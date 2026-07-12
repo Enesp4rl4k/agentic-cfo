@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── AI CFO design tokens — OKLCH ──────────────────────────────────────
+       Product register · Restrained color strategy · Dark mode default
+       SaaS dashboard · Emil primary + Jakub secondary motion weighting
+    ─────────────────────────────────────────────────────────────────────── */
+
+    /* Surface */
+    --background:    oklch(0.13 0.025 255);   /* deep navy-slate */
+    --foreground:    oklch(0.92 0.008 255);   /* near-white, slightly cool */
+
+    --card:          oklch(0.17 0.022 255);   /* panel, one step up */
+    --card-foreground: oklch(0.92 0.008 255);
+
+    --muted:         oklch(0.21 0.018 255);   /* subtle background fills */
+    --muted-foreground: oklch(0.52 0.012 255); /* labels, captions */
+
+    --border:        oklch(0.27 0.018 255);   /* dividers, card outlines */
+    --input:         oklch(0.27 0.018 255);
+
+    /* Brand accent — primary CTA only, not decoration */
+    --primary:       oklch(0.60 0.19 255);    /* blue */
+    --primary-foreground: oklch(0.99 0 0);
+
+    /* Secondary / subdued actions */
+    --secondary:     oklch(0.21 0.018 255);
+    --secondary-foreground: oklch(0.92 0.008 255);
+
+    /* Semantic state colors */
+    --success:       oklch(0.58 0.18 145);    /* green */
+    --success-foreground: oklch(0.99 0 0);
+
+    --warning:       oklch(0.72 0.18 75);     /* amber */
+    --warning-foreground: oklch(0.15 0 0);
+
+    --destructive:   oklch(0.58 0.22 25);     /* red */
+    --destructive-foreground: oklch(0.99 0 0);
+
+    /* Focus ring */
+    --ring:          oklch(0.60 0.19 255);
+
+    /* Geometry */
+    --radius:        0.375rem;   /* 6px — tight, product-appropriate */
+
+    /* ── Motion — Emil primary: restraint, frequency-gated ─────────────── */
+    --duration-fast:   150ms;
+    --duration-base:   200ms;
+    --ease-out-quart:  cubic-bezier(0.25, 1, 0.5, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Cap body prose at 70ch */
+  .prose {
+    max-width: 70ch;
+  }
+
+  /* Tabular numbers for all financial figures */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* ── Motion utilities — Emil frequency gate applied ────────────────────
+     Frequent dashboard interactions: color/opacity only, no layout animate
+     Rare/occasional: allow transform transitions
+  ──────────────────────────────────────────────────────────────────────── */
+
+  .transition-state {
+    transition: color var(--duration-fast) var(--ease-out-quart),
+                background-color var(--duration-fast) var(--ease-out-quart),
+                border-color var(--duration-fast) var(--ease-out-quart),
+                opacity var(--duration-fast) var(--ease-out-quart);
+  }
+
+  .transition-reveal {
+    transition: opacity var(--duration-base) var(--ease-out-quart),
+                transform var(--duration-base) var(--ease-out-quart);
+  }
+
+  /* Reduced motion: strip all transitions, keep instant state changes */
+  @media (prefers-reduced-motion: reduce) {
+    .transition-state,
+    .transition-reveal {
+      transition: none;
+    }
+
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ── Scrollbar — thin, unobtrusive ──────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.32 0.018 255);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.42 0.018 255);
+}

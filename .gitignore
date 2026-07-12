@@ -1,0 +1,35 @@
+# AI CFO — gitignore
+
+# Secrets
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Uploads / generated reports
+uploads/
+backend/uploads/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
