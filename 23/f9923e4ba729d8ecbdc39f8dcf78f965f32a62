@@ -1,0 +1,32 @@
+backend/app/agents/ratios_agent.py
+  h_2675fe4e526316 1-350
+backend/app/agents/cashflow_agent.py
+  h_2675fe4e526316 2,4-13,15-16,21,28,37,42,58,96-97,99-100,106-187
+frontend/src/app/(dashboard)/ratios/page.tsx
+  h_2675fe4e526316 1-226
+frontend/src/app/(dashboard)/balance-sheet/page.tsx
+  h_2675fe4e526316 1-219
+backend/app/agents/orchestrator.py
+  h_2675fe4e526316 4,6-7,11,36-37,44,61
+frontend/src/lib/api/cfo.ts
+  h_2675fe4e526316 9-10
+backend/app/agents/pnl_agent.py
+  h_2675fe4e526316 2-3,14
+backend/app/agents/balance_sheet_agent.py
+  h_2675fe4e526316 1-261
+backend/app/api/insights.py
+  h_2675fe4e526316 9
+backend/app/agents/i18n.py
+  h_2675fe4e526316 1-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "23f9923e4ba729d8ecbdc39f8dcf78f965f32a62",
+  "prompts": {},
+  "humans": {
+    "h_2675fe4e526316": {
+      "author": "Enes Parlak <eparlak996@gmail.com>"
+    }
+  }
+}
