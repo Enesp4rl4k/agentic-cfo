@@ -148,14 +148,17 @@ def _build_forecast_alerts(scenarios: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_forecast_narrative(
     scenarios: dict[str, Any],
     alerts: list[dict[str, str]],
+    lang: str,
     settings,
 ) -> str:
+    from app.agents.i18n import get_language_instruction
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0.3,
         max_tokens=768,
         api_key=settings.openai_api_key,
     )
+    lang_instruction = get_language_instruction(lang)
     scenario_text = "\n".join(
         f"- {s['label']}: 12-month net {_fmt(s['twelve_month_net'])}, "
         f"runway {s['runway_months'] or 'no limit'} months"
@@ -166,7 +169,7 @@ async def _generate_forecast_narrative(
         SystemMessage(content=(
             "You are an experienced CFO. Review the financial forecast scenarios and "
             "provide a concise strategic recommendation (4-6 sentences). "
-            "Be specific about what actions management should take now."
+            f"Be specific about what actions management should take now. {lang_instruction}"
         )),
         HumanMessage(content=(
             f"12-Month Forecast Scenarios:\n{scenario_text}\n\n"
@@ -179,6 +182,7 @@ async def _generate_forecast_narrative(
 
 async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """Forecast Skill. done_when: state['forecast']['scenarios'] has 3 keys."""
+    from app.agents.i18n import validate_language
     cashflow = state.get("cashflow", {})
     pnl = state.get("pnl", {})
 
@@ -191,9 +195,10 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
     try:
         settings = get_settings()
+        lang = validate_language(config.language)
         scenarios = _compute_scenarios(cashflow, pnl)
         alerts = _build_forecast_alerts(scenarios)
-        narrative = await _generate_forecast_narrative(scenarios, alerts, settings)
+        narrative = await _generate_forecast_narrative(scenarios, alerts, lang, settings)
 
         forecast = {
             "scenarios": scenarios,

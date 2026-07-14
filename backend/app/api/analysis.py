@@ -15,12 +15,11 @@ from app.agents.state import AgentRunConfig
 router = APIRouter()
 
 
-async def _run_and_persist(job_id: str) -> None:
+async def _run_and_persist(job_id: str, language: str = "tr") -> None:
     """Background task: run CFO pipeline and persist results to DB."""
     from app.database import session_factory
 
     async with session_factory()() as db:
-        # Mark job as running
         job = await db.get(AnalysisJob, job_id)
         if not job:
             return
@@ -33,7 +32,7 @@ async def _run_and_persist(job_id: str) -> None:
                 job_id=job_id,
                 file_path=job.file_path,
                 file_type=job.file_type,
-                run_config=AgentRunConfig(require_review=False),
+                run_config=AgentRunConfig(require_review=False, language=language),
             )
 
             # Persist transactions
@@ -101,8 +100,14 @@ async def start_analysis(
     job_id: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    language: str = "tr",
 ) -> dict:
-    """Trigger CFO analysis pipeline for an uploaded job."""
+    """
+    Trigger CFO analysis pipeline for an uploaded job.
+    language: tr | en | de  — determines narrative language for all agents.
+    """
+    from app.agents.i18n import validate_language
+    lang = validate_language(language)
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -111,8 +116,8 @@ async def start_analysis(
             status_code=409,
             detail=f"Job is already in status '{job.status}'. Cannot re-run.",
         )
-    background_tasks.add_task(_run_and_persist, job_id)
-    return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
+    background_tasks.add_task(_run_and_persist, job_id, lang)
+    return {"data": {"job_id": job_id, "status": "queued", "language": lang}, "error": None}
 
 
 @router.get("/analysis/{job_id}")

@@ -20,6 +20,8 @@ const navItems = [
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/cashflow", label: "Cash Flow", icon: Droplets },
   { href: "/forecast", label: "Forecast", icon: TrendingUp },
+  { href: "/balance-sheet", label: "Balance Sheet", icon: DollarSign },
+  { href: "/ratios", label: "Financial Ratios", icon: Target },
   { href: "/tax", label: "Tax Analysis", icon: Calculator },
   { href: "/anomalies", label: "Risk & Anomalies", icon: ShieldAlert },
   { href: "/budget", label: "Budget vs Actual", icon: Target },

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.report import Report, ReportFormat
 from app.models.analysis_job import AnalysisJob
+from app.agents.i18n import SUPPORTED_LANGUAGES, LANG_NAMES
 
 router = APIRouter()
 
@@ -159,3 +160,63 @@ async def rerun_with_budget(
     await db.commit()
 
     return {"data": report.data["budget_comparison"], "error": None}
+
+
+# ── Balance Sheet ─────────────────────────────────────────────────────────────
+
+@router.get("/balance-sheet/{job_id}")
+async def get_balance_sheet(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return pro-forma balance sheet for a completed job."""
+    result = await db.execute(
+        select(Report).where(
+            Report.job_id == job_id,
+            Report.report_format == ReportFormat.JSON,
+        )
+    )
+    report = result.scalars().first()
+    if not report or not report.data:
+        raise HTTPException(status_code=404, detail="Balance sheet data not found.")
+    bs = report.data.get("balance_sheet")
+    if not bs:
+        raise HTTPException(status_code=404, detail="Balance sheet not available for this job.")
+    return {"data": bs, "error": None}
+
+
+# ── Financial Ratios ──────────────────────────────────────────────────────────
+
+@router.get("/ratios/{job_id}")
+async def get_financial_ratios(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return financial ratio scorecard for a completed job."""
+    result = await db.execute(
+        select(Report).where(
+            Report.job_id == job_id,
+            Report.report_format == ReportFormat.JSON,
+        )
+    )
+    report = result.scalars().first()
+    if not report or not report.data:
+        raise HTTPException(status_code=404, detail="Ratios data not found.")
+    ratios = report.data.get("financial_ratios")
+    if not ratios:
+        raise HTTPException(status_code=404, detail="Financial ratios not available for this job.")
+    return {"data": ratios, "error": None}
+
+
+# ── Language options ──────────────────────────────────────────────────────────
+
+@router.get("/languages")
+async def get_supported_languages() -> dict:
+    """Return supported narrative languages."""
+    return {
+        "data": [
+            {"code": code, "name": name}
+            for code, name in LANG_NAMES.items()
+        ],
+        "error": None,
+    }

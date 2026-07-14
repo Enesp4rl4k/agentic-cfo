@@ -155,25 +155,28 @@ async def _generate_budget_narrative(
     variance_pct: float,
     alerts: list[dict[str, str]],
     auto_budget: bool,
+    lang: str,
     settings,
 ) -> str:
+    from app.agents.i18n import get_language_instruction
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0.2,
         max_tokens=700,
         api_key=settings.openai_api_key,
     )
-    over = [f"  - {cat}: %{d['variance_pct']:.1f} aşım" for cat, d in categories.items() if d["status"] == "over_budget"]
-    under_rev = [f"  - {cat}: %{abs(d['variance_pct']):.1f} hedef altı" for cat, d in categories.items() if d["status"] == "under_budget"]
-    ahead = [f"  - {cat}: %{d['variance_pct']:.1f} hedef üstü" for cat, d in categories.items() if d["status"] == "ahead_of_target"]
+    lang_instruction = get_language_instruction(lang)
+    over = [f"  - {cat}: {d['variance_pct']:.1f}% overrun" for cat, d in categories.items() if d["status"] == "over_budget"]
+    under_rev = [f"  - {cat}: {abs(d['variance_pct']):.1f}% below target" for cat, d in categories.items() if d["status"] == "under_budget"]
+    ahead = [f"  - {cat}: {d['variance_pct']:.1f}% above target" for cat, d in categories.items() if d["status"] == "ahead_of_target"]
 
-    budget_note = "Not: Bütçe tabanı mevcut gerçekleşmelerden otomatik oluşturuldu." if auto_budget else ""
+    budget_note = "Note: Budget baseline auto-generated from actuals." if auto_budget else ""
 
     messages = [
         SystemMessage(content=(
-            "Sen deneyimli bir CFO'sun. Bütçe-gerçekleşme karşılaştırmasını analiz et "
-            "ve yöneticiye özlü, uygulanabilir öneriler sun (4-6 cümle). "
-            "Önemli sapmaları ve öncelikleri belirt. Türkçe yanıt ver."
+            "You are an experienced CFO. Analyze the budget vs actual comparison "
+            "and provide actionable recommendations (4-6 sentences). "
+            f"Highlight key variances and priorities. {lang_instruction}"
         )),
         HumanMessage(content=(
             f"Toplam Varyans: {_fmt(total_variance)} (%{variance_pct:.1f})\n"
@@ -206,7 +209,9 @@ async def run_budget_comparison(state: CFOState, config: AgentRunConfig) -> Skil
         )
 
     try:
+        from app.agents.i18n import validate_language
         settings = get_settings()
+        lang = validate_language(config.language)
         actuals = _compute_actuals(transactions)
 
         # Use provided budget or auto-generate
@@ -217,7 +222,6 @@ async def run_budget_comparison(state: CFOState, config: AgentRunConfig) -> Skil
         categories = _compute_variances(actuals, budget)
         alerts = _build_budget_alerts(categories)
 
-        # Total variance: sum of all variances weighted by sign (positive = good for revenue, bad for expense)
         income_cats = {"revenue", "other_income"}
         total_variance = sum(
             data["variance"] if cat in income_cats else -data["variance"]
@@ -227,7 +231,7 @@ async def run_budget_comparison(state: CFOState, config: AgentRunConfig) -> Skil
         variance_pct = round(total_variance / max(1, revenue_budget) * 100, 1)
 
         narrative = await _generate_budget_narrative(
-            categories, total_variance, variance_pct, alerts, auto_budget, settings
+            categories, total_variance, variance_pct, alerts, auto_budget, lang, settings
         )
 
         budget_comparison = {

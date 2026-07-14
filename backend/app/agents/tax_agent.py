@@ -183,33 +183,33 @@ def _build_tax_alerts(kdv: dict, stopaj: dict, kurumlar: dict) -> list[dict[str,
 
 
 async def _generate_tax_narrative(
-    kdv: dict, stopaj: dict, kurumlar: dict, alerts: list[dict], settings
+    kdv: dict, stopaj: dict, kurumlar: dict, alerts: list[dict], lang: str, settings
 ) -> str:
+    from app.agents.i18n import get_language_instruction
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0.1,
         max_tokens=600,
         api_key=settings.openai_api_key,
     )
+    lang_instruction = get_language_instruction(lang)
     summary = (
-        f"KDV Tahsil Edilen: {_fmt(kdv['kdv_collected'])}\n"
-        f"KDV Ödenen: {_fmt(kdv['kdv_paid'])}\n"
-        f"KDV Net (Ödenecek/İade): {_fmt(kdv['kdv_net'])}\n"
-        f"Stopaj Toplamı: {_fmt(stopaj['stopaj_total'])}\n"
-        f"  - Maaş Stopajı: {_fmt(stopaj['stopaj_salary'])}\n"
-        f"  - Kira Stopajı: {_fmt(stopaj['stopaj_rent'])}\n"
-        f"Tahmini Kurumlar Vergisi (Yıllık): {_fmt(kurumlar['kurumlar_vergisi_annual'])}\n"
-        f"Geçici Vergi (Çeyrek): {_fmt(kurumlar['gecici_vergi_quarterly'])}\n"
+        f"VAT Collected: {_fmt(kdv['kdv_collected'])}\n"
+        f"VAT Paid: {_fmt(kdv['kdv_paid'])}\n"
+        f"VAT Net (Payable/Refundable): {_fmt(kdv['kdv_net'])}\n"
+        f"Withholding Tax Total: {_fmt(stopaj['stopaj_total'])}\n"
+        f"  - Salary Withholding: {_fmt(stopaj['stopaj_salary'])}\n"
+        f"  - Rent Withholding: {_fmt(stopaj['stopaj_rent'])}\n"
+        f"Corporate Tax (Annual Est.): {_fmt(kurumlar['kurumlar_vergisi_annual'])}\n"
+        f"Provisional Tax (Quarterly): {_fmt(kurumlar['gecici_vergi_quarterly'])}\n"
     )
     messages = [
         SystemMessage(content=(
-            "Sen deneyimli bir Türk mali müşavirisin. "
-            "Vergi yükümlülüklerini analiz et ve yöneticiye özlü, "
-            "uygulanabilir bir vergi planlama özeti sun (3-5 cümle). "
-            "Önemli beyanname tarihlerini ve riskleri vurgula. "
-            "Türkçe yanıt ver."
+            "You are an experienced tax advisor and CFO. Analyze the tax obligations and "
+            "provide a concise, actionable tax planning summary (3-5 sentences). "
+            f"Highlight key filing deadlines and risks. {lang_instruction}"
         )),
-        HumanMessage(content=f"Vergi Özeti:\n{summary}"),
+        HumanMessage(content=f"Tax Summary:\n{summary}"),
     ]
     response = await llm.ainvoke(messages)
     return response.content.strip()
@@ -221,20 +221,22 @@ async def run_tax(state: CFOState, config: AgentRunConfig) -> SkillResult:
     done_when: state['tax_analysis']['kdv_net'] is an integer AND
                state['tax_analysis']['kurumlar_vergisi_annual'] is an integer.
     """
+    from app.agents.i18n import validate_language
     transactions = state.get("transactions", [])
     pnl = state.get("pnl", {})
 
     if not transactions:
-        return SkillResult(ok=False, detail="İşlem verisi bulunamadı — vergi hesaplaması yapılamıyor.", halt=False)
+        return SkillResult(ok=False, detail="No transaction data — tax calculation skipped.", halt=False)
 
     try:
         settings = get_settings()
+        lang = validate_language(config.language)
 
         kdv = _compute_kdv(transactions)
         stopaj = _compute_stopaj(transactions)
         kurumlar = _compute_kurumlar_vergisi(pnl)
         alerts = _build_tax_alerts(kdv, stopaj, kurumlar)
-        narrative = await _generate_tax_narrative(kdv, stopaj, kurumlar, alerts, settings)
+        narrative = await _generate_tax_narrative(kdv, stopaj, kurumlar, alerts, lang, settings)
 
         total_tax_burden = (
             kdv["kdv_payable"]

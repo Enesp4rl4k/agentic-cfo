@@ -180,9 +180,79 @@ export interface DashboardData {
   tax_analysis: TaxAnalysisData | null;
   anomalies: AnomalyData | null;
   budget_comparison: BudgetComparisonData | null;
+  balance_sheet: BalanceSheetData | null;
+  financial_ratios: FinancialRatiosData | null;
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
+}
+
+// ── Balance Sheet ─────────────────────────────────────────────────────────────
+
+export interface BalanceSheetCurrentAssets {
+  cash: number;
+  accounts_receivable: number;
+  inventory: number;
+  prepaid_other: number;
+  total: number;
+}
+
+export interface BalanceSheetData {
+  assets: {
+    current: BalanceSheetCurrentAssets;
+    non_current: { ppe: number; intangibles: number; total: number };
+    total: number;
+  };
+  liabilities: {
+    current: { accounts_payable: number; short_term_debt: number; accrued_expenses: number; total: number };
+    non_current: { long_term_debt: number; total: number };
+    total: number;
+  };
+  equity: { retained_earnings: number; paid_in_capital: number; total: number };
+  is_balanced: boolean;
+  assumptions: { dso_days: number; dio_days: number; dpo_days: number; note: string };
+  narrative: string;
+}
+
+// ── Financial Ratios ──────────────────────────────────────────────────────────
+
+export interface RatioValue {
+  value: number | null;
+  benchmark: number | null;
+  unit: string;
+  status: "good" | "warning" | "critical" | "n/a";
+}
+
+export interface FinancialRatiosData {
+  liquidity: Record<string, RatioValue>;
+  profitability: Record<string, RatioValue>;
+  leverage: Record<string, RatioValue>;
+  efficiency: Record<string, RatioValue>;
+  cash_flow: Record<string, RatioValue>;
+  scorecard: { good: number; warning: number; critical: number; na: number };
+  narrative: string;
+  narrative_lang?: string;
+}
+
+// ── Extended Cash Flow ────────────────────────────────────────────────────────
+
+export interface BurnRateData {
+  monthly_burn_rate: number;
+  avg_monthly_inflow: number;
+  avg_monthly_outflow: number;
+  runway_months: number | null;
+  current_cash_balance: number;
+}
+
+export interface WorkingCapitalData {
+  current_assets_est: number;
+  current_liabilities_est: number;
+  working_capital: number;
+  working_capital_ratio: number;
+  dso_days: number;
+  dio_days: number;
+  dpo_days: number;
+  cash_conversion_cycle: number;
 }
 
 // ── Job / Analysis ────────────────────────────────────────────────────────────

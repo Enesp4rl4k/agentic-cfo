@@ -54,6 +54,12 @@ class CFOState(TypedDict, total=False):
     # Budget vs Actual Agent outputs
     budget_comparison: dict[str, Any]  # {categories: {...}, total_variance, variance_pct, narrative}
 
+    # Balance Sheet Agent outputs
+    balance_sheet: dict[str, Any]  # {assets: {...}, liabilities: {...}, equity: {...}, is_balanced}
+
+    # Financial Ratios Agent outputs
+    financial_ratios: dict[str, Any]  # {liquidity, profitability, leverage, efficiency, cash_flow, scorecard}
+
     # Report Agent outputs
     report_paths: dict[str, str]   # {xlsx: "/path/...", pdf: "/path/..."}
     dashboard_json: dict[str, Any] # serialised summary for the frontend
@@ -89,8 +95,10 @@ class AgentRunConfig:
     dry_run: bool = False
     require_review: bool = True
     auto_proceed_min_confidence: float = 0.80
-    # Budget baseline (category → amount in cents). If None, budget agent is skipped.
+    # Budget baseline (category → amount in cents). If None, budget agent uses auto-budget.
     budget_baseline: dict[str, int] | None = None
+    # Narrative language: "tr" | "en" | "de" (default: "tr")
+    language: str = "tr"
 
 
 DEFAULT_RUN_CONFIG = AgentRunConfig()

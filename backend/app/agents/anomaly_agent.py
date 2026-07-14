@@ -199,33 +199,35 @@ def _compute_risk_score(anomalies: list[dict[str, Any]]) -> float:
 async def _generate_anomaly_narrative(
     anomalies: list[dict[str, Any]],
     risk_score: float,
+    lang: str,
     settings,
 ) -> str:
+    from app.agents.i18n import get_language_instruction
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0.1,
         max_tokens=600,
         api_key=settings.openai_api_key,
     )
+    lang_instruction = get_language_instruction(lang)
     if not anomalies:
-        return "Anlamlı bir anomali tespit edilmedi. İşlemler normal görünüyor."
+        no_anomaly = {"tr": "Anlamlı bir anomali tespit edilmedi.", "en": "No significant anomalies detected.", "de": "Keine wesentlichen Anomalien festgestellt."}
+        return no_anomaly.get(lang, "No anomalies.")
 
     summary_lines = [
         f"- [{a['severity'].upper()}] {a['type']}: {a['detail']}"
-        for a in anomalies[:10]  # top 10
+        for a in anomalies[:10]
     ]
     messages = [
         SystemMessage(content=(
-            "Sen deneyimli bir iç denetçi ve CFO'sun. "
-            "Aşağıdaki finansal anomali listesini incele ve "
-            "yöneticiye kısa, net bir özet sun (3-5 cümle). "
-            "En kritik riskleri önce belirt ve ne yapılması gerektiğini söyle. "
-            "Türkçe yanıt ver."
+            "You are an experienced internal auditor and CFO. "
+            "Review the financial anomaly list and provide a concise summary (3-5 sentences). "
+            f"Highlight the most critical risks first and specify required actions. {lang_instruction}"
         )),
         HumanMessage(content=(
-            f"Risk Skoru: {risk_score:.0%}\n"
-            f"Toplam Anomali: {len(anomalies)}\n\n"
-            f"Tespitler:\n" + "\n".join(summary_lines)
+            f"Risk Score: {risk_score:.0%}\n"
+            f"Total Anomalies: {len(anomalies)}\n\n"
+            f"Findings:\n" + "\n".join(summary_lines)
         )),
     ]
     response = await llm.ainvoke(messages)
@@ -237,17 +239,19 @@ async def run_anomaly_detection(state: CFOState, config: AgentRunConfig) -> Skil
     Anomaly Detection Skill.
     done_when: state['anomalies']['risk_score'] is a float 0–1.
     """
+    from app.agents.i18n import validate_language
     transactions = state.get("transactions", [])
     if not transactions:
         return SkillResult(
             ok=True,
-            patch={"anomalies": {"anomaly_list": [], "risk_score": 0.0, "summary": "İşlem verisi yok."}},
+            patch={"anomalies": {"anomaly_list": [], "risk_score": 0.0, "narrative": "No transaction data."}},
             confidence=1.0,
-            detail="İşlem verisi yok — anomali tespiti atlandı.",
+            detail="No transactions — anomaly detection skipped.",
         )
 
     try:
         settings = get_settings()
+        lang = validate_language(config.language)
 
         all_anomalies: list[dict[str, Any]] = []
         all_anomalies.extend(_zscore_outliers(transactions))
@@ -267,7 +271,7 @@ async def run_anomaly_detection(state: CFOState, config: AgentRunConfig) -> Skil
                 unique_anomalies.append(a)
 
         risk_score = _compute_risk_score(unique_anomalies)
-        narrative = await _generate_anomaly_narrative(unique_anomalies, risk_score, settings)
+        narrative = await _generate_anomaly_narrative(unique_anomalies, risk_score, lang, settings)
 
         high_count = sum(1 for a in unique_anomalies if a.get("severity") == "high")
         needs_review = high_count >= 2 or risk_score >= 0.6

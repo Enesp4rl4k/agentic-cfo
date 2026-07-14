@@ -6,6 +6,8 @@ import type {
   TaxAnalysisData,
   AnomalyData,
   BudgetComparisonData,
+  BalanceSheetData,
+  FinancialRatiosData,
 } from "@/types";
 
 export async function uploadFile(file: File): Promise<{ job_id: string }> {
@@ -97,6 +99,27 @@ export async function rerunBudget(
   const res = await apiClient.post<{ data: BudgetComparisonData; error: null }>(
     `/budget/${jobId}/rerun`,
     { budget }
+  );
+  return res.data.data;
+}
+
+export async function getBalanceSheet(jobId: string): Promise<BalanceSheetData> {
+  const res = await apiClient.get<{ data: BalanceSheetData; error: null }>(
+    `/balance-sheet/${jobId}`
+  );
+  return res.data.data;
+}
+
+export async function getFinancialRatios(jobId: string): Promise<FinancialRatiosData> {
+  const res = await apiClient.get<{ data: FinancialRatiosData; error: null }>(
+    `/ratios/${jobId}`
+  );
+  return res.data.data;
+}
+
+export async function getSupportedLanguages(): Promise<{ code: string; name: string }[]> {
+  const res = await apiClient.get<{ data: { code: string; name: string }[]; error: null }>(
+    `/languages`
   );
   return res.data.data;
 }
