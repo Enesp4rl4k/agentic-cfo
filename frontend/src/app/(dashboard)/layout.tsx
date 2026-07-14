@@ -8,14 +8,22 @@ import {
   FileText,
   TrendingUp,
   DollarSign,
+  Droplets,
+  ShieldAlert,
+  Calculator,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/upload", label: "Upload", icon: Upload },
-  { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/cashflow", label: "Cash Flow", icon: Droplets },
   { href: "/forecast", label: "Forecast", icon: TrendingUp },
+  { href: "/tax", label: "Tax Analysis", icon: Calculator },
+  { href: "/anomalies", label: "Risk & Anomalies", icon: ShieldAlert },
+  { href: "/budget", label: "Budget vs Actual", icon: Target },
+  { href: "/reports", label: "Reports", icon: FileText },
 ];
 
 export default function DashboardLayout({
@@ -36,7 +44,7 @@ export default function DashboardLayout({
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-1 p-3" aria-label="Main navigation">
+        <nav className="flex-1 space-y-0.5 p-3" aria-label="Main navigation">
           {navItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}

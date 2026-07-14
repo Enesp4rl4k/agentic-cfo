@@ -1,9 +1,6 @@
 """
 Agent kernel types — domain-neutral.
 
-Mirrors the pattern from listingpilot/packages/agent-kernel/src/types.ts
-but adapted to Python and LangGraph.
-
 An Agent is a LangGraph StateGraph. Each node is one Skill.
 The confidence gate is a conditional edge before the first effect node.
 """
@@ -48,6 +45,15 @@ class CFOState(TypedDict, total=False):
     # Forecast Agent outputs
     forecast: dict[str, Any]  # {scenarios: {optimistic, base, pessimistic}, alerts: [...]}
 
+    # Tax Agent outputs
+    tax_analysis: dict[str, Any]  # {kdv_collected, kdv_paid, kdv_net, stopaj, kurumlar_vergisi, ...}
+
+    # Anomaly Detection Agent outputs
+    anomalies: dict[str, Any]  # {anomaly_list: [...], risk_score: float, summary: str}
+
+    # Budget vs Actual Agent outputs
+    budget_comparison: dict[str, Any]  # {categories: {...}, total_variance, variance_pct, narrative}
+
     # Report Agent outputs
     report_paths: dict[str, str]   # {xlsx: "/path/...", pdf: "/path/..."}
     dashboard_json: dict[str, Any] # serialised summary for the frontend
@@ -83,6 +89,8 @@ class AgentRunConfig:
     dry_run: bool = False
     require_review: bool = True
     auto_proceed_min_confidence: float = 0.80
+    # Budget baseline (category → amount in cents). If None, budget agent is skipped.
+    budget_baseline: dict[str, int] | None = None
 
 
 DEFAULT_RUN_CONFIG = AgentRunConfig()
@@ -96,6 +104,9 @@ ROUTE_INGEST = "data_ingestion"
 ROUTE_PNL = "pnl"
 ROUTE_CASHFLOW = "cashflow"
 ROUTE_FORECAST = "forecast"
+ROUTE_TAX = "tax"
+ROUTE_ANOMALY = "anomaly"
+ROUTE_BUDGET = "budget"
 ROUTE_REPORT = "report"
 ROUTE_REVIEW_GATE = "review_gate"
 ROUTE_END = "__end__"

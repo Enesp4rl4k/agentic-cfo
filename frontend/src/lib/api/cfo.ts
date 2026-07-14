@@ -1,5 +1,12 @@
 import { apiClient } from "@/lib/api/client";
-import type { AnalysisJob, DashboardData, ReportMeta } from "@/types";
+import type {
+  AnalysisJob,
+  DashboardData,
+  ReportMeta,
+  TaxAnalysisData,
+  AnomalyData,
+  BudgetComparisonData,
+} from "@/types";
 
 export async function uploadFile(file: File): Promise<{ job_id: string }> {
   const form = new FormData();
@@ -42,7 +49,54 @@ export async function listReports(jobId: string): Promise<ReportMeta[]> {
 }
 
 export function getDownloadUrl(reportId: string): string {
+  // NEXT_PUBLIC_ vars are inlined at build time — safe to access without process types
   const base =
-    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    (typeof window !== "undefined"
+      ? (window as Window & { __API_URL__?: string }).__API_URL__
+      : undefined) ??
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).NEXT_PUBLIC_API_URL ??
+    "http://localhost:8000";
   return `${base}/api/v1/reports/${reportId}/download`;
+}
+
+export async function downloadReport(reportId: string): Promise<Blob> {
+  const res = await apiClient.get(`/reports/${reportId}/download`, {
+    responseType: "blob",
+  });
+  return res.data as Blob;
+}
+
+export async function getTaxAnalysis(jobId: string): Promise<TaxAnalysisData> {
+  const res = await apiClient.get<{ data: TaxAnalysisData; error: null }>(
+    `/tax/${jobId}`
+  );
+  return res.data.data;
+}
+
+export async function getAnomalies(jobId: string): Promise<AnomalyData> {
+  const res = await apiClient.get<{ data: AnomalyData; error: null }>(
+    `/anomalies/${jobId}`
+  );
+  return res.data.data;
+}
+
+export async function getBudgetComparison(
+  jobId: string
+): Promise<BudgetComparisonData> {
+  const res = await apiClient.get<{ data: BudgetComparisonData; error: null }>(
+    `/budget/${jobId}`
+  );
+  return res.data.data;
+}
+
+export async function rerunBudget(
+  jobId: string,
+  budget: Record<string, number>
+): Promise<BudgetComparisonData> {
+  const res = await apiClient.post<{ data: BudgetComparisonData; error: null }>(
+    `/budget/${jobId}/rerun`,
+    { budget }
+  );
+  return res.data.data;
 }

@@ -1,17 +1,20 @@
 """
 CFO Orchestrator — LangGraph StateGraph.
 
-Graph topology:
-  START → data_ingestion → review_gate → pnl → cashflow → forecast → report → END
-                                      ↓
-                                hold_for_review → END
+Graph topology (8 skills):
+  START → data_ingestion → review_gate → pnl → cashflow → forecast
+                                                              ↓
+                                               tax → anomaly → budget → report → END
+                                    ↓
+                              hold_for_review → END
 
-The review_gate is a conditional edge:
-  - If awaiting_review=True or confidence < threshold → hold_for_review
-  - Otherwise → pnl (proceed to analysis)
+The review_gate fires after data_ingestion:
+  - confidence < 0.80 or awaiting_review → hold_for_review
+  - otherwise → proceed to pnl
 
-This mirrors listingpilot's agent-kernel gate rule:
-  "stop before the first effect skill unless cleared to proceed"
+After forecast, the extended skills (tax, anomaly, budget) run in parallel
+conceptually but are sequenced in LangGraph for simplicity — they are fast
+rule-based agents and don't block on each other's output.
 """
 from __future__ import annotations
 
@@ -33,6 +36,9 @@ from app.agents.data_ingestion import run_data_ingestion
 from app.agents.pnl_agent import run_pnl
 from app.agents.cashflow_agent import run_cashflow
 from app.agents.forecast_agent import run_forecast
+from app.agents.tax_agent import run_tax
+from app.agents.anomaly_agent import run_anomaly_detection
+from app.agents.budget_agent import run_budget_comparison
 from app.agents.report_agent import run_report
 
 logger = logging.getLogger(__name__)
@@ -52,7 +58,7 @@ def _append_log(state: CFOState, log: StepLog) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Node wrappers — each calls the skill and merges the patch into state
+# Node wrappers
 # ---------------------------------------------------------------------------
 
 async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
@@ -130,6 +136,62 @@ async def node_forecast(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
+async def node_tax(state: CFOState, config: dict) -> CFOState:
+    run_config: AgentRunConfig = config.get("configurable", {}).get(
+        "run_config", DEFAULT_RUN_CONFIG
+    )
+    result = await run_tax(state, run_config)
+    patch = _append_log(state, StepLog(
+        step="tax",
+        ok=result.ok,
+        detail=result.detail,
+        confidence=result.confidence,
+    ))
+    patch.update(result.patch)
+    # Tax failures are non-fatal — pipeline continues without tax data
+    if not result.ok:
+        logger.warning("Tax agent failed — continuing pipeline: %s", result.detail)
+    return {**state, **patch}  # type: ignore[return-value]
+
+
+async def node_anomaly(state: CFOState, config: dict) -> CFOState:
+    run_config: AgentRunConfig = config.get("configurable", {}).get(
+        "run_config", DEFAULT_RUN_CONFIG
+    )
+    result = await run_anomaly_detection(state, run_config)
+    patch = _append_log(state, StepLog(
+        step="anomaly",
+        ok=result.ok,
+        detail=result.detail,
+        confidence=result.confidence,
+    ))
+    patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
+    # Anomaly failures are non-fatal
+    if not result.ok:
+        logger.warning("Anomaly agent failed — continuing: %s", result.detail)
+    return {**state, **patch}  # type: ignore[return-value]
+
+
+async def node_budget(state: CFOState, config: dict) -> CFOState:
+    run_config: AgentRunConfig = config.get("configurable", {}).get(
+        "run_config", DEFAULT_RUN_CONFIG
+    )
+    result = await run_budget_comparison(state, run_config)
+    patch = _append_log(state, StepLog(
+        step="budget",
+        ok=result.ok,
+        detail=result.detail,
+        confidence=result.confidence,
+    ))
+    patch.update(result.patch)
+    # Budget failures are non-fatal
+    if not result.ok:
+        logger.warning("Budget agent failed — continuing: %s", result.detail)
+    return {**state, **patch}  # type: ignore[return-value]
+
+
 async def node_report(state: CFOState, config: dict) -> CFOState:
     run_config: AgentRunConfig = config.get("configurable", {}).get(
         "run_config", DEFAULT_RUN_CONFIG
@@ -166,22 +228,13 @@ async def node_hold_for_review(state: CFOState, config: dict) -> CFOState:
 # ---------------------------------------------------------------------------
 
 def route_after_ingestion(state: CFOState) -> str:
-    """
-    Gate rule (from CLAUDE.md law #10):
-    - If halted: go to END immediately
-    - If awaiting_review or confidence < threshold: hold_for_review
-    - Otherwise: proceed to pnl
-    """
     if state.get("halted"):
         return ROUTE_END
-
     if state.get("awaiting_review"):
         return ROUTE_HOLD
-
     min_conf = state.get("min_confidence", 1.0)
     if min_conf < 0.80:
         return ROUTE_HOLD
-
     return ROUTE_PNL
 
 
@@ -192,10 +245,14 @@ def route_after_ingestion(state: CFOState) -> str:
 def build_cfo_graph() -> StateGraph:
     graph = StateGraph(CFOState)
 
+    # Register all nodes
     graph.add_node("data_ingestion", node_data_ingestion)
     graph.add_node("pnl", node_pnl)
     graph.add_node("cashflow", node_cashflow)
     graph.add_node("forecast", node_forecast)
+    graph.add_node("tax", node_tax)
+    graph.add_node("anomaly", node_anomaly)
+    graph.add_node("budget", node_budget)
     graph.add_node("report", node_report)
     graph.add_node("hold_for_review", node_hold_for_review)
 
@@ -212,10 +269,16 @@ def build_cfo_graph() -> StateGraph:
         },
     )
 
-    # Linear analysis pipeline
+    # Core analysis pipeline
     graph.add_edge("pnl", "cashflow")
     graph.add_edge("cashflow", "forecast")
-    graph.add_edge("forecast", "report")
+
+    # Extended CFO skills — run after forecast, non-fatal
+    graph.add_edge("forecast", "tax")
+    graph.add_edge("tax", "anomaly")
+    graph.add_edge("anomaly", "budget")
+    graph.add_edge("budget", "report")
+
     graph.add_edge("report", END)
     graph.add_edge("hold_for_review", END)
 

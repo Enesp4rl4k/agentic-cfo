@@ -3,7 +3,7 @@
 export interface KPI {
   label: string;
   value: number;
-  format: "currency" | "percent" | "months" | "number";
+  format: "currency" | "percent" | "months" | "number" | "score";
   trend: number | null;
 }
 
@@ -45,6 +45,7 @@ export interface CashFlowData {
   net_change: number;
   monthly_series: MonthlyEntry[];
   narrative: string;
+  alerts: Alert[];
 }
 
 export interface ForecastScenario {
@@ -62,6 +63,7 @@ export interface ForecastData {
     pessimistic: ForecastScenario;
   };
   narrative: string;
+  alerts: Alert[];
 }
 
 export type AlertLevel = "warning" | "critical" | "info";
@@ -69,6 +71,7 @@ export type AlertLevel = "warning" | "critical" | "info";
 export interface Alert {
   level: AlertLevel;
   message: string;
+  category?: string;
 }
 
 export interface Transaction {
@@ -82,16 +85,107 @@ export interface Transaction {
   confidence: number | null;
 }
 
+// ── Tax Analysis ──────────────────────────────────────────────────────────────
+
+export interface MonthlyKDV {
+  month: string;
+  collected: number;
+  paid: number;
+  net: number;
+}
+
+export interface TaxAnalysisData {
+  kdv_collected: number;
+  kdv_paid: number;
+  kdv_net: number;
+  kdv_payable: number;
+  kdv_refundable: number;
+  monthly_kdv: MonthlyKDV[];
+  stopaj_total: number;
+  stopaj_salary: number;
+  stopaj_rent: number;
+  kurumlar_vergisi_annual: number;
+  gecici_vergi_quarterly: number;
+  total_tax_burden: number;
+  effective_tax_rate: number;
+  narrative: string;
+  alerts: Alert[];
+}
+
+// ── Anomaly Detection ─────────────────────────────────────────────────────────
+
+export type AnomalySeverity = "high" | "medium" | "low";
+export type AnomalyType =
+  | "outlier_amount"
+  | "potential_duplicate"
+  | "round_number"
+  | "frequency_spike";
+
+export interface AnomalyEntry {
+  type: AnomalyType;
+  severity: AnomalySeverity;
+  detail: string;
+  transaction_date: string | null;
+  amount_cents: number;
+  vendor: string | null;
+  category: string;
+  description: string;
+  z_score?: number;
+  count_in_window?: number;
+}
+
+export interface AnomalyData {
+  anomaly_list: AnomalyEntry[];
+  anomaly_count: number;
+  high_severity_count: number;
+  risk_score: number; // 0–1
+  narrative: string;
+}
+
+// ── Budget vs Actual ──────────────────────────────────────────────────────────
+
+export type BudgetStatus =
+  | "on_track"
+  | "over_budget"
+  | "under_budget"
+  | "under_spend"
+  | "ahead_of_target";
+
+export interface BudgetCategoryData {
+  budget: number;
+  actual: number;
+  variance: number;
+  variance_pct: number;
+  status: BudgetStatus;
+}
+
+export interface BudgetComparisonData {
+  categories: Record<string, BudgetCategoryData>;
+  total_variance: number;
+  variance_pct: number;
+  over_budget_count: number;
+  auto_budget: boolean;
+  narrative: string;
+  alerts: Alert[];
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
 export interface DashboardData {
   generated_at: string;
   kpis: KPI[];
   pnl: PnLData;
   cashflow: CashFlowData;
   forecast: ForecastData;
+  tax_analysis: TaxAnalysisData | null;
+  anomalies: AnomalyData | null;
+  budget_comparison: BudgetComparisonData | null;
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
 }
+
+// ── Job / Analysis ────────────────────────────────────────────────────────────
 
 export type JobStatus =
   | "pending"
