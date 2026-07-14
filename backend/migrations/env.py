@@ -19,10 +19,12 @@ from app.config import get_settings
 from app.database import Base
 
 # Import all models so Alembic can detect them
-from app.models.analysis_job import AnalysisJob  # noqa: F401
-from app.models.transaction import Transaction    # noqa: F401
-from app.models.report import Report              # noqa: F401
-from app.models.category_rule import CategoryRule # noqa: F401
+from app.models.analysis_job import AnalysisJob    # noqa: F401
+from app.models.transaction import Transaction     # noqa: F401
+from app.models.report import Report               # noqa: F401
+from app.models.category_rule import CategoryRule  # noqa: F401
+from app.models.organization import Organization   # noqa: F401
+from app.models.user import User                   # noqa: F401
 
 # Alembic Config object
 config = context.config

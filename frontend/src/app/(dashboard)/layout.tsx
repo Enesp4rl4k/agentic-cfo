@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Upload,
@@ -12,8 +12,12 @@ import {
   ShieldAlert,
   Calculator,
   Target,
+  LogOut,
+  User,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -34,6 +38,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { user, logout, isAuthenticated } = useAuth();
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -43,10 +48,15 @@ export default function DashboardLayout({
         <div className="flex h-14 items-center gap-2 border-b border-border px-5">
           <DollarSign className="h-5 w-5 text-primary" aria-hidden="true" />
           <span className="font-semibold tracking-tight">AI CFO</span>
+          {user?.organization && (
+            <span className="ml-auto text-xs text-muted-foreground truncate max-w-[80px]">
+              {user.organization.name}
+            </span>
+          )}
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-0.5 p-3" aria-label="Main navigation">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3" aria-label="Main navigation">
           {navItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
@@ -66,20 +76,56 @@ export default function DashboardLayout({
           ))}
         </nav>
 
-        <div className="border-t border-border p-4">
-          <p className="text-xs text-muted-foreground">
-            Powered by GPT-4o + LangGraph
-          </p>
+        {/* User menu */}
+        <div className="border-t border-border p-3 space-y-1">
+          {isAuthenticated && user ? (
+            <>
+              <div className="flex items-center gap-2.5 rounded-md px-3 py-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold">
+                  {user.full_name?.[0]?.toUpperCase() ?? "U"}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-foreground">
+                    {user.full_name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground capitalize">
+                    {user.role}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={logout}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground",
+                  "transition-colors hover:bg-muted hover:text-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                )}
+              >
+                <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Sign out
+              </button>
+            </>
+          ) : (
+            <p className="px-3 text-xs text-muted-foreground">
+              Powered by GPT-4o + LangGraph
+            </p>
+          )}
         </div>
       </aside>
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-10 flex h-14 items-center border-b border-border bg-background/80 px-6 backdrop-blur">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
           <h1 className="text-sm font-semibold text-muted-foreground">
             Financial Intelligence Platform
           </h1>
+          {user && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="capitalize">{user.organization?.plan ?? "free"}</span>
+            </div>
+          )}
         </header>
 
         <main className="flex-1 overflow-auto">{children}</main>

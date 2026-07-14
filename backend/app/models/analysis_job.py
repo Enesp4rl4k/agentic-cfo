@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Text, JSON
+from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -11,6 +11,7 @@ from app.database import Base
 if TYPE_CHECKING:
     from app.models.transaction import Transaction
     from app.models.report import Report
+    from app.models.organization import Organization
 
 
 def utcnow() -> datetime:
@@ -31,6 +32,20 @@ class AnalysisJob(Base):
 
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    # Multi-tenant isolation — every job belongs to one organization
+    organization_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backwards compatibility with existing jobs
+        index=True,
+    )
+    # Owner user — who uploaded this file
+    created_by_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False)
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -61,4 +76,7 @@ class AnalysisJob(Base):
     )
     reports: Mapped[list["Report"]] = relationship(
         "Report", back_populates="job", cascade="all, delete-orphan"
+    )
+    organization: Mapped["Organization | None"] = relationship(
+        "Organization", back_populates="jobs"
     )

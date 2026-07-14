@@ -5,8 +5,11 @@ from functools import lru_cache
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # OpenAI
+    # OpenAI — platform key (used when user hasn't provided their own)
     openai_api_key: str
+    # BYOK: if set, this key is used instead of openai_api_key for this specific run
+    # Set per-organization in the future via settings UI
+    openai_api_key_override: str | None = None
 
     # PostgreSQL
     postgres_host: str = "localhost"
