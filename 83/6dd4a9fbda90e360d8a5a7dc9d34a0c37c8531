@@ -1,0 +1,38 @@
+backend/migrations/versions/002_auth.py
+  h_2675fe4e526316 1-84
+frontend/src/app/(dashboard)/layout.tsx
+  h_2675fe4e526316 4,15-17,20,41,51-53
+backend/app/api/auth.py
+  h_2675fe4e526316 1-344
+frontend/src/app/(auth)/layout.tsx
+  h_2675fe4e526316 1-7
+backend/app/models/user.py
+  h_2675fe4e526316 1-82
+frontend/src/app/(auth)/login/page.tsx
+  h_2675fe4e526316 1-215
+backend/app/models/organization.py
+  h_2675fe4e526316 1-50
+backend/app/models/analysis_job.py
+  h_2675fe4e526316 5,14
+backend/app/services/auth_service.py
+  h_2675fe4e526316 1-84
+frontend/src/middleware.ts
+  h_2675fe4e526316 1-52
+backend/app/api/deps.py
+  h_2675fe4e526316 1-96
+frontend/src/app/(auth)/register/page.tsx
+  h_2675fe4e526316 1-331
+frontend/src/lib/auth/AuthContext.tsx
+  h_2675fe4e526316 1-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "836dd4a9fbda90e360d8a5a7dc9d34a0c37c8531",
+  "prompts": {},
+  "humans": {
+    "h_2675fe4e526316": {
+      "author": "Enes Parlak <eparlak996@gmail.com>"
+    }
+  }
+}
