@@ -1,0 +1,54 @@
+backend/migrations/script.py.mako
+  h_2675fe4e526316 1-26
+frontend/src/app/(dashboard)/cashflow/page.tsx
+  h_2675fe4e526316 1-296
+backend/migrations/env.py
+  h_2675fe4e526316 1-79
+frontend/src/app/(dashboard)/forecast/page.tsx
+  h_2675fe4e526316 1-222
+backend/app/agents/budget_agent.py
+  h_2675fe4e526316 1-261
+backend/app/agents/orchestrator.py
+  h_2675fe4e526316 4-17,39-41,61
+frontend/src/types/index.ts
+  h_2675fe4e526316 6,48,66,74,88-95
+frontend/src/app/(dashboard)/reports/page.tsx
+  h_2675fe4e526316 1-178
+.env.example
+  h_2675fe4e526316 1,3-4,6-7,9-14,21,24-25
+backend/alembic.ini
+  h_2675fe4e526316 1-39
+backend/app/agents/tax_agent.py
+  h_2675fe4e526316 1-271
+backend/app/agents/report_agent.py
+  h_2675fe4e526316 2,4-5,22-23,31-33,38-42,45,48-60,62-64,77-80,83-91,114,128,130-175,186-188,193,204-207
+backend/app/api/insights.py
+  h_2675fe4e526316 1-161
+frontend/src/lib/api/cfo.ts
+  h_2675fe4e526316 4-7,9,52,54-55
+frontend/src/app/(dashboard)/tax/page.tsx
+  h_2675fe4e526316 1-250
+frontend/src/app/(dashboard)/anomalies/page.tsx
+  h_2675fe4e526316 1-239
+backend/app/agents/anomaly_agent.py
+  h_2675fe4e526316 1-317
+frontend/src/hooks/useCFO.ts
+  h_2675fe4e526316 11-15
+frontend/src/app/(dashboard)/budget/page.tsx
+  h_2675fe4e526316 1-294
+backend/app/agents/__init__.py
+  h_2675fe4e526316 1-8,10,13-19
+backend/migrations/versions/001_initial.py
+  h_2675fe4e526316 1-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "b115ab6f302f63c14a1f7012f4f9d504c2549a7c",
+  "prompts": {},
+  "humans": {
+    "h_2675fe4e526316": {
+      "author": "Enes Parlak <eparlak996@gmail.com>"
+    }
+  }
+}
