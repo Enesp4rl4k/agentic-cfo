@@ -130,13 +130,11 @@ def _write_excel(
 ) -> None:
     """Write a multi-sheet Excel report using openpyxl."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, numbers
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font, PatternFill, Alignment
 
     HEADER_FILL = PatternFill("solid", fgColor="1E3A5F")
     HEADER_FONT = Font(color="FFFFFF", bold=True)
     SUBHEADER_FILL = PatternFill("solid", fgColor="E8F0FE")
-    CURRENCY_FORMAT = '#,##0.00'
 
     wb = Workbook()
 

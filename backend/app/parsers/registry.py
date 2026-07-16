@@ -26,10 +26,25 @@ def register(cls: Type[BankParser]) -> Type[BankParser]:
     return cls
 
 
+def _ensure_parsers_registered() -> None:
+    """Import all bank parsers and register them if not already done."""
+    if _REGISTRY:
+        return  # already populated
+    from app.parsers.banks.akbank import AkbankParser
+    from app.parsers.banks.garanti import GarantiParser
+    from app.parsers.banks.isbank import IsBankParser
+    from app.parsers.banks.ziraat import ZiraatParser
+
+    for cls in (AkbankParser, GarantiParser, IsBankParser, ZiraatParser):
+        if cls not in _REGISTRY:
+            _REGISTRY.append(cls)
+
+
 class ParserRegistry:
     @staticmethod
     def detect(text: str) -> Type[BankParser] | None:
         """Return the first parser class whose can_parse() returns True."""
+        _ensure_parsers_registered()
         for parser_cls in _REGISTRY:
             try:
                 if parser_cls.can_parse(text):
@@ -46,10 +61,6 @@ class ParserRegistry:
         Falls back to GenericParser if no bank matches.
         """
         # Import here to avoid circular imports
-        from app.parsers.banks.akbank import AkbankParser
-        from app.parsers.banks.garanti import GarantiParser
-        from app.parsers.banks.isbank import IsBankParser
-        from app.parsers.banks.ziraat import ZiraatParser
         from app.parsers.banks.generic import GenericParser
 
         parser_cls = ParserRegistry.detect(text)

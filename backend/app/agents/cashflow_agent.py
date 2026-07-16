@@ -12,9 +12,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.agents.state import CFOState, AgentRunConfig, SkillResult
 from app.config import get_settings
 
@@ -126,11 +123,14 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_cashflow_narrative(
     cashflow: dict[str, Any], alerts: list[dict], settings
 ) -> str:
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage, SystemMessage
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0.2,
         max_tokens=512,
         api_key=settings.openai_api_key,
+        base_url=settings.llm_base_url or None,
     )
     alert_text = "\n".join(f"- [{a['level'].upper()}] {a['message']}" for a in alerts) or "No critical alerts."
     messages = [

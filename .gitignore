@@ -27,6 +27,14 @@ out/
 uploads/
 backend/uploads/
 
+# SQLite dev database
+*.db
+*.db-shm
+*.db-wal
+
+# Lock files (generated, not needed in repo)
+package-lock.json
+
 # Docker
 *.log
 

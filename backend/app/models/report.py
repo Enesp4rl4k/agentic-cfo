@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import String, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -16,14 +17,14 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class ReportType(str):
+class ReportType(StrEnum):
     PNL = "pnl"
     CASHFLOW = "cashflow"
     FORECAST = "forecast"
     FULL = "full"
 
 
-class ReportFormat(str):
+class ReportFormat(StrEnum):
     EXCEL = "xlsx"
     PDF = "pdf"
     JSON = "json"

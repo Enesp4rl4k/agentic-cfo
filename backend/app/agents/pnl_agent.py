@@ -10,11 +10,7 @@ done_when: state['pnl'] contains revenue, gross_profit, net_income (all integers
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from typing import Any
-
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import CFOState, AgentRunConfig, SkillResult
 from app.config import get_settings
@@ -70,11 +66,14 @@ def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 async def _generate_cfo_narrative(pnl: dict[str, Any], settings) -> str:
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage, SystemMessage
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0.2,
         max_tokens=512,
         api_key=settings.openai_api_key,
+        base_url=settings.llm_base_url or None,
     )
     summary = (
         f"Revenue: {_fmt(pnl['revenue'])}\n"

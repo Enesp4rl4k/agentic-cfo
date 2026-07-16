@@ -71,7 +71,7 @@ async def _extract_transactions_with_llm(
     raw_text: str, settings
 ) -> list[dict[str, Any]]:
     """
-    Use GPT-4o to extract structured transactions from raw document text.
+    Use LLM (DeepSeek / OpenAI compatible) to extract structured transactions.
     Returns list of dicts: date, amount, type, description, vendor, confidence.
     """
     llm = ChatOpenAI(
@@ -79,6 +79,7 @@ async def _extract_transactions_with_llm(
         temperature=0.0,
         max_tokens=4096,
         api_key=settings.openai_api_key,
+        base_url=settings.llm_base_url or None,
     )
     system = (
         "You are a financial data extraction specialist. "

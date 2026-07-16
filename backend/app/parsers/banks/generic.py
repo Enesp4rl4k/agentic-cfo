@@ -48,7 +48,6 @@ class GenericParser(BankParser):
         """Call GPT-4o to extract transactions from unstructured text."""
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage, SystemMessage
-        from datetime import timezone
 
         settings = get_settings()
         llm = ChatOpenAI(

@@ -1,15 +1,12 @@
-import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.transaction import Transaction
 from app.models.report import Report, ReportType, ReportFormat
-from app.agents.orchestrator import run_cfo_pipeline
 from app.agents.state import AgentRunConfig
 
 router = APIRouter()
@@ -18,6 +15,7 @@ router = APIRouter()
 async def _run_and_persist(job_id: str) -> None:
     """Background task: run CFO pipeline and persist results to DB."""
     from app.database import session_factory
+    from app.agents.orchestrator import run_cfo_pipeline
 
     async with session_factory()() as db:
         # Mark job as running

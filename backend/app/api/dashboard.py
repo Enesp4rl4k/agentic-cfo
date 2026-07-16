@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.report import Report, ReportFormat, ReportType
+from app.models.report import Report, ReportFormat
 
 router = APIRouter()
 

@@ -1,6 +1,5 @@
 import os
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +19,7 @@ def _extension(filename: str) -> str:
 
 @router.post("/upload")
 async def upload_file(
-    file: Annotated[UploadFile, File(description="Financial document: PDF, Excel, or CSV")],
+    file: UploadFile = File(description="Financial document: PDF, Excel, or CSV"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """

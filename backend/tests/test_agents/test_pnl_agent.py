@@ -2,7 +2,6 @@
 Tests for P&L agent — pure computation, no LLM calls.
 done_when: pytest tests/test_agents/test_pnl_agent.py -q → pass
 """
-import pytest
 from app.agents.pnl_agent import _compute_pnl
 
 

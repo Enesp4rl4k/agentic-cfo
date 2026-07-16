@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import String, DateTime, Text, JSON
@@ -17,7 +18,7 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class JobStatus(str):
+class JobStatus(StrEnum):
     PENDING = "pending"
     INGESTING = "ingesting"
     ANALYZING = "analyzing"

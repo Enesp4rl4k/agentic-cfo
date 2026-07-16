@@ -1,12 +1,16 @@
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.analysis_job import AnalysisJob
 
 
 def utcnow() -> datetime:

@@ -45,6 +45,7 @@ export interface CashFlowData {
   net_change: number;
   monthly_series: MonthlyEntry[];
   narrative: string;
+  alerts: Alert[];
 }
 
 export interface ForecastScenario {
@@ -62,6 +63,7 @@ export interface ForecastData {
     pessimistic: ForecastScenario;
   };
   narrative: string;
+  alerts: Alert[];
 }
 
 export type AlertLevel = "warning" | "critical" | "info";

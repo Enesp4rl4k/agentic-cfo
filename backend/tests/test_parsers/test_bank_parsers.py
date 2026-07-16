@@ -3,8 +3,6 @@ Tests for bank statement parsers.
 Uses synthetic text fixtures — no real PDF files needed.
 done_when: pytest tests/test_parsers/ -q → all pass
 """
-import pytest
-from datetime import timezone
 
 from app.parsers.banks.akbank import AkbankParser
 from app.parsers.banks.garanti import GarantiParser

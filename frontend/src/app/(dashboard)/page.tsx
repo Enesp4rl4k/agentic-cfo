@@ -592,7 +592,7 @@ export default function DashboardPage() {
 
   const allAlerts = [
     ...(dashboard.cashflow.alerts ?? []),
-    ...(dashboard.forecast?.alerts ?? []),
+    ...(dashboard.forecast.alerts ?? []),
   ];
 
   return (

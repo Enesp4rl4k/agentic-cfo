@@ -40,10 +40,6 @@ def _extrapolate(
     if not monthly_series:
         return []
 
-    last = monthly_series[-1]
-    last_in = last["in"]
-    last_out = last["out"]
-
     # Use average of last 3 months as baseline if available
     recent = monthly_series[-3:] if len(monthly_series) >= 3 else monthly_series
     avg_in = int(statistics.mean(e["in"] for e in recent))
@@ -155,6 +151,7 @@ async def _generate_forecast_narrative(
         temperature=0.3,
         max_tokens=768,
         api_key=settings.openai_api_key,
+        base_url=settings.llm_base_url or None,
     )
     scenario_text = "\n".join(
         f"- {s['label']}: 12-month net {_fmt(s['twelve_month_net'])}, "
