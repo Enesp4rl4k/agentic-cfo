@@ -1,0 +1,48 @@
+frontend/src/app/(dashboard)/forecast/page.tsx
+  h_2675fe4e526316 1-310
+backend/app/config.py
+  h_2675fe4e526316 8-9,11,18-20
+backend/app/api/__init__.py
+  h_2675fe4e526316 1
+README.md
+  h_2675fe4e526316 1,3-4,6,8,10-26,29-36,39-45,49-50,52-54,56,61-64,69-76,84,87,89-102,105-107,109,111-135,140-144
+frontend/postcss.config.js
+  h_2675fe4e526316 1-6
+backend/app/models/report.py
+  h_2675fe4e526316 3
+frontend/tailwind.config.js
+  h_2675fe4e526316 1-2,5-8,13-17,19-20,23-24,27
+backend/alembic/versions/001_initial.py
+  h_2675fe4e526316 1-133
+frontend/next.config.mjs
+  h_2675fe4e526316 1-6
+backend/alembic.ini
+  h_2675fe4e526316 1-42
+backend/alembic/script.py.mako
+  h_2675fe4e526316 1-28
+frontend/src/app/(dashboard)/reports/page.tsx
+  h_2675fe4e526316 1-191
+frontend/src/app/(dashboard)/cashflow/page.tsx
+  h_2675fe4e526316 1-317
+backend/app/models/transaction.py
+  h_2675fe4e526316 4
+backend/app/main.py
+  h_2675fe4e526316 1-3,14,17-30
+backend/app/parsers/banks/__init__.py
+  h_2675fe4e526316 1-7
+backend/app/agents/__init__.py
+  h_2675fe4e526316 1-4
+backend/alembic/env.py
+  h_2675fe4e526316 1-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "a047417496f8678e36777cf0268c96ce7dbe0331",
+  "prompts": {},
+  "humans": {
+    "h_2675fe4e526316": {
+      "author": "Enes Parlak <eparlak996@gmail.com>"
+    }
+  }
+}
