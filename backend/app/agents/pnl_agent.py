@@ -9,6 +9,8 @@ done_when: state['pnl'] contains revenue, gross_profit, net_income (all integers
 """
 from __future__ import annotations
 
+from app.services.telemetry import trace_agent
+
 import logging
 from typing import Any
 
@@ -65,37 +67,59 @@ def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-async def _generate_cfo_narrative(pnl: dict[str, Any], settings) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
-    summary = (
-        f"Revenue: {_fmt(pnl['revenue'])}\n"
-        f"COGS: {_fmt(pnl['cogs'])}\n"
-        f"Gross Profit: {_fmt(pnl['gross_profit'])} ({pnl['gross_margin']*100:.1f}%)\n"
-        f"Total OpEx: {_fmt(pnl['total_opex'])}\n"
-        f"EBITDA: {_fmt(pnl['ebitda'])} ({pnl['ebitda_margin']*100:.1f}%)\n"
-        f"Tax: {_fmt(pnl['tax'])}\n"
-        f"Net Income: {_fmt(pnl['net_income'])} ({pnl['net_margin']*100:.1f}%)\n"
-    )
-    messages = [
-        SystemMessage(content=(
-            "You are an experienced CFO. Analyze the P&L figures provided and write "
-            "a concise, actionable executive summary (3-5 sentences). "
-            "Highlight key risks and opportunities. Be direct and data-driven."
-        )),
-        HumanMessage(content=f"P&L Summary:\n{summary}"),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+async def _generate_cfo_narrative(
+    pnl: dict[str, Any],
+    settings,
+    sector: str = "default",
+    state: dict[str, Any] | None = None,
+) -> str:
+    """
+    Generate CFO narrative using structured output + ContextBuilder.
+    Falls back to template if LLM key is not configured.
+    Returns plain text string for backward compatibility with pipeline.
+    """
+    from app.services.llm_structured import get_pnl_narrative
+    from app.services.context_builder import get_context_builder
+
+    # Build benchmark context string
+    benchmark_lines: str | None = None
+    pnl_with_benchmark = dict(pnl)
+    try:
+        from app.services.benchmark import get_benchmark_engine
+        engine = get_benchmark_engine()
+        bm = engine.build_full_comparison(pnl, sector=sector)
+        metrics = bm.get("metrics") or {}
+        bm_parts = []
+        for metric, data in metrics.items():
+            if "company_value" in data and "benchmark" in data:
+                bm_parts.append(
+                    f"{metric}: şirket %{data['company_value']*100:.1f} "
+                    f"vs medyan %{data['benchmark']['median']*100:.1f} "
+                    f"({data.get('percentile_position', '')})"
+                )
+        if bm_parts:
+            benchmark_lines = "; ".join(bm_parts)
+            pnl_with_benchmark["_benchmark_context"] = benchmark_lines
+    except Exception:
+        pass
+
+    # Use ContextBuilder to assemble token-budgeted prompt context
+    if state is not None:
+        ctx = get_context_builder(budget=4096)
+        context_result = ctx.build_pnl_context(
+            state={**state, "pnl": pnl},
+            sector=sector,
+            benchmark_lines=benchmark_lines,
+        )
+        # Attach context metadata for observability
+        pnl_with_benchmark["_context_tokens"] = context_result.token_count
+        pnl_with_benchmark["_context_truncated"] = context_result.truncated
+
+    narrative = await get_pnl_narrative(pnl_with_benchmark, settings)
+    return narrative.to_text()
 
 
+@trace_agent("pnl_agent")
 async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """P&L Skill. done_when: state['pnl']['net_income'] is an integer."""
     transactions = state.get("transactions", [])
@@ -105,7 +129,7 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
     try:
         settings = get_settings()
         pnl = _compute_pnl(transactions)
-        narrative = await _generate_cfo_narrative(pnl, settings)
+        narrative = await _generate_cfo_narrative(pnl, settings, state=state)
         pnl["narrative"] = narrative
 
         confidence = 0.95 if pnl["revenue"] > 0 else 0.50

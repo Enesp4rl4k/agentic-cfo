@@ -15,6 +15,8 @@ import {
   Area,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -69,14 +71,39 @@ function AlertStrip({ alerts }: { alerts: Alert[] }) {
   );
 }
 
+// ── Mini Sparkline ────────────────────────────────────────────────────────────
+
+function Sparkline({
+  data,
+  positive,
+}: {
+  data: { v: number }[];
+  positive: boolean;
+}) {
+  if (data.length < 2) return null;
+  return (
+    <LineChart width={64} height={28} data={data}>
+      <Line
+        type="monotone"
+        dataKey="v"
+        stroke={positive ? "oklch(0.58 0.18 145)" : "oklch(0.58 0.22 25)"}
+        strokeWidth={1.5}
+        dot={false}
+        isAnimationActive={false}
+      />
+    </LineChart>
+  );
+}
+
 // ── Financial Summary Row (replaces hero-metric card grid) ───────────────────
-// Impeccable rule: no identical card grid, no hero-metric template.
-// Instead: a single horizontal data row with clear typographic hierarchy.
 
 function FinancialSummaryRow({ data }: { data: DashboardData }) {
   const { pnl, cashflow } = data;
   const netPositive = pnl.net_income >= 0;
   const cashPositive = cashflow.net_change >= 0;
+
+  // Build sparkline data from monthly series net values
+  const sparkData = cashflow.monthly_series.map((m) => ({ v: m.net / 100 }));
 
   const metrics = [
     {
@@ -118,26 +145,37 @@ function FinancialSummaryRow({ data }: { data: DashboardData }) {
       className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5"
       aria-label="Financial summary"
     >
-      {metrics.map((m) => (
-        <div key={m.label} className="bg-card px-4 py-4">
-          <p className="text-xs text-muted-foreground">{m.label}</p>
-          <p
-            className={cn(
-              "mt-1 text-lg font-semibold tabular tracking-tight",
-              "accent" in m && m.accent
-                ? "positive" in m && m.positive
-                  ? "text-success"
-                  : "text-destructive"
-                : "text-foreground"
+      {metrics.map((m) => {
+        const isNet = m.label === "Net Cash Flow";
+        const accentPositive = "accent" in m && m.accent && "positive" in m && m.positive;
+        return (
+          <div key={m.label} className="bg-card px-4 py-4">
+            <p className="text-xs text-muted-foreground">{m.label}</p>
+            <div className="mt-1 flex items-end justify-between gap-2">
+              <p
+                className={cn(
+                  "text-lg font-semibold tabular tracking-tight",
+                  "accent" in m && m.accent
+                    ? "positive" in m && m.positive
+                      ? "text-success"
+                      : "text-destructive"
+                    : "text-foreground"
+                )}
+              >
+                {m.value}
+              </p>
+              {isNet && sparkData.length >= 2 && (
+                <div className="shrink-0" aria-hidden="true">
+                  <Sparkline data={sparkData} positive={cashPositive} />
+                </div>
+              )}
+            </div>
+            {m.sub && (
+              <p className="mt-0.5 text-xs text-muted-foreground tabular">{m.sub}</p>
             )}
-          >
-            {m.value}
-          </p>
-          {m.sub && (
-            <p className="mt-0.5 text-xs text-muted-foreground tabular">{m.sub}</p>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

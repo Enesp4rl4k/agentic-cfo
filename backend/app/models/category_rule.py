@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy import String, DateTime, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
 
@@ -25,7 +24,7 @@ class CategoryRule(Base):
     __tablename__ = "category_rules"
 
     id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
 
     # Matching criteria — at least one must be set

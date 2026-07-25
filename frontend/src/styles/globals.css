@@ -4,27 +4,36 @@
 
 @layer base {
   :root {
-    /* ── AI CFO design tokens — OKLCH ──────────────────────────────────────
-       Product register · Restrained color strategy · Dark mode default
-       SaaS dashboard · Emil primary + Jakub secondary motion weighting
+    /* ── C-Level AI design tokens — OKLCH ──────────────────────────────────
+       Brand: C-Level AI · "Your entire C-Suite, powered by AI"
+       Deep navy surfaces + electric violet accent
+       Dark mode default · Premium enterprise tone
     ─────────────────────────────────────────────────────────────────────── */
 
-    /* Surface */
-    --background:    oklch(0.13 0.025 255);   /* deep navy-slate */
-    --foreground:    oklch(0.92 0.008 255);   /* near-white, slightly cool */
+    /* ── C-Level AI brand tokens ─────────────────────────────────────────── */
+    --brand-name:    "C-Level AI";
+    --brand-hue:     262;                      /* violet anchor */
 
-    --card:          oklch(0.17 0.022 255);   /* panel, one step up */
-    --card-foreground: oklch(0.92 0.008 255);
+    /* Surface — slightly warmer navy for premium feel */
+    --background:    oklch(0.11 0.030 262);   /* deep navy-violet */
+    --foreground:    oklch(0.94 0.006 262);   /* near-white */
 
-    --muted:         oklch(0.21 0.018 255);   /* subtle background fills */
-    --muted-foreground: oklch(0.52 0.012 255); /* labels, captions */
+    --card:          oklch(0.15 0.026 262);   /* elevated panel */
+    --card-foreground: oklch(0.94 0.006 262);
 
-    --border:        oklch(0.27 0.018 255);   /* dividers, card outlines */
-    --input:         oklch(0.27 0.018 255);
+    --muted:         oklch(0.20 0.022 262);   /* subtle fills */
+    --muted-foreground: oklch(0.54 0.012 262); /* labels, captions */
 
-    /* Brand accent — primary CTA only, not decoration */
-    --primary:       oklch(0.60 0.19 255);    /* blue */
+    --border:        oklch(0.25 0.022 262);   /* dividers */
+    --input:         oklch(0.25 0.022 262);
+
+    /* Brand accent — C-Level AI electric violet */
+    --primary:       oklch(0.62 0.26 262);    /* vivid violet — authority + AI */
     --primary-foreground: oklch(0.99 0 0);
+
+    /* C-Level AI gradient (hero, highlights) */
+    --brand-gradient-from: oklch(0.62 0.26 262);   /* violet */
+    --brand-gradient-to:   oklch(0.55 0.22 220);   /* blue shift */
 
     /* Secondary / subdued actions */
     --secondary:     oklch(0.21 0.018 255);

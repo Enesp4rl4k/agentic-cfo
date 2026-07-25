@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
 
@@ -40,10 +39,10 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     job_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("analysis_jobs.id"), nullable=False, index=True
+        String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
     # All amounts stored in kuruş (smallest unit) as integer
     amount_kurus: Mapped[int] = mapped_column(Integer, nullable=False)

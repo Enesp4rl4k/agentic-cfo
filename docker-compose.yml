@@ -54,6 +54,27 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["arq", "app.worker.WorkerSettings"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
@@ -64,6 +85,9 @@ services:
     env_file:
       - .env
     environment:
+      # SSR / server-side requests: use Docker internal hostname
+      BACKEND_INTERNAL_URL: http://backend:8000
+      # Client-side (browser) requests: use public hostname
       NEXT_PUBLIC_API_URL: http://localhost:8000
     depends_on:
       backend:

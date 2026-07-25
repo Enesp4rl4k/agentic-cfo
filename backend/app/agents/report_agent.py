@@ -102,6 +102,7 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
             "net_change": _fmt(cashflow.get("net_change", 0)),
             "monthly_series": cashflow.get("monthly_series", []),
             "narrative": cashflow.get("narrative", ""),
+            "alerts": cashflow.get("alerts", []),
         },
         "forecast": {
             "scenarios": {
@@ -116,6 +117,29 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
             },
             "narrative": forecast.get("narrative", ""),
         },
+        "anomalies": state.get("anomalies", []),
+        "anomaly_narrative": state.get("anomaly_narrative", ""),
+        "triggered_alerts": state.get("triggered_alerts", []),
+
+        # Budget agent
+        "budget": state.get("budget"),
+
+        # Tax agent
+        "tax": (
+            {
+                "vat_payable": state["tax"]["vat"]["net_vat_payable"],
+                "withholding_tax": state["tax"]["withholding"]["income_tax_withholding"],
+                "corporate_tax_estimate": state["tax"]["corporate"]["corporate_tax_estimate"],
+                "total_tax_burden": state["tax"]["total_tax_burden"],
+                "payment_calendar": state["tax"]["payment_calendar"],
+                "narrative": state["tax"].get("narrative", ""),
+            }
+            if state.get("tax") else None
+        ),
+
+        # Multi-period agent
+        "multi_period": state.get("multi_period"),
+
         "alerts": all_alerts,
         "recent_transactions": recent_transactions,
         "transaction_count": len(transactions),

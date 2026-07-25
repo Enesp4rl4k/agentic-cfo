@@ -4,6 +4,9 @@ import { useSearchParams } from "next/navigation";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -11,7 +14,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { AlertTriangle, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import { AlertTriangle, Upload } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Alert, MonthlyEntry } from "@/types";
@@ -161,40 +164,153 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
   );
 }
 
+// ── Net cash flow bar chart ───────────────────────────────────────────────────
+
+function NetCashFlowBar({ series }: { series: MonthlyEntry[] }) {
+  const data = series.map((m) => ({
+    month: m.month.slice(5),
+    net: m.net / 100,
+  }));
+
+  if (!data.length) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <h2 className="mb-0.5 text-sm font-medium">Monthly Net Cash Flow</h2>
+      <p className="mb-4 text-xs text-muted-foreground">Positive = surplus · Negative = deficit</p>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+          <XAxis dataKey="month" {...axisStyle} />
+          <YAxis
+            {...axisStyle}
+            tickFormatter={(v: number) =>
+              `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
+            }
+          />
+          <Tooltip
+            {...tooltipStyle}
+            formatter={(v: number) => [formatCurrency(v), "Net"]}
+          />
+          <ReferenceLine y={0} stroke="oklch(0.42 0.018 255)" strokeWidth={1} />
+          <Bar dataKey="net" radius={[3, 3, 0, 0]} maxBarSize={28}>
+            {data.map((entry, i) => (
+              <Cell
+                key={i}
+                fill={
+                  entry.net >= 0
+                    ? "oklch(0.58 0.18 145)"   // emerald — surplus
+                    : "oklch(0.58 0.22 25)"    // red — deficit
+                }
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 // ── Monthly table ─────────────────────────────────────────────────────────────
+
+function NetBar({ net, maxAbs }: { net: number; maxAbs: number }) {
+  if (maxAbs === 0) return null;
+  const pct = Math.min((Math.abs(net) / maxAbs) * 100, 100);
+  const positive = net >= 0;
+  return (
+    <div className="flex items-center gap-1.5">
+      {/* Negative side */}
+      <div className="flex h-1.5 w-12 justify-end overflow-hidden rounded-l-full bg-muted">
+        {!positive && (
+          <div
+            className="h-full rounded-l-full bg-destructive/70"
+            style={{ width: `${pct}%` }}
+          />
+        )}
+      </div>
+      {/* Center divider */}
+      <div className="h-3 w-px bg-border" />
+      {/* Positive side */}
+      <div className="h-1.5 w-12 overflow-hidden rounded-r-full bg-muted">
+        {positive && (
+          <div
+            className="h-full rounded-r-full bg-emerald-400/70"
+            style={{ width: `${pct}%` }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
   if (!series.length) return null;
+
+  // Compute running balance and max abs net for bar scaling
+  const maxAbsNet = Math.max(...series.map((r) => Math.abs(r.net)));
+  let balance = 0;
+  const rows = series.map((row) => {
+    balance += row.net;
+    return { ...row, runningBalance: balance };
+  });
+
+  // Totals
+  const totalIn  = series.reduce((s, r) => s + r.in,  0);
+  const totalOut = series.reduce((s, r) => s + r.out, 0);
+  const totalNet = series.reduce((s, r) => s + r.net, 0);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm" role="table" aria-label="Monthly cash flow">
         <thead>
           <tr className="border-b border-border">
-            {["Month", "Cash In", "Cash Out", "Net"].map((h) => (
-              <th
-                key={h}
-                className={cn(
-                  "px-4 py-2.5 text-xs font-medium text-muted-foreground",
-                  h === "Month" ? "text-left" : "text-right"
-                )}
-              >
-                {h}
-              </th>
-            ))}
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+              Month
+            </th>
+            <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
+              Cash In
+            </th>
+            <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
+              Cash Out
+            </th>
+            <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
+              Net
+            </th>
+            <th className="hidden px-4 py-2.5 text-center text-xs font-medium text-muted-foreground sm:table-cell">
+              Flow
+            </th>
+            <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-muted-foreground lg:table-cell">
+              Running Balance
+            </th>
           </tr>
         </thead>
         <tbody>
-          {series.map((row, i) => {
+          {rows.map((row, i) => {
             const netPositive = row.net >= 0;
+            const isNegativeStreak =
+              !netPositive &&
+              i > 0 &&
+              rows[i - 1].net < 0;
             return (
-              <tr key={i} className="border-b border-border/40 last:border-0 hover:bg-muted/20">
+              <tr
+                key={i}
+                className={cn(
+                  "border-b border-border/40 last:border-0 transition-colors hover:bg-muted/20",
+                  isNegativeStreak && "bg-destructive/4"
+                )}
+              >
                 <td className="px-4 py-2.5 text-xs tabular-nums text-muted-foreground">
                   {row.month}
+                  {row.projected && (
+                    <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                      proj
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-sm text-emerald-400">
                   {formatCurrency(row.in / 100)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-destructive">
+                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-muted-foreground">
                   {formatCurrency(row.out / 100)}
                 </td>
                 <td
@@ -206,10 +322,49 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
                   {netPositive ? "+" : "−"}
                   {formatCurrency(Math.abs(row.net / 100))}
                 </td>
+                <td className="hidden px-4 py-2.5 sm:table-cell">
+                  <div className="flex justify-center">
+                    <NetBar net={row.net} maxAbs={maxAbsNet} />
+                  </div>
+                </td>
+                <td
+                  className={cn(
+                    "hidden px-4 py-2.5 text-right tabular-nums text-xs lg:table-cell",
+                    row.runningBalance >= 0 ? "text-muted-foreground" : "text-destructive"
+                  )}
+                >
+                  {row.runningBalance >= 0 ? "" : "−"}
+                  {formatCurrency(Math.abs(row.runningBalance / 100))}
+                </td>
               </tr>
             );
           })}
         </tbody>
+        {/* Summary footer */}
+        <tfoot>
+          <tr className="border-t border-border bg-muted/20">
+            <td className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+              Total
+            </td>
+            <td className="px-4 py-2.5 text-right tabular-nums text-xs font-semibold text-emerald-400">
+              {formatCurrency(totalIn / 100)}
+            </td>
+            <td className="px-4 py-2.5 text-right tabular-nums text-xs font-semibold text-muted-foreground">
+              {formatCurrency(totalOut / 100)}
+            </td>
+            <td
+              className={cn(
+                "px-4 py-2.5 text-right tabular-nums text-xs font-semibold",
+                totalNet >= 0 ? "text-emerald-400" : "text-destructive"
+              )}
+            >
+              {totalNet >= 0 ? "+" : "−"}
+              {formatCurrency(Math.abs(totalNet / 100))}
+            </td>
+            <td className="hidden sm:table-cell" />
+            <td className="hidden lg:table-cell" />
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -296,12 +451,17 @@ export default function CashflowPage() {
       {/* Summary metrics */}
       <MetricStrip metrics={metrics} />
 
-      {/* Monthly chart */}
+      {/* Monthly in/out area chart */}
       <div className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-0.5 text-sm font-medium">Monthly Cash Flow</h2>
         <p className="mb-4 text-xs text-muted-foreground">Cash in vs. out per month</p>
         <MonthlyCashFlowChart series={cf.monthly_series} />
       </div>
+
+      {/* Net cash flow bar chart */}
+      {cf.monthly_series.length > 0 && (
+        <NetCashFlowBar series={cf.monthly_series} />
+      )}
 
       {/* Monthly table */}
       {cf.monthly_series.length > 0 && (

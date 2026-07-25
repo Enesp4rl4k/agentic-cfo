@@ -13,15 +13,17 @@ sqlalchemy==2.0.31
 alembic==1.13.2
 asyncpg==0.29.0
 psycopg2-binary==2.9.9
+aiosqlite==0.20.0
 
 # Redis / job queue
 redis==5.0.7
-rq==1.16.2
+arq==0.26.1
 
 # PDF / OCR
 pymupdf==1.24.7
 pytesseract==0.3.13
 Pillow==10.4.0
+pdfplumber==0.11.3    # Table-aware PDF extraction (optional but recommended)
 
 # Excel
 openpyxl==3.1.5
@@ -35,6 +37,16 @@ pydantic-settings==2.3.4
 
 # HTTP client
 httpx==0.27.0
+
+# Scheduling
+apscheduler==3.10.4
+
+# Scientific / stats (anomaly detection)
+scipy==1.13.1
+numpy==1.26.4
+
+# Email notifications
+aiosmtplib==3.0.1
 
 # Utilities
 python-multipart==0.0.9

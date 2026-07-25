@@ -1,106 +1,43 @@
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.transaction import Transaction
-from app.models.report import Report, ReportType, ReportFormat
-from app.agents.state import AgentRunConfig
 
 router = APIRouter()
 
 
-async def _run_and_persist(job_id: str) -> None:
-    """Background task: run CFO pipeline and persist results to DB."""
-    from app.database import session_factory
-    from app.agents.orchestrator import run_cfo_pipeline
-
-    async with session_factory()() as db:
-        # Mark job as running
-        job = await db.get(AnalysisJob, job_id)
-        if not job:
-            return
-        job.status = JobStatus.ANALYZING
-        job.updated_at = datetime.now(timezone.utc)
-        await db.commit()
-
-        try:
-            result = await run_cfo_pipeline(
-                job_id=job_id,
-                file_path=job.file_path,
-                file_type=job.file_type,
-                run_config=AgentRunConfig(require_review=False),
-            )
-
-            # Persist transactions
-            for tx_data in result.get("transactions") or []:
-                tx = Transaction(
-                    job_id=job_id,
-                    amount_kurus=tx_data.get("amount_cents", 0),
-                    currency=tx_data.get("currency", "USD"),
-                    type=tx_data.get("type", "expense"),
-                    category=tx_data.get("category", "other_expense"),
-                    description=tx_data.get("description", ""),
-                    vendor=tx_data.get("vendor"),
-                    transaction_date=datetime.fromisoformat(tx_data["transaction_date"])
-                    if tx_data.get("transaction_date")
-                    else datetime.now(timezone.utc),
-                    raw_text=tx_data.get("raw_text"),
-                    confidence=tx_data.get("confidence"),
-                )
-                db.add(tx)
-
-            # Persist dashboard JSON report
-            if result.get("dashboard_json"):
-                db.add(Report(
-                    job_id=job_id,
-                    report_type=ReportType.FULL,
-                    report_format=ReportFormat.JSON,
-                    data=result["dashboard_json"],
-                ))
-
-            # Persist Excel report reference
-            report_paths = result.get("report_paths") or {}
-            if report_paths.get("xlsx"):
-                db.add(Report(
-                    job_id=job_id,
-                    report_type=ReportType.FULL,
-                    report_format=ReportFormat.EXCEL,
-                    file_path=report_paths["xlsx"],
-                ))
-
-            # Update job status
-            logs_serializable = [
-                {"step": lg.step, "ok": lg.ok, "detail": lg.detail, "confidence": lg.confidence}
-                for lg in (result.get("logs") or [])
-            ]
-            job.status = (
-                JobStatus.AWAITING_REVIEW if result.get("awaiting_review") else JobStatus.COMPLETED
-            )
-            job.logs = logs_serializable
-            job.min_confidence = result.get("min_confidence")
-            job.awaiting_review = bool(result.get("awaiting_review"))
-            job.completed_at = datetime.now(timezone.utc)
-            job.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-
-        except Exception as exc:
-            job.status = JobStatus.FAILED
-            job.error_message = str(exc)
-            job.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            raise
+class AnalyzeRequest(BaseModel):
+    """Optional request body for POST /analyze/{job_id}."""
+    budget_input: dict[str, Any] | None = None
 
 
 @router.post("/analyze/{job_id}")
 async def start_analysis(
     job_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    body: AnalyzeRequest | None = None,
 ) -> dict:
-    """Trigger CFO analysis pipeline for an uploaded job."""
+    """
+    Trigger CFO analysis pipeline for an uploaded job.
+    Job is enqueued into Redis via ARQ — survives application restarts.
+
+    Optionally provide budget_input for budget vs actual comparison:
+    {
+      "budget_input": {
+        "items": [{"category": "salary", "budgeted": 500000}],
+        "period": "2024-01"
+      }
+    }
+    """
+    from app.worker import enqueue_analysis
+
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -109,7 +46,10 @@ async def start_analysis(
             status_code=409,
             detail=f"Job is already in status '{job.status}'. Cannot re-run.",
         )
-    background_tasks.add_task(_run_and_persist, job_id)
+
+    budget_input = body.budget_input if body else None
+    await enqueue_analysis(job_id, budget_input)
+
     return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
 
 
@@ -154,3 +94,80 @@ async def approve_review(
     job.updated_at = datetime.now(timezone.utc)
     await db.commit()
     return {"data": {"job_id": job_id, "approved": True}, "error": None}
+
+
+@router.get("/jobs")
+async def list_jobs(
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+) -> dict:
+    """List the most recent analysis jobs (for sidebar history)."""
+    result = await db.execute(
+        select(AnalysisJob).order_by(desc(AnalysisJob.created_at)).limit(limit)
+    )
+    jobs = result.scalars().all()
+    return {
+        "data": [
+            {
+                "job_id": j.id,
+                "status": j.status,
+                "filename": j.filename,
+                "created_at": j.created_at.isoformat(),
+                "completed_at": j.completed_at.isoformat() if j.completed_at else None,
+            }
+            for j in jobs
+        ],
+        "error": None,
+    }
+
+
+@router.get("/analysis/{job_id}/transactions")
+async def list_transactions(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """List all transactions for a job (paginated)."""
+    from sqlalchemy import func
+
+    # Total count
+    count_result = await db.execute(
+        select(func.count()).select_from(Transaction).where(Transaction.job_id == job_id)
+    )
+    total = count_result.scalar() or 0
+
+    # Paginated rows — nulls last for missing dates
+    from sqlalchemy import nullslast
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.job_id == job_id)
+        .order_by(nullslast(Transaction.transaction_date.desc()))
+        .limit(limit)
+        .offset(offset)
+    )
+    txs = result.scalars().all()
+
+    return {
+        "data": {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "transactions": [
+                {
+                    "id": tx.id,
+                    "job_id": tx.job_id,
+                    "amount_cents": tx.amount_kurus,
+                    "currency": tx.currency,
+                    "type": tx.type,
+                    "category": tx.category,
+                    "description": tx.description,
+                    "vendor": tx.vendor,
+                    "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+                    "confidence": float(tx.confidence) if tx.confidence else None,
+                }
+                for tx in txs
+            ],
+        },
+        "error": None,
+    }

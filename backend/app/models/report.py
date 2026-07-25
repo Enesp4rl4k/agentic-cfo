@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import String, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
 
@@ -34,10 +33,10 @@ class Report(Base):
     __tablename__ = "reports"
 
     id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     job_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("analysis_jobs.id"), nullable=False, index=True
+        String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
     report_type: Mapped[str] = mapped_column(String(20), nullable=False)   # pnl | cashflow | forecast | full
     report_format: Mapped[str] = mapped_column(String(10), nullable=False) # xlsx | pdf | json

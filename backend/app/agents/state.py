@@ -30,27 +30,53 @@ class StepLog:
 # ---------------------------------------------------------------------------
 
 class CFOState(TypedDict, total=False):
-    # Input
+    # ── Input ─────────────────────────────────────────────────────────────────
     job_id: str
     file_path: str
     file_type: str          # pdf | xlsx | csv
 
-    # Data Ingestion outputs
-    raw_text: str           # full extracted text from the document
-    transactions: list[dict[str, Any]]  # parsed transaction dicts
+    # ── Data Ingestion ────────────────────────────────────────────────────────
+    raw_text: str
+    transactions: list[dict[str, Any]]
 
-    # P&L Agent outputs
-    pnl: dict[str, Any]     # {revenue, cogs, gross_profit, opex, net_income, ...}
+    # ── P&L Agent ─────────────────────────────────────────────────────────────
+    pnl: dict[str, Any]
+    # {revenue, cogs, gross_profit, gross_margin, opex, total_opex,
+    #  ebitda, ebitda_margin, net_income, net_margin, narrative}
 
-    # Cash Flow Agent outputs
-    cashflow: dict[str, Any]  # {operating, investing, financing, net_change, ...}
+    # ── Cash Flow Agent ───────────────────────────────────────────────────────
+    cashflow: dict[str, Any]
+    # {operating, investing, financing, net_change, monthly_series, narrative, alerts}
 
-    # Forecast Agent outputs
-    forecast: dict[str, Any]  # {scenarios: {optimistic, base, pessimistic}, alerts: [...]}
+    # ── Forecast Agent ────────────────────────────────────────────────────────
+    forecast: dict[str, Any]
+    # {scenarios: {optimistic, base, pessimistic}, narrative, alerts}
 
-    # Report Agent outputs
-    report_paths: dict[str, str]   # {xlsx: "/path/...", pdf: "/path/..."}
-    dashboard_json: dict[str, Any] # serialised summary for the frontend
+    # ── Anomaly Agent ─────────────────────────────────────────────────────────
+    anomalies: list[dict[str, Any]]
+    anomaly_narrative: str
+
+    # ── Budget Agent ──────────────────────────────────────────────────────────
+    budget: dict[str, Any] | None
+    # {items: [{category, budgeted, actual, variance, variance_pct}],
+    #  total_budgeted, total_actual, total_variance, narrative}
+
+    # ── Tax Agent ─────────────────────────────────────────────────────────────
+    tax: dict[str, Any] | None
+    # {vat_payable, withholding_tax, corporate_tax_estimate,
+    #  payment_calendar: [{date, type, amount}], narrative}
+
+    # ── Multi-Period Agent ────────────────────────────────────────────────────
+    multi_period: dict[str, Any] | None
+    # {mom: {revenue_pct, net_pct, ...}, yoy: {...}, trend_direction}
+
+    # ── Alert Agent ───────────────────────────────────────────────────────────
+    triggered_alerts: list[dict[str, Any]]
+    # [{type, severity, message, threshold, actual_value, notified}]
+
+    # ── Report Agent ──────────────────────────────────────────────────────────
+    report_paths: dict[str, str]
+    dashboard_json: dict[str, Any]
 
     # Run control
     logs: list[StepLog]
@@ -58,6 +84,16 @@ class CFOState(TypedDict, total=False):
     awaiting_review: bool           # True → hold; needs human approval before effects
     halted: bool                    # True → stopped by error or explicit halt
     error: str | None               # last error message if halted
+
+    # ── Kernel engineering metadata ───────────────────────────────────────────
+    # CapabilityRouter: which agents to run (serialised RoutingPlan summary)
+    routing_plan: dict[str, Any] | None
+    # ReflectionAgent scores per agent narrative
+    reflection_scores: dict[str, Any] | None
+    # AgentMemory episode IDs saved in this run
+    memory_episode_ids: list[str] | None
+    # Org context for memory retrieval
+    org_id: str | None
 
 
 # ---------------------------------------------------------------------------

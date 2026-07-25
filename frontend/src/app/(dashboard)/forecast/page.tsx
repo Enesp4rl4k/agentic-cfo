@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ComposedChart,
+  AreaChart,
+  Area,
   Line,
   Bar,
   XAxis,
@@ -11,13 +14,14 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts";
-import { AlertTriangle, Upload } from "lucide-react";
+import { AlertTriangle, Upload, TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Alert, ForecastScenario } from "@/types";
 
-// ── Shared chart style ────────────────────────────────────────────────────────
+// ── Chart style ───────────────────────────────────────────────────────────────
 
 const tooltipStyle = {
   contentStyle: {
@@ -38,10 +42,10 @@ const axisStyle = {
 };
 
 const SCENARIO_COLORS = {
-  optimistic: "oklch(0.72 0.19 142)",  // emerald
-  base:       "oklch(0.60 0.19 255)",  // blue
-  pessimistic: "oklch(0.58 0.22 25)",  // red-orange
-} as const;
+  optimistic:  { line: "oklch(0.72 0.19 142)",  fill: "oklch(0.72 0.19 142 / 0.12)" },
+  base:        { line: "oklch(0.60 0.19 255)",  fill: "oklch(0.60 0.19 255 / 0.18)" },
+  pessimistic: { line: "oklch(0.58 0.22 25)",   fill: "oklch(0.58 0.22 25 / 0.12)" },
+};
 
 // ── Alert strip ───────────────────────────────────────────────────────────────
 
@@ -68,22 +72,165 @@ function AlertStrip({ alerts }: { alerts: Alert[] }) {
   );
 }
 
-// ── Scenario comparison table ─────────────────────────────────────────────────
+// ── KPI cards ─────────────────────────────────────────────────────────────────
 
-function ScenarioTable({
+function KPICard({
+  label,
+  value,
+  sub,
+  positive,
+  neutral,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  positive?: boolean;
+  neutral?: boolean;
+}) {
+  const TrendIcon = neutral ? Minus : positive ? TrendingUp : TrendingDown;
+  const colorCls = neutral
+    ? "text-muted-foreground"
+    : positive
+    ? "text-emerald-400"
+    : "text-destructive";
+
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="mt-1 flex items-end gap-1.5">
+        <p className={cn("text-lg font-semibold tabular-nums leading-none", colorCls)}>
+          {value}
+        </p>
+        <TrendIcon className={cn("mb-0.5 h-3.5 w-3.5", colorCls)} aria-hidden="true" />
+      </div>
+      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
+// ── Monte Carlo fan chart ─────────────────────────────────────────────────────
+// Shows the spread (fan) between pessimistic and optimistic as a filled band,
+// with the base scenario as a solid line through the middle.
+
+function MonteCarloFanChart({
   scenarios,
 }: {
   scenarios: Record<string, ForecastScenario>;
 }) {
-  const rows = Object.entries(scenarios);
-  const sign = (n: number) => (n >= 0 ? "+" : "");
+  const base = scenarios.base?.months ?? [];
+  if (!base.length) {
+    return (
+      <div className="flex h-[260px] items-center justify-center text-xs text-muted-foreground">
+        No projection data available
+      </div>
+    );
+  }
+
+  const data = base.map((_, i) => {
+    const opt  = (scenarios.optimistic?.months[i]?.net  ?? 0) / 100;
+    const bas  = (scenarios.base?.months[i]?.net        ?? 0) / 100;
+    const pes  = (scenarios.pessimistic?.months[i]?.net ?? 0) / 100;
+    const month = base[i]?.month?.slice(5) ?? `M${i + 1}`;
+    return {
+      month,
+      // Area uses [low, high] for the band
+      band: [Math.min(opt, pes), Math.max(opt, pes)] as [number, number],
+      base: bas,
+      optimistic: opt,
+      pessimistic: pes,
+    };
+  });
+
+  const fmtK = (v: number) =>
+    `${v < 0 ? "-" : ""}₺${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.abs(v)}`;
+
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+        <defs>
+          <linearGradient id="fanGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor="oklch(0.60 0.19 255)" stopOpacity={0.18} />
+            <stop offset="95%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0.04} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+        <XAxis dataKey="month" {...axisStyle} />
+        <YAxis {...axisStyle} tickFormatter={fmtK} />
+        <Tooltip
+          {...tooltipStyle}
+          formatter={(v: number, name: string) => [formatCurrency(v), name]}
+        />
+        <ReferenceLine y={0} stroke="oklch(0.35 0.018 255)" strokeDasharray="3 3" />
+
+        {/* Confidence band */}
+        <Area
+          dataKey="band"
+          name="Confidence band"
+          fill="url(#fanGradient)"
+          stroke="none"
+          activeDot={false}
+          legendType="none"
+        />
+
+        {/* Pessimistic line */}
+        <Line
+          type="monotone"
+          dataKey="pessimistic"
+          name="Pessimistic"
+          stroke={SCENARIO_COLORS.pessimistic.line}
+          strokeWidth={1.5}
+          dot={false}
+          strokeDasharray="3 3"
+        />
+
+        {/* Optimistic line */}
+        <Line
+          type="monotone"
+          dataKey="optimistic"
+          name="Optimistic"
+          stroke={SCENARIO_COLORS.optimistic.line}
+          strokeWidth={1.5}
+          dot={false}
+          strokeDasharray="5 2"
+        />
+
+        {/* Base scenario — solid, prominent */}
+        <Line
+          type="monotone"
+          dataKey="base"
+          name="Base"
+          stroke={SCENARIO_COLORS.base.line}
+          strokeWidth={2.5}
+          dot={false}
+        />
+
+        <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Scenario comparison table ─────────────────────────────────────────────────
+
+function ScenarioTable({
+  scenarios,
+  activeScenario,
+  onSelect,
+}: {
+  scenarios: Record<string, ForecastScenario>;
+  activeScenario: string;
+  onSelect: (key: string) => void;
+}) {
+  const rows = ["optimistic", "base", "pessimistic"]
+    .filter((k) => k in scenarios)
+    .map((k) => [k, scenarios[k]] as [string, ForecastScenario]);
 
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">12-Month Scenario Comparison</h2>
+        <h2 className="text-sm font-medium">Scenario Comparison</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Based on historical trends — optimistic, base, and pessimistic projections
+          Click a row to view its monthly breakdown below
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -97,7 +244,7 @@ function ScenarioTable({
                 12-Month Net
               </th>
               <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-                Cash Runway
+                Runway
               </th>
               <th className="hidden px-4 py-2.5 text-left text-xs font-medium text-muted-foreground sm:table-cell">
                 Assumption
@@ -106,21 +253,23 @@ function ScenarioTable({
           </thead>
           <tbody>
             {rows.map(([key, s]) => {
-              const isBase = key === "base";
+              const isActive = key === activeScenario;
+              const color = SCENARIO_COLORS[key as keyof typeof SCENARIO_COLORS]?.line;
               const netPositive = s.twelve_month_net >= 0;
-              const color = SCENARIO_COLORS[key as keyof typeof SCENARIO_COLORS];
               return (
                 <tr
                   key={key}
+                  onClick={() => onSelect(key)}
                   className={cn(
-                    "border-b border-border/50 last:border-0",
-                    isBase ? "bg-primary/5" : "hover:bg-muted/20"
+                    "cursor-pointer border-b border-border/50 last:border-0 transition-colors",
+                    isActive ? "bg-primary/5 ring-1 ring-inset ring-primary/20" : "hover:bg-muted/20"
                   )}
+                  aria-selected={isActive}
                 >
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 text-xs font-medium">
                       <span
-                        className="h-2 w-2 rounded-full"
+                        className="h-2 w-2 rounded-full shrink-0"
                         style={{ background: color }}
                         aria-hidden="true"
                       />
@@ -133,7 +282,7 @@ function ScenarioTable({
                       netPositive ? "text-emerald-400" : "text-destructive"
                     )}
                   >
-                    {sign(s.twelve_month_net)}
+                    {netPositive ? "+" : ""}
                     {formatCurrency(s.twelve_month_net)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-sm text-muted-foreground">
@@ -152,75 +301,67 @@ function ScenarioTable({
   );
 }
 
-// ── Projected net cash flow chart ─────────────────────────────────────────────
+// ── Monthly breakdown bar chart ───────────────────────────────────────────────
 
-function ForecastChart({
-  scenarios,
+function MonthlyBreakdownChart({
+  scenario,
+  scenarioKey,
 }: {
-  scenarios: Record<string, ForecastScenario>;
+  scenario: ForecastScenario;
+  scenarioKey: string;
 }) {
-  // Merge all scenarios by month index
-  const base = scenarios.base?.months ?? [];
-  if (!base.length) {
-    return (
-      <div className="flex h-[260px] items-center justify-center text-xs text-muted-foreground">
-        No projection data available
-      </div>
-    );
-  }
+  const months = scenario.months ?? [];
+  if (!months.length) return null;
 
-  const data = base.map((_, i) => ({
-    month: base[i]?.month?.slice(5) ?? `M${i + 1}`,
-    optimistic: (scenarios.optimistic?.months[i]?.net ?? 0) / 100,
-    base: (scenarios.base?.months[i]?.net ?? 0) / 100,
-    pessimistic: (scenarios.pessimistic?.months[i]?.net ?? 0) / 100,
+  const color = SCENARIO_COLORS[scenarioKey as keyof typeof SCENARIO_COLORS]?.line
+    ?? SCENARIO_COLORS.base.line;
+
+  const data = months.map((m) => ({
+    month: m.month?.slice(5) ?? "?",
+    revenue: (m.in ?? 0) / 100,
+    expenses: (m.out ?? 0) / 100,
+    net: (m.net ?? 0) / 100,
   }));
 
+  const fmtK = (v: number) =>
+    `${v < 0 ? "-" : ""}₺${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.abs(v)}`;
+
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
-        <XAxis dataKey="month" {...axisStyle} />
-        <YAxis
-          {...axisStyle}
-          tickFormatter={(v: number) =>
-            `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
-          }
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ background: color }}
+          aria-hidden="true"
         />
-        <Tooltip
-          {...tooltipStyle}
-          formatter={(v: number, name: string) => [formatCurrency(v), name]}
-        />
-        <Legend
-          wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }}
-        />
-        <Line
-          type="monotone"
-          dataKey="optimistic"
-          name="Optimistic"
-          stroke={SCENARIO_COLORS.optimistic}
-          strokeWidth={1.5}
-          dot={false}
-          strokeDasharray="4 2"
-        />
-        <Bar
-          dataKey="base"
-          name="Base"
-          fill={SCENARIO_COLORS.base}
-          opacity={0.7}
-          maxBarSize={14}
-        />
-        <Line
-          type="monotone"
-          dataKey="pessimistic"
-          name="Pessimistic"
-          stroke={SCENARIO_COLORS.pessimistic}
-          strokeWidth={1.5}
-          dot={false}
-          strokeDasharray="2 3"
-        />
-      </ComposedChart>
-    </ResponsiveContainer>
+        <h2 className="text-sm font-medium">{scenario.label} — Monthly Breakdown</h2>
+      </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Revenue, expenses, and net cash flow per month
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <ComposedChart data={data} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+          <XAxis dataKey="month" {...axisStyle} />
+          <YAxis {...axisStyle} tickFormatter={fmtK} />
+          <Tooltip
+            {...tooltipStyle}
+            formatter={(v: number, name: string) => [formatCurrency(v), name]}
+          />
+          <Bar dataKey="revenue"  name="Revenue"  fill="oklch(0.72 0.19 142)" opacity={0.75} maxBarSize={10} />
+          <Bar dataKey="expenses" name="Expenses" fill="oklch(0.58 0.22 25)"  opacity={0.65} maxBarSize={10} />
+          <Line
+            type="monotone"
+            dataKey="net"
+            name="Net"
+            stroke={color}
+            strokeWidth={2}
+            dot={false}
+          />
+          <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -255,6 +396,7 @@ function EmptyState() {
 export default function ForecastPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
+  const [activeScenario, setActiveScenario] = useState("base");
 
   const { data: dashboard, isLoading } = useDashboard(jobId);
 
@@ -264,6 +406,11 @@ export default function ForecastPage() {
     return (
       <div className="space-y-4 p-5">
         <div className="h-6 w-48 animate-pulse rounded bg-muted" />
+        <div className="grid grid-cols-3 gap-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
+          ))}
+        </div>
         <div className="h-72 animate-pulse rounded-lg bg-muted" />
         <div className="h-48 animate-pulse rounded-lg bg-muted" />
       </div>
@@ -271,40 +418,104 @@ export default function ForecastPage() {
   }
 
   const forecast = dashboard!.forecast;
-  const alerts = forecast.scenarios
-    ? (dashboard!.alerts ?? []).filter(
-        (a) =>
-          a.message.toLowerCase().includes("runway") ||
-          a.message.toLowerCase().includes("forecast") ||
-          a.message.toLowerCase().includes("scenario")
-      )
-    : [];
+  const scenarios = forecast.scenarios ?? {};
+  const base = scenarios.base;
+  const opt  = scenarios.optimistic;
+  const pes  = scenarios.pessimistic;
+
+  const alerts = (dashboard!.alerts ?? []).filter(
+    (a) =>
+      a.message.toLowerCase().includes("runway") ||
+      a.message.toLowerCase().includes("forecast") ||
+      a.message.toLowerCase().includes("scenario")
+  );
+
+  const activeScenarioData = (scenarios as Record<string, ForecastScenario>)[activeScenario];
 
   return (
     <div className="space-y-4 p-5">
+      {/* Header */}
       <div>
         <h1 className="text-lg font-semibold tracking-tight">12-Month Forecast</h1>
         {forecast.narrative && (
-          <p className="mt-1 text-sm text-muted-foreground max-w-prose leading-relaxed">
+          <p className="mt-1 max-w-prose text-sm text-muted-foreground leading-relaxed">
             {forecast.narrative}
           </p>
         )}
       </div>
 
-      {/* Forecast-specific alerts */}
+      {/* Alerts */}
       {alerts.length > 0 && <AlertStrip alerts={alerts} />}
 
-      {/* Projected net cash flow chart */}
+      {/* KPI strip */}
+      {(base || opt || pes) && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {base && (
+            <KPICard
+              label="Base Case 12-Month Net"
+              value={formatCurrency(base.twelve_month_net)}
+              sub={base.runway_months ? `${base.runway_months} months runway` : "Stable runway"}
+              positive={base.twelve_month_net >= 0}
+            />
+          )}
+          {opt && (
+            <KPICard
+              label="Optimistic Upside"
+              value={
+                base
+                  ? `+${formatCurrency(opt.twelve_month_net - base.twelve_month_net)}`
+                  : formatCurrency(opt.twelve_month_net)
+              }
+              sub="vs base case"
+              positive
+            />
+          )}
+          {pes && (
+            <KPICard
+              label="Pessimistic Downside"
+              value={
+                base
+                  ? `${formatCurrency(pes.twelve_month_net - base.twelve_month_net)}`
+                  : formatCurrency(pes.twelve_month_net)
+              }
+              sub="vs base case"
+              positive={false}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Monte Carlo fan chart */}
       <div className="rounded-lg border border-border bg-card p-4">
-        <h2 className="mb-0.5 text-sm font-medium">Projected Monthly Net Cash Flow</h2>
+        <div className="mb-1 flex items-center gap-2">
+          <h2 className="text-sm font-medium">Monte Carlo Projection Fan</h2>
+          <span
+            title="The shaded band represents the full range between optimistic and pessimistic scenarios"
+            className="cursor-help"
+          >
+            <Info className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          </span>
+        </div>
         <p className="mb-4 text-xs text-muted-foreground">
-          Three scenarios over the next 12 months
+          Shaded band = scenario spread · solid line = base case
         </p>
-        <ForecastChart scenarios={forecast.scenarios} />
+        <MonteCarloFanChart scenarios={scenarios} />
       </div>
 
-      {/* Scenario comparison table */}
-      <ScenarioTable scenarios={forecast.scenarios} />
+      {/* Scenario table — clickable rows */}
+      <ScenarioTable
+        scenarios={scenarios}
+        activeScenario={activeScenario}
+        onSelect={setActiveScenario}
+      />
+
+      {/* Monthly breakdown for selected scenario */}
+      {activeScenarioData && (
+        <MonthlyBreakdownChart
+          scenario={activeScenarioData}
+          scenarioKey={activeScenario}
+        />
+      )}
     </div>
   );
 }

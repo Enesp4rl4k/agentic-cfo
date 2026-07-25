@@ -27,15 +27,43 @@ def register(cls: Type[BankParser]) -> Type[BankParser]:
 
 
 def _ensure_parsers_registered() -> None:
-    """Import all bank parsers and register them if not already done."""
+    """Import all parsers (bank + accounting) and register them if not already done."""
     if _REGISTRY:
         return  # already populated
+
+    # ── Bank statement parsers ────────────────────────────────────────────────
     from app.parsers.banks.akbank import AkbankParser
     from app.parsers.banks.garanti import GarantiParser
     from app.parsers.banks.isbank import IsBankParser
     from app.parsers.banks.ziraat import ZiraatParser
 
-    for cls in (AkbankParser, GarantiParser, IsBankParser, ZiraatParser):
+    # ── Accounting software parsers ───────────────────────────────────────────
+    from app.parsers.accounting.logo_tiger import LogoTigerParser
+    from app.parsers.accounting.netsis import NetsisParser
+    from app.parsers.accounting.mikro import MikroParser
+    from app.parsers.accounting.parasut import ParasutParser
+
+    # ── Invoice parsers ───────────────────────────────────────────────────────
+    from app.parsers.invoice import InvoiceBatchParser, TurkishInvoiceParser
+
+    all_parsers = (
+        # Invoice batch first — most specific
+        InvoiceBatchParser,
+        # Accounting parsers — more specific markers, lower false-positive risk
+        LogoTigerParser,
+        NetsisParser,
+        MikroParser,
+        ParasutParser,
+        # Single invoice parser — after accounting (avoid false positives)
+        TurkishInvoiceParser,
+        # Bank parsers
+        AkbankParser,
+        GarantiParser,
+        IsBankParser,
+        ZiraatParser,
+    )
+
+    for cls in all_parsers:
         if cls not in _REGISTRY:
             _REGISTRY.append(cls)
 

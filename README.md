@@ -1,186 +1,188 @@
-# AI CFO — Agentic Financial Intelligence Platform
+# C-Level AI
 
-> CFO-level financial analysis, forecasting, and reporting for SMBs.
-> Upload a bank statement → AI analyzes it → Get P&L, cash flow, and a 12-month forecast.
+> **Your entire C-Suite, powered by AI.**  
+> Upload your accounting data. Get CFO reports, risk analysis, and 12-month forecasts in 5 minutes.
 
-![Stack](https://img.shields.io/badge/FastAPI-0.111-green) ![Stack](https://img.shields.io/badge/Next.js-14-black) ![Stack](https://img.shields.io/badge/LangGraph-0.1-orange) ![Stack](https://img.shields.io/badge/DeepSeek-API-blue)
+[![Tests](https://img.shields.io/badge/tests-941%20passing-brightgreen)](backend/)
+[![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
+[![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
 ---
 
-## Features
+## What is C-Level AI?
 
-| Feature | Details |
-|---------|---------|
-| **Automatic data extraction** | Reads PDF, Excel, and CSV bank statements |
-| **Turkish bank support** | Akbank, Garanti BBVA, İş Bankası, Ziraat (structured parsers) |
-| **P&L analysis** | Revenue, COGS, gross profit, OpEx breakdown, EBITDA, net income |
-| **Cash flow statement** | Operating / Investing / Financing activities, monthly series |
-| **12-month forecast** | Optimistic / Base / Pessimistic scenarios, runway calculation |
-| **CFO narrative** | LLM-generated executive summary at each analysis step |
-| **Category correction** | User corrects category → system learns (CategoryRule feedback loop) |
-| **Excel report** | 3-sheet Excel: P&L + Cash Flow + Forecast |
-| **Confidence gate** | Requires human approval when LLM confidence drops below 80% |
+C-Level AI is an agentic financial intelligence platform that runs 12 specialized AI agents simultaneously — each covering a different executive role:
+
+| Agent | Coverage |
+|-------|----------|
+| **CFO** | P&L, cash flow, budget variance, tax calendar, anomaly detection |
+| **CEO** | OKR tracking, strategic priorities, board deck synthesis |
+| **CTO** | Technical debt, system health, sprint velocity |
+| **COO** | Process efficiency, SLA compliance, resource utilization |
+| **CMO** | CAC, LTV, campaign ROI, market growth |
+| **CHRO** | Attrition risk, compensation analysis, department health |
+| **Compliance** | Regulatory coverage, policy gaps, violation tracking |
+| **Risk** | KRI monitoring, correlation matrix, cascade simulation |
+| **Internal Audit** | Anomaly flagging, audit trail, finding management |
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- Python 3.11+
+- Docker (optional, for full stack)
+
+### 1. Clone & configure
+
+```bash
+git clone https://github.com/yourorg/clevelai.git
+cd clevelai
+cp .env.example .env
+# Edit .env — add your LLM API key and NEXTAUTH_SECRET
+```
+
+### 2. Backend
+
+```bash
+cd backend
+pip install -r requirements.txt
+alembic upgrade head          # run migrations
+uvicorn app.main:app --reload  # start API on :8000
+```
+
+### 3. Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev   # start on :3000
+```
+
+### 4. Open
+
+- **Landing page:** http://localhost:3000
+- **Login:** http://localhost:3000/auth/login
+- **Register:** http://localhost:3000/auth/register
+- **API docs:** http://localhost:8000/docs
+
+---
+
+## One-command demo (Docker)
+
+```bash
+cp .env.demo .env
+docker compose -f docker-compose.demo.yml up
+```
+
+Then open http://localhost:3000 — sample data is pre-loaded automatically.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              CFO Orchestrator (LangGraph)             │
-└──────┬──────┬──────┬──────┬──────────────────────────┘
-       │      │      │      │
-  ┌────▼──┐ ┌─▼───┐ ┌▼────┐ ┌▼──────────┐ ┌──────────┐
-  │ Data  │ │ P&L │ │Cash │ │ Forecast  │ │  Report  │
-  │Ingest │ │Agent│ │Flow │ │  Agent    │ │  Agent   │
-  └───────┘ └─────┘ └─────┘ └───────────┘ └──────────┘
-```
-
-**Stack:**
-- **Backend:** FastAPI + LangGraph + SQLAlchemy (PostgreSQL / SQLite)
-- **Frontend:** Next.js 14 App Router + Tailwind CSS + Recharts
-- **LLM:** DeepSeek API (OpenAI-compatible — works with GPT-4o too)
-- **Database:** PostgreSQL (production) / SQLite (development)
-
----
-
-## Quick Start
-
-### Docker (Recommended)
-
-```bash
-git clone https://github.com/your-username/agentic-cfo.git
-cd agentic-cfo
-
-cp .env.example .env
-# Edit .env: add your OPENAI_API_KEY (or DeepSeek key)
-
-docker-compose up --build
-```
-
-- Frontend: http://localhost:3000
-- Backend API docs: http://localhost:8000/docs
-
-### Local Development (no Docker)
-
-**Backend:**
-```bash
-cd backend
-pip install fastapi uvicorn sqlalchemy aiosqlite pydantic pydantic-settings python-multipart aiofiles
-pip install langchain langchain-openai langgraph openpyxl pymupdf
-
-# Create .env
-cp ../.env.example .env
-# Set your API key and LLM config
-
-python -m uvicorn app.main:app --reload --port 8000
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-# http://localhost:3000
+┌─────────────────────────────────────────────────┐
+│                 Next.js 14 Frontend              │
+│  Landing · Auth · Dashboard · Chat · Settings   │
+└──────────────────┬──────────────────────────────┘
+                   │ REST + SSE
+┌──────────────────▼──────────────────────────────┐
+│                FastAPI Backend                  │
+│  Upload → Data Ingestion → Agent Orchestrator   │
+│                                                 │
+│  ┌──────────────────────────────────────────┐   │
+│  │           LangGraph Pipeline             │   │
+│  │  CFO → CEO → CTO → COO → CMO → CHRO     │   │
+│  │  Risk → Compliance → Audit → Synthesis   │   │
+│  └──────────────────────────────────────────┘   │
+│                                                 │
+│  PostgreSQL · Redis · Alembic migrations        │
+└─────────────────────────────────────────────────┘
 ```
 
 ---
 
-## LLM Configuration
+## Features
 
-The system works with any OpenAI-compatible API. Configure via `.env`:
+### Financial Intelligence
+- **P&L Statement** — revenue, COGS, OPEX breakdown, waterfall chart
+- **Cash Flow** — operating/investing/financing with running balance table
+- **12-Month Forecast** — Monte Carlo fan chart, 3 scenarios, monthly breakdown
+- **Budget Variance** — planned vs actual with alert thresholds
+- **Tax Calendar** — VAT, withholding, corporate tax payment schedule
+
+### AI & Agents
+- **12 specialized agents** running in a LangGraph pipeline
+- **Real-time SSE streaming** — watch each agent step live
+- **Natural language queries** — ask anything about your finances
+- **Structured LLM output** — Pydantic schemas, template fallbacks for dev mode
+- **Anomaly detection** — duplicate payments, unusual amounts, vendor concentration
+
+### Platform
+- **Multi-tenant workspaces** — invite team members, role-based access (owner/admin/analyst/viewer)
+- **NextAuth.js authentication** — JWT, refresh tokens, API key support
+- **OCR pipeline** — PyMuPDF + pdfplumber + Tesseract for PDF invoices
+- **Turkish accounting parsers** — Logo Tiger, Paraşüt, GİB e-Fatura, Akbank, Garanti, İş Bankası
+- **OpenTelemetry** — structured JSON logs, LangSmith traces
+- **Audit trail** — every action logged with user + org context
+
+### UI/UX
+- **Command Center** — all agents, cross-domain risks, quick wins
+- **Transactions** — sortable columns, pagination, CSV export
+- **Anomalies** — grouped by severity, collapsible sections, confidence bars
+- **Risk dashboard** — KRI gauge cards, heatmap, risk matrix scatter plot
+- **Chat** — markdown rendering, follow-up chips, typing indicator
+
+---
+
+## Environment Variables
 
 ```env
-# DeepSeek (recommended — cost-effective)
-OPENAI_API_KEY=sk-...            # Your DeepSeek API key
+# LLM
+OPENAI_API_KEY=sk-...
 LLM_MODEL=deepseek-chat
 LLM_BASE_URL=https://api.deepseek.com
 
-# OpenAI GPT-4o
-# OPENAI_API_KEY=sk-...
-# LLM_MODEL=gpt-4o
-# LLM_BASE_URL=                  # leave empty for OpenAI default
+# Database (SQLite for dev, PostgreSQL for prod)
+USE_SQLITE=true
+
+# Auth
+NEXTAUTH_SECRET=your-32-char-secret
+NEXTAUTH_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-> Get a DeepSeek API key: https://platform.deepseek.com
+See `.env.example` for all options.
 
 ---
 
-## Usage Flow
-
-1. **http://localhost:3000/upload** → Upload a bank statement (PDF / Excel / CSV)
-2. AI processes in the background: extract → P&L → cash flow → forecast → report
-3. View results on the Dashboard (KPIs, charts, scenario table)
-4. Download the Excel report from `/reports`
-5. Correct transaction categories — the classifier learns from corrections
-
----
-
-## API Reference
-
-Swagger UI available at **http://localhost:8000/docs** when the backend is running.
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/v1/upload` | POST | Upload file → returns `job_id` |
-| `/api/v1/analyze/{job_id}` | POST | Trigger analysis pipeline |
-| `/api/v1/analysis/{job_id}` | GET | Poll job status |
-| `/api/v1/analysis/{job_id}/approve` | POST | Human approval (confidence gate) |
-| `/api/v1/dashboard/{job_id}` | GET | Dashboard JSON payload |
-| `/api/v1/reports/{job_id}` | GET | List generated reports |
-| `/api/v1/reports/{report_id}/download` | GET | Download Excel/PDF |
-| `/api/v1/transactions/{id}/category` | PATCH | Correct transaction category |
-
----
-
-## Project Structure
-
-```
-agentic-cfo/
-├── backend/
-│   ├── alembic/             # Database migrations
-│   ├── app/
-│   │   ├── agents/          # LangGraph agents
-│   │   │   ├── orchestrator.py
-│   │   │   ├── data_ingestion.py
-│   │   │   ├── pnl_agent.py
-│   │   │   ├── cashflow_agent.py
-│   │   │   ├── forecast_agent.py
-│   │   │   └── report_agent.py
-│   │   ├── api/             # FastAPI route handlers
-│   │   ├── models/          # SQLAlchemy models
-│   │   ├── parsers/         # Turkish bank statement parsers
-│   │   └── services/        # Classifier, storage
-│   └── tests/
-└── frontend/
-    └── src/
-        ├── app/             # Next.js App Router pages
-        ├── components/      # UI components
-        ├── hooks/           # TanStack Query hooks
-        └── types/           # TypeScript types
-```
-
----
-
-## Development
+## Testing
 
 ```bash
-# Backend tests
-cd backend && python -m pytest tests/ -q
-
-# Backend lint
-cd backend && python -m ruff check app/ tests/
-
-# Frontend type check
-cd frontend && npm run typecheck
-
-# Frontend lint
-cd frontend && npm run lint
+cd backend
+pytest tests/ -v          # run all 941 tests
+pytest tests/ -x          # stop on first failure
+pytest tests/ --co -q     # list tests only
 ```
+
+All tests are pure-function — no LLM calls, no database required.
+
+---
+
+## Roadmap
+
+- [ ] Stripe billing integration
+- [ ] Scheduled weekly email reports (Resend)
+- [ ] SSO / SAML for enterprise
+- [ ] WhatsApp / Slack notifications for alerts
+- [ ] Mobile-responsive dashboard
+- [ ] Custom KPI builder
 
 ---
 
 ## License
 
-MIT
+MIT © 2025 C-Level AI

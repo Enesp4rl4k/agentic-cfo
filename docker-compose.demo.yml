@@ -1,0 +1,115 @@
+# AI CFO Suite — Demo Environment
+# ====================================
+# Single command to run the full demo:
+#   docker-compose -f docker-compose.demo.yml up --build
+#
+# Then: python demo/seed.py
+#
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:8000/docs
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aicfo_demo
+      POSTGRES_USER: aicfo
+      POSTGRES_PASSWORD: demo_pass_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - demo_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.demo
+    environment:
+      USE_SQLITE: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: aicfo_demo
+      POSTGRES_USER: aicfo
+      POSTGRES_PASSWORD: demo_pass_2024
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_PATH: /app/uploads
+      BACKEND_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+    volumes:
+      - demo_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["arq", "app.worker.WorkerSettings"]
+    env_file:
+      - .env.demo
+    environment:
+      USE_SQLITE: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: aicfo_demo
+      POSTGRES_USER: aicfo
+      POSTGRES_PASSWORD: demo_pass_2024
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_PATH: /app/uploads
+    volumes:
+      - demo_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_INTERNAL_URL: http://backend:8000
+      NEXT_PUBLIC_DEMO_MODE: "true"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  demo_postgres:
+  demo_uploads:

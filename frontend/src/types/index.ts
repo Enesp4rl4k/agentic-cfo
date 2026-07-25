@@ -74,6 +74,7 @@ export interface Alert {
 }
 
 export interface Transaction {
+  id?: string;
   amount_cents: number;
   currency: string;
   type: "income" | "expense";

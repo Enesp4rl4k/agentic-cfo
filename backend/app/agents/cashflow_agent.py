@@ -9,6 +9,8 @@ done_when: state['cashflow'] contains operating, investing, financing, net_chang
 """
 from __future__ import annotations
 
+from app.services.telemetry import trace_agent
+
 import logging
 from typing import Any
 
@@ -94,13 +96,13 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
     if cashflow["net_change"] < 0:
         alerts.append({
             "level": "warning",
-            "message": f"Net cash flow is negative: {_fmt(cashflow['net_change'])}",
+            "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'])}. Nakit dengesini izleyin.",
         })
 
     if cashflow["operating"] < 0:
         alerts.append({
             "level": "critical",
-            "message": "Operating cash flow is negative — the business cannot fund itself from operations.",
+            "message": "Faaliyet nakit akışı negatif — işletme, faaliyetlerini kendi nakit akışıyla finanse edemiyor. Acil önlem gerekiyor.",
         })
 
     series = cashflow.get("monthly_series", [])
@@ -113,7 +115,7 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
         if neg_streak >= 2:
             alerts.append({
                 "level": "critical",
-                "message": f"2+ consecutive months of negative cash flow detected (including {entry['month']}).",
+                "message": f"Art arda 2+ ay negatif nakit akışı tespit edildi ({entry['month']} dahil). Gider kontrolü yapılmalı.",
             })
             break
 
@@ -121,35 +123,35 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
 
 
 async def _generate_cashflow_narrative(
-    cashflow: dict[str, Any], alerts: list[dict], settings
+    cashflow: dict[str, Any],
+    alerts: list[dict],
+    settings,
+    state: dict[str, Any] | None = None,
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
-    alert_text = "\n".join(f"- [{a['level'].upper()}] {a['message']}" for a in alerts) or "No critical alerts."
-    messages = [
-        SystemMessage(content=(
-            "You are an experienced CFO. Analyze the cash flow statement and write "
-            "a concise, actionable commentary (2-4 sentences). Highlight liquidity risks clearly."
-        )),
-        HumanMessage(content=(
-            f"Operating: {_fmt(cashflow['operating'])}\n"
-            f"Investing: {_fmt(cashflow['investing'])}\n"
-            f"Financing: {_fmt(cashflow['financing'])}\n"
-            f"Net Change: {_fmt(cashflow['net_change'])}\n\n"
-            f"Alerts:\n{alert_text}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+    """
+    Generate structured CashFlow narrative with ContextBuilder.
+    Falls back to template if LLM key is not configured.
+    """
+    from app.services.llm_structured import get_cashflow_narrative
+
+    cashflow_with_alerts = dict(cashflow)
+    cashflow_with_alerts["alerts"] = alerts
+
+    # Attach context metadata via ContextBuilder
+    if state is not None:
+        from app.services.context_builder import get_context_builder
+        ctx = get_context_builder(budget=3072)
+        context_result = ctx.build_cashflow_context(
+            state={**state, "cashflow": cashflow_with_alerts}
+        )
+        cashflow_with_alerts["_context_tokens"] = context_result.token_count
+        cashflow_with_alerts["_context_truncated"] = context_result.truncated
+
+    narrative = await get_cashflow_narrative(cashflow_with_alerts, settings)
+    return narrative.to_text()
 
 
+@trace_agent("cashflow_agent")
 async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """Cash Flow Skill. done_when: state['cashflow']['net_change'] is an integer."""
     transactions = state.get("transactions", [])
@@ -160,7 +162,7 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         settings = get_settings()
         cashflow = _classify_cashflow(transactions)
         alerts = _detect_alerts(cashflow)
-        narrative = await _generate_cashflow_narrative(cashflow, alerts, settings)
+        narrative = await _generate_cashflow_narrative(cashflow, alerts, settings, state=state)
 
         cashflow["alerts"] = alerts
         cashflow["narrative"] = narrative

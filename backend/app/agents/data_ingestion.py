@@ -4,6 +4,10 @@ Data Ingestion Agent — Skill 1 of 5.
 Responsibility: Read the uploaded file (PDF/Excel/CSV), extract raw text
 and structured transactions, persist them to the DB.
 
+Parse strategy (fast → slow):
+  1. Bank-specific parser (ParserRegistry.detect) — rule-based, free, fast
+  2. LLM extraction (_extract_transactions_with_llm) — fallback only
+
 Confidence signals:
 - 1.0  → all transactions parsed with vendor + amount + date
 - 0.85 → some fields missing but majority parseable
@@ -22,6 +26,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import CFOState, AgentRunConfig, SkillResult
 from app.config import get_settings
+from app.parsers.registry import ParserRegistry
+from app.parsers.base import ParsedStatement
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +55,45 @@ def _guess_category(description: str) -> str:
 
 
 def _parse_amount(raw: str) -> int | None:
-    """Parse an amount string into the smallest currency unit (cents/kurus)."""
-    cleaned = re.sub(r"[^\d,.]", "", raw.replace(",", "."))
+    """Parse an amount string into the smallest currency unit (cents/kurus).
+
+    Handles:
+      - "1000.50"  → 100050
+      - "1.000,50" → 100050 (European format: dot=thousands, comma=decimal)
+      - "1,000.50" → 100050 (Anglo format: comma=thousands, dot=decimal)
+      - "₺1,500"   → 150000 (TRY symbol + Anglo format)
+    """
+    # Strip currency symbols and whitespace
+    s = re.sub(r"[^\d,.]", "", raw)
+    if not s:
+        return None
+
+    # Detect format: if both separators present, identify which is decimal
+    has_dot   = "." in s
+    has_comma = "," in s
+
+    if has_dot and has_comma:
+        # Whichever appears last is the decimal separator
+        last_dot   = s.rfind(".")
+        last_comma = s.rfind(",")
+        if last_comma > last_dot:
+            # European format: 1.000,50 → remove dots, replace comma with dot
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # Anglo format: 1,000.50 → remove commas
+            s = s.replace(",", "")
+    elif has_comma and not has_dot:
+        # Could be decimal comma (1000,50) or thousands comma (1,500)
+        # If there are exactly 3 digits after the comma, treat as thousands sep
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) == 3:
+            s = s.replace(",", "")  # thousands separator
+        else:
+            s = s.replace(",", ".")  # decimal separator
+    # If only dots, leave as-is
+
     try:
-        return int(float(cleaned) * 100)
+        return int(round(float(s) * 100))
     except (ValueError, TypeError):
         return None
 
@@ -109,12 +150,44 @@ async def _extract_transactions_with_llm(
 
 
 def _read_pdf(file_path: str) -> str:
-    import fitz  # PyMuPDF
-    text_parts: list[str] = []
-    with fitz.open(file_path) as doc:
-        for page in doc:
-            text_parts.append(page.get_text())
-    return "\n".join(text_parts)
+    """
+    Read PDF using multi-strategy OCR pipeline.
+
+    Tries native text extraction first (fast, high confidence).
+    Falls back to pdfplumber for table-heavy documents.
+    Falls back to Tesseract OCR for scanned/image-based PDFs.
+
+    Returns the best-quality text available, with a warning comment
+    prepended if confidence is low (for LLM fallback awareness).
+    """
+    try:
+        from app.services.ocr_service import extract_text_from_pdf
+        result = extract_text_from_pdf(file_path)
+
+        if result.needs_llm_fallback:
+            # Prepend low-confidence marker for LLM extraction path
+            prefix = (
+                f"[OCR_LOW_CONFIDENCE: {result.confidence:.0%} — "
+                f"strategy={result.strategy_used}, pages={result.page_count}]\n\n"
+            )
+            return prefix + result.text
+
+        # Append warnings for partial OCR
+        text = result.text
+        if result.warnings and result.confidence < 0.85:
+            text += "\n\n[OCR_WARNINGS: " + "; ".join(result.warnings[:3]) + "]"
+
+        return text
+
+    except Exception as exc:
+        # Graceful fallback to original simple extraction
+        logger.warning("OCR service failed (%s), falling back to basic PDF read: %s", file_path, exc)
+        import fitz
+        text_parts: list[str] = []
+        with fitz.open(file_path) as doc:
+            for page in doc:
+                text_parts.append(page.get_text())
+        return "\n".join(text_parts)
 
 
 def _read_excel(file_path: str) -> str:
@@ -134,12 +207,35 @@ def _read_csv(file_path: str) -> str:
         return f.read()
 
 
+def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any]]:
+    """Convert ParsedStatement (bank parser output) to the CFO pipeline's transaction format."""
+    transactions = []
+    for tx in statement.transactions:
+        transactions.append({
+            "amount_cents": tx.amount_cents,
+            "currency": tx.currency,
+            "type": tx.tx_type,
+            "category": _guess_category(tx.description),
+            "description": tx.description,
+            "vendor": tx.vendor,
+            "transaction_date": tx.date.isoformat() if tx.date else None,
+            "raw_text": tx.raw_row,
+            "confidence": 0.95,  # structured parsers are high-confidence
+        })
+    return transactions
+
+
 async def run_data_ingestion(
     state: CFOState, config: AgentRunConfig
 ) -> SkillResult:
     """
     Data Ingestion Skill.
     done_when: state['transactions'] is a non-empty list.
+
+    Strategy:
+      1. Read raw text from file (PDF / Excel / CSV)
+      2. Try ParserRegistry (bank-specific rule-based parsers) — fast, free
+      3. If no bank match → fall back to LLM extraction
     """
     settings = get_settings()
     file_path = state.get("file_path", "")
@@ -166,6 +262,46 @@ async def run_data_ingestion(
                 confidence=0.0,
             )
 
+        # ── Strategy 1: Bank-specific rule-based parser ────────────────────
+        detected_bank = ParserRegistry.detect(raw_text)
+        if detected_bank is not None:
+            logger.info(
+                "job=%s — using bank parser: %s",
+                state.get("job_id"), detected_bank.bank_display_name,
+            )
+            statement: ParsedStatement = detected_bank().parse(raw_text, file_path)
+            transactions = _statement_to_transactions(statement)
+
+            if transactions:
+                parseable = sum(
+                    1 for tx in transactions
+                    if tx["amount_cents"] > 0 and tx["transaction_date"]
+                )
+                overall_confidence = 0.95 if parseable / len(transactions) >= 0.8 else 0.75
+                detail = (
+                    f"[{detected_bank.bank_display_name}] Parsed {len(transactions)} transactions "
+                    f"({parseable} fully parsed, confidence={overall_confidence:.2f})"
+                )
+                if statement.parse_warnings:
+                    logger.warning(
+                        "job=%s — parser warnings: %s",
+                        state.get("job_id"), statement.parse_warnings,
+                    )
+                return SkillResult(
+                    ok=True,
+                    patch={"raw_text": raw_text, "transactions": transactions},
+                    confidence=overall_confidence,
+                    needs_review=overall_confidence < 0.80,
+                    detail=detail,
+                )
+            else:
+                logger.warning(
+                    "job=%s — bank parser returned 0 transactions, falling back to LLM",
+                    state.get("job_id"),
+                )
+
+        # ── Strategy 2: LLM fallback ───────────────────────────────────────
+        logger.info("job=%s — no bank parser matched, using LLM extraction", state.get("job_id"))
         raw_transactions = await _extract_transactions_with_llm(raw_text, settings)
 
         if not raw_transactions:
@@ -176,7 +312,7 @@ async def run_data_ingestion(
                 confidence=0.4,
             )
 
-        transactions: list[dict[str, Any]] = []
+        transactions = []
         confidences: list[float] = []
 
         for t in raw_transactions:
@@ -215,7 +351,7 @@ async def run_data_ingestion(
             confidence=overall_confidence,
             needs_review=overall_confidence < 0.80,
             detail=(
-                f"Extracted {len(transactions)} transactions "
+                f"[LLM] Extracted {len(transactions)} transactions "
                 f"({parseable} fully parsed, confidence={overall_confidence:.2f})"
             ),
         )

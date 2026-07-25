@@ -25,6 +25,28 @@ class Settings(BaseSettings):
     backend_secret_key: str = "dev-secret-change-in-production"
     backend_cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
 
+    # TCMB EVDS API (optional — benchmark data falls back to static if not set)
+    # Get free key: https://evds2.tcmb.gov.tr/index.php?lang=tr
+    tcmb_api_key: str = ""
+
+    # GİB e-Fatura (optional — falls back gracefully if not configured)
+    # Test ortamı: https://efatura.gib.gov.tr/test
+    gib_vkn:      str  = ""      # Vergi Kimlik Numarası (10 hane)
+    gib_username: str  = ""      # e-Fatura portal kullanıcı adı
+    gib_password: str  = ""      # e-Fatura portal şifresi
+    gib_sandbox:  bool = True    # True = test ortamı
+
+    # Open Banking — Turkish banks (sandbox credentials from developer portals)
+    # Akbank: https://developer.akbank.com
+    akbank_client_id:     str = ""
+    akbank_client_secret: str = ""
+    # Garanti BBVA: https://developer.garantibbva.com.tr
+    garanti_client_id:     str = ""
+    garanti_client_secret: str = ""
+    # Sandbox mode (True = no real bank data, safe for development)
+    open_banking_sandbox:      bool = True
+    open_banking_redirect_uri: str  = "http://localhost:8000/api/v1/open-banking/callback"
+
     # Storage
     storage_backend: str = "local"
     storage_local_path: str = "./uploads"
@@ -42,6 +64,10 @@ class Settings(BaseSettings):
 
     # Dev mode: use SQLite instead of PostgreSQL
     use_sqlite: bool = True
+
+    # Demo mode: enables /demo/seed endpoint and pre-loaded sample data
+    demo_mode: bool = False
+    demo_company_name: str = "TechNova Yazılım A.Ş."
 
     @property
     def database_url(self) -> str:
@@ -66,6 +92,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.backend_cors_origins.split(",")]
+
+    @property
+    def secret_key(self) -> str:
+        """JWT signing secret — alias for backend_secret_key."""
+        return self.backend_secret_key
 
 
 @lru_cache
