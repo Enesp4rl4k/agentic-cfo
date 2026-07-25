@@ -1,0 +1,542 @@
+frontend/src/app/(dashboard)/forecast/page.tsx
+  h_2675fe4e526316 3,7-8,17,19,24,45-48,75-82,84-88,90-96,98-107,109-212,217-218,221-222,224-226,231,233,247,256-257,262,264-265,267,272,285,304,306-308,310-311,313-317,319-323,326-328,330-335,337-343,346,351-352,355-358,360-361,363-364,399,409-413,421-426,431-433,437,441,447,450-488,490-498,500,502,505,507-516,518
+frontend/src/app/(dashboard)/layout.tsx
+  h_2675fe4e526316 3,5-10,17-42,45,48-50,53-79,82-198,200-222,225-226,228,230,234-236,239,243,246-289,291-294,297,299-304,311-313,317,319-320,322-329,331-347,349-353,357-367,369-384
+backend/app/api/cto.py
+  h_2675fe4e526316 1-137
+frontend/src/app/(dashboard)/upload/page.tsx
+  h_2675fe4e526316 3,11-22,24-25,27-28,30,32-33,35-55,57-138,140-141,152-153,156-191,193,195-210,212-227,229-230,234,237-239,242-243,245-249,253-254,258-262,264-265,267-269,271-292,294-312,315-368,372-484,486-503,505-714
+frontend/src/lib/dashboard-utils.ts
+  h_2675fe4e526316 1-227
+backend/app/agents/pnl_agent.py
+  h_2675fe4e526316 12-13,72-74,76-119,122,132
+docker-compose.demo.yml
+  h_2675fe4e526316 1-115
+backend/alembic/versions/005_organizations.py
+  h_2675fe4e526316 1-90
+backend/app/services/executive_report_pdf.py
+  h_2675fe4e526316 1-458
+backend/app/models/audit_log.py
+  h_2675fe4e526316 1-59
+backend/app/agents/compliance/turkey_regulations.py
+  h_2675fe4e526316 1-350
+frontend/src/app/auth/register/page.tsx
+  h_2675fe4e526316 1-288
+frontend/src/components/ui/logo.tsx
+  h_2675fe4e526316 1-142
+frontend/src/lib/api/cfo.ts
+  h_2675fe4e526316 2,48-89,91-245
+backend/app/api/reports.py
+  h_2675fe4e526316 3-5,14-17,29,36,40-43,70-74,76-78,80-86,88-125
+backend/app/services/data_sync/audit.py
+  h_2675fe4e526316 1-127
+backend/tests/test_agents/test_report_agent.py
+  h_2675fe4e526316 1-221
+backend/tests/test_agents/test_anomaly_agent.py
+  h_2675fe4e526316 1-185
+frontend/src/hooks/useCFO.ts
+  h_2675fe4e526316 11-16,18,50,74,77-103,106-172
+backend/app/services/telemetry.py
+  h_2675fe4e526316 1-432
+frontend/next.config.mjs
+  h_2675fe4e526316 4-8
+frontend/src/app/(dashboard)/chat/page.tsx
+  h_2675fe4e526316 1-557
+backend/tests/test_agents/test_okr_agent.py
+  h_2675fe4e526316 1-244
+backend/app/agents/cmo/campaign_agent.py
+  h_2675fe4e526316 1-401
+backend/app/agents/coo/state.py
+  h_2675fe4e526316 1-144
+backend/app/agents/compliance/policies_agent.py
+  h_2675fe4e526316 1-263
+backend/app/agents/chro/orchestrator.py
+  h_2675fe4e526316 1-308
+backend/app/models/category_rule.py
+  h_2675fe4e526316 27
+backend/app/parsers/accounting/parasut.py
+  h_2675fe4e526316 1-312
+frontend/src/components/ui/demo-banner.tsx
+  h_2675fe4e526316 1-67
+backend/app/services/open_banking/garanti.py
+  h_2675fe4e526316 1-126
+frontend/src/app/(dashboard)/cmo/page.tsx
+  h_2675fe4e526316 1-532
+backend/tests/test_parsers/test_accounting_parsers.py
+  h_2675fe4e526316 1-223
+backend/tests/test_agents/test_ceo_synthesis.py
+  h_2675fe4e526316 1-282
+frontend/src/app/api/auth/[...nextauth]/route.ts
+  h_2675fe4e526316 1-5
+frontend/src/app/(landing)/layout.tsx
+  h_2675fe4e526316 1-11
+demo/seed.py
+  h_2675fe4e526316 1-234
+backend/app/services/open_banking/__init__.py
+  h_2675fe4e526316 1-26
+backend/tests/test_agents/test_ceo_pipeline.py
+  h_2675fe4e526316 1-359
+backend/app/services/data_sync/banking/psd2.py
+  h_2675fe4e526316 1-449
+backend/app/api/pilot.py
+  h_2675fe4e526316 1-375
+backend/app/models/anomaly.py
+  h_2675fe4e526316 1-83
+backend/app/main.py
+  h_2675fe4e526316 2,7,15-37,42-48,59,65-70,75-77,79-80,101,104,106-113,117-130
+backend/app/models/transaction.py
+  h_2675fe4e526316 42,45
+backend/app/services/data_sync/orchestrator.py
+  h_2675fe4e526316 1-325
+backend/app/models/organization.py
+  h_2675fe4e526316 1-88
+backend/app/config.py
+  h_2675fe4e526316 28-49,68-71,96-100
+backend/tests/test_agents/test_causal_agent.py
+  h_2675fe4e526316 1-220
+frontend/src/app/(dashboard)/cto/page.tsx
+  h_2675fe4e526316 1-466
+frontend/src/lib/auth.ts
+  h_2675fe4e526316 1-98
+frontend/src/styles/globals.css
+  h_2675fe4e526316 7-10,13-15,17-19,21-22,24-25,27-31,34-37
+backend/app/scheduler.py
+  h_2675fe4e526316 1-378
+backend/app/agents/ceo/state.py
+  h_2675fe4e526316 1-166
+backend/app/agents/ceo/synthesis_agent.py
+  h_2675fe4e526316 1-751
+backend/app/agents/compliance/state.py
+  h_2675fe4e526316 1-76
+backend/app/agents/cto/__init__.py
+  h_2675fe4e526316 1
+backend/app/parsers/registry.py
+  h_2675fe4e526316 30,33-34,40-64,66
+backend/app/services/data_sync/validators.py
+  h_2675fe4e526316 1-296
+backend/app/agents/risk/cross_correlation.py
+  h_2675fe4e526316 1-316
+frontend/src/hooks/useAgentStream.ts
+  h_2675fe4e526316 1-248
+backend/tests/test_agents/test_multi_period_agent.py
+  h_2675fe4e526316 1-330
+backend/app/agents/risk/orchestrator.py
+  h_2675fe4e526316 1-315
+backend/app/agents/risk/kri_agent.py
+  h_2675fe4e526316 1-254
+frontend/IMPLEMENTATION_SUMMARY.md
+  h_2675fe4e526316 1-466
+.env.example
+  h_2675fe4e526316 5-6,9-17,19-29,31-35,39,42-53,56-58,62,64-65
+frontend/src/app/(dashboard)/pnl/page.tsx
+  h_2675fe4e526316 1-49,51-102,104-194,196-315,317-523
+frontend/src/app/(dashboard)/anomalies/page.tsx
+  h_2675fe4e526316 1-603
+backend/app/services/alert_router.py
+  h_2675fe4e526316 1-290
+backend/app/services/llm_structured.py
+  h_2675fe4e526316 1-567
+backend/tests/test_agents/test_data_ingestion.py
+  h_2675fe4e526316 1-257
+backend/app/services/agent_memory.py
+  h_2675fe4e526316 1-375
+backend/app/api/demo.py
+  h_2675fe4e526316 1-126
+backend/BENCHMARK_DELIVERY_SUMMARY.md
+  h_2675fe4e526316 1-475
+backend/app/api/org.py
+  h_2675fe4e526316 1-426
+backend/app/agents/chro/compensation_agent.py
+  h_2675fe4e526316 1-312
+frontend/src/app/(dashboard)/compliance/page.tsx
+  h_2675fe4e526316 1-589
+backend/tests/test_agents/test_orchestrator_integration.py
+  h_2675fe4e526316 1-330
+backend/alembic/versions/006_pilot_program.py
+  h_2675fe4e526316 1-70
+backend/app/agents/ceo/orchestrator.py
+  h_2675fe4e526316 1-473
+backend/app/agents/chro/state.py
+  h_2675fe4e526316 1-76
+backend/app/parsers/accounting/mikro.py
+  h_2675fe4e526316 1-146
+backend/app/services/data_sync/accounting/parasut.py
+  h_2675fe4e526316 1-353
+frontend/src/app/(dashboard)/risk/page.tsx
+  h_2675fe4e526316 1-772
+backend/tests/test_agents/test_memory.py
+  h_2675fe4e526316 1-230
+backend/app/agents/cashflow_agent.py
+  h_2675fe4e526316 12-13,99,105,118,128-129,131-151,154,165
+backend/app/models/user.py
+  h_2675fe4e526316 1-72
+backend/app/agents/audit/findings_agent.py
+  h_2675fe4e526316 1-204
+backend/app/agents/compliance/violations_agent.py
+  h_2675fe4e526316 1-441
+backend/app/services/data_sync/schemas.py
+  h_2675fe4e526316 1-145
+backend/tests/test_agents/test_alert_agent.py
+  h_2675fe4e526316 1-266
+backend/app/services/retry_harness.py
+  h_2675fe4e526316 1-322
+frontend/src/app/(dashboard)/cashflow/page.tsx
+  h_2675fe4e526316 7-9,167-213,216-245,248-261,267-284,288,290-293,297-300,304-308,313,325-337,343-367,454,461-465
+backend/tests/test_agents/test_routing.py
+  h_2675fe4e526316 1-267
+backend/tests/test_agents/test_nl_query_engine.py
+  h_2675fe4e526316 1-254
+backend/app/streaming/__init__.py
+  h_2675fe4e526316 1
+backend/app/agents/audit/__init__.py
+  h_2675fe4e526316 1
+backend/app/agents/data_ingestion.py
+  h_2675fe4e526316 7-10,29-30,58-94,96,153-185,210-227,234-238,265-304,354
+backend/app/agents/compliance/regulations_agent.py
+  h_2675fe4e526316 1-473
+backend/app/agents/coo/sla_agent.py
+  h_2675fe4e526316 1-596
+backend/app/services/data_sync/accounting/__init__.py
+  h_2675fe4e526316 1
+backend/app/agents/tax_agent.py
+  h_2675fe4e526316 1-274
+backend/app/agents/compliance/__init__.py
+  h_2675fe4e526316 1-13
+backend/app/agents/ceo/okr_agent.py
+  h_2675fe4e526316 1-543
+frontend/src/app/(dashboard)/coo/page.tsx
+  h_2675fe4e526316 1-552
+backend/app/services/pdf_export.py
+  h_2675fe4e526316 1-458
+frontend/src/app/(dashboard)/ceo/page.tsx
+  h_2675fe4e526316 1-590
+backend/tests/test_agents/test_chro_pipeline.py
+  h_2675fe4e526316 1-320
+backend/app/api/efatura.py
+  h_2675fe4e526316 1-283
+backend/app/api/brief.py
+  h_2675fe4e526316 1-106
+backend/tests/test_agents/test_budget_agent.py
+  h_2675fe4e526316 1-191
+backend/app/agents/cto/orchestrator.py
+  h_2675fe4e526316 1-350
+backend/app/api/coo.py
+  h_2675fe4e526316 1-105
+frontend/src/app/auth/login/page.tsx
+  h_2675fe4e526316 1-165
+backend/app/parsers/accounting/logo_tiger.py
+  h_2675fe4e526316 1-288
+backend/app/agents/state.py
+  h_2675fe4e526316 33,38,42,44-45,47,49,51,53,55-79,88-97
+frontend/src/app/(landing)/page.tsx
+  h_2675fe4e526316 1-537
+backend/app/api/stream.py
+  h_2675fe4e526316 1-102
+backend/app/api/sensitivity.py
+  h_2675fe4e526316 1-204
+backend/tests/test_agents/test_telemetry.py
+  h_2675fe4e526316 1-271
+backend/app/api/compliance.py
+  h_2675fe4e526316 1-142
+frontend/src/app/(dashboard)/tax/page.tsx
+  h_2675fe4e526316 1-320
+backend/app/agents/forecast_agent.py
+  h_2675fe4e526316 18-19,33-81,86,89-90,92-93,117-125,128-130,132,139-144,147-158,161-162,164-165,168-169,171-172,175-176,178-179,197-316,326,331,337,343,353,355-373,376,393-411,417-418,423-427,435-438
+backend/app/api/benchmark.py
+  h_2675fe4e526316 1-156
+backend/BENCHMARK_SETUP.md
+  h_2675fe4e526316 1-647
+backend/app/agents/cto/tech_debt_agent.py
+  h_2675fe4e526316 1-261
+backend/app/services/data_sync/README.md
+  h_2675fe4e526316 1-392
+backend/tests/test_agents/test_cmo_pipeline.py
+  h_2675fe4e526316 1-409
+backend/app/api/risk.py
+  h_2675fe4e526316 1-80
+backend/tests/test_agents/test_sse.py
+  h_2675fe4e526316 1-173
+backend/app/middleware/__init__.py
+  h_2675fe4e526316 1
+backend/app/api/causal.py
+  h_2675fe4e526316 1-146
+backend/app/services/data_sync/banking/__init__.py
+  h_2675fe4e526316 1
+backend/app/agents/cto/velocity_agent.py
+  h_2675fe4e526316 1-322
+frontend/src/app/(dashboard)/audit/page.tsx
+  h_2675fe4e526316 1-563
+backend/app/agents/ceo/board_deck_agent.py
+  h_2675fe4e526316 1-545
+backend/app/agents/cmo/orchestrator.py
+  h_2675fe4e526316 1-315
+backend/app/agents/causal_agent.py
+  h_2675fe4e526316 1-366
+.env.demo
+  h_2675fe4e526316 1-71
+backend/DELIVERABLES.md
+  h_2675fe4e526316 1-362
+docker-compose.yml
+  h_2675fe4e526316 57-77,88-90
+frontend/src/app/(dashboard)/pilot/page.tsx
+  h_2675fe4e526316 1-412
+README.demo.md
+  h_2675fe4e526316 1-179
+frontend/src/app/(dashboard)/command-center/page.tsx
+  h_2675fe4e526316 1-481
+backend/app/api/datasource.py
+  h_2675fe4e526316 1-252
+frontend/src/middleware.ts
+  h_2675fe4e526316 1-23
+backend/app/parsers/invoice/__init__.py
+  h_2675fe4e526316 1-382
+backend/app/agents/sensitivity_agent.py
+  h_2675fe4e526316 1-220
+backend/app/api/chat.py
+  h_2675fe4e526316 1-317
+backend/alembic/versions/003_users.py
+  h_2675fe4e526316 1-53
+backend/tests/test_data_sync.py
+  h_2675fe4e526316 1-364
+backend/alembic/versions/001_initial.py
+  h_2675fe4e526316 25,30,32,38,44,52,55,72,80,83,90,95,103,107,113,119,126-155,157
+backend/app/agents/chat_agent.py
+  h_2675fe4e526316 1-430
+backend/app/parsers/accounting/netsis.py
+  h_2675fe4e526316 1-198
+frontend/src/app/(dashboard)/trends/page.tsx
+  h_2675fe4e526316 1-381
+backend/app/agents/orchestrator.py
+  h_2675fe4e526316 2-22,27,40-44,49-53,55-57,61-65,67,78-113,116,122,125-141,146,152-158,163,169-174,179,185-190,192-250,255,278,285,290-304,309,314-318,324,335-354,356-362,373,380-382,385-405,417-421,423-426,431,433-434,437-440,442-474
+backend/app/agents/ceo/__init__.py
+  h_2675fe4e526316 1
+backend/app/worker.py
+  h_2675fe4e526316 1-355
+backend/tests/test_agents/test_audit_pipeline.py
+  h_2675fe4e526316 1-279
+demo/data/logo_tiger_2024.csv
+  h_2675fe4e526316 1-170
+frontend/src/components/ui/toast.tsx
+  h_2675fe4e526316 1-111
+backend/app/agents/cmo/state.py
+  h_2675fe4e526316 1-147
+backend/app/agents/coo/process_agent.py
+  h_2675fe4e526316 1-490
+backend/app/models/analysis_job.py
+  h_2675fe4e526316 6,33,40-53
+backend/app/api/anomalies.py
+  h_2675fe4e526316 1-220
+backend/app/api/ceo.py
+  h_2675fe4e526316 1-461
+backend/app/streaming/sse.py
+  h_2675fe4e526316 1-250
+frontend/src/types/index.ts
+  h_2675fe4e526316 77
+backend/alembic/versions/004_audit_logs.py
+  h_2675fe4e526316 1-49
+frontend/QUICKSTART.md
+  h_2675fe4e526316 1-338
+backend/tests/test_agents/test_benchmark_integration.py
+  h_2675fe4e526316 1-576
+frontend/src/components/ui/system-status.tsx
+  h_2675fe4e526316 1-198
+write_landing.py
+  h_2675fe4e526316 1-391
+README.md
+  h_2675fe4e526316 1,3-4,6-8,12,14,16-26,32,34-36,38,40-44,47,51-53,56-57,61,64,66-69,73,75-77,80,84,86-94,96-103,108,110-137,141,143-155,158-159,162,165-171,173,175,177-182,188
+frontend/src/app/(dashboard)/page.tsx
+  h_2675fe4e526316 18-19,74-97,105-107,148-151,153-154,157,163,167-174,177-178
+backend/app/agents/cmo/cohort_agent.py
+  h_2675fe4e526316 1-330
+backend/tests/test_agents/test_llm_structured.py
+  h_2675fe4e526316 1-346
+backend/app/models/report.py
+  h_2675fe4e526316 36,39
+backend/app/models/__init__.py
+  h_2675fe4e526316 4,15-18
+backend/app/services/benchmark.py
+  h_2675fe4e526316 1-674
+backend/app/api/alerts.py
+  h_2675fe4e526316 1-281
+backend/app/agents/cto/state.py
+  h_2675fe4e526316 1-166
+backend/tests/test_agents/test_sensitivity_agent.py
+  h_2675fe4e526316 1-238
+backend/tests/test_parsers/test_ocr_and_invoice.py
+  h_2675fe4e526316 1-409
+backend/DATA_SYNC_GUIDE.md
+  h_2675fe4e526316 1-546
+backend/app/services/context_builder.py
+  h_2675fe4e526316 1-420
+frontend/src/components/ui/feedback-widget.tsx
+  h_2675fe4e526316 1-257
+backend/app/services/data_sync/__init__.py
+  h_2675fe4e526316 1-16
+backend/app/api/audit.py
+  h_2675fe4e526316 1-68
+backend/app/agents/cmo/funnel_agent.py
+  h_2675fe4e526316 1-340
+backend/app/agents/cmo/__init__.py
+  h_2675fe4e526316 1
+backend/tests/test_agents/test_coo_pipeline.py
+  h_2675fe4e526316 1-456
+backend/tests/test_agents/test_cto_pipeline.py
+  h_2675fe4e526316 1-416
+backend/app/agents/report_agent.py
+  h_2675fe4e526316 105,120-142
+frontend/src/app/providers.tsx
+  h_2675fe4e526316 4,6,22-26
+backend/app/agents/coo/orchestrator.py
+  h_2675fe4e526316 1-347
+frontend/components.json
+  h_2675fe4e526316 1-21
+backend/tests/fixtures/llm_mock.py
+  h_2675fe4e526316 1-206
+backend/app/agents/cto/incident_agent.py
+  h_2675fe4e526316 1-347
+backend/app/agents/chro/headcount_agent.py
+  h_2675fe4e526316 1-277
+backend/app/models/pilot.py
+  h_2675fe4e526316 1-89
+backend/tests/test_agents/test_retry_harness.py
+  h_2675fe4e526316 1-264
+backend/tests/test_agents/test_context_builder.py
+  h_2675fe4e526316 1-337
+backend/app/agents/audit/state.py
+  h_2675fe4e526316 1-66
+frontend/src/components/ui/onboarding-banner.tsx
+  h_2675fe4e526316 1-133
+backend/tests/test_agents/test_forecast_agent.py
+  h_2675fe4e526316 1-273
+backend/app/agents/nl_query_engine.py
+  h_2675fe4e526316 1-323
+ROADMAP.md
+  h_2675fe4e526316 1-854
+backend/app/agents/alert_agent.py
+  h_2675fe4e526316 1-339
+backend/app/agents/coo/__init__.py
+  h_2675fe4e526316 1
+backend/app/agents/risk/state.py
+  h_2675fe4e526316 1-81
+frontend/src/app/(dashboard)/chro/page.tsx
+  h_2675fe4e526316 1-516
+frontend/src/app/(dashboard)/transactions/page.tsx
+  h_2675fe4e526316 1-648
+backend/tests/test_agents/test_compliance_pipeline.py
+  h_2675fe4e526316 1-562
+backend/app/models/data_source.py
+  h_2675fe4e526316 1-118
+backend/alembic/versions/002_data_sources.py
+  h_2675fe4e526316 1-55
+backend/app/api/open_banking.py
+  h_2675fe4e526316 1-305
+frontend/src/app/(dashboard)/reports/page.tsx
+  h_2675fe4e526316 3,8-9,12-20,27,29-56,58-61,63,65-79,83-84,89,92-93,98,100-130,133-196,201-203,206-207,209-281,283-288,293,295-301,303,305-312,317-323,325,340,369,384-387,406-407,411
+backend/app/agents/cto/infra_agent.py
+  h_2675fe4e526316 1-316
+backend/BENCHMARK_INTEGRATION_CHECKLIST.md
+  h_2675fe4e526316 1-531
+backend/IMPLEMENTATION_SUMMARY.md
+  h_2675fe4e526316 1-398
+frontend/src/app/auth/layout.tsx
+  h_2675fe4e526316 1-15
+frontend/src/types/next-auth.d.ts
+  h_2675fe4e526316 1-40
+backend/app/agents/audit/orchestrator.py
+  h_2675fe4e526316 1-504
+backend/BENCHMARK_INTEGRATION_README.md
+  h_2675fe4e526316 1-387
+frontend/src/app/(dashboard)/settings/workspace/page.tsx
+  h_2675fe4e526316 1-378
+backend/tests/test_agents/test_pipeline_integration.py
+  h_2675fe4e526316 1-392
+backend/app/services/reflection_agent.py
+  h_2675fe4e526316 1-397
+backend/app/agents/risk/__init__.py
+  h_2675fe4e526316 1
+backend/app/services/gib_efatura.py
+  h_2675fe4e526316 1-388
+backend/app/parsers/accounting/__init__.py
+  h_2675fe4e526316 1-7
+backend/app/services/data_sync/scheduler.py
+  h_2675fe4e526316 1-340
+backend/app/agents/risk/loss_agent.py
+  h_2675fe4e526316 1-270
+backend/app/services/capability_router.py
+  h_2675fe4e526316 1-461
+backend/app/api/cmo.py
+  h_2675fe4e526316 1-105
+backend/app/middleware/audit.py
+  h_2675fe4e526316 1-158
+backend/app/services/data_sync/accounting/importers.py
+  h_2675fe4e526316 1-243
+backend/app/agents/compliance/orchestrator.py
+  h_2675fe4e526316 1-462
+backend/app/services/open_banking/base.py
+  h_2675fe4e526316 1-212
+backend/app/api/analysis.py
+  h_2675fe4e526316 2,4-6,16-18,25,27-40,49-52,97-173
+backend/app/agents/anomaly_agent.py
+  h_2675fe4e526316 1-483
+backend/tests/test_agents/test_tax_agent.py
+  h_2675fe4e526316 1-293
+backend/tests/test_agents/test_risk_pipeline.py
+  h_2675fe4e526316 1-330
+frontend/src/app/(dashboard)/templates/page.tsx
+  h_2675fe4e526316 1-437
+backend/app/agents/cmo/attribution.py
+  h_2675fe4e526316 1-353
+backend/app/services/auth.py
+  h_2675fe4e526316 1-90
+backend/tests/test_agents/test_reflection.py
+  h_2675fe4e526316 1-273
+backend/requirements.txt
+  h_2675fe4e526316 16,20,26,41-50
+backend/app/agents/budget_agent.py
+  h_2675fe4e526316 1-197
+backend/app/agents/audit/controls_agent.py
+  h_2675fe4e526316 1-200
+backend/app/services/benchmark_utils.py
+  h_2675fe4e526316 1-615
+backend/app/agents/coo/resource_agent.py
+  h_2675fe4e526316 1-324
+frontend/src/app/(dashboard)/budget/page.tsx
+  h_2675fe4e526316 1-304
+backend/app/services/open_banking/akbank.py
+  h_2675fe4e526316 1-107
+backend/app/services/ocr_service.py
+  h_2675fe4e526316 1-549
+frontend/DASHBOARDS.md
+  h_2675fe4e526316 1-444
+backend/app/agents/risk/register_agent.py
+  h_2675fe4e526316 1-270
+backend/app/agents/multi_period_agent.py
+  h_2675fe4e526316 1-299
+backend/app/agents/chro/__init__.py
+  h_2675fe4e526316 1
+backend/app/api/auth.py
+  h_2675fe4e526316 1-314
+backend/app/agents/chro/attrition_agent.py
+  h_2675fe4e526316 1-341
+backend/app/agents/chro/survival.py
+  h_2675fe4e526316 1-463
+backend/app/agents/ceo/strategic_priorities_agent.py
+  h_2675fe4e526316 1-213
+frontend/src/components/ui/agent-progress.tsx
+  h_2675fe4e526316 1-243
+backend/app/api/chro.py
+  h_2675fe4e526316 1-78
+backend/app/agents/audit/coverage_agent.py
+  h_2675fe4e526316 1-197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8c1b86c929eabfc7ad56161437643cabeccf7dd4",
+  "prompts": {},
+  "humans": {
+    "h_2675fe4e526316": {
+      "author": "Enes Parlak <eparlak996@gmail.com>"
+    }
+  }
+}
