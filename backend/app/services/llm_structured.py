@@ -578,7 +578,12 @@ def _is_placeholder_key(api_key: str) -> bool:
     """Return True if the API key is a placeholder (dev mode)."""
     if not api_key:
         return True
-    placeholders = {"sk-dev-placeholder", "sk-demo-placeholder-replace-with-real-key", ""}
-    return api_key in placeholders or api_key.startswith("sk-dev-") or api_key.startswith("sk-demo-")
+    placeholders = {
+        "llm-placeholder-dev",
+        "llm-placeholder-demo",
+        "llm-placeholder-ci",
+        "",
+    }
+    return api_key in placeholders or api_key.startswith("llm-placeholder-")
 
 

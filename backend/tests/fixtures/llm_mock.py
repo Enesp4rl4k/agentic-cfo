@@ -112,7 +112,7 @@ def patch_llm(
 
 @contextmanager
 def patch_settings(
-    openai_api_key: str = "sk-test-mock-key-not-real",
+    openai_api_key: str = "llm-placeholder-mock",
     llm_model: str = "gpt-3.5-turbo",
 ):
     """Patch get_settings() to return a mock settings object."""

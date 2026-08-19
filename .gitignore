@@ -2,6 +2,7 @@
 
 # Secrets
 .env
+.env.demo
 *.env.local
 
 # Python

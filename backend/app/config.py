@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # OpenAI — optional for dev/test without LLM
-    openai_api_key: str = "sk-dev-placeholder"
+    openai_api_key: str = "llm-placeholder-dev"
 
     # PostgreSQL — optional, falls back to SQLite when not set
     postgres_host: str = "localhost"

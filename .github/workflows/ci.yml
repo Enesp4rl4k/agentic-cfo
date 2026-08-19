@@ -82,7 +82,7 @@ jobs:
           DATABASE_URL:       postgresql+asyncpg://aicfo:aicfo@localhost:5432/aicfo_test
           REDIS_URL:          redis://localhost:6379/0
           BACKEND_SECRET_KEY: ci-test-secret-key-32chars!!!!!
-          OPENAI_API_KEY:     sk-dev-placeholder
+          OPENAI_API_KEY:     llm-placeholder-ci
           LOG_FORMAT:         plain
         run: |
           chmod +x verify.sh scripts/*.sh
@@ -157,7 +157,7 @@ jobs:
           DATABASE_URL:         postgresql+asyncpg://aicfo:aicfo@localhost:5432/aicfo_test
           REDIS_URL:            redis://localhost:6379/0
           BACKEND_SECRET_KEY:   ci-test-secret-key-32chars!!!!!
-          OPENAI_API_KEY:       sk-dev-placeholder
+          OPENAI_API_KEY:       llm-placeholder-ci
           LOG_FORMAT:           plain
         run: |
           pytest tests/ \

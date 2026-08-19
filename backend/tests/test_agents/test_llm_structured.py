@@ -77,19 +77,19 @@ class TestIsPlaceholderKey:
         assert _is_placeholder_key("") is True
 
     def test_dev_placeholder_is_placeholder(self):
-        assert _is_placeholder_key("sk-dev-placeholder") is True
+        assert _is_placeholder_key("llm-placeholder-dev") is True
 
     def test_demo_placeholder_is_placeholder(self):
-        assert _is_placeholder_key("sk-demo-placeholder-replace-with-real-key") is True
+        assert _is_placeholder_key("llm-placeholder-demo") is True
 
     def test_dev_prefix_is_placeholder(self):
-        assert _is_placeholder_key("sk-dev-mykey123") is True
+        assert _is_placeholder_key("llm-placeholder-custom") is True
 
     def test_real_key_is_not_placeholder(self):
-        assert _is_placeholder_key("sk-abc123realkey") is False
+        assert _is_placeholder_key("vendor-api-key-not-a-placeholder") is False
 
-    def test_deepseek_key_is_not_placeholder(self):
-        assert _is_placeholder_key("sk-1a2b3c4d5e6f7g8h") is False
+    def test_vendor_key_is_not_placeholder(self):
+        assert _is_placeholder_key("deepseek-prod-key-example") is False
 
 
 # ── PnLNarrative schema ───────────────────────────────────────────────────────
@@ -305,7 +305,7 @@ import asyncio
 from unittest.mock import MagicMock
 
 
-def _mock_settings(key: str = "sk-dev-placeholder") -> MagicMock:
+def _mock_settings(key: str = "llm-placeholder-dev") -> MagicMock:
     s = MagicMock()
     s.openai_api_key = key
     s.llm_model = "deepseek-chat"

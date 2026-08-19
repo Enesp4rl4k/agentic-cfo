@@ -142,7 +142,7 @@ Then open http://localhost:3000 — sample data is pre-loaded automatically.
 
 ```env
 # LLM
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=your-llm-api-key-here
 LLM_MODEL=deepseek-chat
 LLM_BASE_URL=https://api.deepseek.com
 

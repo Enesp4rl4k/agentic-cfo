@@ -39,14 +39,14 @@ gerçek veriyle çalışır. Sadece AI narratifleri ve CFO Chat devre dışı ka
 **DeepSeek (önerilen — ~$0.001/analiz):**
 ```bash
 # .env.demo dosyasında şu satırı düzenleyin:
-OPENAI_API_KEY=sk-your-deepseek-key-here
+OPENAI_API_KEY=your-deepseek-api-key-here
 LLM_MODEL=deepseek-chat
 LLM_BASE_URL=https://api.deepseek.com
 ```
 
 **OpenAI GPT-4o:**
 ```bash
-OPENAI_API_KEY=sk-your-openai-key-here
+OPENAI_API_KEY=your-openai-api-key-here
 LLM_MODEL=gpt-4o
 LLM_BASE_URL=
 ```
