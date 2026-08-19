@@ -16,6 +16,9 @@ env:
   NODE_VERSION:   "20"
   REGISTRY:       ghcr.io
   IMAGE_NAME:     ${{ github.repository }}
+  # Ephemeral CI database identity (password comes from GitHub Secrets — see .github/CI_SECRETS.md)
+  CI_PG_USER: aicfo
+  CI_PG_DB:   aicfo_test
 
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
@@ -29,9 +32,9 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER:     aicfo
-          POSTGRES_PASSWORD: aicfo
-          POSTGRES_DB:       aicfo_test
+          POSTGRES_USER:     ${{ env.CI_PG_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_PG_PASS }}
+          POSTGRES_DB:       ${{ env.CI_PG_DB }}
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
@@ -51,6 +54,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate CI secrets configured
+        run: |
+          if [ -z "${{ secrets.CI_PG_PASS }}" ]; then
+            echo "::error::Missing repository secret CI_PG_PASS. See .github/CI_SECRETS.md"
+            exit 1
+          fi
+          if [ -z "${{ secrets.CI_BACKEND_SECRET }}" ]; then
+            echo "::error::Missing repository secret CI_BACKEND_SECRET. See .github/CI_SECRETS.md"
+            exit 1
+          fi
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -79,9 +93,9 @@ jobs:
 
       - name: Run consolidation proof gate
         env:
-          DATABASE_URL:       postgresql+asyncpg://aicfo:aicfo@localhost:5432/aicfo_test
+          DATABASE_URL:       postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
           REDIS_URL:          redis://localhost:6379/0
-          BACKEND_SECRET_KEY: ci-test-secret-key-32chars!!!!!
+          BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
           OPENAI_API_KEY:     llm-placeholder-ci
           LOG_FORMAT:         plain
         run: |
@@ -101,9 +115,9 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER:     aicfo
-          POSTGRES_PASSWORD: aicfo
-          POSTGRES_DB:       aicfo_test
+          POSTGRES_USER:     ${{ env.CI_PG_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_PG_PASS }}
+          POSTGRES_DB:       ${{ env.CI_PG_DB }}
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
@@ -154,9 +168,9 @@ jobs:
       - name: Run tests
         working-directory: backend
         env:
-          DATABASE_URL:         postgresql+asyncpg://aicfo:aicfo@localhost:5432/aicfo_test
+          DATABASE_URL:         postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
           REDIS_URL:            redis://localhost:6379/0
-          BACKEND_SECRET_KEY:   ci-test-secret-key-32chars!!!!!
+          BACKEND_SECRET_KEY:   ${{ secrets.CI_BACKEND_SECRET }}
           OPENAI_API_KEY:       llm-placeholder-ci
           LOG_FORMAT:           plain
         run: |
@@ -208,7 +222,7 @@ jobs:
         working-directory: frontend
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
-          NEXTAUTH_SECRET:     ci-test-secret
+          NEXTAUTH_SECRET:     ${{ secrets.CI_NEXTAUTH_SECRET }}
           NEXTAUTH_URL:        http://localhost:3000
         run: npm run build
 
