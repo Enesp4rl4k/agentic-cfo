@@ -1,5 +1,19 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from __future__ import annotations
+
+import warnings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ── Known-insecure default values (SEC-7) ─────────────────────────────────────
+_INSECURE_SECRETS: frozenset[str] = frozenset({
+    "dev-secret-change-in-production",
+    "dev-secret-change-in-production-32chars!!",
+    "changeme",
+    "secret",
+    "password",
+    "",
+})
 
 
 class Settings(BaseSettings):
@@ -24,6 +38,72 @@ class Settings(BaseSettings):
     # App
     backend_secret_key: str = "dev-secret-change-in-production"
     backend_cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
+    backend_url:  str = "http://localhost:8000"
+    frontend_url: str = "http://localhost:3000"
+
+    # SSO — Microsoft Entra ID (Azure AD) (SEC-1)
+    azure_tenant_id:     str = ""   # "common" for multi-tenant, or specific tenant GUID
+    azure_client_id:     str = ""
+    azure_client_secret: str = ""
+
+    # SSO — Google Workspace (SEC-1)
+    google_client_id:     str = ""
+    google_client_secret: str = ""
+
+    # SSO — GitHub (SEC-1, optional)
+    github_client_id:     str = ""
+    github_client_secret: str = ""
+
+    # Field-level encryption (SEC-2)
+    # NOTE: Set field_encryption_key to a 32-byte Fernet key and enable this
+    # in production to encrypt OAuth tokens and other sensitive DB fields.
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    field_encryption_key:     str  = ""
+    field_encryption_enabled: bool = False  # Set True in production once key is configured
+
+    # Open Banking (INT-2) — per-bank credentials
+    openbanking_akbank_client_id:      str = ""
+    openbanking_akbank_client_secret:  str = ""
+    openbanking_garanti_client_id:     str = ""
+    openbanking_garanti_client_secret: str = ""
+    openbanking_isbank_client_id:      str = ""
+    openbanking_isbank_client_secret:  str = ""
+    openbanking_yapikredi_client_id:     str = ""
+    openbanking_yapikredi_client_secret: str = ""
+
+    # E-ticaret (INT-4)
+    shopify_shop_domain:    str = ""
+    shopify_access_token:   str = ""
+    trendyol_supplier_id:   str = ""
+    trendyol_api_key:       str = ""
+    trendyol_api_secret:    str = ""
+
+    # Google Sheets (INT-5) — base64-encoded service account JSON
+    google_sheets_service_account: str = ""
+
+    # Webhook / notification outbound (INT-6)
+    # NOTE: slack_webhook_url and smtp_* are defined ONCE here.
+    # Per-org overrides are stored in the alert_preferences DB table.
+    slack_webhook_url:  str = ""          # Global fallback; per-org overrides in DB
+    teams_webhook_url:  str = ""
+    custom_webhook_url: str = ""
+
+    # WhatsApp Business notifications (optional)
+    # Meta Cloud API: https://developers.facebook.com/docs/whatsapp/cloud-api
+    whatsapp_phone_number_id: str = ""    # Sender phone number ID from Meta console
+    whatsapp_access_token:    str = ""    # System user token (never expires)
+    whatsapp_api_version:     str = "v19.0"
+    # Twilio WhatsApp fallback (sandbox: https://www.twilio.com/console/sms/whatsapp/sandbox)
+    twilio_account_sid:   str = ""
+    twilio_auth_token:    str = ""
+    twilio_whatsapp_from: str = ""        # e.g. "whatsapp:+14155238886"
+
+    # SMTP email notifications
+    smtp_host:         str = "smtp.gmail.com"
+    smtp_port:         int = 587
+    smtp_user:         str = ""
+    smtp_password:     str = ""
+    notification_from: str = "noreply@aicfo.app"
 
     # TCMB EVDS API (optional — benchmark data falls back to static if not set)
     # Get free key: https://evds2.tcmb.gov.tr/index.php?lang=tr
@@ -48,26 +128,45 @@ class Settings(BaseSettings):
     open_banking_redirect_uri: str  = "http://localhost:8000/api/v1/open-banking/callback"
 
     # Storage
-    storage_backend: str = "local"
+    storage_backend:    str = "local"
     storage_local_path: str = "./uploads"
 
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
-    llm_model: str = "deepseek-chat"
+    llm_model:       str   = "deepseek-chat"
     llm_temperature: float = 0.0
-    llm_max_tokens: int = 16384
+    llm_max_tokens:  int   = 16384
     # DeepSeek: https://api.deepseek.com
     # OpenAI:   https://api.openai.com/v1  (or leave empty)
     llm_base_url: str = "https://api.deepseek.com"
 
     # File upload
     max_upload_size_mb: int = 10
+    # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.
+    auto_enqueue_analysis_on_upload: bool = True
+    # RAG maintenance: tamamlanmış job'lar için eksik chunk index backfill.
+    rag_backfill_enabled: bool = True
+    rag_backfill_lookback_days: int = 14
 
     # Dev mode: use SQLite instead of PostgreSQL
     use_sqlite: bool = True
 
     # Demo mode: enables /demo/seed endpoint and pre-loaded sample data
-    demo_mode: bool = False
-    demo_company_name: str = "TechNova Yazılım A.Ş."
+    demo_mode:         bool = False
+    demo_company_name: str  = "TechNova Yazılım A.Ş."
+
+    # Stripe Billing (STRIPE sprint)
+    stripe_secret_key:      str = ""
+    stripe_webhook_secret:  str = ""
+    stripe_publishable_key: str = ""
+    # Stripe Price IDs (set in .env after creating products in Stripe Dashboard)
+    stripe_price_starter_monthly:    str = ""
+    stripe_price_starter_yearly:     str = ""
+    stripe_price_pro_monthly:        str = ""
+    stripe_price_pro_yearly:         str = ""
+    stripe_price_enterprise_monthly: str = ""
+    stripe_price_enterprise_yearly:  str = ""
+
+    # ── Derived properties ────────────────────────────────────────────────────
 
     @property
     def database_url(self) -> str:
@@ -97,6 +196,39 @@ class Settings(BaseSettings):
     def secret_key(self) -> str:
         """JWT signing secret — alias for backend_secret_key."""
         return self.backend_secret_key
+
+    def validate_production_security(self) -> None:
+        """
+        Raise ValueError if security-critical settings are insecure.
+
+        Call this from application startup when USE_SQLITE=False (i.e. production).
+        In SQLite/dev mode, only a warning is emitted so local dev is not blocked.
+        """
+        issues: list[str] = []
+
+        if self.backend_secret_key in _INSECURE_SECRETS:
+            issues.append(
+                "BACKEND_SECRET_KEY is set to an insecure default. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+
+        if self.field_encryption_enabled and not self.field_encryption_key:
+            issues.append(
+                "FIELD_ENCRYPTION_ENABLED=true but FIELD_ENCRYPTION_KEY is empty. "
+                "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            )
+
+        if not self.use_sqlite and issues:
+            # Production mode — hard fail
+            raise ValueError(
+                "Production security check failed:\n"
+                + "\n".join(f"  • {i}" for i in issues)
+            )
+
+        if issues:
+            # Dev/SQLite mode — warn only
+            for issue in issues:
+                warnings.warn(f"⚠️  Security warning: {issue}", stacklevel=3)
 
 
 @lru_cache

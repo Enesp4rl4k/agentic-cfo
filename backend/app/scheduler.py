@@ -328,13 +328,270 @@ async def _generate_morning_brief() -> None:
             logger.warning("Could not store morning brief in Redis: %s", exc)
 
 
+async def _nightly_intelligence_run() -> None:
+    """
+    Nightly Intelligence Run — Her gece 02:00 UTC'de çalışır.
+
+    Her organizasyon için:
+    1. Son 48 saatte tamamlanan CFO job'larını topla
+    2. AlertRouter ile karar ver (dedup + severity scoring)
+    3. NotificationService ile teslim et (Slack + email + in-app)
+
+    Org başına max 1 run — idempotent (aynı fingerprint tekrar teslim edilmez).
+    """
+    from app.database import get_session_factory, engine
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.models.report import Report, ReportFormat
+    from app.models.organization import Organization
+    from app.models.in_app_notification import InAppNotification
+    from app.services.alert_router import AlertRouter, RawAlert
+    from app.services.notification_service import NotificationService
+    from sqlalchemy import select, desc
+
+    logger.info("Scheduler: starting nightly intelligence run")
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+
+    async with get_session_factory(engine())() as db:
+        # Get all orgs
+        org_result = await db.execute(select(Organization))
+        orgs = org_result.scalars().all()
+
+        if not orgs:
+            logger.info("Scheduler: no organizations found — skipping nightly run")
+            return
+
+        notification_svc = NotificationService()
+
+        for org in orgs:
+            try:
+                await _process_org_nightly(
+                    org=org,
+                    db=db,
+                    cutoff=cutoff,
+                    notification_svc=notification_svc,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Nightly run failed for org=%s: %s", org.id, exc, exc_info=True
+                )
+
+        logger.info("Scheduler: nightly intelligence run completed for %d orgs", len(orgs))
+
+
+async def _process_org_nightly(org, db, cutoff, notification_svc) -> None:
+    """Process a single org in the nightly run."""
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.models.report import Report, ReportFormat
+    from app.services.alert_router import AlertRouter, RawAlert
+    from sqlalchemy import select, desc
+
+    # Find completed jobs for this org in last 48h
+    job_result = await db.execute(
+        select(AnalysisJob)
+        .where(
+            AnalysisJob.org_id == org.id,
+            AnalysisJob.status == JobStatus.COMPLETED,
+            AnalysisJob.completed_at >= cutoff,
+        )
+        .order_by(desc(AnalysisJob.completed_at))
+        .limit(5)
+    )
+    jobs = job_result.scalars().all()
+
+    if not jobs:
+        logger.debug("Nightly: org=%s has no recent jobs — skipping", org.id)
+        return
+
+    all_raw_alerts: list[RawAlert] = []
+
+    for job in jobs:
+        rep_result = await db.execute(
+            select(Report)
+            .where(
+                Report.job_id == job.id,
+                Report.report_format == ReportFormat.JSON,
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+        rep = rep_result.scalar_one_or_none()
+        if not rep or not rep.data:
+            continue
+
+        d = rep.data
+        ts = job.completed_at or datetime.now(timezone.utc)
+
+        # Extract CFO alerts from all dashboard sections
+        for section in ("cashflow", "forecast", "pnl", "budget"):
+            for a in (d.get(section) or {}).get("alerts") or []:
+                all_raw_alerts.append(RawAlert(
+                    level=a.get("level", "warning"),
+                    message=a.get("message", ""),
+                    domain="cfo",
+                    source=section,
+                    job_id=job.id,
+                    timestamp=ts,
+                    org_id=str(org.id),
+                ))
+
+        # Extract anomaly-based alerts
+        for anomaly in (d.get("anomalies") or {}).get("items") or []:
+            severity = anomaly.get("severity", "medium")
+            level = "critical" if severity == "critical" else (
+                "error" if severity == "high" else "warning"
+            )
+            all_raw_alerts.append(RawAlert(
+                level=level,
+                message=anomaly.get("title", anomaly.get("description", "")),
+                domain="cfo",
+                source="anomaly",
+                job_id=job.id,
+                timestamp=ts,
+                org_id=str(org.id),
+            ))
+
+    if not all_raw_alerts:
+        logger.debug("Nightly: org=%s — no alerts extracted", org.id)
+        return
+
+    # Run smart dedup + routing
+    router = AlertRouter()
+    decisions = router.process_alerts(all_raw_alerts)
+
+    actionable = [d for d in decisions if d.action.value in ("deliver", "escalate")]
+    if not actionable:
+        logger.debug("Nightly: org=%s — all alerts suppressed/deduped", org.id)
+        return
+
+    logger.info(
+        "Nightly: org=%s — delivering %d/%d alerts",
+        org.id, len(actionable), len(decisions),
+    )
+
+    # Deliver via NotificationService
+    await notification_svc.deliver(
+        decisions=actionable,
+        org_id=str(org.id),
+        org_name=org.name or f"Org {org.id}",
+        db=db,
+    )
+
+
+async def _daily_active_org_analysis() -> None:
+    """
+    FAZ-2: Daily intelligence run — 08:00 UTC.
+
+    For every active org that has uploaded data in the last 30 days but
+    has NOT completed a CFO analysis in the last 24 hours, enqueue a
+    fresh CFO pipeline run.
+
+    This makes the platform self-updating — orgs get daily analysis
+    without any manual trigger.
+
+    Idempotent: skips orgs that already have a recent completed job.
+    """
+    from app.database import get_session_factory, engine
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.models.organization import Organization
+    from sqlalchemy import select, desc, func
+    from datetime import timedelta
+
+    logger.info("Scheduler: starting daily active-org analysis run")
+    now = datetime.now(timezone.utc)
+    cutoff_recent = now - timedelta(hours=24)    # skip if already ran today
+    cutoff_active = now - timedelta(days=30)     # only orgs active in last 30d
+
+    async with get_session_factory(engine())() as db:
+        # Find orgs that have uploaded data recently
+        active_org_result = await db.execute(
+            select(AnalysisJob.org_id)
+            .where(
+                AnalysisJob.org_id.isnot(None),
+                AnalysisJob.created_at >= cutoff_active,
+            )
+            .group_by(AnalysisJob.org_id)
+        )
+        active_org_ids = [row[0] for row in active_org_result.all()]
+
+        if not active_org_ids:
+            logger.info("Scheduler: no active orgs found — skipping daily run")
+            return
+
+        queued = 0
+        skipped = 0
+
+        for org_id in active_org_ids:
+            try:
+                # Check if a completed job exists in last 24h for this org
+                recent_result = await db.execute(
+                    select(AnalysisJob.id).where(
+                        AnalysisJob.org_id == org_id,
+                        AnalysisJob.status == JobStatus.COMPLETED,
+                        AnalysisJob.completed_at >= cutoff_recent,
+                    ).limit(1)
+                )
+                if recent_result.scalar_one_or_none():
+                    skipped += 1
+                    continue
+
+                # Find the most recent PENDING or COMPLETED job with a file
+                latest_result = await db.execute(
+                    select(AnalysisJob)
+                    .where(
+                        AnalysisJob.org_id == org_id,
+                        AnalysisJob.file_path.isnot(None),
+                    )
+                    .order_by(desc(AnalysisJob.created_at))
+                    .limit(1)
+                )
+                latest_job = latest_result.scalar_one_or_none()
+
+                if not latest_job:
+                    skipped += 1
+                    continue
+
+                # Create a new analysis job pointing to the same file
+                import uuid as _uuid
+                new_job = AnalysisJob(
+                    id=str(_uuid.uuid4()),
+                    status=JobStatus.PENDING,
+                    filename=latest_job.filename,
+                    file_path=latest_job.file_path,
+                    file_type=latest_job.file_type,
+                    user_id=latest_job.user_id,
+                    org_id=org_id,
+                )
+                db.add(new_job)
+                await db.flush()  # get the new_job.id
+
+                from app.worker import enqueue_analysis
+                await enqueue_analysis(new_job.id)
+                queued += 1
+
+                logger.info(
+                    "Scheduler: daily run — enqueued job=%s for org=%s",
+                    new_job.id, org_id,
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "Scheduler: daily run failed for org=%s: %s", org_id, exc
+                )
+
+        await db.commit()
+        logger.info(
+            "Scheduler: daily run complete — queued=%d skipped=%d total_orgs=%d",
+            queued, skipped, len(active_org_ids),
+        )
+
+
 def get_scheduler() -> AsyncIOScheduler:
     """Return the singleton scheduler (create if needed)."""
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
 
-        # Daily at 06:00 UTC — scan recent jobs
+        # Daily at 06:00 UTC — scan recent jobs for anomalies
         _scheduler.add_job(
             _scan_recent_jobs,
             CronTrigger(hour=6, minute=0),
@@ -361,7 +618,222 @@ def get_scheduler() -> AsyncIOScheduler:
             max_instances=1,
         )
 
+        # Nightly at 02:00 UTC — full intelligence run + notifications
+        _scheduler.add_job(
+            _nightly_intelligence_run,
+            CronTrigger(hour=2, minute=0),
+            id="nightly_intelligence_run",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # FAZ-2: Daily at 08:00 UTC — re-analyze active orgs automatically
+        _scheduler.add_job(
+            _daily_active_org_analysis,
+            CronTrigger(hour=8, minute=0),
+            id="daily_active_org_analysis",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # PROACTIVE: Every hour — KRI scan + alert dispatch
+        _scheduler.add_job(
+            _hourly_proactive_kri_scan,
+            CronTrigger(minute=15),   # Her saatin 15. dakikasında
+            id="hourly_proactive_kri_scan",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # ERP SYNC: Daily at 06:30 UTC — scheduled ERP sync for active integrations
+        _scheduler.add_job(
+            _daily_erp_sync,
+            CronTrigger(hour=6, minute=30),
+            id="daily_erp_sync",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # DQ-5: Hourly — check and run due SyncSchedules (ERP/OB/eFatura)
+        _scheduler.add_job(
+            _run_scheduled_syncs,
+            CronTrigger(minute=45),   # Her saatin 45. dakikasında
+            id="scheduled_data_syncs",
+            replace_existing=True,
+        )
+
+        # RAG maintenance: her 2 saatte bir eksik chunk indexlerini tamamla.
+        _scheduler.add_job(
+            _rag_backfill_maintenance,
+            CronTrigger(minute=5, hour="*/2"),
+            id="rag_backfill_maintenance",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
+        _scheduler.add_job(
+            _nightly_usage_prune,
+            CronTrigger(hour=3, minute=0),
+            id="nightly_usage_prune",
+            replace_existing=True,
+            max_instances=1,
+        )
+
     return _scheduler
+
+
+async def _hourly_proactive_kri_scan() -> None:
+    """
+    Saatlik KRI tarama ve proaktif alert dispatch.
+    Her org icin Risk Kernel calistirir, esik asiminda cascade + alert.
+    """
+    try:
+        from app.services.proactive_alerts import get_proactive_orchestrator
+        from app.database import get_session_factory, engine
+        async with get_session_factory(engine())() as db:
+            orchestrator = get_proactive_orchestrator(db=db)
+            result       = await orchestrator.run_scheduled_scan()
+            if result.get("total_alerts", 0) > 0:
+                logger.info(
+                    "Proactive KRI scan: orgs=%d alerts=%d",
+                    result.get("scanned", 0), result.get("total_alerts", 0),
+                )
+    except Exception as exc:
+        logger.error("Hourly proactive scan hatasi: %s", exc)
+
+
+async def _nightly_usage_prune() -> None:
+    """
+    Nightly: Delete usage_events older than 90 days.
+    Prevents unbounded table growth — idempotent.
+    """
+    try:
+        from app.services.usage_meter import prune_old_usage_events
+        from app.database import get_session_factory, engine
+        async with get_session_factory(engine())() as db:
+            deleted = await prune_old_usage_events(db=db, days=90)
+            if deleted:
+                logger.info("Usage prune: deleted %d old events", deleted)
+    except Exception as exc:
+        logger.error("Usage prune hatasi: %s", exc)
+
+
+async def _daily_erp_sync() -> None:
+    """
+    Gunluk ERP sync: Parasut gibi OAuth tabanli entegrasyonlari sync et.
+    CSV tabanli entegrasyonlar (Logo Tiger, Mikro) manual trigger bekler.
+    """
+    try:
+        from app.services.erp.erp_sync_runner import run_scheduled_erp_sync
+        from app.database import get_session_factory, engine
+        async with get_session_factory(engine())() as db:
+            result = await run_scheduled_erp_sync(db=db)
+            logger.info("Daily ERP sync: synced=%d", result.get("synced", 0))
+    except Exception as exc:
+        logger.error("Daily ERP sync hatasi: %s", exc)
+
+
+async def _run_scheduled_syncs() -> None:
+    """
+    DQ-5: Run all due SyncSchedule entries.
+    Pulls data from ERP/Open Banking/eFatura sources and starts analysis jobs.
+    Called every hour — each SyncSchedule checks its own frequency/hour internally.
+    """
+    try:
+        from app.services.scheduled_sync import run_due_syncs
+        from app.config import get_settings
+        from app.database import get_session_factory, engine
+        settings = get_settings()
+        async with get_session_factory(engine())() as db:
+            results = await run_due_syncs(db=db, settings=settings)
+            if results:
+                logger.info(
+                    "ScheduledSync: ran %d sync(s) — %d success, %d failed",
+                    len(results),
+                    sum(1 for r in results if r.status == "success"),
+                    sum(1 for r in results if r.status == "failed"),
+                )
+    except Exception as exc:
+        logger.error("ScheduledSync runner error: %s", exc)
+
+
+async def _rag_backfill_maintenance() -> None:
+    """
+    Backfill missing rag_chunks for recently completed jobs (idempotent).
+    """
+    try:
+        from app.config import get_settings
+        from app.database import get_session_factory, engine
+        from app.models.analysis_job import AnalysisJob, JobStatus
+        from app.models.transaction import Transaction
+        from app.models.rag_chunk import RagChunk
+        from app.services.rag_service import index_job_text
+        from sqlalchemy import select, func
+
+        settings = get_settings()
+        if not settings.rag_backfill_enabled:
+            return
+
+        lookback_days = max(1, settings.rag_backfill_lookback_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+
+        async with get_session_factory(engine())() as db:
+            jobs_result = await db.execute(
+                select(AnalysisJob).where(
+                    AnalysisJob.status == JobStatus.COMPLETED,
+                    AnalysisJob.completed_at.isnot(None),
+                    AnalysisJob.completed_at >= cutoff,
+                    AnalysisJob.org_id.isnot(None),
+                )
+            )
+            jobs = jobs_result.scalars().all()
+            if not jobs:
+                return
+
+            checked = 0
+            indexed = 0
+            for job in jobs:
+                checked += 1
+                count_result = await db.execute(
+                    select(func.count()).select_from(RagChunk).where(
+                        RagChunk.org_id == str(job.org_id),
+                        RagChunk.job_id == str(job.id),
+                        RagChunk.source_type == "cfo_transactions_raw",
+                    )
+                )
+                if int(count_result.scalar() or 0) > 0:
+                    continue
+
+                tx_result = await db.execute(
+                    select(Transaction.raw_text).where(Transaction.job_id == job.id)
+                )
+                tx_rows = tx_result.all()
+                doc_text = "\n".join((row[0] or "") for row in tx_rows).strip()
+                if not doc_text:
+                    continue
+
+                added = await index_job_text(
+                    db,
+                    org_id=str(job.org_id),
+                    job_id=str(job.id),
+                    source_type="cfo_transactions_raw",
+                    raw_text=doc_text[:80_000],
+                )
+                if added > 0:
+                    indexed += 1
+
+            if indexed > 0:
+                await db.commit()
+
+            logger.info(
+                "RAG backfill maintenance: checked=%d indexed=%d lookback_days=%d",
+                checked,
+                indexed,
+                lookback_days,
+            )
+    except Exception as exc:
+        logger.error("RAG backfill maintenance error: %s", exc)
 
 
 def start_scheduler() -> None:

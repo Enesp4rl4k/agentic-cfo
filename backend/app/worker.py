@@ -104,6 +104,20 @@ async def run_ceo_analysis(
         await pool.set(f"ceo:{job_id}", serialized, ex=86400)  # 24h TTL
 
         logger.info("ARQ worker: CEO job=%s completed", job_id)
+
+        # FAZ-4B: trigger cross-domain correlation for ceo agent
+        if result_data := result:
+            org_id_from_result = result_data.get("org_id") or result_data.get("job_id", "")[:8]
+            # CEO synthesis result → update CompanyContext + trigger feedback rules
+            import asyncio
+            from app.services.auto_chain import on_agent_complete as _oac
+            asyncio.create_task(_oac(
+                agent="ceo",
+                org_id=job_id,  # use job_id as org proxy if org_id not in result
+                result={"job_id": job_id, "ceo_result": result},
+                db=None,
+            ))
+
         return {"ok": True, "job_id": job_id}
 
     except Exception as exc:
@@ -153,11 +167,28 @@ async def run_cfo_analysis(
         await db.commit()
 
         try:
+            # ── FAZ-1C: CapabilityRouter pre-flight check ──────────────────
+            # Build a minimal state to let the router decide which agents run.
+            # If Redis / file not yet parsed, we proceed with defaults.
+            from app.services.capability_router import get_capability_router
+
+            _preflight_state: dict[str, Any] = {"file_path": job.file_path}
+            _routing_plan = get_capability_router().route(_preflight_state)
+            logger.info(
+                "CapabilityRouter pre-flight: job=%s — %s",
+                job_id, _routing_plan.summary(),
+            )
+            # Pass routing plan to pipeline so it can skip unavailable agents
+            run_config = AgentRunConfig(
+                require_review=False,
+                # Future: pass routing_plan.execution_order to orchestrator
+            )
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
                 file_type=job.file_type,
-                run_config=AgentRunConfig(require_review=False),
+                run_config=run_config,
                 budget_input=budget_input,
             )
 
@@ -188,6 +219,31 @@ async def run_cfo_analysis(
                     confidence=tx_data.get("confidence"),
                 )
                 db.add(tx)
+
+            # RAG (v1) indexing: store CFO raw_text evidence chunks.
+            # Non-fatal: indexleme başarısız olsa bile job raporu yine yayınlanır.
+            try:
+                if job.org_id:
+                    from app.services.rag_service import index_job_text
+
+                    # Use the pipeline output raw_text rows as evidence source.
+                    tx_raw_texts = [
+                        (txd.get("raw_text") or "")
+                        for txd in (result.get("transactions") or [])
+                    ]
+                    doc_text = "\n".join(tx_raw_texts).strip()
+                    # Keep storage bounded (chunk_text itself will be truncated by service).
+                    doc_text = doc_text[:80_000]
+
+                    await index_job_text(
+                        db,
+                        org_id=str(job.org_id),
+                        job_id=str(job_id),
+                        source_type="cfo_transactions_raw",
+                        raw_text=doc_text,
+                    )
+            except Exception as exc:
+                logger.debug("RAG indexing failed (non-fatal): %s", exc)
 
             # Persist dashboard JSON report
             if result.get("dashboard_json"):
@@ -242,6 +298,52 @@ async def run_cfo_analysis(
                 "ARQ worker: job=%s completed — status=%s awaiting_review=%s",
                 job_id, job.status, job.awaiting_review,
             )
+
+            # ── FAZ-1A: Trigger auto-chain (fire-and-forget) ──────────────────
+            if job.status == JobStatus.COMPLETED and job.org_id:
+                import asyncio
+                from app.services.auto_chain import on_agent_complete
+
+                chain_result: dict[str, Any] = {
+                    "job_id":     job_id,
+                    "dashboard":  result.get("dashboard_json") or {},
+                    "anomalies":  result.get("anomalies") or [],
+                    "forecast":   (result.get("dashboard_json") or {}).get("forecast"),
+                    "pnl":        (result.get("dashboard_json") or {}).get("pnl"),
+                    "cashflow":   (result.get("dashboard_json") or {}).get("cashflow"),
+                }
+
+                asyncio.create_task(
+                    on_agent_complete(
+                        agent="cfo",
+                        org_id=job.org_id,
+                        result=chain_result,
+                        db=None,
+                    )
+                )
+                logger.info("ARQ worker: auto_chain triggered for cfo → org=%s", job.org_id)
+
+                # ── M3: Invalidate analytics cache on CFO completion ───────────
+                async def _invalidate_analytics_cache(org_id: str) -> None:
+                    try:
+                        from app.services.cache_service import invalidate_org_analytics
+                        count = await invalidate_org_analytics(org_id)
+                        if count:
+                            logger.debug("Cache invalidated: org=%s keys=%d", org_id, count)
+                    except Exception as exc:
+                        logger.debug("Cache invalidation failed (non-fatal): %s", exc)
+
+                asyncio.create_task(_invalidate_analytics_cache(str(job.org_id)))
+
+                # ── S5-1/S5-2: Save to memory + run trend analysis ─────────────
+                asyncio.create_task(
+                    _save_to_memory_and_trend(
+                        org_id=job.org_id,
+                        job_id=job_id,
+                        result=result,
+                    )
+                )
+
             return {"ok": True, "job_id": job_id, "status": str(job.status)}
 
         except Exception as exc:
@@ -270,6 +372,72 @@ async def get_arq_pool() -> ArqRedis:
         settings = get_settings()
         _pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     return _pool
+
+
+async def _save_to_memory_and_trend(
+    org_id: str,
+    job_id: str,
+    result: dict[str, Any],
+) -> None:
+    """
+    S5-1/S5-2: Save CFO result to memory store and run trend analysis.
+    Fire-and-forget background task — non-fatal.
+    """
+    try:
+        from app.services.agent_memory import get_memory_store, EpisodeRecord
+        from app.services.trend_detector import TrendDetector
+        from datetime import datetime, timezone
+
+        pnl = (result.get("dashboard_json") or {}).get("pnl") or {}
+        anomalies = result.get("anomalies") or []
+        period = datetime.now(timezone.utc).strftime("%Y-%m")
+
+        store = get_memory_store()  # auto-configured from settings
+
+        # Save episode to memory
+        episode = EpisodeRecord(
+            org_id=org_id,
+            agent="pnl_agent",
+            period=period,
+            summary={
+                "revenue":      pnl.get("revenue"),
+                "net_income":   pnl.get("net_income"),
+                "net_margin":   pnl.get("net_margin"),
+                "ebitda":       pnl.get("ebitda"),
+                "anomalies":    [{"anomaly_type": a.get("anomaly_type"), "severity": a.get("severity")} for a in anomalies[:10]],
+            },
+            narrative=pnl.get("narrative", ""),
+            job_id=job_id,
+        )
+        await store.save(episode)
+
+        # Run trend analysis
+        detector = TrendDetector(memory_store=store)
+        trend_result = await detector.analyze(
+            org_id=org_id,
+            current_pnl=pnl,
+            current_anomalies=anomalies,
+            current_period=period,
+        )
+
+        # Store trend analysis in Redis for the frontend to read
+        if trend_result.trend_alerts or trend_result.recurring_anomalies:
+            pool = await get_arq_pool()
+            import json
+            await pool.set(
+                f"trend:{org_id}",
+                json.dumps(trend_result.to_dict()),
+                ex=86400,  # 24h TTL
+            )
+            logger.info(
+                "Trend analysis: org=%s alerts=%d recurring=%d",
+                org_id,
+                len(trend_result.trend_alerts),
+                len(trend_result.recurring_anomalies),
+            )
+
+    except Exception as exc:
+        logger.debug("Memory+trend save failed (non-fatal): %s", exc)
 
 
 async def enqueue_analysis(
