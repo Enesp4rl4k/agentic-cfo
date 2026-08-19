@@ -1,0 +1,80 @@
+# Version control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.pyc
+
+# Virtual environments
+.venv
+venv
+env
+ENV
+
+# Test & coverage
+.pytest_cache
+.coverage
+htmlcov
+coverage.xml
+*.cover
+.tox
+
+# Development tools
+.mypy_cache
+.ruff_cache
+.hypothesis
+
+# Editors
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Secrets & env files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+secrets/
+
+# Docs & non-runtime files
+docs/
+*.md
+*.rst
+*.txt
+!requirements.txt
+
+# Alembic (migrations run separately, not baked into image)
+# Uncomment if you run migrations via CI/CD, not inside container:
+# alembic/
+
+# Uploads (mounted as volume at runtime)
+uploads/
+
+# Benchmarks and summaries
+*_SUMMARY.md
+*_CHECKLIST.md
+*_README.md
+DELIVERABLES.md
+DATA_SYNC_GUIDE.md
+
+# Test fixtures and seed data
+tests/
+demo/
+
+# CI/CD
+.github/
+
+# Logs
+*.log
+logs/

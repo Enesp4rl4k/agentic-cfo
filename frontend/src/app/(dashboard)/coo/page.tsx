@@ -5,14 +5,22 @@ export const dynamic = "force-dynamic";
 import { useState, useMemo } from "react";
 import {
   Zap, TrendingDown, Clock, AlertCircle, CheckCircle, Users,
-  Filter, ArrowUp, ArrowDown, Minus,
+  ArrowUp, ArrowDown, Minus, Cpu, RefreshCw, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import {
   LineChart, Line, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell,
 } from "recharts";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, formatNumber, getSeverityColorClass } from "@/lib/dashboard-utils";
+import { useAgentJob } from "@/hooks/useAgentJob";
+import { AgentJobPanel } from "@/components/ui/agent-job-panel";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { useCOOKernelFromJob, useCOOKernelFromOrg } from "@/hooks/useKernels";
+import { useCompanyContextStore } from "@/store/companyContext";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,23 +53,21 @@ interface COOResult {
   error: string | null;
 }
 
-// ── Placeholder Data ──────────────────────────────────────────────────────────
+// ── Sample Data ────────────────────────────────────────────────────────────────
 
-const SAMPLE_DATA = {
-  processes: `process_name,cycle_time,throughput,wip,constraint_type,impact_score
+const SAMPLE_PROCESSES = `process_name,cycle_time,throughput,wip,constraint_type,impact_score
 Order Processing,5,20,45,resource,92
 Payment Verification,3,30,25,policy,78
 Inventory Check,2,40,15,material,65
 Shipping Preparation,4,25,35,resource,88
-Quality Inspection,3,15,20,resource,72`,
+Quality Inspection,3,15,20,resource,72`;
 
-  sla: `ticket_id,title,assigned_to,created_date,due_date,priority,status
+const SAMPLE_SLA = `ticket_id,title,assigned_to,created_date,due_date,priority,status
 T001,Sistem Entegrasyonu,Ali,2024-06-20,2024-07-25,critical,in_progress
 T002,Veri Aktarımı,Fatma,2024-06-18,2024-07-20,high,in_progress
 T003,API Geliştirme,Mehmet,2024-06-22,2024-07-30,high,in_progress
 T004,Raporlama,Ayşe,2024-06-15,2024-07-18,medium,in_progress
-T005,Kullanıcı Arayüzü,Can,2024-06-25,2024-08-05,medium,in_progress`,
-};
+T005,Kullanıcı Arayüzü,Can,2024-06-25,2024-08-05,medium,in_progress`;
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -334,6 +340,124 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
   );
 }
 
+// ── Kernel Banner ─────────────────────────────────────────────────────────────
+
+interface KernelBannerProps {
+  kernel: {
+    sla_compliance: number;
+    overall_ops_score: number;
+    resource_utilization: number;
+    bottleneck_risk: string;
+    scaling_readiness: string;
+    top_bottlenecks: string[];
+    narrative: string;
+    data_source: string;
+    confidence: number;
+  };
+  onDismiss: () => void;
+}
+
+function KernelBanner({ kernel, onDismiss }: KernelBannerProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const scoreColor = kernel.overall_ops_score >= 7
+    ? "text-emerald-400" : kernel.overall_ops_score >= 5
+    ? "text-yellow-400" : "text-red-400";
+
+  const riskColor = kernel.bottleneck_risk === "low"
+    ? "text-emerald-400" : kernel.bottleneck_risk === "medium"
+    ? "text-yellow-400" : "text-red-400";
+
+  return (
+    <Card className="border-primary/30 bg-primary/5 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg bg-primary/10 p-1.5">
+            <Cpu className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="font-semibold text-sm">COO Kernel Analizi</p>
+            <p className="text-xs text-muted-foreground capitalize">
+              {kernel.data_source === "real" ? "Gerçek veri" : "CFO verisinden tahmin"} · %{Math.round(kernel.confidence * 100)} güven
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="text-muted-foreground hover:text-foreground text-xs"
+          aria-label="Kernel banner'ı kapat"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Metrics row */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
+          <p className="text-xs text-muted-foreground">Ops Skoru</p>
+          <p className={cn("text-lg font-bold tabular-nums", scoreColor)}>
+            {kernel.overall_ops_score.toFixed(1)}/10
+          </p>
+        </div>
+        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
+          <p className="text-xs text-muted-foreground">SLA Uyum</p>
+          <p className={cn("text-lg font-bold tabular-nums", kernel.sla_compliance >= 0.95 ? "text-emerald-400" : "text-orange-400")}>
+            %{(kernel.sla_compliance * 100).toFixed(1)}
+          </p>
+        </div>
+        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
+          <p className="text-xs text-muted-foreground">Kaynak Kull.</p>
+          <p className="text-lg font-bold tabular-nums">
+            %{(kernel.resource_utilization * 100).toFixed(0)}
+          </p>
+        </div>
+        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
+          <p className="text-xs text-muted-foreground">Darboğaz Riski</p>
+          <p className={cn("text-lg font-bold capitalize", riskColor)}>
+            {kernel.bottleneck_risk === "low" ? "Düşük" : kernel.bottleneck_risk === "medium" ? "Orta" : "Yüksek"}
+          </p>
+        </div>
+      </div>
+
+      {/* Top bottlenecks */}
+      {kernel.top_bottlenecks.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {kernel.top_bottlenecks.slice(0, 4).map((b, i) => (
+            <span key={i} className="rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-xs text-orange-400">
+              {b}
+            </span>
+          ))}
+          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium border",
+            kernel.scaling_readiness === "ready"
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+              : "bg-red-500/10 border-red-500/20 text-red-400"
+          )}>
+            Ölçeklenme: {kernel.scaling_readiness === "ready" ? "Hazır" : kernel.scaling_readiness === "limited" ? "Sınırlı" : "Hazır değil"}
+          </span>
+        </div>
+      )}
+
+      {/* Narrative (collapsible) */}
+      {kernel.narrative && (
+        <div>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {expanded ? "Özeti Gizle" : "Detaylı Özet"}
+          </button>
+          {expanded && (
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed border-t border-border pt-2">
+              {kernel.narrative}
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function COODashboardPage() {
@@ -341,33 +465,47 @@ export default function COODashboardPage() {
   const [slaCsv, setSlaCsv] = useState("");
   const [company, setCompany] = useState("");
   const [period, setPeriod] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<COOResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [showKernel, setShowKernel] = useState(true);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const { activeCFOJobId, orgId } = useCompanyContextStore();
+  const kernelFromJob = useCOOKernelFromJob();
+  const kernelFromOrg = useCOOKernelFromOrg();
+
+  const {
+    enqueue, reset,
+    status, progress, result, logs, error,
+    isActive, isEnqueueing,
+  } = useAgentJob("coo");
+
+  const cooResult = result as COOResult | null;
+
+  // Auto-load kernel from CFO job or org context
+  const kernelResult = kernelFromOrg.result ?? kernelFromJob.result;
+  const kernelLoading = kernelFromJob.loading || kernelFromOrg.loading;
+
+  function handleLoadKernel() {
+    if (orgId) {
+      kernelFromOrg.load({ org_id: orgId });
+    } else if (activeCFOJobId) {
+      kernelFromJob.load({ job_id: activeCFOJobId });
+    }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!processCsv && !slaCsv) {
-      setError("En az bir veri kaynağı (süreçler veya SLA CSV) gereklidir.");
+      setSubmitError("En az bir veri kaynağı (süreçler veya SLA CSV) gereklidir.");
       return;
     }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiClient.post<COOResult>("/coo/analyze", {
-        company_name: company || null,
-        period: period || null,
-        process_csv: processCsv || null,
-        sla_csv: slaCsv || null,
-      });
-      if (res.data.error) throw new Error(res.data.error);
-      setResult(res.data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Bilinmeyen hata");
-    } finally {
-      setLoading(false);
-    }
+    setSubmitError(null);
+    enqueue({
+      company_name:     company || undefined,
+      reporting_period: period  || undefined,
+      process_csv:      processCsv || undefined,
+      sla_csv:          slaCsv     || undefined,
+    });
   }
 
   // Parse CSV data
@@ -426,19 +564,41 @@ export default function COODashboardPage() {
   return (
     <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Zap className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold">COO Operasyon Panosu</h1>
-          <p className="text-sm text-muted-foreground">
-            Süreç darboğazları, ToC analizi ve SLA izleme
-          </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Zap className="h-6 w-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold">COO Operasyon Panosu</h1>
+            <p className="text-sm text-muted-foreground">
+              Süreç darboğazları, ToC analizi ve SLA izleme
+            </p>
+          </div>
         </div>
+        {(activeCFOJobId || orgId) && !kernelResult && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleLoadKernel}
+            disabled={kernelLoading}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-1.5", kernelLoading && "animate-spin")} />
+            {kernelLoading ? "Kernel yükleniyor…" : "Kernel Analizi Yükle"}
+          </Button>
+        )}
       </div>
 
+      {/* Kernel banner — shows auto-computed ops metrics without CSV */}
+      {kernelResult?.output && showKernel && (
+        <KernelBanner
+          kernel={kernelResult.output as KernelBannerProps["kernel"]}
+          onDismiss={() => setShowKernel(false)}
+        />
+      )}
+
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-4">
+        {/* Company / Period */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="coo-company" className="mb-1 block text-xs font-medium">
               Şirket Adı
@@ -467,72 +627,49 @@ export default function COODashboardPage() {
           </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div>
-            <label htmlFor="coo-processes" className="mb-1 block text-xs font-medium">
-              Süreçler CSV
-            </label>
-            <textarea
-              id="coo-processes"
-              value={processCsv}
-              onChange={(e) => setProcessCsv(e.target.value)}
-              placeholder="CSV verisi yapıştırın..."
-              rows={6}
-              className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-          <div>
-            <label htmlFor="coo-sla" className="mb-1 block text-xs font-medium">
-              SLA / Biletler CSV
-            </label>
-            <textarea
-              id="coo-sla"
-              value={slaCsv}
-              onChange={(e) => setSlaCsv(e.target.value)}
-              placeholder="CSV verisi yapıştırın..."
-              rows={6}
-              className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
+        {/* CSV inputs — file drop or paste */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <AgentCsvInput
+            label="Süreçler CSV"
+            value={processCsv}
+            onChange={setProcessCsv}
+            sampleData={SAMPLE_PROCESSES}
+            description="process_name, cycle_time, throughput, wip, constraint_type, impact_score"
+            disabled={isActive || isEnqueueing}
+          />
+          <AgentCsvInput
+            label="SLA / Biletler CSV"
+            value={slaCsv}
+            onChange={setSlaCsv}
+            sampleData={SAMPLE_SLA}
+            description="ticket_id, title, assigned_to, created_date, due_date, priority, status"
+            disabled={isActive || isEnqueueing}
+          />
         </div>
 
-        {error && (
-          <p role="alert" className="mb-3 rounded border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-400">
-            {error}
+        {submitError && (
+          <p role="alert" className="rounded border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-400">
+            {submitError}
           </p>
         )}
 
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Analiz yapılıyor…" : "COO Analizi Çalıştır"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setProcessCsv(SAMPLE_DATA.processes);
-              setSlaCsv(SAMPLE_DATA.sla);
-            }}
-            className="rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            Örnek Veri Yükle
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={isActive || isEnqueueing}
+          className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {isActive ? "Analiz yapılıyor…" : "COO Analizi Çalıştır"}
+        </button>
       </form>
 
       {/* Results */}
       {(parsedProcesses.length > 0 || parsedTickets.length > 0) && (
         <div className="space-y-6">
-          {/* Row 1: Bottleneck bubble + ToC */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {parsedProcesses.length > 0 && <BottleneckBubbleChart processes={parsedProcesses} />}
             {parsedProcesses.length > 0 && <TOCAnalysis processes={parsedProcesses} />}
           </div>
 
-          {/* Row 2: SLA Trend + At-Risk */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {parsedTickets.length > 0 && <SLATrendChart trend={mockTrend} breachRate={breachRate} />}
             {parsedTickets.length > 0 && (
@@ -540,9 +677,9 @@ export default function COODashboardPage() {
             )}
           </div>
 
-          {result?.error && (
+          {cooResult?.error && (
             <div role="alert" className="rounded border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-400">
-              Hata: {result.error}
+              Hata: {cooResult.error}
             </div>
           )}
         </div>

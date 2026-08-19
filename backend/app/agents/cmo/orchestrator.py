@@ -285,16 +285,18 @@ async def run_cmo_pipeline(
     campaign_csv: str | None = None,
     funnel_csv: str | None = None,
     cohort_csv: str | None = None,
+    org_id: str | None = None,   # S2-3: cross-domain context
 ) -> CMOState:
     """
     Run the full CMO pipeline.
+    S2-3: org_id enables CFO (opex_marketing) + COO (delivery) context enrichment.
     At least one of campaign_csv, funnel_csv, cohort_csv must be provided.
     Returns the final CMOState.
     """
     if not any([campaign_csv, funnel_csv, cohort_csv]):
         raise ValueError("At least one of campaign_csv, funnel_csv, or cohort_csv is required.")
 
-    initial: CMOState = {
+    base: CMOState = {
         "job_id":       job_id,
         "company_name": company_name,
         "period":       period,
@@ -307,6 +309,16 @@ async def run_cmo_pipeline(
         "halted":       False,
         "error":        None,
     }
+
+    # S2-3: Inject cross-domain context (CFO + COO) into initial state
+    if org_id:
+        try:
+            from app.services.cross_context_enricher import enrich_initial_state
+            base = await enrich_initial_state("cmo", base, org_id=org_id)  # type: ignore[assignment]
+        except Exception:
+            pass  # non-fatal
+
+    initial = base
 
     result: CMOState = await _cmo_graph.ainvoke(
         initial,

@@ -16,6 +16,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import time
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,8 @@ from app.models.rag_chunk import RagChunk
 from app.database import session_factory
 
 logger = logging.getLogger(__name__)
+_EVIDENCE_CACHE: dict[str, tuple[float, str]] = {}
+_EVIDENCE_CACHE_TTL_SECONDS = 45.0
 
 
 def _tokenise(text: str) -> list[str]:
@@ -183,6 +186,21 @@ async def retrieve_evidence(
     if not org_id or not query.strip():
         return ""
 
+    cache_key = "|".join(
+        [
+            org_id,
+            (job_id or ""),
+            ",".join(job_ids or []),
+            source_type or "",
+            str(top_k),
+            query.strip().lower(),
+        ]
+    )
+    now_ts = time.monotonic()
+    cached = _EVIDENCE_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) <= _EVIDENCE_CACHE_TTL_SECONDS:
+        return cached[1]
+
     async def _run(_db: AsyncSession) -> str:
         # Fetch recent candidate chunks (avoid huge candidate sets for TF-IDF)
         q = select(RagChunk.job_id, RagChunk.chunk_index, RagChunk.chunk_text).where(
@@ -190,12 +208,22 @@ async def retrieve_evidence(
         )
         if source_type:
             q = q.where(RagChunk.source_type == source_type)
+        strict_job_scope = bool(job_id or job_ids)
         if job_id:
             q = q.where(RagChunk.job_id == job_id)
         elif job_ids:
             q = q.where(RagChunk.job_id.in_(job_ids))
         q = q.order_by(RagChunk.created_at.desc()).limit(candidate_limit)
         rows = (await _db.execute(q)).all()
+        # Fallback: if strict job scope returns no evidence, retry org-wide to avoid empty grounding.
+        if not rows and strict_job_scope:
+            q_fallback = select(RagChunk.job_id, RagChunk.chunk_index, RagChunk.chunk_text).where(
+                RagChunk.org_id == org_id
+            )
+            if source_type:
+                q_fallback = q_fallback.where(RagChunk.source_type == source_type)
+            q_fallback = q_fallback.order_by(RagChunk.created_at.desc()).limit(candidate_limit)
+            rows = (await _db.execute(q_fallback)).all()
         if not rows:
             return ""
 
@@ -240,7 +268,13 @@ async def retrieve_evidence(
                 f"- job={jid} chunk={e.chunk_index} score={e.score:.2f}: {e.preview}"
             )
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        _EVIDENCE_CACHE[cache_key] = (time.monotonic(), result)
+        if len(_EVIDENCE_CACHE) > 512:
+            # keep cache bounded: drop oldest by timestamp
+            oldest_key = min(_EVIDENCE_CACHE.items(), key=lambda kv: kv[1][0])[0]
+            _EVIDENCE_CACHE.pop(oldest_key, None)
+        return result
 
     if db is not None:
         return await _run(db)

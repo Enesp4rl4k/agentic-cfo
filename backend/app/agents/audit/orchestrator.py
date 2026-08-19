@@ -476,9 +476,13 @@ async def run_audit_pipeline(
     company_name: str | None = None,
     audit_period: str | None = None,
     settings: Any = None,
+    org_id: str | None = None,   # S2-6: cross-domain context
 ) -> dict[str, Any]:
-    """Run the complete Internal Audit pipeline."""
-    initial: AuditState = {
+    """
+    Run the complete Internal Audit pipeline.
+    S2-6: org_id enables CFO anomaly cross-check context enrichment.
+    """
+    base: AuditState = {
         "findings_csv":  findings_csv,
         "controls_csv":  controls_csv,
         "coverage_csv":  coverage_csv,
@@ -491,8 +495,16 @@ async def run_audit_pipeline(
         "logs":          [],
         "error":         None,
     }
+
+    if org_id:
+        try:
+            from app.services.cross_context_enricher import enrich_initial_state
+            base = await enrich_initial_state("audit", base, org_id=org_id)  # type: ignore[assignment]
+        except Exception:
+            pass
+
     result: AuditState = await _audit_graph.ainvoke(
-        initial, config={"configurable": {"settings": settings}}
+        base, config={"configurable": {"settings": settings}}
     )
     return {
         "findings":      result.get("findings"),

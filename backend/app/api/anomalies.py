@@ -12,11 +12,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.api.auth import get_current_user
+from app.models.user import User
 from app.models.anomaly import Anomaly
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.transaction import Transaction
 
 router = APIRouter()
+
+
+def _check_job_access(job: AnalysisJob, user: User) -> None:
+    if user.org_id and job.org_id and job.org_id != user.org_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
 
 # ── Response helpers ──────────────────────────────────────────────────────────
@@ -44,12 +51,14 @@ def _anomaly_dict(a: Anomaly) -> dict:
 async def list_anomalies(
     job_id: str,
     severity: str | None = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all anomalies for a completed analysis job."""
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
 
     stmt = select(Anomaly).where(Anomaly.job_id == job_id)
     if severity:
@@ -83,6 +92,7 @@ async def list_anomalies(
 @router.post("/anomalies/scan/{job_id}")
 async def scan_anomalies(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -92,6 +102,7 @@ async def scan_anomalies(
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
     if job.status != JobStatus.COMPLETED:
         raise HTTPException(
             status_code=409,

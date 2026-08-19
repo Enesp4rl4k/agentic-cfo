@@ -5,23 +5,20 @@ import {
   TrendingUp, Target, Users, BarChart2,
   AlertTriangle, Megaphone, RefreshCw,
 } from "lucide-react";
+import { useAgentJob, type AgentJobRequest } from "@/hooks/useAgentJob";
+import { AgentJobPanel } from "@/components/ui/agent-job-panel";
+import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 
-// ── API ───────────────────────────────────────────────────────────────────────
+// ── API (legacy — kept for reference, no longer called directly) ───────────────
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { apiClient } from "@/lib/api/client";
 
 async function runCMOAnalysis(body: CMOFormData) {
-  const res = await fetch(`${API}/api/v1/cmo/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
-  }
-  const json = await res.json();
-  return json.data as CMOResult;
+  const res = await apiClient.post<{ data: CMOResult; error: string | null }>(
+    "/cmo/analyze",
+    body
+  );
+  return res.data.data;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -405,37 +402,50 @@ function CMOSummarySection({ summary }: { summary: CMOSummary }) {
 
 // ── Input Form ────────────────────────────────────────────────────────────────
 
-function CMOInputForm({ onResult }: { onResult: (r: CMOResult) => void }) {
+function CMOInputForm({
+  onEnqueue,
+  disabled,
+}: {
+  onEnqueue: (data: AgentJobRequest) => void;
+  disabled?: boolean;
+}) {
   const [form, setForm] = useState<CMOFormData>({});
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.campaign_csv && !form.funnel_csv && !form.cohort_csv) {
       setError("At least one data source is required.");
       return;
     }
-    setLoading(true);
     setError(null);
-    try {
-      const result = await runCMOAnalysis(form);
-      onResult(result);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Analysis failed");
-    } finally {
-      setLoading(false);
-    }
+    onEnqueue({
+      company_name:     form.company_name,
+      reporting_period: form.period,
+      campaign_csv:     form.campaign_csv,
+      funnel_csv:       form.funnel_csv,
+      cohort_csv:       form.cohort_csv,
+    });
   }
 
-  const fields = [
-    { label: "Campaign CSV (Google Ads / Meta Ads)", key: "campaign_csv" as const, placeholder: "Campaign,Channel,Spend,Revenue,Conversions\nSummer Sale,google,5000,18000,120" },
-    { label: "Funnel CSV (HubSpot / Salesforce)", key: "funnel_csv" as const, placeholder: "id,stage,source,created,closed\n1,Won,google,2024-01-05,2024-02-10" },
-    { label: "Cohort CSV (Mixpanel / Amplitude)", key: "cohort_csv" as const, placeholder: "cohort,users,retention_30d,retention_90d,ltv,cac\n2024-01,200,45%,28%,1200,150" },
-  ] as const;
+  const SAMPLE_CAMPAIGN = `Campaign,Channel,Spend,Revenue,Conversions
+Summer Sale,google,5000,18000,120
+Brand Awareness,meta,3200,9600,85
+Product Launch,email,800,4200,210`;
+
+  const SAMPLE_FUNNEL = `id,stage,source,created,closed
+1,Won,google,2024-01-05,2024-02-10
+2,Lost,meta,2024-01-08,2024-02-15
+3,Won,email,2024-01-12,2024-02-20`;
+
+  const SAMPLE_COHORT = `cohort,users,retention_30d,retention_90d,ltv,cac
+2024-01,200,45%,28%,1200,150
+2024-02,180,42%,25%,1100,165
+2024-03,220,48%,31%,1350,140`;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Company / Period */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-muted-foreground mb-1">Company Name</label>
@@ -457,18 +467,33 @@ function CMOInputForm({ onResult }: { onResult: (r: CMOResult) => void }) {
         </div>
       </div>
 
-      {fields.map(({ label, key, placeholder }) => (
-        <div key={key}>
-          <label className="block text-xs text-muted-foreground mb-1">{label}</label>
-          <textarea
-            className="w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground font-mono resize-none"
-            rows={4}
-            placeholder={placeholder}
-            value={form[key] ?? ""}
-            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          />
-        </div>
-      ))}
+      {/* CSV inputs — file drop or paste */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <AgentCsvInput
+          label="Campaign CSV (Google Ads / Meta Ads)"
+          value={form.campaign_csv ?? ""}
+          onChange={(v) => setForm(f => ({ ...f, campaign_csv: v }))}
+          sampleData={SAMPLE_CAMPAIGN}
+          description="Campaign, Channel, Spend, Revenue, Conversions"
+          disabled={disabled}
+        />
+        <AgentCsvInput
+          label="Funnel CSV (HubSpot / Salesforce)"
+          value={form.funnel_csv ?? ""}
+          onChange={(v) => setForm(f => ({ ...f, funnel_csv: v }))}
+          sampleData={SAMPLE_FUNNEL}
+          description="id, stage, source, created, closed"
+          disabled={disabled}
+        />
+        <AgentCsvInput
+          label="Cohort CSV (Mixpanel / Amplitude)"
+          value={form.cohort_csv ?? ""}
+          onChange={(v) => setForm(f => ({ ...f, cohort_csv: v }))}
+          sampleData={SAMPLE_COHORT}
+          description="cohort, users, retention_30d, retention_90d, ltv, cac"
+          disabled={disabled}
+        />
+      </div>
 
       {error && (
         <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -478,11 +503,11 @@ function CMOInputForm({ onResult }: { onResult: (r: CMOResult) => void }) {
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={disabled}
         className="flex items-center gap-2 rounded bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
-        {loading && <RefreshCw className="h-4 w-4 animate-spin" />}
-        {loading ? "Analyzing..." : "Run CMO Analysis"}
+        {disabled && <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />}
+        {disabled ? "Analyzing..." : "Run CMO Analysis"}
       </button>
     </form>
   );
@@ -491,7 +516,13 @@ function CMOInputForm({ onResult }: { onResult: (r: CMOResult) => void }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CMODashboardPage() {
-  const [result, setResult] = useState<CMOResult | null>(null);
+  const {
+    enqueue, reset,
+    status, progress, result, logs, error,
+    isActive, isEnqueueing,
+  } = useAgentJob("cmo");
+
+  const cmoResult = result as CMOResult | null;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -505,24 +536,35 @@ export default function CMODashboardPage() {
         </p>
       </div>
 
+      {(isActive || status === "failed") && (
+        <AgentJobPanel
+          status={status}
+          progress={progress}
+          logs={logs}
+          error={error}
+          agentLabel="CMO"
+          onReset={reset}
+        />
+      )}
+
       <div className="rounded-lg border border-border bg-card p-5">
         <h2 className="font-semibold text-foreground mb-4">Input Data</h2>
-        <CMOInputForm onResult={setResult} />
+        <CMOInputForm onEnqueue={enqueue} disabled={isActive || isEnqueueing} />
       </div>
 
-      {result && (
+      {cmoResult && (
         <div className="space-y-6">
-          {result.cmo_summary && <CMOSummarySection summary={result.cmo_summary} />}
+          {cmoResult.cmo_summary && <CMOSummarySection summary={cmoResult.cmo_summary} />}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {result.campaigns && <CampaignSection data={result.campaigns} />}
-            {result.funnel && <FunnelSection data={result.funnel} />}
-            {result.cohorts && <CohortSection data={result.cohorts} />}
+            {cmoResult.campaigns && <CampaignSection data={cmoResult.campaigns} />}
+            {cmoResult.funnel && <FunnelSection data={cmoResult.funnel} />}
+            {cmoResult.cohorts && <CohortSection data={cmoResult.cohorts} />}
           </div>
 
-          {result.error && (
+          {cmoResult.error && (
             <div className="rounded border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              Pipeline error: {result.error}
+              Pipeline error: {cmoResult.error}
             </div>
           )}
         </div>

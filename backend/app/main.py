@@ -59,6 +59,8 @@ async def lifespan(app: FastAPI):
     import app.models.organization     # noqa: F401
     import app.models.pilot            # noqa: F401
     import app.models.company_context  # noqa: F401
+    import app.models.canonical_transaction  # noqa: F401
+    import app.models.sync_run  # noqa: F401
     import app.models.alert_preference     # noqa: F401
     import app.models.in_app_notification  # noqa: F401
     import app.models.agent_job            # noqa: F401

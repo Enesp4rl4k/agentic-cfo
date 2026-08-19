@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -61,6 +61,12 @@ class AnalysisJob(Base):
     awaiting_review: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Connector / sync / ingestion metadata (used by scheduled sync + UI)
+    # NOTE: Keep it small; put large payloads elsewhere.
+    result_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

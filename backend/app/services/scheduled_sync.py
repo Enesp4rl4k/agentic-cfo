@@ -210,6 +210,7 @@ class ScheduledSyncRunner:
             "ScheduledSync: starting %s for org=%s source=%s",
             schedule.schedule_id, schedule.org_id, schedule.source_type
         )
+        sync_run_id: str | None = None
 
         try:
             csv_bytes, filename = await self._pull_data(schedule, settings)
@@ -226,6 +227,13 @@ class ScheduledSyncRunner:
             # Validate data quality
             from app.services.csv_validator import CSVValidator
             validation = CSVValidator.validate(csv_bytes, filename=filename)
+            sync_run_id = await self._start_sync_run(
+                db=db,
+                org_id=schedule.org_id,
+                schedule_id=schedule.schedule_id,
+                provider=schedule.source_type,
+                row_count_raw=validation.row_count,
+            )
 
             if validation.health_score < self.MIN_HEALTH_SCORE:
                 logger.warning(
@@ -243,6 +251,89 @@ class ScheduledSyncRunner:
                     duration_ms=int(time.time() * 1000) - t0,
                 )
 
+            # Normalize into canonical contract and compute quality gate.
+            from app.models.canonical_transaction import CanonicalTransaction
+            from app.services.data_plane.normalization_service import (
+                normalize_csv_transactions,
+                to_insert_dict,
+            )
+            from app.services.data_plane.quality_gate_service import score_sync_quality
+
+            canonical_rows = normalize_csv_transactions(
+                csv_bytes=csv_bytes,
+                column_mapping=validation.column_mapping,
+            )
+            quality = score_sync_quality(
+                validator_health_score=validation.health_score,
+                canonical_row_count=len(canonical_rows),
+            )
+            if quality.should_block:
+                return SyncResult(
+                    schedule_id=schedule.schedule_id,
+                    org_id=schedule.org_id,
+                    source_type=schedule.source_type,
+                    status=SyncStatus.SKIPPED,
+                    row_count=validation.row_count,
+                    health_score=validation.health_score,
+                    error=(
+                        "Data-plane quality gate blocked sync "
+                        f"(score={quality.quality_score})"
+                    ),
+                    duration_ms=int(time.time() * 1000) - t0,
+                )
+
+            for row in canonical_rows:
+                row_data = to_insert_dict(
+                    org_id=schedule.org_id,
+                    source_type=schedule.source_type,
+                    sync_run_id=sync_run_id,
+                    row=row,
+                )
+                # Idempotent upsert across repeated sync pulls.
+                dialect = db.bind.dialect.name if db.bind else ""
+                if dialect == "postgresql":
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                    stmt = pg_insert(CanonicalTransaction).values(**row_data)
+                    await db.execute(
+                        stmt.on_conflict_do_update(
+                            constraint="uq_canonical_tx_org_source_record",
+                            set_={
+                                "sync_run_id": row_data["sync_run_id"],
+                                "transaction_date": row_data["transaction_date"],
+                                "amount_cents": row_data["amount_cents"],
+                                "currency": row_data["currency"],
+                                "direction": row_data["direction"],
+                                "category": row_data["category"],
+                                "counterparty": row_data["counterparty"],
+                                "description": row_data["description"],
+                                "confidence": row_data["confidence"],
+                            },
+                        )
+                    )
+                elif dialect == "sqlite":
+                    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+                    stmt = sqlite_insert(CanonicalTransaction).values(**row_data)
+                    await db.execute(
+                        stmt.on_conflict_do_update(
+                            index_elements=["org_id", "source_type", "source_record_id"],
+                            set_={
+                                "sync_run_id": row_data["sync_run_id"],
+                                "transaction_date": row_data["transaction_date"],
+                                "amount_cents": row_data["amount_cents"],
+                                "currency": row_data["currency"],
+                                "direction": row_data["direction"],
+                                "category": row_data["category"],
+                                "counterparty": row_data["counterparty"],
+                                "description": row_data["description"],
+                                "confidence": row_data["confidence"],
+                            },
+                        )
+                    )
+                else:
+                    db.add(CanonicalTransaction(**row_data))
+
             # Create analysis job
             job_id: str | None = None
             if schedule.auto_analyze:
@@ -251,8 +342,24 @@ class ScheduledSyncRunner:
                     filename=filename,
                     org_id=schedule.org_id,
                     column_mapping=validation.column_mapping,
+                    quality_meta={
+                        "quality_score": quality.quality_score,
+                        "quality_issues": quality.issues,
+                        "quality_should_review": quality.should_review,
+                        "sync_run_id": sync_run_id,
+                    },
                     db=db,
                     settings=settings,
+                )
+
+            if sync_run_id:
+                await self._finish_sync_run(
+                    db=db,
+                    sync_run_id=sync_run_id,
+                    status=SyncStatus.SUCCESS,
+                    row_count_canonical=len(canonical_rows),
+                    quality_score=quality.quality_score,
+                    triggered_job_id=job_id,
                 )
 
             # Send notification
@@ -279,6 +386,16 @@ class ScheduledSyncRunner:
 
         except Exception as exc:
             logger.error("ScheduledSync: error in %s: %s", schedule.schedule_id, exc)
+            if sync_run_id:
+                await self._finish_sync_run(
+                    db=db,
+                    sync_run_id=sync_run_id,
+                    status=SyncStatus.FAILED,
+                    row_count_canonical=0,
+                    quality_score=None,
+                    triggered_job_id=None,
+                    error_message=str(exc),
+                )
             return SyncResult(
                 schedule_id=schedule.schedule_id,
                 org_id=schedule.org_id,
@@ -287,6 +404,52 @@ class ScheduledSyncRunner:
                 error=str(exc),
                 duration_ms=int(time.time() * 1000) - t0,
             )
+
+    async def _start_sync_run(
+        self,
+        *,
+        db: Any,
+        org_id: str,
+        schedule_id: str,
+        provider: str,
+        row_count_raw: int,
+    ) -> str:
+        from app.models.sync_run import SyncRun
+
+        sr = SyncRun(
+            org_id=org_id,
+            schedule_id=schedule_id,
+            provider=provider,
+            status=SyncStatus.RUNNING,
+            row_count_raw=row_count_raw,
+        )
+        db.add(sr)
+        await db.flush()
+        return str(sr.id)
+
+    async def _finish_sync_run(
+        self,
+        *,
+        db: Any,
+        sync_run_id: str,
+        status: str,
+        row_count_canonical: int,
+        quality_score: float | None,
+        triggered_job_id: str | None,
+        error_message: str | None = None,
+    ) -> None:
+        from app.models.sync_run import SyncRun
+
+        sr = await db.get(SyncRun, sync_run_id)
+        if not sr:
+            return
+        sr.status = status
+        sr.row_count_canonical = row_count_canonical
+        sr.quality_score = quality_score
+        sr.triggered_job_id = triggered_job_id
+        sr.error_message = error_message
+        sr.completed_at = datetime.now(timezone.utc)
+        sr.updated_at = datetime.now(timezone.utc)
 
     async def _pull_data(
         self,
@@ -371,6 +534,7 @@ class ScheduledSyncRunner:
         filename: str,
         org_id: str,
         column_mapping: dict[str, str],
+        quality_meta: dict[str, Any] | None,
         db: Any,
         settings: Any,
     ) -> str | None:
@@ -433,16 +597,22 @@ class ScheduledSyncRunner:
                     )
 
             # Save column mapping to job metadata
-            if column_mapping and job:
+            if job:
                 from sqlalchemy import update as sql_update
                 from app.models.analysis_job import AnalysisJob
                 meta = job.result_metadata or {}
-                meta["column_mapping"] = column_mapping
+                if column_mapping:
+                    meta["column_mapping"] = column_mapping
                 meta["sync_auto"] = True
+                if quality_meta:
+                    meta.update(quality_meta)
                 await db.execute(
                     sql_update(AnalysisJob)
                     .where(AnalysisJob.id == job.id)
-                    .values(result_metadata=meta)
+                    .values(
+                        result_metadata=meta,
+                        awaiting_review=bool(quality_meta and quality_meta.get("quality_should_review")),
+                    )
                 )
                 await db.commit()
 

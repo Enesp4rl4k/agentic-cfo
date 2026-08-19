@@ -4,15 +4,18 @@ Audit Log Middleware — FastAPI Starlette middleware.
 Records every mutating request (POST/PUT/PATCH/DELETE) to the audit_logs table.
 
 Behavior:
-  - Runs AFTER the response is sent (non-blocking)
-  - Extracts user identity from JWT token or API key header (best-effort)
+  - Reads the request body BEFORE passing to the route handler (body is re-injected)
+  - Extracts user identity from JWT token (best-effort, no DB hit)
   - Strips sensitive fields from request body (password, token, api_key, secret)
+  - Records response status and duration
   - Skips: GET/HEAD/OPTIONS, health checks, docs, static files
-  - Skips if DB is unavailable (non-fatal — audit failure must not break business logic)
+  - Non-fatal: audit failure must not break business logic
 
-Registration in main.py:
-    from app.middleware.audit import AuditLogMiddleware
-    app.add_middleware(AuditLogMiddleware)
+Fix applied (SEC-6):
+  The original implementation attempted to read request.stream() AFTER the response
+  was already sent, which always yields empty bytes because the ASGI body had
+  already been consumed. The fix buffers the body before calling the route handler
+  and re-injects it so the route can still read it normally.
 """
 from __future__ import annotations
 
@@ -23,28 +26,28 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import Message
 
 logger = logging.getLogger(__name__)
 
-# Paths that should never be audited (high-frequency, low-value)
-_SKIP_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"}
+_SKIP_PATHS    = {"/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"}
 _SKIP_PREFIXES = ("/static", "/_next")
-
-# HTTP methods to audit
 _AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-# Request body fields to redact before storing
 _SENSITIVE_FIELDS = {
     "password", "hashed_password", "token", "access_token", "refresh_token",
     "api_key", "secret", "secret_key", "authorization",
 }
 
+# Max body size to store in the audit log (avoid huge blobs in DB)
+_MAX_BODY_LOG_BYTES = 8 * 1024  # 8 KB
+
 
 def _redact_body(body: dict[str, Any]) -> dict[str, Any]:
-    """Remove sensitive fields from a request body dict."""
     return {
         k: "***REDACTED***" if k.lower() in _SENSITIVE_FIELDS else v
         for k, v in body.items()
@@ -52,24 +55,15 @@ def _redact_body(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_user(request: Request) -> tuple[str | None, str | None, str | None]:
-    """
-    Extract (user_id, email, role) from request.
-
-    Tries JWT token first, then API key.
-    Returns (None, None, None) if not authenticated or token invalid.
-    """
+    """Extract (user_id, email, role) from JWT. Returns (None,None,None) on failure."""
     try:
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
-            token = auth[7:]
             from app.services.auth import decode_token
-            payload = decode_token(token)
+            payload = decode_token(auth[7:])
             return payload.get("sub"), payload.get("email"), payload.get("role")
     except Exception:
         pass
-
-    # API key check — resolve to user in DB (async context needed, skip here)
-    # user_id from API key requires DB lookup — not worth the overhead in middleware
     return None, None, None
 
 
@@ -77,11 +71,12 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
     """
     ASGI middleware that writes an AuditLog row for every mutating request.
 
-    Uses a background task to avoid blocking the response.
+    Body is buffered before the route handler runs, then re-injected so the
+    route can still read it. The audit write happens in a background task.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # ── Fast-path skips ───────────────────────────────────────────────────
+        # Fast-path skips
         if request.method not in _AUDIT_METHODS:
             return await call_next(request)
 
@@ -91,27 +86,36 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in _SKIP_PREFIXES):
             return await call_next(request)
 
+        # ── Buffer request body BEFORE the route handler consumes it ──────────
+        raw_body: bytes = b""
+        try:
+            raw_body = await request.body()
+        except Exception:
+            pass
+
+        # Re-inject body so route handlers can still read it
+        async def _receive() -> Message:
+            return {"type": "http.request", "body": raw_body, "more_body": False}
+
+        request = Request(request.scope, receive=_receive)
+
         # ── Time the request ──────────────────────────────────────────────────
         start = time.monotonic()
         response = await call_next(request)
         duration_ms = int((time.monotonic() - start) * 1000)
 
-        # ── Parse request body (already consumed by this point — best effort) ─
+        # ── Parse body for audit log ──────────────────────────────────────────
         request_body: dict | None = None
         try:
-            # Body was consumed by the route handler; try to get it from scope
-            body_bytes = b""
-            async for chunk in request.stream():
-                body_bytes += chunk
-            if body_bytes:
-                request_body = _redact_body(json.loads(body_bytes))
+            if raw_body and len(raw_body) <= _MAX_BODY_LOG_BYTES:
+                content_type = request.headers.get("content-type", "")
+                if "application/json" in content_type:
+                    request_body = _redact_body(json.loads(raw_body))
         except Exception:
             pass
 
-        # ── Extract user identity ─────────────────────────────────────────────
         user_id, user_email, user_role = _extract_user(request)
 
-        # ── Write audit log in background (fire-and-forget) ──────────────────
         audit_data = {
             "id":              str(uuid.uuid4()),
             "user_id":         user_id,
@@ -128,7 +132,6 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             "created_at":      datetime.now(timezone.utc),
         }
 
-        # Schedule DB write without blocking response
         import asyncio
         asyncio.create_task(self._write_audit(audit_data))
 
@@ -145,7 +148,6 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     async def _write_audit(data: dict) -> None:
-        """Write audit log to DB. Non-fatal — logs warning if it fails."""
         try:
             from app.database import get_session_factory, engine
             from app.models.audit_log import AuditLog

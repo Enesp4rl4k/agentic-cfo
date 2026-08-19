@@ -6,6 +6,7 @@ import {
   BarChart2, DollarSign, UserMinus, UserCheck,
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
+import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -449,19 +450,30 @@ export default function CHRODashboardPage() {
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {inputs.map(({ label, value, set, ph, id }) => (
-            <div key={id}>
-              <label htmlFor={id} className="mb-1 block text-xs font-medium">{label}</label>
-              <textarea
-                id={id}
-                value={value}
-                onChange={(e) => set(e.target.value)}
-                placeholder={ph}
-                rows={6}
-                className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          ))}
+          <AgentCsvInput
+            label="Headcount CSV"
+            value={headcountCsv}
+            onChange={setHeadcountCsv}
+            sampleData={PH.headcount}
+            description="employee_id, department, level, role, fte, start_date, status"
+            disabled={loading}
+          />
+          <AgentCsvInput
+            label="Attrition CSV"
+            value={attritionCsv}
+            onChange={setAttritionCsv}
+            sampleData={PH.attrition}
+            description="employee_id, department, tenure_years, departure_type, reason"
+            disabled={loading}
+          />
+          <AgentCsvInput
+            label="Compensation CSV"
+            value={compensationCsv}
+            onChange={setCompensationCsv}
+            sampleData={PH.compensation}
+            description="employee_id, level, base_salary, equity_annual, market_rate"
+            disabled={loading}
+          />
         </div>
 
         {error && (
@@ -480,12 +492,8 @@ export default function CHRODashboardPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setHeadcountCsv(PH.headcount);
-              setAttritionCsv(PH.attrition);
-              setCompensationCsv(PH.compensation);
-            }}
-            className="rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => { /* sample data loaded via AgentCsvInput */ }}
+            className="hidden rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
           >
             Load Example Data
           </button>

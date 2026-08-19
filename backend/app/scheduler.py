@@ -705,18 +705,16 @@ async def _hourly_proactive_kri_scan() -> None:
 
 async def _nightly_usage_prune() -> None:
     """
-    Nightly: Delete usage_events older than 90 days.
-    Prevents unbounded table growth — idempotent.
+    Nightly: enqueue usage_events prune on the maintenance queue.
     """
     try:
-        from app.services.usage_meter import prune_old_usage_events
-        from app.database import get_session_factory, engine
-        async with get_session_factory(engine())() as db:
-            deleted = await prune_old_usage_events(db=db, days=90)
-            if deleted:
-                logger.info("Usage prune: deleted %d old events", deleted)
+        from app.worker import enqueue_maintenance_job
+
+        enqueued = await enqueue_maintenance_job("run_usage_prune_maintenance")
+        if enqueued:
+            logger.info("Usage prune enqueued to maintenance queue")
     except Exception as exc:
-        logger.error("Usage prune hatasi: %s", exc)
+        logger.error("Usage prune enqueue hatasi: %s", exc)
 
 
 async def _daily_erp_sync() -> None:
@@ -760,80 +758,16 @@ async def _run_scheduled_syncs() -> None:
 
 async def _rag_backfill_maintenance() -> None:
     """
-    Backfill missing rag_chunks for recently completed jobs (idempotent).
+    Enqueue RAG chunk backfill on the maintenance queue (analysis queue stays free).
     """
     try:
-        from app.config import get_settings
-        from app.database import get_session_factory, engine
-        from app.models.analysis_job import AnalysisJob, JobStatus
-        from app.models.transaction import Transaction
-        from app.models.rag_chunk import RagChunk
-        from app.services.rag_service import index_job_text
-        from sqlalchemy import select, func
+        from app.worker import enqueue_maintenance_job
 
-        settings = get_settings()
-        if not settings.rag_backfill_enabled:
-            return
-
-        lookback_days = max(1, settings.rag_backfill_lookback_days)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
-
-        async with get_session_factory(engine())() as db:
-            jobs_result = await db.execute(
-                select(AnalysisJob).where(
-                    AnalysisJob.status == JobStatus.COMPLETED,
-                    AnalysisJob.completed_at.isnot(None),
-                    AnalysisJob.completed_at >= cutoff,
-                    AnalysisJob.org_id.isnot(None),
-                )
-            )
-            jobs = jobs_result.scalars().all()
-            if not jobs:
-                return
-
-            checked = 0
-            indexed = 0
-            for job in jobs:
-                checked += 1
-                count_result = await db.execute(
-                    select(func.count()).select_from(RagChunk).where(
-                        RagChunk.org_id == str(job.org_id),
-                        RagChunk.job_id == str(job.id),
-                        RagChunk.source_type == "cfo_transactions_raw",
-                    )
-                )
-                if int(count_result.scalar() or 0) > 0:
-                    continue
-
-                tx_result = await db.execute(
-                    select(Transaction.raw_text).where(Transaction.job_id == job.id)
-                )
-                tx_rows = tx_result.all()
-                doc_text = "\n".join((row[0] or "") for row in tx_rows).strip()
-                if not doc_text:
-                    continue
-
-                added = await index_job_text(
-                    db,
-                    org_id=str(job.org_id),
-                    job_id=str(job.id),
-                    source_type="cfo_transactions_raw",
-                    raw_text=doc_text[:80_000],
-                )
-                if added > 0:
-                    indexed += 1
-
-            if indexed > 0:
-                await db.commit()
-
-            logger.info(
-                "RAG backfill maintenance: checked=%d indexed=%d lookback_days=%d",
-                checked,
-                indexed,
-                lookback_days,
-            )
+        enqueued = await enqueue_maintenance_job("run_rag_backfill_maintenance")
+        if enqueued:
+            logger.info("RAG backfill enqueued to maintenance queue")
     except Exception as exc:
-        logger.error("RAG backfill maintenance error: %s", exc)
+        logger.error("RAG backfill enqueue error: %s", exc)
 
 
 def start_scheduler() -> None:

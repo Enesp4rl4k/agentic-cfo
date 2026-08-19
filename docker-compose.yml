@@ -19,6 +19,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -33,6 +34,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: runner          # only build up to the runtime stage
+      cache_from:
+        - type=registry,ref=ghcr.io/${GITHUB_REPOSITORY:-local/agentic-cfo-backend}:cache
+    image: ${BACKEND_IMAGE:-agentic-cfo-backend:latest}
     restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8000}:8000"
@@ -42,7 +47,7 @@ services:
       POSTGRES_HOST: postgres
       REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./uploads:/app/uploads
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,12 +57,17 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
+      start_period: 20s
       retries: 5
 
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: runner
+      cache_from:
+        - type=registry,ref=ghcr.io/${GITHUB_REPOSITORY:-local/agentic-cfo-backend}:cache
+    image: ${BACKEND_IMAGE:-agentic-cfo-backend:latest}
     restart: unless-stopped
     command: ["arq", "app.worker.WorkerSettings"]
     env_file:
@@ -66,7 +76,32 @@ services:
       POSTGRES_HOST: postgres
       REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./uploads:/app/uploads
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  worker-maintenance:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runner
+      cache_from:
+        - type=registry,ref=ghcr.io/${GITHUB_REPOSITORY:-local/agentic-cfo-backend}:cache
+    image: ${BACKEND_IMAGE:-agentic-cfo-backend:latest}
+    restart: unless-stopped
+    command: ["arq", "app.worker.MaintenanceWorkerSettings"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,20 +114,31 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runner          # skip deps+builder stages in final image
+      cache_from:
+        - type=registry,ref=ghcr.io/${GITHUB_REPOSITORY:-local/agentic-cfo-frontend}:cache
+    image: ${FRONTEND_IMAGE:-agentic-cfo-frontend:latest}
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     env_file:
       - .env
     environment:
       # SSR / server-side requests: use Docker internal hostname
       BACKEND_INTERNAL_URL: http://backend:8000
       # Client-side (browser) requests: use public hostname
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ > /dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
 
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:   # named volume instead of bind-mount for portability

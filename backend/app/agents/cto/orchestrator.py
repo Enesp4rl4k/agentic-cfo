@@ -199,6 +199,37 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
         ) or "Kritik risk tespit edilmedi."
         scores_text = " | ".join(f"{k}: {v}/10" for k, v in scores.items())
 
+        # S2-1: Cross-domain context (CFO + CHRO) enrichment for CTO narrative
+        cross_context_lines: list[str] = []
+        cfo_sum = state.get("__cfo_summary") or {}
+        chro_sum = state.get("__chro_summary") or {}
+
+        if cfo_sum.get("runway_months") is not None:
+            runway = cfo_sum["runway_months"]
+            cross_context_lines.append(
+                f"Nakit Ömrü (CFO): {runway:.1f} ay"
+                + (" — KRİTİK: Teknik borç yatırımlarını ertelemek gerekebilir" if runway < 6 else "")
+            )
+        if cfo_sum.get("critical_anomalies"):
+            cross_context_lines.append(
+                f"CFO Kritik Anomali: {cfo_sum['critical_anomalies']} adet — altyapı kaynaklı olabilir"
+            )
+        if chro_sum.get("turnover_rate") is not None:
+            turnover = chro_sum["turnover_rate"]
+            if turnover > 0.15:
+                cross_context_lines.append(
+                    f"İşten Ayrılma Oranı (CHRO): %{turnover*100:.0f} — mühendis kadrosu riski"
+                )
+        if chro_sum.get("headcount_change") is not None:
+            cross_context_lines.append(
+                f"Kadro Değişimi (CHRO): {chro_sum['headcount_change']:+d} kişi"
+            )
+
+        cross_context_block = (
+            "\n\nÇapraz Domain Bağlamı (CFO/CHRO):\n" + "\n".join(f"- {l}" for l in cross_context_lines)
+            if cross_context_lines else ""
+        )
+
         response = await llm.ainvoke([
             SystemMessage(content=(
                 "Sen deneyimli bir CTO'sun. Aşağıdaki teknoloji sağlık verilerini analiz et ve "
@@ -206,13 +237,14 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
                 "Yanıt şu yapıda olsun:\n"
                 "1. Genel teknoloji sağlık durumunun 1-2 cümlelik değerlendirmesi (skor odaklı)\n"
                 "2. En kritik 1-2 risk (altyapı, teknik borç veya olay)\n"
-                "3. Yönetimin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
+                "3. CFO/CHRO bağlamını göz önüne alarak yapılması gereken 2-3 somut eylem\n"
                 "Teknik jargonu azalt, CEO'nun anlayacağı dilde yaz."
             )),
             HumanMessage(content=(
                 f"Genel Teknoloji Sağlık Skoru: {overall_health}/10\n"
                 f"Bileşen Skorları: {scores_text}\n\n"
                 f"Önemli Riskler:\n{risks_text}"
+                f"{cross_context_block}"
             )),
         ])
         narrative = response.content.strip()
@@ -312,15 +344,35 @@ async def run_cto_pipeline(
     sprint_csv: str | None = None,
     company_name: str | None = None,
     run_config: CTORunConfig | None = None,
+    # S2-1: Cross-domain context
+    org_id: str | None = None,
+    cfo_context: dict | None = None,    # CFO cashflow, runway
+    chro_context: dict | None = None,   # Headcount, attrition
 ) -> CTOState:
     """
     Run the full CTO analysis pipeline.
+
+    S2-1: org_id + cfo_context + chro_context allow cross-domain enrichment.
+    When CFO data is available (runway, cashflow), the CTO summary gains
+    financial context: "Runway 4 ay → teknik borç azaltma önceliklendirilmeli".
 
     At least one data source required; others are optional.
     All agents gracefully skip when their input is absent.
 
     Returns final CTOState — caller persists to DB.
     """
+    # S2-1: Load cross-domain context from CompanyContext if org_id available
+    enriched_cfo = cfo_context
+    enriched_chro = chro_context
+    if org_id and not enriched_cfo:
+        try:
+            from app.services.agent_context_bridge import enrich_state
+            bridge_result = await enrich_state("cto", {}, org_id=org_id)
+            enriched_cfo = bridge_result.get("__cfo_summary")
+            enriched_chro = bridge_result.get("__chro_summary")
+        except Exception as exc:
+            logger.debug("CTO context bridge failed (non-fatal): %s", exc)
+
     cfg = run_config or DEFAULT_CTO_RUN_CONFIG
     initial_state: CTOState = {
         "job_id": job_id,
@@ -334,6 +386,9 @@ async def run_cto_pipeline(
         "awaiting_review": False,
         "halted": False,
         "error": None,
+        # S2-1: Cross-domain context (injected into summary LLM prompt)
+        "__cfo_summary":  enriched_cfo,
+        "__chro_summary": enriched_chro,
     }
 
     result: CTOState = await cto_graph.ainvoke(

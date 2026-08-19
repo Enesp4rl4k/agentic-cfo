@@ -263,6 +263,20 @@ AGENT_CAPABILITIES: dict[str, AgentCapability] = {
         priority=9,
         token_budget=512,
     ),
+    # MUHASEBE-6: Muhasebe agentı — THP sınıflandırma + double-entry
+    "muhasebe_agent": AgentCapability(
+        name="muhasebe_agent",
+        requires_all=["transactions"],
+        produces=["yevmiye_kayitlari", "mizan", "onay_kuyrugu"],
+        depends_on=["data_ingestion"],
+        priority=8,   # report'tan önce, diğer analizlerden sonra
+        token_budget=1024,  # kural motoru ağırlıklı → düşük LLM maliyeti
+        validator=lambda state: (
+            (True, "")
+            if len(state.get("transactions") or []) >= 1
+            else (False, "THP sınıflandırma için en az 1 işlem gerekli.")
+        ),
+    ),
 }
 
 

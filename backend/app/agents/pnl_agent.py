@@ -24,6 +24,70 @@ def _fmt(cents: int) -> str:
     return f"${cents / 100:,.2f}"
 
 
+def _monthly_buckets(transactions: list[dict[str, Any]], tx_type: str) -> dict[str, int]:
+    """
+    Group transaction amounts by YYYY-MM month key.
+    Returns {month_str: total_cents}.
+    """
+    from collections import defaultdict
+    buckets: dict[str, int] = defaultdict(int)
+    for t in transactions:
+        if t.get("type") != tx_type:
+            continue
+        date_raw = t.get("transaction_date") or t.get("date") or ""
+        month = str(date_raw)[:7]  # "YYYY-MM"
+        if month:
+            buckets[month] += t.get("amount_cents", 0)
+    return dict(sorted(buckets.items()))
+
+
+def _compute_trend(monthly: dict[str, int]) -> dict[str, Any]:
+    """
+    Compute MoM and YoY trends from monthly bucketed data.
+    Returns trend dict with percentage changes.
+    """
+    if not monthly:
+        return {}
+
+    months = sorted(monthly.keys())
+    latest_month = months[-1]
+    latest_val = monthly[latest_month]
+
+    # MoM: compare to previous month
+    mom_pct: float | None = None
+    if len(months) >= 2:
+        prev_val = monthly[months[-2]]
+        if prev_val:
+            mom_pct = round((latest_val - prev_val) / abs(prev_val) * 100, 2)
+
+    # YoY: compare to same month last year
+    yoy_pct: float | None = None
+    if latest_month and len(latest_month) == 7:
+        year, month_num = int(latest_month[:4]), int(latest_month[5:])
+        prev_year_month = f"{year - 1}-{month_num:02d}"
+        if prev_year_month in monthly and monthly[prev_year_month]:
+            yoy_pct = round(
+                (latest_val - monthly[prev_year_month]) / abs(monthly[prev_year_month]) * 100, 2
+            )
+
+    # 3-month average
+    last_3 = [monthly[m] for m in months[-3:]]
+    avg_3m = sum(last_3) // len(last_3) if last_3 else 0
+
+    return {
+        "monthly_series": [{"month": m, "amount": v} for m, v in monthly.items()],
+        "latest_month": latest_month,
+        "mom_change_pct": mom_pct,
+        "yoy_change_pct": yoy_pct,
+        "avg_last_3m": avg_3m,
+        "trend_direction": (
+            "up" if mom_pct and mom_pct > 2 else
+            "down" if mom_pct and mom_pct < -2 else
+            "stable"
+        ),
+    }
+
+
 def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     """Pure calculation — no LLM, no I/O."""
     income_txs = [t for t in transactions if t.get("type") == "income"]
@@ -49,6 +113,10 @@ def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     net_income = ebitda - tax - loan_payments
     net_margin = round(net_income / revenue, 4) if revenue else 0.0
 
+    # S1-1: MoM / YoY trend analysis
+    revenue_trend = _compute_trend(_monthly_buckets(transactions, "income"))
+    expense_trend = _compute_trend(_monthly_buckets(transactions, "expense"))
+
     return {
         "revenue": revenue,
         "cogs": cogs,
@@ -64,6 +132,12 @@ def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "net_margin": net_margin,
         "total_expenses": cogs + total_opex + tax + loan_payments,
         "transaction_count": len(transactions),
+        # S1-1: trend analysis
+        "revenue_trend": revenue_trend,
+        "expense_trend": expense_trend,
+        "revenue_mom_pct": revenue_trend.get("mom_change_pct"),
+        "revenue_yoy_pct": revenue_trend.get("yoy_change_pct"),
+        "revenue_trend_direction": revenue_trend.get("trend_direction", "stable"),
     }
 
 
@@ -133,6 +207,14 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
         pnl["narrative"] = narrative
 
         confidence = 0.95 if pnl["revenue"] > 0 else 0.50
+        pnl["_confidence"] = confidence
+
+        # S3-2: Attach evidence chain (transaction IDs + formula + audit trail)
+        try:
+            from app.services.evidence_builder import get_evidence_builder
+            pnl = get_evidence_builder().attach_pnl_evidence(pnl, transactions)
+        except Exception as ev_exc:
+            logger.debug("Evidence builder (non-fatal): %s", ev_exc)
 
         return SkillResult(
             ok=True,

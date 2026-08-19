@@ -455,6 +455,14 @@ async def run_anomaly_detection(
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         all_anomalies.sort(key=lambda a: severity_order.get(a["severity"], 4))
 
+        # S3-3: Attach evidence to each anomaly
+        try:
+            from app.services.evidence_builder import get_evidence_builder
+            eb = get_evidence_builder()
+            all_anomalies = [eb.attach_anomaly_evidence(a, transactions) for a in all_anomalies]
+        except Exception as ev_exc:
+            logger.debug("Evidence builder (non-fatal): %s", ev_exc)
+
         narrative = await _generate_anomaly_narrative(all_anomalies, settings)
 
         critical_count = sum(1 for a in all_anomalies if a["severity"] == "critical")

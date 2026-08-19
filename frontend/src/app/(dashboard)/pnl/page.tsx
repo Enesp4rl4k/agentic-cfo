@@ -12,8 +12,10 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Upload, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from "lucide-react";
+import { Upload, TrendingUp, TrendingDown, ChevronDown, ChevronRight, BarChart3, ChevronUp, RefreshCw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/hooks/useCFO";
+import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatPercent, cn } from "@/lib/utils";
 import type { PnLData } from "@/types";
 
@@ -518,6 +520,268 @@ export default function PnLPage() {
       <WaterfallChart pnl={pnl} />
       <OpExDrillDown pnl={pnl} />
       <PnLStatement pnl={pnl} />
+      <BenchmarkPanel jobId={jobId} pnl={pnl} />
+    </div>
+  );
+}
+
+// ── Benchmark Panel ───────────────────────────────────────────────────────────
+
+interface BenchmarkMetric {
+  benchmark: { metric: string; sector: string; p25: number; p50: number; p75: number };
+  company_value: number;
+  percentile_position: "bottom_25" | "p25_p50" | "p50_p75" | "top_25";
+  vs_median_pct: number;
+  interpretation: string;
+  recommendation: string;
+}
+
+interface BenchmarkData {
+  sector: string;
+  metrics: Record<string, BenchmarkMetric>;
+  overall_score: number;
+  overall_label: string;
+}
+
+const SECTOR_LABELS: Record<string, string> = {
+  default:       "Genel Ortalama",
+  retail:        "Perakende",
+  manufacturing: "Üretim / İmalat",
+  technology:    "Teknoloji / Yazılım",
+  construction:  "İnşaat / Gayrimenkul",
+  services:      "Hizmet",
+  food_beverage: "Yiyecek-İçecek",
+  logistics:     "Lojistik",
+};
+
+const METRIC_LABELS: Record<string, string> = {
+  gross_margin:    "Brüt Kâr Marjı",
+  net_margin:      "Net Kâr Marjı",
+  ebitda_margin:   "FAVÖK Marjı",
+  opex_to_revenue: "Gider/Ciro Oranı",
+};
+
+function percentileColor(pos: string): { bar: string; badge: string; text: string } {
+  switch (pos) {
+    case "top_25":   return { bar: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", text: "text-emerald-400" };
+    case "p50_p75":  return { bar: "bg-blue-500",    badge: "bg-blue-500/15 text-blue-400 border-blue-500/30",         text: "text-blue-400" };
+    case "p25_p50":  return { bar: "bg-amber-500",   badge: "bg-amber-500/15 text-amber-400 border-amber-500/30",     text: "text-amber-400" };
+    default:         return { bar: "bg-red-500",     badge: "bg-red-500/15 text-red-400 border-red-500/30",           text: "text-red-400" };
+  }
+}
+
+function percentileLabel(pos: string): string {
+  switch (pos) {
+    case "top_25":  return "İlk %25";
+    case "p50_p75": return "%50–75";
+    case "p25_p50": return "%25–50";
+    default:        return "Alt %25";
+  }
+}
+
+function BenchmarkMetricRow({ metricKey, data }: { metricKey: string; data: BenchmarkMetric }) {
+  const [expanded, setExpanded] = useState(false);
+  const colors = percentileColor(data.percentile_position);
+  const label = METRIC_LABELS[metricKey] ?? metricKey;
+  const companyPct = (data.company_value * 100).toFixed(1);
+  const medianPct  = (data.benchmark.p50 * 100).toFixed(1);
+  const delta      = data.vs_median_pct;
+
+  // Position on the bar: 0..1 where p25=0.25, p75=0.75
+  const range = data.benchmark.p75 - data.benchmark.p25;
+  const companyPos = range > 0
+    ? Math.min(1, Math.max(0, (data.company_value - data.benchmark.p25) / range))
+    : 0.5;
+
+  return (
+    <div className="border-b border-border last:border-0">
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/30 transition-state"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {/* Metric name */}
+        <div className="w-40 shrink-0">
+          <p className="text-sm font-medium">{label}</p>
+        </div>
+
+        {/* Company vs benchmark bar */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+            <span>P25: {(data.benchmark.p25 * 100).toFixed(0)}%</span>
+            <span>Medyan: {medianPct}%</span>
+            <span>P75: {(data.benchmark.p75 * 100).toFixed(0)}%</span>
+          </div>
+          <div className="relative h-2 w-full rounded-full bg-muted/40">
+            {/* P25–P75 range bar */}
+            <div className="absolute inset-y-0 left-0 right-0 rounded-full overflow-hidden">
+              <div className="absolute h-full bg-muted/60 rounded-full"
+                style={{
+                  left: "25%",
+                  width: "50%",
+                }}
+              />
+            </div>
+            {/* Median marker */}
+            <div className="absolute top-1/2 -translate-y-1/2 w-0.5 h-3.5 bg-muted-foreground/40 rounded-full"
+              style={{ left: "50%" }}
+            />
+            {/* Company marker */}
+            <div
+              className={cn("absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full ring-2 ring-background shadow-sm", colors.bar)}
+              style={{ left: `calc(${companyPos * 100}% - 5px)` }}
+              title={`${label}: ${companyPct}%`}
+            />
+          </div>
+        </div>
+
+        {/* Company value */}
+        <div className="w-20 text-right shrink-0">
+          <p className={cn("text-sm font-bold tabular-nums", colors.text)}>{companyPct}%</p>
+          <p className={cn("text-[10px]", delta >= 0 ? "text-emerald-400" : "text-red-400")}>
+            {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% vs medyan
+          </p>
+        </div>
+
+        {/* Badge */}
+        <span className={cn("shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold", colors.badge)}>
+          {percentileLabel(data.percentile_position)}
+        </span>
+
+        {/* Expand */}
+        {expanded
+          ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        }
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border/50 bg-muted/10 px-4 py-3 space-y-1.5 animate-slide-down">
+          <p className="text-xs text-foreground">{data.interpretation}</p>
+          {data.recommendation && (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-primary">→ Öneri:</span> {data.recommendation}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) {
+  const [sector, setSector] = useState("default");
+  const [open, setOpen] = useState(false);
+
+  const { data, isLoading, refetch, isFetching } = useQuery<BenchmarkData>({
+    queryKey: ["benchmark", jobId, sector],
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: BenchmarkData }>(
+        `/benchmark/${jobId}?sector=${sector}`
+      );
+      return res.data.data;
+    },
+    enabled: !!jobId && open,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  const overallColors = data
+    ? data.overall_score >= 3
+      ? { badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", text: "text-emerald-400" }
+      : data.overall_score >= 2
+      ? { badge: "bg-amber-500/15 text-amber-400 border-amber-500/30", text: "text-amber-400" }
+      : { badge: "bg-red-500/15 text-red-400 border-red-500/30", text: "text-red-400" }
+    : null;
+
+  return (
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      {/* Header — always visible, click to expand */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-muted/30 transition-state text-left"
+        aria-expanded={open}
+      >
+        <div className="flex items-center gap-2.5">
+          <BarChart3 className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold">Sektör Karşılaştırması</p>
+            <p className="text-[11px] text-muted-foreground">
+              TCMB/BDDK verilerine göre sektör ortalaması ile kıyasla
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {data?.overall_label && overallColors && (
+            <span className={cn("rounded border px-2 py-0.5 text-[10px] font-semibold", overallColors.badge)}>
+              {data.overall_label}
+            </span>
+          )}
+          {open
+            ? <ChevronUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            : <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          }
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {open && (
+        <div className="border-t border-border animate-slide-down">
+          {/* Sector selector */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/10">
+            <label htmlFor="sector-select" className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+              Sektör:
+            </label>
+            <div className="relative">
+              <select
+                id="sector-select"
+                value={sector}
+                onChange={(e) => setSector(e.target.value)}
+                className="appearance-none rounded border border-input bg-background pl-3 pr-8 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring transition-state"
+              >
+                {Object.entries(SECTOR_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" aria-hidden="true" />
+            </div>
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="ml-auto flex items-center gap-1.5 rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-state disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} aria-hidden="true" />
+              {isFetching ? "Yükleniyor…" : "Yenile"}
+            </button>
+          </div>
+
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Benchmark verileri yükleniyor…
+            </div>
+          )}
+
+          {/* Metrics */}
+          {data && (
+            <div>
+              {Object.entries(data.metrics).map(([key, metric]) => (
+                <BenchmarkMetricRow key={key} metricKey={key} data={metric} />
+              ))}
+
+              {/* Footer */}
+              <div className="px-4 py-2.5 bg-muted/10 border-t border-border">
+                <p className="text-[10px] text-muted-foreground">
+                  Kaynak: TCMB/BDDK Sektör İstatistikleri 2023-2024 ·{" "}
+                  {SECTOR_LABELS[data.sector] ?? data.sector}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

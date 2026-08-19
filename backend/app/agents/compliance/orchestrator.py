@@ -420,9 +420,11 @@ async def run_compliance_pipeline(
     regulations_csv: str | None = None,
     company_name: str | None = None,
     audit_period: str | None = None,
+    org_id: str | None = None,   # S2-5: cross-domain context
 ) -> ComplianceState:
     """
     Run the full Compliance analysis pipeline.
+    S2-5: org_id enables CFO (muhasebe anomalileri) context enrichment.
 
     At least one data source required; others are optional.
     All agents gracefully skip when their input is absent.
@@ -435,7 +437,7 @@ async def run_compliance_pipeline(
             "policy_csv, violations_csv, or regulations_csv."
         )
 
-    initial_state: ComplianceState = {
+    base: ComplianceState = {
         "policy_csv":      policy_csv or "",
         "violations_csv":  violations_csv or "",
         "regulations_csv": regulations_csv or "",
@@ -448,6 +450,14 @@ async def run_compliance_pipeline(
         "logs":            [],
         "error":           None,
     }
+
+    if org_id:
+        try:
+            from app.services.cross_context_enricher import enrich_initial_state
+            base = await enrich_initial_state("compliance", base, org_id=org_id)  # type: ignore[assignment]
+            initial_state = base  # type: ignore[assignment]
+        except Exception:
+            pass
 
     result: ComplianceState = await compliance_graph.ainvoke(
         initial_state,

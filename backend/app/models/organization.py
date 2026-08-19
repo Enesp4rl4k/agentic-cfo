@@ -47,6 +47,17 @@ class Organization(Base):
     max_members: Mapped[int] = mapped_column(default=5, nullable=False)
     max_jobs_per_month: Mapped[int] = mapped_column(default=20, nullable=False)
 
+    # Stripe Billing (STRIPE sprint)
+    subscription_plan: Mapped[str] = mapped_column(String(30), default="free", nullable=False)
+    subscription_status: Mapped[str] = mapped_column(
+        String(30), default="inactive", nullable=False
+    )  # inactive | active | past_due | cancelled | trialing
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    subscription_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(

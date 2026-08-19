@@ -82,26 +82,40 @@ def _detect_seasonality(
 def _extrapolate(
     monthly_series: list[dict[str, Any]],
     months_ahead: int,
-    growth_rate: float,
+    revenue_rate: float = 1.01,
+    cost_rate: float = 1.01,
     seasonality_indices: dict[int, float] | None = None,
+    # Deprecated alias kept for backward compatibility — use revenue_rate instead
+    growth_rate: float | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Growth-rate extrapolation with optional seasonality adjustment.
+    Growth-rate extrapolation with independent revenue and cost rates.
 
-    growth_rate: monthly multiplier, e.g. 1.02 = +2%/month, 0.98 = -2%/month.
+    revenue_rate: monthly revenue multiplier, e.g. 1.05 = +5%/month
+    cost_rate:    monthly cost multiplier,    e.g. 0.99 = -1%/month
     seasonality_indices: dict[calendar_month → multiplier] from _detect_seasonality().
-      If provided, each projected month is multiplied by its seasonal index.
+      If provided, each projected month's revenue is multiplied by its seasonal index.
+      Costs get a partial seasonal adjustment (30% of the revenue seasonal effect).
+
+    Note: The old single `growth_rate` parameter incorrectly derived cost_rate as
+    (2 - growth_rate), which caused costs to *decrease* in optimistic scenarios.
+    This is now fixed by explicitly separating revenue_rate and cost_rate.
     """
     if not monthly_series:
         return []
 
+    # Backward compatibility: if only growth_rate passed, derive both rates from it
+    if growth_rate is not None and revenue_rate == 1.01 and cost_rate == 1.01:
+        revenue_rate = growth_rate
+        cost_rate = 1.0  # neutral cost assumption for legacy callers
+
     # Use average of last 3 months as baseline
     recent = monthly_series[-3:] if len(monthly_series) >= 3 else monthly_series
-    avg_in = int(statistics.mean(e["in"] for e in recent))
+    avg_in  = int(statistics.mean(e["in"]  for e in recent))
     avg_out = int(statistics.mean(e["out"] for e in recent))
 
     projected: list[dict[str, Any]] = []
-    cur_in = avg_in
+    cur_in  = avg_in
     cur_out = avg_out
 
     last_month = monthly_series[-1]["month"]
@@ -112,22 +126,25 @@ def _extrapolate(
         if month > 12:
             month = 1
             year += 1
-        cur_in = int(cur_in * growth_rate)
-        cur_out = int(cur_out * (2 - growth_rate))
 
-        # Apply seasonality adjustment if available
+        cur_in  = int(cur_in  * revenue_rate)
+        cur_out = int(cur_out * cost_rate)
+
+        # Apply seasonality adjustment to revenue
         seasonal_adj = 1.0
         if seasonality_indices:
             seasonal_adj = seasonality_indices.get(month, 1.0)
 
-        adjusted_in = int(cur_in * seasonal_adj)
-        adjusted_out = int(cur_out * (1 + (1 - seasonal_adj) * 0.3))  # costs partially seasonal
+        adjusted_in  = int(cur_in  * seasonal_adj)
+        # Costs get a partial seasonal effect (30% of revenue swing)
+        cost_seasonal = 1.0 + (seasonal_adj - 1.0) * 0.3
+        adjusted_out = int(cur_out * cost_seasonal)
 
         projected.append({
             "month": f"{year:04d}-{month:02d}",
-            "in": adjusted_in,
-            "out": adjusted_out,
-            "net": adjusted_in - adjusted_out,
+            "in":    adjusted_in,
+            "out":   adjusted_out,
+            "net":   adjusted_in - adjusted_out,
             "projected": True,
             "seasonal_index": round(seasonal_adj, 3) if seasonality_indices else None,
         })
@@ -141,6 +158,11 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
     Seasonality detection runs on the historical monthly_series.
     If >= 12 months of data exist, each projected month is adjusted by
     its historical seasonal index (e.g. December typically higher for retail).
+
+    Scenario definitions (revenue_rate, cost_rate):
+      optimistic:  revenue +5%/mo, costs -1%/mo (efficiency gains)
+      base:        revenue +1%/mo, costs +1%/mo (steady state)
+      pessimistic: revenue -3%/mo, costs +1%/mo (contracting market)
     """
     series = cashflow.get("monthly_series", [])
 
@@ -148,9 +170,9 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
     seasonality_indices = _detect_seasonality(series)
     has_seasonality = bool(seasonality_indices)
 
-    opt_desc = "Gelir ayda %5 büyür, giderler sabit kalır."
-    base_desc = "Gelir ayda %1 büyür, giderler ayda %1 artar."
-    pess_desc = "Gelir ayda %3 düşer, giderler sabit kalır."
+    opt_desc  = "Gelir ayda %5 büyür, giderler ayda %1 düşer (verimlilik kazanımları)."
+    base_desc = "Gelir ayda %1 büyür, giderler ayda %1 artar (sabit seyir)."
+    pess_desc = "Gelir ayda %3 düşer, giderler ayda %1 artar (daralan piyasa)."
     if has_seasonality:
         opt_desc  += " Geçmiş mevsimsellik uygulandı."
         base_desc += " Geçmiş mevsimsellik uygulandı."
@@ -160,22 +182,28 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
         "optimistic": {
             "label": "İyimser",
             "description": opt_desc,
-            "growth_rate": 1.05,
-            "months": _extrapolate(series, 12, 1.05, seasonality_indices or None),
+            "revenue_rate": 1.05,
+            "cost_rate":    0.99,
+            "months": _extrapolate(series, 12, revenue_rate=1.05, cost_rate=0.99,
+                                   seasonality_indices=seasonality_indices or None),
             "seasonality_applied": has_seasonality,
         },
         "base": {
             "label": "Baz",
             "description": base_desc,
-            "growth_rate": 1.01,
-            "months": _extrapolate(series, 12, 1.01, seasonality_indices or None),
+            "revenue_rate": 1.01,
+            "cost_rate":    1.01,
+            "months": _extrapolate(series, 12, revenue_rate=1.01, cost_rate=1.01,
+                                   seasonality_indices=seasonality_indices or None),
             "seasonality_applied": has_seasonality,
         },
         "pessimistic": {
             "label": "Kötümser",
             "description": pess_desc,
-            "growth_rate": 0.97,
-            "months": _extrapolate(series, 12, 0.97, seasonality_indices or None),
+            "revenue_rate": 0.97,
+            "cost_rate":    1.01,
+            "months": _extrapolate(series, 12, revenue_rate=0.97, cost_rate=1.01,
+                                   seasonality_indices=seasonality_indices or None),
             "seasonality_applied": has_seasonality,
         },
     }
@@ -373,6 +401,53 @@ async def _generate_forecast_narrative(
     return narrative.to_text()
 
 
+def _build_scenario_explanation(
+    scenarios: dict[str, Any],
+    monte_carlo: dict[str, Any] | None,
+) -> dict[str, str]:
+    """
+    S1-3: Human-readable explanation of what each scenario assumes.
+    Shows the key growth assumptions behind optimistic/base/pessimistic.
+    """
+    explanations: dict[str, str] = {}
+
+    for name, sc in scenarios.items():
+        growth = sc.get("revenue_growth_rate", 0) * 100
+        runway = sc.get("runway_months")
+        twelve_net = sc.get("twelve_month_net", 0)
+
+        if name == "optimistic":
+            label = "İyimser Senaryo"
+            assumption = f"Gelir aylık %{growth:.1f} büyüme varsayıyor"
+        elif name == "pessimistic":
+            label = "Kötümser Senaryo"
+            assumption = f"Gelir aylık %{abs(growth):.1f} daralma varsayıyor"
+        else:
+            label = "Baz Senaryo"
+            assumption = f"Mevcut trend devam ediyor (aylık %{growth:.1f})"
+
+        runway_text = (
+            f"Nakit ömrü: {runway:.0f} ay" if runway and runway < 36
+            else "Nakit ömrü: 36+ ay (stabil)"
+        )
+
+        explanations[name] = (
+            f"{label}: {assumption}. "
+            f"12 aylık net nakit: {_fmt(twelve_net)}. "
+            f"{runway_text}."
+        )
+
+    if monte_carlo:
+        rp = monte_carlo.get("runway_risk_pct", 0)
+        explanations["monte_carlo_summary"] = (
+            f"1000 Monte Carlo simülasyonu: "
+            f"%{rp:.0f} olasılıkla nakit sıkıntısı riski var. "
+            f"Tahminlerin güvenilirliği {'yüksek' if rp < 20 else 'orta' if rp < 50 else 'düşük'}."
+        )
+
+    return explanations
+
+
 @trace_agent("forecast_agent")
 async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """Forecast Skill. done_when: state['forecast']['scenarios'] has 3 keys."""
@@ -410,12 +485,29 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
         has_seasonality = scenarios.get("base", {}).get("seasonality_applied", False)
 
+        # S1-3: scenario explanation + confidence interval
+        scenario_explanation = _build_scenario_explanation(scenarios, monte_carlo)
+
         forecast = {
             "scenarios": scenarios,
             "alerts": alerts,
             "narrative": narrative,
             "seasonality_applied": has_seasonality,
             "monte_carlo": monte_carlo if monte_carlo else None,
+            "scenario_explanation": scenario_explanation,
+            "confidence_interval": {
+                "p10": monte_carlo.get("p10_12m_net") if monte_carlo else None,
+                "p50": monte_carlo.get("p50_12m_net") if monte_carlo else None,
+                "p90": monte_carlo.get("p90_12m_net") if monte_carlo else None,
+                "interpretation": (
+                    f"1000 Monte Carlo simülasyonunda: "
+                    f"%10 olasılıkla {_fmt(monte_carlo['p10_12m_net'])}'ın altında, "
+                    f"%50 olasılıkla {_fmt(monte_carlo['p50_12m_net'])}, "
+                    f"%90 olasılıkla {_fmt(monte_carlo['p90_12m_net'])}'ın altında"
+                    if monte_carlo and monte_carlo.get("p50_12m_net") is not None
+                    else "Monte Carlo simülasyonu çalıştırılamadı"
+                ),
+            },
         }
 
         has_critical = any(a["level"] == "critical" for a in alerts)

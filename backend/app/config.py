@@ -34,6 +34,11 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+    # ARQ queue partitioning (analysis vs maintenance) + backpressure knobs
+    arq_analysis_queue_name: str = "arq:queue:analysis"
+    arq_maintenance_queue_name: str = "arq:queue:maintenance"
+    arq_analysis_max_jobs: int = 10
+    arq_maintenance_max_jobs: int = 3
 
     # App
     backend_secret_key: str = "dev-secret-change-in-production"

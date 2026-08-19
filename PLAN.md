@@ -1,7 +1,85 @@
-# AI CFO — Tam Proje Planı
+# C-Level AI — Stratejik Vizyon & Teknik Hafıza
+
+> **Vizyon:** Türkiye'nin her büyüklükteki şirketine kurumsal düzeyde C-Suite zekası.
+> Muhasebe yazılımlarının sağladığı veriyi içselleştiren, SMMM'yi güçlendiren, CFO/CEO/CTO/CMO/CHRO'yu
+> tek platformda buluşturan otonom analiz sistemi.
+>
+> Stack: FastAPI + LangGraph (backend) · Next.js 14 + shadcn/ui (frontend) · PostgreSQL · Redis · Docker
+
+---
+
+## Stratejik Farklılaşma (Hafıza)
+
+### Neden rakiplerden farklıyız?
+
+| Rakip | Eksikliği | Bizim cevabımız |
+|-------|-----------|-----------------|
+| Mosaic, Pigment | İngilizce, USD odaklı, KOBİ fiyatı yok | Türkçe, TRY, Logo Tiger/Paraşüt native |
+| QuickBooks, Xero | Analiz yok, sadece muhasebe | Muhasebe + AI analiz + C-Suite zekası |
+| ChatGPT + Excel | Şirket verisine erişim yok | Şirketin gerçek verisiyle çalışır |
+| Geleneksel SMMM | Zaman alır, pahalı, rapor yok | Saniyeler içinde, otomatik, explainable |
+
+### 4 Teknoloji Farkı
+
+**1. Explainable AI**
+Her sonucun yanında "nasıl ulaştım" kanıtı:
+- Anomali: Z-score, karşılaştırma, confidence yüzdesi
+- Tahmin: hangi geçmiş veriye dayandı, hangi varsayımlar
+- Muhasebe: hangi belge → hangi hesap kodu → neden
+
+**2. Passive Intelligence (Sürtünmesiz Onboarding)**
+- Email parser: muhasebe raporlarının gönderildiği email adresine yönlendirme → otomatik parse
+- Banka PDF OCR: banka ekstresi → otomatik işlem
+- Logo Tiger / Paraşüt API: native ERP entegrasyonu (Türk pazarında rakipsiz)
+
+**3. Counterfactual Scenario Engine**
+"Eğer şu aksiyonu alsanız ne olurdu?" simülasyonu:
+- Personel artırımı → net etki + break-even + cashflow riski
+- Yeni pazar girişi → 3 senaryo (iyimser / baz / kötümser)
+- Maliyet kesintisi → hangi kalemde, ne kadar, ne zaman
+
+**4. SMMM Güçlendirme (Muhasebe Agentı)**
+Muhasebe yazılımını "aradan çıkarmak" değil, SMMM'yi güçlendirmek:
+- Banka/belge → otomatik sınıflandırma (Tekdüzen Hesap Planı)
+- Çift taraflı kayıt (double-entry) otomasyonu
+- e-Fatura/e-Arşiv otomatik işleme (GİB uyumlu)
+- SMMM onay workflow: agent hazırlar, SMMM tek tıkla onaylar
+- Türkiye'de ~100.000 SMMM → B2B2B kanal fırsatı
+
+### Go-to-Market Stratejisi
+
+**Hedef Segment 1 — SMMM Portalı (B2B2B)**
+1 muhasebeci → 30+ müşteri firma yönetiyor
+"Müşterilerinize AI CFO analizi sunun" → her SMMM = 30 müşteri
+
+**Hedef Segment 2 — Yatırım Almış Startuplar**
+CFO'ya bütçe yok ama yatırımcıya rapor sunmak gerekiyor
+"5 dakikada board deck" değer önerisi
+
+**Hedef Segment 3 — Orta Ölçekli KOBİ (50-500 çalışan)**
+ERP var (Logo Tiger) ama BI/analitik yok
+Native entegrasyon → en az sürtünmeli onboarding
+
+### Güven Sorunu Çözümü
+- Her analizde kanıt zinciri göster (explainability)
+- İlk 10 müşteriyi elinden tutarak onboard et
+- SMMM imzası gerektiren durumlarda "AI önerir, insan onaylar" workflow
+
+---
+
+## Sonraki Geliştirme Öncelikleri
+
+1. **Email Parser** — muhasebe raporu emailini otomatik parse et (2-3 gün)
+2. **Explainability UI** — her sonucun kanıt zincirini göster (3-4 gün)
+3. **Logo Tiger API** — native ERP entegrasyonu (1 hafta)
+4. **Counterfactual Engine** — "ne olurdu" simülasyonu (2 hafta)
+5. **SMMM Portal** — muhasebe agentı + onay workflow (3-4 hafta)
+
+---
+
+# AI CFO — Tam Proje Planı (Teknik)
 
 > KOBİ'ler için CFO seviyesi finansal analiz, tahmin ve iş akışı yönetimi yapan agentic AI sistemi.
-> Stack: FastAPI + LangGraph (backend) · Next.js 14 + shadcn/ui (frontend) · PostgreSQL · Redis · Docker
 
 ---
 

@@ -3,8 +3,11 @@
 export interface KPI {
   label: string;
   value: number;
-  format: "currency" | "percent" | "months" | "number";
+  format: "currency" | "percent" | "months" | "number" | "count";
   trend: number | null;
+  // Optional anomaly-specific fields
+  critical?: number;
+  high?: number;
 }
 
 export interface MonthlyEntry {
@@ -85,6 +88,17 @@ export interface Transaction {
   confidence: number | null;
 }
 
+export interface AnomalyItem {
+  id?: string;
+  anomaly_type: string;
+  severity: "low" | "medium" | "high" | "critical";
+  title: string;
+  description: string;
+  transaction_ids: string[] | null;
+  confidence: number | null;
+  acknowledged?: boolean;
+}
+
 export interface DashboardData {
   generated_at: string;
   kpis: KPI[];
@@ -94,6 +108,15 @@ export interface DashboardData {
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
+  // Anomaly data — present when anomaly agent ran
+  anomalies?: AnomalyItem[];
+  anomaly_narrative?: string;
+  // Budget agent output — present when budget_input was provided
+  budget?: Record<string, unknown> | null;
+  // Tax agent output — present when tax agent ran
+  tax?: Record<string, unknown> | null;
+  // Multi-period comparison — present when 2+ months of data
+  multi_period?: Record<string, unknown> | null;
 }
 
 export type JobStatus =
@@ -127,6 +150,7 @@ export interface ReportMeta {
   id: string;
   job_id: string;
   report_type: string;
+  title?: string | null;
   report_format: string;
   has_file: boolean;
   created_at: string;

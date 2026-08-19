@@ -21,6 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.api.auth import get_current_user
+from app.models.user import User
 from app.models.report import Report, ReportFormat
 
 router = APIRouter()
@@ -87,7 +89,10 @@ async def _get_pnl_for_job(job_id: str, db: AsyncSession) -> dict[str, Any]:
 
 
 @router.get("/analysis/{job_id}/sensitivity/variables")
-async def list_sensitivity_variables(job_id: str) -> dict[str, Any]:
+async def list_sensitivity_variables(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """List all available sensitivity variables and their default ranges."""
     from app.agents.sensitivity_agent import DEFAULT_RANGES, VARIABLE_LABELS
     return {
@@ -110,6 +115,7 @@ async def list_sensitivity_variables(job_id: str) -> dict[str, Any]:
 async def compute_sensitivity_matrix(
     job_id: str,
     body: SensitivityMatrixRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -167,6 +173,7 @@ async def compute_sensitivity_matrix(
 async def compute_single_sensitivity(
     job_id: str,
     body: SensitivityVariableRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """

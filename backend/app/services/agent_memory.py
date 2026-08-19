@@ -166,6 +166,152 @@ class _InMemoryBackend:
         self._store.clear()
 
 
+# ── PostgreSQL async backend ──────────────────────────────────────────────────
+
+class _PostgreSQLBackend:
+    """
+    Async PostgreSQL backend using asyncpg directly (no SQLAlchemy dependency).
+    Falls back to SQLite gracefully if asyncpg is not available.
+
+    Table: agent_memory_episodes (separate from main ORM tables to keep
+    the memory store self-contained and independently deployable).
+    """
+
+    _CREATE = """
+    CREATE TABLE IF NOT EXISTS agent_memory_episodes (
+        id          TEXT PRIMARY KEY,
+        org_id      TEXT NOT NULL,
+        agent       TEXT NOT NULL,
+        period      TEXT NOT NULL,
+        summary     TEXT NOT NULL,
+        narrative   TEXT NOT NULL DEFAULT '',
+        confidence  REAL NOT NULL DEFAULT 1.0,
+        job_id      TEXT NOT NULL DEFAULT '',
+        tags        TEXT NOT NULL DEFAULT '[]',
+        created_at  REAL NOT NULL
+    )
+    """
+    _CREATE_IDX_ORG   = "CREATE INDEX IF NOT EXISTS idx_ame_org   ON agent_memory_episodes(org_id)"
+    _CREATE_IDX_AGENT = "CREATE INDEX IF NOT EXISTS idx_ame_agent ON agent_memory_episodes(org_id, agent)"
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+        self._pool: Any = None
+
+    async def _get_pool(self) -> Any:
+        if self._pool is None:
+            try:
+                import asyncpg
+                self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
+                async with self._pool.acquire() as conn:
+                    await conn.execute(self._CREATE)
+                    await conn.execute(self._CREATE_IDX_ORG)
+                    await conn.execute(self._CREATE_IDX_AGENT)
+                logger.info("AgentMemory: PostgreSQL backend connected")
+            except Exception as exc:
+                logger.error("AgentMemory: PostgreSQL init failed: %s", exc)
+                raise
+        return self._pool
+
+    def save(self, record: EpisodeRecord) -> None:
+        """Sync wrapper — schedules the async save on the running event loop."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self._async_save(record))
+            else:
+                loop.run_until_complete(self._async_save(record))
+        except Exception as exc:
+            logger.warning("AgentMemory PostgreSQL save failed: %s", exc)
+
+    async def _async_save(self, record: EpisodeRecord) -> None:
+        pool = await self._get_pool()
+        d = record.to_dict()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO agent_memory_episodes
+                    (id, org_id, agent, period, summary, narrative,
+                     confidence, job_id, tags, created_at)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                ON CONFLICT (id) DO UPDATE SET
+                    summary   = EXCLUDED.summary,
+                    narrative = EXCLUDED.narrative,
+                    confidence= EXCLUDED.confidence
+                """,
+                d["id"], d["org_id"], d["agent"], d["period"],
+                d["summary"], d["narrative"], d["confidence"],
+                d["job_id"], d["tags"], d["created_at"],
+            )
+
+    def all(self) -> list[EpisodeRecord]:
+        """Sync wrapper — runs async query in event loop."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Can't block a running loop — return empty and log
+                # Callers in async context should use async retrieve directly
+                logger.debug("AgentMemory: all() called from running loop — use async path")
+                return []
+            return loop.run_until_complete(self._async_all())
+        except Exception as exc:
+            logger.warning("AgentMemory PostgreSQL all() failed: %s", exc)
+            return []
+
+    async def _async_all(self) -> list[EpisodeRecord]:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM agent_memory_episodes ORDER BY created_at DESC"
+            )
+        return [EpisodeRecord.from_dict(dict(r)) for r in rows]
+
+    async def async_retrieve(
+        self,
+        org_id: str,
+        agent: str | None = None,
+        top_k: int = 5,
+        min_confidence: float = 0.0,
+    ) -> list[EpisodeRecord]:
+        """Async-native retrieve — preferred over sync all() in async contexts."""
+        pool = await self._get_pool()
+        if agent:
+            rows = await pool.fetch(
+                """
+                SELECT * FROM agent_memory_episodes
+                WHERE org_id=$1 AND agent=$2 AND confidence>=$3
+                ORDER BY created_at DESC LIMIT $4
+                """,
+                org_id, agent, min_confidence, top_k,
+            )
+        else:
+            rows = await pool.fetch(
+                """
+                SELECT * FROM agent_memory_episodes
+                WHERE org_id=$1 AND confidence>=$2
+                ORDER BY created_at DESC LIMIT $3
+                """,
+                org_id, min_confidence, top_k,
+            )
+        return [EpisodeRecord.from_dict(dict(r)) for r in rows]
+
+    def clear(self) -> None:
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_running():
+                loop.run_until_complete(self._async_clear())
+        except Exception as exc:
+            logger.warning("AgentMemory PostgreSQL clear() failed: %s", exc)
+
+    async def _async_clear(self) -> None:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM agent_memory_episodes")
+
+
 # ── SQLite backend ────────────────────────────────────────────────────────────
 
 class _SQLiteBackend:
@@ -227,10 +373,14 @@ class AgentMemoryStore:
     Parameters
     ----------
     backend : str
-        "memory"  — in-memory (test/dev, not persistent)
-        "sqlite"  — SQLite file (dev/prod, persistent)
+        "memory"     — in-memory (test/dev, not persistent)
+        "sqlite"     — SQLite file (dev, persistent)
+        "postgresql" — PostgreSQL async (production)
     db_path : str
-        Path to SQLite file (ignored for memory backend).
+        Path to SQLite file (ignored for memory/postgresql backends).
+    pg_dsn : str
+        PostgreSQL DSN e.g. "postgresql://user:pass@host/db".
+        Only used when backend="postgresql".
     max_episodes : int
         Maximum episodes per org+agent pair (oldest pruned when exceeded).
     """
@@ -239,10 +389,20 @@ class AgentMemoryStore:
         self,
         backend: str = "memory",
         db_path: str = ":memory:",
+        pg_dsn: str = "",
         max_episodes: int = 50,
     ) -> None:
         self.max_episodes = max_episodes
-        if backend == "sqlite":
+        self._backend_name = backend
+        if backend == "postgresql":
+            if not pg_dsn:
+                logger.warning(
+                    "AgentMemory: pg_dsn not set — falling back to in-memory backend"
+                )
+                self._backend = _InMemoryBackend()  # type: ignore[assignment]
+            else:
+                self._backend = _PostgreSQLBackend(pg_dsn)  # type: ignore[assignment]
+        elif backend == "sqlite":
             self._backend = _SQLiteBackend(db_path)
         else:
             self._backend = _InMemoryBackend()  # type: ignore[assignment]
@@ -359,17 +519,64 @@ class AgentMemoryStore:
         }
 
 
-# ── Module-level default (in-memory) ─────────────────────────────────────────
+# ── Module-level default — auto-configured from settings ─────────────────────
 
 _default_store: AgentMemoryStore | None = None
 
 
 def get_memory_store(
-    backend: str = "memory",
+    backend: str | None = None,
     db_path: str = ":memory:",
+    pg_dsn: str = "",
 ) -> AgentMemoryStore:
-    """Return the default module-level store, or create one."""
+    """
+    Return the singleton memory store, auto-configured from app settings.
+
+    Priority:
+      1. Explicit `backend` parameter (for tests / forced override)
+      2. Settings: use_sqlite=False + postgres DSN → "postgresql"
+      3. Settings: use_sqlite=True → "sqlite" with aicfo_dev path
+      4. Fallback: "memory" (no persistence)
+
+    This means orchestrator.py and worker.py no longer need to hardcode
+    "sqlite" — they call get_memory_store() with no arguments and get the
+    correct backend for the current environment.
+    """
     global _default_store
     if _default_store is None:
-        _default_store = AgentMemoryStore(backend=backend, db_path=db_path)
+        if backend is not None:
+            # Explicit override (tests, CLI tools)
+            _default_store = AgentMemoryStore(
+                backend=backend, db_path=db_path, pg_dsn=pg_dsn
+            )
+        else:
+            # Auto-detect from settings
+            try:
+                from app.config import get_settings
+                s = get_settings()
+                if not s.use_sqlite:
+                    # Production: PostgreSQL — derive sync DSN from database_url
+                    # asyncpg needs "postgresql://" not "postgresql+asyncpg://"
+                    dsn = s.database_url_sync  # already plain postgresql://
+                    _default_store = AgentMemoryStore(
+                        backend="postgresql", pg_dsn=dsn
+                    )
+                    logger.info("AgentMemory: using PostgreSQL backend")
+                else:
+                    _default_store = AgentMemoryStore(
+                        backend="sqlite", db_path="./agent_memory.db"
+                    )
+                    logger.info("AgentMemory: using SQLite backend (dev)")
+            except Exception as exc:
+                logger.warning(
+                    "AgentMemory: settings load failed (%s) — using in-memory", exc
+                )
+                _default_store = AgentMemoryStore(backend="memory")
+
     return _default_store
+
+
+def reset_memory_store() -> None:
+    """Reset singleton — for testing only."""
+    global _default_store
+    _default_store = None

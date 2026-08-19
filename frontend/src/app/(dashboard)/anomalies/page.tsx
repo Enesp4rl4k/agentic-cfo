@@ -22,6 +22,7 @@ import {
 } from "@/hooks/useCFO";
 import { cn } from "@/lib/utils";
 import type { AnomalyItem } from "@/lib/api/cfo";
+import { EvidenceChainPanel, ConfidenceBadge } from "@/components/ui/evidence-chain-panel";
 
 // ── Severity config ───────────────────────────────────────────────────────────
 
@@ -228,41 +229,18 @@ function AnomalyCard({
             {anomaly.description}
           </p>
 
-          {/* Confidence */}
+          {/* Confidence badge (inline) */}
           {anomaly.confidence != null && (
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-2">
               <ConfidenceBar value={anomaly.confidence} barClass={cfg.bar} />
+              <ConfidenceBadge confidence={anomaly.confidence} />
             </div>
           )}
 
-          {/* Evidence toggle */}
-          {anomaly.evidence && Object.keys(anomaly.evidence).length > 0 && (
-            <>
-              <button
-                onClick={() => setExpanded((v) => !v)}
-                className="mt-2 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                aria-expanded={expanded}
-              >
-                {expanded ? (
-                  <ChevronUp className="h-3 w-3" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="h-3 w-3" aria-hidden="true" />
-                )}
-                {expanded ? "Hide evidence" : "Show evidence"}
-              </button>
-
-              {expanded && (
-                <dl className="mt-2 rounded-md bg-muted/30 p-2.5 font-mono text-xs">
-                  {Object.entries(anomaly.evidence).map(([k, v]) => (
-                    <div key={k} className="flex gap-2 py-0.5">
-                      <dt className="shrink-0 text-muted-foreground">{k}:</dt>
-                      <dd className="break-all">{String(v)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </>
-          )}
+          {/* Evidence chain panel — replaces raw dl */}
+          <div className="mt-3">
+            <EvidenceChainPanel anomaly={anomaly} />
+          </div>
         </div>
 
         {/* Acknowledge button */}

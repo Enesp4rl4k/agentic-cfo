@@ -246,6 +246,7 @@ async def chat_with_cfo(
     dashboard: dict[str, Any],
     transactions: list[dict[str, Any]],
     conversation_history: list[dict[str, str]] | None = None,
+    system_prompt_override: str | None = None,
 ) -> str:
     """
     Single-turn or multi-turn CFO chat.
@@ -255,6 +256,8 @@ async def chat_with_cfo(
         dashboard: Dashboard JSON from the report agent
         transactions: List of transaction dicts
         conversation_history: Previous turns [{"role": "user/assistant", "content": "..."}]
+        system_prompt_override: If set, replaces the default CFO system prompt entirely.
+            Used by /chat/agent to inject full CompanyContext across all agents.
 
     Returns:
         Assistant's response text
@@ -264,7 +267,14 @@ async def chat_with_cfo(
     from app.config import get_settings
 
     settings = get_settings()
-    context = _build_financial_context(dashboard, transactions)
+
+    if system_prompt_override:
+        # Universal agent mode — use the pre-built cross-agent context
+        system_content = system_prompt_override
+    else:
+        # Default CFO mode — build from financial data
+        context = _build_financial_context(dashboard, transactions)
+        system_content = CFO_SYSTEM_PROMPT.format(context=context)
 
     llm = ChatOpenAI(
         model=settings.llm_model,
@@ -274,7 +284,7 @@ async def chat_with_cfo(
         base_url=settings.llm_base_url or None,
     )
 
-    messages = [SystemMessage(content=CFO_SYSTEM_PROMPT.format(context=context))]
+    messages = [SystemMessage(content=system_content)]
 
     for turn in (conversation_history or []):
         if turn["role"] == "user":
@@ -354,6 +364,7 @@ async def stream_chat_with_cfo(
     dashboard: dict[str, Any],
     transactions: list[dict[str, Any]],
     conversation_history: list[dict[str, str]] | None = None,
+    system_prompt_override: str | None = None,
 ) -> AsyncIterator[str]:
     """Streaming CFO chat — yields text chunks."""
     from langchain_openai import ChatOpenAI
@@ -361,7 +372,12 @@ async def stream_chat_with_cfo(
     from app.config import get_settings
 
     settings = get_settings()
-    context = _build_financial_context(dashboard, transactions)
+
+    if system_prompt_override:
+        system_content = system_prompt_override
+    else:
+        context = _build_financial_context(dashboard, transactions)
+        system_content = CFO_SYSTEM_PROMPT.format(context=context)
 
     llm = ChatOpenAI(
         model=settings.llm_model,
@@ -372,7 +388,7 @@ async def stream_chat_with_cfo(
         streaming=True,
     )
 
-    messages = [SystemMessage(content=CFO_SYSTEM_PROMPT.format(context=context))]
+    messages = [SystemMessage(content=system_content)]
     for turn in (conversation_history or []):
         if turn["role"] == "user":
             messages.append(HumanMessage(content=turn["content"]))

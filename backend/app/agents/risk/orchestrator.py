@@ -211,13 +211,21 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:  # noq
             li = cross_correlation["leading_indicators"][0]
             cross_context += f"\nÖncü gösterge: {li['interpretation']}"
 
+        # S4-3: Türkiye makro risk faktörleri
+        try:
+            from app.agents.risk.turkey_macro_risks import build_macro_risk_prompt_block
+            macro_block = build_macro_risk_prompt_block(max_items=3)
+            cross_context += macro_block
+        except Exception:
+            pass
+
         llm_response = await llm.ainvoke([
             SystemMessage(content=(
                 "Sen deneyimli bir Risk Yöneticisisin. Kurumsal risk verilerini analiz et ve "
                 "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
                 "Yanıt yapısı:\n"
                 "1. Genel risk duruşunun 1-2 cümlelik değerlendirmesi\n"
-                "2. En kritik 1-2 risk\n"
+                "2. En kritik 1-2 risk (şirkete özgü + Türkiye makro riski varsa)\n"
                 "3. Yönetimin hemen yapması gereken 2-3 somut eylem\n"
                 "Risk profesyoneli bakışıyla pratik öneriler ekle."
             )),

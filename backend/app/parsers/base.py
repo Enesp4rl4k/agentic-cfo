@@ -117,15 +117,56 @@ class BankParser(ABC):
 
     @staticmethod
     def parse_turkish_date(raw: str) -> datetime | None:
-        """Try common Turkish date formats."""
+        """
+        Try common Turkish date formats.
+
+        Handles:
+          "15.03.2024"  — standard Turkish
+          "15/03/2024"  — slash separator
+          "2024-03-15"  — ISO
+          "15.03.24"    — 2-digit year
+          "15 Mart 2024" — Turkish month name
+          "15-Mart-2024" — hyphen with month name
+        """
         from datetime import timezone
-        formats = [
+
+        raw = raw.strip()
+
+        # Standard numeric formats
+        numeric_formats = [
             "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d",
             "%d.%m.%y", "%d-%m-%Y", "%d %m %Y",
+            "%d/%m/%y", "%Y/%m/%d",
         ]
-        for fmt in formats:
+        for fmt in numeric_formats:
             try:
-                return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
+
+        # Turkish month names → number mapping
+        _TR_MONTHS = {
+            "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
+            "mayıs": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
+            "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+            # Common abbreviations
+            "oca": 1, "şub": 2, "mar": 3, "nis": 4,
+            "may": 5, "haz": 6, "tem": 7, "ağu": 8,
+            "eyl": 9, "eki": 10, "kas": 11, "ara": 12,
+        }
+        import re as _re
+        # "15 Mart 2024" or "15-Mart-2024" or "15.Mart.2024"
+        m = _re.match(r"(\d{1,2})[\s.\-/]([A-Za-zğüşıöçĞÜŞİÖÇ]+)[\s.\-/](\d{2,4})", raw)
+        if m:
+            day, month_str, year_str = int(m.group(1)), m.group(2).lower(), m.group(3)
+            month_num = _TR_MONTHS.get(month_str)
+            if month_num:
+                year = int(year_str)
+                if year < 100:
+                    year += 2000
+                try:
+                    return datetime(year, month_num, day, tzinfo=timezone.utc)
+                except ValueError:
+                    pass
+
         return None

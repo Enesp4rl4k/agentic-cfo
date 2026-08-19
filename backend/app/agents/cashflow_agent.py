@@ -78,6 +78,13 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         for k, v in sorted(monthly.items())
     ]
 
+    # S1-2: Cash Conversion Cycle (CCC) — proxy calculation from transaction data
+    # CCC = DSO + DIO - DPO
+    # DSO (Days Sales Outstanding): how long to collect receivables
+    # DIO (Days Inventory Outstanding): how long inventory sits (0 for service cos)
+    # DPO (Days Payable Outstanding): how long to pay suppliers
+    ccc = _compute_ccc(transactions, operating_in, operating_out)
+
     return {
         "operating": operating,
         "operating_in": operating_in,
@@ -86,6 +93,97 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "financing": financing,
         "net_change": net_change,
         "monthly_series": monthly_series,
+        # CCC metrics
+        "dso_days": ccc["dso_days"],
+        "dpo_days": ccc["dpo_days"],
+        "ccc_days": ccc["ccc_days"],
+        "ccc_interpretation": ccc["interpretation"],
+    }
+
+
+def _compute_ccc(
+    transactions: list[dict[str, Any]],
+    total_revenue_cents: int,
+    total_expenses_cents: int,
+) -> dict[str, Any]:
+    """
+    S1-2: Cash Conversion Cycle estimation.
+
+    Uses transaction data to estimate:
+      DSO = (Accounts Receivable proxy / Revenue) × 365
+      DPO = (Accounts Payable proxy / COGS) × 365
+      CCC = DSO - DPO  (no inventory for most service/tech companies)
+
+    For companies without explicit AR/AP tracking, we use
+    income timing vs. expense timing as a proxy.
+    """
+    from datetime import datetime, timezone
+
+    if not transactions or total_revenue_cents == 0:
+        return {"dso_days": None, "dpo_days": None, "ccc_days": None, "interpretation": "Yetersiz veri"}
+
+    # Estimate DSO: average lag between income transactions and month start
+    # As a proxy: if revenue arrives in clumps vs. uniformly → high DSO
+    income_txs = [t for t in transactions if t.get("type") == "income"]
+    expense_txs = [t for t in transactions if t.get("type") == "expense"
+                   and t.get("category") in ("cogs", "other_expense")]
+
+    # Simple proxy: annualized revenue / 365 gives daily revenue
+    # DSO = avg days until payment collected (use 30 as baseline for invoice businesses)
+    # DPO = avg days to pay suppliers
+
+    # Count transactions per month to estimate payment patterns
+    months_with_income = set()
+    months_with_expense = set()
+    for t in income_txs:
+        m = str(t.get("transaction_date", ""))[:7]
+        if m:
+            months_with_income.add(m)
+    for t in expense_txs:
+        m = str(t.get("transaction_date", ""))[:7]
+        if m:
+            months_with_expense.add(m)
+
+    n_income_months = max(1, len(months_with_income))
+    n_expense_months = max(1, len(months_with_expense))
+
+    # Proxy DSO: transactions per month vs revenue size
+    avg_monthly_revenue = total_revenue_cents / n_income_months
+    daily_revenue = avg_monthly_revenue / 30
+
+    # High-value, few transactions → higher DSO (invoice-based)
+    # Low-value, many transactions → lower DSO (retail/subscription)
+    n_income_txs = max(1, len(income_txs))
+    avg_invoice_size = total_revenue_cents / n_income_txs
+    # Heuristic: avg invoice > 10K TRY → B2B, longer DSO
+    if avg_invoice_size > 10_000_00:  # 10,000 TRY in kuruş
+        dso_days = 45  # B2B typical
+    elif avg_invoice_size > 1_000_00:  # 1,000 TRY
+        dso_days = 20  # mixed
+    else:
+        dso_days = 7   # retail/subscription
+
+    # DPO proxy: how spread out are expense payments
+    n_expense_txs = max(1, len(expense_txs))
+    avg_expense_size = total_expenses_cents / n_expense_txs if total_expenses_cents > 0 else 0
+    if avg_expense_size > 5_000_00:  # 5,000 TRY — larger supplier invoices
+        dpo_days = 30
+    else:
+        dpo_days = 15
+
+    ccc_days = dso_days - dpo_days  # DIO = 0 for service companies
+
+    interpretation = (
+        "Negatif CCC — tahsilat ödemeden önce geliyor (sağlıklı)" if ccc_days < 0 else
+        f"CCC {ccc_days} gün — tahsilat gecikiyor, nakit sıkışıklığı riski" if ccc_days > 45 else
+        f"CCC {ccc_days} gün — normal aralıkta"
+    )
+
+    return {
+        "dso_days": dso_days,
+        "dpo_days": dpo_days,
+        "ccc_days": ccc_days,
+        "interpretation": interpretation,
     }
 
 
@@ -169,6 +267,13 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
         has_critical = any(a["level"] == "critical" for a in alerts)
         confidence = 0.90 if not has_critical else 0.85
+
+        # S3-3: Attach cashflow evidence
+        try:
+            from app.services.evidence_builder import get_evidence_builder
+            cashflow = get_evidence_builder().attach_cashflow_evidence(cashflow, transactions)
+        except Exception as ev_exc:
+            logger.debug("Evidence builder (non-fatal): %s", ev_exc)
 
         return SkillResult(
             ok=True,

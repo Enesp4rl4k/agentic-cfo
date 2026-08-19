@@ -68,6 +68,20 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
             "trend": None,
         })
 
+    # Add anomaly summary KPI if anomalies detected
+    anomalies = state.get("anomalies") or []
+    critical_count = sum(1 for a in anomalies if a.get("severity") == "critical")
+    high_count = sum(1 for a in anomalies if a.get("severity") == "high")
+    if anomalies:
+        kpis.append({
+            "label": "Anomalies",
+            "value": len(anomalies),
+            "format": "count",
+            "trend": None,
+            "critical": critical_count,
+            "high": high_count,
+        })
+
     # Recent transactions (last 20)
     recent_transactions = sorted(
         transactions,

@@ -1,4 +1,5 @@
 import os
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
@@ -7,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.report import Report, ReportFormat
+from app.api.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # NOTE: Download route MUST be registered before the list route.
@@ -115,6 +119,96 @@ async def download_executive_report(
 
     safe_name = company_name.lower().replace(" ", "-").replace(".", "")[:30]
     filename  = f"{safe_name}-yonetim-raporu.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
+
+
+# ── Unified Executive Report ──────────────────────────────────────────────────
+
+@router.get("/reports/unified/summary")
+async def get_unified_report_summary(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Get a structured unified executive report (JSON) from CompanyContext.
+
+    Combines all available C-Suite agent results:
+    CFO + CTO + CMO + COO + CHRO + Risk + CEO synthesis.
+
+    Returns a structured report with per-agent sections and executive summary.
+    """
+    from app.services.company_context import get_company_context
+    from app.services.unified_report import build_unified_report
+
+    org_id = str(user.org_id) if user.org_id else "default"
+    ctx = await get_company_context(org_id, db)
+
+    if not any([
+        ctx.last_cfo_result, ctx.last_cto_result, ctx.last_cmo_result,
+        ctx.last_coo_result, ctx.last_chro_result, ctx.last_risk_result,
+        ctx.last_ceo_result,
+    ]):
+        raise HTTPException(
+            status_code=404,
+            detail="Henüz tamamlanmış analiz yok. Önce bir veya daha fazla agent analizi çalıştırın.",
+        )
+
+    report = build_unified_report(
+        ctx_data=ctx.to_dict(),
+        company_name=ctx.company_name,
+        reporting_period=ctx.reporting_period,
+    )
+
+    return {"data": report, "error": None}
+
+
+@router.get("/reports/unified/pdf")
+async def download_unified_pdf(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download a unified executive board PDF from CompanyContext.
+
+    Generates a multi-section A4 PDF covering all analyzed domains.
+    Requires at least one completed agent analysis.
+    """
+    from app.services.company_context import get_company_context
+    from app.services.unified_report import generate_unified_pdf
+
+    org_id = str(user.org_id) if user.org_id else "default"
+    ctx = await get_company_context(org_id, db)
+
+    if not ctx.last_cfo_result and not ctx.last_ceo_result:
+        raise HTTPException(
+            status_code=404,
+            detail="En az bir CFO veya CEO analizi tamamlanmış olmalı.",
+        )
+
+    try:
+        pdf_bytes = generate_unified_pdf(
+            ctx_data=ctx.to_dict(),
+            company_name=ctx.company_name,
+            reporting_period=ctx.reporting_period,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Unified PDF generation failed for org=%s", org_id)
+        raise HTTPException(status_code=500, detail=f"PDF üretimi başarısız: {exc}")
+
+    company = (ctx.company_name or "sirket").lower().replace(" ", "-")[:25]
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y%m%d")
+    filename = f"{company}-yonetim-raporu-{date_str}.pdf"
 
     return Response(
         content=pdf_bytes,

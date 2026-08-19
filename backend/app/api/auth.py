@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
@@ -40,6 +41,46 @@ from app.services.auth import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
+
+# ── PERF-2: Short-lived in-process user cache ─────────────────────────────────
+# Avoids a DB round-trip on every authenticated request for the same user.
+# TTL is intentionally short (matches access token window) so revocations
+# and role changes propagate within 60 seconds.
+#
+# ⚠️  MULTI-PROCESS WARNING: This cache is per-process (not shared across
+# gunicorn/uvicorn workers). In a multi-worker deployment:
+#   - Role changes / revocations may not propagate to all workers for up to TTL seconds
+#   - Each worker maintains its own independent copy
+#   - For production multi-worker deployments, replace with Redis:
+#       await redis.setex(f"user:{user_id}", 60, user.model_dump_json())
+#   - Single-process deployments (default Docker setup) are unaffected.
+#
+# Note: lru_cache on an async function caches the coroutine object, not the
+# result. We use a plain dict + timestamp instead.
+
+import time as _time
+
+_USER_CACHE: dict[str, tuple[User, float]] = {}
+_USER_CACHE_TTL = 60  # seconds
+
+
+def _cache_get(user_id: str) -> User | None:
+    entry = _USER_CACHE.get(user_id)
+    if entry is None:
+        return None
+    user, ts = entry
+    if _time.monotonic() - ts > _USER_CACHE_TTL:
+        del _USER_CACHE[user_id]
+        return None
+    return user
+
+
+def _cache_set(user_id: str, user: User) -> None:
+    _USER_CACHE[user_id] = (user, _time.monotonic())
+
+
+def _cache_invalidate(user_id: str) -> None:
+    _USER_CACHE.pop(user_id, None)
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -101,9 +142,16 @@ async def get_current_user(
         except JWTError:
             raise credentials_exception
 
+        # PERF-2: Check cache before hitting the DB
+        cached = _cache_get(user_id)
+        if cached is not None:
+            return cached
+
         user = await db.get(User, user_id)
         if not user or not user.is_active:
             raise credentials_exception
+
+        _cache_set(user_id, user)
         return user
 
     # ── Try API key ───────────────────────────────────────────────────────────
@@ -119,20 +167,27 @@ async def get_current_user(
     raise credentials_exception
 
 
-async def require_role(*roles: str):
+def require_role(*roles: str):
     """
     Role-based access control dependency factory.
 
+    Returns a FastAPI dependency (synchronous callable returning a coroutine),
+    so FastAPI can inject it correctly via Depends().
+
     Usage:
         @router.get("/admin-only")
-        async def admin_endpoint(user = Depends(require_role("admin"))):
+        async def admin_endpoint(user: User = Depends(require_role("admin", "owner"))):
             ...
+
+    Note: `async def require_role` was a bug — it returned a coroutine instead
+    of a dependency callable. Fixed to a plain `def` factory.
     """
     async def _check(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Bu işlem için '{'/'.join(roles)}' rolü gerekli.",
+                detail=f"Bu işlem için '{'/'.join(roles)}' rolü gerekli. "
+                       f"Mevcut rol: '{user.role}'.",
             )
         return user
     return _check
@@ -291,6 +346,8 @@ async def create_api_key(
     current_user.api_key = new_key
     await db.commit()
 
+    # Invalidate cache so next request reloads the updated user from DB
+    _cache_invalidate(current_user.id)
     logger.info("API key rotated for user: %s", current_user.email)
 
     return {

@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # Module-level kernel service instances (singleton pattern)
 _router    = get_capability_router()
 _reflector = get_reflection_agent(pass_threshold=0.55)
-_memory    = get_memory_store(backend="sqlite", db_path="./agent_memory.db")
+_memory    = get_memory_store()   # auto-configured from settings: sqlite in dev, postgresql in prod
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────

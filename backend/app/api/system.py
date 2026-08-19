@@ -1,0 +1,310 @@
+"""
+System Management API
+
+Provides unified operational visibility for:
+  - core infrastructure health (DB, Redis, imports)
+  - platform operations overview (job statuses, recent failures, sync status)
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.analysis_job import AnalysisJob
+
+router = APIRouter(tags=["system"])
+OPS_SCHEMA_VERSION = "v1.1"
+SLA_ANALYZING_BREACH_MINUTES = 15
+
+ERROR_BUDGETS = {
+    "analysis": {"weekly_failure_rate_target_pct": 2.0},
+    "chat": {"weekly_failure_rate_target_pct": 1.0},
+    "sync": {"weekly_failure_rate_target_pct": 3.0},
+}
+
+
+async def _check_redis() -> dict[str, Any]:
+    try:
+        import redis.asyncio as redis  # type: ignore[import]
+        from app.config import get_settings
+
+        settings = get_settings()
+        client = redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=2,
+        )
+        await client.ping()
+        await client.aclose()
+        return {"ok": True, "detail": "redis ping ok"}
+    except Exception as exc:
+        return {"ok": False, "detail": str(exc)}
+
+
+async def _queue_depths() -> dict[str, int]:
+    try:
+        import redis.asyncio as redis  # type: ignore[import]
+        from app.config import get_settings
+
+        settings = get_settings()
+        client = redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=2,
+        )
+        analysis_depth = int(await client.llen(settings.arq_analysis_queue_name))
+        maintenance_depth = int(await client.llen(settings.arq_maintenance_queue_name))
+        await client.aclose()
+        return {
+            "analysis": analysis_depth,
+            "maintenance": maintenance_depth,
+        }
+    except Exception:
+        return {"analysis": -1, "maintenance": -1}
+
+
+def _check_agent_imports() -> dict[str, Any]:
+    checks: dict[str, bool] = {}
+    modules = [
+        ("cfo_orchestrator", "app.agents.orchestrator"),
+        ("risk_orchestrator", "app.agents.risk.orchestrator"),
+        ("ceo_orchestrator", "app.agents.ceo.orchestrator"),
+    ]
+    for name, module_path in modules:
+        try:
+            __import__(module_path)
+            checks[name] = True
+        except Exception:
+            checks[name] = False
+    return {
+        "ok": all(checks.values()),
+        "modules": checks,
+    }
+
+
+def _safe_pct(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((numerator / denominator) * 100.0, 2)
+
+
+def _percentile(values: list[int], pct: float) -> int | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return int(values[0])
+    ordered = sorted(values)
+    k = max(0, min(len(ordered) - 1, int(round((pct / 100.0) * (len(ordered) - 1)))))
+    return int(ordered[k])
+
+
+def _derive_actions(*, failed_count: int, awaiting_review_count: int, breaches: Iterable[dict[str, Any]]) -> list[str]:
+    actions: list[str] = []
+    if failed_count > 0:
+        actions.append("Inspect latest failed jobs and classify root cause before new deployments.")
+    if awaiting_review_count > 0:
+        actions.append("Clear awaiting_review queue to prevent decision latency for users.")
+    if any(True for _ in breaches):
+        actions.append("Escalate SLA breaches to on-call and prioritize queue drain.")
+    if not actions:
+        actions.append("System is stable; keep monitoring and run routine verification checks.")
+    return actions[:3]
+
+
+@router.get("/system/health")
+async def system_health(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+
+    # DB check
+    db_ok = True
+    db_detail = "ok"
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception as exc:
+        db_ok = False
+        db_detail = str(exc)
+
+    redis_check = await _check_redis()
+    agent_check = _check_agent_imports()
+
+    overall_ok = db_ok and redis_check.get("ok", False) and agent_check.get("ok", False)
+    status_label = "healthy" if overall_ok else "degraded"
+
+    return {
+        "data": {
+            "status": status_label,
+            "ok": overall_ok,
+            "schema_version": OPS_SCHEMA_VERSION,
+            "checked_at": now,
+            "components": {
+                "database": {"ok": db_ok, "detail": db_detail},
+                "redis": redis_check,
+                "agents": agent_check,
+            },
+        },
+        "error": None,
+    }
+
+
+@router.get("/system/ops")
+async def system_ops(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    # Job status counters
+    status_rows = await db.execute(
+        select(AnalysisJob.status, func.count(AnalysisJob.id)).group_by(AnalysisJob.status)
+    )
+    status_counts = {str(status): int(count) for status, count in status_rows.all()}
+    total_jobs = sum(status_counts.values())
+    failed_count = int(status_counts.get("failed", 0))
+
+    awaiting_review_count = int(
+        (
+            await db.execute(
+                select(func.count(AnalysisJob.id)).where(AnalysisJob.awaiting_review.is_(True))
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    failed_rows = await db.execute(
+        select(
+            AnalysisJob.id,
+            AnalysisJob.status,
+            AnalysisJob.error_message,
+            AnalysisJob.updated_at,
+        )
+        .where(AnalysisJob.status == "failed")
+        .order_by(AnalysisJob.updated_at.desc())
+        .limit(10)
+    )
+    recent_failed_jobs = [
+        {
+            "job_id": row.id,
+            "status": row.status,
+            "error_message": row.error_message,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in failed_rows.all()
+    ]
+
+    # SLA breach: jobs stuck in pending/analyzing beyond threshold.
+    breach_rows = await db.execute(
+        select(
+            AnalysisJob.id,
+            AnalysisJob.status,
+            AnalysisJob.updated_at,
+        ).where(
+            AnalysisJob.status.in_(("pending", "analyzing"))
+        )
+    )
+    now = datetime.now(timezone.utc)
+    sla_breaches: list[dict[str, Any]] = []
+    for row in breach_rows.all():
+        if not row.updated_at:
+            continue
+        age_minutes = int((now - row.updated_at).total_seconds() // 60)
+        if age_minutes >= SLA_ANALYZING_BREACH_MINUTES:
+            sla_breaches.append(
+                {
+                    "job_id": row.id,
+                    "status": row.status,
+                    "age_minutes": age_minutes,
+                    "threshold_minutes": SLA_ANALYZING_BREACH_MINUTES,
+                }
+            )
+
+    # Completion and first-result timing metrics (recent completed window)
+    completed_rows = await db.execute(
+        select(
+            AnalysisJob.created_at,
+            AnalysisJob.completed_at,
+            AnalysisJob.result_metadata,
+        )
+        .where(AnalysisJob.status == "completed")
+        .order_by(AnalysisJob.completed_at.desc())
+        .limit(200)
+    )
+    completion_ms_samples: list[int] = []
+    first_result_ms_samples: list[int] = []
+    for row in completed_rows.all():
+        if row.created_at and row.completed_at:
+            completion_ms_samples.append(
+                int((row.completed_at - row.created_at).total_seconds() * 1000)
+            )
+        meta = row.result_metadata or {}
+        started_iso = meta.get("analysis_started_at") if isinstance(meta, dict) else None
+        if started_iso and row.created_at:
+            try:
+                started_at = datetime.fromisoformat(str(started_iso))
+                first_result_ms_samples.append(
+                    int((started_at - row.created_at).total_seconds() * 1000)
+                )
+            except Exception:
+                pass
+
+    job_completion_p95_ms = _percentile(completion_ms_samples, 95.0)
+    time_to_first_result_p95_ms = _percentile(first_result_ms_samples, 95.0)
+
+    # Sync summary is optional because table may not exist in every env.
+    sync_summary: dict[str, Any] = {"available": False, "by_status": {}}
+    try:
+        sync_rows = await db.execute(
+            text(
+                """
+                SELECT COALESCE(status, 'unknown') AS status, COUNT(*) AS cnt
+                FROM sync_runs
+                GROUP BY COALESCE(status, 'unknown')
+                """
+            )
+        )
+        sync_summary = {
+            "available": True,
+            "by_status": {str(row.status): int(row.cnt) for row in sync_rows},
+        }
+    except Exception:
+        pass
+
+    queue_depths = await _queue_depths()
+    failure_rate_pct = _safe_pct(failed_count, total_jobs)
+    awaiting_review_ratio_pct = _safe_pct(awaiting_review_count, total_jobs)
+    suggested_actions = _derive_actions(
+        failed_count=failed_count,
+        awaiting_review_count=awaiting_review_count,
+        breaches=sla_breaches,
+    )
+
+    return {
+        "data": {
+            "schema_version": OPS_SCHEMA_VERSION,
+            "jobs": {
+                "status_counts": status_counts,
+                "awaiting_review": awaiting_review_count,
+                "total": total_jobs,
+                "failure_rate_pct": failure_rate_pct,
+                "awaiting_review_ratio_pct": awaiting_review_ratio_pct,
+                "recent_failed": recent_failed_jobs,
+            },
+            "sync": sync_summary,
+            "sla": {
+                "queue_depth": max(0, queue_depths.get("analysis", -1)),
+                "queue_depths": queue_depths,
+                "job_completion_p95_ms": job_completion_p95_ms,
+                "time_to_first_result_p95_ms": time_to_first_result_p95_ms,
+                "error_rate_pct": failure_rate_pct,
+                "breaches": sla_breaches,
+            },
+            "error_budget": ERROR_BUDGETS,
+            "suggested_actions": suggested_actions,
+            "generated_at": now.isoformat(),
+        },
+        "error": None,
+    }
+

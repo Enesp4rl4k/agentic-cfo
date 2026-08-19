@@ -62,6 +62,11 @@ class User(Base):
     # API key for programmatic access (optional)
     api_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
 
+    # SSO / OAuth2 fields (SEC-1)
+    sso_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)   # "microsoft"|"google"|"github"
+    sso_id:       Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)  # provider user ID
+    last_login:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Metadata
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

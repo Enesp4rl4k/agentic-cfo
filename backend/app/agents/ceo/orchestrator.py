@@ -43,6 +43,7 @@ from app.agents.ceo.synthesis_agent          import (
 )
 from app.agents.ceo.strategic_priorities_agent import run_strategic_priorities_agent
 from app.agents.ceo.board_deck_agent           import run_board_deck_agent
+from app.agents.ceo.swot_agent                 import run_swot_agent
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +265,16 @@ async def node_board_deck(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
+async def node_swot(state: CEOState, config: dict) -> CEOState:
+    """SWOT analizi — tüm C-Suite özetlerinden otomatik SWOT matrisi üretir."""
+    result = await run_swot_agent(state, _run_config(config))
+    patch = _append_log(state, CEOStepLog(
+        step="swot", ok=result.ok, detail=result.detail, confidence=result.confidence
+    ))
+    patch.update(result.patch)
+    return {**state, **patch}  # type: ignore[return-value]
+
+
 async def node_okr(state: CEOState, config: dict) -> CEOState:
     from app.agents.ceo.okr_agent import run_okr_agent
     return await run_okr_agent(state, config)  # type: ignore[return-value]
@@ -298,6 +309,7 @@ def build_ceo_graph() -> StateGraph:
     graph.add_node("condense_summaries",   node_condense_summaries)
     graph.add_node("synthesis",            node_synthesis)
     graph.add_node("strategic_priorities", node_strategic_priorities)
+    graph.add_node("swot",                 node_swot)
     graph.add_node("board_deck",           node_board_deck)
     graph.add_node("okr",                  node_okr)
     graph.add_node("hold_for_review",      node_hold_for_review)
@@ -316,7 +328,9 @@ def build_ceo_graph() -> StateGraph:
         },
     )
 
-    graph.add_edge("strategic_priorities", "board_deck")
+    # SWOT strategic_priorities ile paralel çalışır, board_deck'te birleşir
+    graph.add_edge("strategic_priorities", "swot")
+    graph.add_edge("swot",                 "board_deck")
     graph.add_edge("board_deck",           "okr")
     graph.add_edge("okr",                  END)
     graph.add_edge("hold_for_review",      END)

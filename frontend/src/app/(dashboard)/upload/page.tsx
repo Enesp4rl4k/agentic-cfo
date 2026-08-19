@@ -1,717 +1,626 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useDropzone } from "react-dropzone";
 import {
-  Upload,
-  FileText,
-  CheckCircle,
-  AlertCircle,
-  Loader2,
-  Activity,
-  Clock,
-  ChevronRight,
-  ChevronLeft,
-  X,
-  Plus,
-  Building2,
-  Users,
-  Megaphone,
-  Settings,
-  Cpu,
+  Upload, AlertTriangle, CheckCircle2, XCircle,
+  RefreshCw, ArrowRight, ChevronDown, ChevronUp, Info, Files,
 } from "lucide-react";
-import { useUpload, useStartAnalysis, useJobStatus } from "@/hooks/useCFO";
-import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { AgentProgressPanel } from "@/components/ui/agent-progress";
-import { FeedbackWidget } from "@/components/ui/feedback-widget";
+import {
+  validateAndUpload, acceptColumnMapping,
+  type ValidationResult, type ColumnInfo,
+} from "@/lib/api/data_quality";
+import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Health score helpers ──────────────────────────────────────────────────────
 
-type WizardStep = "cfo" | "domains" | "review" | "running";
-type UploadPhase = "idle" | "uploading" | "starting" | "polling" | "done" | "error";
-
-interface DomainFile {
-  domain: string;
-  source_type: string;
-  file: File;
-  label: string;
+function healthColor(score: number): string {
+  if (score >= 90) return "text-emerald-400";
+  if (score >= 75) return "text-emerald-400";
+  if (score >= 55) return "text-amber-400";
+  if (score >= 35) return "text-orange-400";
+  return "text-red-400";
 }
 
-// ── Step labels (Türkçe) ──────────────────────────────────────────────────────
-
-const STEP_LABELS: Record<string, string> = {
-  data_ingestion: "İşlemler çıkarılıyor",
-  pnl:            "Gelir tablosu hesaplanıyor",
-  cashflow:       "Nakit akışı analiz ediliyor",
-  forecast:       "Tahmin oluşturuluyor",
-  anomaly:        "Anomaliler taranıyor",
-  tax:            "Vergi takvimi hazırlanıyor",
-  budget:         "Bütçe karşılaştırması yapılıyor",
-  alert:          "Uyarılar değerlendiriliyor",
-  report:         "Rapor oluşturuluyor",
-  review_gate:    "İnceleme noktası",
-};
-
-const PIPELINE_STEPS = [
-  "data_ingestion", "pnl", "cashflow", "forecast", "report",
-];
-
-// ── Domain config ─────────────────────────────────────────────────────────────
-
-const DOMAIN_CONFIG = [
-  {
-    domain: "cto",
-    label: "Teknoloji (CTO)",
-    icon: Cpu,
-    description: "Bulut maliyetleri, teknik borç, olaylar ve sprint verisini analiz eder",
-    color: "text-blue-400",
-    bg: "bg-blue-950/20 border-blue-800/40",
-    sources: [
-      { source_type: "cloud_billing", label: "Bulut Faturası (AWS/GCP/Azure CSV)", accept: ".csv" },
-      { source_type: "git_log",       label: "Git Log (git log --oneline çıktısı)", accept: ".txt,.csv" },
-      { source_type: "incident_log",  label: "Olay Kayıtları (CSV)", accept: ".csv" },
-      { source_type: "sprint_data",   label: "Sprint Verisi (CSV)", accept: ".csv" },
-    ],
-  },
-  {
-    domain: "chro",
-    label: "İnsan Kaynakları (CHRO)",
-    icon: Users,
-    description: "Çalışan sayısı, işten ayrılma ve ücret verilerini analiz eder",
-    color: "text-purple-400",
-    bg: "bg-purple-950/20 border-purple-800/40",
-    sources: [
-      { source_type: "headcount",    label: "Çalışan Listesi (CSV)", accept: ".csv,.xlsx" },
-      { source_type: "attrition",    label: "İşten Ayrılma Verisi (CSV)", accept: ".csv" },
-      { source_type: "compensation", label: "Ücret Tablosu (CSV)", accept: ".csv,.xlsx" },
-    ],
-  },
-  {
-    domain: "cmo",
-    label: "Pazarlama (CMO)",
-    icon: Megaphone,
-    description: "Kampanya performansı, dönüşüm hunisi ve kohort analizlerini yapar",
-    color: "text-emerald-400",
-    bg: "bg-emerald-950/20 border-emerald-800/40",
-    sources: [
-      { source_type: "campaign", label: "Kampanya Metrikleri (CSV)", accept: ".csv" },
-      { source_type: "funnel",   label: "Dönüşüm Hunisi (CSV)", accept: ".csv" },
-      { source_type: "cohort",   label: "Kohort Analizi (CSV)", accept: ".csv" },
-    ],
-  },
-  {
-    domain: "coo",
-    label: "Operasyon (COO)",
-    icon: Settings,
-    description: "SLA uyumu, süreç verimliliği ve kaynak kullanımını ölçer",
-    color: "text-amber-400",
-    bg: "bg-amber-950/20 border-amber-800/40",
-    sources: [
-      { source_type: "sla",      label: "SLA Verileri (CSV)", accept: ".csv" },
-      { source_type: "process",  label: "Süreç Metrikleri (CSV)", accept: ".csv" },
-      { source_type: "resource", label: "Kaynak Kullanımı (CSV)", accept: ".csv" },
-    ],
-  },
-];
-
-// ── Pipeline progress bileşeni ────────────────────────────────────────────────
-
-function StepIcon({ ok, inProgress }: { ok?: boolean; inProgress?: boolean }) {
-  if (inProgress) return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden="true" />;
-  if (ok === true)  return <CheckCircle className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />;
-  if (ok === false) return <AlertCircle className="h-3.5 w-3.5 text-destructive" aria-hidden="true" />;
-  return <div className="h-3.5 w-3.5 rounded-full border border-border" aria-hidden="true" />;
+function healthBg(score: number): string {
+  if (score >= 90) return "bg-emerald-500/15";
+  if (score >= 75) return "bg-emerald-500/10";
+  if (score >= 55) return "bg-amber-500/10";
+  if (score >= 35) return "bg-orange-500/10";
+  return "bg-red-500/10";
 }
 
-// ── Adım 1: Banka ekstresi dropzone ──────────────────────────────────────────
+function healthBorder(score: number): string {
+  if (score >= 75) return "border-emerald-500/30";
+  if (score >= 55) return "border-amber-500/30";
+  if (score >= 35) return "border-orange-500/30";
+  return "border-red-500/30";
+}
 
-function CFODropzone({
-  file,
-  onFile,
-  disabled,
-}: {
-  file: File | null;
-  onFile: (f: File) => void;
-  disabled: boolean;
-}) {
-  const onDrop = useCallback((accepted: File[]) => {
-    if (accepted[0]) onFile(accepted[0]);
-  }, [onFile]);
+function healthLabel(label: string): string {
+  const map: Record<string, string> = {
+    excellent: "Mükemmel",
+    good: "İyi",
+    fair: "Orta",
+    poor: "Zayıf",
+    critical: "Kritik",
+  };
+  return map[label] ?? label;
+}
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      "application/pdf": [".pdf"],
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      "application/vnd.ms-excel": [".xls"],
-      "text/csv": [".csv"],
-    },
-    maxFiles: 1,
-    maxSize: 10 * 1024 * 1024,
-    disabled,
-  });
+// ── Health Score Ring ─────────────────────────────────────────────────────────
+
+function HealthScoreRing({ score, label }: { score: number; label: string }) {
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
 
   return (
-    <div
-      {...getRootProps()}
-      className={cn(
-        "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-8 py-12 text-center transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        disabled
-          ? "cursor-default opacity-60"
-          : isDragActive
-          ? "border-primary bg-primary/5"
-          : file
-          ? "border-emerald-600 bg-emerald-950/20"
-          : "border-border hover:border-muted-foreground/50 hover:bg-muted/20"
-      )}
-    >
-      <input {...getInputProps()} aria-label="Banka ekstresi yükle" />
-      {file ? (
-        <>
-          <FileText className="h-10 w-10 text-emerald-400" aria-hidden="true" />
-          <p className="mt-3 font-medium text-foreground">{file.name}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {(file.size / 1024).toFixed(0)} KB · Değiştirmek için tıkla
-          </p>
-        </>
-      ) : (
-        <>
-          <Upload className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
-          <p className="mt-3 font-medium">
-            {isDragActive ? "Bırakın!" : "Sürükle & bırak veya tıkla"}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">PDF, XLSX, CSV · Maks 10 MB</p>
-        </>
-      )}
+    <div className="flex flex-col items-center gap-1">
+      <svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
+        <circle cx="48" cy="48" r={radius} fill="none" strokeWidth="8" className="stroke-border" />
+        <circle
+          cx="48" cy="48" r={radius} fill="none" strokeWidth="8"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 48 48)"
+          className={cn(
+            "transition-all duration-700",
+            score >= 75 ? "stroke-emerald-400" :
+            score >= 55 ? "stroke-amber-400" :
+            score >= 35 ? "stroke-orange-400" : "stroke-red-400"
+          )}
+        />
+        <text x="48" y="44" textAnchor="middle" className="fill-foreground text-xl font-bold" fontSize="20">
+          {score}
+        </text>
+        <text x="48" y="60" textAnchor="middle" className="fill-muted-foreground" fontSize="10">
+          /100
+        </text>
+      </svg>
+      <span className={cn("text-sm font-semibold", healthColor(score))}>
+        {healthLabel(label)}
+      </span>
     </div>
   );
 }
 
-// ── Adım 2: Domain dosyaları ──────────────────────────────────────────────────
+// ── Column mapping row ────────────────────────────────────────────────────────
 
-function DomainFileRow({
-  source,
-  domainColor,
-  file,
-  onFile,
-  onRemove,
+const SYSTEM_FIELDS = [
+  { value: "",             label: "— Eşleştirme yok —" },
+  { value: "date",         label: "Tarih (zorunlu)" },
+  { value: "amount",       label: "Tutar (zorunlu)" },
+  { value: "description",  label: "Açıklama" },
+  { value: "category",     label: "Kategori" },
+  { value: "reference",    label: "Referans No" },
+];
+
+function ColumnMappingRow({
+  col,
+  mappedField,
+  onChange,
 }: {
-  source: { source_type: string; label: string; accept: string };
-  domainColor: string;
-  file?: File;
-  onFile: (f: File) => void;
-  onRemove: () => void;
+  col: ColumnInfo;
+  mappedField: string;
+  onChange: (field: string) => void;
 }) {
-  const onDrop = useCallback((accepted: File[]) => {
-    if (accepted[0]) onFile(accepted[0]);
-  }, [onFile]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: source.accept.split(",").reduce((acc, ext) => {
-      const mimeMap: Record<string, string> = {
-        ".csv": "text/csv",
-        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ".txt": "text/plain",
-        ".xls": "application/vnd.ms-excel",
-      };
-      const mime = mimeMap[ext.trim()];
-      if (mime) acc[mime] = [ext.trim()];
-      return acc;
-    }, {} as Record<string, string[]>),
-    maxFiles: 1,
-    maxSize: 10 * 1024 * 1024,
-  });
+  const typeIcon =
+    col.detected_type === "date" ? "📅" :
+    col.detected_type === "amount" ? "💰" :
+    col.detected_type === "text" ? "📝" : "🔢";
 
   return (
-    <div className="flex items-center gap-3">
-      <div
-        {...getRootProps()}
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
+      {/* Column name */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span aria-hidden="true">{typeIcon}</span>
+          <span className="truncate text-sm font-medium">{col.raw_name}</span>
+          {col.issues.length > 0 && (
+            <span title={col.issues.join("; ")}>
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          {col.null_pct > 0 && `%${col.null_pct.toFixed(0)} boş · `}
+          {col.sample_values.slice(0, 2).join(", ")}
+          {col.sample_values.length > 2 && "…"}
+        </p>
+      </div>
+
+      {/* Arrow */}
+      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+
+      {/* System field select */}
+      <select
+        value={mappedField}
+        onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "flex flex-1 cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition-colors",
-          isDragActive
-            ? "border-primary bg-primary/5"
-            : file
-            ? "border-emerald-600/40 bg-emerald-950/10"
-            : "border-border hover:border-muted-foreground/40 hover:bg-muted/10"
+          "h-8 rounded-md border text-sm",
+          "bg-muted/30 px-2 pr-7",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          mappedField ? "border-primary/30 text-foreground" : "border-border text-muted-foreground"
         )}
       >
-        <input {...getInputProps()} />
-        {file ? (
-          <>
-            <FileText className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
-            <span className="flex-1 truncate text-sm">{file.name}</span>
-            <span className="text-xs text-muted-foreground">
-              {(file.size / 1024).toFixed(0)} KB
-            </span>
-          </>
-        ) : (
-          <>
-            <Plus className={cn("h-4 w-4 shrink-0", domainColor)} aria-hidden="true" />
-            <span className="text-muted-foreground">{source.label}</span>
-          </>
+        {SYSTEM_FIELDS.map((f) => (
+          <option key={f.value} value={f.value}>{f.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// ── Issue list ────────────────────────────────────────────────────────────────
+
+function IssueList({ validation }: { validation: ValidationResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const errors = validation.row_issues.filter((i) => i.severity === "error");
+  const warnings = validation.row_issues.filter((i) => i.severity === "warning");
+  const infos = validation.row_issues.filter((i) => i.severity === "info");
+
+  const visible = expanded ? validation.row_issues : validation.row_issues.slice(0, 5);
+
+  if (validation.row_issues.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {errors.length > 0 && (
+          <span className="flex items-center gap-1 text-red-400">
+            <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            {errors.length} hata
+          </span>
+        )}
+        {warnings.length > 0 && (
+          <span className="flex items-center gap-1 text-amber-400">
+            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+            {warnings.length} uyarı
+          </span>
+        )}
+        {infos.length > 0 && (
+          <span className="flex items-center gap-1 text-blue-400">
+            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+            {infos.length} bilgi
+          </span>
         )}
       </div>
-      {file && (
+
+      <div className="space-y-1">
+        {visible.map((issue, i) => (
+          <div
+            key={i}
+            className={cn(
+              "flex items-start gap-2 rounded-md px-3 py-2 text-xs",
+              issue.severity === "error" ? "bg-red-500/8 text-red-300" :
+              issue.severity === "warning" ? "bg-amber-500/8 text-amber-300" :
+              "bg-blue-500/8 text-blue-300"
+            )}
+          >
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              {issue.row > 0 ? `R${issue.row}` : "—"}
+            </span>
+            <span className="leading-relaxed">{issue.message}</span>
+          </div>
+        ))}
+      </div>
+
+      {validation.row_issues.length > 5 && (
         <button
-          onClick={onRemove}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          aria-label="Dosyayı kaldır"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1 text-xs text-primary hover:opacity-80"
         >
-          <X className="h-3.5 w-3.5" aria-hidden="true" />
+          {expanded ? (
+            <><ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> Daha az göster</>
+          ) : (
+            <><ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> {validation.row_issues.length - 5} tane daha göster</>
+          )}
         </button>
       )}
     </div>
   );
 }
 
-// ── Özet kartı (Adım 3) ───────────────────────────────────────────────────────
+// ── Upload drop zone ──────────────────────────────────────────────────────────
 
-function ReviewSummary({
-  cfoFile,
-  domainFiles,
+function DropZone({
+  onFile,
+  loading,
 }: {
-  cfoFile: File;
-  domainFiles: DomainFile[];
+  onFile: (file: File) => void;
+  loading: boolean;
 }) {
-  const byDomain = DOMAIN_CONFIG.map((d) => ({
-    ...d,
-    files: domainFiles.filter((f) => f.domain === d.domain),
-  }));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) onFile(file);
+  }
 
   return (
-    <div className="space-y-3">
-      {/* CFO */}
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-        <Building2 className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">Finansal Veri (CFO)</p>
-          <p className="truncate text-sm font-medium">{cfoFile.name}</p>
-        </div>
-        <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label="CSV dosyası seçmek için tıklayın veya sürükleyin"
+      onClick={() => inputRef.current?.click()}
+      onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      className={cn(
+        "flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors cursor-pointer",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30",
+        loading && "pointer-events-none opacity-60"
+      )}
+    >
+      <div className={cn(
+        "flex h-14 w-14 items-center justify-center rounded-2xl transition-colors",
+        dragging ? "bg-primary/20" : "bg-muted"
+      )}>
+        {loading
+          ? <RefreshCw className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
+          : <Upload className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+        }
       </div>
 
-      {/* Domain dosyaları */}
-      {byDomain.map((d) =>
-        d.files.length > 0 ? (
-          <div key={d.domain} className={cn("rounded-lg border px-4 py-3", d.bg)}>
-            <div className="mb-2 flex items-center gap-2">
-              <d.icon className={cn("h-4 w-4", d.color)} aria-hidden="true" />
-              <p className="text-xs font-medium text-muted-foreground">{d.label}</p>
-              <span className="ml-auto text-xs text-muted-foreground">{d.files.length} dosya</span>
-            </div>
-            {d.files.map((f, i) => (
-              <p key={i} className="truncate text-sm text-muted-foreground">
-                • {f.file.name}
-              </p>
-            ))}
-          </div>
-        ) : null
-      )}
-
-      {domainFiles.length === 0 && (
-        <p className="text-xs text-muted-foreground">
-          Domain dosyası eklenmedi — yalnızca CFO analizi çalışacak.
+      <div className="text-center">
+        <p className="font-semibold">
+          {loading ? "Analiz ediliyor…" : "CSV dosyasını sürükleyin veya tıklayın"}
         </p>
-      )}
+        <p className="mt-1 text-sm text-muted-foreground">
+          Logo Tiger · Paraşüt · Akbank · Garanti · GİB e-Fatura · Genel CSV
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Maksimum 10 MB · .csv, .txt, .tsv
+        </p>
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv,.txt,.tsv"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onFile(file);
+        }}
+      />
     </div>
   );
 }
 
-// ── Pipeline progress bileşeni ────────────────────────────────────────────────
+// ── Main upload page ──────────────────────────────────────────────────────────
 
-function PipelineProgress({
-  status,
-  logs,
-}: {
-  status: string;
-  logs: { step: string; ok: boolean; detail: string | null; confidence: number | null }[];
-}) {
-  const completedSteps = new Set(logs.map((l) => l.step));
-  const runningIndex = PIPELINE_STEPS.findIndex((s) => !completedSteps.has(s));
-
-  return (
-    <div className="mt-4 w-full space-y-1.5">
-      <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Activity className="h-3 w-3 animate-pulse text-primary" aria-hidden="true" />
-        Agent çalışıyor: <span className="font-medium text-foreground">{status}</span>
-      </p>
-      {PIPELINE_STEPS.map((step, i) => {
-        const log = logs.find((l) => l.step === step);
-        const isRunning = i === runningIndex && status !== "completed" && status !== "failed";
-        return (
-          <div
-            key={step}
-            className={cn(
-              "flex items-center gap-2.5 rounded-md border px-3 py-2 text-xs transition-colors",
-              log
-                ? log.ok
-                  ? "border-emerald-500/20 bg-emerald-950/20 text-emerald-400"
-                  : "border-destructive/30 bg-destructive/8 text-destructive"
-                : isRunning
-                ? "border-primary/30 bg-primary/5 text-primary"
-                : "border-border bg-card text-muted-foreground"
-            )}
-          >
-            <StepIcon ok={log?.ok} inProgress={isRunning} />
-            <span className="flex-1 font-medium">{STEP_LABELS[step] ?? step}</span>
-            {log?.confidence != null && (
-              <span className="tabular-nums opacity-60">
-                %{(log.confidence * 100).toFixed(0)}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Ana sayfa ─────────────────────────────────────────────────────────────────
+type Phase = "idle" | "validating" | "review" | "uploading" | "done" | "error";
 
 export default function UploadPage() {
   const router = useRouter();
-  const { success, error: toastError } = useToast();
 
-  // Wizard state
-  const [wizardStep, setWizardStep] = useState<WizardStep>("cfo");
-  const [phase, setPhase] = useState<UploadPhase>("idle");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
-  // File state
-  const [cfoFile, setCfoFile] = useState<File | null>(null);
-  const [domainFiles, setDomainFiles] = useState<DomainFile[]>([]);
-
-  const upload = useUpload();
-  const startAnalysis = useStartAnalysis();
-
-  const { data: job } = useJobStatus(activeJobId, phase === "polling");
-
-  // Job status watcher
+  // Auto-redirect to dashboard once job is ready
   useEffect(() => {
-    if (!job) return;
-    if (job.status === "completed") {
-      setPhase("done");
-      success("Analiz tamamlandı", "Dashboard'a yönlendiriliyor…");
-      setTimeout(() => router.push(`/?job=${activeJobId}`), 1500);
-    } else if (job.status === "failed") {
-      setPhase("error");
-      const msg = job.error ?? "Analiz başarısız.";
-      setErrorMsg(msg);
-      toastError("Analiz başarısız", msg);
-    } else if (job.status === "awaiting_review") {
-      setPhase("done");
-      success("İnceleme gerekli", "Agent güven skoru düşük — lütfen onaylayın.");
-      setTimeout(() => router.push(`/?job=${activeJobId}`), 1000);
+    if (phase === "done" && jobId) {
+      // Mark tour as pending so dashboard auto-starts the tour on first upload
+      import("@/components/ui/product-tour").then(({ markTourPending }) => {
+        markTourPending();
+      });
+
+      // Small delay so the user sees the success state briefly
+      const t = setTimeout(() => {
+        router.push(`/?job=${jobId}`);
+      }, 1200);
+      return () => clearTimeout(t);
     }
-  }, [job?.status, activeJobId, router, success, toastError]);
+  }, [phase, jobId, router]);
 
-  // Domain file helpers
-  const addDomainFile = (domain: string, source_type: string, label: string, file: File) => {
-    setDomainFiles((prev) => {
-      const filtered = prev.filter(
-        (f) => !(f.domain === domain && f.source_type === source_type)
-      );
-      return [...filtered, { domain, source_type, label, file }];
-    });
-  };
-
-  const removeDomainFile = (domain: string, source_type: string) => {
-    setDomainFiles((prev) =>
-      prev.filter((f) => !(f.domain === domain && f.source_type === source_type))
-    );
-  };
-
-  // Submit — upload CFO file, upload domain files, start analysis
-  const handleSubmit = async () => {
-    if (!cfoFile) return;
+  // Process file: validate + optionally start analysis
+  const handleFile = useCallback(async (file: File) => {
+    setSelectedFile(file);
+    setPhase("validating");
     setErrorMsg(null);
+    setValidation(null);
 
     try {
-      // 1. Upload banka ekstresi
-      setPhase("uploading");
-      setWizardStep("running");
-      const { job_id } = await upload.mutateAsync(cfoFile);
-      setActiveJobId(job_id);
+      const result = await validateAndUpload(file, { minScore: 40 });
 
-      // 2. Domain dosyalarını yükle (paralel)
-      if (domainFiles.length > 0) {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-        await Promise.allSettled(
-          domainFiles.map(async (df) => {
-            const form = new FormData();
-            form.append("file", df.file);
-            await fetch(
-              `${apiBase}/api/v1/datasource/${job_id}/${df.domain}/${df.source_type}`,
-              { method: "POST", body: form }
-            );
-          })
-        );
+      if (result.validation) {
+        setValidation(result.validation);
+        // Initialize mapping from auto-detected
+        setColumnMapping(result.validation.column_mapping);
       }
 
-      // 3. Analizi başlat
-      setPhase("starting");
-      await startAnalysis.mutateAsync(job_id);
-      setPhase("polling");
-    } catch (err) {
+      if (result.started && result.job_id) {
+        // High-quality file — auto-started
+        setJobId(result.job_id);
+        setPhase("done");
+      } else {
+        // Needs review (low score or mapping issues)
+        setPhase("review");
+      }
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Dosya işlenemedi");
       setPhase("error");
-      setErrorMsg(err instanceof Error ? err.message : "Yükleme başarısız.");
     }
-  };
+  }, []);
 
-  const isRunning = phase === "uploading" || phase === "starting" || phase === "polling";
-  const wizardSteps: WizardStep[] = ["cfo", "domains", "review"];
-  const stepIndex = wizardSteps.indexOf(wizardStep as WizardStep);
-
-  // ── Running view ──────────────────────────────────────────────────────────
-
-  if (wizardStep === "running") {
-    return (
-      <div className="mx-auto max-w-xl p-6">
-        <h1 className="text-xl font-bold tracking-tight">Analiz çalışıyor</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          AI CFO agent'ı verilerinizi işliyor…
-        </p>
-
-        {(phase === "uploading" || phase === "starting") && (
-          <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
-            {phase === "uploading" ? "Dosya yükleniyor…" : "Analiz başlatılıyor…"}
-          </div>
-        )}
-
-        {(phase === "polling" || phase === "starting") && activeJobId && (
-          <AgentProgressPanel
-            jobId={activeJobId}
-            className="mt-6"
-            onComplete={(status) => {
-              if (status === "completed") {
-                setPhase("done");
-                success("Analiz tamamlandı", "Dashboard'a yönlendiriliyor…");
-                setTimeout(() => router.push(`/?job=${activeJobId}`), 1500);
-              } else if (status === "awaiting_review") {
-                setPhase("done");
-              } else if (status === "failed" || status === "error") {
-                setPhase("error");
-                setErrorMsg("Pipeline başarısız oldu. Tekrar deneyin.");
-              }
-            }}
-          />
-        )}
-
-        {phase === "done" && job?.status === "completed" && (
-          <>
-            <div
-              role="status"
-              className="mt-6 flex items-center gap-2 rounded-lg border border-emerald-800/40 bg-emerald-950/20 px-4 py-3 text-sm text-emerald-400"
-            >
-              <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Analiz tamamlandı — dashboard'a yönlendiriliyor…
-            </div>
-            <div className="mt-4">
-              <FeedbackWidget jobId={activeJobId ?? undefined} pageContext="upload_complete" />
-            </div>
-          </>
-        )}
-
-        {phase === "done" && job?.status === "awaiting_review" && (
-          <div
-            role="status"
-            className="mt-6 flex items-center gap-2 rounded-lg border border-yellow-700/40 bg-yellow-950/20 px-4 py-3 text-sm text-yellow-400"
-          >
-            <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />
-            İnceleme gerekli — yönlendiriliyor…
-          </div>
-        )}
-
-        {phase === "error" && errorMsg && (
-          <div
-            role="alert"
-            className="mt-6 space-y-3"
-          >
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              {errorMsg}
-            </div>
-            <button
-              onClick={() => { setPhase("idle"); setErrorMsg(null); setActiveJobId(null); setWizardStep("cfo"); }}
-              className="w-full rounded-lg border border-border px-5 py-2.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
-            >
-              Baştan başla
-            </button>
-          </div>
-        )}
-      </div>
-    );
+  // Force upload despite low score
+  async function handleForceUpload() {
+    if (!selectedFile) return;
+    setPhase("uploading");
+    try {
+      const result = await validateAndUpload(selectedFile, { force: true });
+      if (result.job_id) {
+        setJobId(result.job_id);
+        setPhase("done");
+      } else {
+        throw new Error(result.blocked_reason ?? "Yükleme başarısız");
+      }
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Yükleme başarısız");
+      setPhase("error");
+    }
   }
 
-  // ── Wizard view ───────────────────────────────────────────────────────────
+  // Accept mapping and start analysis
+  async function handleAcceptMapping() {
+    if (!selectedFile || !validation) return;
+    setPhase("uploading");
+    try {
+      // Read file as base64
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = "";
+      uint8.forEach((b) => { binary += String.fromCharCode(b); });
+      const base64 = btoa(binary);
+
+      const result = await acceptColumnMapping({
+        filename: selectedFile.name,
+        column_mapping: columnMapping,
+        csv_content: base64,
+        encoding: validation.encoding,
+      });
+      setJobId(result.job_id);
+      setPhase("done");
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Yükleme başarısız");
+      setPhase("error");
+    }
+  }
+
+  // Navigate to results
+  function goToDashboard() {
+    if (jobId) router.push(`/?job=${jobId}`);
+  }
+
+  const [uploadMode, setUploadMode] = useState<"single" | "batch">("single");
 
   return (
-    <div className="mx-auto max-w-xl p-6">
-      {/* Breadcrumb */}
-      <div className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
-        {["Finansal Veri", "Ek Veriler", "Özet & Başlat"].map((label, i) => (
-          <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <ChevronRight className="h-3 w-3" aria-hidden="true" />}
-            <span className={cn(
-              "font-medium",
-              i === stepIndex ? "text-foreground" : ""
-            )}>
-              {label}
-            </span>
-          </span>
-        ))}
+    <main className="mx-auto max-w-screen-md space-y-6 p-4 sm:p-6 lg:p-8">
+
+      {/* Mode tabs */}
+      <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" aria-label="Yükleme modu">
+        <button
+          role="tab"
+          aria-selected={uploadMode === "single"}
+          onClick={() => setUploadMode("single")}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+            uploadMode === "single"
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Upload className="h-4 w-4" aria-hidden="true" />
+          Tekli Yükleme
+        </button>
+        <button
+          role="tab"
+          aria-selected={uploadMode === "batch"}
+          onClick={() => setUploadMode("batch")}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+            uploadMode === "batch"
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Files className="h-4 w-4" aria-hidden="true" />
+          Toplu Yükleme
+        </button>
       </div>
 
-      {/* ── Adım 1: Banka ekstresi ── */}
-      {wizardStep === "cfo" && (
-        <>
-          <h1 className="text-xl font-bold tracking-tight">Finansal belge yükle</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Banka ekstrenizi, Excel aktarımınızı veya CSV dosyanızı yükleyin.
-            Akbank, Garanti, İş Bankası ve Ziraat formatları otomatik tanınır.
-          </p>
+      {/* Batch mode panel */}
+      {uploadMode === "batch" && (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <MultiBatchUpload />
+        </div>
+      )}
 
-          <CFODropzone
-            file={cfoFile}
-            onFile={setCfoFile}
-            disabled={false}
-          />
+      {/* Single mode — existing flow (hidden when batch is active) */}
+      {uploadMode === "single" && (<>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Veri Yükleme</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Muhasebe verilerinizi yükleyin — AI ajanları otomatik analiz başlatır.
+        </p>
+      </div>
 
-          <div className="mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Desteklenen formatlar:</span>{" "}
-              PDF banka ekstresi, Excel (.xlsx), CSV · Maks 10 MB ·
-              Verileriniz güvenli şekilde işlenir.
+      {/* ── Drop zone ────────────────────────────────────────────────────── */}
+      {(phase === "idle" || phase === "error") && (
+        <DropZone onFile={handleFile} loading={false} />
+      )}
+
+      {phase === "validating" && (
+        <DropZone onFile={() => {}} loading={true} />
+      )}
+
+      {/* ── Error state ───────────────────────────────────────────────────── */}
+      {phase === "error" && errorMsg && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/20 bg-destructive/8 px-4 py-3.5 text-sm text-destructive space-y-2"
+        >
+          <p className="font-medium">{errorMsg}</p>
+          <ul className="text-xs text-destructive/80 space-y-0.5 list-disc list-inside">
+            <li>Desteklenen formatlar: <strong>.csv, .txt, .tsv</strong></li>
+            <li>Maksimum boyut: <strong>10 MB</strong></li>
+            <li>Logo Tiger, Paraşüt, Akbank, Garanti, Ziraat, İş Bankası export'ları destekleniyor</li>
+            <li>Sorun devam ederse CSV formatında kayıt ederek tekrar deneyin</li>
+          </ul>
+        </div>
+      )}
+
+      {/* ── Review phase ──────────────────────────────────────────────────── */}
+      {phase === "review" && validation && (
+        <div className="space-y-5" role="region" aria-label="Veri kalitesi raporu">
+
+          {/* Health score card */}
+          <div className={cn(
+            "rounded-xl border p-5",
+            healthBorder(validation.health_score),
+            healthBg(validation.health_score)
+          )}>
+            <div className="flex items-start gap-5">
+              <HealthScoreRing score={validation.health_score} label={validation.health_label} />
+              <div className="flex-1 space-y-2">
+                <div>
+                  <p className="font-semibold">{validation.summary}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Kodlama: {validation.encoding} · Ayraç: {validation.delimiter === "\t" ? "TAB" : `"${validation.delimiter}"`}
+                  </p>
+                </div>
+                <ul className="space-y-1">
+                  {validation.recommendations.map((r, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-sm">
+                      <span className="mt-0.5 text-xs">•</span>
+                      <span>{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Issues */}
+          <IssueList validation={validation} />
+
+          {/* Column mapping (DQ-2) */}
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-semibold">Kolon Eşleştirme</h2>
+              <p className="text-xs text-muted-foreground">
+                Kolonları sistem alanlarıyla eşleştirin
+              </p>
+            </div>
+            <div className="space-y-2">
+              {validation.columns.map((col) => (
+                <ColumnMappingRow
+                  key={col.name}
+                  col={col}
+                  mappedField={columnMapping[col.mapped_field ?? ""] ? col.mapped_field ?? "" : ""}
+                  onChange={(field) => {
+                    const newMapping = { ...columnMapping };
+                    // Remove old binding for this column
+                    Object.keys(newMapping).forEach((k) => {
+                      if (newMapping[k] === col.raw_name) delete newMapping[k];
+                    });
+                    if (field) newMapping[field] = col.raw_name;
+                    setColumnMapping(newMapping);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            {/* Re-upload different file */}
+            <button
+              onClick={() => { setPhase("idle"); setValidation(null); }}
+              className="h-10 rounded-lg border border-border px-5 text-sm font-medium transition-colors hover:bg-muted press-feedback"
+            >
+              Farklı dosya seç
+            </button>
+
+            {/* Force upload even with low score */}
+            {validation.health_score < 75 && (
+              <button
+                onClick={handleForceUpload}
+                className="h-10 rounded-lg border border-amber-500/30 bg-amber-500/8 px-5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/15 press-feedback"
+              >
+                Yine de yükle
+              </button>
+            )}
+
+            {/* Primary: accept mapping + upload */}
+            <button
+              onClick={handleAcceptMapping}
+              disabled={!columnMapping.date || !columnMapping.amount}
+              className={cn(
+                "h-10 rounded-lg px-5 text-sm font-semibold transition-opacity press-feedback",
+                "bg-primary text-primary-foreground hover:opacity-90",
+                "disabled:pointer-events-none disabled:opacity-50"
+              )}
+            >
+              Eşleştirmeyi Onayla & Yükle
+              <ArrowRight className="ml-1.5 inline h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {(!columnMapping.date || !columnMapping.amount) && (
+            <p className="text-center text-xs text-amber-400">
+              Devam etmek için tarih ve tutar kolonlarını eşleştirin.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Uploading ─────────────────────────────────────────────────────── */}
+      {phase === "uploading" && (
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-border py-12">
+          <RefreshCw className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
+          <div className="text-center">
+            <p className="font-semibold">Yükleniyor…</p>
+            <p className="mt-1 text-sm text-muted-foreground">AI ajanlar hazırlanıyor</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Success — auto-redirects after 1.2s ──────────────────────────── */}
+      {phase === "done" && jobId && (
+        <div className="flex flex-col items-center gap-5 rounded-xl border border-emerald-500/30 bg-emerald-500/8 py-12">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
+            <CheckCircle2 className="h-8 w-8 text-emerald-400" aria-hidden="true" />
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold text-emerald-400">Yükleme Başarılı!</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              AI ajanlar analizi başlattı. Dashboard&apos;a yönlendiriliyorsunuz…
             </p>
           </div>
-
+          {/* Fallback manual button in case redirect is slow */}
           <button
-            onClick={() => setWizardStep("domains")}
-            disabled={!cfoFile}
-            className={cn(
-              "mt-6 flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-medium transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "bg-primary text-primary-foreground hover:bg-primary/90",
-              "disabled:cursor-not-allowed disabled:opacity-50"
-            )}
+            onClick={goToDashboard}
+            className="h-10 rounded-lg bg-primary px-8 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 press-feedback"
           >
-            Devam et
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            Hemen Git
+            <ArrowRight className="ml-1.5 inline h-4 w-4" aria-hidden="true" />
           </button>
-        </>
-      )}
-
-      {/* ── Adım 2: Domain dosyaları ── */}
-      {wizardStep === "domains" && (
-        <>
-          <h1 className="text-xl font-bold tracking-tight">Ek veriler (isteğe bağlı)</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Bu verilerle AI daha derin bir analiz yapabilir. İstediğinizi atlayabilirsiniz.
-          </p>
-
-          <div className="mt-5 space-y-4">
-            {DOMAIN_CONFIG.map((d) => (
-              <details key={d.domain} className={cn("rounded-lg border", d.bg)}>
-                <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 text-sm font-medium">
-                  <d.icon className={cn("h-4 w-4 shrink-0", d.color)} aria-hidden="true" />
-                  <span className="flex-1">{d.label}</span>
-                  {domainFiles.filter((f) => f.domain === d.domain).length > 0 && (
-                    <span className="rounded-full bg-emerald-800/30 px-1.5 py-0.5 text-xs text-emerald-400">
-                      {domainFiles.filter((f) => f.domain === d.domain).length} dosya
-                    </span>
-                  )}
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform [[open]_&]:rotate-90" aria-hidden="true" />
-                </summary>
-                <div className="space-y-2 border-t border-border/50 px-4 py-3">
-                  <p className="mb-2 text-xs text-muted-foreground">{d.description}</p>
-                  {d.sources.map((src) => {
-                    const existing = domainFiles.find(
-                      (f) => f.domain === d.domain && f.source_type === src.source_type
-                    );
-                    return (
-                      <DomainFileRow
-                        key={src.source_type}
-                        source={src}
-                        domainColor={d.color}
-                        file={existing?.file}
-                        onFile={(f) => addDomainFile(d.domain, src.source_type, src.label, f)}
-                        onRemove={() => removeDomainFile(d.domain, src.source_type)}
-                      />
-                    );
-                  })}
-                </div>
-              </details>
-            ))}
-          </div>
-
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={() => setWizardStep("cfo")}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              Geri
-            </button>
-            <button
-              onClick={() => setWizardStep("review")}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors",
-                "bg-primary text-primary-foreground hover:bg-primary/90"
-              )}
-            >
-              {domainFiles.length > 0 ? "Özete geç" : "Atla, devam et"}
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ── Adım 3: Özet ve başlat ── */}
-      {wizardStep === "review" && cfoFile && (
-        <>
-          <h1 className="text-xl font-bold tracking-tight">Analizi başlat</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Yüklenen dosyaları kontrol edin ve analizi başlatın.
-          </p>
-
-          <div className="mt-5">
-            <ReviewSummary cfoFile={cfoFile} domainFiles={domainFiles} />
-          </div>
-
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={() => setWizardStep("domains")}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              Geri
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isRunning}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors",
-                "bg-primary text-primary-foreground hover:bg-primary/90",
-                "disabled:cursor-not-allowed disabled:opacity-50"
-              )}
-            >
-              {isRunning && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              {isRunning ? "Başlatılıyor…" : "Analizi Başlat"}
-            </button>
-          </div>
-
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            AI CFO agent'ı işlemleri çıkaracak, gelir tablosu + nakit akışı hesaplayacak
-            ve 12 aylık tahmin üretecek.
-          </p>
-        </>
-      )}
-    </div>
+        </div>
+      )}</>)}
+    </main>
   );
 }

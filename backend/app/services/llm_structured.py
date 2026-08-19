@@ -394,6 +394,31 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
 
 # ── LLM-powered structured output ─────────────────────────────────────────────
 
+def _make_llm(model_id: str, temperature: float, max_tokens: int, settings: Any):
+    """Build a ChatOpenAI instance. Imported lazily to avoid hard dependency."""
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
+        model=model_id,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        api_key=settings.openai_api_key,
+        base_url=getattr(settings, "llm_base_url", None) or None,
+    )
+
+
+def _router_model_for(task: str) -> str:
+    """
+    Resolve the best model ID for a given task type via LLMTaskRouter.
+    Falls back to settings.llm_model if router is unavailable.
+    """
+    try:
+        from app.services.llm_router import get_llm_router
+        cfg = get_llm_router().select_model(task)
+        return cfg.model_id
+    except Exception:
+        return "gpt-4o"  # safe fallback
+
+
 async def get_pnl_narrative(
     pnl: dict[str, Any],
     settings: Any,
@@ -401,21 +426,17 @@ async def get_pnl_narrative(
     """
     Generate structured P&L narrative.
     Falls back to template if LLM key is not configured.
+    Uses LLMTaskRouter → SHORT_NARRATIVE model for cost efficiency.
     """
     if _is_placeholder_key(settings.openai_api_key):
         logger.debug("LLM key not configured — using template-based P&L narrative")
         return _pnl_narrative_template(pnl)
 
     try:
-        from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.1,
-            max_tokens=1024,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
+        model_id = _router_model_for("short_narrative")
+        llm = _make_llm(model_id, temperature=0.1, max_tokens=1024, settings=settings
         ).with_structured_output(PnLNarrative)
 
         revenue = pnl.get("revenue", 0) / 100
@@ -463,20 +484,17 @@ async def get_cashflow_narrative(
     cashflow: dict[str, Any],
     settings: Any,
 ) -> CashFlowNarrative:
-    """Generate structured Cash Flow narrative."""
+    """Generate structured Cash Flow narrative.
+    Uses LLMTaskRouter → METRIC_COMMENTARY for cost efficiency.
+    """
     if _is_placeholder_key(settings.openai_api_key):
         return _cashflow_narrative_template(cashflow)
 
     try:
-        from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.1,
-            max_tokens=800,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
+        model_id = _router_model_for("metric_commentary")
+        llm = _make_llm(model_id, temperature=0.1, max_tokens=800, settings=settings
         ).with_structured_output(CashFlowNarrative)
 
         operating = cashflow.get("operating", 0) / 100
@@ -515,20 +533,17 @@ async def get_forecast_narrative(
     forecast: dict[str, Any],
     settings: Any,
 ) -> ForecastNarrative:
-    """Generate structured Forecast narrative."""
+    """Generate structured Forecast narrative.
+    Uses LLMTaskRouter → MULTI_PERIOD (GPT-4o) for deeper reasoning.
+    """
     if _is_placeholder_key(settings.openai_api_key):
         return _forecast_narrative_template(forecast)
 
     try:
-        from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.1,
-            max_tokens=800,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
+        model_id = _router_model_for("multi_period")
+        llm = _make_llm(model_id, temperature=0.1, max_tokens=800, settings=settings
         ).with_structured_output(ForecastNarrative)
 
         scenarios = forecast.get("scenarios", {})
@@ -565,3 +580,5 @@ def _is_placeholder_key(api_key: str) -> bool:
         return True
     placeholders = {"sk-dev-placeholder", "sk-demo-placeholder-replace-with-real-key", ""}
     return api_key in placeholders or api_key.startswith("sk-dev-") or api_key.startswith("sk-demo-")
+
+

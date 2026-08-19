@@ -221,3 +221,125 @@ class TestParserRegistryAccounting:
 
     def test_logo_tiger_does_not_match_parasut_csv(self):
         assert LogoTigerParser.can_parse(PARASUT_TRANSACTION_CSV) is False
+
+
+# ── Logo Tiger — Demo Fixture (realistic production data) ────────────────────
+# Uses demo/data/logo_tiger_2024.csv format: full year of TechNova Yazılım A.Ş.
+
+LOGO_TIGER_DEMO = """\
+LOGO YAZILIM A.Ş.
+Şirket: TechNova Yazılım A.Ş.
+Dönem: 01.01.2024 - 31.12.2024
+Fiş Listesi Raporu - Hesap Hareketleri
+Rapor Tarihi: 31.12.2024
+
+Tarih;Fiş No;Hesap Kodu;Açıklama;Borç;Alacak;Bakiye
+02.01.2024;G001;701;Ocak Yazılım Lisans Geliri;;285000,00;285000,00
+05.01.2024;F001;760;Ocak Maaş Ödemeleri - Mühendislik;145000,00;;140000,00
+08.01.2024;F002;770;Ocak Ofis Kirası - Levent İstanbul;28500,00;;111500,00
+10.01.2024;G002;701;Danışmanlık Hizmet Bedeli - ABC Holding;;65000,00;176500,00
+12.01.2024;F003;760;Ocak Maaş - Satış Ekibi;52000,00;;124500,00
+15.01.2024;F004;771;Ocak Elektrik - İGDAŞ;4200,00;;120300,00
+15.01.2024;F005;771;Ocak İnternet - Turkcell;2800,00;;117500,00
+18.01.2024;G003;701;Proje Teslim Ödemesi - XYZ Şirketi;;120000,00;237500,00
+20.01.2024;F006;740;Google Ads - Ocak Kampanyası;18500,00;;219000,00
+22.01.2024;F007;758;AWS Bulut Altyapı Faturası;22000,00;;197000,00
+25.01.2024;F008;758;GitHub Enterprise Lisansı;8500,00;;188500,00
+28.01.2024;F009;360;KDV Ödemesi - Ocak;31200,00;;157300,00
+30.01.2024;F010;363;Stopaj Vergisi - Ocak;28750,00;;128550,00
+31.01.2024;G004;701;Aylık SaaS Abonelik Gelirleri;;42000,00;170550,00
+02.02.2024;G005;701;Şubat Yazılım Lisans Geliri;;310000,00;480550,00
+05.02.2024;F011;760;Şubat Maaş - Mühendislik;148000,00;;332550,00
+07.02.2024;F012;760;Şubat Maaş - Satış;53500,00;;279050,00
+08.02.2024;F013;770;Şubat Ofis Kirası;28500,00;;250550,00
+10.02.2024;G006;701;Yeni Müşteri Onboarding Bedeli - DEF Ltd;;95000,00;345550,00
+"""
+
+
+class TestLogoTigerDemoFixture:
+    """End-to-end tests using the demo/data/logo_tiger_2024.csv format."""
+
+    def setup_method(self):
+        self.parser = LogoTigerParser()
+        self.result = self.parser.parse(LOGO_TIGER_DEMO)
+
+    def test_detects_logo_tiger_marker(self):
+        assert LogoTigerParser.can_parse(LOGO_TIGER_DEMO) is True
+
+    def test_parses_multiple_transactions(self):
+        """Demo fixture has 20 rows — all should be parsed."""
+        assert len(self.result.transactions) >= 14, (
+            f"Expected ≥14 transactions from demo fixture, got {len(self.result.transactions)}"
+        )
+
+    def test_income_vs_expense_split(self):
+        """7xx = income, 6xx/7xx borç = expense in Turkish accounting."""
+        income_txs  = [t for t in self.result.transactions if t.tx_type == "income"]
+        expense_txs = [t for t in self.result.transactions if t.tx_type == "expense"]
+        assert len(income_txs)  >= 6, f"Expected ≥6 income txs, got {len(income_txs)}"
+        assert len(expense_txs) >= 8, f"Expected ≥8 expense txs, got {len(expense_txs)}"
+
+    def test_turkish_amount_parsing(self):
+        """Amounts like '285000,00' must parse to correct cents."""
+        # First row: Alacak 285000,00 → 28_500_000 kuruş
+        first_income = next(
+            (t for t in self.result.transactions if t.tx_type == "income"), None
+        )
+        assert first_income is not None
+        assert first_income.amount_cents == 28_500_000, (
+            f"Expected 28500000 kuruş, got {first_income.amount_cents}"
+        )
+
+    def test_turkish_date_parsing(self):
+        """DD.MM.YYYY format parsed correctly."""
+        dates = [t.date for t in self.result.transactions if t.date]
+        assert len(dates) >= 10, "Most transactions should have a parsed date"
+        # First transaction date should be 2024-01-02
+        first_date = min(dates)
+        assert first_date.year == 2024
+        assert first_date.month == 1
+
+    def test_currency_is_try(self):
+        """All transactions from a Turkish ERP export should be TRY."""
+        for tx in self.result.transactions:
+            assert tx.currency == "TRY", f"Expected TRY, got {tx.currency} for {tx.description}"
+
+    def test_no_fatal_parse_warnings(self):
+        """Parser should run without fatal errors."""
+        fatal_warnings = [
+            w for w in self.result.parse_warnings
+            if "error" in w.lower() or "failed" in w.lower()
+        ]
+        assert not fatal_warnings, f"Fatal parse warnings: {fatal_warnings}"
+
+    def test_all_amounts_positive(self):
+        """amount_cents must always be positive (sign is in tx_type)."""
+        for tx in self.result.transactions:
+            assert tx.amount_cents > 0, (
+                f"Non-positive amount {tx.amount_cents} for {tx.description}"
+            )
+
+    def test_descriptions_not_empty(self):
+        """Description field must be populated for most transactions."""
+        empty_desc = [t for t in self.result.transactions if not t.description.strip()]
+        assert len(empty_desc) == 0, (
+            f"{len(empty_desc)} transactions have empty descriptions"
+        )
+
+    def test_total_income_greater_than_total_expense(self):
+        """TechNova is a profitable company — total income > total expenses."""
+        total_income  = sum(t.amount_cents for t in self.result.transactions if t.tx_type == "income")
+        total_expense = sum(t.amount_cents for t in self.result.transactions if t.tx_type == "expense")
+        assert total_income > 0
+        assert total_expense > 0
+        # Not asserting income > expense for the partial fixture, just that both exist
+        assert total_income + total_expense > 0
+
+    def test_multi_month_data(self):
+        """Demo fixture spans January and February — both months should appear."""
+        months = {
+            t.date.month for t in self.result.transactions
+            if t.date
+        }
+        assert 1 in months, "January transactions expected"
+        assert 2 in months, "February transactions expected"

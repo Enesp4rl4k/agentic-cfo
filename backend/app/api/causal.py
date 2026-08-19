@@ -19,6 +19,8 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.api.auth import get_current_user
+from app.models.user import User
 from app.models.report import Report, ReportFormat
 
 router = APIRouter()
@@ -53,6 +55,7 @@ async def _get_dashboard(job_id: str, db: AsyncSession) -> dict[str, Any]:
 async def run_causal_analysis(
     job_id: str,
     body: CausalAnalysisRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -119,6 +122,7 @@ async def run_causal_analysis(
 @router.get("/analysis/{job_id}/causal/feature-importance")
 async def get_feature_importance(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """

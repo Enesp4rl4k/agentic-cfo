@@ -530,14 +530,22 @@ async def chat_with_agent(
         conversation_history = body.conversation_history
 
     # Build enriched dashboard context
+    active_cfo_job_id = (ctx.active_cfo_job_id or None) if hasattr(ctx, "active_cfo_job_id") else None
     evidence_block = await retrieve_evidence(
         db=db,
         org_id=org_id,
         query=body.question,
-        job_id=ctx.active_cfo_job_id,
+        job_id=active_cfo_job_id,
         top_k=3,
         source_type="cfo_transactions_raw",
     )
+    evidence_found = bool((evidence_block or "").strip())
+    if not evidence_found:
+        evidence_block = (
+            "## RAG Kanıtlar (evidence)\n"
+            "- Bu soruya doğrudan kanıt bulunamadı. Yanıt verirken varsayımları açık belirt "
+            "ve mümkünse kullanıcıdan veri/periyot netleştirmesi iste."
+        )
     system_prompt_with_evidence = (
         f"{system_prompt}\n\n{evidence_block}" if evidence_block else system_prompt
     )
@@ -554,6 +562,8 @@ async def chat_with_agent(
         "_coo_result": ctx.last_coo_result,
         "_chro_result": ctx.last_chro_result,
         "_risk_result": ctx.last_risk_result,
+        "_evidence_found": evidence_found,
+        "_evidence_job_scope": active_cfo_job_id,
     }
 
     settings = get_settings()
@@ -645,6 +655,8 @@ async def chat_with_agent(
             "company_name": ctx.company_name,
             "used_reasoning": body.use_reasoning,
             "reasoning_trace": reasoning_trace,     # None unless use_reasoning=True
+            "evidence_found": evidence_found,
+            "evidence_job_scope": active_cfo_job_id,
         },
         "error": None,
     }

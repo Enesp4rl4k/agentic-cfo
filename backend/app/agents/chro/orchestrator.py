@@ -272,13 +272,14 @@ async def run_chro_pipeline(
     company_name: str | None = None,
     analysis_period: str | None = None,
     settings: Any = None,
+    org_id: str | None = None,   # S2-2: cross-domain context
 ) -> dict[str, Any]:
     """
     Run complete CHRO pipeline.
+    S2-2: org_id enables CFO (net_margin, runway) + CTO (velocity) context enrichment.
     Returns: { headcount, attrition, compensation, chro_summary, logs, error }
     """
-    
-    initial_state: CHROState = {
+    base: CHROState = {
         "headcount_csv": headcount_csv,
         "attrition_csv": attrition_csv,
         "compensation_csv": compensation_csv,
@@ -291,6 +292,16 @@ async def run_chro_pipeline(
         "logs": [],
         "error": None,
     }
+
+    # S2-2: Inject cross-domain context (CFO + CTO) into initial state
+    if org_id:
+        try:
+            from app.services.cross_context_enricher import enrich_initial_state
+            base = await enrich_initial_state("chro", base, org_id=org_id)  # type: ignore[assignment]
+        except Exception:
+            pass  # non-fatal
+
+    initial_state = base
     
     config = {
         "settings": settings,

@@ -315,9 +315,11 @@ async def run_coo_pipeline(
     process_csv: str | None = None,
     resource_csv: str | None = None,
     sla_csv: str | None = None,
+    org_id: str | None = None,   # S2-4: cross-domain context
 ) -> COOState:
     """
     Run the full COO pipeline.
+    S2-4: org_id enables CTO (infra_waste) + CHRO (attrition) context enrichment.
     At least one of process_csv, resource_csv, sla_csv must be provided.
     Returns the final COOState.
     """
@@ -326,7 +328,7 @@ async def run_coo_pipeline(
             "At least one of process_csv, resource_csv, or sla_csv is required."
         )
 
-    initial: COOState = {
+    base: COOState = {
         "job_id":       job_id,
         "company_name": company_name,
         "period":       period,
@@ -339,6 +341,15 @@ async def run_coo_pipeline(
         "halted":       False,
         "error":        None,
     }
+
+    if org_id:
+        try:
+            from app.services.cross_context_enricher import enrich_initial_state
+            base = await enrich_initial_state("coo", base, org_id=org_id)  # type: ignore[assignment]
+        except Exception:
+            pass
+
+    initial = base
 
     result: COOState = await _coo_graph.ainvoke(
         initial,

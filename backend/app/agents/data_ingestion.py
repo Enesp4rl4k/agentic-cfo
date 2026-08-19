@@ -31,27 +31,109 @@ from app.parsers.base import ParsedStatement
 
 logger = logging.getLogger(__name__)
 
-CATEGORY_KEYWORDS: dict[str, list[str]] = {
-    "revenue":        ["sales", "income", "revenue", "payment received", "invoice issued"],
-    "cogs":           ["raw material", "goods", "product cost", "manufacturing", "inventory"],
-    "salary":         ["salary", "payroll", "wages", "employee", "social security", "staff"],
-    "rent":           ["rent", "lease", "office rent"],
-    "utilities":      ["electricity", "water", "gas", "internet", "phone", "telecom"],
-    "marketing":      ["advertising", "marketing", "google ads", "meta ads", "social media", "campaign"],
-    "technology":     ["software", "server", "cloud", "aws", "azure", "saas", "subscription", "license"],
-    "tax":            ["tax", "vat", "withholding", "corporate tax", "income tax"],
-    "loan":           ["loan", "debt", "interest", "installment", "bank payment", "credit"],
-    "other_expense":  [],
-    "other_income":   [],
-}
+# Category keywords ordered by SPECIFICITY (most specific first wins on tie).
+# Each entry: (category, keywords, priority)
+# Higher priority = wins when multiple categories match.
+_CATEGORY_RULES: list[tuple[str, list[str], int]] = [
+    # ── Income ────────────────────────────────────────────────────────────────
+    ("revenue",       ["sales invoice", "payment received", "customer payment",
+                       "invoice issued", "gelir", "satış", "tahsilat",
+                       "sales", "income", "revenue"],                           90),
+    ("other_income",  ["other income", "diğer gelir", "grant", "refund received"], 85),
+    # ── COGS ──────────────────────────────────────────────────────────────────
+    ("cogs",          ["raw material", "hammadde", "goods purchased",
+                       "product cost", "manufacturing", "inventory",
+                       "mal alımı", "stok alımı"],                              80),
+    # ── Payroll ───────────────────────────────────────────────────────────────
+    ("salary",        ["salary", "payroll", "maaş", "ücret", "sigorta",
+                       "wages", "employee", "social security",
+                       "sgk", "personel", "staff"],                             75),
+    # ── Tax ── (before "loan" to avoid confusing withholding with bank payment)
+    ("tax",           ["kdv", "stopaj", "kurumlar vergisi", "gelir vergisi",
+                       "vat", "withholding", "corporate tax", "income tax",
+                       "tax payment", "vergi"],                                 73),
+    # ── Loan / Finance ────────────────────────────────────────────────────────
+    ("loan",          ["kredi ödemesi", "taksit", "loan repayment",
+                       "debt payment", "faiz", "interest payment",
+                       "installment", "loan", "debt", "credit",
+                       "bank loan"],                                             70),
+    # ── Rent ──────────────────────────────────────────────────────────────────
+    ("rent",          ["kira", "office rent", "rent payment",
+                       "lease payment", "rent", "lease"],                       65),
+    # ── Utilities ─────────────────────────────────────────────────────────────
+    ("utilities",     ["elektrik", "su faturası", "doğalgaz", "fatura",
+                       "electricity", "water bill", "gas bill",
+                       "internet", "phone", "telecom", "utilities"],           60),
+    # ── Marketing ─────────────────────────────────────────────────────────────
+    ("marketing",     ["google ads", "meta ads", "facebook ads", "reklam",
+                       "advertising", "marketing", "social media",
+                       "campaign", "dijital reklam"],                           55),
+    # ── Technology ────────────────────────────────────────────────────────────
+    ("technology",    ["aws", "azure", "google cloud", "digitalocean",
+                       "github", "jira", "figma", "saas",
+                       "software license", "server", "cloud",
+                       "subscription", "license", "yazılım"],                  50),
+    # ── Other expense fallback ────────────────────────────────────────────────
+    ("other_expense", [],                                                       0),
+]
+
+# Build a fast lookup: category → (keywords, priority)
+_CATEGORY_MAP: list[tuple[str, list[str], int]] = [
+    (cat, kws, pri) for cat, kws, pri in _CATEGORY_RULES if kws
+]
 
 
 def _guess_category(description: str) -> str:
+    """
+    Match description against CATEGORY_RULES using keyword matching.
+
+    When multiple categories match, the one with the highest priority wins.
+    This prevents "bank payment" (loan) from beating "salary" (payroll)
+    just because it appears first in a naive loop.
+    """
+    if not description:
+        return "other_expense"
     desc_lower = description.lower()
-    for category, keywords in CATEGORY_KEYWORDS.items():
+    best_category = "other_expense"
+    best_priority = -1
+
+    for category, keywords, priority in _CATEGORY_MAP:
+        if priority <= best_priority:
+            continue  # can't beat current winner even if matched
         if any(kw in desc_lower for kw in keywords):
-            return category
-    return "other_expense"
+            best_category = category
+            best_priority = priority
+
+    return best_category
+
+
+def _detect_currency(raw_text: str) -> str:
+    """
+    Detect the primary currency from document text.
+    Returns ISO-4217 code: "TRY", "USD", "EUR", "GBP" etc.
+    Defaults to "TRY" for documents that appear to be Turkish.
+    """
+    text_upper = raw_text[:2000].upper()  # Only scan the header
+
+    # Explicit Turkish lira markers
+    if any(marker in text_upper for marker in ["₺", "TL ", " TL\n", "TRY", "TÜRK LİRASI", "TÜRK LIRASI"]):
+        return "TRY"
+    # Euro markers
+    if any(marker in text_upper for marker in ["€", "EUR ", " EUR\n", "EURO"]):
+        return "EUR"
+    # GBP
+    if any(marker in text_upper for marker in ["£", "GBP ", " GBP\n"]):
+        return "GBP"
+    # USD
+    if any(marker in text_upper for marker in ["$", "USD ", " USD\n", "DOLLAR"]):
+        return "USD"
+
+    # Turkish document heuristics (common Turkish words in financial docs)
+    turkish_markers = ["HESAP", "BANKA", "FATURA", "TARİH", "TUTAR", "BORÇ", "ALACAK"]
+    if sum(1 for m in turkish_markers if m in text_upper) >= 2:
+        return "TRY"
+
+    return "TRY"  # safe default for this product's target market
 
 
 def _parse_amount(raw: str) -> int | None:
@@ -312,6 +394,13 @@ async def run_data_ingestion(
                 confidence=0.4,
             )
 
+        # Detect currency once from the document header — avoids per-transaction guessing
+        detected_currency = _detect_currency(raw_text)
+        logger.info(
+            "job=%s — detected currency: %s (LLM fallback path)",
+            state.get("job_id"), detected_currency,
+        )
+
         transactions = []
         confidences: list[float] = []
 
@@ -321,9 +410,12 @@ async def run_data_ingestion(
             conf = float(t.get("confidence", 0.8))
             confidences.append(conf)
 
+            # Use per-transaction currency if LLM provided one, else fall back to detected
+            tx_currency = t.get("currency") or detected_currency
+
             transactions.append({
                 "amount_cents": amount_cents or 0,
-                "currency": "USD",
+                "currency": tx_currency,
                 "type": t.get("type", "expense"),
                 "category": _guess_category(t.get("description", "")),
                 "description": t.get("description", ""),

@@ -7,10 +7,18 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.api.auth import get_current_user
+from app.models.user import User
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.transaction import Transaction
 
 router = APIRouter()
+
+
+def _check_job_access(job: AnalysisJob, user: User) -> None:
+    """Raise 403 if the user's org does not own this job."""
+    if user.org_id and job.org_id and job.org_id != user.org_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
 
 class AnalyzeRequest(BaseModel):
@@ -21,6 +29,7 @@ class AnalyzeRequest(BaseModel):
 @router.post("/analyze/{job_id}")
 async def start_analysis(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     body: AnalyzeRequest | None = None,
 ) -> dict:
@@ -41,6 +50,7 @@ async def start_analysis(
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
     if job.status not in (JobStatus.PENDING, JobStatus.FAILED):
         raise HTTPException(
             status_code=409,
@@ -56,12 +66,14 @@ async def start_analysis(
 @router.get("/analysis/{job_id}")
 async def get_analysis_status(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Poll job status and get logs."""
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
     return {
         "data": {
             "job_id": job.id,
@@ -81,12 +93,14 @@ async def get_analysis_status(
 @router.post("/analysis/{job_id}/approve")
 async def approve_review(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Human approval — clear the awaiting_review flag to allow the pipeline to proceed."""
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
     if not job.awaiting_review:
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
     job.awaiting_review = False
@@ -98,13 +112,16 @@ async def approve_review(
 
 @router.get("/jobs")
 async def list_jobs(
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = 20,
 ) -> dict:
-    """List the most recent analysis jobs (for sidebar history)."""
-    result = await db.execute(
-        select(AnalysisJob).order_by(desc(AnalysisJob.created_at)).limit(limit)
-    )
+    """List the most recent analysis jobs for the current org."""
+    q = select(AnalysisJob).order_by(desc(AnalysisJob.created_at)).limit(limit)
+    # Scope to org when available
+    if current_user.org_id:
+        q = q.where(AnalysisJob.org_id == current_user.org_id)
+    result = await db.execute(q)
     jobs = result.scalars().all()
     return {
         "data": [
@@ -124,12 +141,18 @@ async def list_jobs(
 @router.get("/analysis/{job_id}/transactions")
 async def list_transactions(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
     """List all transactions for a job (paginated)."""
     from sqlalchemy import func
+
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
 
     # Total count
     count_result = await db.execute(

@@ -17,7 +17,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from arq import create_pool
@@ -26,6 +26,23 @@ from arq.connections import RedisSettings, ArqRedis
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+class TransientWorkerError(RuntimeError):
+    """Retryable infra error (network/redis/timeout)."""
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    txt = str(exc).lower()
+    transient_markers = (
+        "timeout",
+        "temporar",
+        "connection reset",
+        "connection refused",
+        "network",
+        "redis",
+    )
+    return any(m in txt for m in transient_markers)
 
 
 # ── Task functions ─────────────────────────────────────────────────────────────
@@ -163,6 +180,11 @@ async def run_cfo_analysis(
             return {"ok": False, "error": "job not found"}
 
         job.status = JobStatus.ANALYZING
+        started_at = datetime.now(timezone.utc)
+        if hasattr(job, "result_metadata"):
+            meta = job.result_metadata or {}
+            meta["analysis_started_at"] = started_at.isoformat()
+            job.result_metadata = meta
         job.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
@@ -226,12 +248,15 @@ async def run_cfo_analysis(
                 if job.org_id:
                     from app.services.rag_service import index_job_text
 
-                    # Use the pipeline output raw_text rows as evidence source.
-                    tx_raw_texts = [
-                        (txd.get("raw_text") or "")
-                        for txd in (result.get("transactions") or [])
-                    ]
-                    doc_text = "\n".join(tx_raw_texts).strip()
+                    # Prefer the pipeline-level `raw_text` if present; it is the
+                    # canonical ingestion form used across evidence endpoints.
+                    doc_text = (result.get("raw_text") or "").strip()
+                    if not doc_text:
+                        tx_raw_texts = [
+                            (txd.get("raw_text") or "")
+                            for txd in (result.get("transactions") or [])
+                        ]
+                        doc_text = "\n".join(tx_raw_texts).strip()
                     # Keep storage bounded (chunk_text itself will be truncated by service).
                     doc_text = doc_text[:80_000]
 
@@ -287,8 +312,18 @@ async def run_cfo_analysis(
             job.logs = logs_serializable
             job.min_confidence = result.get("min_confidence")
             job.awaiting_review = bool(result.get("awaiting_review"))
-            job.completed_at = datetime.now(timezone.utc)
+            completed_at = datetime.now(timezone.utc)
+            job.completed_at = completed_at
             job.updated_at = datetime.now(timezone.utc)
+            if hasattr(job, "result_metadata"):
+                meta = job.result_metadata or {}
+                try:
+                    if meta.get("analysis_started_at"):
+                        t0 = datetime.fromisoformat(meta["analysis_started_at"])
+                        meta["job_completion_ms"] = int((completed_at - t0).total_seconds() * 1000)
+                except Exception:
+                    pass
+                job.result_metadata = meta
             await db.commit()
 
             # Notify SSE subscribers that the job is done
@@ -348,8 +383,18 @@ async def run_cfo_analysis(
 
         except Exception as exc:
             logger.exception("ARQ worker: job=%s failed", job_id)
+            transient = _is_transient_error(exc)
             job.status = JobStatus.FAILED
             job.error_message = str(exc)
+            meta = (job.result_metadata or {}) if hasattr(job, "result_metadata") else {}
+            meta["worker_failure"] = {
+                "retryable": transient,
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+            if hasattr(job, "result_metadata"):
+                job.result_metadata = meta
             job.updated_at = datetime.now(timezone.utc)
             await db.commit()
             # Notify SSE subscribers of failure (best-effort, non-fatal)
@@ -357,7 +402,9 @@ async def run_cfo_analysis(
                 await publish_job_error(job_id, str(exc))
             except Exception:
                 pass
-            raise  # ARQ will mark the job as failed and can retry
+            if transient:
+                raise TransientWorkerError(str(exc))
+            return {"ok": False, "job_id": job_id, "status": str(job.status), "retryable": False}
 
 
 # ── Pool helper (used by FastAPI to enqueue) ───────────────────────────────────
@@ -440,13 +487,128 @@ async def _save_to_memory_and_trend(
         logger.debug("Memory+trend save failed (non-fatal): %s", exc)
 
 
+async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
+    """
+    ARQ maintenance task: backfill missing rag_chunks for recently completed jobs.
+    Runs on the maintenance queue so analysis throughput stays isolated under load.
+    """
+    from app.database import get_session_factory, engine
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.models.transaction import Transaction
+    from app.models.rag_chunk import RagChunk
+    from app.services.rag_service import index_job_text
+    from sqlalchemy import func, select
+
+    settings = get_settings()
+    if not settings.rag_backfill_enabled:
+        return {"ok": True, "skipped": True, "reason": "disabled"}
+
+    lookback_days = max(1, settings.rag_backfill_lookback_days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+
+    checked = 0
+    indexed = 0
+    async with get_session_factory(engine())() as db:
+        jobs_result = await db.execute(
+            select(AnalysisJob).where(
+                AnalysisJob.status == JobStatus.COMPLETED,
+                AnalysisJob.completed_at.isnot(None),
+                AnalysisJob.completed_at >= cutoff,
+                AnalysisJob.org_id.isnot(None),
+            )
+        )
+        jobs = jobs_result.scalars().all()
+        for job in jobs:
+            checked += 1
+            count_result = await db.execute(
+                select(func.count()).select_from(RagChunk).where(
+                    RagChunk.org_id == str(job.org_id),
+                    RagChunk.job_id == str(job.id),
+                    RagChunk.source_type == "cfo_transactions_raw",
+                )
+            )
+            if int(count_result.scalar() or 0) > 0:
+                continue
+
+            tx_result = await db.execute(
+                select(Transaction.raw_text).where(Transaction.job_id == job.id)
+            )
+            doc_text = "\n".join((row[0] or "") for row in tx_result.all()).strip()
+            if not doc_text:
+                continue
+
+            added = await index_job_text(
+                db,
+                org_id=str(job.org_id),
+                job_id=str(job.id),
+                source_type="cfo_transactions_raw",
+                raw_text=doc_text[:80_000],
+            )
+            if added > 0:
+                indexed += 1
+
+        if indexed > 0:
+            await db.commit()
+
+    logger.info(
+        "Maintenance RAG backfill: checked=%d indexed=%d lookback_days=%d",
+        checked,
+        indexed,
+        lookback_days,
+    )
+    return {"ok": True, "checked": checked, "indexed": indexed}
+
+
+async def run_usage_prune_maintenance(ctx: dict) -> dict[str, Any]:
+    """ARQ maintenance task: prune usage_events older than 90 days."""
+    from app.database import get_session_factory, engine
+    from app.services.usage_meter import prune_old_usage_events
+
+    async with get_session_factory(engine())() as db:
+        deleted = await prune_old_usage_events(db=db, days=90)
+    logger.info("Maintenance usage prune: deleted=%d", deleted)
+    return {"ok": True, "deleted": deleted}
+
+
+async def enqueue_maintenance_job(task_name: str, *args: Any, **kwargs: Any) -> bool:
+    """
+    Enqueue a job on the maintenance queue.
+    Uses a short Redis lock to avoid duplicate enqueues when scheduler overlaps.
+    """
+    pool = await get_arq_pool()
+    settings = get_settings()
+    lock_key = f"maintenance:enqueue:{task_name}"
+    try:
+        acquired = await pool.set(lock_key, "1", ex=900, nx=True)
+        if not acquired:
+            logger.debug("Maintenance enqueue skipped (lock): %s", task_name)
+            return False
+    except Exception as exc:
+        logger.warning("Maintenance enqueue lock failed for %s: %s", task_name, exc)
+
+    await pool.enqueue_job(
+        task_name,
+        *args,
+        _queue_name=settings.arq_maintenance_queue_name,
+        **kwargs,
+    )
+    logger.info("Enqueued maintenance job: %s", task_name)
+    return True
+
+
 async def enqueue_analysis(
     job_id: str,
     budget_input: dict[str, Any] | None = None,
 ) -> None:
     """Enqueue a CFO analysis job. Called from FastAPI endpoint."""
     pool = await get_arq_pool()
-    await pool.enqueue_job("run_cfo_analysis", job_id, budget_input)
+    settings = get_settings()
+    await pool.enqueue_job(
+        "run_cfo_analysis",
+        job_id,
+        budget_input,
+        _queue_name=settings.arq_analysis_queue_name,
+    )
     logger.info("Enqueued CFO analysis: job=%s", job_id)
 
 
@@ -468,6 +630,7 @@ async def enqueue_ceo_analysis(
     Returns immediately — result polled via GET /ceo/status/{job_id}.
     """
     pool = await get_arq_pool()
+    settings = get_settings()
     await pool.enqueue_job(
         "run_ceo_analysis",
         job_id,
@@ -481,6 +644,7 @@ async def enqueue_ceo_analysis(
         sprint_csv=sprint_csv,
         company_name=company_name,
         period=period,
+        _queue_name=settings.arq_analysis_queue_name,
     )
     # Mark job as pending in Redis immediately so polling returns a valid status
     import json
@@ -511,12 +675,32 @@ class WorkerSettings:
     """ARQ worker configuration. Run with: arq app.worker.WorkerSettings"""
 
     functions = [run_cfo_analysis, run_ceo_analysis]
-    max_jobs = 10                   # concurrent jobs per worker process
+    queue_name = get_settings().arq_analysis_queue_name
+    max_jobs = get_settings().arq_analysis_max_jobs  # concurrent jobs per worker process
     job_timeout = 600               # 10 minutes max per job
     keep_result = 86400             # keep job result in Redis for 24h
     retry_jobs = True
     max_tries = 2                   # retry once on failure
 
+    @classmethod
+    def redis_settings(cls) -> RedisSettings:
+        settings = get_settings()
+        return RedisSettings.from_dsn(settings.redis_url)
+
+
+class MaintenanceWorkerSettings:
+    """
+    Dedicated queue for maintenance workloads (backfill, cleanup, long non-user jobs).
+    This isolates user-facing analysis throughput under high traffic.
+    """
+
+    functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance]
+    queue_name = get_settings().arq_maintenance_queue_name
+    max_jobs = get_settings().arq_maintenance_max_jobs
+    job_timeout = 1200
+    keep_result = 86400
+    retry_jobs = True
+    max_tries = 2
     @classmethod
     def redis_settings(cls) -> RedisSettings:
         settings = get_settings()
