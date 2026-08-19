@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -155,8 +155,41 @@ async def system_health(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     }
 
 
+async def _management_summary(db: AsyncSession, org_id: str | None = None) -> dict[str, Any]:
+    """Conflict + management layer summary for ops endpoint."""
+    out: dict[str, Any] = {
+        "conflicts_available": False,
+        "open_conflicts": 0,
+        "topics": [],
+    }
+    if not org_id:
+        return out
+    try:
+        rows = await db.execute(
+            text(
+                """
+                SELECT topic, status, COUNT(*) AS cnt
+                FROM agent_conflicts
+                WHERE org_id = :org_id AND status = 'open'
+                GROUP BY topic, status
+                """
+            ),
+            {"org_id": org_id},
+        )
+        items = rows.all()
+        out["conflicts_available"] = True
+        out["open_conflicts"] = sum(int(r[2]) for r in items)
+        out["topics"] = [{"topic": str(r[0]), "count": int(r[2])} for r in items]
+    except Exception:
+        pass
+    return out
+
+
 @router.get("/system/ops")
-async def system_ops(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def system_ops(
+    db: AsyncSession = Depends(get_db),
+    org_id: str | None = Query(default=None, description="Optional org scope for management summary"),
+) -> dict[str, Any]:
     # Job status counters
     status_rows = await db.execute(
         select(AnalysisJob.status, func.count(AnalysisJob.id)).group_by(AnalysisJob.status)
@@ -275,6 +308,7 @@ async def system_ops(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     queue_depths = await _queue_depths()
     failure_rate_pct = _safe_pct(failed_count, total_jobs)
     awaiting_review_ratio_pct = _safe_pct(awaiting_review_count, total_jobs)
+    management = await _management_summary(db, org_id)
     suggested_actions = _derive_actions(
         failed_count=failed_count,
         awaiting_review_count=awaiting_review_count,
@@ -302,6 +336,7 @@ async def system_ops(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
                 "breaches": sla_breaches,
             },
             "error_budget": ERROR_BUDGETS,
+            "management": management,
             "suggested_actions": suggested_actions,
             "generated_at": now.isoformat(),
         },

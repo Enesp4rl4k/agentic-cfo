@@ -69,6 +69,9 @@ check "scheduler enqueues maintenance (not inline backfill)" \
   grep -q "enqueue_maintenance_job" backend/app/scheduler.py && \
   grep -q "run_rag_backfill_maintenance" backend/app/scheduler.py
 
+check "golden path components" \
+  bash scripts/golden-path-check.sh
+
 # ── Core verify gate ─────────────────────────────────────────────────────────
 INFO "Running: verify.sh (unit + lint + typecheck)"
 CHECKS=$((CHECKS + 1))

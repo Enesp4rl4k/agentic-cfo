@@ -101,13 +101,54 @@ async def on_agent_complete(
     """
     try:
         from app.services.company_context import get_company_context, save_company_context
+        from app.platform.conductor import ManagementConductor, signals_from_company_context
 
         ctx = await get_company_context(org_id, db)
         agent_lower = agent.lower()
 
+        # ── Step 0: Management conductor plan ────────────────────────────────
+        conductor_plan = None
+        try:
+            ctx_dict = {
+                "active_cfo_job_id": ctx.active_cfo_job_id,
+                "last_cfo_result": ctx.last_cfo_result,
+                "last_risk_result": ctx.last_risk_result,
+                "last_cto_result": ctx.last_cto_result,
+                "last_cmo_result": ctx.last_cmo_result,
+                "last_chro_result": ctx.last_chro_result,
+                "last_coo_result": ctx.last_coo_result,
+            }
+            signals = signals_from_company_context(ctx_dict)
+            signals.add(f"{agent_lower}_complete")
+            conductor = ManagementConductor()
+            conductor_plan = conductor.plan(
+                org_id=org_id,
+                trigger=f"{agent_lower}_complete",
+                available_signals=signals,
+            )
+            logger.info(
+                "Conductor plan org=%s trigger=%s runnable=%s",
+                org_id,
+                agent_lower,
+                [r.value for r in conductor_plan.runnable_roles()],
+            )
+        except Exception as exc:
+            logger.debug("Conductor plan skipped (non-fatal): %s", exc)
+
+        runnable_roles = {
+            p.role.value for p in (conductor_plan.roles if conductor_plan else []) if p.should_run
+        }
+
         # ── Step 1: Run chained agents ────────────────────────────────────────
         downstream = AGENT_CHAIN.get(agent_lower, [])
         for next_agent in downstream:
+            if conductor_plan and next_agent not in runnable_roles:
+                logger.debug(
+                    "Auto-chain: conductor skipped %s for org=%s",
+                    next_agent,
+                    org_id,
+                )
+                continue
             if ctx.has_required_data(next_agent):
                 logger.info(
                     "Auto-chain: %s completed → enqueueing %s for org=%s",

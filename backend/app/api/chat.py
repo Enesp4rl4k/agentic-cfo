@@ -634,6 +634,19 @@ async def chat_with_agent(
             system_prompt_override=system_prompt_with_evidence,
         )
 
+    from app.platform.contracts import EvidenceBundle
+    from app.services.rag.grounding_validator import apply_disclaimer, validate_grounding
+
+    evidence_bundle = EvidenceBundle(
+        query=body.question,
+        org_id=org_id,
+        citations=[],
+        job_scope="job_scoped" if active_cfo_job_id else "org_wide",
+    ) if evidence_found else None
+    grounding = validate_grounding(answer, evidence_bundle)
+    if grounding.requires_disclaimer:
+        answer = apply_disclaimer(answer, grounding, locale="tr")
+
     # Persist exchange to server-side memory
     try:
         await conv_svc.append_turn(
@@ -657,6 +670,8 @@ async def chat_with_agent(
             "reasoning_trace": reasoning_trace,     # None unless use_reasoning=True
             "evidence_found": evidence_found,
             "evidence_job_scope": active_cfo_job_id,
+            "grounding_validated": not grounding.requires_disclaimer,
+            "grounding_flags": grounding.flagged_claims,
         },
         "error": None,
     }
