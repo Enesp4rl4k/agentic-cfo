@@ -201,10 +201,7 @@ async def run_cfo_analysis(
                 job_id, _routing_plan.summary(),
             )
             # Pass routing plan to pipeline so it can skip unavailable agents
-            run_config = AgentRunConfig(
-                require_review=False,
-                # Future: pass routing_plan.execution_order to orchestrator
-            )
+            run_config = AgentRunConfig(require_review=True)
 
             result = await run_cfo_pipeline(
                 job_id=job_id,

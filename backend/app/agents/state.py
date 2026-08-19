@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, TypedDict
 
+from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
+
 
 # ---------------------------------------------------------------------------
 # Shared audit type (one entry per skill run)
@@ -94,6 +96,8 @@ class CFOState(TypedDict, total=False):
     memory_episode_ids: list[str] | None
     # Org context for memory retrieval
     org_id: str | None
+    # Independent verifier output (separate LangGraph step)
+    verifier_verdict: dict[str, Any] | None
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +122,7 @@ class SkillResult:
 class AgentRunConfig:
     dry_run: bool = False
     require_review: bool = True
-    auto_proceed_min_confidence: float = 0.80
+    auto_proceed_min_confidence: float = CONFIDENCE_AUTO_PROCEED_MIN
 
 
 DEFAULT_RUN_CONFIG = AgentRunConfig()

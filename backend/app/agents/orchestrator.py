@@ -13,6 +13,7 @@ Tam pipeline:
   → tax           (non-fatal)
   → budget        (non-fatal, needs budget_input)
   → alert         (always runs, aggregates all signals)
+  → verifier      (independent quality gate — reflection + confidence)
   → report
   → END
 
@@ -36,6 +37,7 @@ from app.agents.state import (
     ROUTE_PNL,
     ROUTE_HOLD,
     ROUTE_END,
+    ROUTE_REPORT,
 )
 
 # Additional routing constants for mid-pipeline halt gates
@@ -55,6 +57,8 @@ from app.agents.report_agent import run_report
 from app.services.capability_router import get_capability_router
 from app.services.reflection_agent import get_reflection_agent
 from app.services.agent_memory import AgentMemoryStore, EpisodeRecord, get_memory_store
+from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
+from app.agents.verifier_node import node_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -277,12 +281,20 @@ async def node_hold_for_review(state: CFOState, config: dict) -> CFOState:
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
+def route_after_verifier(state: CFOState) -> str:
+    if state.get("halted"):
+        return ROUTE_END
+    if state.get("awaiting_review"):
+        return ROUTE_HOLD
+    return ROUTE_REPORT
+
+
 def route_after_ingestion(state: CFOState) -> str:
     if state.get("halted"):
         return ROUTE_END
     if state.get("awaiting_review"):
         return ROUTE_HOLD
-    if (state.get("min_confidence") or 1.0) < 0.80:
+    if (state.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN:
         return ROUTE_HOLD
     return ROUTE_PNL
 
@@ -316,6 +328,7 @@ def build_cfo_graph() -> StateGraph:
     graph.add_node("tax",             node_tax)
     graph.add_node("budget",          node_budget)
     graph.add_node("alert",           node_alert)
+    graph.add_node("verifier",        node_verifier)
     graph.add_node("report",          node_report)
     graph.add_node("hold_for_review", node_hold_for_review)
 
@@ -359,7 +372,16 @@ def build_cfo_graph() -> StateGraph:
     graph.add_edge("multi_period", "tax")
     graph.add_edge("tax",          "budget")
     graph.add_edge("budget",       "alert")
-    graph.add_edge("alert",        "report")
+    graph.add_edge("alert",        "verifier")
+    graph.add_conditional_edges(
+        "verifier",
+        route_after_verifier,
+        {
+            ROUTE_REPORT: "report",
+            ROUTE_HOLD:   "hold_for_review",
+            ROUTE_END:    END,
+        },
+    )
     graph.add_edge("report",       END)
     graph.add_edge("hold_for_review", END)
 
