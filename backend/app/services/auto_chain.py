@@ -87,18 +87,56 @@ FEEDBACK_RULES: dict[str, list[tuple]] = {
 
 # ── Main hook ─────────────────────────────────────────────────────────────────
 
+async def build_conductor_plan_dict(
+    *,
+    org_id: str,
+    agent: str,
+    db: Any = None,
+) -> dict[str, Any] | None:
+    """Build a serializable ManagementConductor plan for result_metadata."""
+    try:
+        from app.services.company_context import get_company_context
+        from app.platform.conductor import ManagementConductor, signals_from_company_context
+
+        ctx = await get_company_context(org_id, db)
+        agent_lower = agent.lower()
+        ctx_dict = {
+            "active_cfo_job_id": ctx.active_cfo_job_id,
+            "last_cfo_result": ctx.last_cfo_result,
+            "last_risk_result": ctx.last_risk_result,
+            "last_cto_result": ctx.last_cto_result,
+            "last_cmo_result": ctx.last_cmo_result,
+            "last_chro_result": ctx.last_chro_result,
+            "last_coo_result": ctx.last_coo_result,
+        }
+        signals = signals_from_company_context(ctx_dict)
+        signals.add(f"{agent_lower}_complete")
+        plan = ManagementConductor().plan(
+            org_id=org_id,
+            trigger=f"{agent_lower}_complete",
+            available_signals=signals,
+        )
+        return plan.to_dict()
+    except Exception as exc:
+        logger.debug("build_conductor_plan_dict failed (non-fatal): %s", exc)
+        return None
+
+
 async def on_agent_complete(
     agent: str,
     org_id: str,
     result: dict[str, Any],
     db: Any = None,
-) -> None:
+) -> dict[str, Any] | None:
     """
     Called after an agent completes. Triggers downstream agents if conditions met.
 
     This runs as a background task — all errors are caught and logged,
     never propagated to the caller.
+
+    Returns the conductor plan dict when available (for result_metadata).
     """
+    conductor_plan_dict: dict[str, Any] | None = None
     try:
         from app.services.company_context import get_company_context, save_company_context
         from app.platform.conductor import ManagementConductor, signals_from_company_context
@@ -126,6 +164,7 @@ async def on_agent_complete(
                 trigger=f"{agent_lower}_complete",
                 available_signals=signals,
             )
+            conductor_plan_dict = conductor_plan.to_dict()
             logger.info(
                 "Conductor plan org=%s trigger=%s runnable=%s",
                 org_id,
@@ -204,11 +243,18 @@ async def on_agent_complete(
             except Exception as e:
                 logger.debug("Feedback rule error (non-fatal): %s", e)
 
+        # ── Step 4: If risk just finished (or both present), run consensus ────
+        if agent_lower in ("risk", "cfo") and ctx.last_cfo_result and ctx.last_risk_result:
+            await _run_auto_consensus(org_id=org_id, ctx=ctx, db=db)
+
     except Exception as exc:
         logger.warning(
             "Auto-chain on_agent_complete failed (non-fatal): agent=%s org=%s error=%s",
             agent, org_id, exc,
         )
+        return conductor_plan_dict
+
+    return conductor_plan_dict
 
 
 # ── Internal runners ──────────────────────────────────────────────────────────
@@ -276,8 +322,42 @@ async def _run_risk_from_context(
         await save_company_context(ctx_fresh, db)
         logger.info("Auto-chain risk pipeline completed for org=%s", org_id)
 
+        # Auto-run consensus on cash_risk / revenue_outlook after CFO+risk available
+        await _run_auto_consensus(org_id=org_id, ctx=ctx_fresh, db=db)
+
     except Exception as exc:
         logger.warning("Auto-chain risk pipeline error: %s", exc)
+
+
+async def _run_auto_consensus(*, org_id: str, ctx: Any, db: Any) -> None:
+    """Run consensus topics when enough agent claims exist (non-fatal)."""
+    try:
+        from app.services.negotiation.consensus_engine import ConsensusEngine
+
+        if not (ctx.last_cfo_result and ctx.last_risk_result):
+            return
+        engine = ConsensusEngine()
+        for topic in ("cash_risk", "revenue_outlook"):
+            try:
+                result = await engine.run_consensus(
+                    org_id=org_id,
+                    topic=topic,
+                    resolution_mode="weighted",
+                    ctx=ctx,
+                    db=db,
+                )
+                conflict_n = len(getattr(result, "conflicts", None) or [])
+                logger.info(
+                    "Auto-consensus topic=%s org=%s conflicts=%d agreement=%.2f",
+                    topic,
+                    org_id,
+                    conflict_n,
+                    float(getattr(result, "agreement_score", 0) or 0),
+                )
+            except Exception as topic_exc:
+                logger.debug("Auto-consensus topic=%s failed: %s", topic, topic_exc)
+    except Exception as exc:
+        logger.debug("Auto-consensus skipped (non-fatal): %s", exc)
 
 
 async def _run_audit_from_context(

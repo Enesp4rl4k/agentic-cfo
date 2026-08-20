@@ -1,17 +1,7 @@
 """
 Sync Schedules API — DQ-5
 
-CRUD endpoints for managing automatic data sync schedules.
-
-Endpoints
----------
-GET    /sync/schedules              → list org's schedules
-POST   /sync/schedules              → create new schedule
-PUT    /sync/schedules/{id}         → update schedule
-DELETE /sync/schedules/{id}         → delete schedule
-POST   /sync/schedules/{id}/run     → trigger manual run immediately
-GET    /sync/schedules/{id}/history → last 20 sync results
-GET    /sync/sources                → list supported source types
+CRUD endpoints for managing automatic data sync schedules (SQLAlchemy ORM).
 """
 from __future__ import annotations
 
@@ -23,21 +13,23 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select, text, update as sql_update, delete as sql_delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.sync_schedule import SyncSchedule
 from app.models.user import User
 from app.services.scheduled_sync import (
-    SyncScheduleConfig, SyncFrequency, SyncSourceType,
+    SyncScheduleConfig,
+    SyncFrequency,
+    SyncSourceType,
     get_sync_runner,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["sync"])
 
-# ── Pydantic models ───────────────────────────────────────────────────────────
 
 class CreateScheduleRequest(BaseModel):
     source_type: str
@@ -58,65 +50,100 @@ class UpdateScheduleRequest(BaseModel):
     source_config: dict[str, Any] | None = None
 
 
-# ── Source type metadata ──────────────────────────────────────────────────────
-
 SOURCE_TYPES = [
     {
         "id": SyncSourceType.ERP_LOGO_TIGER,
         "label": "Logo Tiger",
-        "description": "Logo Tiger ERP — işlem ve muhasebe verisi",
+        "description": "Logo Tiger ERP",
+        "pack": "tr",
         "config_fields": [
-            {"key": "from_date", "label": "Başlangıç Tarihi", "type": "date", "required": False},
-            {"key": "to_date",   "label": "Bitiş Tarihi",     "type": "date", "required": False},
+            {"key": "from_date", "label": "From", "type": "date", "required": False},
+            {"key": "to_date", "label": "To", "type": "date", "required": False},
         ],
     },
     {
         "id": SyncSourceType.ERP_PARASUT,
         "label": "Paraşüt",
-        "description": "Paraşüt muhasebe yazılımı",
+        "description": "Paraşüt accounting (Turkey pack)",
+        "pack": "tr",
         "config_fields": [
-            {"key": "from_date", "label": "Başlangıç Tarihi", "type": "date", "required": False},
-            {"key": "to_date",   "label": "Bitiş Tarihi",     "type": "date", "required": False},
+            {"key": "integration_id", "label": "Integration ID", "type": "text", "required": True},
         ],
     },
     {
         "id": SyncSourceType.OPEN_BANKING,
         "label": "Open Banking",
-        "description": "Türk bankalarından gerçek zamanlı hesap hareketleri",
+        "description": "Bank account movements",
+        "pack": None,
         "config_fields": [
-            {"key": "bank",       "label": "Banka",      "type": "select",
-             "options": ["akbank", "garanti", "isbank", "yapikredi"], "required": True},
-            {"key": "account_id", "label": "Hesap ID",   "type": "text", "required": True},
+            {
+                "key": "bank",
+                "label": "Bank",
+                "type": "select",
+                "options": ["akbank", "garanti", "isbank", "yapikredi"],
+                "required": True,
+            },
+            {"key": "account_id", "label": "Account ID", "type": "text", "required": True},
         ],
     },
     {
         "id": SyncSourceType.GIB_EFATURA,
         "label": "GİB e-Fatura",
-        "description": "GİB portalından e-Fatura ve e-Arşiv",
+        "description": "Turkey e-invoice (Turkey pack)",
+        "pack": "tr",
+        "config_fields": [],
+    },
+    {
+        "id": SyncSourceType.MANUAL_CSV,
+        "label": "CSV upload schedule",
+        "description": "Core connector — scheduled CSV path (manual)",
+        "pack": None,
         "config_fields": [],
     },
 ]
 
 FREQUENCY_OPTIONS = [
-    {"id": SyncFrequency.DAILY,   "label": "Günlük",   "description": "Her gün seçilen saatte"},
-    {"id": SyncFrequency.WEEKLY,  "label": "Haftalık", "description": "Her Pazartesi"},
-    {"id": SyncFrequency.MONTHLY, "label": "Aylık",    "description": "Her ayın 1'i"},
-    {"id": SyncFrequency.MANUAL,  "label": "Manuel",   "description": "Sadece elle tetikleme"},
+    {"id": SyncFrequency.DAILY, "label": "Daily", "description": "Every day at selected hour"},
+    {"id": SyncFrequency.WEEKLY, "label": "Weekly", "description": "Every Monday"},
+    {"id": SyncFrequency.MONTHLY, "label": "Monthly", "description": "1st of each month"},
+    {"id": SyncFrequency.MANUAL, "label": "Manual", "description": "Manual trigger only"},
 ]
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+def _schedule_to_dict(row: SyncSchedule) -> dict[str, Any]:
+    cfg: Any = row.source_config or "{}"
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except Exception:
+            cfg = {}
+    return {
+        "id": row.id,
+        "org_id": row.org_id,
+        "source_type": row.source_type,
+        "frequency": row.frequency,
+        "hour_utc": row.hour_utc,
+        "enabled": row.enabled,
+        "auto_analyze": row.auto_analyze,
+        "notify_on_completion": row.notify_on_completion,
+        "source_config": cfg if isinstance(cfg, dict) else {},
+        "last_run_at": row.last_run_at.isoformat() if row.last_run_at else None,
+        "last_status": row.last_status,
+        "last_job_id": row.last_job_id,
+        "last_row_count": row.last_row_count,
+        "last_health_score": row.last_health_score,
+        "last_error": row.last_error,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
 
 @router.get("/sync/sources")
 async def list_sync_sources(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """List all supported sync source types with config schemas."""
     return {
-        "data": {
-            "sources": SOURCE_TYPES,
-            "frequencies": FREQUENCY_OPTIONS,
-        },
+        "data": {"sources": SOURCE_TYPES, "frequencies": FREQUENCY_OPTIONS},
         "error": None,
     }
 
@@ -126,19 +153,17 @@ async def list_schedules(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """List all sync schedules for the current org."""
     org_id = str(user.org_id) if user.org_id else str(user.id)
     try:
         result = await db.execute(
-            text("SELECT * FROM sync_schedules WHERE org_id = :org_id ORDER BY created_at DESC"),
-            {"org_id": org_id},
+            select(SyncSchedule)
+            .where(SyncSchedule.org_id == org_id)
+            .order_by(SyncSchedule.created_at.desc())
         )
-        rows = result.fetchall()
-        schedules = [_row_to_dict(row) for row in rows]
+        schedules = [_schedule_to_dict(r) for r in result.scalars().all()]
     except Exception as e:
-        logger.warning("sync_schedules table not found: %s", e)
+        logger.warning("sync_schedules unavailable: %s", e)
         schedules = []
-
     return {"data": {"schedules": schedules}, "error": None}
 
 
@@ -148,55 +173,34 @@ async def create_schedule(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Create a new sync schedule."""
-    # Validate source type
     valid_sources = [s["id"] for s in SOURCE_TYPES]
     if body.source_type not in valid_sources:
-        raise HTTPException(status_code=400, detail=f"Geçersiz kaynak tipi: {body.source_type}")
-
-    # Validate frequency
+        raise HTTPException(status_code=400, detail=f"Invalid source type: {body.source_type}")
     valid_freqs = [f["id"] for f in FREQUENCY_OPTIONS]
     if body.frequency not in valid_freqs:
-        raise HTTPException(status_code=400, detail=f"Geçersiz frekans: {body.frequency}")
+        raise HTTPException(status_code=400, detail=f"Invalid frequency: {body.frequency}")
 
     org_id = str(user.org_id) if user.org_id else str(user.id)
-    schedule_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
-
-    try:
-        await db.execute(
-            text("""
-                INSERT INTO sync_schedules
-                (id, org_id, source_type, frequency, hour_utc, enabled,
-                 auto_analyze, notify_on_completion, source_config, created_at, updated_at)
-                VALUES
-                (:id, :org_id, :source_type, :frequency, :hour_utc, :enabled,
-                 :auto_analyze, :notify_on_completion, :source_config, :now, :now)
-            """),
-            {
-                "id": schedule_id,
-                "org_id": org_id,
-                "source_type": body.source_type,
-                "frequency": body.frequency,
-                "hour_utc": body.hour_utc,
-                "enabled": body.enabled,
-                "auto_analyze": body.auto_analyze,
-                "notify_on_completion": body.notify_on_completion,
-                "source_config": json.dumps(body.source_config),
-                "now": now,
-            }
-        )
-        await db.commit()
-    except Exception as e:
-        logger.error("create_schedule failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
-
+    row = SyncSchedule(
+        id=str(uuid.uuid4()),
+        org_id=org_id,
+        source_type=body.source_type,
+        frequency=body.frequency,
+        hour_utc=body.hour_utc,
+        enabled=body.enabled,
+        auto_analyze=body.auto_analyze,
+        notify_on_completion=body.notify_on_completion,
+        source_config=json.dumps(body.source_config or {}),
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
     return {
         "data": {
-            "schedule_id": schedule_id,
-            "source_type": body.source_type,
-            "frequency": body.frequency,
-            "enabled": body.enabled,
+            "schedule_id": row.id,
+            "source_type": row.source_type,
+            "frequency": row.frequency,
+            "enabled": row.enabled,
         },
         "error": None,
     }
@@ -209,33 +213,24 @@ async def update_schedule(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Update a sync schedule."""
     org_id = str(user.org_id) if user.org_id else str(user.id)
-
-    updates: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+    row = await db.get(SyncSchedule, schedule_id)
+    if not row or row.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
     if body.frequency is not None:
-        updates["frequency"] = body.frequency
+        row.frequency = body.frequency
     if body.hour_utc is not None:
-        updates["hour_utc"] = body.hour_utc
+        row.hour_utc = body.hour_utc
     if body.enabled is not None:
-        updates["enabled"] = body.enabled
+        row.enabled = body.enabled
     if body.auto_analyze is not None:
-        updates["auto_analyze"] = body.auto_analyze
+        row.auto_analyze = body.auto_analyze
     if body.notify_on_completion is not None:
-        updates["notify_on_completion"] = body.notify_on_completion
+        row.notify_on_completion = body.notify_on_completion
     if body.source_config is not None:
-        updates["source_config"] = json.dumps(body.source_config)
-
-    try:
-        set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-        await db.execute(
-            text(f"UPDATE sync_schedules SET {set_clause} WHERE id = :id AND org_id = :org_id"),
-            {**updates, "id": schedule_id, "org_id": org_id},
-        )
-        await db.commit()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        row.source_config = json.dumps(body.source_config)
+    row.updated_at = datetime.now(timezone.utc)
+    await db.commit()
     return {"data": {"updated": True, "schedule_id": schedule_id}, "error": None}
 
 
@@ -245,17 +240,12 @@ async def delete_schedule(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Delete a sync schedule."""
     org_id = str(user.org_id) if user.org_id else str(user.id)
-    try:
-        await db.execute(
-            text("DELETE FROM sync_schedules WHERE id = :id AND org_id = :org_id"),
-            {"id": schedule_id, "org_id": org_id},
-        )
-        await db.commit()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    row = await db.get(SyncSchedule, schedule_id)
+    if not row or row.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    await db.delete(row)
+    await db.commit()
     return {"data": {"deleted": True, "schedule_id": schedule_id}, "error": None}
 
 
@@ -265,35 +255,21 @@ async def trigger_manual_run(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """
-    Trigger an immediate manual sync run for a schedule.
-    Runs synchronously — returns result when complete.
-    """
     from app.config import get_settings
 
     org_id = str(user.org_id) if user.org_id else str(user.id)
+    row = await db.get(SyncSchedule, schedule_id)
+    if not row or row.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
 
-    # Load schedule from DB
-    try:
-        result = await db.execute(
-            text("SELECT * FROM sync_schedules WHERE id = :id AND org_id = :org_id"),
-            {"id": schedule_id, "org_id": org_id},
-        )
-        row = result.fetchone()
-    except Exception as e:
-        raise HTTPException(status_code=404, detail="Schedule bulunamadı")
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Schedule bulunamadı")
-
-    row_dict = _row_to_dict(row)
+    row_dict = _schedule_to_dict(row)
     schedule = SyncScheduleConfig(
         schedule_id=schedule_id,
         org_id=org_id,
         source_type=row_dict["source_type"],
         frequency=row_dict["frequency"],
         hour_utc=row_dict["hour_utc"],
-        enabled=True,   # force-run even if disabled
+        enabled=True,
         source_config=row_dict.get("source_config") or {},
         auto_analyze=row_dict["auto_analyze"],
         notify_on_completion=row_dict["notify_on_completion"],
@@ -303,50 +279,13 @@ async def trigger_manual_run(
     runner = get_sync_runner()
     sync_result = await runner.run(schedule, db, settings)
 
-    # Update last_run in DB
-    try:
-        await db.execute(
-            text("""
-                UPDATE sync_schedules SET
-                    last_run_at = :ran_at,
-                    last_status = :status,
-                    last_job_id = :job_id,
-                    last_row_count = :rows,
-                    last_health_score = :score,
-                    last_error = :error,
-                    updated_at = :now
-                WHERE id = :id
-            """),
-            {
-                "ran_at": sync_result.ran_at,
-                "status": sync_result.status,
-                "job_id": sync_result.job_id,
-                "rows": sync_result.row_count,
-                "score": sync_result.health_score,
-                "error": sync_result.error,
-                "now": datetime.now(timezone.utc),
-                "id": schedule_id,
-            }
-        )
-        await db.commit()
-    except Exception as e:
-        logger.warning("Failed to update schedule after run: %s", e)
+    row.last_run_at = sync_result.ran_at
+    row.last_status = sync_result.status
+    row.last_job_id = sync_result.job_id
+    row.last_row_count = sync_result.row_count
+    row.last_health_score = sync_result.health_score
+    row.last_error = sync_result.error
+    row.updated_at = datetime.now(timezone.utc)
+    await db.commit()
 
     return {"data": sync_result.to_dict(), "error": None}
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    """Convert SQLAlchemy row to dict, parsing JSON fields."""
-    d = dict(row._mapping)
-    if isinstance(d.get("source_config"), str):
-        try:
-            d["source_config"] = json.loads(d["source_config"])
-        except Exception:
-            d["source_config"] = {}
-    # Serialize datetimes
-    for k in ("created_at", "updated_at", "last_run_at"):
-        if isinstance(d.get(k), datetime):
-            d[k] = d[k].isoformat()
-    return d

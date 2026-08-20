@@ -21,13 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user, require_role
+from app.api.deps_regional import require_tr_pack
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.transaction import Transaction
 from app.models.smmm_onay import SMMMOnayKaydi, OnayDurumu
 from app.models.user import User
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_tr_pack)])
 logger = logging.getLogger(__name__)
 
 

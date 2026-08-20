@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { apiClient } from "@/lib/api/client";
+import { useI18n } from "@/hooks/useI18n";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { formatCurrency } from "@/lib/dashboard-utils";
 
 interface Plan {
   id: string;
@@ -17,337 +19,188 @@ interface Plan {
   features: string[];
 }
 
-// ── Static plan data (matches backend PLANS) ──────────────────────────────────
-
-const STATIC_PLANS: Plan[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    price_monthly_try: 990,
-    price_yearly_try: 9_900,
-    yearly_savings_pct: 17,
-    max_orgs: 1,
-    max_uploads_per_month: 5,
-    max_users: 2,
-    features: [
-      "CFO Pipeline (P&L, Nakit Akışı, Tahmin)",
-      "Anomali Tespiti",
-      "5 yükleme/ay",
-      "PDF export",
-      "E-posta desteği",
-    ],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price_monthly_try: 2_990,
-    price_yearly_try: 29_900,
-    yearly_savings_pct: 17,
-    max_orgs: 3,
-    max_uploads_per_month: null,
-    max_users: 10,
-    features: [
-      "Starter'ın tüm özellikleri",
-      "C-Suite Kernels (CTO/CMO/CHRO/COO)",
-      "CEO Sentezi & Board Deck",
-      "Monte Carlo & İleri Analitik",
-      "Open Banking Entegrasyonu",
-      "Sınırsız yükleme",
-      "Öncelikli destek",
-    ],
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    price_monthly_try: 9_990,
-    price_yearly_try: 99_900,
-    yearly_savings_pct: 17,
-    max_orgs: null,
-    max_uploads_per_month: null,
-    max_users: null,
-    features: [
-      "Pro'nun tüm özellikleri",
-      "SSO (Microsoft Entra / Google Workspace)",
-      "SOC2 Audit Trail",
-      "KVKK/GDPR Uyumluluk",
-      "IP Whitelist",
-      "Özel Entegrasyonlar",
-      "SLA garantisi",
-      "Dedicated Customer Success",
-    ],
-  },
-];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmt(n: number): string {
-  return n.toLocaleString("tr-TR");
+interface Subscription {
+  plan?: string | null;
+  status?: string | null;
+  subscription_plan?: string | null;
+  subscription_status?: string | null;
 }
-
-// ── Check icon ────────────────────────────────────────────────────────────────
 
 function CheckIcon() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      className="shrink-0 text-emerald-500"
-    >
-      <path
-        d="M3 8l3.5 3.5L13 4"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-emerald-500">
+      <path d="M3 8l3.5 3.5L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-// ── Plan card ─────────────────────────────────────────────────────────────────
-
-function PlanCard({
-  plan,
-  interval,
-  isPopular,
-  currentPlan,
-  onSelect,
-  loading,
-}: {
-  plan: Plan;
-  interval: "month" | "year";
-  isPopular: boolean;
-  currentPlan: string | null;
-  onSelect: (planId: string) => void;
-  loading: boolean;
-}) {
-  const price = interval === "month" ? plan.price_monthly_try : Math.round(plan.price_yearly_try / 12);
-  const isCurrentPlan = currentPlan === plan.id;
-
-  return (
-    <div
-      className={cn(
-        "relative flex flex-col rounded-xl border bg-card p-6 shadow-sm transition-shadow hover:shadow-md",
-        isPopular
-          ? "border-primary ring-2 ring-primary/20"
-          : "border-border",
-      )}
-    >
-      {isPopular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground">
-            En Popüler
-          </span>
-        </div>
-      )}
-
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold">{plan.name}</h3>
-        <div className="mt-2 flex items-baseline gap-1">
-          <span className="text-3xl font-bold">{fmt(price)}</span>
-          <span className="text-muted-foreground text-sm">₺/ay</span>
-        </div>
-        {interval === "year" && (
-          <p className="mt-1 text-xs text-emerald-600 font-medium">
-            Yıllık ödemede %{plan.yearly_savings_pct} tasarruf
-          </p>
-        )}
-      </div>
-
-      {/* Limits */}
-      <div className="mb-4 space-y-1 text-sm text-muted-foreground border-t border-border pt-4">
-        <p>
-          <span className="text-foreground font-medium">
-            {plan.max_users == null ? "Sınırsız" : plan.max_users}
-          </span>{" "}
-          kullanıcı
-        </p>
-        <p>
-          <span className="text-foreground font-medium">
-            {plan.max_uploads_per_month == null ? "Sınırsız" : plan.max_uploads_per_month}
-          </span>{" "}
-          yükleme/ay
-        </p>
-        <p>
-          <span className="text-foreground font-medium">
-            {plan.max_orgs == null ? "Sınırsız" : plan.max_orgs}
-          </span>{" "}
-          organizasyon
-        </p>
-      </div>
-
-      {/* Features */}
-      <ul className="mb-6 flex-1 space-y-2">
-        {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-2 text-sm">
-            <CheckIcon />
-            <span>{f}</span>
-          </li>
-        ))}
-      </ul>
-
-      {/* CTA */}
-      <button
-        onClick={() => onSelect(plan.id)}
-        disabled={loading || isCurrentPlan}
-        aria-busy={loading}
-        className={cn(
-          "w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          isCurrentPlan
-            ? "bg-muted text-muted-foreground cursor-default"
-            : isPopular
-            ? "bg-primary text-primary-foreground hover:bg-primary/90"
-            : "border border-border bg-card hover:bg-muted",
-          loading && "opacity-50 cursor-wait",
-        )}
-      >
-        {isCurrentPlan ? "Mevcut Plan" : loading ? "Yönlendiriliyor…" : "Planı Seç"}
-      </button>
-    </div>
-  );
-}
-
-// ── Pricing page ──────────────────────────────────────────────────────────────
-
 export default function BillingPage() {
+  const { t } = useI18n();
+  const { baseCurrency, locale } = useOrgSettings();
   const [interval, setInterval] = useState<"month" | "year">("month");
-  const [loading, setLoading] = useState<string | null>(null); // planId being processed
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [currentPlan, setCurrentPlan] = useState<string | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // In production this would come from useQuery → GET /billing/subscription
-  const currentPlan: string | null = null;
-
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [plansRes, subRes] = await Promise.all([
+          apiClient.get("/billing/plans"),
+          apiClient.get("/billing/subscription").catch(() => null),
+        ]);
+        if (cancelled) return;
+        const planList = plansRes.data?.data?.plans ?? plansRes.data?.plans ?? [];
+        setPlans(planList);
+        const sub = (subRes?.data?.data ?? subRes?.data) as Subscription | undefined;
+        setCurrentPlan(sub?.subscription_plan || sub?.plan || null);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load billing");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSelectPlan(planId: string) {
     setLoading(planId);
     setError(null);
-
     try {
-      const token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("access_token") ?? ""
-          : "";
-
       const origin = typeof window !== "undefined" ? window.location.origin : "";
-
-      const res = await fetch(`${API_BASE}/api/v1/billing/checkout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          plan: planId,
-          interval,
-          success_url: `${origin}/billing/success?plan=${planId}`,
-          cancel_url: `${origin}/billing`,
-        }),
+      const res = await apiClient.post("/billing/checkout", {
+        plan: planId,
+        interval,
+        success_url: `${origin}/billing/success?plan=${planId}`,
+        cancel_url: `${origin}/billing`,
       });
-
-      const json = await res.json();
-
-      if (!res.ok || json.error) {
-        throw new Error(json.detail ?? json.error ?? "Checkout başlatılamadı");
-      }
-
-      const checkoutUrl = json.data?.url;
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl;
-      } else {
-        throw new Error("Stripe checkout URL alınamadı");
-      }
+      const checkoutUrl = res.data?.data?.url ?? res.data?.url;
+      if (!checkoutUrl) throw new Error("Stripe checkout URL missing");
+      window.location.href = checkoutUrl;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Bir hata oluştu");
+      setError(e instanceof Error ? e.message : "Checkout failed");
       setLoading(null);
+    }
+  }
+
+  async function openPortal() {
+    setPortalLoading(true);
+    setError(null);
+    try {
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await apiClient.post("/billing/portal", {});
+      const url = res.data?.data?.url ?? res.data?.url;
+      if (!url) throw new Error("Customer portal URL missing");
+      window.location.href = url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Portal failed");
+      setPortalLoading(false);
     }
   }
 
   return (
     <main className="mx-auto max-w-screen-xl space-y-10 p-4 sm:p-6 lg:p-8">
-      {/* Header */}
       <div className="text-center space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-          Planınızı Seçin
-        </h1>
-        <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-          KOBİ'den kurumsal ölçeğe kadar her büyüklük için tasarlanmış
-          AI-CFO çözümleri.
-        </p>
-
-        {/* Interval toggle */}
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.billing.title}</h1>
+        <p className="text-muted-foreground text-lg max-w-xl mx-auto">{t.billing.subtitle}</p>
+        {currentPlan && (
+          <button
+            type="button"
+            onClick={() => void openPortal()}
+            disabled={portalLoading}
+            className="text-sm text-primary underline-offset-4 hover:underline"
+          >
+            {portalLoading ? t.billing.redirecting : t.billing.managePortal}
+          </button>
+        )}
         <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
           <button
+            type="button"
             onClick={() => setInterval("month")}
             className={cn(
               "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-              interval === "month"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+              interval === "month" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Aylık
+            {t.billing.monthly}
           </button>
           <button
+            type="button"
             onClick={() => setInterval("year")}
             className={cn(
               "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-              interval === "year"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+              interval === "year" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Yıllık
-            <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-              %17 indirim
-            </span>
+            {t.billing.yearly}
           </button>
         </div>
       </div>
 
-      {/* Error */}
       {error && (
-        <div
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive text-center"
-        >
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive text-center">
           {error}
         </div>
       )}
 
-      {/* Plan cards */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {STATIC_PLANS.map((plan) => (
-          <PlanCard
-            key={plan.id}
-            plan={plan}
-            interval={interval}
-            isPopular={plan.id === "pro"}
-            currentPlan={currentPlan}
-            onSelect={handleSelectPlan}
-            loading={loading === plan.id}
-          />
-        ))}
-      </div>
-
-      {/* Trust badges */}
-      <div className="border-t border-border pt-8 text-center space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Tüm planlar 14 günlük ücretsiz deneme içerir. Kredi kartı gerekmez.
-        </p>
-        <div className="flex flex-wrap justify-center gap-6 text-xs text-muted-foreground">
-          {[
-            "🔒 SSL şifreleme",
-            "🇹🇷 KVKK uyumlu",
-            "💳 Güvenli ödeme (Stripe)",
-            "📞 7/24 destek (Enterprise)",
-          ].map((badge) => (
-            <span key={badge}>{badge}</span>
-          ))}
-        </div>
+        {plans.map((plan) => {
+          const price = interval === "month" ? plan.price_monthly_try : plan.price_yearly_try;
+          const isCurrent = currentPlan === plan.id;
+          const isPopular = plan.id === "pro";
+          return (
+            <div
+              key={plan.id}
+              className={cn(
+                "relative flex flex-col rounded-2xl border p-6",
+                isPopular ? "border-primary shadow-md" : "border-border",
+              )}
+            >
+              {isPopular && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                  Popular
+                </span>
+              )}
+              <h2 className="text-xl font-bold">{plan.name}</h2>
+              <p className="mt-2 text-3xl font-bold">
+                {formatCurrency(price, baseCurrency, locale)}
+                <span className="text-sm font-normal text-muted-foreground">
+                  /{interval === "month" ? "mo" : "yr"}
+                </span>
+              </p>
+              <ul className="mt-4 flex-1 space-y-2 text-sm text-muted-foreground">
+                {plan.features.map((f) => (
+                  <li key={f} className="flex gap-2">
+                    <CheckIcon />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                disabled={isCurrent || loading === plan.id}
+                onClick={() => void handleSelectPlan(plan.id)}
+                className={cn(
+                  "mt-6 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+                  isCurrent
+                    ? "bg-muted text-muted-foreground cursor-default"
+                    : isPopular
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "border border-border bg-card hover:bg-muted",
+                )}
+              >
+                {isCurrent
+                  ? t.billing.currentPlan
+                  : loading === plan.id
+                    ? t.billing.redirecting
+                    : t.billing.selectPlan}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </main>
   );

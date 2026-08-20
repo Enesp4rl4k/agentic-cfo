@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Boolean, Text, ForeignKey
+from sqlalchemy import String, DateTime, Boolean, Text, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -41,6 +41,13 @@ class Organization(Base):
     # Branding / settings
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # International locale contract (core OS — not Turkey-only)
+    country_code: Mapped[str] = mapped_column(String(2), default="US", nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    locale: Mapped[str] = mapped_column(String(16), default="en-US", nullable=False)
+    # e.g. ["tr"] enables Turkey regional pack (SMMM, GIB, Paraşüt, THP)
+    regional_packs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
 
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)

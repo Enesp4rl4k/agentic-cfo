@@ -389,7 +389,18 @@ def build_cfo_graph() -> StateGraph:
 
 
 # Compiled graph — reused across requests (thread-safe)
-cfo_graph = build_cfo_graph().compile()
+# Checkpointer enables resume of interrupted runs via thread_id=job_id.
+def _compile_cfo_graph():
+    from app.agents.checkpointer import get_checkpointer
+
+    try:
+        return build_cfo_graph().compile(checkpointer=get_checkpointer())
+    except Exception as exc:
+        logger.warning("CFO graph checkpointer disabled (%s) — compiling without", exc)
+        return build_cfo_graph().compile()
+
+
+cfo_graph = _compile_cfo_graph()
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -426,6 +437,8 @@ async def run_cfo_pipeline(
         3. AgentMemoryStore — episode saved after pipeline completes;
            memory_episode_ids stored in state.
     """
+    from app.agents.checkpointer import checkpoint_config
+
     cfg = run_config or DEFAULT_RUN_CONFIG
     initial_state: CFOState = {
         "job_id": job_id,
@@ -448,7 +461,7 @@ async def run_cfo_pipeline(
 
     result: CFOState = await cfo_graph.ainvoke(
         initial_state,
-        config={"configurable": {"run_config": cfg}},
+        config=checkpoint_config(job_id, run_config=cfg),
     )
 
     logger.info(

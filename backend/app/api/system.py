@@ -20,7 +20,7 @@ from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 
 router = APIRouter(tags=["system"])
-OPS_SCHEMA_VERSION = "v1.1"
+OPS_SCHEMA_VERSION = "v1.2"
 SLA_ANALYZING_BREACH_MINUTES = 15
 
 ERROR_BUDGETS = {
@@ -161,6 +161,8 @@ async def _management_summary(db: AsyncSession, org_id: str | None = None) -> di
         "conflicts_available": False,
         "open_conflicts": 0,
         "topics": [],
+        "recent_conflicts": [],
+        "suggested_topics": ["cash_risk", "revenue_outlook", "headcount", "tech_risk"],
     }
     if not org_id:
         return out
@@ -180,6 +182,46 @@ async def _management_summary(db: AsyncSession, org_id: str | None = None) -> di
         out["conflicts_available"] = True
         out["open_conflicts"] = sum(int(r[2]) for r in items)
         out["topics"] = [{"topic": str(r[0]), "count": int(r[2])} for r in items]
+
+        recent = await db.execute(
+            text(
+                """
+                SELECT id, topic, status, consensus_score, resolution, created_at
+                FROM agent_conflicts
+                WHERE org_id = :org_id
+                ORDER BY created_at DESC
+                LIMIT 10
+                """
+            ),
+            {"org_id": org_id},
+        )
+        recent_conflicts: list[dict[str, Any]] = []
+        for row in recent.all():
+            score = row[3]
+            try:
+                score_f = float(score) if score is not None else None
+            except (TypeError, ValueError):
+                score_f = None
+            severity = "low"
+            if score_f is not None:
+                if score_f < 0.35:
+                    severity = "critical"
+                elif score_f < 0.55:
+                    severity = "high"
+                elif score_f < 0.75:
+                    severity = "medium"
+            recent_conflicts.append(
+                {
+                    "id": row[0],
+                    "topic": row[1],
+                    "status": row[2],
+                    "consensus_score": score_f,
+                    "severity": severity,
+                    "resolution": row[4],
+                    "created_at": row[5].isoformat() if row[5] else None,
+                }
+            )
+        out["recent_conflicts"] = recent_conflicts
     except Exception:
         pass
     return out
@@ -315,6 +357,60 @@ async def system_ops(
         breaches=sla_breaches,
     )
 
+    llm_cost: dict[str, Any] = {
+        "available": False,
+        "calls": 0,
+        "total_cost_usd": 0.0,
+        "saved_usd": 0.0,
+        "avg_cost_usd": 0.0,
+        "cache_size": 0,
+    }
+    try:
+        from app.services.llm_router import get_llm_router
+
+        stats = get_llm_router().get_stats()
+        llm_cost = {
+            "available": True,
+            "calls": int(stats.get("calls") or 0),
+            "total_cost_usd": float(stats.get("total_cost_usd") or 0.0),
+            "saved_usd": float(stats.get("saved_usd") or 0.0),
+            "avg_cost_usd": float(stats.get("avg_cost_usd") or 0.0),
+            "cache_size": int(stats.get("cache_size") or 0),
+        }
+    except Exception:
+        pass
+
+    stripe_health: dict[str, Any] = {"configured": False, "ok": False}
+    try:
+        from app.config import get_settings
+
+        settings = get_settings()
+        key = getattr(settings, "stripe_secret_key", "") or ""
+        stripe_health = {
+            "configured": bool(key) and not str(key).startswith("sk_test_placeholder"),
+            "ok": bool(key),
+            "webhook_secret_set": bool(getattr(settings, "stripe_webhook_secret", "") or ""),
+        }
+    except Exception:
+        pass
+
+    regional: dict[str, Any] = {"packs": [], "country_code": None, "base_currency": None}
+    if org_id:
+        try:
+            from app.models.organization import Organization
+            from app.services.regional.packs import normalize_packs
+
+            org = await db.get(Organization, org_id)
+            if org:
+                regional = {
+                    "packs": normalize_packs(getattr(org, "regional_packs", None)),
+                    "country_code": getattr(org, "country_code", None),
+                    "base_currency": getattr(org, "base_currency", None),
+                    "locale": getattr(org, "locale", None),
+                }
+        except Exception:
+            pass
+
     return {
         "data": {
             "schema_version": OPS_SCHEMA_VERSION,
@@ -335,6 +431,9 @@ async def system_ops(
                 "error_rate_pct": failure_rate_pct,
                 "breaches": sla_breaches,
             },
+            "llm_cost": llm_cost,
+            "stripe": stripe_health,
+            "regional": regional,
             "error_budget": ERROR_BUDGETS,
             "management": management,
             "suggested_actions": suggested_actions,

@@ -1,0 +1,9 @@
+date,amount,description,category,reference
+2026-01-05,12500.00,Acme Corp subscription revenue,revenue,INV-1001
+2026-01-08,-3200.50,AWS cloud infrastructure,software,AWS-8891
+2026-01-12,-4500.00,Office rent January,rent,RENT-01
+2026-01-15,8900.00,Enterprise deal — Northwind,revenue,INV-1002
+2026-01-18,-2100.00,Payroll taxes remittance,tax,TAX-Q1
+2026-01-22,-780.25,Google Ads campaign,marketing,ADS-22
+2026-01-25,5600.00,Professional services invoice,revenue,INV-1003
+2026-01-28,-1500.00,Contractor payment — design,payroll,CTR-44

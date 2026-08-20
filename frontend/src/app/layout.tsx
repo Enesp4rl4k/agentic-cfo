@@ -6,8 +6,9 @@ import "@/styles/globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "AI CFO — Financial Intelligence",
-  description: "Agentic AI-powered financial analysis, forecasting, and reporting for SMBs.",
+  title: "Agentic Management OS",
+  description:
+    "International agentic management OS — multi-role C-Suite intelligence with grounded AI.",
 };
 
 export default function RootLayout({

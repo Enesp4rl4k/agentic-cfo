@@ -98,9 +98,96 @@ jobs:
           BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
           OPENAI_API_KEY:     llm-placeholder-ci
           LOG_FORMAT:         plain
+          LANGGRAPH_CHECKPOINT: memory
         run: |
           chmod +x verify.sh scripts/*.sh
           ./scripts/proof.sh --fast
+
+  # ── Optional load baseline (non-blocking artifact) ────────────────────────
+  load-baseline:
+    name: Load Baseline (ops P95 artifact)
+    runs-on: ubuntu-latest
+    needs: [proof-gate]
+    continue-on-error: true
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER:     ${{ env.CI_PG_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_PG_PASS }}
+          POSTGRES_DB:       ${{ env.CI_PG_DB }}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start API briefly for baseline
+        working-directory: backend
+        env:
+          DATABASE_URL:       postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
+          REDIS_URL:          redis://localhost:6379/0
+          BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
+          OPENAI_API_KEY:     llm-placeholder-ci
+          USE_SQLITE:         "false"
+          LANGGRAPH_CHECKPOINT: memory
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/v1/system/health >/dev/null; then
+              echo "API up"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run load baseline
+        env:
+          BACKEND_URL: http://127.0.0.1:8000
+          LOAD_REQUESTS: "30"
+          LOAD_CONCURRENCY: "5"
+          LOAD_P95_MS: "2000"
+        run: |
+          chmod +x scripts/load-baseline.sh
+          mkdir -p artifacts
+          ./scripts/load-baseline.sh | tee artifacts/load-baseline.txt
+
+      - name: Upload load baseline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-baseline
+          path: artifacts/load-baseline.txt
+          if-no-files-found: warn
 
   # ── Backend: lint + test (legacy — kept for coverage upload) ──────────────
   backend-ci:

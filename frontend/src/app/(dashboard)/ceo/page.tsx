@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BarChart3, Download, ShieldAlert, TrendingUp, Users, Cpu } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -188,35 +188,66 @@ export default function CEODashboardPage() {
   const [loading, setLoading] = useState(false);
   const [result,  setResult]  = useState<CEOResult | null>(null);
   const [error,   setError]   = useState<string | null>(null);
+  const [liveLoaded, setLiveLoaded] = useState(false);
+
+  // Prefer live CompanyContext / last CEO result over SAMPLE CSV paste.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        if (cancelled || !ctx) return;
+        if (ctx.company_name) setCompany(String(ctx.company_name));
+        if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
+        const lastCeo = ctx.last_ceo_result;
+        if (lastCeo && typeof lastCeo === "object") {
+          setResult(lastCeo as CEOResult);
+          setLiveLoaded(true);
+        }
+      } catch {
+        /* empty state until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.post<CEOResult>("/ceo/analyze", {
-        company_name: company || null,
-        period:       period  || null,
-        transactions: [{ date: "2024-01-01", amount: 100000, category: "Revenue", type: "income" }],
-      });
-      if (res.data.error) throw new Error(res.data.error);
-      setResult(res.data);
+      // Prefer analyze-from-job when CFO context exists (no SAMPLE transactions).
+      if (activeCFOJobId) {
+        const res = await apiClient.post(`/ceo/analyze-from-job/${activeCFOJobId}`, {
+          company_name: company || null,
+          period: period || null,
+        });
+        const data = res.data?.data ?? res.data;
+        if (res.data?.error) throw new Error(res.data.error);
+        setResult(data as CEOResult);
+        setLiveLoaded(true);
+      } else {
+        const res = await apiClient.post<CEOResult>("/ceo/analyze", {
+          company_name: company || null,
+          period:       period  || null,
+        });
+        if (res.data.error) throw new Error(res.data.error);
+        setResult(res.data);
+        setLiveLoaded(true);
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Bilinmeyen hata");
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
   }
 
-  const display = result ?? {
-    board_deck: SAMPLE_BOARD_DECK,
-    okr_status: { company_score: 0.83, objectives: SAMPLE_OKRS },
-    outlook: {
-      base_case:   [100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122],
-      optimistic:  [100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155],
-      pessimistic: [100,  99,  98,  97,  96,  95,  94,  93,  92,  91,  90,  89],
-    },
-  };
+  const display = result;
+  const showEmpty = !display;
 
   return (
     <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
@@ -224,9 +255,10 @@ export default function CEODashboardPage() {
       <div className="flex items-center gap-3">
         <BarChart3 className="h-6 w-6 text-primary" aria-hidden="true" />
         <div>
-          <h1 className="text-2xl font-bold">CEO Yönetim Panosu</h1>
+          <h1 className="text-2xl font-bold">CEO Command Board</h1>
           <p className="text-sm text-muted-foreground">
-            Board deck, OKR puan kartı ve 12 aylık outlook
+            Board deck, OKR scorecard, and 12-month outlook from live company context
+            {liveLoaded ? " · live" : ""}
           </p>
         </div>
       </div>
@@ -235,7 +267,7 @@ export default function CEODashboardPage() {
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="ceo-company">Şirket Adı</Label>
+            <Label htmlFor="ceo-company">Company</Label>
             <Input
               id="ceo-company"
               value={company}
@@ -244,12 +276,12 @@ export default function CEODashboardPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ceo-period">Dönem</Label>
+            <Label htmlFor="ceo-period">Period</Label>
             <Input
               id="ceo-period"
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              placeholder="2024-H1"
+              placeholder="2026-H1"
             />
           </div>
         </div>
@@ -260,60 +292,43 @@ export default function CEODashboardPage() {
           </p>
         )}
 
-        <Separator className="mb-4" />
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={loading}>
-            {loading ? "Yükleniyor…" : "CEO Analizi Çalıştır"}
-          </Button>
-          {display.board_deck && (
-            <PDFExportButtons
-              jobId={activeCFOJobId ?? null}
-              orgId={orgId ?? null}
-            />
-          )}
-        </div>
+        <Button type="submit" disabled={loading}>
+          {loading ? "Running…" : activeCFOJobId ? "Synthesize from CFO job" : "Run CEO analysis"}
+        </Button>
       </form>
 
-      {/* Results */}
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            {display.board_deck && <BoardDeckViewer slides={display.board_deck} />}
+      {showEmpty ? (
+        <Card className="p-6 text-sm text-muted-foreground">
+          No live CEO results yet. Upload data and complete a CFO run, or synthesize from an active CFO job.
+          Sample CSV paste has been removed from the default path.
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          <PDFExportButtons jobId={activeCFOJobId} orgId={orgId} />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              {display?.board_deck && <BoardDeckViewer slides={display.board_deck} />}
+            </div>
+            {display?.okr_status && (
+              <OKRWeightedScorecard
+                companyScore={display.okr_status.company_score}
+                objectives={display.okr_status.objectives as OKRObjective[]}
+              />
+            )}
           </div>
-          {display.okr_status && (
-            <OKRWeightedScorecard
-              objectives={display.okr_status.objectives}
-              companyScore={display.okr_status.company_score}
+          {display?.outlook && <OutlookChart outlook={display.outlook} />}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <SWOTWidget
+              data={(result as CEOResult & { swot?: { strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[]; strategic_priorities?: string[] } })?.swot ?? null}
+              jobId={activeCFOJobId}
+              orgId={orgId}
             />
-          )}
-        </div>
-
-        {display.outlook && <OutlookChart outlook={display.outlook} />}
-
-        {/* SWOT + Cross-Risk row */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <SWOTWidget
-            data={(result as CEOResult & { swot?: { strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[]; strategic_priorities?: string[] } })?.swot ?? null}
-            jobId={activeCFOJobId}
-            orgId={orgId}
-          />
-          <CrossRiskTimeline
-            risks={(result as CEOResult & { cross_risks?: CrossRisk[] })?.cross_risks ?? [
-              { domain: "finance",    risk_type: "liquidity",  severity: "high",   description: "Nakit pisti 4 ayın altında — opex kısıtı değerlendirin" },
-              { domain: "tech",       risk_type: "debt",       severity: "medium", description: "Tech debt birikimi sprint hızını yavaşlatıyor" },
-              { domain: "hr",         risk_type: "retention",  severity: "high",   description: "3 kilit pozisyonda ayrılma riski tespit edildi" },
-              { domain: "compliance", risk_type: "regulatory", severity: "medium", description: "KVKK VERBİS kaydı yenileme tarihi yaklaşıyor" },
-            ]}
-          />
-        </div>
-
-        {result?.error && (
-          <div role="alert" className="rounded border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-400">
-            Hata: {result.error}
+            <CrossRiskTimeline
+              risks={(result as CEOResult & { cross_risks?: CrossRisk[] })?.cross_risks ?? []}
+            />
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </main>
   );
 }

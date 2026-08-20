@@ -22,12 +22,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Nav groups ────────────────────────────────────────────────────────────────
 
 const NAV_GROUPS = [
   {
-    label: "Genel",
+    label: "General",
     items: [
       { href: "/command-center", label: "Command Center", icon: Activity },
       { href: "/pnl",            label: "Dashboard",      icon: LayoutDashboard },
@@ -35,7 +37,7 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: "Finans",
+    label: "Finance",
     items: [
       { href: "/pnl",      label: "P&L",       icon: DollarSign },
       { href: "/cashflow", label: "Cash Flow",  icon: Waves },
@@ -45,7 +47,7 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: "Analiz",
+    label: "Analytics",
     items: [
       { href: "/trends",                    label: "Trends",          icon: BarChart2 },
       { href: "/anomalies",                 label: "Anomalies",       icon: ShieldAlert },
@@ -68,32 +70,33 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: "Risk & Uyum",
+    label: "Risk & Compliance",
     items: [
       { href: "/risk",         label: "Risk",              icon: Shield },
       { href: "/risk/cascade", label: "Cascade Sim.",      icon: Zap },
       { href: "/compliance",   label: "Compliance",        icon: ShieldCheck },
       { href: "/audit",        label: "Internal Audit",    icon: FileSearch },
-      { href: "/sensitivity",  label: "What-If Analizi",   icon: Activity },
+      { href: "/sensitivity",  label: "What-If",           icon: Activity },
     ],
   },
   {
-    label: "Araçlar",
+    label: "Tools",
     items: [
       { href: "/chat",          label: "CFO Chat",        icon: MessageSquare },
       { href: "/reports",       label: "Reports",         icon: FileText },
       { href: "/intelligence",  label: "Intelligence",    icon: Activity },
-      { href: "/simulation",    label: "Simülasyon",      icon: Zap },
-      { href: "/integrations",  label: "Entegrasyonlar",  icon: Link2 },
+      { href: "/simulation",    label: "Simulation",      icon: Zap },
+      { href: "/integrations",  label: "Integrations",    icon: Link2 },
       { href: "/templates",     label: "CSV Templates",   icon: Download },
     ],
   },
   {
     label: "Portal",
     items: [
-      { href: "/smmm",        label: "SMMM Portalı",   icon: Users },
-      { href: "/smmm-onay",   label: "SMMM Onay",      icon: FileCheck },
-      { href: "/billing",     label: "Faturalama",     icon: CreditCard },
+      { href: "/smmm",        label: "Turkey accounting review", icon: Users, trPack: true },
+      { href: "/smmm-onay",   label: "SMMM approvals",           icon: FileCheck, trPack: true },
+      { href: "/billing",     label: "Billing",                  icon: CreditCard },
+      { href: "/settings/alerts", label: "Alerts",               icon: Zap },
       { href: "/settings/workspace", label: "Workspace", icon: Building2 },
       { href: "/pilot",       label: "Pilot Program",  icon: Users },
     ],
@@ -224,6 +227,8 @@ function SidebarContent({
   const { data: jobs } = useJobs();
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
+  const { hasTrPack } = useOrgSettings();
+  const { t } = useI18n();
 
   function navHref(href: string) {
     if (jobId && href !== "/upload") return `${href}?job=${jobId}`;
@@ -231,6 +236,14 @@ function SidebarContent({
   }
 
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
+
+  const groups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      const needsTr = Boolean((item as { trPack?: boolean }).trPack);
+      return !needsTr || hasTrPack;
+    }),
+  })).filter((g) => g.items.length > 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -241,9 +254,9 @@ function SidebarContent({
           style={{ background: "linear-gradient(135deg, oklch(0.62 0.26 262), oklch(0.55 0.22 220))" }}
           aria-hidden="true"
         >
-          C
+          A
         </div>
-        <span className="font-bold tracking-tight">C-Level AI</span>
+        <span className="font-bold tracking-tight truncate">{t.product.name}</span>
       </div>
 
       {/* Nav groups */}
@@ -252,7 +265,7 @@ function SidebarContent({
         aria-label="Main navigation"
         style={{ scrollbarWidth: "none" }}
       >
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.label} className="mb-1">
             <p className="mb-1 mt-2 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
               {group.label}
@@ -354,8 +367,8 @@ function SidebarContent({
         >
           <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary">Pro&apos;ya Yükselt</p>
-            <p className="text-[10px] text-muted-foreground">Tüm C-Suite ajanları</p>
+            <p className="text-xs font-semibold text-primary">Upgrade to Pro</p>
+            <p className="text-[10px] text-muted-foreground">Full C-Suite agents</p>
           </div>
         </Link>
       </div>

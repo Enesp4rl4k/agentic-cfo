@@ -118,9 +118,9 @@ export function Logo({ size = "md", variant = "full", className }: LogoProps) {
     return (
       <span className={cn("inline-flex items-center font-bold tracking-tight", cfg.text, className)}>
         <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-          C-Level
+          Agentic
         </span>
-        <span className="ml-1 text-foreground/90">AI</span>
+        <span className="ml-1 text-foreground/90">OS</span>
       </span>
     );
   }
@@ -131,9 +131,9 @@ export function Logo({ size = "md", variant = "full", className }: LogoProps) {
       <LogoMark size={cfg.icon} />
       <span className={cn("font-bold tracking-tight leading-none", cfg.text)}>
         <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-          C-Level
+          Agentic
         </span>
-        <span className="ml-1 text-foreground/90">AI</span>
+        <span className="ml-1 text-foreground/90">OS</span>
       </span>
     </span>
   );

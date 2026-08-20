@@ -151,6 +151,9 @@ class Settings(BaseSettings):
     # RAG maintenance: tamamlanmış job'lar için eksik chunk index backfill.
     rag_backfill_enabled: bool = True
     rag_backfill_lookback_days: int = 14
+    rag_embedding_enabled: bool = True
+    rag_embedding_model: str = "text-embedding-3-small"
+    rag_embedding_dimensions: int = 1536
 
     # Dev mode: use SQLite instead of PostgreSQL
     use_sqlite: bool = True

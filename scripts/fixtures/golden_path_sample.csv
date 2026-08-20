@@ -1,0 +1,11 @@
+date,amount,description,category,reference
+2026-01-05,15000.00,Customer payment ACME,revenue,INV-1001
+2026-01-08,-4500.50,Office rent,operations,RENT-01
+2026-01-12,-1200.00,AWS cloud bill,technology,AWS-01
+2026-01-15,8200.75,Customer payment Beta,revenue,INV-1002
+2026-01-20,-3500.00,Payroll,payroll,PAY-01
+2026-01-25,-890.25,Marketing ads,marketing,ADS-01
+2026-01-28,5000.00,Customer payment Gamma,revenue,INV-1003
+2026-02-01,-4500.50,Office rent,operations,RENT-02
+2026-02-05,-2100.00,Software licenses,technology,SOFT-01
+2026-02-10,11000.00,Customer payment Delta,revenue,INV-1004

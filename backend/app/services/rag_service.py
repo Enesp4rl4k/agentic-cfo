@@ -20,6 +20,7 @@ import time
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.rag_chunk import RagChunk
 from app.database import session_factory
 
@@ -115,6 +116,39 @@ def _chunk_text(
     return chunks
 
 
+def _vector_literal(values: list[float]) -> str:
+    return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
+
+
+def _has_embedding_support() -> bool:
+    settings = get_settings()
+    key = (settings.openai_api_key or "").strip()
+    return (
+        settings.rag_embedding_enabled
+        and bool(key)
+        and not key.startswith("llm-placeholder-")
+    )
+
+
+def _embed_texts(texts: list[str]) -> list[list[float]] | None:
+    if not texts or not _has_embedding_support():
+        return None
+    try:
+        from langchain_openai import OpenAIEmbeddings
+
+        settings = get_settings()
+        client = OpenAIEmbeddings(
+            model=settings.rag_embedding_model,
+            api_key=settings.openai_api_key,
+            base_url=settings.llm_base_url or None,
+            dimensions=settings.rag_embedding_dimensions,
+        )
+        return client.embed_documents(texts)
+    except Exception as exc:
+        logger.warning("RAG embedding generation failed, using TF-IDF only: %s", exc)
+        return None
+
+
 async def index_job_text(
     db: AsyncSession,
     *,
@@ -144,6 +178,8 @@ async def index_job_text(
     )
 
     now = datetime.now(timezone.utc)
+    embeddings = _embed_texts(chunks)
+    settings = get_settings()
     for i, ch in enumerate(chunks):
         db.add(
             RagChunk(
@@ -152,6 +188,8 @@ async def index_job_text(
                 source_type=source_type,
                 chunk_index=i,
                 chunk_text=ch,
+                embedding_model=settings.rag_embedding_model if embeddings else None,
+                embedding=embeddings[i] if embeddings and i < len(embeddings) else None,
                 created_at=now,
             )
         )

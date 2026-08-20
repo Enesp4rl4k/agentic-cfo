@@ -320,6 +320,41 @@ async def run_cfo_analysis(
                         meta["job_completion_ms"] = int((completed_at - t0).total_seconds() * 1000)
                 except Exception:
                     pass
+                # Persist conductor plan before auto-chain so ops/debug can inspect it.
+                if job.org_id:
+                    try:
+                        from app.services.auto_chain import build_conductor_plan_dict
+
+                        plan_dict = await build_conductor_plan_dict(
+                            org_id=str(job.org_id),
+                            agent="cfo",
+                            db=db,
+                        )
+                        if plan_dict:
+                            meta["conductor_plan"] = plan_dict
+                    except Exception as exc:
+                        logger.debug("conductor_plan metadata skipped: %s", exc)
+                # RAG index observability for staging proof
+                try:
+                    from sqlalchemy import func, select
+                    from app.models.rag_chunk import RagChunk
+
+                    emb_count = int(
+                        (
+                            await db.execute(
+                                select(func.count())
+                                .select_from(RagChunk)
+                                .where(
+                                    RagChunk.job_id == job_id,
+                                    RagChunk.embedding.isnot(None),
+                                )
+                            )
+                        ).scalar()
+                        or 0
+                    )
+                    meta["rag_embeddings_indexed"] = emb_count
+                except Exception as exc:
+                    logger.debug("rag embedding count skipped: %s", exc)
                 job.result_metadata = meta
             await db.commit()
 

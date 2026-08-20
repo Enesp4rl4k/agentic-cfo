@@ -72,6 +72,50 @@ check "scheduler enqueues maintenance (not inline backfill)" \
 check "golden path components" \
   bash scripts/golden-path-check.sh
 
+check "rag staging proof" \
+  bash scripts/rag-staging-proof.sh
+
+check "golden path e2e script present" \
+  test -f scripts/golden-path-e2e.sh
+
+check "golden path fixture csv" \
+  test -f scripts/fixtures/golden_path_sample.csv
+
+check "board deck smoke" \
+  bash scripts/board-deck-smoke.sh
+
+check "TR SMMM checklist" \
+  bash scripts/tr-smmm-checklist.sh
+
+check "LangGraph checkpointer module" \
+  test -f backend/app/agents/checkpointer.py && \
+  grep -q "get_checkpointer" backend/app/agents/orchestrator.py
+
+check "international platform doc" \
+  test -f INTERNATIONAL_PLATFORM.md
+
+check "org locale migration" \
+  test -f backend/alembic/versions/024_org_international_locale.py
+
+check "i18n dictionaries" \
+  test -f frontend/src/lib/i18n/messages/en.ts && \
+  test -f frontend/src/lib/i18n/messages/tr.ts
+
+check "regional CoA adapters" \
+  test -f backend/app/services/regional/coa.py && \
+  grep -q "GenericCoaAdapter" backend/app/services/regional/coa.py
+
+check "TR pack gate" \
+  grep -q "require_tr_pack" backend/app/api/deps_regional.py && \
+  grep -q "require_tr_pack" backend/app/api/smmm_onay.py
+
+check "EN golden path fixture" \
+  test -f scripts/fixtures/golden_path_sample_en_usd.csv
+
+check "sync schedules ORM" \
+  test -f backend/app/models/sync_schedule.py && \
+  ! grep -q 'text("SELECT \* FROM sync_schedules' backend/app/services/scheduled_sync.py
+
 # ── Core verify gate ─────────────────────────────────────────────────────────
 INFO "Running: verify.sh (unit + lint + typecheck)"
 CHECKS=$((CHECKS + 1))

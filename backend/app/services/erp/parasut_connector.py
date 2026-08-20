@@ -281,12 +281,20 @@ class ParasutConnector:
 
         try:
             client = ParasutClient(
-                client_id     = config["client_id"],
-                client_secret = config["client_secret"],
-                company_id    = company_id,
-                access_token  = access_token,
+                client_id=config["client_id"],
+                client_secret=config["client_secret"],
+                refresh_token=_decrypt(integration.refresh_token_enc or ""),
+                company_id=company_id,
             )
-            batch = await client.fetch_transactions()
+            # Prefer already-refreshed access token when present.
+            if access_token:
+                client._access_token = access_token
+                if integration.token_expires_at:
+                    client._token_expires_at = integration.token_expires_at
+
+            date_to = datetime.now(timezone.utc)
+            date_from = date_to - timedelta(days=int(config.get("lookback_days", 90)))
+            batch = await client.sync_transactions(date_from=date_from, date_to=date_to)
             tx_count = len(batch.transactions) if batch else 0
 
             # Integration guncelle
@@ -305,9 +313,12 @@ class ParasutConnector:
 
             return {
                 "ok":           True,
-                "transactions": [t.__dict__ for t in (batch.transactions if batch else [])],
+                "transactions": [
+                    t.model_dump() if hasattr(t, "model_dump") else t.dict()
+                    for t in (batch.transactions if batch else [])
+                ],
                 "sync_count":   tx_count,
-                "errors":       [],
+                "errors":       list(batch.warnings) if batch else [],
             }
 
         except Exception as exc:

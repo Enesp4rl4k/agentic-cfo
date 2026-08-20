@@ -20,7 +20,7 @@
 ## Sprint 1 (Hafta 1–2) — Foundation + doğrulama
 
 ### 1A — RAG v2 temeli
-- [ ] Migration `023_rag_embeddings.py` — `rag_chunks.embedding vector(1536)` nullable + HNSW index (pgvector)
+- [ ] Migration `023_rag_embeddings.py` — `rag_chunks.embedding vector(1536)` nullable + ivfflat index (pgvector)
 - [ ] `EmbeddingRagRetriever` — OpenAI-compatible embeddings, TF-IDF fallback
 - [ ] Worker: index job sonrası embedding yaz
 - [ ] `grounding_validator.py` — citation yoksa factual claim flag
@@ -65,16 +65,16 @@
 ## Sprint 3 (Hafta 5–6) — TR moat + production hardening
 
 ### 3A — Paraşüt → SMMM
-- [ ] `scheduled_sync` → canonical → quality gate → CFO enqueue (mevcut hattı sıkılaştır)
-- [ ] SMMM onay paketi: failed/awaiting_review + canonical summary
-- [ ] e-Fatura / GIB sandbox connector smoke
+- [x] `scheduled_sync` → canonical → quality gate → CFO enqueue (mevcut hattı sıkılaştır)
+- [x] SMMM onay paketi: failed/awaiting_review + canonical summary
+- [x] e-Fatura / GIB sandbox connector smoke
 
 **DoD:** Paraşüt sandbox sync → canonical row → analysis job idempotent.
 
 ### 3B — Observability
-- [ ] LangGraph checkpointer (SQLite dev / Postgres prod) — resume failed jobs
-- [ ] LLM cost metrics in `/system/ops`
-- [ ] Load baseline: `./scripts/load-baseline.sh` CI artifact
+- [x] LangGraph checkpointer (SQLite dev / Postgres prod) — resume failed jobs
+- [x] LLM cost metrics in `/system/ops`
+- [x] Load baseline: `./scripts/load-baseline.sh` CI artifact
 
 ---
 

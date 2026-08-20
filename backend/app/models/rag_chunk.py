@@ -2,10 +2,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+
+try:
+    from pgvector.sqlalchemy import Vector
+except Exception:  # pragma: no cover - dependency/import edge
+    Vector = None
 
 if TYPE_CHECKING:
     from app.models.organization import Organization
@@ -45,6 +50,14 @@ class RagChunk(Base):
 
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    if Vector is not None:
+        embedding: Mapped[list[float] | None] = mapped_column(
+            Vector(1536).with_variant(JSON(), "sqlite"),
+            nullable=True,
+        )
+    else:
+        embedding: Mapped[list[float] | None] = mapped_column(JSON(), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

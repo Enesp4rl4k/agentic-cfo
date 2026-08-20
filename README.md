@@ -1,7 +1,7 @@
-# C-Level AI
+# Agentic Management OS
 
-> **Your entire C-Suite, powered by AI.**  
-> Upload your accounting data. Get CFO reports, risk analysis, and 12-month forecasts in 5 minutes.
+> **Your entire C-Suite, powered by AI — globally.**  
+> Upload financial data. Get CFO reports, risk analysis, board decks, and multi-role insights in minutes.
 
 [![Tests](https://img.shields.io/badge/tests-941%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
@@ -9,9 +9,10 @@
 
 ---
 
-## What is C-Level AI?
+## What is Agentic Management OS?
 
-C-Level AI is an agentic financial intelligence platform that runs 12 specialized AI agents simultaneously — each covering a different executive role:
+An **international** agentic management platform: one data plane, many executive lenses.
+Turkey-specific accounting (Paraşüt, THP/SMMM, GİB) is an optional **Regional Pack** — not the product identity.
 
 | Agent | Coverage |
 |-------|----------|
@@ -25,7 +26,13 @@ C-Level AI is an agentic financial intelligence platform that runs 12 specialize
 | **Risk** | KRI monitoring, correlation matrix, cascade simulation |
 | **Internal Audit** | Anomaly flagging, audit trail, finding management |
 
+See [INTERNATIONAL_PLATFORM.md](INTERNATIONAL_PLATFORM.md) for locale / regional pack contracts.
+
 ---
+
+## What is C-Level AI?
+
+C-Level AI is the product family name for this Agentic Management OS.
 
 ## Quick Start
 

@@ -50,6 +50,21 @@ export interface SystemOps {
     }>;
   };
   error_budget: Record<string, { weekly_failure_rate_target_pct: number }>;
+  management?: {
+    conflicts_available: boolean;
+    open_conflicts: number;
+    topics: Array<{ topic: string; count: number }>;
+    recent_conflicts?: Array<{
+      id: string;
+      topic: string;
+      status: string;
+      consensus_score: number | null;
+      severity: string;
+      resolution: string | null;
+      created_at: string | null;
+    }>;
+    suggested_topics?: string[];
+  };
   suggested_actions: string[];
   generated_at: string;
 }
@@ -59,8 +74,10 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   return res.data.data;
 }
 
-export async function getSystemOps(): Promise<SystemOps> {
-  const res = await apiClient.get<{ data: SystemOps; error: null }>("/system/ops");
+export async function getSystemOps(orgId?: string | null): Promise<SystemOps> {
+  const res = await apiClient.get<{ data: SystemOps; error: null }>("/system/ops", {
+    params: orgId ? { org_id: orgId } : undefined,
+  });
   return res.data.data;
 }
 

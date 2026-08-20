@@ -86,6 +86,10 @@ class UpdateOrgRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=200)
     description: str | None = None
     logo_url: str | None = None
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    base_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    locale: str | None = Field(default=None, min_length=2, max_length=16)
+    regional_packs: list[str] | None = None
 
 
 class InviteRequest(BaseModel):
@@ -100,12 +104,18 @@ class AcceptInviteRequest(BaseModel):
 
 
 def _org_dict(org: Organization) -> dict[str, Any]:
+    from app.services.regional.packs import normalize_packs
+
     return {
         "org_id":               org.id,
         "name":                 org.name,
         "slug":                 org.slug,
         "description":          org.description,
         "logo_url":             org.logo_url,
+        "country_code":         getattr(org, "country_code", None) or "US",
+        "base_currency":        getattr(org, "base_currency", None) or "USD",
+        "locale":               getattr(org, "locale", None) or "en-US",
+        "regional_packs":       normalize_packs(getattr(org, "regional_packs", None)),
         "plan":                 org.plan,
         "max_members":          org.max_members,
         "max_jobs_per_month":   org.max_jobs_per_month,
@@ -156,6 +166,10 @@ async def create_org(
         name=body.name,
         slug=slug,
         description=body.description,
+        country_code="US",
+        base_currency="USD",
+        locale="en-US",
+        regional_packs=[],
     )
     db.add(org)
     await db.flush()  # get org.id before commit
@@ -204,9 +218,35 @@ async def update_org(
         org.description = body.description
     if body.logo_url is not None:
         org.logo_url = body.logo_url
+    if body.country_code is not None:
+        org.country_code = body.country_code.upper()
+    if body.base_currency is not None:
+        org.base_currency = body.base_currency.upper()
+    if body.locale is not None:
+        org.locale = body.locale
+    if body.regional_packs is not None:
+        from app.services.regional.packs import normalize_packs
+
+        org.regional_packs = normalize_packs(body.regional_packs)
     await db.commit()
     await db.refresh(org)
     return {"data": _org_dict(org), "error": None}
+
+
+@router.get("/org/me/tax-rates")
+async def get_org_tax_rates(
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Pack-aware tax rate table for the tax lens."""
+    from app.services.regional.packs import normalize_packs
+    from app.services.regional.tax import tax_rates_for_org
+
+    org = _require_org(current_user)
+    data = tax_rates_for_org(
+        country_code=getattr(org, "country_code", None) or "US",
+        regional_packs=normalize_packs(getattr(org, "regional_packs", None)),
+    )
+    return {"data": data, "error": None}
 
 
 @router.get("/org/members")
@@ -299,14 +339,34 @@ async def invite_member(
 
     logger.info("Invite sent: %s → %s (role=%s)", org.name, body.email, body.role)
 
-    # TODO: send email via Resend/SendGrid — token available in invite.token
+    email_sent = False
+    try:
+        from app.config import get_settings
+        from app.services.integrations import WebhookDispatcher
+
+        settings = get_settings()
+        frontend = getattr(settings, "frontend_url", None) or "http://localhost:3000"
+        accept_url = f"{frontend}/auth/accept-invite?token={invite.token}"
+        notifier = WebhookDispatcher()
+        email_sent = await notifier.send_email(
+            to=invite.email,
+            subject=f"You're invited to {org.name}",
+            body=(
+                f"You have been invited to join {org.name} as {invite.role}.\n\n"
+                f"Accept: {accept_url}\n\n"
+                f"This invite expires at {invite.expires_at.isoformat()}."
+            ),
+        )
+    except Exception as exc:
+        logger.warning("Invite email failed (non-fatal): %s", exc)
+
     return {
         "data": {
             "invite_id":  invite.id,
             "email":      invite.email,
             "role":       invite.role,
-            "token":      invite.token,  # remove from response in prod (send via email only)
             "expires_at": invite.expires_at.isoformat(),
+            "email_sent": bool(email_sent),
         },
         "error": None,
     }

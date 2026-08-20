@@ -16,6 +16,7 @@ import { useContextSummary, useActiveCFOJob, useFullContext } from "@/hooks/useC
 import { useSystemHealth, useSystemOps } from "@/hooks/useSystemOps";
 import { apiClient } from "@/lib/api/client";
 import { CrossAgentIntelligence } from "@/components/ui/cross-agent-intelligence";
+import { ConflictCard } from "@/components/command-center/ConflictCard";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
 
@@ -203,6 +204,9 @@ function QuickWinCard({ win }: { win: QuickWinItem }) {
 function ManagementLayerCard() {
   const { data: health } = useSystemHealth();
   const { data: ops } = useSystemOps();
+  const activeCfoJobId = useActiveCFOJob();
+  const [deckBusy, setDeckBusy] = useState(false);
+  const [deckMsg, setDeckMsg] = useState<string | null>(null);
 
   const statusBadge = health?.ok
     ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
@@ -215,13 +219,37 @@ function ManagementLayerCard() {
   const breaches = ops?.sla.breaches ?? [];
   const hasEscalation = breaches.length > 0 || failedCount > 0;
   const suggestedActions = ops?.suggested_actions ?? [];
+  const openConflicts = ops?.management?.open_conflicts ?? 0;
+
+  async function generateBoardDeck() {
+    if (!activeCfoJobId) {
+      setDeckMsg("Aktif CFO job yok — önce upload/analiz çalıştırın.");
+      return;
+    }
+    setDeckBusy(true);
+    setDeckMsg(null);
+    try {
+      const res = await apiClient.post(`/ceo/analyze-from-job/${activeCfoJobId}`, {});
+      const data = (res.data as { data?: { board_deck?: unknown }; board_deck?: unknown })?.data
+        ?? res.data;
+      if ((data as { board_deck?: unknown })?.board_deck) {
+        setDeckMsg("Board deck üretildi — CEO sayfasından görüntüleyin.");
+      } else {
+        setDeckMsg("CEO sentezi tetiklendi.");
+      }
+    } catch (err) {
+      setDeckMsg(err instanceof Error ? err.message : "Board deck oluşturulamadı");
+    } finally {
+      setDeckBusy(false);
+    }
+  }
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h2 className="text-sm font-semibold">Management Layer v1</h2>
+          <h2 className="text-sm font-semibold">Management Layer v1.5</h2>
         </div>
         <span className={cn("rounded border px-2 py-0.5 text-xs font-medium", statusBadge)}>
           {health?.status ?? "checking"}
@@ -234,9 +262,23 @@ function ManagementLayerCard() {
             {breaches.length > 0
               ? `${breaches.length} SLA breach detected`
               : "Recent failures require operator review"}
+            {openConflicts > 0 ? ` · ${openConflicts} open agent conflicts` : ""}
           </p>
         </div>
       )}
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={deckBusy || !activeCfoJobId}
+          onClick={() => void generateBoardDeck()}
+          className="inline-flex items-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+        >
+          {deckBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
+          Generate board deck
+        </button>
+        {deckMsg && <p className="w-full text-[11px] text-muted-foreground">{deckMsg}</p>}
+      </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded border border-border bg-muted/20 p-2">
@@ -664,7 +706,7 @@ export default function CommandCenterPage() {
               {ctxSummary?.company_name
                 ? <><Building2 className="inline h-3.5 w-3.5 mr-1 opacity-60" aria-hidden="true" />{ctxSummary.company_name} · </>
                 : null}
-              {agents.length || 9} agents · real-time health monitoring
+              Agentic Management OS · {agents.length || 9} agents · real-time health
             </p>
           </div>
         </div>
@@ -734,6 +776,9 @@ export default function CommandCenterPage() {
 
       {/* Unified management visibility (ops + reliability) */}
       <ManagementLayerCard />
+
+      {/* Cross-agent conflict surface */}
+      <ConflictCard />
 
       {/* Agent grid */}
       <div>

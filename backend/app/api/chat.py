@@ -497,7 +497,7 @@ async def chat_with_agent(
     from app.agents.chat_agent import chat_with_cfo
     from app.config import get_settings
     from app.services.conversation_memory import get_conversation_service
-    from app.services.rag_service import retrieve_evidence
+    from app.services.rag import get_rag_retriever
 
     user_id = str(user.id)
     # SEC-FIX: Never fall back to "default" — use user.id as isolated namespace
@@ -531,7 +531,7 @@ async def chat_with_agent(
 
     # Build enriched dashboard context
     active_cfo_job_id = (ctx.active_cfo_job_id or None) if hasattr(ctx, "active_cfo_job_id") else None
-    evidence_block = await retrieve_evidence(
+    evidence_bundle = await get_rag_retriever().retrieve(
         db=db,
         org_id=org_id,
         query=body.question,
@@ -539,7 +539,8 @@ async def chat_with_agent(
         top_k=3,
         source_type="cfo_transactions_raw",
     )
-    evidence_found = bool((evidence_block or "").strip())
+    evidence_block = evidence_bundle.to_prompt_block()
+    evidence_found = evidence_bundle.found
     if not evidence_found:
         evidence_block = (
             "## RAG Kanıtlar (evidence)\n"
@@ -563,7 +564,7 @@ async def chat_with_agent(
         "_chro_result": ctx.last_chro_result,
         "_risk_result": ctx.last_risk_result,
         "_evidence_found": evidence_found,
-        "_evidence_job_scope": active_cfo_job_id,
+        "_evidence_job_scope": evidence_bundle.job_scope,
     }
 
     settings = get_settings()
@@ -634,16 +635,9 @@ async def chat_with_agent(
             system_prompt_override=system_prompt_with_evidence,
         )
 
-    from app.platform.contracts import EvidenceBundle
     from app.services.rag.grounding_validator import apply_disclaimer, validate_grounding
 
-    evidence_bundle = EvidenceBundle(
-        query=body.question,
-        org_id=org_id,
-        citations=[],
-        job_scope="job_scoped" if active_cfo_job_id else "org_wide",
-    ) if evidence_found else None
-    grounding = validate_grounding(answer, evidence_bundle)
+    grounding = validate_grounding(answer, evidence_bundle if evidence_found else None)
     if grounding.requires_disclaimer:
         answer = apply_disclaimer(answer, grounding, locale="tr")
 
@@ -669,7 +663,8 @@ async def chat_with_agent(
             "used_reasoning": body.use_reasoning,
             "reasoning_trace": reasoning_trace,     # None unless use_reasoning=True
             "evidence_found": evidence_found,
-            "evidence_job_scope": active_cfo_job_id,
+            "evidence_job_scope": evidence_bundle.job_scope,
+            "evidence_retriever_version": evidence_bundle.retriever_version,
             "grounding_validated": not grounding.requires_disclaimer,
             "grounding_flags": grounding.flagged_claims,
         },

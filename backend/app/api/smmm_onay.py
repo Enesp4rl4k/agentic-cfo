@@ -6,6 +6,7 @@ Agent hazırlar → SMMM görür → tek tıkla onaylar / düzeltir / reddeder.
 Endpoints:
   GET  /smmm/onay/queue          → Bekleyen onay listesi
   GET  /smmm/onay/queue/{job_id} → Belirli iş için bekleyen onaylar
+  GET  /smmm/onay/package/{job_id} → SMMM paket özeti (review/failed/canonical)
   POST /smmm/onay/{kayit_id}/onayla   → Onayla
   POST /smmm/onay/{kayit_id}/duzeltle → Hesap kodunu düzelterek onayla
   POST /smmm/onay/{kayit_id}/reddet   → Reddet
@@ -24,11 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from app.api.auth import get_current_user
+from app.api.deps_regional import require_tr_pack
 from app.database import get_db
 from app.models.user import User
 from app.models.smmm_onay import SMMMOnayKaydi, OnayDurumu
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_tr_pack)])
 logger = logging.getLogger(__name__)
 
 
@@ -283,6 +285,90 @@ async def toplu_onayla(
             "onaylandi_ids":   approved_ids,
             "requested":       len(req.kayit_idler),
             "skipped":         len(req.kayit_idler) - len(approved_ids),
+        },
+        "error": None,
+    }
+
+
+@router.get("/smmm/onay/package/{job_id}")
+async def get_onay_package(
+    job_id:       str,
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    SMMM onay paketi özeti: awaiting_review + failed + canonical count.
+
+    Paraşüt → canonical → CFO hattı için muhasebeci paket görünümü.
+    """
+    from app.models.analysis_job import AnalysisJob
+    from app.models.canonical_transaction import CanonicalTransaction
+
+    org_id = getattr(current_user, "org_id", None) or getattr(
+        current_user, "organization_id", None
+    )
+
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Analiz işi bulunamadı")
+    if org_id and str(job.org_id) != str(org_id):
+        raise HTTPException(status_code=403, detail="Bu işe erişim yok")
+
+    bekleyen_q = select(func.count()).where(
+        and_(
+            SMMMOnayKaydi.job_id == job_id,
+            SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
+        )
+    )
+    reddedilen_q = select(func.count()).where(
+        and_(
+            SMMMOnayKaydi.job_id == job_id,
+            SMMMOnayKaydi.durum == OnayDurumu.REDDEDILDI,
+        )
+    )
+    bekleyen = int((await db.execute(bekleyen_q)).scalar_one() or 0)
+    reddedilen = int((await db.execute(reddedilen_q)).scalar_one() or 0)
+
+    sync_run_id = None
+    meta = job.result_metadata if isinstance(job.result_metadata, dict) else {}
+    sync_run_id = meta.get("sync_run_id")
+
+    canonical_count = 0
+    try:
+        cq = select(func.count()).select_from(CanonicalTransaction).where(
+            CanonicalTransaction.org_id == str(job.org_id)
+        )
+        if sync_run_id:
+            cq = cq.where(CanonicalTransaction.sync_run_id == str(sync_run_id))
+        canonical_count = int((await db.execute(cq)).scalar_one() or 0)
+    except Exception:
+        canonical_count = 0
+
+    awaiting_review = bool(job.awaiting_review) or str(job.status) == "awaiting_review"
+    failed = str(job.status) == "failed"
+
+    return {
+        "data": {
+            "job_id": job_id,
+            "org_id": str(job.org_id),
+            "job_status": str(job.status),
+            "awaiting_review": awaiting_review,
+            "failed": failed,
+            "error_message": job.error_message if failed else None,
+            "smmm": {
+                "bekliyor": bekleyen,
+                "reddedildi": reddedilen,
+            },
+            "canonical_count": canonical_count,
+            "sync_run_id": sync_run_id,
+            "quality_score": meta.get("quality_score"),
+            "sync_fingerprint": meta.get("sync_fingerprint"),
+            "ready_for_export": (
+                not failed
+                and bekleyen == 0
+                and not awaiting_review
+                and canonical_count > 0
+            ),
         },
         "error": None,
     }

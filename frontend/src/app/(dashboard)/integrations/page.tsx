@@ -272,15 +272,31 @@ export default function IntegrationsPage() {
         <div className="flex items-center gap-2">
           <Link2 className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">ERP Entegrasyonları</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Integrations</h1>
             <p className="text-sm text-muted-foreground">
-              Muhasebe yazılımınızı bağlayın, veri otomatik CFO analizine gitsin
+              Core connectors (CSV / generic) vs Turkey pack (Paraşüt, Logo, e-Fatura)
             </p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4" />
         </Button>
+      </div>
+
+      {/* Core vs Turkey pack */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Card className="p-4 space-y-1">
+          <h2 className="text-sm font-semibold">Core connectors</h2>
+          <p className="text-xs text-muted-foreground">
+            Upload CSV/XLSX/PDF on the Upload page. QuickBooks/Xero CSV maps are documented in INTERNATIONAL_PLATFORM.md (OAuth later).
+          </p>
+        </Card>
+        <Card className="p-4 space-y-1">
+          <h2 className="text-sm font-semibold">Turkey pack</h2>
+          <p className="text-xs text-muted-foreground">
+            Paraşüt, Logo Tiger, Mikro, GİB e-Fatura — enable via org regional_packs includes &quot;tr&quot;.
+          </p>
+        </Card>
       </div>
 
       {/* Mevcut entegrasyonlar */}
