@@ -1,4 +1,4 @@
-"""Yapı Kredi statement parser."""
+"""Enpara.com statement parser."""
 from __future__ import annotations
 
 import re
@@ -6,10 +6,10 @@ from datetime import datetime
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 
-class YapiKrediParser(BankParser):
-    bank_id = "yapkredi"
-    bank_display_name = "Yapı ve Kredi Bankası"
-    _MARKERS = ["YAPI VE KREDİ", "YAPI KREDİ", "Yapi Kredi", "YapiKredi", "YKB"]
+class EnparaParser(BankParser):
+    bank_id = "enpara"
+    bank_display_name = "Enpara.com"
+    _MARKERS = ["ENPARA.COM", "Enpara", "ENPARA", "enpara.com"]
 
     @classmethod
     def can_parse(cls, text: str) -> bool:
@@ -24,7 +24,7 @@ class YapiKrediParser(BankParser):
         )
         statement.transactions = self._parse_table(text)
         if not statement.transactions:
-            statement.parse_warnings.append("No transactions extracted from Yapı Kredi statement.")
+            statement.parse_warnings.append("No transactions extracted from Enpara statement.")
         return statement
 
     def _extract_account(self, text: str) -> str | None:
@@ -33,7 +33,7 @@ class YapiKrediParser(BankParser):
 
     def _parse_table(self, text: str) -> list[ParsedTransaction]:
         """
-        Yapı Kredi format: DD/MM/YYYY or DD.MM.YYYY  İşlem Açıklaması  Borç / Alacak Tutar  Bakiye
+        Enpara format: DD/MM/YYYY  Açıklama  Tutar (TL)  Bakiye (TL)
         """
         transactions: list[ParsedTransaction] = []
         row_pattern = re.compile(

@@ -407,3 +407,167 @@ class TestOCRResult:
     def test_needs_llm_fallback_empty_text(self):
         r = self._make_result(0.90, "")
         assert r.needs_llm_fallback is True
+
+
+# ── UBL-TR XML Invoice Parser Tests ──────────────────────────────────────────
+
+SAMPLE_UBL_TR_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+    <cbc:UUID>e8f81014-41d9-4b36-a6c9-0414f52cfbe4</cbc:UUID>
+    <cbc:ID>GIB2024000000042</cbc:ID>
+    <cbc:IssueDate>2024-03-15</cbc:IssueDate>
+    <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
+    <cbc:DocumentCurrencyCode>TRY</cbc:DocumentCurrencyCode>
+    
+    <cac:AccountingSupplierParty>
+        <cac:Party>
+            <cac:PartyIdentification>
+                <cbc:ID>1234567890</cbc:ID>
+            </cac:PartyIdentification>
+            <cac:PartyName>
+                <cbc:Name>ACME Yazılım ve Bilişim A.Ş.</cbc:Name>
+            </cac:PartyName>
+            <cac:PartyTaxScheme>
+                <cac:TaxScheme>
+                    <cbc:Name>Büyük Mükellefler</cbc:Name>
+                </cac:TaxScheme>
+            </cac:PartyTaxScheme>
+        </cac:Party>
+    </cac:AccountingSupplierParty>
+
+    <cac:AccountingCustomerParty>
+        <cac:Party>
+            <cac:PartyIdentification>
+                <cbc:ID>9876543210</cbc:ID>
+            </cac:PartyIdentification>
+            <cac:PartyName>
+                <cbc:Name>Global Lojistik Ltd. Şti.</cbc:Name>
+            </cac:PartyName>
+        </cac:Party>
+    </cac:AccountingCustomerParty>
+
+    <cac:TaxTotal>
+        <cbc:TaxAmount currencyID="TRY">20000.00</cbc:TaxAmount>
+        <cac:TaxSubtotal>
+            <cbc:TaxableAmount currencyID="TRY">100000.00</cbc:TaxableAmount>
+            <cbc:TaxAmount currencyID="TRY">20000.00</cbc:TaxAmount>
+            <cbc:Percent>20.00</cbc:Percent>
+            <cac:TaxCategory>
+                <cac:TaxScheme>
+                    <cbc:Name>KDV</cbc:Name>
+                </cac:TaxScheme>
+            </cac:TaxCategory>
+        </cac:TaxSubtotal>
+    </cac:TaxTotal>
+
+    <cac:LegalMonetaryTotal>
+        <cbc:LineExtensionAmount currencyID="TRY">100000.00</cbc:LineExtensionAmount>
+        <cbc:TaxExclusiveAmount currencyID="TRY">100000.00</cbc:TaxExclusiveAmount>
+        <cbc:TaxInclusiveAmount currencyID="TRY">120000.00</cbc:TaxInclusiveAmount>
+        <cbc:PayableAmount currencyID="TRY">120000.00</cbc:PayableAmount>
+    </cac:LegalMonetaryTotal>
+
+    <cac:InvoiceLine>
+        <cbc:ID>1</cbc:ID>
+        <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+        <cbc:LineExtensionAmount currencyID="TRY">100000.00</cbc:LineExtensionAmount>
+        <cac:Item>
+            <cbc:Name>Kurumsal ERP Yazılım Lisansı</cbc:Name>
+        </cac:Item>
+        <cac:Price>
+            <cbc:PriceAmount currencyID="TRY">100000.00</cbc:PriceAmount>
+        </cac:Price>
+    </cac:InvoiceLine>
+</Invoice>
+"""
+
+
+def test_ubl_tr_xml_invoice_parser():
+    from decimal import Decimal
+    from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
+
+    parsed = UBLTRInvoiceParser.parse_xml(SAMPLE_UBL_TR_XML)
+
+    assert parsed.invoice_number == "GIB2024000000042"
+    assert parsed.supplier.vkn_tckn == "1234567890"
+    assert parsed.supplier.title == "ACME Yazılım ve Bilişim A.Ş."
+    assert parsed.customer.title == "Global Lojistik Ltd. Şti."
+    assert parsed.line_extension_total == Decimal("100000.00")
+    assert parsed.payable_amount == Decimal("120000.00")
+    assert len(parsed.line_items) == 1
+    assert parsed.line_items[0].item_name == "Kurumsal ERP Yazılım Lisansı"
+
+    # Test TDHP Accounting Journal Entries
+    tdhp = parsed.suggested_tdhp_entries
+    assert len(tdhp) >= 2
+    assert any(entry.account_code == "120.01" for entry in tdhp)  # Alıcılar
+    assert any(entry.account_code == "600.01" for entry in tdhp)  # Satış Geliri
+    assert any(entry.account_code == "391.01" for entry in tdhp)  # KDV
+
+
+def test_bank_parsers_yapkredi_qnb_enpara():
+    from app.parsers.banks.yapkredi import YapiKrediParser
+    from app.parsers.banks.qnb import QNBParser
+    from app.parsers.banks.enpara import EnparaParser
+
+    yk_text = """
+    YAPI VE KREDİ BANKASI A.Ş.
+    Hesap Numarası: 12345678
+    15/03/2024  MÜŞTERİ HAVALESİ  +50.000,00  120.000,00
+    16/03/2024  OFİS KİRA ÖDEMESİ  -15.000,00  105.000,00
+    """
+    assert YapiKrediParser.can_parse(yk_text) is True
+    yk_stmt = YapiKrediParser().parse(yk_text)
+    assert len(yk_stmt.transactions) == 2
+
+    qnb_text = """
+    QNB FİNANSBANK EKSTRE
+    Hesap No: 99887766
+    10.03.2024  YAZILIM GELİRİ  +25.000,00  80.000,00
+    """
+    assert QNBParser.can_parse(qnb_text) is True
+    qnb_stmt = QNBParser().parse(qnb_text)
+    assert len(qnb_stmt.transactions) == 1
+
+    enpara_text = """
+    ENPARA.COM HESAP HAREKETİ
+    12/03/2024  FATURA ÖDEMESİ  -2.500,00  45.000,00
+    """
+    assert EnparaParser.can_parse(enpara_text) is True
+    enpara_stmt = EnparaParser().parse(enpara_text)
+    assert len(enpara_stmt.transactions) == 1
+
+
+def test_turkish_tax_engine():
+    from decimal import Decimal
+    from app.services.regional.tax_calculator import TurkishTaxEngine
+
+    # Test KDV: 391 (20.000 TL) - 191 (12.000 TL) = 8.000 TL Ödenecek KDV
+    kdv_res = TurkishTaxEngine.calculate_monthly_kdv(
+        year=2024,
+        month=3,
+        sales_kdv_391=Decimal("20000.00"),
+        purchase_kdv_191=Decimal("12000.00"),
+        previous_carryover_kdv=Decimal("0.0"),
+    )
+    assert kdv_res.odenecek_kdv == Decimal("8000.00")
+    assert kdv_res.sonraki_doneme_devreden_kdv == Decimal("0.0")
+
+    # Test Muhtasar Stopaj (%20 kira)
+    muh_res = TurkishTaxEngine.calculate_muhtasar(
+        year=2024,
+        month=3,
+        gross_rent_amount=Decimal("30000.00"),
+    )
+    assert muh_res.toplam_stopaj == Decimal("6000.00")
+
+    # Test 30-day cash outflow calendar
+    calendar = TurkishTaxEngine.generate_30_day_tax_calendar(
+        current_date=kdv_res.odeme_vadesi,
+        kdv_res=kdv_res,
+        muhtasar_res=muh_res,
+    )
+    assert len(calendar) == 2
+    assert sum(c.amount for c in calendar) == Decimal("14000.00")

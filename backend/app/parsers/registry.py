@@ -33,8 +33,11 @@ def _ensure_parsers_registered() -> None:
 
     # ── Bank statement parsers ────────────────────────────────────────────────
     from app.parsers.banks.akbank import AkbankParser
+    from app.parsers.banks.enpara import EnparaParser
     from app.parsers.banks.garanti import GarantiParser
     from app.parsers.banks.isbank import IsBankParser
+    from app.parsers.banks.qnb import QNBParser
+    from app.parsers.banks.yapkredi import YapiKrediParser
     from app.parsers.banks.ziraat import ZiraatParser
 
     # ── Accounting software parsers ───────────────────────────────────────────
@@ -58,8 +61,11 @@ def _ensure_parsers_registered() -> None:
         TurkishInvoiceParser,
         # Bank parsers
         AkbankParser,
+        EnparaParser,
         GarantiParser,
         IsBankParser,
+        QNBParser,
+        YapiKrediParser,
         ZiraatParser,
     )
 
