@@ -42,3 +42,14 @@ package-lock.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Standalone Side Projects & Local Data
+data/
+enterprise-knowledge-integrator/
+
+# Standalone Sub-Projects
+post-agentic-ai/
+post_agentic_ai/
+langgraph_checkpoints.sqlite
+agent_memory.db
+knowledge_integrator/
