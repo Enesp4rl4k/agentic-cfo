@@ -15,16 +15,14 @@ Scenarios:
 from __future__ import annotations
 
 import os
-import tempfile
+
 import pytest
-import pytest_asyncio
 
 # Force in-memory backends for all tests — no external dependencies
 os.environ.setdefault("USE_SQLITE", "true")
 
 from app.agents.orchestrator import run_cfo_pipeline
 from app.agents.state import AgentRunConfig, CFOState
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -252,8 +250,9 @@ async def test_duplicate_transactions_detected(duplicate_csv_file, run_config_no
     anomalies = result.get("anomalies") or []
     # At least one anomaly should be detected given the obvious duplicates
     # (either from anomaly_agent or in dashboard_json)
-    dashboard_anomalies = (result.get("dashboard_json") or {}).get("anomalies") or {}
-    all_anomalies = anomalies + (dashboard_anomalies.get("items") or [])
+    dashboard_anomalies = (result.get("dashboard_json") or {}).get("anomalies") or []
+    dash_items = dashboard_anomalies if isinstance(dashboard_anomalies, list) else (dashboard_anomalies.get("items") or [])
+    all_anomalies = anomalies + dash_items
 
     assert len(all_anomalies) > 0, \
         "Expected duplicate anomalies to be detected in DUPLICATE_CSV"
@@ -338,7 +337,7 @@ async def test_budget_agent_runs_with_budget_input(csv_file, run_config_no_revie
 @pytest.mark.asyncio
 async def test_memory_episode_saved_on_success(csv_file, run_config_no_review):
     """After a successful run with org_id, a memory episode is saved."""
-    from app.services.agent_memory import AgentMemoryStore, reset_memory_store
+    from app.services.agent_memory import reset_memory_store
 
     # Use fresh isolated in-memory store for this test
     reset_memory_store()

@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     twilio_auth_token:    str = ""
     twilio_whatsapp_from: str = ""        # e.g. "whatsapp:+14155238886"
 
+    # WhatsApp webhook verification token (self-chosen, set same in Meta console)
+    whatsapp_verify_token: str = "agentic-cfo-verify"
+
+    # Slack Bot (for Events API and chat.postMessage)
+    slack_bot_token:     str = ""  # xoxb-...
+    slack_signing_secret: str = "" # From Slack App Basic Information page
+
     # SMTP email notifications
     smtp_host:         str = "smtp.gmail.com"
     smtp_port:         int = 587
@@ -148,6 +155,9 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 10
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.
     auto_enqueue_analysis_on_upload: bool = True
+    # Confidence gate: min lowest-skill confidence to auto-proceed without a
+    # human. Below this the run holds for review. Env-tunable per deployment.
+    agent_auto_proceed_min_confidence: float = 0.80
     # RAG maintenance: tamamlanmış job'lar için eksik chunk index backfill.
     rag_backfill_enabled: bool = True
     rag_backfill_lookback_days: int = 14

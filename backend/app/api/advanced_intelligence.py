@@ -32,6 +32,29 @@ def _get_org_id(user: User) -> str:
     return str(org_id)
 
 
+def _assemble_board_deck(
+    dashboard: dict[str, Any],
+    *,
+    company_name: str,
+    period: str,
+    include_swot: bool = True,
+    include_kri: bool = True,
+) -> dict[str, Any]:
+    """Build a BoardDeckPDFBuilder-shaped deck dict from a CFO dashboard JSON.
+
+    Reuses the same deck assembly as the TR vertical — the dashboard JSON has
+    the `pnl` / `forecast` / `anomalies` keys `_board_deck_from` reads.
+    """
+    from app.agents.tr_vertical import _board_deck_from
+
+    deck = _board_deck_from(company_name, period, dashboard or {}, None)
+    if include_swot and "swot" not in deck:
+        deck["swot"] = (dashboard or {}).get("swot") or {}
+    if not include_kri:
+        deck.pop("kri_posture", None)
+    return deck
+
+
 # ── NL Simulation ──────────────────────────────────────────────────────────────
 
 class NLSimulateRequest(BaseModel):
@@ -95,7 +118,7 @@ async def proactive_scan(
     Manuel KRI tarama ve alert tetikleme.
     Normalde scheduler calistirir; test ve debug icin manuel tetikleme.
     """
-    from app.services.proactive_alerts import get_proactive_orchestrator
+    from app.agents.orchestration.proactive_alerts import get_proactive_orchestrator
 
     org_id       = _get_org_id(current_user)
     orchestrator = get_proactive_orchestrator(db=db)
@@ -167,6 +190,7 @@ class BoardDeckPDFRequest(BaseModel):
     job_id:       str | None = None
     org_id_param: str | None = None
     company_name: str | None = None
+    period:       str | None = None
     include_swot:     bool = True
     include_kri:      bool = True
     include_cascade:  bool = False
@@ -183,20 +207,21 @@ async def board_deck_pdf(
 
     Dosya tarayicida dogrudan indirilir.
     """
-    from app.services.board_deck_pdf import generate_board_deck_pdf
-
     org_id = _get_org_id(current_user)
 
     try:
-        pdf_bytes = await generate_board_deck_pdf(
-            org_id       = org_id,
-            job_id       = req.job_id,
-            company_name = req.company_name,
-            include_swot     = req.include_swot,
-            include_kri      = req.include_kri,
-            include_cascade  = req.include_cascade,
-            db           = db,
+        from app.api.reports_pdf import _load_dashboard_for_job
+        from app.services.board_deck_pdf import BoardDeckPDFBuilder
+
+        dashboard = await _load_dashboard_for_job(req.job_id, db) if req.job_id else {}
+        deck = _assemble_board_deck(
+            dashboard,
+            company_name=req.company_name or "Şirket",
+            period=req.period or "",
+            include_swot=req.include_swot,
+            include_kri=req.include_kri,
         )
+        pdf_bytes = BoardDeckPDFBuilder().build_pdf(deck)
         filename = f"board-deck-{org_id[:8]}.pdf"
         return StreamingResponse(
             iter([pdf_bytes]),
@@ -230,8 +255,8 @@ async def temporal_auto_record(
     CompanyContext'teki mevcut agent sonucunu temporal log'a otomatik kaydet.
     Her analiz sonrasinda cagirilmasi onerilir.
     """
-    from app.services.temporal_intelligence import get_temporal_engine
     from app.services.company_context import get_company_context
+    from app.services.temporal_intelligence import get_temporal_engine
 
     org_id = _get_org_id(current_user)
 

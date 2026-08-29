@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { Logo } from "@/components/ui/logo";
@@ -9,9 +10,18 @@ import { DemoBanner } from "@/components/ui/demo-banner";
 import { OnboardingBanner } from "@/components/ui/onboarding-banner";
 import { SystemStatusWidget } from "@/components/ui/system-status";
 import { NotificationBell } from "@/components/ui/notification-bell";
-import { AgentChatPanel } from "@/components/ui/agent-chat-panel";
 import { ThemeIconToggle } from "@/components/ui/theme-toggle";
-import { CommandPalette, CommandPaletteTrigger } from "@/components/ui/command-palette";
+import { CommandPaletteTrigger } from "@/components/ui/command-palette";
+
+// PERF: Lazy load heavy overlay components
+const AgentChatPanel = dynamic(
+  () => import("@/components/ui/agent-chat-panel").then((mod) => mod.AgentChatPanel),
+  { ssr: false }
+);
+const CommandPalette = dynamic(
+  () => import("@/components/ui/command-palette").then((mod) => mod.CommandPalette),
+  { ssr: false }
+);
 import {
   LayoutDashboard, Upload, FileText, TrendingUp, DollarSign,
   Menu, X, Clock, CheckCircle, AlertCircle, Loader2,
@@ -62,11 +72,11 @@ const NAV_GROUPS = [
     label: "C-Suite",
     items: [
       { href: "/cfo",        label: "CFO View",    icon: DollarSign },
-      { href: "/cto",        label: "CTO View",    icon: Cpu },
+      { href: "/cto",        label: "CTO View",    icon: Cpu,       estimated: true },
       { href: "/ceo",        label: "CEO View",    icon: Crown },
-      { href: "/cmo",        label: "CMO View",    icon: Megaphone },
-      { href: "/coo",        label: "COO View",    icon: Layers },
-      { href: "/chro",       label: "CHRO View",   icon: Users },
+      { href: "/cmo",        label: "CMO View",    icon: Megaphone, estimated: true },
+      { href: "/coo",        label: "COO View",    icon: Layers,    estimated: true },
+      { href: "/chro",       label: "CHRO View",   icon: Users,     estimated: true },
     ],
   },
   {
@@ -93,6 +103,7 @@ const NAV_GROUPS = [
   {
     label: "Portal",
     items: [
+      { href: "/tr-vertical", label: "TR Autopilot (L3)",        icon: Zap, trPack: true },
       { href: "/smmm",        label: "Turkey accounting review", icon: Users, trPack: true },
       { href: "/smmm-onay",   label: "SMMM approvals",           icon: FileCheck, trPack: true },
       { href: "/billing",     label: "Billing",                  icon: CreditCard },
@@ -271,13 +282,17 @@ function SidebarContent({
               {group.label}
             </p>
             <div className="space-y-0.5 px-2">
-              {group.items.map(({ href, label, icon: Icon }) => {
+              {group.items.map((navItem) => {
+                const { href, label, icon: Icon } = navItem;
+                const estimated =
+                  "estimated" in navItem ? Boolean(navItem.estimated) : false;
                 const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
                 return (
                   <Link
                     key={href}
                     href={navHref(href)}
                     onClick={onNavigate}
+                    title={estimated ? "Bağlı veri kaynağı yoksa CFO finansallarından tahmin edilir" : undefined}
                     className={cn(
                       "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm",
                       "transition-[color,background-color] duration-150 ease-out",
@@ -307,6 +322,14 @@ function SidebarContent({
                     />
 
                     <span className="flex-1 truncate">{label}</span>
+                    {estimated && (
+                      <span
+                        className="shrink-0 text-xs text-muted-foreground/50"
+                        aria-hidden="true"
+                      >
+                        ~
+                      </span>
+                    )}
 
                     {href === "/anomalies" && anomalyCritical > 0 && (
                       <span

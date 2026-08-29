@@ -20,11 +20,10 @@ from __future__ import annotations
 
 import logging
 import re
-import statistics
 from collections import defaultdict
 from typing import Any
 
-from app.agents.cto.state import CTOState, CTORunConfig, CTOSkillResult
+from app.agents.cto.state import CTORunConfig, CTOSkillResult, CTOState
 
 logger = logging.getLogger(__name__)
 
@@ -157,24 +156,16 @@ def _compute_debt_metrics(parsed: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _generate_debt_narrative(metrics: dict[str, Any], settings) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import complete_text
 
     top_hotspots = "\n".join(
         f"  - {h['file']} ({h['changes']} changes, {h['authors']} contributors)"
         for h in metrics.get("hotspot_files", [])[:5]
     ) or "  None detected"
 
-    messages = [
-        SystemMessage(content=(
+    return (await complete_text(
+        task="short_narrative",
+        system_prompt=(
             "Sen deneyimli bir CTO ve yazılım mimarısın. "
             "Git geçmişinden elde edilen teknik borç göstergelerini analiz et ve Türkçe olarak "
             "kısa, eyleme dönüştürülebilir bir özet yaz. "
@@ -183,18 +174,17 @@ async def _generate_debt_narrative(metrics: dict[str, Any], settings) -> str:
             "2. En riskli 1-2 alan (bus factor, hotspot)\n"
             "3. Ekibin sprint'e alması gereken 2-3 somut iyileştirme (öncelik sırasıyla)\n"
             "Geliştirici deneyimiyle ilgili pratik öneriler ekle."
-        )),
-        HumanMessage(content=(
+        ),
+        prompt=(
             f"Teknik Borç Skoru: {metrics['debt_score']:.1f}/10\n"
             f"Toplam Commit (dönem): {metrics['total_commits']}\n"
             f"Aktif Katkıcı: {metrics['active_contributors']}\n"
             f"Kod Değişim Oranı (Churn): %{metrics['churn_rate']*100:.1f}\n"
             f"Bus Factor Riski Olan Dosya: {metrics['bus_factor_files_count']}\n\n"
             f"En Yoğun Değişen Dosyalar (Hotspot):\n{top_hotspots}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        ),
+        max_tokens=512,
+    )).strip()
 
 
 async def run_tech_debt_agent(

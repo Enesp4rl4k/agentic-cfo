@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # Generic rates by ISO country — illustrative defaults for the tax lens
 GENERIC_TAX_BY_COUNTRY: dict[str, list[dict[str, Any]]] = {
     "US": [

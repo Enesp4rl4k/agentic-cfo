@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ class WSAlertManager:
                 "type":    "connected",
                 "org_id":  org_id,
                 "message": "Real-time alert channel hazır",
-                "ts":      datetime.now(timezone.utc).isoformat(),
+                "ts":      datetime.now(UTC).isoformat(),
             }))
         except Exception:
             pass
@@ -112,7 +112,7 @@ class WSAlertManager:
         message = json.dumps({
             "type":  "new_alert",
             "alert": alert,
-            "ts":    datetime.now(timezone.utc).isoformat(),
+            "ts":    datetime.now(UTC).isoformat(),
         })
 
         await self._broadcast(org_id, message)
@@ -131,7 +131,7 @@ class WSAlertManager:
             "type":     "alert_acknowledged",
             "alert_id": alert_id,
             "by":       by_user,
-            "ts":       datetime.now(timezone.utc).isoformat(),
+            "ts":       datetime.now(UTC).isoformat(),
         })
         await self._broadcast(org_id, message)
 
@@ -139,7 +139,7 @@ class WSAlertManager:
         """Send a heartbeat ping to keep connections alive."""
         message = json.dumps({
             "type": "heartbeat",
-            "ts":   datetime.now(timezone.utc).isoformat(),
+            "ts":   datetime.now(UTC).isoformat(),
         })
         await self._broadcast(org_id, message)
 

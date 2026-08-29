@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+    <cbc:UUID>b3d9a2f1-7c44-4e18-9a2b-5f6e1c0d8a44</cbc:UUID>
+    <cbc:ID>GIB2024000000108</cbc:ID>
+    <cbc:IssueDate>2024-01-22</cbc:IssueDate>
+    <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
+    <cbc:DocumentCurrencyCode>TRY</cbc:DocumentCurrencyCode>
+
+    <cac:AccountingSupplierParty>
+        <cac:Party>
+            <cac:PartyIdentification>
+                <cbc:ID>4560012345</cbc:ID>
+            </cac:PartyIdentification>
+            <cac:PartyName>
+                <cbc:Name>TechNova Yazılım A.Ş.</cbc:Name>
+            </cac:PartyName>
+        </cac:Party>
+    </cac:AccountingSupplierParty>
+
+    <cac:AccountingCustomerParty>
+        <cac:Party>
+            <cac:PartyIdentification>
+                <cbc:ID>7788990011</cbc:ID>
+            </cac:PartyIdentification>
+            <cac:PartyName>
+                <cbc:Name>ABC Holding A.Ş.</cbc:Name>
+            </cac:PartyName>
+        </cac:Party>
+    </cac:AccountingCustomerParty>
+
+    <cac:TaxTotal>
+        <cbc:TaxAmount currencyID="TRY">57000.00</cbc:TaxAmount>
+        <cac:TaxSubtotal>
+            <cbc:TaxableAmount currencyID="TRY">285000.00</cbc:TaxableAmount>
+            <cbc:TaxAmount currencyID="TRY">57000.00</cbc:TaxAmount>
+            <cbc:Percent>20.00</cbc:Percent>
+            <cac:TaxCategory>
+                <cac:TaxScheme>
+                    <cbc:Name>KDV</cbc:Name>
+                </cac:TaxScheme>
+            </cac:TaxCategory>
+        </cac:TaxSubtotal>
+    </cac:TaxTotal>
+
+    <cac:LegalMonetaryTotal>
+        <cbc:LineExtensionAmount currencyID="TRY">285000.00</cbc:LineExtensionAmount>
+        <cbc:TaxExclusiveAmount currencyID="TRY">285000.00</cbc:TaxExclusiveAmount>
+        <cbc:TaxInclusiveAmount currencyID="TRY">342000.00</cbc:TaxInclusiveAmount>
+        <cbc:PayableAmount currencyID="TRY">342000.00</cbc:PayableAmount>
+    </cac:LegalMonetaryTotal>
+
+    <cac:InvoiceLine>
+        <cbc:ID>1</cbc:ID>
+        <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+        <cbc:LineExtensionAmount currencyID="TRY">285000.00</cbc:LineExtensionAmount>
+        <cac:Item>
+            <cbc:Name>Yıllık Kurumsal ERP Yazılım Lisansı</cbc:Name>
+        </cac:Item>
+        <cac:Price>
+            <cbc:PriceAmount currencyID="TRY">285000.00</cbc:PriceAmount>
+        </cac:Price>
+    </cac:InvoiceLine>
+</Invoice>

@@ -1,0 +1,5 @@
+tarih,açıklama,tutar,tip,kategori
+gecersiz,Tarihsiz kayıt bir,"1.000,00",income,sales
+NaN,Tarihsiz kayıt iki,"-500,00",expense,other_expense
+,Boş tarih,"-250,00",expense,other_expense
+2024-13-45,Geçersiz tarih,"2.000,00",income,sales

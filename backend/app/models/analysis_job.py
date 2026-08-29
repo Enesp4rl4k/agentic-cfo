@@ -1,20 +1,20 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.transaction import Transaction
     from app.models.report import Report
+    from app.models.transaction import Transaction
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class JobStatus(StrEnum):
@@ -32,7 +32,7 @@ class AnalysisJob(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)  # pdf | xlsx | csv
@@ -69,7 +69,7 @@ class AnalysisJob(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False

@@ -1,6 +1,15 @@
-"""010_sso_fields: add SSO columns to users table + IP whitelist to organizations"""
+"""010_sso_fields: add SSO columns to users table + IP whitelist to organizations
+
+Revision ID: 010_sso_fields
+Revises: 009
+"""
 from alembic import op
 import sqlalchemy as sa
+
+revision = "010_sso_fields"
+down_revision = "009"
+branch_labels = None
+depends_on = None
 
 
 def upgrade() -> None:

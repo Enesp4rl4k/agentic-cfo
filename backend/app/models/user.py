@@ -11,11 +11,11 @@ Supports:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class UserRole(StrEnum):
@@ -55,7 +55,7 @@ class User(Base):
         nullable=True,
         index=True,
     )
-    organization: Mapped["Organization | None"] = relationship(
+    organization: Mapped[Organization | None] = relationship(
         "Organization", back_populates="members", foreign_keys=[org_id]
     )
 

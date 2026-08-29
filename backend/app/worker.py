@@ -17,11 +17,11 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from arq import create_pool
-from arq.connections import RedisSettings, ArqRedis
+from arq.connections import ArqRedis, RedisSettings
 
 from app.config import get_settings
 
@@ -124,10 +124,11 @@ async def run_ceo_analysis(
 
         # FAZ-4B: trigger cross-domain correlation for ceo agent
         if result_data := result:
-            org_id_from_result = result_data.get("org_id") or result_data.get("job_id", "")[:8]
+            result_data.get("org_id") or result_data.get("job_id", "")[:8]
             # CEO synthesis result → update CompanyContext + trigger feedback rules
             import asyncio
-            from app.services.auto_chain import on_agent_complete as _oac
+
+            from app.agents.orchestration.auto_chain import on_agent_complete as _oac
             asyncio.create_task(_oac(
                 agent="ceo",
                 org_id=job_id,  # use job_id as org proxy if org_id not in result
@@ -161,15 +162,14 @@ async def run_cfo_analysis(
     Called by the ARQ worker process — NOT by the FastAPI request process.
     This means the job survives application restarts.
     """
-    from app.database import get_session_factory, engine
-    from app.models.analysis_job import AnalysisJob, JobStatus
-    from app.models.transaction import Transaction
-    from app.models.report import Report, ReportType, ReportFormat
-    from app.models.anomaly import Anomaly
     from app.agents.orchestrator import run_cfo_pipeline
     from app.agents.state import AgentRunConfig
-
-    from app.streaming.sse import publish_step_event, publish_job_done, publish_job_error
+    from app.database import engine, get_session_factory
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.models.anomaly import Anomaly
+    from app.models.report import Report, ReportFormat, ReportType
+    from app.models.transaction import Transaction
+    from app.streaming.sse import publish_job_done, publish_job_error, publish_step_event
 
     logger.info("ARQ worker: starting CFO analysis for job=%s", job_id)
 
@@ -180,12 +180,12 @@ async def run_cfo_analysis(
             return {"ok": False, "error": "job not found"}
 
         job.status = JobStatus.ANALYZING
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         if hasattr(job, "result_metadata"):
             meta = job.result_metadata or {}
             meta["analysis_started_at"] = started_at.isoformat()
             job.result_metadata = meta
-        job.updated_at = datetime.now(timezone.utc)
+        job.updated_at = datetime.now(UTC)
         await db.commit()
 
         try:
@@ -201,7 +201,12 @@ async def run_cfo_analysis(
                 job_id, _routing_plan.summary(),
             )
             # Pass routing plan to pipeline so it can skip unavailable agents
-            run_config = AgentRunConfig(require_review=True)
+            from app.config import get_settings as _gs
+
+            run_config = AgentRunConfig(
+                require_review=True,
+                auto_proceed_min_confidence=_gs().agent_auto_proceed_min_confidence,
+            )
 
             result = await run_cfo_pipeline(
                 job_id=job_id,
@@ -233,7 +238,7 @@ async def run_cfo_analysis(
                     vendor=tx_data.get("vendor"),
                     transaction_date=datetime.fromisoformat(tx_data["transaction_date"])
                     if tx_data.get("transaction_date")
-                    else datetime.now(timezone.utc),
+                    else datetime.now(UTC),
                     raw_text=tx_data.get("raw_text"),
                     confidence=tx_data.get("confidence"),
                 )
@@ -309,9 +314,9 @@ async def run_cfo_analysis(
             job.logs = logs_serializable
             job.min_confidence = result.get("min_confidence")
             job.awaiting_review = bool(result.get("awaiting_review"))
-            completed_at = datetime.now(timezone.utc)
+            completed_at = datetime.now(UTC)
             job.completed_at = completed_at
-            job.updated_at = datetime.now(timezone.utc)
+            job.updated_at = datetime.now(UTC)
             if hasattr(job, "result_metadata"):
                 meta = job.result_metadata or {}
                 try:
@@ -323,7 +328,7 @@ async def run_cfo_analysis(
                 # Persist conductor plan before auto-chain so ops/debug can inspect it.
                 if job.org_id:
                     try:
-                        from app.services.auto_chain import build_conductor_plan_dict
+                        from app.agents.orchestration.auto_chain import build_conductor_plan_dict
 
                         plan_dict = await build_conductor_plan_dict(
                             org_id=str(job.org_id),
@@ -337,6 +342,7 @@ async def run_cfo_analysis(
                 # RAG index observability for staging proof
                 try:
                     from sqlalchemy import func, select
+
                     from app.models.rag_chunk import RagChunk
 
                     emb_count = int(
@@ -366,10 +372,12 @@ async def run_cfo_analysis(
                 job_id, job.status, job.awaiting_review,
             )
 
-            # ── FAZ-1A: Trigger auto-chain (fire-and-forget) ──────────────────
+            # ── FAZ-1A: Persist CompanyContext + semantic + auto-chain ─────────
             if job.status == JobStatus.COMPLETED and job.org_id:
                 import asyncio
-                from app.services.auto_chain import on_agent_complete
+
+                from app.agents.orchestration.auto_chain import on_agent_complete
+                from app.services.company_context import get_company_context, save_company_context
 
                 chain_result: dict[str, Any] = {
                     "job_id":     job_id,
@@ -379,6 +387,22 @@ async def run_cfo_analysis(
                     "pnl":        (result.get("dashboard_json") or {}).get("pnl"),
                     "cashflow":   (result.get("dashboard_json") or {}).get("cashflow"),
                 }
+
+                try:
+                    ctx_obj = await get_company_context(str(job.org_id), db)
+                    ctx_obj.update_agent_result("cfo", chain_result)
+                    ctx_obj.set_active_job("cfo", str(job_id))
+                    await save_company_context(ctx_obj, db)
+                    from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+                    await rebuild_semantic_snapshot(str(job.org_id), db, include_brief=True)
+                    logger.info(
+                        "ARQ worker: CompanyContext + semantic persisted for org=%s job=%s",
+                        job.org_id,
+                        job_id,
+                    )
+                except Exception as exc:
+                    logger.warning("ARQ worker: context/semantic persist failed (non-fatal): %s", exc)
 
                 asyncio.create_task(
                     on_agent_complete(
@@ -423,11 +447,11 @@ async def run_cfo_analysis(
                 "retryable": transient,
                 "error_type": type(exc).__name__,
                 "message": str(exc),
-                "at": datetime.now(timezone.utc).isoformat(),
+                "at": datetime.now(UTC).isoformat(),
             }
             if hasattr(job, "result_metadata"):
                 job.result_metadata = meta
-            job.updated_at = datetime.now(timezone.utc)
+            job.updated_at = datetime.now(UTC)
             await db.commit()
             # Notify SSE subscribers of failure (best-effort, non-fatal)
             try:
@@ -463,13 +487,14 @@ async def _save_to_memory_and_trend(
     Fire-and-forget background task — non-fatal.
     """
     try:
-        from app.services.agent_memory import get_memory_store, EpisodeRecord
+        from datetime import datetime
+
+        from app.services.agent_memory import EpisodeRecord, get_memory_store
         from app.services.trend_detector import TrendDetector
-        from datetime import datetime, timezone
 
         pnl = (result.get("dashboard_json") or {}).get("pnl") or {}
         anomalies = result.get("anomalies") or []
-        period = datetime.now(timezone.utc).strftime("%Y-%m")
+        period = datetime.now(UTC).strftime("%Y-%m")
 
         store = get_memory_store()  # auto-configured from settings
 
@@ -524,22 +549,24 @@ async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
     ARQ maintenance task: backfill missing rag_chunks for recently completed jobs.
     Runs on the maintenance queue so analysis throughput stays isolated under load.
     """
-    from app.database import get_session_factory, engine
-    from app.models.analysis_job import AnalysisJob, JobStatus
-    from app.models.transaction import Transaction
-    from app.models.rag_chunk import RagChunk
-    from app.services.rag_service import index_job_text
     from sqlalchemy import func, select
+
+    from app.database import engine, get_session_factory
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.models.rag_chunk import RagChunk
+    from app.models.transaction import Transaction
+    from app.services.rag_service import index_job_text
 
     settings = get_settings()
     if not settings.rag_backfill_enabled:
         return {"ok": True, "skipped": True, "reason": "disabled"}
 
     lookback_days = max(1, settings.rag_backfill_lookback_days)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
     checked = 0
     indexed = 0
+    embeddings_backfilled = 0
     async with get_session_factory(engine())() as db:
         jobs_result = await db.execute(
             select(AnalysisJob).where(
@@ -579,27 +606,102 @@ async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
             if added > 0:
                 indexed += 1
 
-        if indexed > 0:
+        # Phase 2: backfill embeddings for text-only chunks (pgvector path)
+        from app.services.rag_service import _embed_texts, _has_embedding_support
+
+        if _has_embedding_support():
+            emb_rows = await db.execute(
+                select(RagChunk)
+                .where(
+                    RagChunk.embedding.is_(None),
+                    RagChunk.created_at >= cutoff,
+                )
+                .order_by(RagChunk.created_at.desc())
+                .limit(200)
+            )
+            stale_chunks = emb_rows.scalars().all()
+            if stale_chunks:
+                texts = [(c.chunk_text or "")[:8000] for c in stale_chunks]
+                vectors = _embed_texts(texts)
+                if vectors:
+                    for chunk, vec in zip(stale_chunks, vectors, strict=False):
+                        chunk.embedding = vec
+                        chunk.embedding_model = settings.rag_embedding_model
+                    embeddings_backfilled = len(stale_chunks)
+
+        if indexed > 0 or embeddings_backfilled > 0:
             await db.commit()
 
     logger.info(
-        "Maintenance RAG backfill: checked=%d indexed=%d lookback_days=%d",
+        "Maintenance RAG backfill: checked=%d indexed=%d embeddings=%d lookback_days=%d",
         checked,
         indexed,
+        embeddings_backfilled,
         lookback_days,
     )
-    return {"ok": True, "checked": checked, "indexed": indexed}
+    return {
+        "ok": True,
+        "checked": checked,
+        "indexed": indexed,
+        "embeddings_backfilled": embeddings_backfilled,
+    }
 
 
 async def run_usage_prune_maintenance(ctx: dict) -> dict[str, Any]:
     """ARQ maintenance task: prune usage_events older than 90 days."""
-    from app.database import get_session_factory, engine
+    from app.database import engine, get_session_factory
     from app.services.usage_meter import prune_old_usage_events
 
     async with get_session_factory(engine())() as db:
         deleted = await prune_old_usage_events(db=db, days=90)
     logger.info("Maintenance usage prune: deleted=%d", deleted)
     return {"ok": True, "deleted": deleted}
+
+
+async def run_semantic_rebuild(ctx: dict, org_id: str) -> dict[str, Any]:
+    """ARQ maintenance task: rebuild semantic snapshot after a debounce skip."""
+    from app.database import engine, get_session_factory
+    from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+    async with get_session_factory(engine())() as db:
+        snap = await rebuild_semantic_snapshot(str(org_id), db, include_brief=True)
+    ok = snap is not None
+    logger.info(
+        "Maintenance semantic rebuild org=%s ok=%s period=%s metrics=%s",
+        org_id,
+        ok,
+        snap.period.key if snap else None,
+        len(snap.metrics) if snap else 0,
+    )
+    return {
+        "ok": ok,
+        "org_id": str(org_id),
+        "period": snap.period.key if snap else None,
+        "metric_count": len(snap.metrics) if snap else 0,
+        "awaiting_review": bool(snap.brief and snap.brief.awaiting_review) if snap else None,
+    }
+
+
+async def enqueue_semantic_rebuild_job(org_id: str, *, defer_by: float = 0.0) -> bool:
+    """Enqueue a per-org trailing semantic rebuild on the maintenance queue."""
+    pool = await get_arq_pool()
+    settings = get_settings()
+    lock_key = f"semantic:rebuild:pending:{org_id}"
+    ttl = max(int(defer_by) + 5, 15)
+    try:
+        acquired = await pool.set(lock_key, "1", ex=ttl, nx=True)
+        if not acquired:
+            logger.debug("Semantic rebuild already pending org=%s", org_id)
+            return True
+    except Exception as exc:
+        logger.debug("Semantic rebuild lock failed org=%s: %s", org_id, exc)
+
+    job_kwargs: dict[str, Any] = {"_queue_name": settings.arq_maintenance_queue_name}
+    if defer_by and defer_by > 0:
+        job_kwargs["_defer_by"] = timedelta(seconds=defer_by)
+    await pool.enqueue_job("run_semantic_rebuild", org_id, **job_kwargs)
+    logger.info("Enqueued trailing semantic rebuild org=%s defer_by=%.1fs", org_id, defer_by)
+    return True
 
 
 async def enqueue_maintenance_job(task_name: str, *args: Any, **kwargs: Any) -> bool:
@@ -726,7 +828,7 @@ class MaintenanceWorkerSettings:
     This isolates user-facing analysis throughput under high traffic.
     """
 
-    functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance]
+    functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance, run_semantic_rebuild]
     queue_name = get_settings().arq_maintenance_queue_name
     max_jobs = get_settings().arq_maintenance_max_jobs
     job_timeout = 1200

@@ -6,19 +6,20 @@ Chat API — POST /chat/job/{job_id}    CFO chat (finansal veriler)
 Finansal + teknoloji verileri üzerinde doğal dil soru-cevap.
 Streaming ve tek seferlik iki mod desteklenir.
 """
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
-from app.models.user import User
+from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.report import Report, ReportFormat
 from app.models.transaction import Transaction
+from app.models.user import User
 
 router = APIRouter()
 
@@ -40,12 +41,12 @@ class CEOChatRequest(BaseModel):
     job_id: str | None = None
 
 
-@router.post("/chat/job/{job_id}")
+@router.post("/chat/job/{job_id}", response_model=None)
 async def chat(
     job_id: str,
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict | StreamingResponse:
+) -> Any:
     """
     Ask a financial question about a completed analysis job.
     Set stream=true for streaming SSE response.
@@ -125,12 +126,12 @@ async def chat(
     return {"data": {"answer": answer, "job_id": job_id}, "error": None}
 
 
-@router.post("/chat/ceo")
+@router.post("/chat/ceo", response_model=None)
 # NOTE: /chat/job/{job_id} uses explicit /job/ prefix to avoid clashing with /chat/ceo
 async def chat_ceo(
     body: CEOChatRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict | StreamingResponse:
+) -> Any:
     """
     CEO-level strategic chat.
 
@@ -320,6 +321,84 @@ async def natural_language_query(
     }
 
 
+# ── POST /query/stream — Streaming NL Query (for Omnibar AI mode) ─────────────
+
+@router.post("/query/stream", response_model=None)
+async def natural_language_query_stream(
+    body: NLQueryRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """
+    Streaming variant of /query.
+
+    Returns SSE stream of text tokens. The last event is a special sentinel:
+      data: \\x00FOLLOW_UPS:[\"soru1\", \"soru2\"]
+
+    Frontend should:
+      1. Accumulate all text chunks into the answer buffer.
+      2. On the FOLLOW_UPS sentinel, parse the JSON and render follow-up chips.
+      3. On data: [DONE], close the EventSource.
+    """
+    from sqlalchemy import desc as sa_desc
+
+    from app.agents.nl_query_engine import execute_nl_query, generate_nl_insight_stream
+    from app.config import get_settings
+
+    report_result = await db.execute(
+        select(Report)
+        .where(Report.job_id == body.job_id, Report.report_format == ReportFormat.JSON)
+        .order_by(sa_desc(Report.created_at))
+        .limit(1)
+    )
+    report = report_result.scalar_one_or_none()
+    if not report or not report.data:
+        async def _not_found():
+            yield "data: Analiz verisi bulunamadı. Önce bir CSV yükleyip analiz çalıştırın.\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_not_found(), media_type="text/event-stream")
+
+    dashboard = report.data
+    tx_result = await db.execute(
+        select(Transaction).where(Transaction.job_id == body.job_id).limit(50)
+    )
+    txs = tx_result.scalars().all()
+    tx_dicts = [
+        {
+            "id": str(t.id),
+            "amount_cents": t.amount_kurus,
+            "type": t.type,
+            "category": t.category,
+            "description": t.description,
+            "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
+        }
+        for t in txs
+    ]
+
+    query_result = execute_nl_query(
+        query=body.query,
+        dashboard=dashboard,
+        transactions=tx_dicts,
+    )
+
+    settings = get_settings()
+
+    async def _generate():
+        async for chunk in generate_nl_insight_stream(
+            query=body.query,
+            query_result=query_result,
+            dashboard=dashboard,
+            settings=settings,
+        ):
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── Universal Agent Chat — CompanyContext aware ───────────────────────────────
 
 class AgentChatRequest(BaseModel):
@@ -471,12 +550,12 @@ def _build_agent_system_prompt(
     return "\n".join(lines)
 
 
-@router.post("/chat/agent")
+@router.post("/chat/agent", response_model=None)
 async def chat_with_agent(
     body: AgentChatRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict | StreamingResponse:
+) -> Any:
     """
     Universal agent chat — answers questions using the full CompanyContext.
 
@@ -493,11 +572,10 @@ async def chat_with_agent(
     - session_id auto-generated as {user_id}:{date} if not provided.
     - Each completed exchange is persisted automatically.
     """
-    from app.services.company_context import get_company_context
     from app.agents.chat_agent import chat_with_cfo
-    from app.config import get_settings
+    from app.services.chat_grounding import finalize_grounded_answer, prepare_grounded_chat
+    from app.services.company_context import get_company_context
     from app.services.conversation_memory import get_conversation_service
-    from app.services.rag import get_rag_retriever
 
     user_id = str(user.id)
     # SEC-FIX: Never fall back to "default" — use user.id as isolated namespace
@@ -513,12 +591,24 @@ async def chat_with_agent(
     ctx = await get_company_context(org_id, db)
     ctx_data = ctx.to_dict()
 
-    # Build rich system prompt
+    # Build rich system prompt (locale-aware)
     system_prompt = _build_agent_system_prompt(
         agent_filter=body.agent_filter,
         ctx_data=ctx_data,
         company_name=ctx.company_name,
     )
+    org_locale = "en-US"
+    try:
+        from app.models.organization import Organization
+        from app.services.regional.locale_prompt import with_locale_instruction
+
+        if user.org_id:
+            org_row = await db.get(Organization, str(user.org_id))
+            if org_row and getattr(org_row, "locale", None):
+                org_locale = str(org_row.locale)
+        system_prompt = with_locale_instruction(system_prompt, org_locale)
+    except Exception:
+        pass
 
     # Build server-side conversation history (overrides client-sent history)
     server_history = await conv_svc.load(user_id, session_id, last_n=20)
@@ -529,27 +619,20 @@ async def chat_with_agent(
     if not conversation_history and body.conversation_history:
         conversation_history = body.conversation_history
 
-    # Build enriched dashboard context
     active_cfo_job_id = (ctx.active_cfo_job_id or None) if hasattr(ctx, "active_cfo_job_id") else None
-    evidence_bundle = await get_rag_retriever().retrieve(
+    pack = await prepare_grounded_chat(
         db=db,
         org_id=org_id,
-        query=body.question,
+        question=body.question,
+        base_system_prompt=system_prompt,
         job_id=active_cfo_job_id,
-        top_k=3,
-        source_type="cfo_transactions_raw",
+        locale=org_locale,
     )
-    evidence_block = evidence_bundle.to_prompt_block()
-    evidence_found = evidence_bundle.found
-    if not evidence_found:
-        evidence_block = (
-            "## RAG Kanıtlar (evidence)\n"
-            "- Bu soruya doğrudan kanıt bulunamadı. Yanıt verirken varsayımları açık belirt "
-            "ve mümkünse kullanıcıdan veri/periyot netleştirmesi iste."
-        )
-    system_prompt_with_evidence = (
-        f"{system_prompt}\n\n{evidence_block}" if evidence_block else system_prompt
-    )
+    system_prompt_with_evidence = pack.system_prompt
+    evidence_found = pack.evidence_found
+    semantic_values = pack.semantic_values
+    evidence_bundle = pack.evidence_bundle
+    job_scope = evidence_bundle.job_scope if evidence_bundle is not None else None
 
     enriched_dashboard = {
         "pnl": (ctx.last_cfo_result or {}).get("pnl", {}),
@@ -564,14 +647,15 @@ async def chat_with_agent(
         "_chro_result": ctx.last_chro_result,
         "_risk_result": ctx.last_risk_result,
         "_evidence_found": evidence_found,
-        "_evidence_job_scope": evidence_bundle.job_scope,
+        "_evidence_job_scope": job_scope,
+        "_evidence_tx_count": pack.evidence_tx_count,
+        "_evidence_semantic_count": pack.evidence_semantic_count,
+        "_semantic_metrics": semantic_values,
     }
-
-    settings = get_settings()
 
     context_agents = [
         k.replace("last_", "").replace("_result", "")
-        for k in ctx_data.keys()
+        for k in ctx_data
         if k.startswith("last_") and k.endswith("_result") and ctx_data[k] is not None
     ]
 
@@ -635,11 +719,7 @@ async def chat_with_agent(
             system_prompt_override=system_prompt_with_evidence,
         )
 
-    from app.services.rag.grounding_validator import apply_disclaimer, validate_grounding
-
-    grounding = validate_grounding(answer, evidence_bundle if evidence_found else None)
-    if grounding.requires_disclaimer:
-        answer = apply_disclaimer(answer, grounding, locale="tr")
+    answer, grounding_validated = finalize_grounded_answer(answer, pack, locale=org_locale)
 
     # Persist exchange to server-side memory
     try:
@@ -663,10 +743,12 @@ async def chat_with_agent(
             "used_reasoning": body.use_reasoning,
             "reasoning_trace": reasoning_trace,     # None unless use_reasoning=True
             "evidence_found": evidence_found,
-            "evidence_job_scope": evidence_bundle.job_scope,
-            "evidence_retriever_version": evidence_bundle.retriever_version,
-            "grounding_validated": not grounding.requires_disclaimer,
-            "grounding_flags": grounding.flagged_claims,
+            "evidence_job_scope": job_scope,
+            "evidence_retriever_version": pack.retriever_version,
+            "evidence_tx_count": pack.evidence_tx_count,
+            "evidence_semantic_count": pack.evidence_semantic_count,
+            "grounding_validated": grounding_validated,
+            "grounding_flags": pack.grounding_flags or [],
         },
         "error": None,
     }
@@ -716,3 +798,32 @@ async def get_session_history(
         },
         "error": None,
     }
+
+
+@router.get("/chat/sse")
+async def chat_sse(
+    question: str,
+    session_id: str | None = None,
+    agent_filter: str = "all",
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Fallback GET endpoint for SSE when WebSockets are blocked."""
+    # Build a pseudo request body to reuse the chat_with_agent logic
+    req = AgentChatRequest(
+        question=question,
+        session_id=session_id,
+        agent_filter=agent_filter,
+        stream=True
+    )
+    # Re-use the existing universal chat function
+    response = await chat_with_agent(body=req, user=user, db=db)
+
+    if isinstance(response, StreamingResponse):
+        return response
+
+    # Fallback if somehow it didn't return a StreamingResponse
+    async def _fail():
+        yield "data: Error: Could not start SSE stream\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(_fail(), media_type="text/event-stream")

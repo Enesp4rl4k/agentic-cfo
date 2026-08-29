@@ -9,27 +9,25 @@
 
 import pytest
 
+from app.agents.ceo.synthesis_agent import _detect_cross_risks
+from app.agents.cto.incident_agent import (
+    _build_incident_alerts,
+    _compute_incident_metrics,
+    _parse_incident_csv,
+)
 from app.agents.cto.infra_agent import (
-    _parse_billing_csv,
-    _compute_infra_metrics,
     _build_infra_alerts,
+    _compute_infra_metrics,
+    _parse_billing_csv,
 )
 from app.agents.cto.tech_debt_agent import (
-    _parse_git_log,
     _compute_debt_metrics,
-)
-from app.agents.cto.incident_agent import (
-    _parse_incident_csv,
-    _compute_incident_metrics,
-    _build_incident_alerts,
+    _parse_git_log,
 )
 from app.agents.cto.velocity_agent import (
-    _parse_sprint_csv,
     _compute_velocity_metrics,
-    _build_velocity_alerts,
+    _parse_sprint_csv,
 )
-from app.agents.ceo.synthesis_agent import _detect_cross_risks
-
 
 # ── Sample fixtures ───────────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ check_grep "EmbeddingRagRetriever" "class EmbeddingRagRetriever" "backend/app/se
 check_grep "index writes embedding" "embedding=" "backend/app/services/rag_service.py"
 check_grep "conductor_plan metadata" "conductor_plan" "backend/app/worker.py"
 check_grep "chat retriever version" "evidence_retriever_version" "backend/app/api/chat.py"
-check_grep "grounding validator" "validate_grounding" "backend/app/api/chat.py"
+check_grep "grounding validator" "validate_grounding" "backend/app/services/chat_grounding.py"
 
 if [[ -n "${BACKEND_URL:-}" ]]; then
   INFO "Live checks against $BACKEND_URL"

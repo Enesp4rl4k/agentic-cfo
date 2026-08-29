@@ -17,14 +17,14 @@ Maliyet tasarrufu örneği:
 
 Kullanim:
     router = get_llm_router()
-    
+
     # Otomatik model seçimi
     result = await router.complete(
         task="classify_intent",
         prompt="Bu sorunun intent'i nedir?",
         context={"query": "..."},
     )
-    
+
     # Manuel model override
     result = await router.complete(
         task="deep_analysis",
@@ -36,126 +36,32 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-# ── Task tipleri ──────────────────────────────────────────────────────────────
+# ── Model catalog (moved to app.platform.model_catalog) ──────────────────────
+# Re-exported for backwards compatibility. New code should import from
+# app.platform.model_catalog directly.
+from app.platform.model_catalog import (
+    MODELS,
+    TASK_TO_MODEL,
+    ModelConfig,
+    TaskType,
+)
+from app.platform.model_catalog import select_model as _catalog_select_model
 
-class TaskType:
-    """Standart LLM görev tipleri."""
-
-    # Ucuz + hızlı (GPT-3.5 veya GPT-4o-mini)
-    CLASSIFY_INTENT    = "classify_intent"       # Intent sınıflandırma
-    ROUTE_QUERY        = "route_query"           # Hangi agent cevap vermeli?
-    SIMPLE_EXTRACTION  = "simple_extraction"     # Basit veri çıkarma
-    KEYWORD_MATCH      = "keyword_match"         # Anahtar kelime eşleştirme
-    TRANSLATE_SHORT    = "translate_short"       # Kısa çeviri (<500 token)
-
-    # Orta (GPT-4o-mini)
-    SHORT_NARRATIVE    = "short_narrative"       # Kısa özet (<300 kelime)
-    METRIC_COMMENTARY  = "metric_commentary"     # Sayısal metrik yorumu
-    ALERT_MESSAGE      = "alert_message"         # Alert mesajı üretimi
-    QUICK_ANALYSIS     = "quick_analysis"        # Hızlı analiz
-
-    # Pahalı + kaliteli (GPT-4o)
-    DEEP_ANALYSIS      = "deep_analysis"         # Derin analiz
-    BOARD_NARRATIVE    = "board_narrative"       # Board deck için narrative
-    SWOT_GENERATION    = "swot_generation"       # SWOT üretimi
-    STRATEGIC_ADVICE   = "strategic_advice"      # Stratejik öneri
-    COMPLEX_REASONING  = "complex_reasoning"     # Karmaşık muhakeme
-
-    # Uzun doküman (Claude 3.5 veya GPT-4o)
-    LONG_DOCUMENT      = "long_document"         # >10K token context
-    CONTRACT_ANALYSIS  = "contract_analysis"     # Sözleşme analizi
-    MULTI_PERIOD       = "multi_period"          # Çok dönem analizi
-
-    # Deterministik — LLM kullanma
-    CALCULATION        = "calculation"           # Hesaplama
-    DATA_TRANSFORM     = "data_transform"        # Veri dönüşümü
-    RULE_BASED         = "rule_based"            # Kural tabanlı işlem
-
-
-# ── Model konfigürasyonu ──────────────────────────────────────────────────────
-
-@dataclass
-class ModelConfig:
-    model_id:       str
-    max_tokens:     int
-    temperature:    float
-    cost_per_1k_in:  float   # USD / 1K input token
-    cost_per_1k_out: float   # USD / 1K output token
-    supports_vision: bool = False
-    context_window:  int  = 8192
-
-
-MODELS: dict[str, ModelConfig] = {
-    "gpt-3.5-turbo": ModelConfig(
-        model_id        = "gpt-3.5-turbo",
-        max_tokens      = 1000,
-        temperature     = 0.2,
-        cost_per_1k_in  = 0.0005,
-        cost_per_1k_out = 0.0015,
-        context_window  = 16385,
-    ),
-    "gpt-4o-mini": ModelConfig(
-        model_id        = "gpt-4o-mini",
-        max_tokens      = 2000,
-        temperature     = 0.3,
-        cost_per_1k_in  = 0.00015,
-        cost_per_1k_out = 0.0006,
-        context_window  = 128000,
-    ),
-    "gpt-4o": ModelConfig(
-        model_id        = "gpt-4o",
-        max_tokens      = 4000,
-        temperature     = 0.3,
-        cost_per_1k_in  = 0.0025,
-        cost_per_1k_out = 0.010,
-        supports_vision = True,
-        context_window  = 128000,
-    ),
-    "gpt-4o-high": ModelConfig(
-        model_id        = "gpt-4o",
-        max_tokens      = 8000,
-        temperature     = 0.1,
-        cost_per_1k_in  = 0.0025,
-        cost_per_1k_out = 0.010,
-        supports_vision = True,
-        context_window  = 128000,
-    ),
-}
-
-# Görev → model eşlemesi
-TASK_TO_MODEL: dict[str, str] = {
-    # Ucuz
-    TaskType.CLASSIFY_INTENT:   "gpt-4o-mini",
-    TaskType.ROUTE_QUERY:       "gpt-4o-mini",
-    TaskType.SIMPLE_EXTRACTION: "gpt-4o-mini",
-    TaskType.KEYWORD_MATCH:     "gpt-4o-mini",
-    TaskType.TRANSLATE_SHORT:   "gpt-4o-mini",
-
-    # Orta
-    TaskType.SHORT_NARRATIVE:   "gpt-4o-mini",
-    TaskType.METRIC_COMMENTARY: "gpt-4o-mini",
-    TaskType.ALERT_MESSAGE:     "gpt-4o-mini",
-    TaskType.QUICK_ANALYSIS:    "gpt-4o-mini",
-
-    # Kaliteli
-    TaskType.DEEP_ANALYSIS:     "gpt-4o",
-    TaskType.BOARD_NARRATIVE:   "gpt-4o",
-    TaskType.SWOT_GENERATION:   "gpt-4o",
-    TaskType.STRATEGIC_ADVICE:  "gpt-4o",
-    TaskType.COMPLEX_REASONING: "gpt-4o",
-
-    # Uzun
-    TaskType.LONG_DOCUMENT:     "gpt-4o",
-    TaskType.CONTRACT_ANALYSIS: "gpt-4o",
-    TaskType.MULTI_PERIOD:      "gpt-4o",
-}
-
+__all__ = [
+    "MODELS",
+    "TASK_TO_MODEL",
+    "LLMResponse",
+    "LLMTaskRouter",
+    "ModelConfig",
+    "TaskType",
+    "get_llm_router",
+]
 
 # ── LLM çağrı sonucu ──────────────────────────────────────────────────────────
 
@@ -192,20 +98,8 @@ class LLMTaskRouter:
         }
 
     def select_model(self, task: str, prompt_length: int = 0) -> ModelConfig:
-        """
-        Görev tipine göre model seç.
-        Uzun prompt'larda context window'u dikkate al.
-        """
-        # Deterministik görevler için model yok
-        if task in (TaskType.CALCULATION, TaskType.DATA_TRANSFORM, TaskType.RULE_BASED):
-            raise ValueError(f"Task '{task}' LLM gerektirmiyor — deterministik hesapla")
-
-        # Uzun prompt → büyük context window gerek
-        if prompt_length > 8000:
-            return MODELS["gpt-4o"]  # 128K context
-
-        model_id = TASK_TO_MODEL.get(task, "gpt-4o")  # Bilinmiyorsa en iyi modeli kullan
-        return MODELS.get(model_id, MODELS["gpt-4o"])
+        """Görev tipine göre model seç — kural app.platform.model_catalog'da."""
+        return _catalog_select_model(task, prompt_length)
 
     async def complete(
         self,
@@ -311,34 +205,24 @@ class LLMTaskRouter:
         prompt:        str,
         system_prompt: str,
     ) -> tuple[str, int, int]:
-        """Gerçek LLM API çağrısı."""
-        from app.config import get_settings
-        settings = get_settings()
+        """
+        Gerçek LLM API çağrısı.
 
+        ``ChatOpenAI`` doğrudan burada kurulmaz — tek çıkış kapısı olan
+        ``app.platform.model_gateway`` üzerinden gider (retry / timeout / trace
+        orada uygulanır). Lazy import: gateway bu modülü import ettiği için.
+        """
         try:
-            from langchain_openai import ChatOpenAI
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from app.platform.model_gateway import _raw_chat
 
-            llm = ChatOpenAI(
-                model       = config.model_id,
-                temperature = config.temperature,
-                max_tokens  = config.max_tokens,
-                api_key     = settings.openai_api_key,
-                base_url    = getattr(settings, "llm_base_url", None) or None,
+            text, _parsed, in_tok, out_tok = await _raw_chat(
+                config,
+                system_prompt,
+                prompt,
+                schema=None,
+                temperature=None,
+                max_tokens=None,
             )
-
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=prompt),
-            ]
-            response  = await llm.ainvoke(messages)
-            text      = response.content or ""
-
-            # Token tahmini (gerçek usage varsa kullan)
-            usage = getattr(response, "usage_metadata", None) or {}
-            in_tok  = usage.get("input_tokens",  len(prompt.split()) * 1.3)
-            out_tok = usage.get("output_tokens", len(text.split()) * 1.3)
-
             return text, int(in_tok), int(out_tok)
 
         except Exception as exc:

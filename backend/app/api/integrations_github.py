@@ -21,16 +21,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
+from app.database import get_db
 from app.models.user import User
 
 router = APIRouter()
@@ -65,7 +65,7 @@ async def _save_github_config(
     """Upsert GitHub config into erp_integrations table."""
     try:
         from app.models.erp_integration import ERPIntegration
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         result = await db.execute(
             select(ERPIntegration).where(
@@ -233,9 +233,10 @@ async def sync_github(
             detail="GitHub bağlantısı bulunamadı. Önce /integrations/github/connect ile bağlanın.",
         )
 
-    from app.services.github_connector import GitHubConnector
-    from app.agents.cto.orchestrator import run_cto_pipeline
     import uuid
+
+    from app.agents.cto.orchestrator import run_cto_pipeline
+    from app.services.github_connector import GitHubConnector
 
     connector = GitHubConnector(token=config["token"])
 
@@ -279,7 +280,7 @@ async def sync_github(
 
     # Persist last sync info back to DB
     config.update({
-        "last_sync":         datetime.now(timezone.utc).isoformat(),
+        "last_sync":         datetime.now(UTC).isoformat(),
         "last_commit_count": len(github_data.commits),
         "last_pr_count":     len(github_data.pull_requests),
     })

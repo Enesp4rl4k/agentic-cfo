@@ -1,18 +1,18 @@
 """Negotiation services package."""
 from app.services.negotiation.consensus_engine import (
-    ConsensusEngine,
-    ConflictDetector,
+    TOPIC_WEIGHTS,
     AgentClaim,
     Conflict,
+    ConflictDetector,
+    ConsensusEngine,
     ConsensusResult,
-    TOPIC_WEIGHTS,
 )
 
 __all__ = [
-    "ConsensusEngine",
-    "ConflictDetector",
+    "TOPIC_WEIGHTS",
     "AgentClaim",
     "Conflict",
+    "ConflictDetector",
+    "ConsensusEngine",
     "ConsensusResult",
-    "TOPIC_WEIGHTS",
 ]

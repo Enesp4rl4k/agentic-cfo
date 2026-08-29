@@ -70,6 +70,7 @@ async def _process_parsed_email(
     Same file sent twice (e.g. reply-all or duplicate forward) → deduped.
     """
     import hashlib
+
     from sqlalchemy import select as sa_select
 
     results = []
@@ -79,9 +80,10 @@ async def _process_parsed_email(
             continue  # Skip unclassified when there are other known attachments
 
         try:
-            from app.services.upload_service import get_upload_service
-            from app.models.analysis_job import AnalysisJob, JobStatus
             import io
+
+            from app.models.analysis_job import AnalysisJob, JobStatus
+            from app.services.upload_service import get_upload_service
 
             # ── Idempotency check ─────────────────────────────────────────────
             # Build a stable fingerprint: sha256 of content + org scope
@@ -334,8 +336,9 @@ async def get_email_history(
     List recently ingested emails and their resulting analysis jobs.
     Shows analysis jobs whose source is 'email_ingest'.
     """
+    from sqlalchemy import String, cast, select
+
     from app.models.analysis_job import AnalysisJob
-    from sqlalchemy import select, cast, String
 
     org_id = _get_org_id(current_user)
 

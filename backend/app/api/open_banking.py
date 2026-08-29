@@ -33,11 +33,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,7 +144,7 @@ async def start_oauth(
     _oauth_states[state] = {
         "bank_id":             bank_id,
         "redirect_after_auth": body.redirect_after_auth,
-        "created_at":          datetime.now(timezone.utc).isoformat(),
+        "created_at":          datetime.now(UTC).isoformat(),
     }
 
     return {
@@ -205,7 +204,7 @@ async def oauth_callback(
         )
 
     connection_id = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(
+    expires_at = datetime.now(UTC) + timedelta(
         seconds=tokens.get("expires_in", 3600)
     )
 
@@ -218,7 +217,7 @@ async def oauth_callback(
             "connection_id": connection_id,
             "bank_id":       bank_id,
             "bank_name":     _SUPPORTED_BANKS[bank_id]["name"],
-            "connected_at":  datetime.now(timezone.utc).isoformat(),
+            "connected_at":  datetime.now(UTC).isoformat(),
             "expires_at":    expires_at.isoformat(),
             "sandbox":       sandbox,
             "next_step":     f"POST /api/v1/open-banking/connections/{connection_id}/sync ile işlemleri senkronize edin.",
@@ -242,9 +241,8 @@ async def sync_transactions(
     Creates a new AnalysisJob with the fetched transactions
     and triggers the CFO analysis pipeline.
     """
-    from datetime import date
-    start_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
-    end_date   = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    start_date = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    end_date   = datetime.now(UTC).strftime("%Y-%m-%d")
 
     client_id, client_secret, sandbox = _get_bank_settings(bank_id)
 
@@ -278,10 +276,10 @@ async def sync_transactions(
 
     # Trigger pipeline with direct transactions (bypass file parsing)
     try:
-        from app.worker import enqueue_analysis
-        # Store transactions in Redis for worker to pick up
-        from app.worker import get_arq_pool
         import json
+
+        # Store transactions in Redis for worker to pick up
+        from app.worker import enqueue_analysis, get_arq_pool
         pool = await get_arq_pool()
         await pool.set(
             f"ob_transactions:{job.id}",

@@ -12,18 +12,16 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, Integer, Text, JSON, Index
+from sqlalchemy import JSON, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 from app.services.data_sync.schemas import (
     SyncBatch,
-    SyncSourceType,
-    SyncStatus,
     SyncJobLog,
+    SyncStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,10 +42,10 @@ class SyncAuditLog(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
-    ended_at: Mapped[Optional[datetime]] = mapped_column(
+    ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Metrics
     transactions_synced: Mapped[int] = mapped_column(Integer, default=0)
@@ -61,7 +59,7 @@ class SyncAuditLog(Base):
 
     # Diagnostics
     warnings: Mapped[list[str]] = mapped_column(JSON, default=[])
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Indexes for common queries
     __table_args__ = (
@@ -75,7 +73,6 @@ class AuditTrail:
 
     def __init__(self):
         """Initialize audit trail."""
-        pass
 
     @staticmethod
     def compute_batch_hash(batch: SyncBatch) -> str:
@@ -101,8 +98,8 @@ class AuditTrail:
         batch: SyncBatch,
         status: SyncStatus,
         started_at: datetime,
-        ended_at: Optional[datetime] = None,
-        error_message: Optional[str] = None,
+        ended_at: datetime | None = None,
+        error_message: str | None = None,
         conflict_count: int = 0,
     ) -> SyncJobLog:
         """Create job log entry from batch."""

@@ -25,25 +25,26 @@ import asyncio
 import logging
 from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
+from app.agents.ceo.board_deck_agent import run_board_deck_agent
 from app.agents.ceo.state import (
+    CEO_ROUTE_HOLD,
+    DEFAULT_CEO_RUN_CONFIG,
+    CEORunConfig,
     CEOState,
     CEOStepLog,
-    CEOSkillResult,
-    CEORunConfig,
-    DEFAULT_CEO_RUN_CONFIG,
-    CEO_ROUTE_HOLD,
-    CEO_ROUTE_END,
-)
-from app.agents.ceo.synthesis_agent          import (
-    run_synthesis_agent,
-    _condense_financial_summary,
-    _condense_tech_summary,
 )
 from app.agents.ceo.strategic_priorities_agent import run_strategic_priorities_agent
-from app.agents.ceo.board_deck_agent           import run_board_deck_agent
-from app.agents.ceo.swot_agent                 import run_swot_agent
+from app.agents.ceo.swot_agent import run_swot_agent
+from app.agents.ceo.synthesis_agent import (
+    _condense_financial_summary,
+    _condense_hr_summary,
+    _condense_marketing_summary,
+    _condense_ops_summary,
+    _condense_tech_summary,
+    run_synthesis_agent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +298,7 @@ def route_after_synthesis(state: CEOState) -> str:
         return CEO_ROUTE_HOLD
     if (state.get("min_confidence") or 1.0) < 0.75:
         return CEO_ROUTE_HOLD
-    return "strategic_priorities"
+    return "priorities_step"
 
 
 # ── Graph assembly ─────────────────────────────────────────────────────────────
@@ -305,35 +306,34 @@ def route_after_synthesis(state: CEOState) -> str:
 def build_ceo_graph() -> StateGraph:
     graph = StateGraph(CEOState)
 
-    graph.add_node("run_pipelines",        node_run_pipelines)
-    graph.add_node("condense_summaries",   node_condense_summaries)
-    graph.add_node("synthesis",            node_synthesis)
-    graph.add_node("strategic_priorities", node_strategic_priorities)
-    graph.add_node("swot",                 node_swot)
-    graph.add_node("board_deck",           node_board_deck)
-    graph.add_node("okr",                  node_okr)
-    graph.add_node("hold_for_review",      node_hold_for_review)
+    graph.add_node("pipelines_step",    node_run_pipelines)
+    graph.add_node("summaries_step",    node_condense_summaries)
+    graph.add_node("synthesis_step",    node_synthesis)
+    graph.add_node("priorities_step",   node_strategic_priorities)
+    graph.add_node("swot_step",         node_swot)
+    graph.add_node("deck_step",         node_board_deck)
+    graph.add_node("okr_step",          node_okr)
+    graph.add_node("hold_step",         node_hold_for_review)
 
-    graph.set_entry_point("run_pipelines")
+    graph.set_entry_point("pipelines_step")
 
-    graph.add_edge("run_pipelines",      "condense_summaries")
-    graph.add_edge("condense_summaries", "synthesis")
+    graph.add_edge("pipelines_step",    "summaries_step")
+    graph.add_edge("summaries_step",    "synthesis_step")
 
     graph.add_conditional_edges(
-        "synthesis",
+        "synthesis_step",
         route_after_synthesis,
         {
-            "strategic_priorities": "strategic_priorities",
-            CEO_ROUTE_HOLD:         "hold_for_review",
+            "priorities_step": "priorities_step",
+            CEO_ROUTE_HOLD:    "hold_step",
         },
     )
 
-    # SWOT strategic_priorities ile paralel çalışır, board_deck'te birleşir
-    graph.add_edge("strategic_priorities", "swot")
-    graph.add_edge("swot",                 "board_deck")
-    graph.add_edge("board_deck",           "okr")
-    graph.add_edge("okr",                  END)
-    graph.add_edge("hold_for_review",      END)
+    graph.add_edge("priorities_step", "swot_step")
+    graph.add_edge("swot_step",       "deck_step")
+    graph.add_edge("deck_step",       "okr_step")
+    graph.add_edge("okr_step",        END)
+    graph.add_edge("hold_step",       END)
 
     return graph
 
@@ -359,9 +359,9 @@ async def _run_cfo_from_transactions(
     Returns a dict that mimics the shape of CFOState so synthesis_agent can
     call _condense_financial_summary() on it without changes.
     """
-    from app.agents.pnl_agent import run_pnl
     from app.agents.cashflow_agent import run_cashflow
     from app.agents.forecast_agent import run_forecast
+    from app.agents.pnl_agent import run_pnl
     from app.agents.state import DEFAULT_RUN_CONFIG
 
     # Normalize transaction types: frontend may send "revenue" but agents expect "income"
@@ -392,7 +392,6 @@ async def _run_cfo_from_transactions(
 
     # Run core agents sequentially — skip data_ingestion (already have transactions)
     try:
-        from app.agents.state import CFOState
         pnl_result = await run_pnl(synthetic_state, cfg)  # type: ignore[arg-type]
         if pnl_result.ok:
             synthetic_state.update(pnl_result.patch)

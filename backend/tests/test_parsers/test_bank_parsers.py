@@ -8,8 +8,8 @@ from app.parsers.banks.akbank import AkbankParser
 from app.parsers.banks.garanti import GarantiParser
 from app.parsers.banks.isbank import IsBankParser
 from app.parsers.banks.ziraat import ZiraatParser
-from app.parsers.registry import ParserRegistry
 from app.parsers.base import BankParser
+from app.parsers.registry import ParserRegistry
 
 # ── Fixtures — synthetic statement text ──────────────────────────────────────
 

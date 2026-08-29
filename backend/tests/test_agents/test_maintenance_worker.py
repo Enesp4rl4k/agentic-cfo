@@ -17,7 +17,9 @@ def test_worker_settings_partitioned() -> None:
     assert maintenance_names == {
         "run_rag_backfill_maintenance",
         "run_usage_prune_maintenance",
+        "run_semantic_rebuild",
     }
+
     assert WorkerSettings.queue_name != MaintenanceWorkerSettings.queue_name
 
 

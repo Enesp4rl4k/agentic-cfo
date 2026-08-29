@@ -15,7 +15,6 @@ from typing import Any
 
 from app.agents.audit.state import AuditState, AuditStepLog
 
-
 _RISK_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 _FREQ_MONTHS = {
     "annual": 12, "semi-annual": 6, "quarterly": 3,

@@ -8,15 +8,21 @@ GET  /risk/health-check — Service health
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.risk.orchestrator import run_risk_pipeline
+from app.api.auth import get_current_user
+from app.database import get_db
+from app.models.user import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class RiskAnalyzeRequest(BaseModel):
@@ -220,7 +226,6 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
         recovery_weeks = int(max(8, runway * 4))
 
     elif req.trigger_type == "revenue_drop":
-        rev = req.monthly_revenue or 2_000_000
         drop_pct = 0.3 * mult
 
         domains = [
@@ -352,7 +357,11 @@ async def run_cascade_simulation(body: CascadeRequest) -> dict[str, Any]:
 
 
 @router.post("/risk/analyze")
-async def run_risk_analysis(body: RiskAnalyzeRequest) -> dict[str, Any]:
+async def run_risk_analysis(
+    body: RiskAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """
     Run full Risk pipeline synchronously.
     Returns: { job_id, register, losses, kris, risk_summary, logs, error }
@@ -366,6 +375,24 @@ async def run_risk_analysis(body: RiskAnalyzeRequest) -> dict[str, Any]:
             company_name=body.company_name,
             reporting_period=body.reporting_period,
         )
+
+        if current_user.org_id and not result.get("error"):
+            try:
+                from app.agents.orchestration.auto_chain import on_agent_complete
+                from app.services.context_persist import persist_agent_completion
+
+                await persist_agent_completion(
+                    str(current_user.org_id),
+                    "risk",
+                    dict(result),
+                    db,
+                    job_id=job_id,
+                    company_name=body.company_name,
+                    reporting_period=body.reporting_period,
+                    auto_chain_hook=on_agent_complete,
+                )
+            except Exception as exc:
+                logger.warning("Risk context persist failed: %s", exc)
 
         logs_serializable = [
             {

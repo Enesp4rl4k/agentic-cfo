@@ -4,7 +4,7 @@ Laws, not tips. Every rule has a number, a "never", or a command that checks it.
 
 ## NEVER
 
-1. Never report a task done without a passing check command. Done = `./verify.sh` exits 0.
+1. Never report a task done without a passing check command. Done = `./verify.sh` or `python scripts/verify.py` exits 0.
 2. Never add a dependency without listing it in `requirements.txt` or `package.json` first.
 3. Never commit `.env` — only `.env.example` with placeholder values.
 4. Never write raw SQL — use SQLAlchemy ORM exclusively.
@@ -36,6 +36,14 @@ Laws, not tips. Every rule has a number, a "never", or a command that checks it.
 ```bash
 ./verify.sh
 ```
+
+Windows (no bash):
+
+```powershell
+python scripts/verify.py
+```
+
+`--fast --backend` skips mypy and frontend. Install deps first: `pip install -r backend/requirements.txt`.
 
 Exits 0 = safe to ship. Non-zero = do not proceed.
 

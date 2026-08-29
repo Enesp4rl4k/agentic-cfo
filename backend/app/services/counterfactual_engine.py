@@ -33,9 +33,8 @@ Kullanım:
 """
 from __future__ import annotations
 
-import math
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -234,8 +233,8 @@ class CounterfactualEngine:
             ],
             sensitivity={
                 "salary_+10pct":       round((total_cost_12m * 1.1 - total_revenue_gain) * -1),
-                "productivity_+5pct":  round((self.monthly_revenue * (productivity_gain_pct + 0.05) * ramp_factor * abs(delta) * horizon_months - total_cost_12m)),
-                "horizon_6m":          round((self.monthly_revenue * productivity_gain_pct * ramp_factor * abs(delta) * 6 - monthly_cost * 6)),
+                "productivity_+5pct":  round(self.monthly_revenue * (productivity_gain_pct + 0.05) * ramp_factor * abs(delta) * horizon_months - total_cost_12m),
+                "horizon_6m":          round(self.monthly_revenue * productivity_gain_pct * ramp_factor * abs(delta) * 6 - monthly_cost * 6),
             },
         )
 

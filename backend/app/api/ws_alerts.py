@@ -23,11 +23,11 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -78,8 +78,9 @@ async def ws_alerts(
           if (msg.type === 'new_alert') dispatch(addAlert(msg.alert));
         };
     """
-    from app.services.ws_alert_manager import get_ws_alert_manager
     import asyncio
+
+    from app.services.ws_alert_manager import get_ws_alert_manager
 
     # Auth: validate JWT token
     if token:
@@ -125,7 +126,7 @@ async def ws_alerts(
                         by_user  = user_id,
                     )
                 elif msg.get("type") == "ping":
-                    await ws.send_text(json.dumps({"type": "pong", "ts": datetime.now(timezone.utc).isoformat()}))
+                    await ws.send_text(json.dumps({"type": "pong", "ts": datetime.now(UTC).isoformat()}))
 
             except WebSocketDisconnect:
                 break
@@ -156,10 +157,11 @@ async def alert_history(
     Replaces Redis TTL-based storage — alerts are kept forever.
     """
     try:
-        from sqlalchemy import text
         from datetime import timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        from sqlalchemy import text
+
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         query  = (
             "SELECT id, message, severity, source, channels_sent, "
             "acknowledged, acknowledged_by, acknowledged_at, created_at "
@@ -234,7 +236,7 @@ async def acknowledge_alert(
             ),
             {
                 "user_id": str(user.id),
-                "now":     datetime.now(timezone.utc),
+                "now":     datetime.now(UTC),
                 "id":      alert_id,
             },
         )
@@ -285,7 +287,7 @@ async def test_alert_channel(
         "message":  "✅ Test alert — kanal bağlantısı başarılı",
         "severity": "info",
         "source":   "test",
-        "ts":       datetime.now(timezone.utc).isoformat(),
+        "ts":       datetime.now(UTC).isoformat(),
     }
 
     if channel == "in_app":
@@ -307,8 +309,8 @@ async def test_alert_channel(
     elif channel == "slack":
         # Use existing NotificationService
         try:
+            from app.services.alert_router import AlertRouter, RawAlert
             from app.services.notification_service import NotificationService
-            from app.services.alert_router import RawAlert, AlertRouter
 
             alert = RawAlert(
                 level="info", message="Test alert — Slack kanal testi",
@@ -400,7 +402,7 @@ async def create_alert_rule(
                 "channels":  json.dumps(body.channels),
                 "severity":  body.severity,
                 "enabled":   body.enabled,
-                "now":       datetime.now(timezone.utc),
+                "now":       datetime.now(UTC),
             },
         )
         await db.commit()

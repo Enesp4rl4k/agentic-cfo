@@ -18,17 +18,16 @@ GDPR Article 17: Right to erasure ("right to be forgotten").
 """
 from __future__ import annotations
 
-import csv
 import io
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -95,7 +94,7 @@ async def data_inventory(
     return {
         "data": {
             "org_id":   str(org_id) if org_id else None,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "categories": [
                 {
                     "category":       "Finansal İşlem Verileri",
@@ -155,7 +154,7 @@ async def export_personal_data(
     import json
 
     user_data: dict[str, Any] = {
-        "export_date":  datetime.now(timezone.utc).isoformat(),
+        "export_date":  datetime.now(UTC).isoformat(),
         "user_id":      str(current_user.id),
         "email":        current_user.email,
         "full_name":    current_user.full_name,
@@ -222,7 +221,7 @@ async def create_erasure_request(
             "reason":          req.reason,
             "include_derived": req.include_derived,
             "status":          "pending",
-            "created_at":      datetime.now(timezone.utc).isoformat(),
+            "created_at":      datetime.now(UTC).isoformat(),
         },
     )
     db.add(notif)
@@ -234,7 +233,7 @@ async def create_erasure_request(
             "request_id":    request_id,
             "status":        "pending",
             "message":       "Talebiniz alındı. 30 gün içinde yanıt verilecektir.",
-            "deadline":      (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            "deadline":      (datetime.now(UTC) + timedelta(days=30)).isoformat(),
         },
         "error": None,
     }

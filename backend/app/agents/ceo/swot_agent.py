@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.agents.ceo.state import CEOState, CEORunConfig, CEOSkillResult
+from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def _extract_swot(
     net_margin    = fin.get("net_margin", 0) or 0
     runway        = fin.get("cash_runway_months") or fin.get("runway_months")
     revenue_trend = fin.get("revenue_trend", 0) or 0
-    revenue       = fin.get("revenue", 0) or 0
+    fin.get("revenue", 0) or 0
 
     if net_margin > 0.15:
         strengths.append(_item(
@@ -82,7 +82,7 @@ def _extract_swot(
         weaknesses.append(_item(
             f"Negatif net marj: %{net_margin*100:.1f}",
             "cfo", 9,
-            f"Net zarar -- operasyonel verimlilik sorunu",
+            "Net zarar -- operasyonel verimlilik sorunu",
             "Acil maliyet optimizasyonu ve gelir artirici aksiyonlar",
         ))
 
@@ -172,7 +172,7 @@ def _extract_swot(
     # ── CMO / Pazarlama ───────────────────────────────────────────────────────
     if mkt:
         roas    = mkt.get("overall_roas", 0) or 0
-        cac     = (mkt.get("cac") or mkt.get("avg_cac_cents", 0) or 0) / 100
+        (mkt.get("cac") or mkt.get("avg_cac_cents", 0) or 0) / 100
         churn   = mkt.get("avg_monthly_churn", 0) or 0
         ltv_cac = mkt.get("ltv_cac_ratio", 0) or 0
 
@@ -210,7 +210,7 @@ def _extract_swot(
     # ── CHRO / Insan Kaynaklari ───────────────────────────────────────────────
     if hr:
         turnover      = hr.get("annual_turnover_rate", 0) or 0
-        headcount     = hr.get("total_headcount", 0) or 0
+        hr.get("total_headcount", 0) or 0
         engagement    = hr.get("engagement_score", 0) or 0
         open_roles    = hr.get("open_critical_roles", 0) or 0
 
@@ -255,7 +255,7 @@ def _extract_swot(
     # ── COO / Operasyon ───────────────────────────────────────────────────────
     if ops:
         sla_compliance = ops.get("sla_compliance", 0) or 0
-        ops_score      = ops.get("overall_ops_score", 0) or 0
+        ops.get("overall_ops_score", 0) or 0
 
         if sla_compliance > 0.95:
             strengths.append(_item(
@@ -400,7 +400,6 @@ async def run_swot_agent(
     risk       = None
     compliance = None
     try:
-        from app.agents.ceo.synthesis_agent import _condense_risk_summary   # type: ignore[attr-defined]
         risk_r = state.get("_risk_result") or {}
         if risk_r:
             risk = risk_r

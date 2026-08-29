@@ -16,18 +16,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
+from app.database import get_db
+from app.models.agent_job import AGENT_TYPES, AgentJob, AgentJobStatus
 from app.models.user import User
-from app.models.agent_job import AgentJob, AgentJobStatus, AGENT_TYPES
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
     Fire-and-forget background task.
     Opens its own DB session — never shares the request session.
     """
-    from app.database import get_session_factory, engine
+    from app.database import engine, get_session_factory
 
     async with get_session_factory(engine())() as db:
         job = await db.get(AgentJob, job_id)
@@ -124,16 +124,36 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
             job.progress = 100
             job.result_json = result
             job.logs = result.get("logs", [])
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(UTC)
             await db.commit()
             logger.info("AgentJob %s (%s) completed", job_id, agent_type)
+
+            if job.org_id:
+                try:
+                    from app.agents.orchestration.auto_chain import on_agent_complete
+                    from app.services.context_persist import persist_agent_completion
+
+                    await persist_agent_completion(
+                        str(job.org_id),
+                        agent_type,
+                        result,
+                        db,
+                        job_id=job_id,
+                        company_name=input_data.get("company_name"),
+                        reporting_period=input_data.get("reporting_period"),
+                        auto_chain_hook=on_agent_complete,
+                    )
+                except Exception as persist_exc:
+                    logger.warning(
+                        "AgentJob %s context persist failed: %s", job_id, persist_exc
+                    )
 
         except Exception as exc:
             logger.error("AgentJob %s (%s) failed: %s", job_id, agent_type, exc, exc_info=True)
             job.status = AgentJobStatus.FAILED
             job.progress = 0
             job.error_message = str(exc)[:1000]
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(UTC)
             await db.commit()
 
 

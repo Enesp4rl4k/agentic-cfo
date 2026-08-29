@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.models.category_rule import CategoryRule
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def classify_by_keywords(description: str) -> str:
 async def classify(
     description: str,
     vendor: str | None,
-    db: "AsyncSession",
+    db: AsyncSession,
 ) -> str:
     """
     Classify a transaction description into a category.
@@ -55,6 +56,7 @@ async def classify(
     """
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
+
     from app.models.category_rule import CategoryRule
 
     # 1. Vendor match — most specific
@@ -96,13 +98,14 @@ async def learn(
     vendor: str | None,
     new_category: str,
     apply_always: bool,
-    db: "AsyncSession",
-) -> "CategoryRule":
+    db: AsyncSession,
+) -> CategoryRule:
     """
     Persist a user correction as a CategoryRule.
     Called when user changes a transaction's category in the UI.
     """
     from sqlalchemy import select
+
     from app.models.category_rule import CategoryRule
 
     # Upsert: if an identical rule already exists, update the category

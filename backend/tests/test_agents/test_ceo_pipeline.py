@@ -7,23 +7,21 @@
 #   - CondenseSummaries: CFO/CTO output extraction helpers
 #   - API helper: overall_health_score calculation
 
-import pytest
 
-from app.agents.ceo.synthesis_agent import (
-    _detect_cross_risks,
-    _condense_financial_summary,
-    _condense_tech_summary,
+from app.agents.ceo.board_deck_agent import (
+    _build_one_page_summary,
+    _build_slides,
 )
 from app.agents.ceo.strategic_priorities_agent import (
     _build_priorities_from_risks,
     _score_priority,
 )
-from app.agents.ceo.board_deck_agent import (
-    _build_slides,
-    _build_one_page_summary,
+from app.agents.ceo.synthesis_agent import (
+    _condense_financial_summary,
+    _condense_tech_summary,
+    _detect_cross_risks,
 )
 from app.api.ceo import _compute_overall_health
-
 
 # ── Shared fixtures ───────────────────────────────────────────────────────────
 

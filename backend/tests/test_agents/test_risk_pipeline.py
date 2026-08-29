@@ -8,21 +8,22 @@ KRI threshold monitoring, enterprise risk scoring, CEO cross-risk integration.
 from __future__ import annotations
 
 import pytest
-from app.agents.risk.register_agent import (
-    _parse_register_csv,
-    _compute_register_metrics,
-    _build_register_alerts,
-    _heat_band,
+
+from app.agents.risk.kri_agent import (
+    _build_kri_alerts,
+    _compute_kri_metrics,
+    _parse_kri_csv,
 )
 from app.agents.risk.loss_agent import (
-    _parse_loss_csv,
-    _compute_loss_metrics,
     _build_loss_alerts,
+    _compute_loss_metrics,
+    _parse_loss_csv,
 )
-from app.agents.risk.kri_agent import (
-    _parse_kri_csv,
-    _compute_kri_metrics,
-    _build_kri_alerts,
+from app.agents.risk.register_agent import (
+    _build_register_alerts,
+    _compute_register_metrics,
+    _heat_band,
+    _parse_register_csv,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

@@ -9,13 +9,12 @@ done_when: state['pnl'] contains revenue, gross_profit, net_income (all integers
 """
 from __future__ import annotations
 
-from app.services.telemetry import trace_agent
-
 import logging
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ def _compute_trend(monthly: dict[str, int]) -> dict[str, Any]:
     if latest_month and len(latest_month) == 7:
         year, month_num = int(latest_month[:4]), int(latest_month[5:])
         prev_year_month = f"{year - 1}-{month_num:02d}"
-        if prev_year_month in monthly and monthly[prev_year_month]:
+        if monthly.get(prev_year_month):
             yoy_pct = round(
                 (latest_val - monthly[prev_year_month]) / abs(monthly[prev_year_month]) * 100, 2
             )
@@ -152,8 +151,8 @@ async def _generate_cfo_narrative(
     Falls back to template if LLM key is not configured.
     Returns plain text string for backward compatibility with pipeline.
     """
-    from app.services.llm_structured import get_pnl_narrative
     from app.services.context_builder import get_context_builder
+    from app.services.llm_structured import get_pnl_narrative
 
     # Build benchmark context string
     benchmark_lines: str | None = None

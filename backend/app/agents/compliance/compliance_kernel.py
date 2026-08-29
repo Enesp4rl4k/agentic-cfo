@@ -17,7 +17,7 @@ Kapsanan mevzuat:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -348,4 +348,6 @@ async def run_compliance_kernel(
         monthly_invoice_count=monthly_invoice_count,
     )
     output = kernel.generate()
-    return {"ok": True, "output": output.to_dict()}
+    from app.platform.provenance import attach_provenance
+
+    return attach_provenance({"ok": True, "output": output.to_dict()})

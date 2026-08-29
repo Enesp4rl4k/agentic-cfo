@@ -24,17 +24,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.deps_regional import require_tr_pack
-from app.api.auth import get_current_user
-from app.models.user import User
+from app.database import get_db
 
 router = APIRouter(dependencies=[Depends(require_tr_pack)])
 logger = logging.getLogger(__name__)
@@ -106,7 +104,7 @@ async def list_invoices(
             detail="direction 'inbound' veya 'outbound' olmalı.",
         )
 
-    from app.services.gib_efatura import get_efatura_client, GIBError
+    from app.services.gib_efatura import GIBError, get_efatura_client
     client = get_efatura_client()
     if not client:
         raise HTTPException(
@@ -116,9 +114,9 @@ async def list_invoices(
 
     # Default: last 30 days
     if not end_date:
-        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        end_date = datetime.now(UTC).strftime("%Y-%m-%d")
     if not start_date:
-        start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
 
     try:
         await client.authenticate()
@@ -166,7 +164,7 @@ async def get_tax_calendar(
             detail="period 'YYYY-MM' formatında olmalı (örn: '2024-01').",
         )
 
-    from app.services.gib_efatura import get_efatura_client, GIBError, compute_tax_calendar
+    from app.services.gib_efatura import GIBError, compute_tax_calendar, get_efatura_client
     client = get_efatura_client()
     if not client:
         raise HTTPException(
@@ -209,7 +207,7 @@ async def sync_efatura(
 
     Returns: job_id + fatura sayısı + dönem özeti
     """
-    from app.services.gib_efatura import get_efatura_client, GIBError
+    from app.services.gib_efatura import GIBError, get_efatura_client
 
     client = get_efatura_client()
     if not client:
@@ -254,8 +252,9 @@ async def sync_efatura(
     queued = False
     if body.analyze:
         try:
-            from app.worker import get_arq_pool, enqueue_analysis
             import json
+
+            from app.worker import enqueue_analysis, get_arq_pool
             pool = await get_arq_pool()
             await pool.set(
                 f"ob_transactions:{job.id}",

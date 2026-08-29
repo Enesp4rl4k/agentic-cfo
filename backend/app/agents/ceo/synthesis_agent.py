@@ -18,10 +18,9 @@ done_when: state['cross_risks'] is a list (may be empty = no cross-domain risks)
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
-from app.agents.ceo.state import CEOState, CEORunConfig, CEOSkillResult
+from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +285,7 @@ def _detect_cross_risks(
         hr = locals().get("chro") or locals().get("hr") or {}
         early_departure_rate = hr.get("early_departure_rate", 0.0)
         total_departures = hr.get("total_departures", 0)
-        
+
         if early_departure_rate > 0.20 and net_margin is not None and net_margin < 0.05:
             risks.append({
                 "risk_id": "cross-chro-attrition-margin",
@@ -309,7 +308,7 @@ def _detect_cross_risks(
         below_market_count = hr.get("below_market_count", 0)
         total_employees = hr.get("total_employees", 1)
         equity_penetration = hr.get("equity_penetration", 0.0)
-        
+
         if below_market_count > (total_employees * 0.15) and equity_penetration < 0.50:
             risks.append({
                 "risk_id": "cross-chro-comp-retention",

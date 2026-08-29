@@ -17,8 +17,8 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -95,21 +95,65 @@ async def _load_context_from_job(
         return {}
 
 
-async def _load_context_from_org(org_id: str) -> dict[str, Any]:
-    """CompanyContext'ten agent sonuçlarını yükle."""
+async def _load_context_from_org(
+    org_id: str,
+    db: AsyncSession | None = None,
+) -> dict[str, Any]:
+    """Load agent results + semantic baselines from CompanyContext."""
     try:
         from app.services.company_context import get_company_context
-        ctx = await get_company_context(org_id)
+        from app.services.semantic.store import get_latest_semantic_snapshot
+
+        ctx = await get_company_context(org_id, db)
         if not ctx:
             return {}
-        results = ctx.get("agent_results") or {}
-        return {
-            "cfo":  results.get("cfo")  or {},
-            "chro": results.get("chro") or {},
-            "cto":  results.get("cto")  or {},
-            "cmo":  results.get("cmo")  or {},
-            "coo":  results.get("coo")  or {},
+
+        cfo = ctx.last_cfo_result or {}
+        dash = cfo.get("dashboard") or cfo
+        pnl = dict(dash.get("pnl") or {})
+        cashflow = dict(dash.get("cashflow") or {})
+        forecast = dict(dash.get("forecast") or {})
+
+        out: dict[str, Any] = {
+            "cfo": cfo,
+            "chro": ctx.last_chro_result or {},
+            "cto": ctx.last_cto_result or {},
+            "cmo": ctx.last_cmo_result or {},
+            "coo": ctx.last_coo_result or {},
+            "pnl": pnl,
+            "cashflow": cashflow,
+            "forecast": forecast,
+            "chro_data": ctx.last_chro_result or {},
+            "cto_data": ctx.last_cto_result or {},
+            "cmo_data": ctx.last_cmo_result or {},
+            "coo_data": ctx.last_coo_result or {},
         }
+
+        if db is not None:
+            snap = await get_latest_semantic_snapshot(str(org_id), db)
+            if snap is not None:
+                vals = snap.values()
+                if vals.get("finance.revenue") is not None and "revenue" not in pnl:
+                    pnl["revenue"] = vals["finance.revenue"]
+                    pnl["revenue_cents"] = vals["finance.revenue"]
+                if vals.get("finance.net_margin") is not None:
+                    pnl["net_margin"] = vals["finance.net_margin"]
+                if vals.get("finance.operating_cashflow") is not None:
+                    cashflow["operating"] = vals["finance.operating_cashflow"]
+                    cashflow["operating_cents"] = vals["finance.operating_cashflow"]
+                if vals.get("finance.runway_months") is not None:
+                    scenarios = dict(forecast.get("scenarios") or {})
+                    base = dict(scenarios.get("base") or {})
+                    base["runway_months"] = vals["finance.runway_months"]
+                    scenarios["base"] = base
+                    forecast["scenarios"] = scenarios
+                out["semantic_metrics"] = vals
+                out["semantic_period"] = snap.period.key
+                out["pnl"] = pnl
+                out["cashflow"] = cashflow
+                out["forecast"] = forecast
+
+        return out
     except Exception as exc:
         logger.debug("CompanyContext yüklenemedi: %s", exc)
         return {}
@@ -143,16 +187,15 @@ async def simulate_cascade(
             "forecast": report_data.get("forecast") or {},
         }
     elif req.org_id:
-        org_ctx = await _load_context_from_org(req.org_id)
-        cfo_r = org_ctx.get("cfo") or {}
+        org_ctx = await _load_context_from_org(req.org_id, db)
         ctx = {
-            "pnl":       cfo_r.get("pnl") or {},
-            "cashflow":  cfo_r.get("cashflow") or {},
-            "forecast":  cfo_r.get("forecast") or {},
-            "chro_data": org_ctx.get("chro") or {},
-            "cto_data":  org_ctx.get("cto") or {},
-            "cmo_data":  org_ctx.get("cmo") or {},
-            "coo_data":  org_ctx.get("coo") or {},
+            "pnl":       org_ctx.get("pnl") or {},
+            "cashflow":  org_ctx.get("cashflow") or {},
+            "forecast":  org_ctx.get("forecast") or {},
+            "chro_data": org_ctx.get("chro_data") or org_ctx.get("chro") or {},
+            "cto_data":  org_ctx.get("cto_data") or org_ctx.get("cto") or {},
+            "cmo_data":  org_ctx.get("cmo_data") or org_ctx.get("cmo") or {},
+            "coo_data":  org_ctx.get("coo_data") or org_ctx.get("coo") or {},
         }
 
     sim = get_cascade_simulator(**ctx)

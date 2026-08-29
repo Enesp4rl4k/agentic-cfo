@@ -7,17 +7,17 @@ Her job: input CSV/text → pipeline çalışır → result_json'a yazılır.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class AgentJobStatus(StrEnum):

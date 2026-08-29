@@ -103,7 +103,7 @@ class AttributionEngine:
             # Assign weights: last touch = 1.0, earlier touches decay exponentially
             weights = [2 ** (-(n - 1 - i) / half_life) for i in range(n)]
             total_w = sum(weights) or 1
-            for ch, w in zip(journey, weights):
+            for ch, w in zip(journey, weights, strict=False):
                 credits[ch] += w / total_w
         total = sum(credits.values()) or 1
         return {ch: round(v / total * 100, 2) for ch, v in credits.items()}

@@ -1,16 +1,16 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
-from app.models.user import User
+from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.transaction import Transaction
+from app.models.user import User
 
 router = APIRouter()
 
@@ -105,7 +105,7 @@ async def approve_review(
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
     job.awaiting_review = False
     job.status = JobStatus.PENDING
-    job.updated_at = datetime.now(timezone.utc)
+    job.updated_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"job_id": job_id, "approved": True}, "error": None}
 

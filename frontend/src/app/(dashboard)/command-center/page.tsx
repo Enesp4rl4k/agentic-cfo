@@ -9,13 +9,15 @@ import {
   Building2, CheckCircle2, Loader2, ChevronRight,
 } from "lucide-react";
 import { FileDown, Loader2 as Loader } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useCommandCenter } from "@/hooks/useCFO";
 import { useContextSummary, useActiveCFOJob, useFullContext } from "@/hooks/useCompanyContext";
 import { useSystemHealth, useSystemOps } from "@/hooks/useSystemOps";
 import { apiClient } from "@/lib/api/client";
 import { CrossAgentIntelligence } from "@/components/ui/cross-agent-intelligence";
+import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
+import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary, type LiveDataStatus } from "@/lib/api/semantic";
 import { ConflictCard } from "@/components/command-center/ConflictCard";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
@@ -86,7 +88,7 @@ function TrendIcon({ trend }: { trend?: "up" | "down" | "stable" }) {
 
 // ── Components ────────────────────────────────────────────────────────────────
 
-function CompanyHealthGauge({ avgScore }: { avgScore: number }) {
+function CompanyHealthGauge({ avgScore, subtitle }: { avgScore: number; subtitle?: string }) {
   const color = avgScore >= 75 ? "text-emerald-400" : avgScore >= 60 ? "text-yellow-400" : "text-red-400";
   const r = 50;
   const circ = 2 * Math.PI * r;
@@ -109,7 +111,7 @@ function CompanyHealthGauge({ avgScore }: { avgScore: number }) {
       </svg>
       <div className="text-center">
         <p className="text-sm font-semibold">Company Health</p>
-        <p className="text-xs text-muted-foreground">9-agent average</p>
+        <p className="text-xs text-muted-foreground">{subtitle ?? "9-agent average"}</p>
       </div>
     </div>
   );
@@ -659,21 +661,90 @@ export default function CommandCenterPage() {
 
   const { data, isLoading, isError, refetch, isFetching } = useCommandCenter(jobId);
 
+  const [brief, setBrief] = useState<DecisionBrief | null>(null);
+  const [periodHistory, setPeriodHistory] = useState<SemanticPeriodSummary[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string | undefined>();
+  const [rebuildingBrief, setRebuildingBrief] = useState(false);
+  const [approvingBrief, setApprovingBrief] = useState(false);
+  const [showAgentHealth, setShowAgentHealth] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<LiveDataStatus | null>(null);
+  const [semanticMetrics, setSemanticMetrics] = useState<Record<string, number>>({});
+
+  const loadBrief = async (periodKey?: string) => {
+    try {
+      const res = await getDecisionBrief(periodKey);
+      setBrief(res.brief);
+      if (!selectedPeriod) setSelectedPeriod(res.period_key);
+    } catch {
+      setBrief(null);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const periods = await getSemanticHistory(12);
+        if (!cancelled) setPeriodHistory(periods);
+        const live = await getLiveDataStatus();
+        if (!cancelled) setLiveStatus(live);
+        const sem = await getSemanticMe();
+        if (!cancelled && sem.snapshot?.metrics) {
+          const map: Record<string, number> = {};
+          for (const m of sem.snapshot.metrics) {
+            if (typeof m.value === "number") map[m.metric_id] = m.value;
+          }
+          setSemanticMetrics(map);
+        }
+      } catch {
+        if (!cancelled) setPeriodHistory([]);
+      }
+      await loadBrief(selectedPeriod);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when context or fetch cycle updates
+  }, [fullCtx?.updated_at, ctxSummary?.company_name, isFetching, selectedPeriod]);
+
+  async function handleApproveBrief() {
+    setApprovingBrief(true);
+    try {
+      const res = await approveDecisionBrief(selectedPeriod);
+      setBrief(res.brief);
+    } finally {
+      setApprovingBrief(false);
+    }
+  }
+
+  async function handleRebuildBrief() {
+    setRebuildingBrief(true);
+    try {
+      await rebuildSemantic();
+      const periods = await getSemanticHistory(12);
+      setPeriodHistory(periods);
+      await loadBrief(selectedPeriod);
+    } finally {
+      setRebuildingBrief(false);
+    }
+  }
+
   // Enrich API agents with icons/colors
   const agents: AgentHealth[] = (data?.agents ?? []).map(enrichAgent);
   const crossRisks: CrossRiskItem[] = data?.cross_risks ?? [];
   const quickWins: QuickWinItem[] = data?.quick_wins ?? [];
 
-  const avgScore = agents.length
-    ? agents.reduce((sum, a) => sum + a.health_score, 0) / agents.length
-    : 0;
+  const avgScore = brief?.health_score
+    ?? (agents.length
+      ? agents.reduce((sum, a) => sum + a.health_score, 0) / agents.length
+      : 0);
   const criticalCount = agents.filter(a => a.status === "critical").length;
   const warningCount = agents.filter(a => a.status === "warning").length;
   const criticalRisks = crossRisks.filter(r => r.severity === "critical" || r.severity === "high").length;
 
-  if (isLoading) return <CommandCenterSkeleton />;
+  if (isLoading && !brief) return <CommandCenterSkeleton />;
 
-  if (isError) {
+  if (isError && !brief) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
         <div className="mb-4 rounded-full bg-destructive/10 p-4">
@@ -706,7 +777,12 @@ export default function CommandCenterPage() {
               {ctxSummary?.company_name
                 ? <><Building2 className="inline h-3.5 w-3.5 mr-1 opacity-60" aria-hidden="true" />{ctxSummary.company_name} · </>
                 : null}
-              Agentic Management OS · {agents.length || 9} agents · real-time health
+              Agentic Management OS · {agents.length || 9} agents
+              {liveStatus?.live_sync_enabled && (
+                <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                  live sync · {liveStatus.baseline_source}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -724,10 +800,30 @@ export default function CommandCenterPage() {
         <DownloadBoardDeckButton />
       </div>
 
-      {/* Company health summary */}
+      <DecisionBriefPanel
+        brief={brief}
+        periodOptions={periodHistory}
+        selectedPeriod={selectedPeriod}
+        onPeriodChange={(pk) => setSelectedPeriod(pk)}
+        onRebuild={() => void handleRebuildBrief()}
+        rebuilding={rebuildingBrief}
+        onApprove={() => void handleApproveBrief()}
+        approving={approvingBrief}
+      />
+
+      {isError && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          Agent health API unavailable — showing semantic brief from CompanyContext.
+        </div>
+      )}
+
+      {/* Company health summary — secondary when brief exists */}
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex flex-wrap items-center gap-8">
-          <CompanyHealthGauge avgScore={avgScore} />
+          <CompanyHealthGauge
+            avgScore={avgScore}
+            subtitle={brief ? "Semantic decision brief" : "9-agent average"}
+          />
 
           <div className="flex-1 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="text-center">
@@ -780,20 +876,39 @@ export default function CommandCenterPage() {
       {/* Cross-agent conflict surface */}
       <ConflictCard />
 
-      {/* Agent grid */}
+      {/* Agent grid — collapsed when semantic brief is primary */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold">Agent Health Status</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {agents.map((agent) => (
-            <AgentCard key={agent.agent} agent={agent} />
-          ))}
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Agent Health Status</h2>
+          {brief && (
+            <button
+              type="button"
+              onClick={() => setShowAgentHealth((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              {showAgentHealth ? "Hide details" : "Show agent health"}
+            </button>
+          )}
         </div>
+        {(!brief || showAgentHealth) && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {agents.map((agent) => (
+              <AgentCard key={agent.agent} agent={agent} />
+            ))}
+          </div>
+        )}
+        {brief && !showAgentHealth && agents.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {agents.length} agents tracked · expand for per-agent health scores
+          </p>
+        )}
       </div>
 
       {/* Cross-Agent Intelligence — rule-based, instant, no LLM cost */}
       {fullCtx && (
         <CrossAgentIntelligence
           context={fullCtx}
+          semanticMetrics={semanticMetrics}
           className="rounded-lg border border-border bg-card p-5"
         />
       )}

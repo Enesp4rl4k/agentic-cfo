@@ -63,24 +63,10 @@ export async function validateCSV(file: File): Promise<ValidationResult> {
   const form = new FormData();
   form.append("file", file);
 
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/data-quality/validate`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${typeof window !== "undefined" ? localStorage.getItem("access_token") ?? "" : ""}`,
-      },
-      body: form,
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `HTTP ${res.status}`);
-  }
-
-  const json = await res.json();
-  return json.data as ValidationResult;
+  const res = await apiClient.post<{ data: ValidationResult }>("/data-quality/validate", form, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+  return res.data.data;
 }
 
 export async function validateAndUpload(
@@ -94,39 +80,17 @@ export async function validateAndUpload(
   if (options?.minScore != null) params.set("min_score", String(options.minScore));
   if (options?.force) params.set("force", "true");
 
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/data-quality/validate-and-upload?${params}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${typeof window !== "undefined" ? localStorage.getItem("access_token") ?? "" : ""}`,
-      },
-      body: form,
-    }
+  const res = await apiClient.post<{ data: ValidateAndUploadResult }>(
+    `/data-quality/validate-and-upload?${params.toString()}`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
   );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `HTTP ${res.status}`);
-  }
-
-  const json = await res.json();
-  return json.data as ValidateAndUploadResult;
+  return res.data.data;
 }
 
 export async function getFieldMappingHints(): Promise<FieldMappingHint[]> {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/data-quality/field-mapping-hints`,
-    {
-      headers: {
-        Authorization: `Bearer ${typeof window !== "undefined" ? localStorage.getItem("access_token") ?? "" : ""}`,
-      },
-    }
-  );
-
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
-  return json.data.fields as FieldMappingHint[];
+  const res = await apiClient.get<{ data: { fields: FieldMappingHint[] } }>("/data-quality/field-mapping-hints");
+  return res.data.data.fields;
 }
 
 export async function acceptColumnMapping(params: {
@@ -135,23 +99,9 @@ export async function acceptColumnMapping(params: {
   csv_content: string;  // base64
   encoding?: string;
 }): Promise<{ job_id: string; column_mapping: Record<string, string>; status: string }> {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/data-quality/accept-mapping`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${typeof window !== "undefined" ? localStorage.getItem("access_token") ?? "" : ""}`,
-      },
-      body: JSON.stringify(params),
-    }
+  const res = await apiClient.post<{ data: { job_id: string; column_mapping: Record<string, string>; status: string } }>(
+    "/data-quality/accept-mapping",
+    params
   );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `HTTP ${res.status}`);
-  }
-
-  const json = await res.json();
-  return json.data;
+  return res.data.data;
 }

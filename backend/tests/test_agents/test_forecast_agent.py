@@ -7,6 +7,7 @@ before the import to keep tests self-contained and dependency-free.
 """
 import sys
 import types
+
 import pytest
 
 # ── Stub out heavy LangChain dependencies before importing the agent ──────────
@@ -28,12 +29,11 @@ for _cls in ("HumanMessage", "SystemMessage", "AIMessage"):
     if not hasattr(_lc_core_msgs, _cls):
         setattr(_lc_core_msgs, _cls, object)
 
-from app.agents.forecast_agent import (  # noqa: E402
+from app.agents.forecast_agent import (
+    _compute_scenarios,
     _detect_seasonality,
     _extrapolate,
-    _compute_scenarios,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ def _make_series(months: int, base_in: int = 1_000_000, base_out: int = 800_000)
     """Generate a flat monthly series starting 2023-01."""
     series = []
     year, month = 2023, 1
-    for i in range(months):
+    for _i in range(months):
         series.append({"month": f"{year:04d}-{month:02d}", "in": base_in, "out": base_out, "net": base_in - base_out})
         month += 1
         if month > 12:
@@ -55,7 +55,7 @@ def _make_growing_series(months: int, start_in: int = 500_000, growth: float = 1
     series = []
     year, month = 2023, 1
     cur = start_in
-    for i in range(months):
+    for _i in range(months):
         out = int(cur * 0.8)
         series.append({"month": f"{year:04d}-{month:02d}", "in": cur, "out": out, "net": cur - out})
         cur = int(cur * growth)
@@ -167,7 +167,7 @@ class TestExtrapolate:
         """With a doubled December index, December in should be ~2x normal."""
         series = _make_series(12)   # ends at 2023-12
         # Override December (month 12) with index 2.0
-        indices = {m: 1.0 for m in range(1, 13)}
+        indices = dict.fromkeys(range(1, 13), 1.0)
         indices[1] = 2.0  # next month after Dec is Jan
         result = _extrapolate(series, 1, 1.0, seasonality_indices=indices)
         assert result[0]["seasonal_index"] == pytest.approx(2.0)

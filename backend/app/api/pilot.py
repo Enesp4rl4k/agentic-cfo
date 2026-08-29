@@ -16,19 +16,19 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.user import User
-from app.api.auth import get_current_user
-from app.config import get_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -75,15 +75,15 @@ async def pilot_status(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
 
     # Count active users (non-admin)
     result = await db.execute(
-        select(func.count()).select_from(User).where(User.is_active == True)
+        select(func.count()).select_from(User).where(User.is_active)
     )
     total_users = result.scalar() or 0
 
     # Count unused invites
     inv_result = await db.execute(
         select(func.count()).select_from(PilotInvite).where(
-            PilotInvite.used == False,
-            (PilotInvite.expires_at == None) | (PilotInvite.expires_at > datetime.now(timezone.utc)),
+            not PilotInvite.used,
+            (PilotInvite.expires_at is None) | (PilotInvite.expires_at > datetime.now(UTC)),
         )
     )
     available_slots = inv_result.scalar() or 0
@@ -112,7 +112,7 @@ async def generate_invites(
     """Admin: generate one or more invite codes."""
     _require_admin(current_user)
 
-    expires = datetime.now(timezone.utc) + timedelta(days=body.expire_days)
+    expires = datetime.now(UTC) + timedelta(days=body.expire_days)
     codes = []
 
     for _ in range(body.count):
@@ -147,7 +147,7 @@ async def validate_invite(
         return {"data": {"valid": False, "reason": "Geçersiz davet kodu."}, "error": None}
     if invite.used:
         return {"data": {"valid": False, "reason": "Bu davet kodu zaten kullanılmış."}, "error": None}
-    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+    if invite.expires_at and invite.expires_at < datetime.now(UTC):
         return {"data": {"valid": False, "reason": "Davet kodunun süresi dolmuş."}, "error": None}
 
     return {
@@ -169,7 +169,7 @@ async def use_invite(
 ) -> dict[str, Any]:
     """Mark an invite as used after successful registration."""
     result = await db.execute(
-        select(PilotInvite).where(PilotInvite.code == code, PilotInvite.used == False)
+        select(PilotInvite).where(PilotInvite.code == code, not PilotInvite.used)
     )
     invite = result.scalar_one_or_none()
     if not invite:
@@ -177,7 +177,7 @@ async def use_invite(
 
     invite.used = True
     invite.used_by_user_id = user_id
-    invite.used_at = datetime.now(timezone.utc)
+    invite.used_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"used": True}, "error": None}
 

@@ -29,10 +29,10 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.data_source import (
+    DOMAIN_SOURCE_KWARGS,
     DataSource,
     DataSourceDomain,
     DataSourceType,
-    DOMAIN_SOURCE_KWARGS,
 )
 
 router = APIRouter()

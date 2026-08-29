@@ -239,6 +239,65 @@ class EmbeddingRagRetriever:
         )
 
 
+class HybridRagRetriever:
+    """
+    Hybrid retriever — merges TF-IDF lexical hits with pgvector semantic hits.
+    Falls back gracefully when embeddings or PostgreSQL are unavailable.
+    """
+
+    version: str = "hybrid_tfidf+pgvector_v2"
+
+    def __init__(self) -> None:
+        self._tfidf = TfidfRagRetriever()
+        self._embedding = EmbeddingRagRetriever()
+
+    async def retrieve(
+        self,
+        *,
+        db: AsyncSession,
+        org_id: str,
+        query: str,
+        job_id: str | None = None,
+        job_ids: list[str] | None = None,
+        source_type: str | None = None,
+        top_k: int = RAG_DEFAULT_TOP_K,
+        candidate_limit: int = RAG_DEFAULT_CANDIDATE_LIMIT,
+        min_score: float = RAG_MIN_SCORE,
+    ) -> EvidenceBundle:
+        tfidf = await self._tfidf.retrieve(
+            db=db,
+            org_id=org_id,
+            query=query,
+            job_id=job_id,
+            job_ids=job_ids,
+            source_type=source_type,
+            top_k=top_k,
+            candidate_limit=candidate_limit,
+            min_score=min_score,
+        )
+        vector = await self._embedding.retrieve(
+            db=db,
+            org_id=org_id,
+            query=query,
+            job_id=job_id,
+            job_ids=job_ids,
+            source_type=source_type,
+            top_k=top_k,
+            candidate_limit=candidate_limit,
+            min_score=min_score,
+        )
+
+        if vector.retriever_version == "pgvector_v2":
+            if tfidf.found and vector.found:
+                return tfidf.merge(vector, top_k=top_k)
+            if vector.found:
+                return vector
+            return tfidf
+
+        # Embedding path fell back to TF-IDF internally — avoid duplicate work.
+        return vector if vector.found else tfidf
+
+
 def _parse_citation_line(line: str, default_source: str) -> EvidenceCitation:
     """Parse rag_service prompt line into EvidenceCitation (best-effort)."""
     try:
@@ -268,5 +327,46 @@ _default_retriever: RagRetriever | None = None
 def get_rag_retriever() -> RagRetriever:
     global _default_retriever
     if _default_retriever is None:
-        _default_retriever = EmbeddingRagRetriever()
+        _default_retriever = HybridRagRetriever()
     return _default_retriever
+
+
+async def retrieve_dual_evidence(
+    *,
+    db: AsyncSession,
+    org_id: str,
+    query: str,
+    job_id: str | None = None,
+    top_k_per_source: int = 3,
+) -> EvidenceBundle:
+    """
+    Dual RAG: transaction evidence + semantic snapshot metrics.
+    Used by /chat/agent for grounded cross-domain answers.
+    """
+    retriever = get_rag_retriever()
+    tx = await retriever.retrieve(
+        db=db,
+        org_id=org_id,
+        query=query,
+        job_id=job_id,
+        source_type="cfo_transactions_raw",
+        top_k=top_k_per_source,
+    )
+    semantic = await retriever.retrieve(
+        db=db,
+        org_id=org_id,
+        query=query,
+        job_id=None,
+        source_type="semantic_snapshot",
+        top_k=top_k_per_source,
+    )
+    merged = tx.merge(semantic, top_k=top_k_per_source * 2)
+    if not merged.citations and (tx.found or semantic.found):
+        merged = EvidenceBundle(
+            query=query,
+            org_id=org_id,
+            citations=(tx.citations + semantic.citations)[: top_k_per_source * 2],
+            job_scope="org_wide",
+            retriever_version=merged.retriever_version,
+        )
+    return merged

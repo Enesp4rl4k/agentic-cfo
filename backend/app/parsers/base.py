@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import ClassVar
 
 
@@ -128,7 +128,6 @@ class BankParser(ABC):
           "15 Mart 2024" — Turkish month name
           "15-Mart-2024" — hyphen with month name
         """
-        from datetime import timezone
 
         raw = raw.strip()
 
@@ -140,7 +139,7 @@ class BankParser(ABC):
         ]
         for fmt in numeric_formats:
             try:
-                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+                return datetime.strptime(raw, fmt).replace(tzinfo=UTC)
             except ValueError:
                 continue
 
@@ -165,7 +164,7 @@ class BankParser(ABC):
                 if year < 100:
                     year += 2000
                 try:
-                    return datetime(year, month_num, day, tzinfo=timezone.utc)
+                    return datetime(year, month_num, day, tzinfo=UTC)
                 except ValueError:
                     pass
 

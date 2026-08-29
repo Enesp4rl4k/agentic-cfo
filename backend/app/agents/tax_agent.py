@@ -17,10 +17,10 @@ done_when: state['tax'] contains vat_payable, withholding_tax,
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, date
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ def _build_payment_calendar(
     # KDV beyannamesi
     if vat["net_vat_payable"] > 0:
         calendar.append({
-            "type": "KDV",
+            "type": "KDV (VAT)",
             "due_date": f"{next_year:04d}-{next_month:02d}-{KDV_BEYANNAME_GUN:02d}",
             "amount": vat["net_vat_payable"],
             "description": (
@@ -174,7 +174,7 @@ def _build_payment_calendar(
     # Muhtasar beyanname (stopaj)
     if withholding["income_tax_withholding"] > 0:
         calendar.append({
-            "type": "Muhtasar (Gelir Vergisi Stopajı)",
+            "type": "Stopaj (Withholding Tax)",
             "due_date": f"{next_year:04d}-{next_month:02d}-{MUHTASAR_GUN:02d}",
             "amount": withholding["income_tax_withholding"],
             "description": (
@@ -183,6 +183,7 @@ def _build_payment_calendar(
             ),
             "urgency": "normal",
         })
+
 
     # SGK işveren payı
     if withholding["ssi_employer"] > 0:
@@ -220,41 +221,48 @@ def _build_payment_calendar(
     return calendar
 
 
+def _tax_narrative_template(tax: dict[str, Any]) -> str:
+    vat = tax["vat"]["net_vat_payable"] / 100
+    corp = tax["corporate"]["corporate_tax_estimate"] / 100
+    total = tax.get("total_tax_burden", 0) / 100
+    n_due = len(tax.get("payment_calendar", []))
+    return (
+        f"Toplam vergi yükü ~{total:,.0f} TL (KDV {vat:,.0f} TL, kurumlar vergisi "
+        f"tahmini {corp:,.0f} TL). {n_due} yaklaşan ödeme takvimde. Nakit planlamasında "
+        "bu tarihleri dikkate alın."
+    )
+
+
 async def _generate_tax_narrative(
     tax: dict[str, Any], settings
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        from app.platform.model_gateway import complete_text
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
-
-    cal_text = "\n".join(
-        f"- {p['type']}: {p['amount']/100:,.0f} TL — due {p['due_date']}"
-        for p in tax.get("payment_calendar", [])
-    )
-
-    messages = [
-        SystemMessage(content=(
-            "You are a Turkish tax accountant. Summarize the tax position "
-            "in 2-4 sentences. Highlight upcoming deadlines and cash flow impact. "
-            "Be specific and actionable."
-        )),
-        HumanMessage(content=(
-            f"VAT payable: {tax['vat']['net_vat_payable']/100:,.0f} TL\n"
-            f"Withholding tax: {tax['withholding']['income_tax_withholding']/100:,.0f} TL\n"
-            f"SSI employer: {tax['withholding']['ssi_employer']/100:,.0f} TL\n"
-            f"Corporate tax estimate: {tax['corporate']['corporate_tax_estimate']/100:,.0f} TL\n\n"
-            f"Upcoming payments:\n{cal_text or 'None'}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        cal_text = "\n".join(
+            f"- {p['type']}: {p['amount']/100:,.0f} TL — due {p['due_date']}"
+            for p in tax.get("payment_calendar", [])
+        )
+        text = await complete_text(
+            task="metric_commentary",
+            system_prompt=(
+                "You are a Turkish tax accountant. Summarize the tax position "
+                "in 2-4 sentences. Highlight upcoming deadlines and cash flow impact. "
+                "Be specific and actionable."
+            ),
+            prompt=(
+                f"VAT payable: {tax['vat']['net_vat_payable']/100:,.0f} TL\n"
+                f"Withholding tax: {tax['withholding']['income_tax_withholding']/100:,.0f} TL\n"
+                f"SSI employer: {tax['withholding']['ssi_employer']/100:,.0f} TL\n"
+                f"Corporate tax estimate: {tax['corporate']['corporate_tax_estimate']/100:,.0f} TL\n\n"
+                f"Upcoming payments:\n{cal_text or 'None'}"
+            ),
+            max_tokens=512,
+        )
+        return text.strip()
+    except Exception as exc:
+        logger.debug("LLM tax narrative fallback: %s", exc)
+        return _tax_narrative_template(tax)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -292,7 +300,7 @@ async def run_tax(
             for t in transactions
             if t.get("transaction_date")
         ]
-        reference_month = max(dates) if dates else datetime.now(timezone.utc).strftime("%Y-%m")
+        reference_month = max(dates) if dates else datetime.now(UTC).strftime("%Y-%m")
 
         calendar = _build_payment_calendar(vat, withholding, corp_tax, reference_month)
 

@@ -13,13 +13,18 @@ Token yenileme durumları ve sync geçmişi burada tutulur.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, Text, Integer, ForeignKey,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
-from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -64,18 +69,18 @@ class ERPIntegration(Base):
     connected_at    = Column(DateTime(timezone=True), nullable=True)
     disconnected_at = Column(DateTime(timezone=True), nullable=True)
     created_at      = Column(DateTime(timezone=True), nullable=False,
-                             default=lambda: datetime.now(timezone.utc))
+                             default=lambda: datetime.now(UTC))
     updated_at      = Column(DateTime(timezone=True), nullable=False,
-                             default=lambda: datetime.now(timezone.utc),
-                             onupdate=lambda: datetime.now(timezone.utc))
+                             default=lambda: datetime.now(UTC),
+                             onupdate=lambda: datetime.now(UTC))
 
     def is_token_expired(self) -> bool:
         if not self.token_expires_at:
             return False
-        return datetime.now(timezone.utc) >= self.token_expires_at
+        return bool(datetime.now(UTC) >= self.token_expires_at)
 
     def is_active(self) -> bool:
-        return self.status == "active"
+        return bool(self.status == "active")
 
     def to_summary(self) -> dict[str, Any]:
         """Credential içermeyen özet dict (API response için)."""
@@ -119,7 +124,7 @@ class ERPSyncLog(Base):
 
     # Timing
     started_at      = Column(DateTime(timezone=True), nullable=False,
-                             default=lambda: datetime.now(timezone.utc))
+                             default=lambda: datetime.now(UTC))
     finished_at     = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Integer, nullable=True)
 

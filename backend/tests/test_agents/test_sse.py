@@ -3,17 +3,14 @@ Tests for sse.py — progress tracking and event publishing helpers.
 No real EventSource or network needed — tests pure functions only.
 """
 import asyncio
-import pytest
+
 from app.streaming.sse import (
+    _PIPELINE_STEPS,
     SSEManager,
     _calc_progress_pct,
     _completed_steps,
-    _PIPELINE_STEPS,
     publish_step_event,
-    publish_agent_start_event,
-    publish_job_done,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

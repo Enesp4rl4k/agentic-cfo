@@ -22,7 +22,7 @@ Kullanım:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ class EvidenceBuilder:
             )
 
         anomaly_type = anomaly.get("anomaly_type", "unknown")
-        severity = anomaly.get("severity", "medium")
+        anomaly.get("severity", "medium")
         confidence = anomaly.get("confidence", 0.7)
 
         evidence = Evidence(

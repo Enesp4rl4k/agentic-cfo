@@ -109,6 +109,21 @@ check "TR pack gate" \
   grep -q "require_tr_pack" backend/app/api/deps_regional.py && \
   grep -q "require_tr_pack" backend/app/api/smmm_onay.py
 
+check "TR vertical (L3 autopilot) smoke" \
+  bash scripts/tr-vertical-smoke.sh
+
+check "Connector Platform (Faz 13) smoke" \
+  bash scripts/connectors-smoke.sh
+
+check "Durable Runs (Faz 14) smoke" \
+  bash scripts/durable-runs-smoke.sh
+
+check "provenance honesty pass wired" \
+  test -f backend/app/platform/provenance.py && \
+  grep -q "attach_provenance" backend/app/agents/cto/cto_kernel.py && \
+  grep -q "_result_is_synthetic" backend/app/agents/orchestration/auto_chain.py && \
+  test -f frontend/src/components/ui/provenance-badge.tsx
+
 check "EN golden path fixture" \
   test -f scripts/fixtures/golden_path_sample_en_usd.csv
 
@@ -123,6 +138,28 @@ if ./verify.sh "$@"; then
   OK "verify.sh"
 else
   FAIL "verify.sh"
+  FAILURES=$((FAILURES + 1))
+fi
+echo ""
+
+# ── Golden-case eval gate (deterministic corpus, no live LLM) ────────────────
+INFO "Running: golden-case eval gate (pytest -m eval)"
+CHECKS=$((CHECKS + 1))
+if ( cd backend && python -m pytest -q --no-header -m eval ); then
+  OK "golden-case eval gate"
+else
+  FAIL "golden-case eval gate"
+  FAILURES=$((FAILURES + 1))
+fi
+echo ""
+
+# ── Connector Platform contract gate (Faz 13) ───────────────────────────────
+INFO "Running: connector platform gate (pytest -m connectors)"
+CHECKS=$((CHECKS + 1))
+if ( cd backend && python -m pytest -q --no-header -m connectors ); then
+  OK "connector platform gate"
+else
+  FAIL "connector platform gate"
   FAILURES=$((FAILURES + 1))
 fi
 echo ""

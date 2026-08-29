@@ -14,7 +14,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def _build_html(
 
     base_scenario = (forecast.get("scenarios") or {}).get("base") or {}
     runway = base_scenario.get("runway_months")
-    forecast_12m = base_scenario.get("twelve_month_net", 0)
+    base_scenario.get("twelve_month_net", 0)
 
     cf_alerts = cashflow.get("alerts") or []
     fc_alerts = forecast.get("alerts") or []
@@ -426,7 +426,7 @@ def generate_executive_report(
         PDF bytes
     """
     try:
-        from weasyprint import HTML, CSS
+        from weasyprint import HTML
     except ImportError as exc:
         raise RuntimeError(f"weasyprint not installed: {exc}") from exc
 
@@ -438,9 +438,9 @@ def generate_executive_report(
             months = sorted(m["month"] for m in series)
             period = f"{months[0]} – {months[-1]}"
         else:
-            period = datetime.now(timezone.utc).strftime("%Y-%m")
+            period = datetime.now(UTC).strftime("%Y-%m")
 
-    generated_at = datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+    generated_at = datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC")
 
     html_content = _build_html(
         dashboard=dashboard,

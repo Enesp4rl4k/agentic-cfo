@@ -17,14 +17,14 @@ import csv
 import io
 import ipaddress
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -54,8 +54,8 @@ async def list_audit_events(
     if current_user.role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
+
     from app.models.audit_log import AuditLog
-    from sqlalchemy import text
 
     query = select(AuditLog).order_by(AuditLog.created_at.desc())
 
@@ -65,13 +65,13 @@ async def list_audit_events(
         query = query.where(AuditLog.action.contains(action))
     if from_date:
         try:
-            dt = datetime.fromisoformat(from_date).replace(tzinfo=timezone.utc)
+            dt = datetime.fromisoformat(from_date).replace(tzinfo=UTC)
             query = query.where(AuditLog.created_at >= dt)
         except ValueError:
             pass
     if to_date:
         try:
-            dt = datetime.fromisoformat(to_date).replace(tzinfo=timezone.utc)
+            dt = datetime.fromisoformat(to_date).replace(tzinfo=UTC)
             query = query.where(AuditLog.created_at <= dt)
         except ValueError:
             pass
@@ -119,7 +119,7 @@ async def export_audit_csv(
 
     from app.models.audit_log import AuditLog
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     result = await db.execute(
         select(AuditLog)
         .where(AuditLog.created_at >= cutoff)
@@ -176,7 +176,7 @@ async def audit_summary_report(
 
     from app.models.audit_log import AuditLog
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     # Total requests
     total_q  = select(func.count()).where(AuditLog.created_at >= cutoff)
@@ -197,7 +197,7 @@ async def audit_summary_report(
     return {
         "data": {
             "period_days":    days,
-            "generated_at":   datetime.now(timezone.utc).isoformat(),
+            "generated_at":   datetime.now(UTC).isoformat(),
             "total_requests": total,
             "unique_users":   users,
             "failed_requests": failed,

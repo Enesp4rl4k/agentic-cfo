@@ -18,7 +18,7 @@ Cikti:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class COOKernelOutput:
     narrative:    str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in asdict(self).items()}
+        return dict(asdict(self).items())
 
     def to_coo_state_patch(self) -> dict[str, Any]:
         return {
@@ -121,7 +121,6 @@ class COOKernel:
         elif tech_health < 7:
             base -= 0.03
         # Nakit sikintisi operasyonu etkiler
-        base_sc = {}
         if self.pnl:
             # forecast yoksa net_margin'den tahmin et
             if self.net_margin < 0:
@@ -303,4 +302,8 @@ async def run_coo_kernel(
     kernel = get_coo_kernel(pnl=pnl, cashflow=cashflow, chro_data=chro_data, cto_data=cto_data,
                             cmo_data=cmo_data, existing_coo_data=existing_coo_data, company_size=company_size)
     output = kernel.generate()
-    return {"ok": True, "output": output.to_dict(), "patch": output.to_coo_state_patch()}
+    from app.platform.provenance import attach_provenance
+
+    return attach_provenance(
+        {"ok": True, "output": output.to_dict(), "patch": output.to_coo_state_patch()}
+    )

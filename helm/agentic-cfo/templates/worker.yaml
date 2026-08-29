@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-worker
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "agentic-cfo.fullname" . }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentic-cfo.fullname" . }}-worker
+    spec:
+      containers:
+      - name: worker
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        command: ["arq", "app.worker.WorkerSettings"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "agentic-cfo.fullname" . }}-config
+        - secretRef:
+            name: {{ include "agentic-cfo.fullname" . }}-secrets
+        volumeMounts:
+        - name: uploads
+          mountPath: /app/uploads
+        resources:
+          {{- toYaml .Values.worker.resources | nindent 10 }}
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: {{ include "agentic-cfo.fullname" . }}-uploads
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-worker-maintenance
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-maintenance
+spec:
+  replicas: {{ .Values.workerMaintenance.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "agentic-cfo.fullname" . }}-worker-maintenance
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentic-cfo.fullname" . }}-worker-maintenance
+    spec:
+      containers:
+      - name: worker-maintenance
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        command: ["arq", "app.worker.MaintenanceWorkerSettings"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "agentic-cfo.fullname" . }}-config
+        - secretRef:
+            name: {{ include "agentic-cfo.fullname" . }}-secrets
+        volumeMounts:
+        - name: uploads
+          mountPath: /app/uploads
+        resources:
+          {{- toYaml .Values.workerMaintenance.resources | nindent 10 }}
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: {{ include "agentic-cfo.fullname" . }}-uploads

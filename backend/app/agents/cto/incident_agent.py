@@ -21,13 +21,12 @@ from __future__ import annotations
 import csv
 import io
 import logging
-import re
 import statistics
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.cto.state import CTOState, CTORunConfig, CTOSkillResult
+from app.agents.cto.state import CTORunConfig, CTOSkillResult, CTOState
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,7 @@ def _parse_datetime(raw: str) -> datetime | None:
     for fmt in formats:
         try:
             dt = datetime.strptime(raw, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
         except ValueError:
             continue
     return None
@@ -168,7 +167,7 @@ def _compute_incident_metrics(incidents: list[dict[str, Any]]) -> dict[str, Any]
     )[:5]
 
     # Trend: compare first half vs second half
-    months = sorted(set(i["month"] for i in incidents))
+    months = sorted({i["month"] for i in incidents})
     trend = "stable"
     if len(months) >= 4:
         mid = len(months) // 2
@@ -234,16 +233,7 @@ async def _generate_incident_narrative(
     alerts: list[dict[str, str]],
     settings,
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import complete_text
 
     by_sev = metrics.get("by_severity", {})
     alert_text = (
@@ -255,8 +245,9 @@ async def _generate_incident_narrative(
         for s in metrics.get("recurring_services", [])[:3]
     ) or "  No data"
 
-    messages = [
-        SystemMessage(content=(
+    return (await complete_text(
+        task="short_narrative",
+        system_prompt=(
             "Sen deneyimli bir CTO'sun, güvenilirlik mühendisliği konusunda uzmansın. "
             "Aşağıdaki olay (incident) verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
             "Yanıt şu yapıda olsun:\n"
@@ -264,8 +255,8 @@ async def _generate_incident_narrative(
             "2. En kritik 1-2 sorun ve kök neden kalıbı\n"
             "3. Ekibin hemen yapması gereken 2-3 somut teknik eylem (madde madde)\n"
             "Teknik jargonu azalt, yöneticinin anlayacağı dilde yaz."
-        )),
-        HumanMessage(content=(
+        ),
+        prompt=(
             f"Toplam Olay: {metrics['total_incidents']}\n"
             f"Önem Dağılımı: kritik={by_sev.get('critical',0)}, yüksek={by_sev.get('high',0)}, "
             f"orta={by_sev.get('medium',0)}, düşük={by_sev.get('low',0)}\n"
@@ -274,10 +265,9 @@ async def _generate_incident_narrative(
             f"Trend: {metrics['trend']}\n\n"
             f"En Çok Olay Yaşanan Servisler:\n{top_services}\n\n"
             f"Uyarılar:\n{alert_text}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        ),
+        max_tokens=512,
+    )).strip()
 
 
 async def run_incident_agent(

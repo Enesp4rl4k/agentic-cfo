@@ -5,23 +5,21 @@ Tests cover: headcount parsing, attrition analysis, compensation metrics,
 org health scoring, and CEO cross-risk detection.
 """
 
-import pytest
-from app.agents.chro.headcount_agent import (
-    _parse_headcount_csv,
-    _compute_headcount_metrics,
-    _build_headcount_alerts,
-)
 from app.agents.chro.attrition_agent import (
-    _parse_attrition_csv,
-    _compute_attrition_metrics,
     _build_attrition_alerts,
+    _compute_attrition_metrics,
+    _parse_attrition_csv,
 )
 from app.agents.chro.compensation_agent import (
-    _parse_compensation_csv,
-    _compute_compensation_metrics,
     _build_compensation_alerts,
+    _compute_compensation_metrics,
+    _parse_compensation_csv,
 )
-
+from app.agents.chro.headcount_agent import (
+    _build_headcount_alerts,
+    _compute_headcount_metrics,
+    _parse_headcount_csv,
+)
 
 # ============================================================================
 # HEADCOUNT AGENT TESTS
@@ -292,29 +290,23 @@ def test_chro_health_score_calculation():
 def test_chro_summary_has_required_fields():
     """Test that CHRO summary includes all required output fields."""
     # Summary should include: chro_health_score, total_headcount, top_risks, quick_wins, narrative
-    pass
 
 
 def test_chro_alerts_aggregation():
     """Test that alerts from all three agents are aggregated."""
-    pass
 
 
 def test_cross_chro_headcount_burnout():
     """Test CHRO-CEO cross-risk: high utilization + high headcount churn."""
-    pass
 
 
 def test_cross_chro_comp_margin():
     """Test CHRO-CEO cross-risk: below-market compensation + negative margin."""
-    pass
 
 
 def test_cross_chro_equity_runway():
     """Test CHRO-CEO cross-risk: high equity burn + low cash runway."""
-    pass
 
 
 def test_chro_no_risks_when_healthy():
     """Test that no critical risks when all metrics are healthy."""
-    pass

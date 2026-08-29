@@ -20,9 +20,9 @@ Usage
 """
 from __future__ import annotations
 
-import logging
 import asyncio
-from pathlib import Path
+import logging
+from datetime import UTC
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -285,6 +285,7 @@ class PDFEngine:
         """
         try:
             import io
+
             from reportlab.lib.pagesizes import A4
             from reportlab.pdfgen import canvas
 
@@ -319,7 +320,7 @@ def build_cfo_summary_context(
     period:         str = "",
 ) -> dict[str, Any]:
     """Build template context from CFO pipeline result dashboard JSON."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     pnl      = dashboard_json.get("pnl") or {}
     cashflow = dashboard_json.get("cashflow") or {}
@@ -354,7 +355,7 @@ def build_cfo_summary_context(
     return {
         "company_name":   company_name,
         "period":         period,
-        "generated_at":   datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M UTC"),
+        "generated_at":   datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC"),
         "revenue":        fmt_money(pnl.get("revenue")),
         "net_margin":     fmt_pct(pnl.get("net_margin")),
         "net_margin_str": fmt_pct(pnl.get("net_margin")),

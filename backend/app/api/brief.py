@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
 
@@ -99,7 +99,7 @@ async def trigger_morning_brief() -> dict:
     return {
         "data": {
             "generated": True,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             **brief,
         },
         "error": None,

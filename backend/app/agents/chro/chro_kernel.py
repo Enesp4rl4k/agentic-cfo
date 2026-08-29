@@ -17,7 +17,7 @@ Cikti:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ class CHROKernelOutput:
     narrative:        str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in asdict(self).items()}
+        return dict(asdict(self).items())
 
     def to_chro_state_patch(self) -> dict[str, Any]:
         return {
@@ -296,4 +296,8 @@ async def run_chro_kernel(
     kernel = get_chro_kernel(pnl=pnl, cashflow=cashflow, forecast=forecast,
                               existing_chro_data=existing_chro_data, company_size=company_size)
     output = kernel.generate()
-    return {"ok": True, "output": output.to_dict(), "patch": output.to_chro_state_patch()}
+    from app.platform.provenance import attach_provenance
+
+    return attach_provenance(
+        {"ok": True, "output": output.to_dict(), "patch": output.to_chro_state_patch()}
+    )

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,10 +24,10 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.organization import Organization, OrgInvite
 from app.models.user import User, UserRole
-from app.api.auth import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -196,7 +196,7 @@ async def get_my_org(
     org = _require_org(current_user)
     # Count members
     result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active == True)
+        select(User).where(User.org_id == org.id, User.is_active)
     )
     members = result.scalars().all()
     data = _org_dict(org)
@@ -309,7 +309,7 @@ async def invite_member(
 
     # Check member limit
     result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active == True)
+        select(User).where(User.org_id == org.id, User.is_active)
     )
     count = len(result.scalars().all())
     if count >= org.max_members:
@@ -320,7 +320,7 @@ async def invite_member(
         select(OrgInvite).where(
             OrgInvite.org_id == org.id,
             OrgInvite.email == str(body.email),
-            OrgInvite.accepted == False,
+            not OrgInvite.accepted,
         )
     )
     for inv in old.scalars().all():
@@ -331,7 +331,7 @@ async def invite_member(
         email=str(body.email),
         role=body.role,
         token=secrets.token_hex(32),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_EXPIRE_DAYS),
+        expires_at=datetime.now(UTC) + timedelta(days=INVITE_EXPIRE_DAYS),
     )
     db.add(invite)
     await db.commit()
@@ -381,16 +381,16 @@ async def accept_invite(
     Accept an org invite. Creates user account if email not yet registered,
     otherwise joins existing user to the org.
     """
-    from app.services.auth import hash_password, create_access_token, create_refresh_token
+    from app.services.auth import create_access_token, create_refresh_token, hash_password
 
     result = await db.execute(
-        select(OrgInvite).where(OrgInvite.token == body.token, OrgInvite.accepted == False)
+        select(OrgInvite).where(OrgInvite.token == body.token, not OrgInvite.accepted)
     )
     invite = result.scalar_one_or_none()
     if not invite:
         raise HTTPException(400, detail="Geçersiz veya süresi dolmuş davet bağlantısı.")
 
-    if invite.expires_at < datetime.now(timezone.utc):
+    if invite.expires_at < datetime.now(UTC):
         raise HTTPException(400, detail="Davet bağlantısının süresi dolmuş.")
 
     # Find or create user
@@ -448,7 +448,7 @@ async def list_invites(
     org = _require_admin(current_user)
     result = await db.execute(
         select(OrgInvite)
-        .where(OrgInvite.org_id == org.id, OrgInvite.accepted == False)
+        .where(OrgInvite.org_id == org.id, not OrgInvite.accepted)
         .order_by(OrgInvite.created_at.desc())
     )
     invites = result.scalars().all()

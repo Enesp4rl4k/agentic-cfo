@@ -16,12 +16,11 @@ Auth header format:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from functools import lru_cache
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -30,12 +29,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.services.auth import (
-    hash_password,
-    verify_password,
     create_access_token,
     create_refresh_token,
     decode_token,
     generate_api_key,
+    hash_api_key,
+    hash_password,
+    verify_password,
 )
 
 router = APIRouter()
@@ -156,8 +156,12 @@ async def get_current_user(
 
     # ── Try API key ───────────────────────────────────────────────────────────
     if x_api_key:
+        hashed_key = hash_api_key(x_api_key)
         result = await db.execute(
-            select(User).where(User.api_key == x_api_key, User.is_active == True)
+            select(User).where(
+                (User.api_key == hashed_key) | (User.api_key == x_api_key),
+                User.is_active,
+            )
         )
         user = result.scalar_one_or_none()
         if not user:
@@ -257,7 +261,7 @@ async def login(
     refresh_token = create_refresh_token(user.id)
 
     # Update last login
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
 
     logger.info("User logged in: %s", user.email)
@@ -343,7 +347,7 @@ async def create_api_key(
     To get a new key, call this endpoint again (old key is revoked).
     """
     new_key = generate_api_key()
-    current_user.api_key = new_key
+    current_user.api_key = hash_api_key(new_key)
     await db.commit()
 
     # Invalidate cache so next request reloads the updated user from DB

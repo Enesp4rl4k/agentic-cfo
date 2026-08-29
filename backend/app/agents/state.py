@@ -14,7 +14,6 @@ from typing import Any, TypedDict
 
 from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
 
-
 # ---------------------------------------------------------------------------
 # Shared audit type (one entry per skill run)
 # ---------------------------------------------------------------------------
@@ -59,6 +58,7 @@ class CFOState(TypedDict, total=False):
     anomaly_narrative: str
 
     # ── Budget Agent ──────────────────────────────────────────────────────────
+    budget_input: dict[str, Any] | None
     budget: dict[str, Any] | None
     # {items: [{category, budgeted, actual, variance, variance_pct}],
     #  total_budgeted, total_actual, total_variance, narrative}
@@ -98,6 +98,10 @@ class CFOState(TypedDict, total=False):
     org_id: str | None
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None
+    # Numeric reconciliation output (separate LangGraph step, runs before verifier)
+    reconciliation: dict[str, Any] | None
+    # Per-step confidence decomposition (why is min_confidence what it is)
+    confidence_breakdown: dict[str, Any] | None
 
 
 # ---------------------------------------------------------------------------

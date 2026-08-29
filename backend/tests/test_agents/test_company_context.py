@@ -14,27 +14,22 @@ Covers:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.services.company_context import (
-    CompanyContext,
-    _trim_context_payload,
     _AGENT_RESULT_MAX_CHARS,
-    _MAX_CONTEXT_BYTES,
-    _CRITICAL_CONTEXT_BYTES,
-    get_company_context,
-    save_company_context,
-    invalidate_company_context,
+    CompanyContext,
+    CompanyContextService,
+    _trim_context_payload,
     cache_kernel_result,
     get_cached_kernel_result,
-    invalidate_kernel_cache,
-    CompanyContextService,
+    get_company_context,
     get_company_context_service,
+    invalidate_company_context,
+    save_company_context,
 )
-
 
 # ── CompanyContext dataclass ──────────────────────────────────────────────────
 

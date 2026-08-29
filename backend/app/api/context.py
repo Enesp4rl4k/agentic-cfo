@@ -15,16 +15,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
+from app.database import get_db
 from app.models.user import User
 from app.services.company_context import (
-    get_company_context,
-    save_company_context,
-    invalidate_company_context,
     get_cache_stats,
+    get_company_context,
+    invalidate_company_context,
     invalidate_kernel_cache,
-    CompanyContext,
+    save_company_context,
 )
 
 router = APIRouter()
@@ -113,10 +112,19 @@ async def update_context(
 
     await save_company_context(ctx, db)
 
+    # Rebuild canonical semantic snapshot (non-blocking best-effort)
+    try:
+        from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+        await rebuild_semantic_snapshot(resolved_id, db, include_brief=True)
+    except Exception as exc:
+        logger.warning("Semantic rebuild after context update failed (non-fatal): %s", exc)
+
     # Trigger auto-chain (non-blocking — fire and forget)
     try:
-        from app.services.auto_chain import on_agent_complete
         import asyncio
+
+        from app.agents.orchestration.auto_chain import on_agent_complete
         asyncio.create_task(on_agent_complete(body.agent, resolved_id, body.result, db))
     except Exception as exc:
         logger.warning("Auto-chain trigger failed (non-fatal): %s", exc)
@@ -214,7 +222,6 @@ async def invalidate_context_cache(
         return {"data": {"invalidated": f"kernel:{kernel}", "org_id": org_id}, "error": None}
 
     # Full invalidation: context + all kernels
-    from app.services.company_context import invalidate_kernel_cache as _ikc
     await invalidate_kernel_cache(org_id)   # all kernels
     # Note: full context invalidation is handled by DELETE /context/{org_id}
     return {"data": {"invalidated": "all_kernels", "org_id": org_id}, "error": None}

@@ -25,40 +25,42 @@ Fatal nodes: data_ingestion, pnl — without these, nothing else can run.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from app.agents.state import (
-    CFOState,
-    AgentRunConfig,
     DEFAULT_RUN_CONFIG,
-    StepLog,
-    ROUTE_PNL,
-    ROUTE_HOLD,
     ROUTE_END,
+    ROUTE_HOLD,
+    ROUTE_PNL,
     ROUTE_REPORT,
+    AgentRunConfig,
+    CFOState,
+    StepLog,
 )
 
 # Additional routing constants for mid-pipeline halt gates
 ROUTE_CASHFLOW = "cashflow"
 ROUTE_FORECAST = "forecast"
 ROUTE_ANOMALY  = "anomaly"
-from app.agents.data_ingestion import run_data_ingestion
-from app.agents.pnl_agent import run_pnl
-from app.agents.cashflow_agent import run_cashflow
-from app.agents.forecast_agent import run_forecast
-from app.agents.anomaly_agent import run_anomaly_detection
-from app.agents.multi_period_agent import run_multi_period
-from app.agents.tax_agent import run_tax
-from app.agents.budget_agent import run_budget
 from app.agents.alert_agent import run_alerts
+from app.agents.anomaly_agent import run_anomaly_detection
+from app.agents.budget_agent import run_budget
+from app.agents.cashflow_agent import run_cashflow
+from app.agents.data_ingestion import run_data_ingestion
+from app.agents.forecast_agent import run_forecast
+from app.agents.multi_period_agent import run_multi_period
+from app.agents.pnl_agent import run_pnl
+from app.agents.reconciliation_node import node_reconcile
 from app.agents.report_agent import run_report
+from app.agents.tax_agent import run_tax
+from app.agents.verifier_node import node_verifier
+from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
+from app.services.agent_memory import EpisodeRecord, get_memory_store
 from app.services.capability_router import get_capability_router
 from app.services.reflection_agent import get_reflection_agent
-from app.services.agent_memory import AgentMemoryStore, EpisodeRecord, get_memory_store
-from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
-from app.agents.verifier_node import node_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +154,8 @@ async def node_pnl(state: CFOState, config: dict) -> CFOState:
         step="pnl", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     if not result.ok:
         patch.update({"halted": True, "error": result.detail})
     else:
@@ -169,6 +173,8 @@ async def node_cashflow(state: CFOState, config: dict) -> CFOState:
         step="cashflow", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     if not result.ok:
         patch.update({"halted": True, "error": result.detail})
     else:
@@ -185,6 +191,8 @@ async def node_forecast(state: CFOState, config: dict) -> CFOState:
         step="forecast", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     if not result.ok:
         patch.update({"halted": True, "error": result.detail})
     else:
@@ -207,6 +215,8 @@ async def node_anomaly(state: CFOState, config: dict) -> CFOState:
         step="anomaly", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
 
@@ -219,6 +229,8 @@ async def node_multi_period(state: CFOState, config: dict) -> CFOState:
         step="multi_period", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
 
@@ -231,6 +243,8 @@ async def node_tax(state: CFOState, config: dict) -> CFOState:
         step="tax", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
 
@@ -243,6 +257,8 @@ async def node_budget(state: CFOState, config: dict) -> CFOState:
         step="budget", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
 
@@ -252,6 +268,8 @@ async def node_alert(state: CFOState, config: dict) -> CFOState:
         step="alert", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+    if result.needs_review:
+        patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
 
@@ -299,7 +317,7 @@ def route_after_ingestion(state: CFOState) -> str:
     return ROUTE_PNL
 
 
-def _route_fatal_node(next_node: str) -> "Callable[[CFOState], str]":
+def _route_fatal_node(next_node: str) -> Callable[[CFOState], str]:
     """
     Factory: returns a routing function that checks `halted` after a fatal node.
     If halted → END; otherwise → next_node.
@@ -318,29 +336,30 @@ def _route_fatal_node(next_node: str) -> "Callable[[CFOState], str]":
 def build_cfo_graph() -> StateGraph:
     graph = StateGraph(CFOState)
 
-    # Register all nodes
-    graph.add_node("data_ingestion",  node_data_ingestion)
-    graph.add_node("pnl",             node_pnl)
-    graph.add_node("cashflow",        node_cashflow)
-    graph.add_node("forecast",        node_forecast)
-    graph.add_node("anomaly",         node_anomaly)
-    graph.add_node("multi_period",    node_multi_period)
-    graph.add_node("tax",             node_tax)
-    graph.add_node("budget",          node_budget)
-    graph.add_node("alert",           node_alert)
-    graph.add_node("verifier",        node_verifier)
-    graph.add_node("report",          node_report)
-    graph.add_node("hold_for_review", node_hold_for_review)
+    # Register all nodes (suffixed with _node to avoid collision with state field keys in LangGraph)
+    graph.add_node("data_ingestion_node",  node_data_ingestion)
+    graph.add_node("pnl_node",             node_pnl)
+    graph.add_node("cashflow_node",        node_cashflow)
+    graph.add_node("forecast_node",        node_forecast)
+    graph.add_node("anomaly_node",         node_anomaly)
+    graph.add_node("multi_period_node",    node_multi_period)
+    graph.add_node("tax_node",             node_tax)
+    graph.add_node("budget_node",          node_budget)
+    graph.add_node("alert_node",           node_alert)
+    graph.add_node("reconcile_node",       node_reconcile)
+    graph.add_node("verifier_node",        node_verifier)
+    graph.add_node("report_node",          node_report)
+    graph.add_node("hold_for_review_node", node_hold_for_review)
 
-    graph.set_entry_point("data_ingestion")
+    graph.set_entry_point("data_ingestion_node")
 
     # ── Confidence gate after ingestion ───────────────────────────────────────
     graph.add_conditional_edges(
-        "data_ingestion",
+        "data_ingestion_node",
         route_after_ingestion,
         {
-            ROUTE_PNL:  "pnl",
-            ROUTE_HOLD: "hold_for_review",
+            ROUTE_PNL:  "pnl_node",
+            ROUTE_HOLD: "hold_for_review_node",
             ROUTE_END:  END,
         },
     )
@@ -348,44 +367,49 @@ def build_cfo_graph() -> StateGraph:
     # ── Fatal nodes: halt-check conditional edges ─────────────────────────────
     # pnl → halt-check → cashflow (or END if pnl failed)
     graph.add_conditional_edges(
-        "pnl",
-        _route_fatal_node("cashflow"),
-        {"cashflow": "cashflow", ROUTE_END: END},
+        "pnl_node",
+        _route_fatal_node("cashflow_node"),
+        {"cashflow_node": "cashflow_node", ROUTE_END: END},
     )
 
     # cashflow → halt-check → forecast (or END if cashflow failed)
     graph.add_conditional_edges(
-        "cashflow",
-        _route_fatal_node("forecast"),
-        {"forecast": "forecast", ROUTE_END: END},
+        "cashflow_node",
+        _route_fatal_node("forecast_node"),
+        {"forecast_node": "forecast_node", ROUTE_END: END},
     )
 
     # forecast → halt-check → anomaly (or END if forecast failed)
     graph.add_conditional_edges(
-        "forecast",
-        _route_fatal_node("anomaly"),
-        {"anomaly": "anomaly", ROUTE_END: END},
+        "forecast_node",
+        _route_fatal_node("anomaly_node"),
+        {"anomaly_node": "anomaly_node", ROUTE_END: END},
     )
 
     # ── Non-fatal nodes: always continue (failure logged, pipeline proceeds) ──
-    graph.add_edge("anomaly",      "multi_period")
-    graph.add_edge("multi_period", "tax")
-    graph.add_edge("tax",          "budget")
-    graph.add_edge("budget",       "alert")
-    graph.add_edge("alert",        "verifier")
+    graph.add_edge("anomaly_node",      "multi_period_node")
+    graph.add_edge("multi_period_node", "tax_node")
+    graph.add_edge("tax_node",          "budget_node")
+    graph.add_edge("budget_node",       "alert_node")
+    # Independent numeric reconciliation runs before the verifier: it can halt
+    # the run (broken arithmetic identity) or flag it for review (ungrounded
+    # figure in a narrative). The verifier then sees the resulting state.
+    graph.add_edge("alert_node",        "reconcile_node")
+    graph.add_edge("reconcile_node",    "verifier_node")
     graph.add_conditional_edges(
-        "verifier",
+        "verifier_node",
         route_after_verifier,
         {
-            ROUTE_REPORT: "report",
-            ROUTE_HOLD:   "hold_for_review",
+            ROUTE_REPORT: "report_node",
+            ROUTE_HOLD:   "hold_for_review_node",
             ROUTE_END:    END,
         },
     )
-    graph.add_edge("report",       END)
-    graph.add_edge("hold_for_review", END)
+    graph.add_edge("report_node",          END)
+    graph.add_edge("hold_for_review_node", END)
 
     return graph
+
 
 
 # Compiled graph — reused across requests (thread-safe)

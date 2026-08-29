@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 export const dynamic = "force-dynamic";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Zap, TrendingDown, Clock, AlertCircle, CheckCircle, Users,
   ArrowUp, ArrowDown, Minus, Cpu, RefreshCw, ChevronDown, ChevronUp,
@@ -20,7 +20,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useCOOKernelFromJob, useCOOKernelFromOrg } from "@/hooks/useKernels";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { useCompanyContextStore } from "@/store/companyContext";
+
+const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -375,11 +378,9 @@ function KernelBanner({ kernel, onDismiss }: KernelBannerProps) {
           <div className="rounded-lg bg-primary/10 p-1.5">
             <Cpu className="h-4 w-4 text-primary" />
           </div>
-          <div>
+          <div className="space-y-1">
             <p className="font-semibold text-sm">COO Kernel Analizi</p>
-            <p className="text-xs text-muted-foreground capitalize">
-              {kernel.data_source === "real" ? "Gerçek veri" : "CFO verisinden tahmin"} · %{Math.round(kernel.confidence * 100)} güven
-            </p>
+            <ProvenanceBadge dataSource={kernel.data_source} confidence={kernel.confidence} />
           </div>
         </div>
         <button
@@ -479,7 +480,30 @@ export default function COODashboardPage() {
     isActive, isEnqueueing,
   } = useAgentJob("coo");
 
-  const cooResult = result as COOResult | null;
+  const [liveResult, setLiveResult] = useState<COOResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        if (cancelled || !ctx) return;
+        if (ctx.company_name) setCompany(String(ctx.company_name));
+        if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
+        const last = ctx.last_coo_result;
+        if (last && typeof last === "object") setLiveResult(last as COOResult);
+      } catch {
+        /* empty until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
+  const cooResult = (result as COOResult | null) ?? liveResult;
 
   // Auto-load kernel from CFO job or org context
   const kernelResult = kernelFromOrg.result ?? kernelFromJob.result;
@@ -588,6 +612,14 @@ export default function COODashboardPage() {
       </div>
 
       {/* Kernel banner — shows auto-computed ops metrics without CSV */}
+      {kernelResult?.output && (kernelResult.output as { data_source?: string }).data_source !== "real" && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          Bu görünüm bağlı bir operasyon veri kaynağı olmadan CFO finansallarından
+          sektör varsayımlarıyla türetilmiştir. Karar dayanağı değildir ve otomatik
+          olarak başka bir ajanı tetiklemez.
+        </div>
+      )}
+
       {kernelResult?.output && showKernel && (
         <KernelBanner
           kernel={kernelResult.output as KernelBannerProps["kernel"]}
@@ -633,7 +665,7 @@ export default function COODashboardPage() {
             label="Süreçler CSV"
             value={processCsv}
             onChange={setProcessCsv}
-            sampleData={SAMPLE_PROCESSES}
+            sampleData={IS_DEMO ? SAMPLE_PROCESSES : undefined}
             description="process_name, cycle_time, throughput, wip, constraint_type, impact_score"
             disabled={isActive || isEnqueueing}
           />
@@ -641,7 +673,7 @@ export default function COODashboardPage() {
             label="SLA / Biletler CSV"
             value={slaCsv}
             onChange={setSlaCsv}
-            sampleData={SAMPLE_SLA}
+            sampleData={IS_DEMO ? SAMPLE_SLA : undefined}
             description="ticket_id, title, assigned_to, created_date, due_date, priority, status"
             disabled={isActive || isEnqueueing}
           />

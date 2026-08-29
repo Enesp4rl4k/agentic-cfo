@@ -19,10 +19,10 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.accounting.thp_classifier import THPSonucu, THP_HESAPLARI
+from app.services.accounting.thp_classifier import THP_HESAPLARI, THPSonucu
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class KayitSatiri:
 class YevmiyeKaydi:
     """Tam bir yevmiye kaydı (birden fazla satırdan oluşabilir)."""
     kayit_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    tarih: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    tarih: datetime = field(default_factory=lambda: datetime.now(UTC))
     aciklama: str = ""
     satirlar: list[KayitSatiri] = field(default_factory=list)
     kaynak_islem_id: str = ""       # Transaction.id
@@ -166,9 +166,9 @@ class DoubleEntryEngine:
             try:
                 tx_date = datetime.fromisoformat(tx_date)
             except Exception:
-                tx_date = datetime.now(timezone.utc)
+                tx_date = datetime.now(UTC)
         elif tx_date is None:
-            tx_date = datetime.now(timezone.utc)
+            tx_date = datetime.now(UTC)
 
         karsi_hesap_kodu = _karsi_hesap_belirle(transaction)
         karsi_hesap = THP_HESAPLARI.get(karsi_hesap_kodu)
@@ -270,7 +270,7 @@ class DoubleEntryEngine:
         """Toplu yevmiye kaydı oluştur."""
         return [
             self.create_entry(tx, thp)
-            for tx, thp in zip(transactions, thp_results)
+            for tx, thp in zip(transactions, thp_results, strict=False)
         ]
 
     @staticmethod

@@ -35,7 +35,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import statistics
 from typing import Any
 
 import numpy as np
@@ -114,8 +113,8 @@ def granger_causality_test(
         }
 
     try:
-        from statsmodels.tsa.stattools import grangercausalitytests
         import numpy as np_inner
+        from statsmodels.tsa.stattools import grangercausalitytests
 
         # Ensure equal length
         n = min(len(cause_series), len(effect_series))
@@ -206,7 +205,7 @@ def lag_correlation_analysis(
         return {"error": f"Gecikmeli korelasyon için en az {MIN_POINTS_CORRELATION} veri noktası gerekiyor."}
 
     results: list[dict[str, Any]] = []
-    for lag in range(0, max_lag + 1):
+    for lag in range(max_lag + 1):
         if n - lag < 4:
             break
         x = series_x[:n - lag]
@@ -261,7 +260,7 @@ def feature_importance_analysis(
 
     # Build feature → impact mapping
     # Impact = how much does a 10% reduction in this cost improve net income?
-    total_costs = sum(v or 0 for v in opex.values()) + pnl.get("cogs", 0)
+    sum(v or 0 for v in opex.values()) + pnl.get("cogs", 0)
     features: list[dict[str, Any]] = []
 
     for cat, amount in opex.items():
@@ -331,8 +330,8 @@ def run_causal_analysis(
           "summary": str,
         }
     """
-    months_x, series_x = _extract_metric_series(monthly_series, metric_x)
-    months_y, series_y = _extract_metric_series(monthly_series, metric_y)
+    _months_x, series_x = _extract_metric_series(monthly_series, metric_x)
+    _months_y, series_y = _extract_metric_series(monthly_series, metric_y)
 
     granger_result = granger_causality_test(series_x, series_y, max_lag)
     lag_result     = lag_correlation_analysis(series_x, series_y, max_lag)

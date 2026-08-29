@@ -16,18 +16,17 @@ Coverage targets:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.services.alert_router import (
-    AlertRouter,
     AlertAction,
-    RawAlert,
     AlertDecision,
+    AlertRouter,
+    RawAlert,
     _compute_priority,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +44,7 @@ def _alert(
         domain=domain,
         source=source,
         job_id=job_id,
-        timestamp=ts or datetime.now(timezone.utc),
+        timestamp=ts or datetime.now(UTC),
     )
 
 
@@ -103,7 +102,7 @@ class TestDeduplication:
         # Same alert in history 2 hours ago
         history = [_alert(
             message="Runway is 3 months",
-            ts=datetime.now(timezone.utc) - timedelta(hours=2),
+            ts=datetime.now(UTC) - timedelta(hours=2),
         )]
         decisions = router.process_alerts([a], history)
         assert len(decisions) == 1
@@ -115,7 +114,7 @@ class TestDeduplication:
         # Same alert in history 5 hours ago (outside 4h TTL)
         history = [_alert(
             message="Runway is 3 months",
-            ts=datetime.now(timezone.utc) - timedelta(hours=5),
+            ts=datetime.now(UTC) - timedelta(hours=5),
         )]
         decisions = router.process_alerts([a], history)
         assert len(decisions) == 1
@@ -139,7 +138,7 @@ class TestDeduplication:
         a = _alert(message="Duplicate test")
         history = [_alert(
             message="Duplicate test",
-            ts=datetime.now(timezone.utc) - timedelta(hours=1),
+            ts=datetime.now(UTC) - timedelta(hours=1),
         )]
         decisions = router.process_alerts([a], history)
         assert "UTC" in decisions[0].reason
@@ -273,7 +272,7 @@ class TestEdgeCases:
     def test_all_duplicates_returns_all_suppressed(self):
         router = AlertRouter()
         msg = "Duplicate alert"
-        history = [_alert(message=msg, ts=datetime.now(timezone.utc) - timedelta(hours=1))]
+        history = [_alert(message=msg, ts=datetime.now(UTC) - timedelta(hours=1))]
         alerts = [_alert(message=msg) for _ in range(3)]
         decisions = router.process_alerts(alerts, history)
         # All three are duplicates

@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone, timedelta
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -113,7 +113,7 @@ class TCMBMacroService:
     def _is_cache_fresh(self) -> bool:
         if not self._cache or not self._cache_time:
             return False
-        age = datetime.now(timezone.utc) - self._cache_time
+        age = datetime.now(UTC) - self._cache_time
         return age < timedelta(hours=CACHE_TTL_HOURS)
 
     async def _try_redis_cache(self) -> MacroSnapshot | None:
@@ -207,7 +207,7 @@ class TCMBMacroService:
             if snapshot:
                 await self._save_redis_cache(snapshot)
                 self._cache = snapshot.to_dict()
-                self._cache_time = datetime.now(timezone.utc)
+                self._cache_time = datetime.now(UTC)
                 return snapshot
 
         # Static fallback
@@ -227,7 +227,7 @@ class TCMBMacroService:
         )
 
         mapping: dict[str, float | None] = {}
-        for code, result in zip(self.SERIES, results):
+        for code, result in zip(self.SERIES, results, strict=False):
             friendly = self.SERIES[code]
             if isinstance(result, float):
                 mapping[friendly] = result

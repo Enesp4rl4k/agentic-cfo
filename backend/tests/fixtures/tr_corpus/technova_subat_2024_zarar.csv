@@ -1,0 +1,7 @@
+tarih,açıklama,tutar,tip,kategori
+2024-02-06,Şubat Küçük Satış - Tek Müşteri,"8.000,00",income,sales
+2024-02-05,Şubat Ofis Kirası - Levent İstanbul,"-35.000,00",expense,rent
+2024-02-15,Şubat Maaş Ödemeleri - Tüm Ekip,"-120.000,00",expense,salary
+2024-02-18,Aşırı Pazarlama Harcaması - Ajans Kampanyası,"-60.000,00",expense,marketing
+2024-02-20,Tekrar Eden Tedarikçi Ödemesi - XYZ Bilişim,"-12.000,00",expense,other_expense
+2024-02-21,Tekrar Eden Tedarikçi Ödemesi - XYZ Bilişim,"-12.000,00",expense,other_expense

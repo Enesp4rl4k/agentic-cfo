@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from app.services.alert_router import AlertDecision, AlertAction
+from app.services.alert_router import AlertAction, AlertDecision
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def _build_slack_payload(decisions: list[AlertDecision], org_name: str = "") -> 
         "elements": [
             {
                 "type": "mrkdwn",
-                "text": f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · {len(actionable)} actionable alerts",
+                "text": f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} · {len(actionable)} actionable alerts",
             }
         ],
     })
@@ -89,7 +89,7 @@ def _build_email_body(decisions: list[AlertDecision], org_name: str = "") -> tup
     )
 
     lines = [
-        f"C-Suite Alert Özeti — {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}",
+        f"C-Suite Alert Özeti — {datetime.now(UTC).strftime('%d %b %Y %H:%M UTC')}",
         "=" * 60,
         "",
     ]
@@ -239,9 +239,10 @@ class NotificationService:
             return 0
 
         try:
-            import aiosmtplib
-            from email.mime.text import MIMEText
             from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+
+            import aiosmtplib
         except ImportError:
             logger.warning("aiosmtplib not installed — add it to requirements.txt")
             return 0
@@ -366,8 +367,9 @@ class NotificationService:
 
         if twilio_sid and twilio_token and twilio_from:
             try:
-                import httpx
                 import base64
+
+                import httpx
                 auth = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
                 to_wa = f"whatsapp:{phone_number}" if not phone_number.startswith("whatsapp:") else phone_number
                 url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
@@ -427,8 +429,9 @@ class NotificationService:
         if db is None:
             return {"channels": ["dashboard"]}
         try:
-            from app.models.alert_preference import AlertPreference
             from sqlalchemy import select
+
+            from app.models.alert_preference import AlertPreference
             result = await db.execute(
                 select(AlertPreference).where(AlertPreference.org_id == org_id)
             )

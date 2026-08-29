@@ -85,7 +85,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff mypy pytest-asyncio
+          pip install "ruff==0.16.4" mypy pytest-asyncio
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -237,20 +237,24 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff mypy pytest-asyncio pytest-cov
+          pip install "ruff==0.16.4" mypy pytest-asyncio pytest-cov
 
       - name: Ruff lint
         working-directory: backend
         run: ruff check app/ --output-format=github
 
-      - name: Mypy type check
+      - name: Mypy strict allowlist (blocking)
+        working-directory: backend
+        run: mypy --config-file mypy_strict.ini
+
+      - name: Mypy full tree (advisory, non-blocking)
         working-directory: backend
         run: |
           mypy app/ \
             --ignore-missing-imports \
             --no-error-summary \
             --exclude '(migrations|alembic)' \
-            2>&1 | tail -20 || true  # Non-blocking for now
+            2>&1 | tail -20 || true  # ~590 legacy errors; greened module-by-module into mypy_strict.ini
 
       - name: Run tests
         working-directory: backend
@@ -268,9 +272,23 @@ jobs:
             --cov=app \
             --cov-report=term-missing \
             --cov-report=xml \
-            -x \
-            --ignore=tests/test_parsers \
             2>&1 | tail -30
+
+      - name: Golden-case eval gate
+        working-directory: backend
+        env:
+          BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
+          OPENAI_API_KEY:     llm-placeholder-ci
+          USE_SQLITE:         "true"
+        run: pytest -q --no-header -m eval
+
+      - name: Connector Platform gate (Faz 13)
+        working-directory: backend
+        env:
+          BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
+          OPENAI_API_KEY:     llm-placeholder-ci
+          USE_SQLITE:         "true"
+        run: pytest -q --no-header -m connectors
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

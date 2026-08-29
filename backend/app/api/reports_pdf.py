@@ -11,12 +11,10 @@ GET  /reports/pdf/{report_id}/download → Oluşturulan raporu indir
 from __future__ import annotations
 
 import logging
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,8 +61,9 @@ def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
 async def _load_dashboard_for_job(job_id: str, db: AsyncSession) -> dict[str, Any]:
     """Load dashboard JSON from report table."""
     try:
+        from sqlalchemy import desc, select
+
         from app.models.report import Report, ReportFormat
-        from sqlalchemy import select, desc
 
         result = await db.execute(
             select(Report).where(
@@ -137,7 +136,7 @@ async def generate_cfo_summary_pdf(
     engine    = PDFEngine()
     pdf_bytes = await engine.render("cfo_summary", context)
 
-    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    date_str = datetime.now(UTC).strftime("%Y%m%d")
     filename = f"cfo_summary_{date_str}.pdf"
 
     logger.info(
@@ -181,7 +180,7 @@ async def generate_executive_brief_pdf(
     engine    = PDFEngine()
     pdf_bytes = await engine.render("executive_brief", context)
 
-    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    date_str = datetime.now(UTC).strftime("%Y%m%d")
     filename = f"executive_brief_{date_str}.pdf"
 
     logger.info(

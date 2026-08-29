@@ -18,10 +18,9 @@ Desteklenen export tipleri:
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -51,8 +50,9 @@ class LogoTigerConnector:
         Logo Tiger entegrasyonu olustur veya guncelle.
         OAuth gerektirmez — CSV upload tabanli.
         """
-        from app.models.erp_integration import ERPIntegration
         from sqlalchemy import select
+
+        from app.models.erp_integration import ERPIntegration
 
         stmt = (
             select(ERPIntegration)
@@ -66,7 +66,7 @@ class LogoTigerConnector:
                 provider     = "logo_tiger",
                 display_name = display_name,
                 status       = "active",  # CSV-based = her zaman hazir
-                connected_at = datetime.now(timezone.utc),
+                connected_at = datetime.now(UTC),
             )
             self.db.add(integration)
             await self.db.commit()
@@ -87,9 +87,10 @@ class LogoTigerConnector:
         Returns:
             {ok, transactions, sync_count, parse_errors, integration_id}
         """
+        from sqlalchemy import select
+
         from app.models.erp_integration import ERPIntegration, ERPSyncLog
         from app.parsers.accounting.logo_tiger import LogoTigerParser
-        from sqlalchemy import select
 
         start = time.time()
 
@@ -109,7 +110,7 @@ class LogoTigerConnector:
             org_id         = org_id,
             provider       = "logo_tiger",
             status         = "running",
-            started_at     = datetime.now(timezone.utc),
+            started_at     = datetime.now(UTC),
         )
         self.db.add(log)
         await self.db.commit()
@@ -152,7 +153,7 @@ class LogoTigerConnector:
             tx_count = len(normalized)
 
             # Integration guncelle
-            integration.last_sync_at     = datetime.now(timezone.utc)
+            integration.last_sync_at     = datetime.now(UTC)
             integration.last_sync_status = "success"
             integration.last_sync_count  = tx_count
             integration.last_error       = None
@@ -160,7 +161,7 @@ class LogoTigerConnector:
             log.status                = "success"
             log.transactions_synced   = tx_count
             log.transactions_skipped  = skipped
-            log.finished_at           = datetime.now(timezone.utc)
+            log.finished_at           = datetime.now(UTC)
             log.duration_seconds      = int(time.time() - start)
 
             await self.db.commit()
@@ -187,13 +188,13 @@ class LogoTigerConnector:
 
         except Exception as exc:
             err_msg = str(exc)
-            integration.last_sync_at     = datetime.now(timezone.utc)
+            integration.last_sync_at     = datetime.now(UTC)
             integration.last_sync_status = "error"
             integration.last_error       = err_msg[:500]
 
             log.status        = "error"
             log.error_message = err_msg[:500]
-            log.finished_at   = datetime.now(timezone.utc)
+            log.finished_at   = datetime.now(UTC)
             log.duration_seconds = int(time.time() - start)
 
             await self.db.commit()
@@ -206,8 +207,9 @@ class LogoTigerConnector:
         limit:  int = 10,
     ) -> list[dict[str, Any]]:
         """Son sync loglarini getir."""
-        from app.models.erp_integration import ERPIntegration, ERPSyncLog
-        from sqlalchemy import select, desc
+        from sqlalchemy import desc, select
+
+        from app.models.erp_integration import ERPSyncLog
 
         stmt = (
             select(ERPSyncLog)
@@ -236,9 +238,10 @@ class MikroConnector:
         csv_content: str,
         filename:    str = "mikro_export.csv",
     ) -> dict[str, Any]:
+        from sqlalchemy import select
+
         from app.models.erp_integration import ERPIntegration, ERPSyncLog
         from app.parsers.accounting.mikro import MikroParser  # type: ignore[attr-defined]
-        from sqlalchemy import select
 
         start = time.time()
         stmt  = (
@@ -249,7 +252,7 @@ class MikroConnector:
         if not integration:
             integration = ERPIntegration(
                 org_id="mikro", provider="mikro", display_name="Mikro ERP",
-                status="active", connected_at=datetime.now(timezone.utc),
+                status="active", connected_at=datetime.now(UTC),
             )
             self.db.add(integration)
             await self.db.commit()
@@ -258,7 +261,7 @@ class MikroConnector:
         log = ERPSyncLog(
             integration_id=integration.id, org_id=org_id,
             provider="mikro", status="running",
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
         )
         self.db.add(log)
         await self.db.commit()
@@ -277,12 +280,12 @@ class MikroConnector:
                 }
                 for tx in statement.transactions if tx.amount_cents != 0
             ]
-            integration.last_sync_at     = datetime.now(timezone.utc)
+            integration.last_sync_at     = datetime.now(UTC)
             integration.last_sync_status = "success"
             integration.last_sync_count  = len(txns)
             log.status              = "success"
             log.transactions_synced = len(txns)
-            log.finished_at         = datetime.now(timezone.utc)
+            log.finished_at         = datetime.now(UTC)
             log.duration_seconds    = int(time.time() - start)
             await self.db.commit()
             return {"ok": True, "transactions": txns, "sync_count": len(txns)}
@@ -291,6 +294,6 @@ class MikroConnector:
             integration.last_error = str(exc)[:500]
             log.status = "error"
             log.error_message = str(exc)[:500]
-            log.finished_at = datetime.now(timezone.utc)
+            log.finished_at = datetime.now(UTC)
             await self.db.commit()
             raise

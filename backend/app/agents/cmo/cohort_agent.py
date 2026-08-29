@@ -193,7 +193,7 @@ def _build_cohort_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     churn     = metrics.get("churn_rate", 0.0)
     ret30     = metrics.get("avg_retention_30d", 0.0)
     trend     = metrics.get("retention_trend", "stable")
-    avg_ltv   = metrics.get("avg_ltv_cents", 0)
+    metrics.get("avg_ltv_cents", 0)
     avg_cac   = metrics.get("avg_cac_cents", 0)
 
     # LTV:CAC ratio benchmarks (SaaS: >3.0 good, <1.0 critical)
@@ -257,15 +257,8 @@ def _build_cohort_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_cohort_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative -- falls back to rule-based summary."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage
+        from app.platform.model_gateway import complete_text
 
-        llm = ChatOpenAI(
-            model=settings.openai_model,
-            temperature=0.3,
-            max_tokens=300,
-            api_key=settings.openai_api_key,
-        )
         ltv_cac = metrics["ltv_cac_ratio"]
         churn   = metrics["churn_rate"]
         ret30   = metrics["avg_retention_30d"]
@@ -275,8 +268,9 @@ async def _generate_cohort_narrative(metrics: dict[str, Any], settings) -> str:
             f"30d_retention={ret30:.1%}, trend={trend}. "
             "Write a 2-sentence CMO-level insight on customer retention health."
         )
-        resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        return resp.content.strip()
+        return (await complete_text(
+            task="metric_commentary", prompt=prompt, max_tokens=300,
+        )).strip()
     except Exception:
         ltv_cac = metrics.get("ltv_cac_ratio", 0.0)
         churn   = metrics.get("churn_rate", 0.0)

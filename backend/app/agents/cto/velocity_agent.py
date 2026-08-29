@@ -22,10 +22,9 @@ import csv
 import io
 import logging
 import statistics
-from collections import defaultdict
 from typing import Any
 
-from app.agents.cto.state import CTOState, CTORunConfig, CTOSkillResult
+from app.agents.cto.state import CTORunConfig, CTOSkillResult, CTOState
 
 logger = logging.getLogger(__name__)
 
@@ -217,24 +216,16 @@ async def _generate_velocity_narrative(
     alerts: list[dict[str, str]],
     settings,
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import complete_text
 
     alert_text = (
         "\n".join(f"- [{a['level'].upper()}] {a['message']}" for a in alerts)
         or "No critical alerts."
     )
 
-    messages = [
-        SystemMessage(content=(
+    return (await complete_text(
+        task="short_narrative",
+        system_prompt=(
             "Sen deneyimli bir CTO ve mühendislik liderisisin. "
             "Sprint velocity verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
             "Yanıt şu yapıda olsun:\n"
@@ -242,18 +233,17 @@ async def _generate_velocity_narrative(
             "2. En kritik sorun (carryover, düşen velocity veya öngörülemezlik)\n"
             "3. Sonraki sprint'te uygulanabilecek 2-3 somut iyileştirme (scrum/kanban pratikleri)\n"
             "Teknik olmayan yöneticinin anlayacağı sade dilde yaz."
-        )),
-        HumanMessage(content=(
+        ),
+        prompt=(
             f"Analiz Edilen Sprint: {metrics['sprints_analyzed']}\n"
             f"Ortalama Velocity: {metrics['avg_velocity']} puan/sprint\n"
             f"Velocity Trendi: {metrics['velocity_trend']}\n"
             f"Öngörülebilirlik Skoru: %{metrics['predictability_score']*100:.0f}\n"
             f"Devredilen İş Oranı: %{metrics['carryover_ratio']*100:.0f}\n\n"
             f"Uyarılar:\n{alert_text}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        ),
+        max_tokens=512,
+    )).strip()
 
 
 async def run_velocity_agent(

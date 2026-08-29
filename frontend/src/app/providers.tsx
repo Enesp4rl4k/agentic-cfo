@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { ToastProvider } from "@/components/ui/toast";
+import { ThemeProvider } from "@/components/ui/theme-toggle";
 import { CompanyContextProvider, useCompanyContextStore } from "@/store/companyContext";
 
 /**
@@ -43,11 +44,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
-        <CompanyContextProvider>
-          {/* Sync session orgId → store (no UI, effect only) */}
-          <OrgIdSync />
-          <ToastProvider>{children}</ToastProvider>
-        </CompanyContextProvider>
+        <ThemeProvider>
+          <CompanyContextProvider>
+            {/* Sync session orgId → store (no UI, effect only) */}
+            <OrgIdSync />
+            <ToastProvider>{children}</ToastProvider>
+          </CompanyContextProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     </SessionProvider>
   );

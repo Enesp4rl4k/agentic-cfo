@@ -10,12 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
-from app.agents.risk.state import RiskState, RiskStepLog
-from app.agents.risk.register_agent import run_register_agent
-from app.agents.risk.loss_agent import run_loss_agent
 from app.agents.risk.kri_agent import run_kri_agent
+from app.agents.risk.loss_agent import run_loss_agent
+from app.agents.risk.register_agent import run_register_agent
+from app.agents.risk.state import RiskState, RiskStepLog
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def node_kri(state: RiskState, config: dict) -> RiskState:
             "logs": result["logs"], "error": result.get("error")}
 
 
-async def node_risk_summary(state: RiskState, config: dict) -> RiskState:  # noqa: C901
+async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
     """
     Synthesise register + loss + kri into enterprise risk posture.
     Enterprise Risk Score (0-10, higher = worse).
@@ -192,17 +192,8 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:  # noq
 
     # LLM enrichment (non-fatal)
     try:
-        from app.config import get_settings
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
-        settings = get_settings()
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=700,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
+        from app.platform.model_gateway import complete_text
+
         cross_context = ""
         if cross_correlation and cross_correlation.get("systemic_risks"):
             sys_names = ", ".join(s["kri"] for s in cross_correlation["systemic_risks"][:2])
@@ -219,8 +210,9 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:  # noq
         except Exception:
             pass
 
-        llm_response = await llm.ainvoke([
-            SystemMessage(content=(
+        narrative = (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir Risk Yöneticisisin. Kurumsal risk verilerini analiz et ve "
                 "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
                 "Yanıt yapısı:\n"
@@ -228,10 +220,10 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:  # noq
                 "2. En kritik 1-2 risk (şirkete özgü + Türkiye makro riski varsa)\n"
                 "3. Yönetimin hemen yapması gereken 2-3 somut eylem\n"
                 "Risk profesyoneli bakışıyla pratik öneriler ekle."
-            )),
-            HumanMessage(content=narrative + cross_context),
-        ])
-        narrative = llm_response.content.strip()
+            ),
+            prompt=narrative + cross_context,
+            max_tokens=700,
+        )).strip()
     except Exception as llm_exc:
         logger.debug("Risk summary LLM failed: %s", llm_exc)
 
@@ -264,17 +256,17 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:  # noq
 
 def build_risk_graph() -> StateGraph:
     builder = StateGraph(RiskState)
-    builder.add_node("register", node_register)
-    builder.add_node("loss",     node_loss)
-    builder.add_node("kri",      node_kri)
-    builder.add_node("risk_summary", node_risk_summary)
+    builder.add_node("register_agent", node_register)
+    builder.add_node("loss_agent",     node_loss)
+    builder.add_node("kri_agent",      node_kri)
+    builder.add_node("summary_agent",  node_risk_summary)
 
-    builder.add_edge("register",     "loss")
-    builder.add_edge("loss",         "kri")
-    builder.add_edge("kri",          "risk_summary")
-    builder.add_edge("risk_summary", END)
+    builder.add_edge("register_agent", "loss_agent")
+    builder.add_edge("loss_agent",     "kri_agent")
+    builder.add_edge("kri_agent",      "summary_agent")
+    builder.add_edge("summary_agent",  END)
 
-    builder.set_entry_point("register")
+    builder.set_entry_point("register_agent")
     return builder.compile()
 
 

@@ -40,7 +40,9 @@ import functools
 import hashlib
 import json
 import logging
-from typing import Any, Callable
+import time
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -55,17 +57,28 @@ TTL_TCMB       = 6  * 60 * 60 # 6 hours
 
 # ── Redis singleton ────────────────────────────────────────────────────────────
 
-_cache_service_instance: "CacheService | None" = None
+_cache_service_instance: CacheService | None = None
 
 
 async def _get_redis() -> Any | None:
-    """Get Redis connection from app's pool (non-blocking)."""
+    """Get Redis connection from app's pool (non-blocking, fast timeout)."""
+    import os
+    if os.environ.get("USE_SQLITE") == "true" or os.environ.get("DISABLE_REDIS") == "true":
+        return None
     try:
-        from app.config import get_settings
         import redis.asyncio as aioredis
 
+        from app.config import get_settings
+
         settings = get_settings()
-        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        if not settings.redis_url:
+            return None
+        r = aioredis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=0.2,
+            socket_timeout=0.2,
+        )
         return r
     except Exception as exc:
         logger.debug("CacheService: Redis unavailable: %s", exc)
@@ -88,43 +101,72 @@ def _hash_prompt(args: tuple, kwargs: dict) -> str:
 
 class CacheService:
     """
-    Redis-backed multi-namespace cache.
+    Dual-tier cache: Redis-backed with local in-memory fallback.
     Falls back gracefully when Redis is unavailable.
     """
+
+    def __init__(self, max_memory_entries: int = 5000) -> None:
+        self._memory_cache: dict[str, tuple[float, dict]] = {}
+        self._max_memory_entries = max_memory_entries
+
+    def _get_memory(self, key: str) -> dict | None:
+        entry = self._memory_cache.get(key)
+        if not entry:
+            return None
+        expires_at, val = entry
+        if time.time() > expires_at:
+            self._memory_cache.pop(key, None)
+            return None
+        return val
+
+    def _set_memory(self, key: str, value: dict, ttl: int) -> None:
+        if len(self._memory_cache) >= self._max_memory_entries:
+            # Evict expired or oldest entry
+            now = time.time()
+            expired_keys = [k for k, (exp, _) in self._memory_cache.items() if now > exp]
+            for k in expired_keys[:100]:
+                self._memory_cache.pop(k, None)
+            if len(self._memory_cache) >= self._max_memory_entries:
+                first_key = next(iter(self._memory_cache))
+                self._memory_cache.pop(first_key, None)
+        self._memory_cache[key] = (time.time() + ttl, value)
 
     async def get(self, key: str) -> dict | None:
         """Return cached value or None on miss."""
         try:
             r = await _get_redis()
-            if r is None:
+            if r is not None:
+                raw = await r.get(key)
+                await r.aclose()
+                if raw:
+                    return json.loads(raw)
                 return None
-            raw = await r.get(key)
-            await r.aclose()
-            if raw:
-                return json.loads(raw)
         except Exception as exc:
-            logger.debug("CacheService.get failed: %s", exc)
-        return None
+            logger.debug("CacheService.get (Redis) failed: %s", exc)
+
+        # In-memory fallback
+        return self._get_memory(key)
 
     async def set(self, key: str, value: dict, ttl: int) -> None:
         """Store value with TTL (seconds). Fire-and-forget."""
+        # Always update memory cache as fallback
+        self._set_memory(key, value, ttl)
         try:
             r = await _get_redis()
-            if r is None:
-                return
-            await r.setex(key, ttl, json.dumps(value, default=str))
-            await r.aclose()
+            if r is not None:
+                await r.setex(key, ttl, json.dumps(value, default=str))
+                await r.aclose()
         except Exception as exc:
-            logger.debug("CacheService.set failed: %s", exc)
+            logger.debug("CacheService.set (Redis) failed: %s", exc)
 
     async def delete(self, key: str) -> None:
         """Delete a specific key."""
+        self._memory_cache.pop(key, None)
         try:
             r = await _get_redis()
-            if r is None:
-                return
-            await r.delete(key)
-            await r.aclose()
+            if r is not None:
+                await r.delete(key)
+                await r.aclose()
         except Exception as exc:
             logger.debug("CacheService.delete failed: %s", exc)
 
@@ -136,23 +178,26 @@ class CacheService:
         Example: await cache.invalidate_pattern("cache:analytics:org-1:*")
         """
         deleted = 0
-        try:
-            r = await _get_redis()
-            if r is None:
-                return 0
-
-            # SCAN is non-blocking — preferable to KEYS for production
-            async for key in r.scan_iter(match=pattern, count=100):
-                await r.delete(key)
+        # Invalidate in memory
+        import fnmatch
+        memory_keys = list(self._memory_cache.keys())
+        for k in memory_keys:
+            if fnmatch.fnmatch(k, pattern):
+                self._memory_cache.pop(k, None)
                 deleted += 1
 
-            await r.aclose()
-
-            if deleted > 0:
-                logger.debug("CacheService: invalidated %d keys matching '%s'", deleted, pattern)
+        try:
+            r = await _get_redis()
+            if r is not None:
+                async for key in r.scan_iter(match=pattern, count=100):
+                    await r.delete(key)
+                    deleted += 1
+                await r.aclose()
         except Exception as exc:
             logger.debug("CacheService.invalidate_pattern failed: %s", exc)
 
+        if deleted > 0:
+            logger.debug("CacheService: invalidated %d keys matching '%s'", deleted, pattern)
         return deleted
 
     def make_key(self, namespace: str, *parts: str) -> str:
@@ -164,28 +209,43 @@ class CacheService:
         """
         try:
             r = await _get_redis()
-            if r is None:
-                return {"available": False}
+            if r is not None:
+                pattern = f"cache:{namespace}:*" if namespace else "cache:*"
+                key_count = 0
+                async for _ in r.scan_iter(match=pattern, count=500):
+                    key_count += 1
+                    if key_count >= 10000:
+                        break
 
-            pattern = f"cache:{namespace}:*" if namespace else "cache:*"
-            key_count = 0
-            async for _ in r.scan_iter(match=pattern, count=500):
-                key_count += 1
-                if key_count >= 10000:  # safety cap
-                    break
+                info = await r.info("memory")
+                await r.aclose()
 
-            info    = await r.info("memory")
-            await r.aclose()
-
-            return {
-                "available":     True,
-                "namespace":     namespace or "all",
-                "key_count":     key_count,
-                "memory_used_mb": round(info.get("used_memory", 0) / 1024 / 1024, 1),
-            }
+                return {
+                    "available": True,
+                    "backend": "redis",
+                    "namespace": namespace or "all",
+                    "key_count": key_count,
+                    "memory_used_mb": round(info.get("used_memory", 0) / 1024 / 1024, 1),
+                }
         except Exception as exc:
-            logger.debug("CacheService.get_stats failed: %s", exc)
-            return {"available": False, "error": str(exc)}
+            logger.debug("CacheService.get_stats (Redis) failed: %s", exc)
+
+        return {
+            "available": True,
+            "backend": "memory",
+            "namespace": namespace or "all",
+            "key_count": len(self._memory_cache),
+            "memory_used_mb": 0.1,
+        }
+
+    async def aclose(self) -> None:
+        """Close any open connections."""
+        try:
+            r = await _get_redis()
+            if r is not None:
+                await r.aclose()
+        except Exception:
+            pass
 
 
 # ── Singleton factory ─────────────────────────────────────────────────────────
@@ -248,7 +308,7 @@ async def get_cached_analytics(
     """
     cache  = get_cache_service()
     params_str = json.dumps(query_params, sort_keys=True)
-    param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]  # noqa: S324
+    param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
     key    = _make_key("analytics", org_id, endpoint.replace("/", "_"), param_hash)
     return await cache.get(key)
 
@@ -263,7 +323,7 @@ async def set_cached_analytics(
     """Cache an analytics response."""
     cache  = get_cache_service()
     params_str = json.dumps(query_params, sort_keys=True)
-    param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]  # noqa: S324
+    param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
     key    = _make_key("analytics", org_id, endpoint.replace("/", "_"), param_hash)
     await cache.set(key, data, ttl)
 

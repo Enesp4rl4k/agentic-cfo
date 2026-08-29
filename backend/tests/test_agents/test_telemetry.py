@@ -5,19 +5,18 @@ Covers: JSONFormatter, trace_agent decorator, AgentMetrics, helper functions.
 import asyncio
 import json
 import logging
+
 import pytest
-from unittest.mock import MagicMock
 
 from app.services.telemetry import (
-    JSONFormatter,
     AgentMetrics,
+    JSONFormatter,
     _NoOpSpan,
     _NoOpTracer,
     get_logger,
-    trace_agent,
     initialize_telemetry,
+    trace_agent,
 )
-
 
 # ── JSONFormatter ──────────────────────────────────────────────────────────────
 
@@ -71,7 +70,7 @@ class TestJSONFormatter:
 
     def test_non_serializable_extra_converted_to_str(self):
         record = self._make_record("msg")
-        setattr(record, "obj", object())  # non-serializable
+        record.obj = object()  # non-serializable
         # Should not raise
         output = self.formatter.format(record)
         assert isinstance(output, str)
@@ -137,7 +136,6 @@ class TestTraceAgentDecorator:
         @trace_agent("test_agent")
         async def my_run(state, config):
             """My docstring."""
-            pass
         assert my_run.__doc__ == "My docstring."
 
     def test_decorated_function_runs(self):

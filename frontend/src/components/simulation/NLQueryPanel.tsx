@@ -13,6 +13,7 @@ import {
   TrendingUp, AlertTriangle, Loader2, CheckCircle2,
 } from "lucide-react";
 import { useNLQuery, NL_QUERY_SUGGESTIONS } from "@/hooks/useNLQuery";
+import { BaselineSourceBadge } from "@/components/ui/baseline-source-badge";
 import { cn } from "@/lib/utils";
 
 // ── Confidence badge ──────────────────────────────────────────────────────────
@@ -195,9 +196,15 @@ function SuggestionChips({ onSelect }: { onSelect: (q: string) => void }) {
 interface NLQueryPanelProps {
   jobId?: string | null;
   orgId?: string | null;
+  baselineSource?: string;
+  goldenPathReady?: boolean;
 }
 
-export function NLQueryPanel({ jobId }: NLQueryPanelProps) {
+export function NLQueryPanel({
+  jobId,
+  baselineSource,
+  goldenPathReady,
+}: NLQueryPanelProps) {
   const { ask, reset, result, isLoading, error, lastQuery } = useNLQuery();
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -229,14 +236,22 @@ export function NLQueryPanel({ jobId }: NLQueryPanelProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
-          <div>
-            <h3 className="text-sm font-semibold">Doğal Dil Simülasyonu</h3>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <Sparkles className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold">Doğal Dil Simülasyonu</h3>
+              {baselineSource && <BaselineSourceBadge source={baselineSource} />}
+            </div>
             <p className="text-xs text-muted-foreground">
               İş sorunuzu yazın — AI senaryoyu otomatik çalıştırır
             </p>
+            {goldenPathReady && (
+              <p className="text-[10px] text-emerald-400 mt-0.5">
+                Canonical baseline active — NL simülasyon gerçek metrikleri kullanır.
+              </p>
+            )}
           </div>
         </div>
         {result && (

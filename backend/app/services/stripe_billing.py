@@ -265,12 +265,12 @@ class StripeService:
 
         try:
             if at_period_end:
-                sub = self._stripe.Subscription.modify(
+                self._stripe.Subscription.modify(
                     subscription_id,
                     cancel_at_period_end=True,
                 )
             else:
-                sub = self._stripe.Subscription.cancel(subscription_id)
+                self._stripe.Subscription.cancel(subscription_id)
 
             return {"cancelled": True, "subscription_id": subscription_id, "error": None}
         except Exception as e:
@@ -433,7 +433,8 @@ async def _update_org_subscription(
 ) -> None:
     """Update organization subscription fields in the database."""
     try:
-        from sqlalchemy import update, text
+        from sqlalchemy import update
+
         from app.models.organization import Organization
 
         update_data: dict[str, Any] = {

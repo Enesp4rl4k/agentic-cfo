@@ -14,18 +14,18 @@ POST /api/v1/alerts/acknowledge/{job_id}/{alert_hash}
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
-from app.models.user import User
+from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 from app.services.alert_router import AlertRouter, RawAlert
 
 router = APIRouter()
@@ -45,7 +45,7 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
     """
     raw: list[RawAlert] = []
     job_id = job.id
-    ts = job.completed_at or job.updated_at or datetime.now(timezone.utc)
+    ts = job.completed_at or job.updated_at or datetime.now(UTC)
 
     # ── CFO pipeline alerts ────────────────────────────────────────────────
     cashflow = dashboard_data.get("cashflow") or {}
@@ -113,7 +113,7 @@ def _build_digest_response(
     return {
         "job_id":   job_id,
         "period":   period,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "summary": (
             f"{len(digest['critical'])} kritik, "
             f"{len(digest['high'])} yüksek, "
@@ -181,7 +181,7 @@ async def get_latest_digest(
 
     Useful for a daily morning briefing: "What happened overnight?"
     """
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = datetime.now(UTC) - timedelta(hours=hours)
 
     q = (
         select(AnalysisJob)
@@ -203,7 +203,7 @@ async def get_latest_digest(
         return {
             "data": {
                 "period": f"Son {hours} saat",
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": datetime.now(UTC).isoformat(),
                 "summary": "Bu dönemde tamamlanan analiz yok.",
                 "critical": [],
                 "high": [],
@@ -215,17 +215,22 @@ async def get_latest_digest(
             "error": None,
         }
 
-    # Collect all alerts from all jobs
+    # Batch-fetch all reports in a single query (resolving N+1 anti-pattern)
+    job_ids = [j.id for j in jobs]
+    report_result = await db.execute(
+        select(Report)
+        .where(Report.job_id.in_(job_ids), Report.report_format == ReportFormat.JSON)
+        .order_by(desc(Report.created_at))
+    )
+    all_reports = report_result.scalars().all()
+    reports_by_job: dict[str, Any] = {}
+    for rep in all_reports:
+        if rep.job_id not in reports_by_job:
+            reports_by_job[rep.job_id] = rep.data or {}
+
     all_raw: list[RawAlert] = []
     for job in jobs:
-        report_result = await db.execute(
-            select(Report)
-            .where(Report.job_id == job.id, Report.report_format == ReportFormat.JSON)
-            .order_by(desc(Report.created_at))
-            .limit(1)
-        )
-        rep = report_result.scalar_one_or_none()
-        dashboard_data = rep.data if rep else {}
+        dashboard_data = reports_by_job.get(job.id, {})
         all_raw.extend(_extract_raw_alerts(job, dashboard_data))
 
     # Route with dedup — alerts from same domain/message in different jobs are deduped
@@ -236,7 +241,7 @@ async def get_latest_digest(
         "data": {
             "period": f"Son {hours} saat",
             "job_count": len(jobs),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "summary": (
                 f"{len(jobs)} analiz tamamlandı — "
                 f"{len(digest['critical'])} kritik, "
@@ -315,7 +320,7 @@ async def get_top_alerts(
     }
 
 
-def _suggest_action(alert: "RawAlert") -> str:
+def _suggest_action(alert: RawAlert) -> str:
     """Generate a short actionable suggestion for an alert."""
     source = alert.source
     level = alert.level
@@ -349,8 +354,9 @@ async def acknowledge_alert(
     If Redis is unavailable, returns 200 with a warning.
     """
     try:
-        from app.worker import get_arq_pool
         import json
+
+        from app.worker import get_arq_pool
 
         pool = await get_arq_pool()
         ack_key = f"ack:{job_id}:{alert_fingerprint}"
@@ -359,7 +365,7 @@ async def acknowledge_alert(
             json.dumps({
                 "job_id": job_id,
                 "fingerprint": alert_fingerprint,
-                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                "acknowledged_at": datetime.now(UTC).isoformat(),
             }),
             ex=86400,  # 24h
         )

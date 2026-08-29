@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Users, TrendingUp, TrendingDown, AlertTriangle,
   BarChart2, DollarSign, UserMinus, UserCheck,
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { AgentCsvInput } from "@/components/ui/agent-csv-input";
+import { useCompanyContextStore } from "@/store/companyContext";
+
+const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -366,6 +369,7 @@ function CHROSummarySection({ data }: { data: CHROSummary }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CHRODashboardPage() {
+  const { orgId } = useCompanyContextStore();
   const [headcountCsv,  setHeadcountCsv]  = useState("");
   const [attritionCsv,  setAttritionCsv]  = useState("");
   const [compensationCsv, setCompensationCsv] = useState("");
@@ -374,6 +378,27 @@ export default function CHRODashboardPage() {
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState<CHROResult | null>(null);
   const [error,    setError]    = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        if (cancelled || !ctx) return;
+        if (ctx.company_name) setCompany(String(ctx.company_name));
+        if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
+        const last = ctx.last_chro_result;
+        if (last && typeof last === "object") setResult(last as CHROResult);
+      } catch {
+        /* empty until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -454,7 +479,7 @@ export default function CHRODashboardPage() {
             label="Headcount CSV"
             value={headcountCsv}
             onChange={setHeadcountCsv}
-            sampleData={PH.headcount}
+            sampleData={IS_DEMO ? PH.headcount : undefined}
             description="employee_id, department, level, role, fte, start_date, status"
             disabled={loading}
           />
@@ -462,7 +487,7 @@ export default function CHRODashboardPage() {
             label="Attrition CSV"
             value={attritionCsv}
             onChange={setAttritionCsv}
-            sampleData={PH.attrition}
+            sampleData={IS_DEMO ? PH.attrition : undefined}
             description="employee_id, department, tenure_years, departure_type, reason"
             disabled={loading}
           />
@@ -470,7 +495,7 @@ export default function CHRODashboardPage() {
             label="Compensation CSV"
             value={compensationCsv}
             onChange={setCompensationCsv}
-            sampleData={PH.compensation}
+            sampleData={IS_DEMO ? PH.compensation : undefined}
             description="employee_id, level, base_salary, equity_annual, market_rate"
             disabled={loading}
           />

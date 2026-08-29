@@ -1,7 +1,8 @@
 """Regional pack helpers — feature gates for locale-specific modules."""
 from __future__ import annotations
 
-from typing import Any, Collection, Iterable
+from collections.abc import Collection, Iterable
+from typing import Any
 
 # Pack id → API path prefixes / nav hrefs gated behind the pack
 TR_PACK_ID = "tr"
@@ -45,10 +46,7 @@ def org_has_tr_pack(org: Any) -> bool:
 
 def path_requires_tr_pack(path: str) -> bool:
     p = path.rstrip("/") or "/"
-    for prefix in TR_PACK_PATH_PREFIXES:
-        if p == prefix or p.startswith(prefix + "/"):
-            return True
-    return False
+    return any(p == prefix or p.startswith(prefix + "/") for prefix in TR_PACK_PATH_PREFIXES)
 
 
 def filter_nav_items_for_packs(

@@ -16,19 +16,19 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
 
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
+from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.user import User
-from app.models.smmm_onay import SMMMOnayKaydi, OnayDurumu
 
 router = APIRouter(dependencies=[Depends(require_tr_pack)])
 logger = logging.getLogger(__name__)
@@ -177,9 +177,9 @@ async def onayla(
 
     kayit.durum            = OnayDurumu.ONAYLANDI
     kayit.onaylayan_user_id = _user_id(current_user)
-    kayit.onay_zamani      = datetime.now(timezone.utc)
+    kayit.onay_zamani      = datetime.now(UTC)
     kayit.onay_notu        = req.onay_notu
-    kayit.updated_at       = datetime.now(timezone.utc)
+    kayit.updated_at       = datetime.now(UTC)
 
     await db.commit()
     logger.info("SMMM onay: kayit=%s user=%s", kayit_id, _user_id(current_user))
@@ -203,11 +203,11 @@ async def duzeltle(
 
     kayit.durum                  = OnayDurumu.DUZELTILDI
     kayit.onaylayan_user_id      = _user_id(current_user)
-    kayit.onay_zamani            = datetime.now(timezone.utc)
+    kayit.onay_zamani            = datetime.now(UTC)
     kayit.duzeltilmis_hesap_kodu = req.hesap_kodu
     kayit.duzeltilmis_hesap_adi  = req.hesap_adi
     kayit.duzeltme_aciklama      = req.aciklama
-    kayit.updated_at             = datetime.now(timezone.utc)
+    kayit.updated_at             = datetime.now(UTC)
 
     await db.commit()
     logger.info(
@@ -234,9 +234,9 @@ async def reddet(
 
     kayit.durum            = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = _user_id(current_user)
-    kayit.onay_zamani      = datetime.now(timezone.utc)
+    kayit.onay_zamani      = datetime.now(UTC)
     kayit.onay_notu        = req.neden
-    kayit.updated_at       = datetime.now(timezone.utc)
+    kayit.updated_at       = datetime.now(UTC)
 
     await db.commit()
     logger.info("SMMM red: kayit=%s user=%s neden=%s", kayit_id, _user_id(current_user), req.neden)
@@ -266,7 +266,7 @@ async def toplu_onayla(
     )
     kayitlar = result.scalars().all()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     approved_ids = []
     for kayit in kayitlar:
         kayit.durum             = OnayDurumu.ONAYLANDI

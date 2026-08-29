@@ -66,7 +66,7 @@ def _parse_register_csv(csv_text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for i, row in enumerate(reader, start=1):
         try:
-            def _safe_int(col, default: int = 3) -> int:
+            def _safe_int(col, default: int = 3, row: dict = row) -> int:
                 if not col or not row.get(col):
                     return default
                 try:

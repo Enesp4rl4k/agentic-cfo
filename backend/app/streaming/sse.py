@@ -24,8 +24,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class SSEManager:
             "event": "done",
             "job_id": job_id,
             "status": status,
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
         })
         # Sentinel None → tells subscribe() generator to stop
         queues = self._queues.get(job_id, [])
@@ -124,7 +124,7 @@ class SSEManager:
                         q.get(),
                         timeout=min(_KEEPALIVE_INTERVAL, remaining),
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Send SSE keepalive comment to prevent proxy timeouts
                     yield ": keepalive\n\n"
                     continue
@@ -169,7 +169,7 @@ def _calc_progress_pct(job_id: str, current_step: str | None = None) -> int:
     """Calculate progress percentage based on completed steps."""
     done = _completed_steps.get(job_id, [])
     total = len(_PIPELINE_STEPS)
-    count = sum(1 for s in done if s in _PIPELINE_STEPS)
+    count: float = sum(1 for s in done if s in _PIPELINE_STEPS)
     # Add half-step credit for currently running step
     if current_step and current_step in _PIPELINE_STEPS and current_step not in done:
         count += 0.5
@@ -209,7 +209,7 @@ async def publish_step_event(
         "confidence": confidence,
         "duration_ms": duration_ms,
         "progress_pct": progress_pct,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
     })
 
 
@@ -230,7 +230,7 @@ async def publish_agent_start_event(
         "current_agent": step,
         "progress_pct": progress_pct,
         "estimated_duration_s": estimated_duration_s,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
     })
 
 
@@ -245,6 +245,6 @@ async def publish_job_error(job_id: str, message: str) -> None:
         "event": "error",
         "job_id": job_id,
         "message": message,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
     })
     await sse_manager.publish_done(job_id, "failed")

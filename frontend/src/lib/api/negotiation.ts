@@ -6,8 +6,12 @@ export interface AgentConflict {
   status: string;
   consensus_score: number | null;
   severity?: string;
-  resolution: string | null;
+  resolution: string | Record<string, unknown> | null;
   created_at: string | null;
+  agent_a?: string;
+  agent_b?: string;
+  claim_a?: Record<string, unknown> | null;
+  claim_b?: Record<string, unknown> | null;
   winning_agent?: string | null;
   narrative?: string | null;
 }

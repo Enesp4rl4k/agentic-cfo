@@ -20,12 +20,12 @@
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import { MessageSquare, X, Send, Bot, User, ChevronDown, Sparkles, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api/client";
+import { sendAgentChatMessage, type AgentFilter } from "@/lib/api/chat";
+import { ChatEvidenceChips, type ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type AgentFilter =
-  | "all" | "cfo" | "cto" | "cmo" | "coo" | "chro" | "risk" | "audit";
+export type { AgentFilter };
 
 interface ChatMessage {
   id: string;
@@ -34,6 +34,7 @@ interface ChatMessage {
   ts: number;
   pending?: boolean;
   error?: boolean;
+  evidence?: ChatEvidenceMeta;
 }
 
 interface AgentChatPanelProps {
@@ -91,28 +92,6 @@ const DEFAULT_SUGGESTIONS: Record<AgentFilter, string[]> = {
   ],
 };
 
-// ── API ───────────────────────────────────────────────────────────────────────
-
-async function sendAgentChat(
-  question: string,
-  agentFilter: AgentFilter,
-  history: ChatMessage[]
-): Promise<string> {
-  const res = await apiClient.post<{
-    data: { answer: string; context_agents?: string[] };
-    error: string | null;
-  }>("/chat/agent", {
-    question,
-    agent_filter: agentFilter,
-    conversation_history: history
-      .filter((m) => !m.pending && !m.error)
-      .map((m) => ({ role: m.role, content: m.content })),
-    stream: false,
-  });
-  if (res.data.error) throw new Error(res.data.error);
-  return res.data.data.answer;
-}
-
 // ── Message bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {
@@ -136,24 +115,29 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       </div>
 
       {/* Bubble */}
-      <div className={cn(
-        "max-w-[82%] rounded-xl px-3 py-2 text-sm leading-relaxed",
-        isUser
-          ? "bg-primary text-primary-foreground rounded-tr-none"
-          : msg.error
-          ? "bg-destructive/10 text-destructive border border-destructive/20 rounded-tl-none"
-          : msg.pending
-          ? "bg-muted text-muted-foreground rounded-tl-none"
-          : "bg-muted text-foreground rounded-tl-none"
-      )}>
-        {msg.pending ? (
-          <span className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-subtle" style={{ animationDelay: "0ms" }} />
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-subtle" style={{ animationDelay: "180ms" }} />
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-subtle" style={{ animationDelay: "360ms" }} />
-          </span>
-        ) : (
-          <span className="whitespace-pre-wrap">{msg.content}</span>
+      <div className={cn("max-w-[82%]", isUser && "flex flex-col items-end")}>
+        <div className={cn(
+          "rounded-xl px-3 py-2 text-sm leading-relaxed",
+          isUser
+            ? "bg-primary text-primary-foreground rounded-tr-none"
+            : msg.error
+            ? "bg-destructive/10 text-destructive border border-destructive/20 rounded-tl-none"
+            : msg.pending
+            ? "bg-muted text-muted-foreground rounded-tl-none"
+            : "bg-muted text-foreground rounded-tl-none"
+        )}>
+          {msg.pending ? (
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-subtle" style={{ animationDelay: "0ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-subtle" style={{ animationDelay: "180ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-subtle" style={{ animationDelay: "360ms" }} />
+            </span>
+          ) : (
+            <span className="whitespace-pre-wrap">{msg.content}</span>
+          )}
+        </div>
+        {!isUser && !msg.pending && msg.evidence && (
+          <ChatEvidenceChips meta={msg.evidence} />
         )}
       </div>
     </div>
@@ -212,12 +196,17 @@ export function AgentChatPanel({
     setLoading(true);
 
     try {
-      const answer = await sendAgentChat(question.trim(), agentFilter, [...messages, userMsg]);
+      const { answer, evidence } = await sendAgentChatMessage(question.trim(), {
+        agentFilter,
+        history: [...messages, userMsg]
+          .filter((m) => !m.pending && !m.error)
+          .map(({ role, content }) => ({ role, content })),
+      });
 
       setMessages((prev) =>
         prev.map((m) =>
           m.id === pendingMsg.id
-            ? { ...m, content: answer, pending: false }
+            ? { ...m, content: answer, pending: false, evidence }
             : m
         )
       );

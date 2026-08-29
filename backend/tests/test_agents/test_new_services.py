@@ -10,10 +10,10 @@ All tests are fully deterministic — no LLM calls, no DB, no network.
 """
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
+import pytest
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CascadeSimulator
@@ -24,14 +24,14 @@ class TestCascadeSimulator:
 
     def _make_simulator(self, **kwargs):
         from app.services.cascade_simulator import CascadeSimulator
-        defaults = dict(
-            revenue_monthly=1_000_000_00,   # 1M TL in cents
-            headcount=50,
-            cash_balance=6_000_000_00,       # 6M TL
-            monthly_burn=500_000_00,          # 500K TL
-            monthly_revenue=1_000_000_00,
-            gross_margin=0.60,
-        )
+        defaults = {
+            "revenue_monthly": 1_000_000_00,   # 1M TL in cents
+            "headcount": 50,
+            "cash_balance": 6_000_000_00,       # 6M TL
+            "monthly_burn": 500_000_00,          # 500K TL
+            "monthly_revenue": 1_000_000_00,
+            "gross_margin": 0.60,
+        }
         defaults.update(kwargs)
         return CascadeSimulator(**defaults)
 
@@ -72,7 +72,7 @@ class TestCascadeSimulator:
         assert result is not None
 
     def test_high_runway_means_low_severity(self):
-        from app.services.cascade_simulator import TriggerType, ImpactLevel
+        from app.services.cascade_simulator import ImpactLevel, TriggerType
         sim = self._make_simulator()
         # 12+ months runway should have lower overall severity than 1 month
         result_low  = sim.simulate(TriggerType.CASH_CRISIS, runway_months=12.0)
@@ -357,7 +357,7 @@ class TestTemporalIntelligenceEngine:
         )
         assert event.recorded_at is not None
         # Should be a recent timestamp
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         diff = abs((now - event.recorded_at).total_seconds())
         assert diff < 10  # Within 10 seconds
 

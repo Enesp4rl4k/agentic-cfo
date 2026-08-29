@@ -19,8 +19,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
+from app.database import get_db
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -371,7 +371,7 @@ async def run_ceo_from_job(
 
     for src in sources:
         try:
-            with open(src.file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(src.file_path, encoding="utf-8", errors="replace") as f:
                 content = f.read()
         except OSError as exc:
             logger.warning("Could not read DataSource file %s: %s", src.file_path, exc)
@@ -449,37 +449,6 @@ async def run_ceo_from_job(
     }
 
 
-@router.post("/ceo/synthesize-from-context")
-async def synthesize_from_context(
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """
-    CEO Synthesis from CompanyContext — the "smart orchestration" endpoint.
-
-    Instead of re-running all pipelines, reads the org's CompanyContext
-    (all completed agent results) and runs ONLY the synthesis → strategic_priorities
-    → board_deck steps.
-
-    This is called:
-    - Automatically by auto_chain after multiple agents complete
-    - Manually from the CEO page "Refresh Synthesis" button
-    - From the Command Center "Full Synthesis" action
-
-    Requires auth — uses the current user's org_id to load context.
-    """
-    from app.api.auth import get_current_user
-    from fastapi import Request
-
-    # We need org_id but can't use Depends(get_current_user) here due to the
-    # existing function signature — use a workaround via the context service directly
-    # In production, add user: User = Depends(get_current_user) to the signature.
-    # For now, accept org_id as query param or default to "default".
-    raise HTTPException(
-        status_code=501,
-        detail="Use POST /ceo/synthesize with org_id parameter instead.",
-    )
-
-
 @router.post("/ceo/synthesize")
 async def synthesize_ceo_from_context(
     current_user: User = Depends(get_current_user),
@@ -502,15 +471,14 @@ async def synthesize_ceo_from_context(
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
     org_id = current_user.org_id
 
-    from app.services.company_context import get_company_context, save_company_context
     from app.agents.ceo.orchestrator import (
-        node_condense_summaries,
-        node_synthesis,
-        node_strategic_priorities,
-        node_board_deck,
         DEFAULT_CEO_RUN_CONFIG,
+        node_board_deck,
+        node_condense_summaries,
+        node_strategic_priorities,
+        node_synthesis,
     )
-    from app.agents.ceo.state import CEOState
+    from app.services.company_context import get_company_context, save_company_context
 
     # Load company context
     ctx = await get_company_context(org_id, db)
@@ -583,6 +551,12 @@ async def synthesize_ceo_from_context(
             ],
         })
         await save_company_context(ctx_fresh, db)
+        try:
+            from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+            await rebuild_semantic_snapshot(org_id, db, include_brief=True)
+        except Exception as rebuild_exc:
+            logger.warning("CEO synthesis semantic rebuild failed: %s", rebuild_exc)
     except Exception as exc:
         logger.warning("Failed to save CEO synthesis to context: %s", exc)
 

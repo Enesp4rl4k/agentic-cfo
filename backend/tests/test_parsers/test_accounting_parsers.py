@@ -2,10 +2,8 @@
 Tests for accounting parsers: Logo Tiger, Paraşüt.
 Uses synthetic CSV fixtures — no real files needed.
 """
-import pytest
 from app.parsers.accounting.logo_tiger import LogoTigerParser
 from app.parsers.accounting.parasut import ParasutParser
-
 
 # ── Logo Tiger fixtures ───────────────────────────────────────────────────────
 

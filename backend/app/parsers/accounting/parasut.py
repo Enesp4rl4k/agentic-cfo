@@ -28,10 +28,8 @@ from __future__ import annotations
 
 import csv
 import io
-import re
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-
 
 # Paraşüt işlem tipi → tx_type mapping
 _TYPE_MAP: dict[str, str] = {

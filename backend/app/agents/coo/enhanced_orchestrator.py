@@ -113,7 +113,7 @@ class COONegotiationScenarios:
         CFO: maliyet etkisi nedir?
         CHRO: ek personel gerekli mi?
         """
-        from app.services.agent_bus import get_agent_bus, QueryType
+        from app.services.agent_bus import QueryType, get_agent_bus
 
         bus = get_agent_bus()
 
@@ -181,7 +181,7 @@ class COONegotiationScenarios:
         """
         Kaynak kisintisi durumunda CHRO ve CFO'ya bildirim.
         """
-        from app.services.agent_bus import get_agent_bus, QueryType
+        from app.services.agent_bus import QueryType, get_agent_bus
 
         bus = get_agent_bus()
 

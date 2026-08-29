@@ -246,17 +246,17 @@ def _okr_status_badge(status: str) -> str:
 
 
 def _render_slide(slide: dict[str, Any], index: int) -> str:
-    chart_type = slide.get("chart_type", "")
+    slide.get("chart_type", "")
     num = slide.get("slide_number", index + 1)
     title = slide.get("title", f"Slide {num}")
     narrative = slide.get("narrative", "")
 
     parts = [
-        f'<div class="slide">',
-        f'  <div class="slide-header">',
+        '<div class="slide">',
+        '  <div class="slide-header">',
         f'    <span class="slide-number">Slide {num}</span>',
         f'    <span class="slide-title">{title}</span>',
-        f'  </div>',
+        '  </div>',
     ]
 
     if narrative:
@@ -323,7 +323,7 @@ def _render_okr_section(okr_status: dict[str, Any]) -> str:
     """Render OKR tracking as an extra PDF slide."""
     objectives = okr_status.get("objectives") or []
     narrative = okr_status.get("narrative", "")
-    period = okr_status.get("period", "")
+    okr_status.get("period", "")
 
     parts = [
         '<div class="slide">',
@@ -436,7 +436,7 @@ def board_deck_to_pdf(
     Raises RuntimeError on render failure.
     """
     try:
-        from weasyprint import HTML, CSS  # type: ignore[import]
+        from weasyprint import HTML  # type: ignore[import]
     except ImportError as exc:
         raise ImportError(
             "weasyprint is required for PDF export. "

@@ -26,8 +26,7 @@ Kullanım:
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -168,7 +167,12 @@ class BenchmarkReport:
     gaps:         list[str]     # geride kalınan metrikler
     summary:      str
 
+    @property
+    def weaknesses(self) -> list[str]:
+        return self.gaps
+
     def to_dict(self) -> dict[str, Any]:
+
         return {
             "sector":        self.sector,
             "company_name":  self.company_name,
@@ -293,7 +297,7 @@ class BenchmarkIntelligenceService:
         company_name: str = "Şirket",
     ) -> BenchmarkReport:
         items = []
-        monthly_rev = (pnl.get("revenue", 0) or 0) / 100 / 12
+        (pnl.get("revenue", 0) or 0) / 100 / 12
 
         # Net marj
         if (nm := pnl.get("net_margin")) is not None:
@@ -390,10 +394,14 @@ class BenchmarkIntelligenceService:
         cto_data:    dict[str, Any] | None = None,
         sector:      str = "saas",
         company_name: str = "Şirket",
+        cfo_data:    dict[str, Any] | None = None,
     ) -> BenchmarkReport:
         """Tüm domain'leri karşılaştır."""
+        if pnl is None and cfo_data is not None:
+            pnl = cfo_data
         all_items: list[BenchmarkItem] = []
         monthly_rev = ((pnl or {}).get("revenue", 0) or 0) / 100 / 12
+
 
         if pnl:
             r = self.compare_cfo(pnl, cashflow, forecast, sector, company_name)

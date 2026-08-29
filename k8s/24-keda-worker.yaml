@@ -1,0 +1,41 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-keda-autoscaler
+  namespace: aicfo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+  minReplicaCount: 1
+  maxReplicaCount: 15
+  cooldownPeriod: 60
+  pollingInterval: 15
+  triggers:
+  - type: redis
+    metadata:
+      address: redis.aicfo.svc.cluster.local:6379
+      listName: arq:queue:analysis
+      listLength: "5"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-maintenance-keda-autoscaler
+  namespace: aicfo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker-maintenance
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  cooldownPeriod: 120
+  pollingInterval: 30
+  triggers:
+  - type: redis
+    metadata:
+      address: redis.aicfo.svc.cluster.local:6379
+      listName: arq:queue:maintenance
+      listLength: "10"

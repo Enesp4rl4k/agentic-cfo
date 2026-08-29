@@ -33,7 +33,7 @@ def cfo_benchmark_margins(
 ) -> dict[str, Any]:
     """
     CFO benchmark: Net margin, Gross margin, EBITDA margin vs sector.
-    
+
     Returns: {
         gross_margin: {...comparison...},
         net_margin: {...comparison...},
@@ -42,11 +42,11 @@ def cfo_benchmark_margins(
     }
     """
     engine = get_benchmark_engine()
-    
+
     gross_margin = company_pnl.get("gross_margin", 0)
     net_margin = company_pnl.get("net_margin", 0)
     ebitda_margin = company_pnl.get("ebitda_margin", 0)
-    
+
     return {
         "gross_margin": engine.compare_to_benchmark("gross_margin", gross_margin, sector),
         "net_margin": engine.compare_to_benchmark("net_margin", net_margin, sector),
@@ -65,32 +65,32 @@ def cfo_benchmark_returns(
 ) -> dict[str, Any]:
     """
     CFO benchmark: ROA (Return on Assets) and ROE (Return on Equity).
-    
+
     Args:
         company_financials: {net_income_cents, total_assets_cents, total_equity_cents}
         sector: sector code
-    
+
     Returns: {roa_comparison, roe_comparison, financial_health}
     """
     engine = get_benchmark_engine()
-    
+
     # Calculate ROA and ROE
     net_income = company_financials.get("net_income_cents", 0) / 100
     total_assets = company_financials.get("total_assets_cents", 1) / 100
     total_equity = company_financials.get("total_equity_cents", 1) / 100
-    
+
     roa = (net_income / total_assets) if total_assets > 0 else 0
     roe = (net_income / total_equity) if total_equity > 0 else 0
-    
+
     roa_comp = engine.compare_to_benchmark("roa", roa, sector)
     roe_comp = engine.compare_to_benchmark("roe", roe, sector)
-    
+
     return {
         "roa": roa_comp,
         "roe": roe_comp,
         "gap_analysis": {
             "roa_gap": engine.calculate_gap_analysis(
-                roa, 
+                roa,
                 roa_comp["benchmark"]["median"],
                 "Return on Assets",
                 sector
@@ -112,19 +112,19 @@ def cfo_benchmark_leverage(
 ) -> dict[str, Any]:
     """
     CFO benchmark: Debt-to-Equity ratio and current ratio.
-    
+
     Returns: {debt_to_equity_comparison, current_ratio_comparison}
     """
     engine = get_benchmark_engine()
-    
+
     total_debt = company_balance_sheet.get("total_debt_cents", 0) / 100
     total_equity = company_balance_sheet.get("total_equity_cents", 1) / 100
     current_assets = company_balance_sheet.get("current_assets_cents", 0) / 100
     current_liabilities = company_balance_sheet.get("current_liabilities_cents", 1) / 100
-    
+
     debt_to_equity = total_debt / total_equity if total_equity > 0 else 0
     current_ratio = current_assets / current_liabilities if current_liabilities > 0 else 0
-    
+
     return {
         "debt_to_equity": engine.compare_to_benchmark("debt_to_equity", debt_to_equity, sector),
         "current_ratio": engine.compare_to_benchmark("current_ratio", current_ratio, sector),
@@ -154,26 +154,26 @@ def cto_benchmark_cloud_efficiency(
 ) -> dict[str, Any]:
     """
     CTO benchmark: Cloud efficiency (waste %, utilization).
-    
+
     Args:
         company_infra: {infra_cost_cents, infra_waste_cents, headcount}
         sector: sector code
-    
+
     Returns: {waste_ratio, cost_per_engineer, efficiency_score}
     """
     infra_cost = company_infra.get("infra_cost_cents", 0) / 100
     infra_waste = company_infra.get("infra_waste_cents", 0) / 100
     headcount = company_infra.get("headcount", 1)
-    
+
     waste_ratio = (infra_waste / infra_cost) if infra_cost > 0 else 0
     cost_per_engineer = (infra_cost / headcount) if headcount > 0 else 0
-    
+
     # Sector benchmark for efficiency
     engine = get_benchmark_engine()
     sector_benchmark = engine.get_sector_benchmark("opex_to_revenue", sector)
-    
+
     efficiency_score = max(0, 100 - (waste_ratio * 100))
-    
+
     return {
         "waste_ratio": waste_ratio,
         "waste_percentage": round(waste_ratio * 100, 1),
@@ -197,22 +197,22 @@ def cto_benchmark_tech_debt(
 ) -> dict[str, Any]:
     """
     CTO benchmark: Tech debt score vs sector.
-    
+
     Args:
         company_tech: {debt_score (0-10), velocity_trend, mttr_hours}
         sector: sector code
-    
+
     Returns: {debt_comparison, velocity_trend, incident_response}
     """
-    engine = get_benchmark_engine()
-    
+    get_benchmark_engine()
+
     debt_score = company_tech.get("debt_score", 5.0)
     velocity_trend = company_tech.get("velocity_trend", "stable")
     mttr_hours = company_tech.get("mttr_hours", 4.0)
-    
+
     # Normalize debt score as a percentage (inverted: lower is better)
-    debt_ratio = debt_score / 10.0
-    
+    debt_score / 10.0
+
     return {
         "debt_score": debt_score,
         "debt_health": (
@@ -224,7 +224,7 @@ def cto_benchmark_tech_debt(
         "velocity_trend": velocity_trend,
         "mttr_hours": mttr_hours,
         "incident_response_benchmark": _evaluate_incident_response(mttr_hours),
-        "sector_context": f"Sektörde ortalama borç skoru: 5.5/10",
+        "sector_context": "Sektörde ortalama borç skoru: 5.5/10",
         "action_items": _tech_debt_recommendations(debt_score),
     }
 
@@ -240,25 +240,25 @@ def chro_benchmark_headcount(
 ) -> dict[str, Any]:
     """
     CHRO benchmark: Headcount growth vs sector.
-    
+
     Args:
         company_hr: {headcount, headcount_prev_year, revenue_cents}
         sector: sector code
-    
+
     Returns: {growth_comparison, productivity, efficiency}
     """
     engine = get_benchmark_engine()
-    
+
     headcount = company_hr.get("headcount", 1)
     headcount_prev = company_hr.get("headcount_prev_year", headcount)
     revenue = company_hr.get("revenue_cents", 0) / 100
-    
+
     headcount_growth = ((headcount - headcount_prev) / headcount_prev) if headcount_prev > 0 else 0
     revenue_per_employee = (revenue / headcount) if headcount > 0 else 0
-    
+
     growth_comp = engine.compare_to_benchmark("headcount_growth_yoy", headcount_growth, sector)
     revenue_bench = engine.get_sector_benchmark("revenue_per_headcount", sector)
-    
+
     return {
         "headcount_growth": growth_comp,
         "growth_gap": engine.calculate_gap_analysis(
@@ -286,20 +286,20 @@ def chro_benchmark_compensation(
 ) -> dict[str, Any]:
     """
     CHRO benchmark: Compensation ratios vs sector.
-    
+
     Args:
         company_hr: {total_compensation_cents, headcount, revenue_cents}
         sector: sector code
-    
+
     Returns: {compensation_per_head, compensation_ratio}
     """
     total_comp = company_hr.get("total_compensation_cents", 0) / 100
     headcount = company_hr.get("headcount", 1)
     revenue = company_hr.get("revenue_cents", 0) / 100
-    
+
     comp_per_head = (total_comp / headcount) if headcount > 0 else 0
     comp_ratio = (total_comp / revenue) if revenue > 0 else 0
-    
+
     return {
         "compensation_per_employee_annual": round(comp_per_head, 0),
         "compensation_to_revenue_ratio": round(comp_ratio, 4),
@@ -319,17 +319,17 @@ def chro_benchmark_attrition(
 ) -> dict[str, Any]:
     """
     CHRO benchmark: Employee attrition rate vs sector.
-    
+
     Args:
         company_hr: {attrition_rate, voluntary_attrition, involuntary_attrition}
         sector: sector code
-    
+
     Returns: {attrition_comparison, health_assessment}
     """
     attrition_rate = company_hr.get("attrition_rate", 0.15)
     voluntary = company_hr.get("voluntary_attrition", attrition_rate * 0.7)
     involuntary = company_hr.get("involuntary_attrition", attrition_rate * 0.3)
-    
+
     # Sector benchmarks (annual attrition %)
     sector_benchmarks = {
         "technology": 0.18,
@@ -338,7 +338,7 @@ def chro_benchmark_attrition(
         "default": 0.15,
     }
     sector_benchmark = sector_benchmarks.get(sector, 0.15)
-    
+
     return {
         "annual_attrition_rate": round(attrition_rate * 100, 1),
         "voluntary_attrition": round(voluntary * 100, 1),
@@ -366,27 +366,27 @@ def cmo_benchmark_unit_economics(
 ) -> dict[str, Any]:
     """
     CMO benchmark: CAC (Customer Acquisition Cost), LTV (Lifetime Value), payback period.
-    
+
     Args:
         company_marketing: {
             cac_dollars, ltv_dollars, payback_months,
             customer_count, monthly_recurring_revenue_cents
         }
         sector: sector code
-    
+
     Returns: {cac_comparison, ltv_comparison, ltv_cac_ratio, payback_comparison}
     """
     engine = get_benchmark_engine()
-    
+
     cac = company_marketing.get("cac_dollars", 0)
     ltv = company_marketing.get("ltv_dollars", 0)
     payback_months = company_marketing.get("payback_months", 12)
-    
+
     ltv_cac_ratio = (ltv / cac) if cac > 0 else 0
-    
+
     payback_comp = engine.compare_to_benchmark("cac_payback_months", payback_months, sector)
     ltv_cac_comp = engine.compare_to_benchmark("ltv_to_cac_ratio", ltv_cac_ratio, sector)
-    
+
     return {
         "cac_usd": round(cac, 2),
         "ltv_usd": round(ltv, 2),
@@ -415,19 +415,19 @@ def coo_benchmark_efficiency(
 ) -> dict[str, Any]:
     """
     COO benchmark: Operational efficiency (cycle times, SLA, utilization).
-    
+
     Args:
         company_operations: {
             process_cycle_days, sla_compliance_pct, resource_utilization_pct
         }
         sector: sector code
-    
+
     Returns: {cycle_time_assessment, sla_assessment, utilization_assessment}
     """
     cycle_days = company_operations.get("process_cycle_days", 10)
     sla_compliance = company_operations.get("sla_compliance_pct", 95)
     utilization = company_operations.get("resource_utilization_pct", 80)
-    
+
     return {
         "process_cycle_days": cycle_days,
         "process_efficiency": (
@@ -467,15 +467,15 @@ def risk_benchmark_kri_thresholds(
 ) -> dict[str, Any]:
     """
     Risk benchmark: KRI (Key Risk Indicator) thresholds vs sector norms.
-    
+
     Args:
         company_risk: {kri_scores: {name: value, ...}, risk_profile}
         sector: sector code
-    
+
     Returns: {kri_assessments, overall_risk_score, recommendations}
     """
     kri_scores = company_risk.get("kri_scores", {})
-    
+
     # Sector-based thresholds
     sector_thresholds = {
         "banking": {"credit_risk": 0.08, "liquidity_risk": 0.15, "operational_risk": 0.10},
@@ -483,7 +483,7 @@ def risk_benchmark_kri_thresholds(
         "default": {"operational_risk": 0.10, "financial_risk": 0.12, "market_risk": 0.08},
     }
     thresholds = sector_thresholds.get(sector, sector_thresholds["default"])
-    
+
     assessments = {}
     overall_score = 0
     for kri_name, kri_value in kri_scores.items():
@@ -500,7 +500,7 @@ def risk_benchmark_kri_thresholds(
             "status": status,
         }
         overall_score += kri_value
-    
+
     return {
         "kri_assessments": assessments,
         "overall_kri_score": round(overall_score / max(len(kri_scores), 1), 4),
@@ -520,7 +520,7 @@ def _determine_position(comparisons: list[dict[str, Any]]) -> str:
     pos_scores = {"bottom_25": 1, "p25_p50": 2, "p50_p75": 3, "top_25": 4}
     scores = [pos_scores.get(p, 2) for p in positions]
     avg_score = sum(scores) / len(scores) if scores else 2
-    
+
     return (
         "sektörün üstünde" if avg_score >= 3.5 else
         "sektör ortalamasında" if avg_score >= 2.5 else
@@ -605,7 +605,7 @@ def _assess_operational_health(cycle_days: float, sla_compliance: float, utiliza
         scores += 1
     if utilization > 75:
         scores += 1
-    
+
     if scores == 3:
         return "Mükemmel - tüm metrikler sağlıklı"
     elif scores == 2:

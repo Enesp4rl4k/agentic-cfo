@@ -8,7 +8,7 @@ This module handles:
   - Usage metering: plan limit check before upload
   - Returning the HTTP response
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,15 +19,15 @@ from app.database import get_db
 from app.models.user import User
 from app.services.upload_service import (
     FileValidationError,
-    get_extension,
-    validate_extension,
-    stream_to_disk,
     create_analysis_job,
+    get_extension,
+    stream_to_disk,
+    validate_extension,
 )
 from app.services.usage_meter import (
+    UsageLimitExceeded,
     check_upload_limit,
     record_usage_event,
-    UsageLimitExceeded,
 )
 
 router = APIRouter()
@@ -110,7 +110,7 @@ async def upload_file(
                 "job_id": str(job.id),
                 "file_type": ext,
                 "auto_queued": queued,
-                "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                "uploaded_at": datetime.now(UTC).isoformat(),
             },
             org_id=str(org_id) if org_id else f"user:{current_user.id}",
             job_id=str(job.id),
@@ -129,7 +129,7 @@ async def upload_file(
             "status": job.status,
             "queue_status": "queued" if queued else "not_queued",
             "auto_queued": queued,
-            "queued_at": datetime.now(timezone.utc).isoformat() if queued else None,
+            "queued_at": datetime.now(UTC).isoformat() if queued else None,
         },
         "error": None,
     }

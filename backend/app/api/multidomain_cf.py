@@ -13,8 +13,8 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -61,6 +61,63 @@ async def _load_ctx(
     org_id: str | None,
     db: AsyncSession,
 ) -> dict[str, Any]:
+    """
+    Load CF baselines. Prefer semantic snapshot metrics, then CompanyContext
+    last_*_result, then job Report JSON.
+    """
+    resolved_org = org_id
+    out: dict[str, Any] = {}
+
+    if resolved_org:
+        try:
+            from app.services.company_context import get_company_context
+            from app.services.semantic.store import get_latest_semantic_snapshot
+
+            snap = await get_latest_semantic_snapshot(str(resolved_org), db)
+            ctx = await get_company_context(str(resolved_org), db)
+            cfo = ctx.last_cfo_result or {}
+            dash = cfo.get("dashboard") or cfo
+            pnl = dict(dash.get("pnl") or {})
+            cashflow = dict(dash.get("cashflow") or {})
+            forecast = dict(dash.get("forecast") or {})
+
+            if snap is not None:
+                vals = snap.values()
+                # Inject semantic baselines into pnl/cashflow/forecast shapes CF engines expect
+                if vals.get("finance.revenue") is not None and "revenue" not in pnl:
+                    pnl["revenue"] = vals["finance.revenue"]
+                    pnl["revenue_cents"] = vals["finance.revenue"]
+                if vals.get("finance.net_margin") is not None:
+                    pnl["net_margin"] = vals["finance.net_margin"]
+                if vals.get("finance.operating_cashflow") is not None:
+                    cashflow["operating"] = vals["finance.operating_cashflow"]
+                    cashflow["operating_cents"] = vals["finance.operating_cashflow"]
+                if vals.get("finance.runway_months") is not None:
+                    scenarios = dict(forecast.get("scenarios") or {})
+                    base = dict(scenarios.get("base") or {})
+                    base["runway_months"] = vals["finance.runway_months"]
+                    scenarios["base"] = base
+                    forecast["scenarios"] = scenarios
+                out["semantic_metrics"] = vals
+                out["semantic_period"] = snap.period.key
+                out["semantic_currency"] = snap.currency
+
+            out.update(
+                {
+                    "pnl": pnl,
+                    "cashflow": cashflow,
+                    "forecast": forecast,
+                    "chro_data": ctx.last_chro_result or {},
+                    "cto_data": ctx.last_cto_result or {},
+                    "cmo_data": ctx.last_cmo_result or {},
+                    "coo_data": ctx.last_coo_result or {},
+                }
+            )
+            if out.get("pnl") or out.get("semantic_metrics"):
+                return out
+        except Exception as exc:
+            logger.debug("Semantic/context CF baseline failed: %s", exc)
+
     if job_id:
         from app.models.report import Report, ReportFormat  # type: ignore[attr-defined]
         stmt = (
@@ -70,38 +127,52 @@ async def _load_ctx(
             .limit(1)
         )
         row = (await db.execute(stmt)).scalar_one_or_none()
-        if row and row.content:
+        raw = None
+        if row is not None:
+            raw = getattr(row, "data", None) or getattr(row, "content", None)
+        if raw:
             try:
                 import json
-                data = json.loads(row.content) if isinstance(row.content, str) else row.content
+                data = json.loads(raw) if isinstance(raw, str) else raw
                 return {
-                    "pnl":      data.get("pnl") or {},
+                    "pnl": data.get("pnl") or {},
                     "cashflow": data.get("cashflow") or {},
                     "forecast": data.get("forecast") or {},
                 }
             except Exception:
                 pass
 
-    if org_id:
-        try:
-            from app.services.company_context import get_company_context
-            ctx = await get_company_context(org_id)
-            if ctx:
-                results = ctx.get("agent_results") or {}
-                cfo_r = results.get("cfo") or {}
-                return {
-                    "pnl":       cfo_r.get("pnl") or {},
-                    "cashflow":  cfo_r.get("cashflow") or {},
-                    "forecast":  cfo_r.get("forecast") or {},
-                    "chro_data": results.get("chro") or {},
-                    "cto_data":  results.get("cto") or {},
-                    "cmo_data":  results.get("cmo") or {},
-                    "coo_data":  results.get("coo") or {},
-                }
-        except Exception as exc:
-            logger.debug("Context yuklenemedi: %s", exc)
+    return out
 
-    return {}
+
+async def _attach_cf_to_brief(
+    org_id: str | None,
+    cf_action: str,
+    db: AsyncSession,
+) -> None:
+    """Persist linked_cf_action hint onto decision brief options after a what-if run."""
+    if not org_id:
+        return
+    try:
+        from app.services.semantic.rebuild import rebuild_semantic_snapshot
+        from app.services.semantic.store import get_latest_semantic_snapshot, save_semantic_snapshot
+
+        snap = await rebuild_semantic_snapshot(str(org_id), db, include_brief=True)
+        if snap is None or snap.brief is None:
+            snap = await get_latest_semantic_snapshot(str(org_id), db)
+        if snap is None or snap.brief is None:
+            return
+        for opt in snap.brief.options:
+            if opt.linked_cf_action == cf_action:
+                opt.impact_summary = f"{opt.impact_summary} (last what-if: {cf_action})"
+        await save_semantic_snapshot(snap, db)
+    except Exception as exc:
+        logger.debug("attach CF to brief skipped: %s", exc)
+
+
+def _cf_engine_kwargs(ctx: dict[str, Any]) -> dict[str, Any]:
+    keys = ("pnl", "cashflow", "forecast", "chro_data", "cto_data", "cmo_data", "coo_data")
+    return {k: ctx[k] for k in keys if k in ctx}
 
 
 # ── Endpoint'ler ───────────────────────────────────────────────────────────────
@@ -118,8 +189,9 @@ async def multidomain_headcount(
     """
     from app.services.multidomain_counterfactual import get_multidomain_cf
 
-    ctx = await _load_ctx(req.job_id, req.org_id, db)
-    engine = get_multidomain_cf(**ctx)
+    org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    ctx = await _load_ctx(req.job_id, org, db)
+    engine = get_multidomain_cf(**_cf_engine_kwargs(ctx))
 
     try:
         result = engine.analyze_headcount_change(
@@ -134,7 +206,10 @@ async def multidomain_headcount(
         logger.exception("Headcount MD CF hatasi: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return result.to_dict()
+    await _attach_cf_to_brief(org, "headcount_change", db)
+    payload = result.to_dict()
+    payload["baseline_source"] = "semantic" if ctx.get("semantic_metrics") else "context"
+    return payload
 
 
 @router.post("/multidomain-cf/marketing")
@@ -146,8 +221,9 @@ async def multidomain_marketing(
     """Pazarlama yatiriminin CFO + CMO + COO uzerindeki birlesik etkisi."""
     from app.services.multidomain_counterfactual import get_multidomain_cf
 
-    ctx = await _load_ctx(req.job_id, req.org_id, db)
-    engine = get_multidomain_cf(**ctx)
+    org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    ctx = await _load_ctx(req.job_id, org, db)
+    engine = get_multidomain_cf(**_cf_engine_kwargs(ctx))
 
     try:
         result = engine.analyze_marketing_investment(
@@ -159,7 +235,10 @@ async def multidomain_marketing(
         logger.exception("Marketing MD CF hatasi: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return result.to_dict()
+    await _attach_cf_to_brief(org, "marketing_invest", db)
+    payload = result.to_dict()
+    payload["baseline_source"] = "semantic" if ctx.get("semantic_metrics") else "context"
+    return payload
 
 
 @router.post("/multidomain-cf/tech")
@@ -171,8 +250,9 @@ async def multidomain_tech(
     """Teknoloji yatiriminin CFO + CTO + COO uzerindeki birlesik etkisi."""
     from app.services.multidomain_counterfactual import get_multidomain_cf
 
-    ctx = await _load_ctx(req.job_id, req.org_id, db)
-    engine = get_multidomain_cf(**ctx)
+    org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    ctx = await _load_ctx(req.job_id, org, db)
+    engine = get_multidomain_cf(**_cf_engine_kwargs(ctx))
 
     try:
         result = engine.analyze_tech_investment(
@@ -185,7 +265,10 @@ async def multidomain_tech(
         logger.exception("Tech MD CF hatasi: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return result.to_dict()
+    await _attach_cf_to_brief(org, "tech_investment", db)
+    payload = result.to_dict()
+    payload["baseline_source"] = "semantic" if ctx.get("semantic_metrics") else "context"
+    return payload
 
 
 @router.get("/multidomain-cf/actions")

@@ -14,7 +14,6 @@ from typing import Any
 
 from app.agents.risk.state import RiskState, RiskStepLog
 
-
 # ── Parsing ────────────────────────────────────────────────────────────────────
 
 def _parse_kri_csv(csv_text: str) -> list[dict[str, Any]]:
@@ -46,7 +45,7 @@ def _parse_kri_csv(csv_text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for i, row in enumerate(reader, start=1):
         try:
-            def _flt(col: str | None, default: float = 0.0) -> float:
+            def _flt(col: str | None, default: float = 0.0, row: dict = row) -> float:
                 if not col or not row.get(col):
                     return default
                 try:

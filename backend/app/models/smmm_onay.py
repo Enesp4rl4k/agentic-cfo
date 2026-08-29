@@ -17,18 +17,17 @@ Onay gerektiren durumlar (double_entry.py'de belirlenir):
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Text, Numeric, Boolean, JSON, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class OnayDurumu(StrEnum):

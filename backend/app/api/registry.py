@@ -45,9 +45,12 @@ _ROUTERS = [
     ("app.api.org",                 "router", "org"),
     ("app.api.pilot",               "router", "pilot"),
     ("app.api.context",             "router", "context"),
+    ("app.api.semantic",            "router", "semantic"),
     ("app.api.notifications",       "router", "notifications"),
     ("app.api.agent_jobs",          "router", "agent-jobs"),
     ("app.api.integrations_github", "router", "integrations"),
+    ("app.api.connectors",          "router", "connectors"),      # Connector Platform (Faz 13)
+    ("app.api.runs",                "router", "runs"),            # Agent run ledger (Faz 14)
     ("app.api.muhasebe",            "router", "muhasebe"),         # MUHASEBE-6
     ("app.api.counterfactual",      "router", "counterfactual"),   # S6
     ("app.api.cascade",             "router", "cascade"),          # Cascade Risk Simulator
@@ -81,6 +84,9 @@ _ROUTERS = [
     ("app.api.ws_alerts",               "router", "ws-alerts"),                   # M1: WebSocket org-channel + alert history
     ("app.api.reports_pdf",             "router", "reports-pdf"),                  # M2: PDF report generation (WeasyPrint)
     ("app.api.system",                  "router", "system"),                       # Global management/ops health
+    ("app.api.actions",                 "router", "actions"),                      # Human-in-the-Loop Action Execution
+    ("app.api.ingestion_webhooks",      "router", "webhooks"),                     # Autonomous e-Fatura & Bank Webhooks
+    ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
 ]
 
 _API_PREFIX = "/api/v1"

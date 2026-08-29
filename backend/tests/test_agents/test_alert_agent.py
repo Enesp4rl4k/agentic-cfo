@@ -3,15 +3,13 @@ Tests for alert_agent.py — pure alert builder functions (no LLM, no DB).
 Covers: _check_profitability, _check_cashflow, _check_growth, _check_budget
 and THRESHOLDS constants.
 """
-import pytest
 from app.agents.alert_agent import (
-    _check_profitability,
+    THRESHOLDS,
+    _check_budget,
     _check_cashflow,
     _check_growth,
-    _check_budget,
-    THRESHOLDS,
+    _check_profitability,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

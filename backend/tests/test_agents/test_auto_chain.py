@@ -1,5 +1,5 @@
 """
-Tests for app.services.auto_chain
+Tests for app.agents.orchestration.auto_chain
 
 Covers:
   - AGENT_CHAIN mapping correctness
@@ -14,27 +14,24 @@ Covers:
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.auto_chain import (
+from app.agents.orchestration.auto_chain import (
     AGENT_CHAIN,
     CEO_TRIGGER_AGENTS,
     FEEDBACK_RULES,
-    on_agent_complete,
-    _cfo_has_critical_anomalies,
-    _cfo_has_cash_crisis,
-    _cto_has_low_velocity,
-    _cmo_has_high_cac,
+    _build_audit_findings_from_cfo,
     _build_kri_csv_from_cfo,
     _build_risk_csv_from_cfo,
-    _build_audit_findings_from_cfo,
+    _cfo_has_cash_crisis,
+    _cfo_has_critical_anomalies,
+    _cmo_has_high_cac,
+    _cto_has_low_velocity,
+    on_agent_complete,
 )
 from app.services.company_context import CompanyContext
-
 
 # ── Test fixtures ─────────────────────────────────────────────────────────────
 
@@ -275,6 +272,15 @@ class TestCSVBuilders:
 # ── on_agent_complete ─────────────────────────────────────────────────────────
 
 class TestOnAgentComplete:
+    @pytest.fixture(autouse=True)
+    def _stub_semantic_rebuild(self):
+        with patch(
+            "app.agents.orchestration.auto_chain.rebuild_semantic_snapshot",
+            new=AsyncMock(),
+        ) as mocked:
+            self.rebuild = mocked
+            yield mocked
+
     @pytest.mark.asyncio
     async def test_cfo_complete_triggers_risk(self):
         ctx = _ctx_with_cfo()
@@ -291,11 +297,11 @@ class TestOnAgentComplete:
             run_called.append("risk")
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=mock_get_ctx),
-            patch("app.services.auto_chain.save_company_context", new=mock_save_ctx),
-            patch("app.services.auto_chain._run_risk_from_context", new=mock_run_risk),
-            patch("app.services.auto_chain._run_audit_from_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=mock_get_ctx),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=mock_save_ctx),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context", new=mock_run_risk),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
         ):
             await on_agent_complete("cfo", "org-test", {}, db=None)
 
@@ -314,11 +320,11 @@ class TestOnAgentComplete:
             audit_called.append("audit")
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_risk_from_context",  new=AsyncMock()),
-            patch("app.services.auto_chain._run_audit_from_context", new=mock_run_audit),
-            patch("app.services.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context",  new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=mock_run_audit),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
         ):
             await on_agent_complete("cfo", "org-test", {}, db=None)
 
@@ -333,11 +339,11 @@ class TestOnAgentComplete:
             ceo_called.append(True)
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_risk_from_context",  new=AsyncMock()),
-            patch("app.services.auto_chain._run_audit_from_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_ceo_synthesis",      new=mock_ceo),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context",  new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",      new=mock_ceo),
         ):
             await on_agent_complete("cfo", "org-test", {}, db=None)
 
@@ -353,15 +359,62 @@ class TestOnAgentComplete:
             ceo_called.append(True)
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_risk_from_context",  new=AsyncMock()),
-            patch("app.services.auto_chain._run_audit_from_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_ceo_synthesis",      new=mock_ceo),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context",  new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",      new=mock_ceo),
         ):
             await on_agent_complete("cfo", "org-test", {}, db=None)
 
         assert len(ceo_called) == 0
+
+    @pytest.mark.asyncio
+    async def test_conductor_plan_skips_downstream_and_ceo(self):
+        """When conductor returns no runnable roles, auto-chain must not enqueue."""
+        ctx = _ctx_with_cfo()
+        risk_called: list[str] = []
+        ceo_called: list[bool] = []
+
+        mock_plan = MagicMock()
+        mock_plan.to_dict.return_value = {"roles": []}
+        mock_plan.roles = []
+        mock_plan.runnable_roles.return_value = []
+
+        async def mock_run_risk(*args, **kwargs):
+            risk_called.append("risk")
+
+        async def mock_ceo(*args, **kwargs):
+            ceo_called.append(True)
+
+        with (
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.platform.conductor.ManagementConductor") as mock_conductor_cls,
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context", new=mock_run_risk),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis", new=mock_ceo),
+        ):
+            mock_conductor_cls.return_value.plan.return_value = mock_plan
+            await on_agent_complete("cfo", "org-test", {}, db=None)
+
+        assert risk_called == []
+        assert ceo_called == []
+
+    @pytest.mark.asyncio
+    async def test_cfo_complete_awaits_semantic_rebuild(self):
+        ctx = _ctx_with_cfo()
+        with (
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis", new=AsyncMock()),
+        ):
+            await on_agent_complete("cfo", "org-test", {}, db=MagicMock())
+
+        self.rebuild.assert_awaited()
+        assert self.rebuild.await_args.args[0] == "org-test"
 
     @pytest.mark.asyncio
     async def test_risk_complete_triggers_compliance(self):
@@ -373,10 +426,10 @@ class TestOnAgentComplete:
             compliance_called.append(True)
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_compliance_from_context", new=mock_compliance),
-            patch("app.services.auto_chain._run_ceo_synthesis",           new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_compliance_from_context", new=mock_compliance),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",           new=AsyncMock()),
         ):
             await on_agent_complete("risk", "org-test", {}, db=None)
 
@@ -392,9 +445,9 @@ class TestOnAgentComplete:
             ceo_called.append(True)
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_ceo_synthesis", new=mock_ceo),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis", new=mock_ceo),
         ):
             # "audit" is not in CEO_TRIGGER_AGENTS
             await on_agent_complete("audit", "org-test", {}, db=None)
@@ -408,7 +461,7 @@ class TestOnAgentComplete:
             raise RuntimeError("Simulated failure in chained agent")
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=boom),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=boom),
         ):
             # Should complete without raising
             await on_agent_complete("cfo", "org-test", {}, db=None)
@@ -426,12 +479,12 @@ class TestOnAgentComplete:
             chro_triggered.append(agent)
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_risk_from_context",  new=AsyncMock()),
-            patch("app.services.auto_chain._run_audit_from_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
-            patch("app.services.auto_chain._run_chained_agent",      new=mock_run_chained),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context",  new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_chained_agent",      new=mock_run_chained),
         ):
             await on_agent_complete("cfo", "org-test", {}, db=None)
 
@@ -450,12 +503,12 @@ class TestOnAgentComplete:
             notif_sent.append(True)
 
         with (
-            patch("app.services.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
-            patch("app.services.auto_chain.save_company_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_risk_from_context",  new=AsyncMock()),
-            patch("app.services.auto_chain._run_audit_from_context", new=AsyncMock()),
-            patch("app.services.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
-            patch("app.services.auto_chain._send_feedback_notification", new=mock_send_notif),
+            patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+            patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_risk_from_context",  new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_audit_from_context", new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._run_ceo_synthesis",      new=AsyncMock()),
+            patch("app.agents.orchestration.auto_chain._send_feedback_notification", new=mock_send_notif),
         ):
             await on_agent_complete("cfo", "org-test", {}, db=None)
 

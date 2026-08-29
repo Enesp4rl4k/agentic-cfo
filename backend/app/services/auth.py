@@ -13,15 +13,13 @@ from __future__ import annotations
 
 import secrets
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
+from jose import jwt
 
 from app.config import get_settings
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT constants
 ACCESS_TOKEN_EXPIRE_MINUTES  = 30
@@ -32,11 +30,18 @@ ALGORITHM                    = "HS256"
 # ── Password helpers ──────────────────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
+    """Hash password using bcrypt (with 72-byte max length safety)."""
+    pwd_bytes = password.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    """Verify password with bcrypt."""
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8")[:72], hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
@@ -53,7 +58,7 @@ def create_access_token(
     role: str,
     expires_delta: timedelta | None = None,
 ) -> str:
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload: dict[str, Any] = {
@@ -62,19 +67,19 @@ def create_access_token(
         "role":  role,
         "type":  "access",
         "exp":   expire,
-        "iat":   datetime.now(timezone.utc),
+        "iat":   datetime.now(UTC),
         "jti":   str(uuid.uuid4()),
     }
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
 def create_refresh_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload: dict[str, Any] = {
         "sub":  user_id,
         "type": "refresh",
         "exp":  expire,
-        "iat":  datetime.now(timezone.utc),
+        "iat":  datetime.now(UTC),
         "jti":  str(uuid.uuid4()),
     }
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
@@ -87,4 +92,11 @@ def decode_token(token: str) -> dict[str, Any]:
 
 def generate_api_key() -> str:
     """Generate a cryptographically secure 32-byte hex API key."""
-    return secrets.token_hex(32)  # 64 chars hex
+    return f"cfo_{secrets.token_hex(28)}"  # 'cfo_' prefix + 56 hex chars = 60 chars
+
+
+def hash_api_key(key: str) -> str:
+    """Hash an API key using SHA-256 for secure storage."""
+    import hashlib
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+

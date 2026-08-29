@@ -14,11 +14,10 @@ Tablo yapısı:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Float, Integer, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 
 from app.database import Base
 
@@ -43,10 +42,10 @@ class SMMMMuhasebeci(Base):
     is_active       = Column(Boolean,     nullable=False, default=True)
 
     created_at      = Column(DateTime(timezone=True), nullable=False,
-                             default=lambda: datetime.now(timezone.utc))
+                             default=lambda: datetime.now(UTC))
     updated_at      = Column(DateTime(timezone=True), nullable=False,
-                             default=lambda: datetime.now(timezone.utc),
-                             onupdate=lambda: datetime.now(timezone.utc))
+                             default=lambda: datetime.now(UTC),
+                             onupdate=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,10 +86,10 @@ class SMMMMusteriKayit(Base):
     notlar           = Column(Text,        nullable=True)
 
     created_at       = Column(DateTime(timezone=True), nullable=False,
-                              default=lambda: datetime.now(timezone.utc))
+                              default=lambda: datetime.now(UTC))
     updated_at       = Column(DateTime(timezone=True), nullable=False,
-                              default=lambda: datetime.now(timezone.utc),
-                              onupdate=lambda: datetime.now(timezone.utc))
+                              default=lambda: datetime.now(UTC),
+                              onupdate=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {

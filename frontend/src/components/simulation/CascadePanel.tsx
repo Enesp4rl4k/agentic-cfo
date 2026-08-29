@@ -5,6 +5,7 @@ import { Zap, ChevronDown, ChevronUp, AlertTriangle, Info, Shield } from "lucide
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { BaselineSourceBadge } from "@/components/ui/baseline-source-badge";
 import { useCascadeSimulator, impactColor, impactBg, domainLabel } from "@/hooks/useSimulation";
 import type { CascadeSimulateRequest, TriggerType, RoleType } from "@/lib/api/simulation";
 
@@ -28,9 +29,10 @@ interface CascadePanelProps {
   jobId?: string;
   orgId?: string;
   className?: string;
+  baselineSource?: string;
 }
 
-export function CascadePanel({ jobId, orgId, className }: CascadePanelProps) {
+export function CascadePanel({ jobId, orgId, className, baselineSource }: CascadePanelProps) {
   const { result, loading, error, simulate } = useCascadeSimulator();
   const [trigger, setTrigger] = useState<TriggerType>("cash_crisis");
   const [scenario, setScenario] = useState<"iyimser" | "baz" | "kotumser">("baz");
@@ -63,9 +65,10 @@ export function CascadePanel({ jobId, orgId, className }: CascadePanelProps) {
   return (
     <div className={cn("space-y-4", className)}>
       {/* Header */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Zap className="h-5 w-5 text-orange-400" />
         <h2 className="text-lg font-semibold">Zincirleme Risk Simülasyonu</h2>
+        {baselineSource && <BaselineSourceBadge source={baselineSource} />}
       </div>
 
       {/* Trigger selector */}

@@ -29,8 +29,7 @@ Her KRI:
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -574,8 +573,14 @@ async def run_risk_kernel(
     kris    = kernel.generate_all()
     posture = kernel.compute_risk_posture(kris)
 
+    from app.platform.provenance import provenance_block
+
+    # KRIs are inferred from other agents' outputs unless a real risk register
+    # (risk_data) was supplied.
+    data_source = "real" if risk_data else "derived"
     return {
         "ok":      True,
         "posture": posture,
         "kri_count": len(kris),
+        "provenance": provenance_block(data_source),
     }

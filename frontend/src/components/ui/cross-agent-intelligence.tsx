@@ -26,12 +26,19 @@ export interface CrossInsight {
   domains: string[];
   recommendation: string;
   chatPrompt: string;  // Pre-filled question for agent chat
+  metric_ids?: string[];
 }
 
-// ── Cross-domain correlation engine ──────────────────────────────────────────
-// Rule-based, deterministic — no LLM cost, instant render
+function numMetric(metrics: Record<string, number> | undefined, id: string): number | null {
+  if (!metrics || metrics[id] == null) return null;
+  const v = Number(metrics[id]);
+  return Number.isFinite(v) ? v : null;
+}
 
-function detectCrossInsights(ctx: CompanyContext): CrossInsight[] {
+function detectCrossInsights(
+  ctx: CompanyContext,
+  semanticMetrics?: Record<string, number>,
+): CrossInsight[] {
   const insights: CrossInsight[] = [];
 
   const cfo  = ctx.last_cfo_result as Record<string, unknown> | null;
@@ -46,8 +53,14 @@ function detectCrossInsights(ctx: CompanyContext): CrossInsight[] {
 
   // ── 1. Talent-Cash Cascade ────────────────────────────────────────────────
   // CFO low cash + CHRO high attrition + CTO low velocity
-  const runwayMonths = ((forecast as Record<string, unknown>)?.scenarios as Record<string, Record<string, number>> | null)?.base?.runway_months ?? 99;
-  const attritionRate = (chro?.attrition as Record<string, number> | null)?.annualized_attrition_rate ?? 0;
+  const runwayMonths =
+    numMetric(semanticMetrics, "finance.runway_months") ??
+    ((forecast as Record<string, unknown>)?.scenarios as Record<string, Record<string, number>> | null)?.base?.runway_months ??
+    99;
+  const attritionRate =
+    numMetric(semanticMetrics, "people.attrition_rate") ??
+    ((chro?.attrition as Record<string, number> | null)?.annualized_attrition_rate ?? 0);
+  const roas = numMetric(semanticMetrics, "growth.overall_roas");
   const ctoScore = (cto?.cto_summary as Record<string, number> | null)?.overall_health_score ?? 10;
 
   if (runwayMonths < 6 && attritionRate > 0.20 && ctoScore < 6) {
@@ -59,14 +72,31 @@ function detectCrossInsights(ctx: CompanyContext): CrossInsight[] {
       domains: ["CFO", "CHRO", "CTO"],
       recommendation: "Önce nakit sağlamlaştır (maliyet dondurma), sonra kilit çalışanları tut (retention paketi), ardından hız kurtarma sprinleri başlat.",
       chatPrompt: "Nakit sıkışması, yüksek attrition ve düşük mühendislik hızı aynı anda yaşanıyor. Hangi önlemi önce almalıyım?",
+      metric_ids: ["finance.runway_months", "people.attrition_rate", "tech.health_score"].filter(
+        (id) => semanticMetrics && id in semanticMetrics
+      ),
     });
   }
 
   // ── 2. Growth Efficiency Crisis ───────────────────────────────────────────
-  // CMO rising CAC + CFO shrinking margins
-  const grossMargin = pnl?.gross_margin ?? 1;
-  const netMargin   = pnl?.net_margin   ?? 1;
+  const grossMargin =
+    numMetric(semanticMetrics, "finance.gross_margin") ?? (pnl?.gross_margin ?? 1);
+  const netMargin =
+    numMetric(semanticMetrics, "finance.net_margin") ?? (pnl?.net_margin ?? 1);
   const cmoScore    = (cmo?.cmo_summary as Record<string, number> | null)?.overall_marketing_score ?? 10;
+
+  if (roas != null && roas < 1.5 && grossMargin < 0.25) {
+    insights.push({
+      id: "semantic-roas-pressure",
+      severity: "high",
+      title: "ROAS Under Pressure (semantic)",
+      description: `Blended ROAS ${roas.toFixed(2)}x with gross margin ${(grossMargin * 100).toFixed(1)}% — marketing efficiency needs reallocation.`,
+      domains: ["CFO", "CMO"],
+      recommendation: "Shift spend to proven cohorts; pause sub-1.5x ROAS channels for 30 days.",
+      chatPrompt: "ROAS is below 1.5x while margins are thin. Which channel should I cut first?",
+      metric_ids: ["growth.overall_roas", "finance.gross_margin"],
+    });
+  }
 
   if (grossMargin < 0.20 && cmo && cmoScore < 5) {
     insights.push({
@@ -187,16 +217,21 @@ const DOMAIN_ICONS: Record<string, typeof DollarSign> = {
 
 interface CrossAgentIntelligenceProps {
   context: CompanyContext;
+  semanticMetrics?: Record<string, number>;
   onAskChat?: (prompt: string) => void;
   className?: string;
 }
 
 export function CrossAgentIntelligence({
   context,
+  semanticMetrics,
   onAskChat,
   className,
 }: CrossAgentIntelligenceProps) {
-  const insights = useMemo(() => detectCrossInsights(context), [context]);
+  const insights = useMemo(
+    () => detectCrossInsights(context, semanticMetrics),
+    [context, semanticMetrics]
+  );
 
   if (insights.length === 0) {
     return (
@@ -278,6 +313,14 @@ export function CrossAgentIntelligence({
                     </span>
                   );
                 })}
+                {(insight.metric_ids ?? []).map((mid) => (
+                  <span
+                    key={mid}
+                    className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary"
+                  >
+                    {mid}
+                  </span>
+                ))}
               </div>
 
               {/* Recommendation */}

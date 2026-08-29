@@ -18,16 +18,13 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
-from app.parsers.registry import ParserRegistry
 from app.parsers.base import ParsedStatement
+from app.parsers.registry import ParserRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +78,9 @@ _CATEGORY_RULES: list[tuple[str, list[str], int]] = [
 _CATEGORY_MAP: list[tuple[str, list[str], int]] = [
     (cat, kws, pri) for cat, kws, pri in _CATEGORY_RULES if kws
 ]
+
+# Public alias for tests / callers that still import CATEGORY_KEYWORDS.
+CATEGORY_KEYWORDS: dict[str, list[str]] = {cat: list(kws) for cat, kws, _pri in _CATEGORY_RULES}
 
 
 def _guess_category(description: str) -> str:
@@ -175,7 +175,7 @@ def _parse_amount(raw: str) -> int | None:
     # If only dots, leave as-is
 
     try:
-        return int(round(float(s) * 100))
+        return round(float(s) * 100)
     except (ValueError, TypeError):
         return None
 
@@ -184,7 +184,7 @@ def _parse_date(raw: str) -> datetime | None:
     formats = ["%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"]
     for fmt in formats:
         try:
-            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
     return None
@@ -197,13 +197,8 @@ async def _extract_transactions_with_llm(
     Use LLM (DeepSeek / OpenAI compatible) to extract structured transactions.
     Returns list of dicts: date, amount, type, description, vendor, confidence.
     """
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.0,
-        max_tokens=4096,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import LLMUnavailable, complete_text
+
     system = (
         "You are a financial data extraction specialist. "
         "Extract all financial transactions from the provided document text as a JSON array.\n"
@@ -218,13 +213,17 @@ async def _extract_transactions_with_llm(
         'Example: [{"date": "15.03.2024", "amount": 1500.00, "type": "expense", '
         '"description": "Electricity bill", "vendor": "City Power Co.", "confidence": 0.95}]'
     )
-    messages = [
-        SystemMessage(content=system),
-        HumanMessage(content=f"Document text:\n\n{raw_text[:8000]}"),
-    ]
     import json
-    response = await llm.ainvoke(messages)
-    content = response.content.strip()
+    try:
+        content = (await complete_text(
+            task="simple_extraction",
+            system_prompt=system,
+            prompt=f"Document text:\n\n{raw_text[:8000]}",
+            temperature=0.0,
+            max_tokens=4096,
+        )).strip()
+    except LLMUnavailable:
+        return []
     if content.startswith("```"):
         content = re.sub(r"^```[a-z]*\n?", "", content)
         content = re.sub(r"\n?```$", "", content)
@@ -307,6 +306,96 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
     return transactions
 
 
+def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
+    """Attempt deterministic CSV parsing if the text is structured CSV."""
+    import csv
+    import io
+    try:
+        reader = csv.DictReader(io.StringIO(raw_text))
+        if not reader.fieldnames:
+            return None
+        field_lower = [f.strip().lower() for f in reader.fieldnames if f]
+        has_amount = any(f in ("amount", "tutar", "bakiye", "borç", "alacak", "amount_cents") for f in field_lower)
+        has_date = any(f in ("date", "tarih", "işlem tarihi", "transaction_date") for f in field_lower)
+        if not (has_amount and has_date):
+            return None
+
+        transactions = []
+        for row in reader:
+            if not row or not any(row.values()):
+                continue
+            r_lower = {k.strip().lower(): (v.strip() if v else "") for k, v in row.items() if k}
+            raw_amt = r_lower.get("amount") or r_lower.get("tutar") or r_lower.get("bakiye") or "0"
+            raw_dt = r_lower.get("date") or r_lower.get("tarih") or r_lower.get("işlem tarihi") or ""
+            raw_desc = r_lower.get("description") or r_lower.get("açıklama") or r_lower.get("detay") or ""
+            raw_type = r_lower.get("type") or r_lower.get("tip") or ""
+            raw_cat = r_lower.get("category") or r_lower.get("kategori") or ""
+            raw_vendor = r_lower.get("vendor") or r_lower.get("tedarikçi") or raw_desc
+
+            amount_cents = _parse_amount(raw_amt)
+            if amount_cents is None:
+                try:
+                    amount_cents = round(float(raw_amt) * 100)
+                except Exception:
+                    amount_cents = 0
+
+            tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
+            category = raw_cat or _guess_category(raw_desc)
+            parsed_dt = _parse_date(raw_dt)
+
+            transactions.append({
+                "amount_cents": abs(amount_cents),
+                "currency": "TRY",
+                "type": tx_type,
+                "category": category,
+                "description": raw_desc,
+                "vendor": raw_vendor,
+                "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
+                "raw_text": str(row),
+                "confidence": 0.95,
+            })
+        return transactions if transactions else None
+    except Exception:
+        return None
+
+
+def _read_xml(file_path: str) -> str:
+    with open(file_path, encoding="utf-8", newline="") as f:
+        return f.read()
+
+
+def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
+    """Parse Turkish e-Fatura / e-Arşiv UBL-TR 1.2 XML into CFO transactions."""
+    if "<Invoice" not in raw_text and ":Invoice" not in raw_text:
+        return None
+    try:
+        from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
+        inv = UBLTRInvoiceParser.parse_xml(raw_text)
+        is_income = inv.invoice_type in ("SATIS", "IHRACAT", "KOMISYON")
+        tx_type = "income" if is_income else "expense"
+        category = "sales" if is_income else "cogs"
+        counterparty = inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
+
+        amount_cents = round(float(inv.payable_amount or inv.tax_inclusive_total) * 100)
+        if amount_cents == 0:
+            amount_cents = round(float(inv.line_extension_total) * 100)
+
+        return [{
+            "amount_cents": abs(amount_cents),
+            "currency": inv.currency_code or "TRY",
+            "type": tx_type,
+            "category": category,
+            "description": f"e-Fatura {inv.invoice_number}: {counterparty}",
+            "vendor": counterparty if not is_income else None,
+            "transaction_date": inv.issue_date.isoformat() if inv.issue_date else None,
+            "raw_text": f"UUID: {inv.invoice_uuid} | No: {inv.invoice_number} | Type: {inv.invoice_type}",
+            "confidence": 1.0,
+        }]
+    except Exception as exc:
+        logger.debug("UBL-TR parser skipped: %s", exc)
+        return None
+
+
 async def run_data_ingestion(
     state: CFOState, config: AgentRunConfig
 ) -> SkillResult:
@@ -333,6 +422,8 @@ async def run_data_ingestion(
             raw_text = _read_excel(file_path)
         elif file_type == "csv":
             raw_text = _read_csv(file_path)
+        elif file_type == "xml":
+            raw_text = _read_xml(file_path)
         else:
             return SkillResult(ok=False, detail=f"Unsupported file type: {file_type}", halt=True)
 
@@ -343,6 +434,19 @@ async def run_data_ingestion(
                 needs_review=True,
                 confidence=0.0,
             )
+
+        # ── Strategy 1.25: GİB UBL-TR 1.2 / 2.1 e-Fatura / e-Arşiv XML Parser ──
+        if file_type == "xml" or "<Invoice" in raw_text or ":Invoice" in raw_text:
+            ubl_txs = _try_parse_ubl_xml(raw_text)
+            if ubl_txs:
+                logger.info("job=%s — UBL-TR XML parser parsed %d invoice transactions", state.get("job_id"), len(ubl_txs))
+                return SkillResult(
+                    ok=True,
+                    patch={"raw_text": raw_text, "transactions": ubl_txs},
+                    confidence=1.0,
+                    needs_review=False,
+                    detail=f"Parsed {len(ubl_txs)} transactions via GİB UBL-TR XML parser",
+                )
 
         # ── Strategy 1: Bank-specific rule-based parser ────────────────────
         detected_bank = ParserRegistry.detect(raw_text)
@@ -376,14 +480,36 @@ async def run_data_ingestion(
                     needs_review=overall_confidence < 0.80,
                     detail=detail,
                 )
-            else:
-                logger.warning(
-                    "job=%s — bank parser returned 0 transactions, falling back to LLM",
-                    state.get("job_id"),
+        # ── Strategy 1.5: Generic CSV parser (deterministic, fast, no LLM) ─
+        if file_type == "csv" or "," in raw_text[:500] or ";" in raw_text[:500]:
+            csv_txs = _try_parse_csv(raw_text)
+            if csv_txs:
+                # Confidence must reflect data quality: rows with an unparseable
+                # date or a zero amount are only partially usable. A file where
+                # most dates failed to parse should NOT sail through the gate.
+                well_formed = sum(
+                    1 for tx in csv_txs
+                    if tx.get("transaction_date") and tx.get("amount_cents", 0) > 0
+                )
+                ratio = well_formed / len(csv_txs)
+                overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
+                logger.info(
+                    "job=%s — deterministic CSV parser: %d transactions, %d well-formed (conf=%.2f)",
+                    state.get("job_id"), len(csv_txs), well_formed, overall_confidence,
+                )
+                return SkillResult(
+                    ok=True,
+                    patch={"raw_text": raw_text, "transactions": csv_txs},
+                    confidence=overall_confidence,
+                    needs_review=overall_confidence < 0.80,
+                    detail=(
+                        f"Parsed {len(csv_txs)} transactions via CSV parser "
+                        f"({well_formed} well-formed, confidence={overall_confidence:.2f})"
+                    ),
                 )
 
         # ── Strategy 2: LLM fallback ───────────────────────────────────────
-        logger.info("job=%s — no bank parser matched, using LLM extraction", state.get("job_id"))
+        logger.info("job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id"))
         raw_transactions = await _extract_transactions_with_llm(raw_text, settings)
 
         if not raw_transactions:

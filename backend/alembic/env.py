@@ -19,10 +19,32 @@ from alembic import context
 
 # ── Import all models so Alembic can detect schema changes ────────────────────
 from app.database import Base  # noqa: F401
+import app.models.agent_conflict  # noqa: F401
+import app.models.agent_job  # noqa: F401
+import app.models.alert_preference  # noqa: F401
+import app.models.agent_run  # noqa: F401
 import app.models.analysis_job  # noqa: F401
-import app.models.transaction   # noqa: F401
-import app.models.report        # noqa: F401
+import app.models.anomaly  # noqa: F401
+import app.models.audit_log  # noqa: F401
+import app.models.canonical_eng_signal  # noqa: F401
+import app.models.canonical_transaction  # noqa: F401
 import app.models.category_rule  # noqa: F401
+import app.models.company_context  # noqa: F401
+import app.models.company_semantic_snapshot  # noqa: F401
+import app.models.connector_connection  # noqa: F401
+import app.models.data_source  # noqa: F401
+import app.models.erp_integration  # noqa: F401
+import app.models.in_app_notification  # noqa: F401
+import app.models.llm_call_log  # noqa: F401
+import app.models.organization  # noqa: F401
+import app.models.pilot  # noqa: F401
+import app.models.rag_chunk  # noqa: F401
+import app.models.report  # noqa: F401
+import app.models.smmm_onay  # noqa: F401
+import app.models.smmm_portal  # noqa: F401
+import app.models.sync_run  # noqa: F401
+import app.models.transaction  # noqa: F401
+import app.models.user  # noqa: F401
 
 from app.config import get_settings
 

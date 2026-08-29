@@ -19,8 +19,7 @@ Cikti (CTOState-uyumlu):
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -80,7 +79,7 @@ class CTOKernelOutput:
     narrative:         str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in asdict(self).items()}
+        return dict(asdict(self).items())
 
     def to_cto_state_patch(self) -> dict[str, Any]:
         """CTOState'e dogrudan patch olarak uygulanabilir dict."""
@@ -281,7 +280,16 @@ class CTOKernel:
             confidence  = 0.50
 
         # Narrative
-        narrative = (
+        real_prefix = ""
+        src = self.existing.get("_source")
+        if src:
+            real_prefix = (
+                f"[{src}] son 30 gun: "
+                f"{self.existing.get('commit_count_30d', 0)} commit, "
+                f"{self.existing.get('pr_count_30d', 0)} PR, "
+                f"{self.existing.get('incident_count_30d', 0)} olay. "
+            )
+        narrative = real_prefix + (
             f"Teknoloji saglik skoru: {health_score}/10. "
             f"Tahmini {engineers} muhendis, aylik tech butcesi ₺{tech_budget_m:,.0f}. "
             f"Altyapi maliyeti ₺{cloud_cost_m:,.0f}/ay, "
@@ -345,8 +353,10 @@ async def run_cto_kernel(
         company_size=company_size,
     )
     output = kernel.generate()
-    return {
+    from app.platform.provenance import attach_provenance
+
+    return attach_provenance({
         "ok":     True,
         "output": output.to_dict(),
         "patch":  output.to_cto_state_patch(),
-    }
+    })

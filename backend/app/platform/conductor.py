@@ -104,7 +104,7 @@ class ManagementConductor:
 
             if forced or has_data:
                 depth: RoleDepthLevel = max_depth  # type: ignore[assignment]
-                reason = "forced" if forced else f"signals={sorted(signals & available_signals)}"
+                reason = "forced" if forced else f"signals={sorted(set(signals) & available_signals)}"
                 plans.append(
                     RoleExecutionPlan(
                         role=role,
@@ -136,7 +136,7 @@ class ManagementConductor:
 
 
 def signals_from_company_context(context: dict[str, Any]) -> set[str]:
-    """Derive available data signals from a CompanyContext-like dict."""
+    """Derive available data signals from a CompanyContext-like dict (+ semantic metrics)."""
     signals: set[str] = set()
     if context.get("active_cfo_job_id") or context.get("last_cfo_result"):
         signals.update({"cfo_job", "cfo_result", "transactions"})
@@ -150,4 +150,22 @@ def signals_from_company_context(context: dict[str, Any]) -> set[str]:
         signals.update({"headcount_csv", "attrition_csv"})
     if context.get("last_coo_result"):
         signals.update({"sla_csv", "process_csv"})
+
+    # Metric presence unlocks roles even when CSV blobs are absent
+    metrics = context.get("semantic_metrics") or context.get("__semantic_metrics") or {}
+    if isinstance(metrics, dict):
+        for mid in metrics:
+            signals.add(f"metric:{mid}")
+        if "finance.revenue" in metrics or "finance.runway_months" in metrics:
+            signals.update({"cfo_result", "cashflow", "forecast"})
+        if "growth.overall_roas" in metrics:
+            signals.update({"campaign_csv", "funnel_csv"})
+        if "tech.health_score" in metrics:
+            signals.update({"git_log", "cloud_billing"})
+        if "people.headcount" in metrics:
+            signals.update({"headcount_csv", "attrition_csv"})
+        if "ops.bottleneck_count" in metrics:
+            signals.update({"sla_csv", "process_csv"})
+        if "risk.overall_score" in metrics:
+            signals.add("risk_result")
     return signals

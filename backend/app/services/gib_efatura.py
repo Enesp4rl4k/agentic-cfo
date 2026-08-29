@@ -32,9 +32,8 @@ Bu client aşağıdaki işlemleri yapar:
 from __future__ import annotations
 
 import logging
-import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -196,7 +195,7 @@ class EFaturaClient:
                 else:
                     invoice_date = raw_date
             except Exception:
-                invoice_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                invoice_date = datetime.now(UTC).strftime("%Y-%m-%d")
 
             # Tutarlar
             net_amount = float(item.get("lineExtensionAmount") or item.get("netAmount") or item.get("matrah", 0) or 0)

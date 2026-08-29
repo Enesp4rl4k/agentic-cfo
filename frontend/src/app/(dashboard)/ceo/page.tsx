@@ -11,11 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { ActionCenter } from "@/components/ActionCenter";
 
 import { BoardDeckViewer }     from "@/components/ceo/BoardDeckViewer";
 import { OKRWeightedScorecard } from "@/components/ceo/OKRScorecard";
 import { OutlookChart }         from "@/components/ceo/OutlookChart";
 import { SWOTWidget }           from "@/components/ceo/SWOTWidget";
+import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
+import { getDecisionBrief, getSemanticHistory, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary } from "@/lib/api/semantic";
 import { type CEOResult, type BoardSlide, type OKRObjective } from "@/components/ceo/types";
 import { useCompanyContextStore } from "@/store/companyContext";
 
@@ -189,6 +192,12 @@ export default function CEODashboardPage() {
   const [result,  setResult]  = useState<CEOResult | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [liveLoaded, setLiveLoaded] = useState(false);
+  const [brief, setBrief] = useState<DecisionBrief | null>(null);
+  const [periodHistory, setPeriodHistory] = useState<SemanticPeriodSummary[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string | undefined>();
+  const [rebuildingBrief, setRebuildingBrief] = useState(false);
+  const [approvingBrief, setApprovingBrief] = useState(false);
+  const [synthesizing, setSynthesizing] = useState(false);
 
   // Prefer live CompanyContext / last CEO result over SAMPLE CSV paste.
   useEffect(() => {
@@ -205,15 +214,67 @@ export default function CEODashboardPage() {
         if (lastCeo && typeof lastCeo === "object") {
           setResult(lastCeo as CEOResult);
           setLiveLoaded(true);
+          if (lastCeo.decision_brief) {
+            setBrief(lastCeo.decision_brief as DecisionBrief);
+          }
         }
       } catch {
         /* empty state until analyze */
+      }
+      try {
+        const b = await getDecisionBrief(selectedPeriod);
+        if (!cancelled && b.brief) setBrief(b.brief);
+        const periods = await getSemanticHistory(12);
+        if (!cancelled) setPeriodHistory(periods);
+      } catch {
+        /* optional */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [orgId]);
+  }, [orgId, selectedPeriod]);
+
+  async function handleApproveBrief() {
+    setApprovingBrief(true);
+    try {
+      const res = await approveDecisionBrief(selectedPeriod);
+      if (res.brief) setBrief(res.brief);
+    } finally {
+      setApprovingBrief(false);
+    }
+  }
+
+  async function handleRegenerateBrief() {
+    setRebuildingBrief(true);
+    try {
+      await rebuildSemantic();
+      const b = await getDecisionBrief(selectedPeriod);
+      if (b.brief) setBrief(b.brief);
+    } finally {
+      setRebuildingBrief(false);
+    }
+  }
+
+  async function handleSynthesizeFromContext() {
+    setSynthesizing(true);
+    setError(null);
+    try {
+      const res = await apiClient.post("/ceo/synthesize", {});
+      const data = res.data?.data ?? res.data;
+      if (res.data?.error) throw new Error(res.data.error);
+      if (data) {
+        setResult(data as CEOResult);
+        setLiveLoaded(true);
+      }
+      const b = await getDecisionBrief(selectedPeriod);
+      if (b.brief) setBrief(b.brief);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Synthesis failed");
+    } finally {
+      setSynthesizing(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -263,6 +324,8 @@ export default function CEODashboardPage() {
         </div>
       </div>
 
+      <ActionCenter />
+
       {/* Input form */}
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -295,15 +358,45 @@ export default function CEODashboardPage() {
         <Button type="submit" disabled={loading}>
           {loading ? "Running…" : activeCFOJobId ? "Synthesize from CFO job" : "Run CEO analysis"}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={synthesizing || !orgId}
+          onClick={() => void handleSynthesizeFromContext()}
+        >
+          {synthesizing ? "Synthesizing…" : "Refresh CEO synthesis"}
+        </Button>
       </form>
 
       {showEmpty ? (
-        <Card className="p-6 text-sm text-muted-foreground">
-          No live CEO results yet. Upload data and complete a CFO run, or synthesize from an active CFO job.
-          Sample CSV paste has been removed from the default path.
-        </Card>
+        <div className="space-y-4">
+          <DecisionBriefPanel
+            brief={brief}
+            periodOptions={periodHistory}
+            selectedPeriod={selectedPeriod}
+            onPeriodChange={(pk) => setSelectedPeriod(pk)}
+            onRebuild={() => void handleRegenerateBrief()}
+            rebuilding={rebuildingBrief}
+            onApprove={() => void handleApproveBrief()}
+            approving={approvingBrief}
+          />
+          <Card className="p-6 text-sm text-muted-foreground">
+            No live CEO results yet. Upload data and complete a CFO run, or synthesize from an active CFO job.
+            Sample CSV paste has been removed from the default path.
+          </Card>
+        </div>
       ) : (
         <div className="space-y-6">
+          <DecisionBriefPanel
+            brief={brief ?? ((display as CEOResult & { decision_brief?: DecisionBrief })?.decision_brief ?? null)}
+            periodOptions={periodHistory}
+            selectedPeriod={selectedPeriod}
+            onPeriodChange={(pk) => setSelectedPeriod(pk)}
+            onRebuild={() => void handleRegenerateBrief()}
+            rebuilding={rebuildingBrief}
+            onApprove={() => void handleApproveBrief()}
+            approving={approvingBrief}
+          />
           <PDFExportButtons jobId={activeCFOJobId} orgId={orgId} />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">

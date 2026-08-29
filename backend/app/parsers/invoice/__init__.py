@@ -32,11 +32,11 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.services.ocr_service import extract_text_from_pdf, extract_invoice_fields
+from app.services.ocr_service import extract_invoice_fields, extract_text_from_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +225,7 @@ class TurkishInvoiceParser(BankParser):
                 try:
                     parsed_date = datetime.strptime(
                         fields["invoice_date"], fmt
-                    ).replace(tzinfo=timezone.utc)
+                    ).replace(tzinfo=UTC)
                     break
                 except ValueError:
                     continue
@@ -255,7 +255,7 @@ class TurkishInvoiceParser(BankParser):
         confidence = min(0.98, confidence)
 
         tx = ParsedTransaction(
-            date=parsed_date or datetime.now(timezone.utc),
+            date=parsed_date or datetime.now(UTC),
             description=description,
             amount_cents=amount_cents,
             tx_type=tx_type,

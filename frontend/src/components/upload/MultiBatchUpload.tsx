@@ -68,7 +68,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
       e.preventDefault();
       setDragging(false);
       const dropped = Array.from(e.dataTransfer.files as FileList).filter(
-        (f: File) => f.name.match(/\.(csv|xlsx|xls|pdf)$/i)
+        (f: File) => f.name.match(/\.(csv|xlsx|xls|pdf|xml)$/i)
       );
       if (dropped.length) onFiles(dropped);
     },
@@ -105,7 +105,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
         <input
           type="file"
           multiple
-          accept=".csv,.xlsx,.xls,.pdf"
+          accept=".csv,.xlsx,.xls,.pdf,.xml"
           className="sr-only"
           onChange={(e) => {
             const input = e.target as HTMLInputElement;
@@ -117,7 +117,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
         />
       </label>
       <p className="mt-3 text-[10px] text-muted-foreground">
-        CSV, Excel (.xlsx/.xls), PDF banka ekstresi · Maks 10 MB/dosya
+        CSV, Excel (.xlsx/.xls), PDF banka ekstresi, GİB e-Fatura XML · Maks 10 MB/dosya
       </p>
     </div>
   );

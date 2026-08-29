@@ -5,7 +5,7 @@ Backend için Sentry entegrasyonu.
 
 Kurulum:
   pip install sentry-sdk[fastapi]
-  
+
 .env'e ekle:
   SENTRY_DSN=https://xxx@sentry.io/xxx
   SENTRY_ENVIRONMENT=production  # veya staging/development
@@ -40,10 +40,10 @@ def init_sentry(settings: Any) -> bool:
 
     try:
         import sentry_sdk
-        from sentry_sdk.integrations.fastapi import FastApiIntegration
-        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-        from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.asyncio import AsyncioIntegration
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
         environment = getattr(settings, "sentry_environment", "production")
         sample_rate = getattr(settings, "sentry_traces_sample_rate", 0.05)

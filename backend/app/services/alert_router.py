@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -41,14 +41,15 @@ class RawAlert:
     domain:    str          # cfo | cto | chro | cmo | coo | audit | risk
     source:    str          # cashflow | forecast | anomaly | ...
     job_id:    str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     evidence:  dict[str, Any] = field(default_factory=dict)
+    org_id:    str | None = None   # multi-tenant scope; set by the scheduler fan-out
 
     @property
     def fingerprint(self) -> str:
         """Stable hash for deduplication — domain + source + first 80 chars of message."""
         key = f"{self.domain}:{self.source}:{self.message[:80]}"
-        return hashlib.md5(key.encode()).hexdigest()[:12]  # noqa: S324 — non-security use
+        return hashlib.md5(key.encode()).hexdigest()[:12]
 
 
 @dataclass
@@ -153,7 +154,7 @@ class AlertRouter:
             List of AlertDecision — one per new_alert (may be SUPPRESS)
         """
         history = recent_history or []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Build dedup index from history
         seen_fingerprints: dict[str, datetime] = {}
@@ -272,7 +273,7 @@ class AlertRouter:
                 if d.priority_score > 0.5:
                     high.append(item)
 
-        actionable_count = len(critical) + len(high) + len(aggregated)
+        actionable_count = sum(1 for d in decisions if d.is_actionable)
 
         top_action = "Kritik uyarı yok."
         if critical:
@@ -281,6 +282,8 @@ class AlertRouter:
             top_action = high[0]["message"]
 
         return {
+            "total":            len(decisions),
+            "actionable":       actionable_count,
             "critical":         critical,
             "high":             high,
             "aggregated":       aggregated,
@@ -288,3 +291,4 @@ class AlertRouter:
             "total_actionable": actionable_count,
             "top_action":       top_action,
         }
+

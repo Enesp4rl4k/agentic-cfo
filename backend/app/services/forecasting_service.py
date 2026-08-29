@@ -31,8 +31,7 @@ Usage
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -174,7 +173,7 @@ def _linear_forecast(
             "p90":  round(p50 + 1.645 * uncertainty, 2),
         })
 
-    historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series)]
+    historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)]
 
     return ForecastResult(
         method        = "linear",
@@ -201,9 +200,9 @@ def _stl_forecast(
     Falls back to linear if statsmodels unavailable.
     """
     try:
-        from statsmodels.tsa.seasonal import STL
-        from statsmodels.tsa.holtwinters import ExponentialSmoothing
         import numpy as np
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+        from statsmodels.tsa.seasonal import STL
 
         y = np.array(series, dtype=float)
         n = len(y)
@@ -240,7 +239,7 @@ def _stl_forecast(
         forecast_pts = []
 
         for step, (fdate, tf, sf) in enumerate(
-            zip(future_dates, trend_forecast, seasonal_forecast), 1
+            zip(future_dates, trend_forecast, seasonal_forecast, strict=False), 1
         ):
             p50 = float(tf + sf)
             uncertainty = iqr * (1.0 + 0.05 * step)
@@ -261,7 +260,7 @@ def _stl_forecast(
             "residual": [round(float(v), 2) for v in residual],
         }
 
-        historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series)]
+        historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)]
 
         return ForecastResult(
             method        = "stl",
@@ -297,8 +296,8 @@ def _arima_forecast(
     Falls back to STL if ARIMA fails.
     """
     try:
-        from statsmodels.tsa.arima.model import ARIMA
         import numpy as np
+        from statsmodels.tsa.arima.model import ARIMA
 
         y = np.array(series, dtype=float)
 
@@ -306,9 +305,9 @@ def _arima_forecast(
         best_aic  = float("inf")
         best_fit  = None
 
-        for p in range(0, 4):
-            for d in range(0, 3):
-                for q in range(0, 4):
+        for p in range(4):
+            for d in range(3):
+                for q in range(4):
                     try:
                         model = ARIMA(y, order=(p, d, q))
                         fit   = model.fit()
@@ -328,7 +327,7 @@ def _arima_forecast(
         future_dates  = _generate_future_dates(dates[-1] if dates else "T+0", periods)
         forecast_pts  = []
 
-        for fdate, p50, ci_row in zip(future_dates, p50_values, conf_int):
+        for fdate, p50, ci_row in zip(future_dates, p50_values, conf_int, strict=False):
             forecast_pts.append({
                 "date": fdate,
                 "p10":  round(float(ci_row[0]), 2),
@@ -339,7 +338,7 @@ def _arima_forecast(
         # In-sample MAE
         mae = float(np.mean(np.abs(y - best_fit.fittedvalues)))
 
-        historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series)]
+        historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)]
 
         return ForecastResult(
             method        = "arima",
@@ -373,7 +372,7 @@ def _generate_future_dates(last_date: str, periods: int) -> list[str]:
 
     try:
         # Try ISO month format first
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         # Try "YYYY-MM" format
         for fmt in ("%Y-%m", "%Y-%m-%d", "%b %Y", "%B %Y"):

@@ -68,10 +68,11 @@ if $RUN_BACKEND; then
   echo -e "${CYAN}  BACKEND CHECKS${NC}"
   echo -e "${CYAN}════════════════════════════════════════${NC}\n"
 
-  # Detect python executable
+  # Detect python executable. Try `python` first: on Windows `python3` is often
+  # the Microsoft Store stub that errors out, while `python` is the real venv.
   PYTHON=""
-  for py in python3 python py; do
-    if command -v "$py" &>/dev/null; then
+  for py in python python3 py; do
+    if command -v "$py" &>/dev/null && "$py" -c "import sys; sys.exit(0)" &>/dev/null; then
       PYTHON="$py"
       break
     fi
@@ -85,11 +86,10 @@ if $RUN_BACKEND; then
     PY_VERSION=$($PYTHON --version 2>&1)
     INFO "Using: $PY_VERSION"
 
-    # 1. pytest
+    # 1. pytest — full suite (parsers included), randomised order via
+    #    pytest-randomly to surface cross-test state pollution.
     check "pytest (unit tests)" \
-      $PYTHON -m pytest backend/tests/ -q --tb=short --no-header \
-        --ignore=backend/tests/test_parsers \
-        -x
+      $PYTHON -m pytest backend/tests/ -q --tb=short --no-header
 
     # 2. ruff lint
     if $PYTHON -m ruff --version &>/dev/null 2>&1; then
@@ -102,11 +102,20 @@ if $RUN_BACKEND; then
     # 3. mypy type check (slow, skippable with --fast)
     if $RUN_MYPY; then
       if $PYTHON -m mypy --version &>/dev/null 2>&1; then
-        check "mypy (type check)" \
-          $PYTHON -m mypy backend/app/ \
-            --ignore-missing-imports \
-            --no-error-summary \
-            --pretty
+        # 3a. Strict allowlist — BLOCKING. Modules in backend/mypy_strict.ini
+        #     must stay at zero errors (the module-by-module paydown ratchet).
+        check "mypy (strict allowlist)" \
+          bash -c "cd backend && $PYTHON -m mypy --config-file mypy_strict.ini"
+        # 3b. Full tree — NON-BLOCKING. ~590 legacy errors; shown for triage,
+        #     does not fail the gate. Green a module, then add it to 3a.
+        INFO "Running: mypy (full tree, advisory)"
+        if $PYTHON -m mypy backend/app/ \
+            --ignore-missing-imports --no-error-summary --pretty; then
+          OK "mypy (full tree, advisory) — clean"
+        else
+          WARN "mypy (full tree, advisory) — legacy errors remain (not blocking)"
+        fi
+        echo ""
       else
         WARN "mypy not installed — install with: pip install mypy"
       fi

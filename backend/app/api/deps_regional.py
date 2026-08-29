@@ -14,8 +14,10 @@ async def require_tr_pack(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    org = getattr(current_user, "organization", None)
-    if org is None and current_user.org_id:
+    # Load the org explicitly — never touch the lazy `.organization` relationship
+    # here (current_user comes from a session that is already closed).
+    org = None
+    if current_user.org_id:
         from app.models.organization import Organization
 
         org = await db.get(Organization, str(current_user.org_id))

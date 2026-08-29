@@ -13,13 +13,12 @@ from __future__ import annotations
 
 import logging
 import statistics
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from app.services.data_sync.schemas import (
+    DataQualityThresholds,
     SyncBatch,
     SyncTransaction,
-    DataQualityThresholds,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 class DataQualityValidator:
     """Validates transaction batches against quality thresholds."""
 
-    def __init__(self, thresholds: Optional[DataQualityThresholds] = None):
+    def __init__(self, thresholds: DataQualityThresholds | None = None):
         """Initialize validator with quality thresholds."""
         self.thresholds = thresholds or DataQualityThresholds()
         self.historical_amounts: dict[str, list[int]] = {}  # vendor -> amounts
@@ -132,7 +131,7 @@ class DataQualityValidator:
             if stdev == 0:
                 return warnings  # All amounts are identical
 
-            for i, tx in enumerate(transactions):
+            for _i, tx in enumerate(transactions):
                 z_score = abs((tx.amount_cents - mean) / stdev)
 
                 if z_score > self.thresholds.outlier_stddev_threshold:
@@ -159,14 +158,14 @@ class DataQualityValidator:
                 )
 
             # Check for very old transactions
-            if tx.date < datetime.now(timezone.utc) - timedelta(days=365):
+            if tx.date < datetime.now(UTC) - timedelta(days=365):
                 warnings.append(
                     f"Very old transaction: {tx.date.date()} "
                     f"{tx.amount_cents / 100:.2f} TRY"
                 )
 
             # Check for future-dated transactions
-            if tx.date > datetime.now(timezone.utc) + timedelta(days=1):
+            if tx.date > datetime.now(UTC) + timedelta(days=1):
                 warnings.append(
                     f"Future-dated transaction: {tx.date.date()} "
                     f"{tx.amount_cents / 100:.2f} TRY"
@@ -270,7 +269,7 @@ class ConflictResolver:
 
         resolved = []
 
-        for sig, txs in groups.items():
+        for _sig, txs in groups.items():
             if len(txs) == 1:
                 resolved.append(txs[0])
             else:

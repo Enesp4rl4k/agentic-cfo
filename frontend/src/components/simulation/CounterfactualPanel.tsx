@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TrendingUp, Users, Cpu, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { BaselineSourceBadge } from "@/components/ui/baseline-source-badge";
 import {
   useHeadcountCF,
   useMarketingCF,
@@ -121,6 +122,9 @@ function ResultView({ result }: { result: MultidomainCFResult }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <BaselineSourceBadge source={result.baseline_source} />
+      </div>
       <Card className="p-4">
         <p className="text-sm text-muted-foreground">{result.executive_summary}</p>
         <p className="text-xs text-muted-foreground mt-1">
@@ -323,10 +327,23 @@ interface CounterfactualPanelProps {
   jobId?: string;
   orgId?: string;
   className?: string;
+  initialAction?: string;
 }
 
-export function CounterfactualPanel({ jobId, orgId, className }: CounterfactualPanelProps) {
-  const [tab, setTab] = useState<ActionTab>("headcount");
+function actionToTab(action: string): ActionTab {
+  if (action === "marketing_invest" || action === "cost_cut") return "marketing";
+  if (action === "tech_investment") return "tech";
+  return "headcount";
+}
+
+export function CounterfactualPanel({ jobId, orgId, className, initialAction }: CounterfactualPanelProps) {
+  const [tab, setTab] = useState<ActionTab>(
+    initialAction ? actionToTab(initialAction) : "headcount"
+  );
+
+  useEffect(() => {
+    if (initialAction) setTab(actionToTab(initialAction));
+  }, [initialAction]);
 
   return (
     <div className={cn("space-y-4", className)}>

@@ -12,8 +12,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -110,7 +110,7 @@ async def risk_cascade_analyze(
     max_cascades: performans icin max simulasyon sayisi (varsayilan 5)
     only_red: sadece RED KRI'lari cascade'e sok
     """
-    from app.services.risk_cascade_bridge import run_risk_cascade_analysis
+    from app.agents.orchestration.risk_cascade_bridge import run_risk_cascade_analysis
     try:
         return await run_risk_cascade_analysis(
             pnl=req.pnl,
@@ -135,7 +135,7 @@ async def risk_cascade_from_job(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """CFO analiz job'undan tam risk + cascade analizi."""
-    from app.services.risk_cascade_bridge import run_risk_cascade_analysis
+    from app.agents.orchestration.risk_cascade_bridge import run_risk_cascade_analysis
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} bulunamadi")
@@ -157,7 +157,7 @@ async def risk_cascade_from_org(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """CompanyContext'teki tum agent verilerinden risk + cascade analizi."""
-    from app.services.risk_cascade_bridge import run_risk_cascade_analysis
+    from app.agents.orchestration.risk_cascade_bridge import run_risk_cascade_analysis
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")

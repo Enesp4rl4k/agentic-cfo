@@ -19,7 +19,7 @@ import statistics
 from collections import defaultdict
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
 
@@ -177,16 +177,7 @@ def _compute_kpi_trends(
 async def _generate_multiperiod_narrative(
     multi: dict[str, Any], settings
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import LLMUnavailable, complete_text
 
     mom = multi.get("mom") or {}
     yoy = multi.get("yoy") or {}
@@ -208,16 +199,20 @@ async def _generate_multiperiod_narrative(
         f"net={trends.get('net_trend')}"
     )
 
-    messages = [
-        SystemMessage(content=(
-            "You are a CFO reviewing period-over-period financial performance. "
-            "Write a concise performance commentary (3-4 sentences). "
-            "Comment on growth trajectory, efficiency, and any concerns."
-        )),
-        HumanMessage(content=f"{mom_text}\n{yoy_text}\n{trend_text}"),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+    try:
+        text = await complete_text(
+            task="metric_commentary",
+            system_prompt=(
+                "You are a CFO reviewing period-over-period financial performance. "
+                "Write a concise performance commentary (3-4 sentences). "
+                "Comment on growth trajectory, efficiency, and any concerns."
+            ),
+            prompt=f"{mom_text}\n{yoy_text}\n{trend_text}",
+            max_tokens=512,
+        )
+        return text.strip()
+    except LLMUnavailable:
+        return f"{mom_text}. {yoy_text}. {trend_text}."
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

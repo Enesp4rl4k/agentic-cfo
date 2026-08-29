@@ -20,10 +20,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
-from app.models.user import User
+from app.database import get_db
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -130,9 +130,8 @@ async def compute_sensitivity_matrix(
     The matrix is ready for heatmap rendering on the frontend.
     """
     from app.agents.sensitivity_agent import (
-        compute_sensitivity_matrix,
         DEFAULT_RANGES,
-        VARIABLE_LABELS,
+        compute_sensitivity_matrix,
     )
 
     # Validate variables
@@ -186,8 +185,8 @@ async def compute_single_sensitivity(
     → List of outcomes for each headcount change from -30% to +30%
     """
     from app.agents.sensitivity_agent import (
-        compute_single_variable_sensitivity,
         DEFAULT_RANGES,
+        compute_single_variable_sensitivity,
     )
 
     if body.variable not in DEFAULT_RANGES:

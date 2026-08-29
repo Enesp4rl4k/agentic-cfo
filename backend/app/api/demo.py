@@ -11,12 +11,12 @@ DELETE /demo/reset   → Remove demo job from context (org can start fresh)
 from __future__ import annotations
 
 import logging
-import os
 import uuid
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -83,17 +83,19 @@ async def seed_demo(
     Safe to call multiple times — idempotent per org (returns existing
     demo job if one already exists and is not yet 24 hours old).
     """
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import desc, select
+
     from app.config import get_settings
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.worker import enqueue_analysis
-    from sqlalchemy import select, desc
-    from datetime import datetime, timezone, timedelta
 
     settings = get_settings()
     org_id = str(current_user.org_id) if current_user.org_id else str(current_user.id)
 
     # ── Idempotency check: existing recent demo job ───────────────────────────
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
     try:
         result = await db.execute(
             select(AnalysisJob)
@@ -168,12 +170,14 @@ async def get_demo_status(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Check if the org has an active demo analysis."""
-    from app.models.analysis_job import AnalysisJob, JobStatus
-    from sqlalchemy import select, desc
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import desc, select
+
+    from app.models.analysis_job import AnalysisJob
 
     org_id = str(current_user.org_id) if current_user.org_id else str(current_user.id)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+    cutoff = datetime.now(UTC) - timedelta(hours=48)
 
     try:
         result = await db.execute(

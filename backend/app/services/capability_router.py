@@ -33,8 +33,9 @@ Execution is the orchestrator's responsibility.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,8 @@ def _forecast_validator(state: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _budget_validator(state: dict[str, Any]) -> tuple[bool, str]:
+    if not state.get("budget_input"):
+        return False, "Budget input not provided."
     txs = state.get("transactions") or []
     if len(txs) < 5:
         return False, "Insufficient transactions for budget analysis."
@@ -163,8 +166,14 @@ def _budget_validator(state: dict[str, Any]) -> tuple[bool, str]:
 def _multiperiod_validator(state: dict[str, Any]) -> tuple[bool, str]:
     cf = state.get("cashflow") or {}
     series = cf.get("monthly_series") or []
-    if len(series) < 3:
-        return False, f"Only {len(series)} months of data — need ≥3 for trend analysis."
+    if series:
+        if len(series) < 3:
+            return False, f"Only {len(series)} months of data — need ≥3 for trend analysis."
+        return True, ""
+    txs = state.get("transactions") or []
+    months = {t.get("transaction_date")[:7] for t in txs if t.get("transaction_date")}
+    if len(months) < 3:
+        return False, f"Only {len(months)} distinct months in transactions — need ≥3 for trend analysis."
     return True, ""
 
 
@@ -240,7 +249,7 @@ AGENT_CAPABILITIES: dict[str, AgentCapability] = {
     ),
     "multi_period_agent": AgentCapability(
         name="multi_period_agent",
-        requires_all=["cashflow"],
+        requires_all=["transactions"],
         produces=["multi_period"],
         depends_on=["cashflow_agent"],
         priority=4,
@@ -398,7 +407,16 @@ class CapabilityRouter:
         already_completed : set[str], optional
             Agents already completed in this run (for dependency tracking).
         """
-        completed = already_completed or set()
+        completed = set(already_completed or set())
+        if _has_data(state, "transactions"):
+            completed.add("data_ingestion")
+        if _has_data(state, "pnl"):
+            completed.add("pnl_agent")
+        if _has_data(state, "cashflow"):
+            completed.add("cashflow_agent")
+        if _has_data(state, "forecast"):
+            completed.add("forecast_agent")
+
         agents_to_check = requested_agents or list(self.capabilities.keys())
 
         decisions: dict[str, RoutingDecision] = {}

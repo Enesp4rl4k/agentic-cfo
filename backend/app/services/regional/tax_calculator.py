@@ -8,10 +8,10 @@ Calculates:
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 
 
 class KDVDeclarationResult(BaseModel):
@@ -171,10 +171,10 @@ class TurkishTaxEngine:
         current_date: date,
         kdv_res: KDVDeclarationResult,
         muhtasar_res: MuhtasarStopajResult,
-        gecici_res: Optional[GeciciVergiResult] = None,
-    ) -> List[TaxCashOutflowItem]:
+        gecici_res: GeciciVergiResult | None = None,
+    ) -> list[TaxCashOutflowItem]:
         """Projects tax payment spikes within 30-60 days for cash flow forecasting."""
-        items: List[TaxCashOutflowItem] = []
+        items: list[TaxCashOutflowItem] = []
 
         if kdv_res.odenecek_kdv > 0:
             items.append(

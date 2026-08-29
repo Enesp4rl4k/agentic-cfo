@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -48,7 +49,7 @@ async def stream_job_events(
 
     async def _already_done_stream():
         import json
-        from datetime import datetime, timezone
+        from datetime import datetime
         logs = job.logs or []
         for log in logs:
             yield (
@@ -60,7 +61,7 @@ async def stream_job_events(
                     "ok": log.get("ok", True),
                     "detail": log.get("detail"),
                     "confidence": log.get("confidence"),
-                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "ts": datetime.now(UTC).isoformat(),
                 })
                 + "\n\n"
             )
@@ -70,7 +71,7 @@ async def stream_job_events(
                 "event": "done",
                 "job_id": job_id,
                 "status": str(job.status),
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
             })
             + "\n\n"
         )

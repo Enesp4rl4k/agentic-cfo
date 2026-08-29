@@ -18,7 +18,7 @@ Cikti:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class CMOKernelOutput:
     narrative:    str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in asdict(self).items()}
+        return dict(asdict(self).items())
 
     def to_cmo_state_patch(self) -> dict[str, Any]:
         return {
@@ -309,8 +309,10 @@ async def run_cmo_kernel(
         industry=industry,
     )
     output = kernel.generate()
-    return {
+    from app.platform.provenance import attach_provenance
+
+    return attach_provenance({
         "ok":     True,
         "output": output.to_dict(),
         "patch":  output.to_cmo_state_patch(),
-    }
+    })

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -64,7 +64,7 @@ async def run_consensus(
     - conflicts: list of detected claim conflicts
     - narrative: human-readable explanation
     """
-    from app.services.negotiation import ConsensusEngine, TOPIC_WEIGHTS
+    from app.services.negotiation import TOPIC_WEIGHTS, ConsensusEngine
 
     org_id = body.org_id or (str(user.org_id) if user.org_id else None)
     if not org_id:
@@ -143,63 +143,15 @@ async def list_conflicts(
     - topic:  filter by topic (optional)
     """
     try:
-        from sqlalchemy import text
+        from app.services.semantic.conflicts import list_org_conflicts
 
-        query = (
-            "SELECT id, topic, agent_a, agent_b, claim_a, claim_b, "
-            "consensus_score, resolution, status, created_at, resolved_at "
-            "FROM agent_conflicts WHERE org_id = :org_id"
+        conflicts = await list_org_conflicts(
+            org_id, db, status=status, topic=topic, limit=50
         )
-        params: dict[str, Any] = {"org_id": org_id}
-
-        if status != "all":
-            query += " AND status = :status"
-            params["status"] = status
-
-        if topic:
-            query += " AND topic = :topic"
-            params["topic"] = topic
-
-        query += " ORDER BY created_at DESC LIMIT 50"
-
-        result = await db.execute(text(query), params)
-        rows   = result.fetchall()
-
-        conflicts = []
-        for row in rows:
-            claim_a = row[4]
-            claim_b = row[5]
-            resolution_data = row[7]
-
-            # Parse JSON fields
-            if isinstance(claim_a, str):
-                try: claim_a = json.loads(claim_a)
-                except Exception: pass
-            if isinstance(claim_b, str):
-                try: claim_b = json.loads(claim_b)
-                except Exception: pass
-            if isinstance(resolution_data, str):
-                try: resolution_data = json.loads(resolution_data)
-                except Exception: pass
-
-            conflicts.append({
-                "id":              row[0],
-                "topic":           row[1],
-                "agent_a":         row[2],
-                "agent_b":         row[3],
-                "claim_a":         claim_a,
-                "claim_b":         claim_b,
-                "consensus_score": row[6],
-                "resolution":      resolution_data,
-                "status":          row[8],
-                "created_at":      row[9].isoformat() if row[9] else None,
-                "resolved_at":     row[10].isoformat() if row[10] else None,
-            })
-
         return {
             "data": {
-                "org_id":    org_id,
-                "count":     len(conflicts),
+                "org_id": org_id,
+                "count": len(conflicts),
                 "conflicts": conflicts,
             },
             "error": None,
@@ -228,39 +180,41 @@ async def resolve_conflict(
     The conflict is marked as resolved and a resolved_at timestamp is set.
     """
     try:
-        from sqlalchemy import text
+        from app.models.agent_conflict import AgentConflict
+        from app.services.semantic.conflicts import _parse_json_field
 
-        await db.execute(
-            text(
-                "UPDATE agent_conflicts "
-                "SET status = 'resolved', "
-                "    resolved_at = :now, "
-                "    resolution = JSON_SET(COALESCE(resolution, '{}'), "
-                "                          '$.user_resolution', :user_res, "
-                "                          '$.note', :note, "
-                "                          '$.resolved_by', :user_id) "
-                "WHERE id = :id"
-            ),
+        row = await db.get(AgentConflict, conflict_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Çelişki bulunamadı.")
+
+        now = datetime.now(UTC)
+        existing = _parse_json_field(row.resolution)
+        if not isinstance(existing, dict):
+            existing = {}
+        existing.update(
             {
-                "now":      datetime.now(timezone.utc),
-                "user_res": body.resolution,
-                "note":     body.note[:500] if body.note else "",
-                "user_id":  str(user.id),
-                "id":       conflict_id,
-            },
+                "user_resolution": body.resolution,
+                "note": body.note[:500] if body.note else "",
+                "resolved_by": str(user.id),
+            }
         )
+        row.status = "resolved"
+        row.resolved_at = now
+        row.resolution = json.dumps(existing)
         await db.commit()
 
         return {
             "data": {
                 "conflict_id": conflict_id,
-                "status":      "resolved",
-                "resolution":  body.resolution,
+                "status": "resolved",
+                "resolution": body.resolution,
                 "resolved_by": str(user.id),
             },
             "error": None,
         }
 
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Failed to resolve conflict=%s: %s", conflict_id, exc)
         raise HTTPException(status_code=500, detail="Çelişki çözülemedi.") from exc
@@ -299,3 +253,32 @@ def _topic_description(topic: str) -> str:
         "operational_risk": "Operasyonel risk — COO vs Risk vs CFO",
     }
     return descriptions.get(topic, topic)
+
+
+# ── Boardroom Endpoints (FAZ 1) ────────────────────────────────────────────────────────
+
+class BoardroomDebateRequest(BaseModel):
+    topic: str
+    context: str
+    agents: list[str] = ["CFO", "CMO"]
+
+@router.post("/negotiation/boardroom/debate")
+async def start_boardroom_debate(
+    body: BoardroomDebateRequest,
+    user: User = Depends(get_current_user)
+) -> dict[str, Any]:
+    """
+    Run an active LLM-driven boardroom debate between agents.
+    """
+    from app.services.negotiation.boardroom import run_boardroom_debate
+
+    try:
+        result = await run_boardroom_debate(
+            topic=body.topic,
+            context=body.context,
+            agents=body.agents
+        )
+        return {"status": "success", "debate": result.model_dump()}
+    except Exception as e:
+        logger.error(f"Boardroom debate failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

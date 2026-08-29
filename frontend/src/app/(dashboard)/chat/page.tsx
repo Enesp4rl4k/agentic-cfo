@@ -7,8 +7,9 @@ import {
   ChevronRight, Sparkles, TrendingUp, AlertTriangle, DollarSign,
   Zap, Wifi, WifiOff, FlaskConical,
 } from "lucide-react";
-import { sendChatMessage } from "@/lib/api/cfo";
-import type { ChatMessage } from "@/lib/api/cfo";
+import { sendAgentChatMessage } from "@/lib/api/chat";
+import type { ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
+import { ChatEvidenceChips } from "@/components/ui/chat-evidence-chips";
 import { cn } from "@/lib/utils";
 import { useWSChat } from "@/hooks/useWSChat";
 import { useSSEChat } from "@/hooks/useSSEChat";
@@ -17,11 +18,14 @@ import { apiClient } from "@/lib/api/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Message = ChatMessage & {
+type Message = {
   id: string;
+  role: "user" | "assistant";
+  content: string;
   pending?: boolean;
   error?: boolean;
   ts: number;
+  evidence?: ChatEvidenceMeta;
 };
 
 // ── Suggestion groups ─────────────────────────────────────────────────────────
@@ -260,6 +264,11 @@ function MessageBubble({
           )}
         </div>
 
+        {/* Evidence chips for grounded assistant replies */}
+        {!message.pending && !isUser && message.evidence && (
+          <ChatEvidenceChips meta={message.evidence} />
+        )}
+
         {/* Footer: timestamp + copy */}
         {!message.pending && (
           <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -403,8 +412,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  // useWS=true → WebSocket streaming (default)
-  // useWS=false → SSE streaming fallback (auto-switch on WS error)
+  // grounded = POST /chat/agent (dual RAG + semantic KPIs, default)
+  // stream = WebSocket token streaming (falls back to SSE on error)
+  const [chatMode, setChatMode] = useState<"grounded" | "stream">("grounded");
   const [useWS, setUseWS] = useState(true);
   const [simResult, setSimResult] = useState<Record<string, unknown> | null>(null);
 
@@ -426,9 +436,10 @@ export default function ChatPage() {
     onError: (_msg) => { /* SSE also failed — already handled in hook */ },
   });
 
-  // Sync SSE messages to local state when in SSE mode
+  // Sync SSE messages to local state when in stream + SSE mode
   useEffect(() => {
-    if (!useWS && sseChat.messages.length > 0) {
+    if (chatMode !== "stream" || useWS) return;
+    if (sseChat.messages.length > 0) {
       const mapped: Message[] = sseChat.messages.map((m, i) => ({
         id: `sse-${i}`,
         role: m.role,
@@ -438,10 +449,11 @@ export default function ChatPage() {
       }));
       setMessages(mapped);
     }
-  }, [useWS, sseChat.messages]);
+  }, [chatMode, useWS, sseChat.messages]);
 
-  // Sync WS messages to local state
+  // Sync WS messages to local state when in stream mode
   useEffect(() => {
+    if (chatMode !== "stream" || !useWS) return;
     if (ws.messages.length > 0) {
       const mapped: Message[] = ws.messages.map((m, i) => ({
         id: `ws-${i}`,
@@ -449,10 +461,11 @@ export default function ChatPage() {
         content: m.content,
         pending: m.streaming,
         ts: Date.now(),
+        evidence: m.evidence,
       }));
       setMessages(mapped);
     }
-  }, [ws.messages]);
+  }, [chatMode, useWS, ws.messages]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -509,6 +522,52 @@ export default function ChatPage() {
       return;
     }
 
+    // Grounded mode — dual RAG + semantic KPIs via POST /chat/agent
+    if (chatMode === "grounded") {
+      const userMsg: Message = {
+        id: crypto.randomUUID(), role: "user", content: q, ts: Date.now(),
+      };
+      const pendingMsg: Message = {
+        id: crypto.randomUUID(), role: "assistant", content: "", pending: true, ts: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMsg, pendingMsg]);
+      setLoading(true);
+      try {
+        const history = messages
+          .filter((m) => !m.pending && !m.error)
+          .map(({ role, content }) => ({ role, content }));
+        const { answer, evidence } = await sendAgentChatMessage(q, {
+          agentFilter: "cfo",
+          history,
+        });
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            id: pendingMsg.id,
+            role: "assistant",
+            content: answer,
+            evidence,
+            ts: Date.now(),
+          },
+        ]);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            id: pendingMsg.id,
+            role: "assistant",
+            content: `Bir hata oluştu: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
+            error: true,
+            ts: Date.now(),
+          },
+        ]);
+      } finally {
+        setLoading(false);
+        inputRef.current?.focus();
+      }
+      return;
+    }
+
     // WebSocket streaming mode
     if (useWS) {
       ws.send({ question: q, jobId, orgId });
@@ -520,38 +579,7 @@ export default function ChatPage() {
       sseChat.send({ question: q, jobId, orgId });
       return;
     }
-
-    // HTTP fallback (non-streaming, last resort)
-    if (!jobId) return;
-    const userMsg: Message = {
-      id: crypto.randomUUID(), role: "user", content: q, ts: Date.now(),
-    };
-    const pendingMsg: Message = {
-      id: crypto.randomUUID(), role: "assistant", content: "", pending: true, ts: Date.now(),
-    };
-    setMessages((prev) => [...prev, userMsg, pendingMsg]);
-    setLoading(true);
-    try {
-      const history: ChatMessage[] = messages.map(({ role, content }) => ({ role, content }));
-      const answer = await sendChatMessage(jobId, q, history);
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        { id: pendingMsg.id, role: "assistant", content: answer, ts: Date.now() },
-      ]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        {
-          id: pendingMsg.id, role: "assistant",
-          content: `Bir hata oluştu: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
-          error: true, ts: Date.now(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
-      inputRef.current?.focus();
-    }
-  }, [jobId, orgId, loading, messages, useWS, ws]);
+  }, [jobId, orgId, loading, messages, chatMode, useWS, ws, sseChat]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -565,12 +593,9 @@ export default function ChatPage() {
     }
   };
 
-  // Combined streaming state: WS or SSE
-  const isStreaming = useWS ? ws.isStreaming : sseChat.status === "streaming";
+  // Combined streaming state: WS or SSE (stream mode only)
+  const isStreaming = chatMode === "stream" && (useWS ? ws.isStreaming : sseChat.status === "streaming");
   const isBusy = loading || isStreaming;
-
-  // Show SSE mode indicator when fallen back
-  const chatMode: "ws" | "sse" | "http" = useWS ? "ws" : "sse";
 
   if (!jobId && !orgId) return <NoJobState />;
 
@@ -591,27 +616,29 @@ export default function ChatPage() {
             <p className="mt-0.5 text-[10px] text-muted-foreground flex items-center gap-1">
               {isBusy ? (
                 <><span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />Yanıt üretiliyor…</>
+              ) : chatMode === "grounded" ? (
+                <><Sparkles className="h-2.5 w-2.5 text-primary" />Grounded (RAG + KPI)</>
               ) : useWS ? (
                 <><Wifi className="h-2.5 w-2.5 text-emerald-400" />WS Streaming</>
               ) : (
-                <><WifiOff className="h-2.5 w-2.5 text-muted-foreground" />HTTP Modu</>
+                <><WifiOff className="h-2.5 w-2.5 text-muted-foreground" />SSE Streaming</>
               )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* WS / HTTP toggle */}
+          {/* Grounded / Stream toggle */}
           <button
-            onClick={() => setUseWS((v) => !v)}
-            title={useWS ? "HTTP moduna geç" : "WS streaming moduna geç"}
+            onClick={() => setChatMode((m) => (m === "grounded" ? "stream" : "grounded"))}
+            title={chatMode === "grounded" ? "Stream moduna geç" : "Grounded moda geç"}
             className={cn(
               "rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors",
-              useWS
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+              chatMode === "grounded"
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
             )}
           >
-            {useWS ? "WS" : "HTTP"}
+            {chatMode === "grounded" ? "Grounded" : "Stream"}
           </button>
           {messages.length > 0 && (
             <button

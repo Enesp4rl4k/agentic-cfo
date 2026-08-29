@@ -27,7 +27,7 @@ Events older than 90 days are pruned by the nightly scheduler.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,6 @@ async def record_usage_event(
     if db is None:
         return
     try:
-        from app.models.organization import Organization
         from sqlalchemy import text
 
         # Try to use usage_events table (may not exist in old migrations)
@@ -95,7 +94,7 @@ async def record_usage_event(
                 "org_id":      org_id,
                 "resource":    resource,
                 "quantity":    quantity,
-                "recorded_at": datetime.now(timezone.utc),
+                "recorded_at": datetime.now(UTC),
             },
         )
         await db.commit()
@@ -115,7 +114,7 @@ async def get_org_plan(org_id: str, db: Any) -> str:
     if db is None:
         return "free"
     try:
-        from sqlalchemy import select, text
+        from sqlalchemy import text
         # Try billing_subscriptions table
         result = await db.execute(
             text(
@@ -146,7 +145,7 @@ async def get_monthly_usage(
     try:
         from sqlalchemy import text
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         result = await db.execute(
@@ -269,7 +268,7 @@ async def get_usage_summary(org_id: str, db: Any) -> dict[str, Any]:
         "org_id":       org_id,
         "plan":         plan_name,
         "plan_display": limits["display_name"],
-        "period":       datetime.now(timezone.utc).strftime("%Y-%m"),
+        "period":       datetime.now(UTC).strftime("%Y-%m"),
         "resources":    usage_data,
         "allowed_agents": limits["allowed_agents"],
     }
@@ -286,10 +285,11 @@ async def prune_old_usage_events(db: Any, days: int = 90) -> int:
     if db is None:
         return 0
     try:
-        from sqlalchemy import text
         from datetime import timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        from sqlalchemy import text
+
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         result = await db.execute(
             text("DELETE FROM usage_events WHERE recorded_at < :cutoff"),
             {"cutoff": cutoff},

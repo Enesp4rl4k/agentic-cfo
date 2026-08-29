@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  Sparkles,
+  Loader2,
+  X,
 } from "lucide-react";
 import {
   useAnomalies,
@@ -180,6 +183,48 @@ function AnomalyCard({
   const cfg = SEVERITY_CONFIG[sev];
   const Icon = cfg.icon;
 
+  // RCA (Root Cause Analysis) state
+  const [rcaOpen,    setRcaOpen]    = useState(false);
+  const [rcaText,    setRcaText]    = useState("");
+  const [rcaLoading, setRcaLoading] = useState(false);
+  const rcaAbort = useRef<AbortController | null>(null);
+
+  const handleExplain = useCallback(async () => {
+    if (rcaOpen) { setRcaOpen(false); rcaAbort.current?.abort(); return; }
+    setRcaOpen(true);
+    setRcaText("");
+    setRcaLoading(true);
+    rcaAbort.current?.abort();
+    const ctrl = new AbortController();
+    rcaAbort.current = ctrl;
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    try {
+      const res = await fetch(`${API_URL}/api/v1/anomalies/explain/${anomaly.id}`, { signal: ctrl.signal });
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) return;
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") { setRcaLoading(false); return; }
+          setRcaText((p) => p + payload);
+        }
+      }
+    } catch (e: any) {
+      if (e.name !== "AbortError") setRcaText("Analiz başlatılamadı.");
+    } finally {
+      setRcaLoading(false);
+    }
+  }, [anomaly.id, rcaOpen]);
+
   return (
     <div
       className={cn(
@@ -240,6 +285,40 @@ function AnomalyCard({
           {/* Evidence chain panel — replaces raw dl */}
           <div className="mt-3">
             <EvidenceChainPanel anomaly={anomaly} />
+          </div>
+
+          {/* RCA — Yapay Zeka Açıkla button */}
+          <div className="mt-3">
+            <button
+              onClick={handleExplain}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "border border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary",
+                rcaOpen ? "border-primary/40 bg-primary/5 text-primary" : "text-muted-foreground"
+              )}
+            >
+              {rcaLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )}
+              {rcaOpen ? "Kapat" : "Yapay Zeka ile Açıkla"}
+            </button>
+
+            {/* Streaming RCA panel */}
+            {rcaOpen && (
+              <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    🔍 Kök Neden Analizi
+                  </span>
+                  {rcaLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                </div>
+                <p className="text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                  {rcaText || (rcaLoading ? <span className="text-muted-foreground animate-pulse">Analiz yapılıyor…</span> : null)}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

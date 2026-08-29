@@ -9,8 +9,8 @@ Pure calculation — no LLM required.
 from __future__ import annotations
 
 import csv
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from collections import Counter
+from datetime import datetime
 from typing import Any
 
 from app.agents.audit.state import AuditState, AuditStepLog

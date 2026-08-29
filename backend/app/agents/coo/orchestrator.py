@@ -13,14 +13,14 @@ from typing import Any
 
 from langgraph.graph import StateGraph
 
+from app.agents.coo.process_agent import run_process_agent
+from app.agents.coo.resource_agent import run_resource_agent
+from app.agents.coo.sla_agent import run_sla_agent
 from app.agents.coo.state import (
+    DEFAULT_COO_RUN_CONFIG,
     COOState,
     COOStepLog,
-    DEFAULT_COO_RUN_CONFIG,
 )
-from app.agents.coo.process_agent  import run_process_agent
-from app.agents.coo.resource_agent import run_resource_agent
-from app.agents.coo.sla_agent      import run_sla_agent
 
 logger = logging.getLogger(__name__)
 
@@ -176,25 +176,16 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
     # ── LLM Narrative (Türkçe + actionable) ──────────────────────────────────
     narrative = _build_fallback_narrative(overall_score, processes, resources, sla)
     try:
-        from app.config import get_settings
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.platform.model_gateway import complete_text
 
-        settings = get_settings()
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=700,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
         eff    = processes.get("efficiency_score", 0.0)
         util   = resources.get("avg_utilization_rate", 0.0)
         breach = sla.get("sla_breach_rate", 0.0)
         nps    = sla.get("avg_nps_score", 0.0)
 
-        response = await llm.ainvoke([
-            SystemMessage(content=(
+        narrative = (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir COO'sun. Operasyonel sağlık verilerini analiz et ve "
                 "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
                 "Yanıt şu yapıda olsun:\n"
@@ -202,15 +193,15 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
                 "2. En kritik 1-2 operasyonel sorun (darboğaz, aşırı kullanım, NPS düşüklüğü)\n"
                 "3. Operasyon ekibinin hemen yapması gereken 2-3 somut iyileştirme (öncelik sırasıyla)\n"
                 "Lean operasyon perspektifinden pratik öneriler ekle."
-            )),
-            HumanMessage(content=(
+            ),
+            prompt=(
                 f"Operasyonel Sağlık Skoru: {overall_score}/10\n"
                 f"Süreç Verimliliği: {eff}/10 | Kaynak Kullanımı: %{util*100:.0f} | "
                 f"SLA İhlal Oranı: %{breach*100:.0f} | NPS: {nps:.0f}\n"
                 f"Önemli Risk Sayısı: {len(top_risks)}"
-            )),
-        ])
-        narrative = response.content.strip()
+            ),
+            max_tokens=700,
+        )).strip()
     except Exception as exc:
         logger.warning("COO summary narrative failed: %s", exc)
 
@@ -289,16 +280,16 @@ def _build_fallback_narrative(
 def build_coo_graph() -> StateGraph:
     g = StateGraph(COOState)
 
-    g.add_node("process",     node_process)
-    g.add_node("resource",    node_resource)
-    g.add_node("sla",         node_sla)
-    g.add_node("coo_summary", node_coo_summary)
+    g.add_node("process_agent",  node_process)
+    g.add_node("resource_agent", node_resource)
+    g.add_node("sla_agent",      node_sla)
+    g.add_node("summary_agent",  node_coo_summary)
 
-    g.set_entry_point("process")
-    g.add_edge("process",     "resource")
-    g.add_edge("resource",    "sla")
-    g.add_edge("sla",         "coo_summary")
-    g.add_edge("coo_summary", "__end__")
+    g.set_entry_point("process_agent")
+    g.add_edge("process_agent",  "resource_agent")
+    g.add_edge("resource_agent", "sla_agent")
+    g.add_edge("sla_agent",      "summary_agent")
+    g.add_edge("summary_agent",  "__end__")
 
     return g.compile()
 

@@ -13,8 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -118,7 +118,7 @@ async def cross_domain_analyze(
     - Genel sirket saglik skoru hesaplanir (0-100)
     - Oncelikli aksiyonlar ve hizli kazanimlar listelenir
     """
-    from app.services.cross_domain_hub import run_cross_domain_analysis
+    from app.agents.orchestration.cross_domain_hub import run_cross_domain_analysis
     try:
         return await run_cross_domain_analysis(
             pnl=req.pnl, cashflow=req.cashflow, forecast=req.forecast,
@@ -140,7 +140,7 @@ async def cross_domain_from_job(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """CFO analiz job'undan tam cross-domain analiz."""
-    from app.services.cross_domain_hub import run_cross_domain_analysis
+    from app.agents.orchestration.cross_domain_hub import run_cross_domain_analysis
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} bulunamadi")
@@ -161,7 +161,7 @@ async def cross_domain_from_org(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """CompanyContext'teki tum agent verilerinden cross-domain analiz."""
-    from app.services.cross_domain_hub import run_cross_domain_analysis
+    from app.agents.orchestration.cross_domain_hub import run_cross_domain_analysis
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")
@@ -187,7 +187,7 @@ async def cross_domain_health(
     Hafif saglik skoru endpoint'i.
     Tam analiz yerine sadece genel saglik durumunu doner (dashboard header icin).
     """
-    from app.services.cross_domain_hub import run_cross_domain_analysis
+    from app.agents.orchestration.cross_domain_hub import run_cross_domain_analysis
     ctx = await _load_from_org(org_id)
     if not ctx:
         return {"health_score": None, "health_label": "no_data", "error": "Veri bulunamadi"}

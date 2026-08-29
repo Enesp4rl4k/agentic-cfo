@@ -62,7 +62,7 @@ def test_derive_actions_capped_at_three() -> None:
 
 
 def test_ops_schema_version() -> None:
-    assert OPS_SCHEMA_VERSION == "v1.1"
+    assert OPS_SCHEMA_VERSION == "v1.2"
 
 
 def test_sla_breach_threshold() -> None:

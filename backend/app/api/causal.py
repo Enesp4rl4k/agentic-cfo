@@ -13,15 +13,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
-from app.models.user import User
+from app.database import get_db
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

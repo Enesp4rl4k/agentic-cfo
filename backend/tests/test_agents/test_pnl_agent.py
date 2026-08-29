@@ -4,7 +4,6 @@ done_when: pytest tests/test_agents/test_pnl_agent.py -q → pass
 """
 from app.agents.pnl_agent import _compute_pnl
 
-
 SAMPLE_TRANSACTIONS = [
     {"type": "income",  "category": "revenue",    "amount_cents": 500_000},  # $5,000
     {"type": "income",  "category": "revenue",    "amount_cents": 300_000},  # $3,000

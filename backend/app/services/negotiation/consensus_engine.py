@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -282,14 +282,13 @@ def _weighted_vote(
         total_weight  += w
 
     if total_weight == 0:
-        return (list(claims.keys())[0], 0.5)
+        return (next(iter(claims.keys())), 0.5)
 
     consensus_value = weighted_sum / total_weight
 
     # Winning agent: claim closest to consensus value with highest weight
     best_agent   = ""
     best_score   = float("inf")
-    best_weight  = 0.0
 
     for agent, claim in claims.items():
         distance = abs(claim.value - consensus_value)
@@ -299,7 +298,6 @@ def _weighted_vote(
         if score < best_score:
             best_score  = score
             best_agent  = agent
-            best_weight = w
 
     return best_agent, consensus_value
 
@@ -409,7 +407,7 @@ class ConsensusEngine:
         conflicts: list[Conflict],
         agreement_score: float,
     ) -> ConsensusResult:
-        winning_agent, consensus_value = _weighted_vote(claims, topic)
+        winning_agent, _consensus_value = _weighted_vote(claims, topic)
         winning_claim = claims[winning_agent]
         dissenting    = [c for name, c in claims.items() if name != winning_agent]
 
@@ -535,7 +533,9 @@ class ConsensusEngine:
     ) -> None:
         """Persist top conflict to DB for frontend display."""
         try:
-            import json, uuid as _uuid
+            import json
+            import uuid as _uuid
+
             from sqlalchemy import text
 
             for conflict in conflicts[:3]:  # persist top 3
@@ -562,7 +562,7 @@ class ConsensusEngine:
                             "winner":    result.winning_agent,
                             "narrative": result.narrative[:500],
                         }),
-                        "now":        datetime.now(timezone.utc),
+                        "now":        datetime.now(UTC),
                     },
                 )
             await db.commit()

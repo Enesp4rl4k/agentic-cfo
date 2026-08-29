@@ -21,15 +21,14 @@ for _cls in ("HumanMessage", "SystemMessage", "AIMessage"):
     if not hasattr(_lc_core_msgs, _cls):
         setattr(_lc_core_msgs, _cls, object)
 
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from app.agents.data_ingestion import (
+    CATEGORY_KEYWORDS,
     _guess_category,
     _parse_amount,
     _parse_date,
-    CATEGORY_KEYWORDS,
 )
-
 
 # ── _guess_category ───────────────────────────────────────────────────────────
 
@@ -210,7 +209,7 @@ class TestParseDate:
     def test_returns_utc_timezone(self):
         result = _parse_date("2024-01-15")
         assert result is not None
-        assert result.tzinfo == timezone.utc
+        assert result.tzinfo == UTC
 
     def test_invalid_date_returns_none(self):
         assert _parse_date("not-a-date") is None

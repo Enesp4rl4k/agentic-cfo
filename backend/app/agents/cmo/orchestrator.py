@@ -13,14 +13,14 @@ from typing import Any
 
 from langgraph.graph import StateGraph
 
+from app.agents.cmo.campaign_agent import run_campaign_agent
+from app.agents.cmo.cohort_agent import run_cohort_agent
+from app.agents.cmo.funnel_agent import run_funnel_agent
 from app.agents.cmo.state import (
+    DEFAULT_CMO_RUN_CONFIG,
     CMOState,
     CMOStepLog,
-    DEFAULT_CMO_RUN_CONFIG,
 )
-from app.agents.cmo.campaign_agent import run_campaign_agent
-from app.agents.cmo.funnel_agent   import run_funnel_agent
-from app.agents.cmo.cohort_agent   import run_cohort_agent
 
 logger = logging.getLogger(__name__)
 
@@ -160,25 +160,16 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
     # ── LLM Narrative (Türkçe + actionable) ───────────────────────────────────
     narrative = _build_fallback_narrative(overall_score, campaigns, funnel, cohorts)
     try:
-        from app.config import get_settings
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.platform.model_gateway import complete_text
 
-        settings = get_settings()
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=700,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
         roas    = campaigns.get("overall_roas", 0.0)
         conv    = funnel.get("overall_conversion_rate", 0.0)
         ltv_cac = cohorts.get("ltv_cac_ratio", 0.0)
         churn   = cohorts.get("churn_rate", 0.0)
 
-        response = await llm.ainvoke([
-            SystemMessage(content=(
+        narrative = (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir CMO'sun. Pazarlama sağlık verilerini analiz et ve "
                 "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
                 "Yanıt şu yapıda olsun:\n"
@@ -186,15 +177,15 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
                 "2. En kritik 1-2 sorun (churn, dönüşüm darboğazı, düşük ROAS)\n"
                 "3. Pazarlama ekibinin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
                 "Growth hacker bakış açısıyla pratik öneriler ekle."
-            )),
-            HumanMessage(content=(
+            ),
+            prompt=(
                 f"Pazarlama Sağlık Skoru: {overall_score}/10\n"
                 f"ROAS: {roas:.2f}x | Dönüşüm Oranı: %{conv*100:.1f} | "
                 f"LTV:CAC: {ltv_cac:.2f}x | Aylık Churn: %{churn*100:.1f}\n"
                 f"Önemli Risk Sayısı: {len(top_risks)}"
-            )),
-        ])
-        narrative = response.content.strip()
+            ),
+            max_tokens=700,
+        )).strip()
     except Exception as exc:
         logger.warning("CMO summary narrative failed: %s", exc)
 
@@ -259,16 +250,16 @@ def _build_fallback_narrative(
 def build_cmo_graph() -> StateGraph:
     g = StateGraph(CMOState)
 
-    g.add_node("campaigns",   node_campaigns)
-    g.add_node("funnel",      node_funnel)
-    g.add_node("cohort",      node_cohort)
-    g.add_node("cmo_summary", node_cmo_summary)
+    g.add_node("campaigns_agent", node_campaigns)
+    g.add_node("funnel_agent",    node_funnel)
+    g.add_node("cohort_agent",    node_cohort)
+    g.add_node("summary_agent",   node_cmo_summary)
 
-    g.set_entry_point("campaigns")
-    g.add_edge("campaigns",   "funnel")
-    g.add_edge("funnel",      "cohort")
-    g.add_edge("cohort",      "cmo_summary")
-    g.add_edge("cmo_summary", "__end__")
+    g.set_entry_point("campaigns_agent")
+    g.add_edge("campaigns_agent", "funnel_agent")
+    g.add_edge("funnel_agent",    "cohort_agent")
+    g.add_edge("cohort_agent",    "summary_agent")
+    g.add_edge("summary_agent",   "__end__")
 
     return g.compile()
 

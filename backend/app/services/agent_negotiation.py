@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.agent_bus import AgentMessage, QueryType, get_agent_bus
+from app.services.agent_bus import QueryType, get_agent_bus
 
 logger = logging.getLogger(__name__)
 

@@ -65,8 +65,8 @@ async def sso_login(
 
     Frontend should redirect the user to the returned `authorization_url`.
     """
-    from app.services.sso import get_sso_service
     from app.config import get_settings
+    from app.services.sso import get_sso_service
 
     settings = get_settings()
 
@@ -114,9 +114,9 @@ async def sso_callback(
       2. Store in localStorage as the session token
       3. Redirect to dashboard
     """
-    from app.services.sso import get_sso_service, provision_sso_user
-    from app.services.auth import create_access_token, create_refresh_token
     from app.config import get_settings
+    from app.services.auth import create_access_token, create_refresh_token
+    from app.services.sso import get_sso_service, provision_sso_user
 
     settings     = get_settings()
     frontend_url = _frontend_url(settings)

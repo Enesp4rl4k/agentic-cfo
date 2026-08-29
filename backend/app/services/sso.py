@@ -33,7 +33,7 @@ import os
 import secrets
 import urllib.parse
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -129,7 +129,7 @@ async def _save_state(state: str, data: dict) -> None:
     except Exception:
         pass
     # In-memory fallback (single-process dev only)
-    _STATE_STORE[state] = (data, datetime.now(timezone.utc).timestamp() + _STATE_TTL)
+    _STATE_STORE[state] = (data, datetime.now(UTC).timestamp() + _STATE_TTL)
 
 
 async def _load_state(state: str) -> dict | None:
@@ -147,7 +147,7 @@ async def _load_state(state: str) -> dict | None:
     if not entry:
         return None
     data, expires = entry
-    if datetime.now(timezone.utc).timestamp() > expires:
+    if datetime.now(UTC).timestamp() > expires:
         return None
     return data
 
@@ -403,6 +403,7 @@ async def provision_sso_user(
     3. If not found → create new user (role=ANALYST, no password)
     """
     from sqlalchemy import select
+
     from app.models.user import User, UserRole
 
     if not oauth_user.email:
@@ -414,7 +415,7 @@ async def provision_sso_user(
     )
     user = result.scalar_one_or_none()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if user:
         # Update SSO metadata

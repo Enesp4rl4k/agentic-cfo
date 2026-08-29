@@ -61,9 +61,8 @@ Usage
 from __future__ import annotations
 
 import io
-import re
 import logging
-import statistics
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -428,7 +427,7 @@ class CSVValidator:
                 mapped_field=mapped_field,
                 null_count=null_count,
                 null_pct=null_pct,
-                sample_values=[v for v in non_empty[:5]],
+                sample_values=list(non_empty[:5]),
                 issues=col_issues,
                 date_format=date_fmt,
             ))

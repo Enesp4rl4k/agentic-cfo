@@ -1,14 +1,14 @@
-import os
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.report import Report, ReportFormat
-from app.api.auth import get_current_user
 from app.models.user import User
 
 router = APIRouter()

@@ -20,7 +20,7 @@ Output: Structured dict + WeasyPrint HTML/PDF
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def _score(v: float | None, scale: float = 10.0) -> str:
 
 def _build_cfo_section(cfo: dict[str, Any]) -> dict[str, Any]:
     pnl      = cfo.get("pnl")      or {}
-    cashflow = cfo.get("cashflow") or {}
+    cfo.get("cashflow") or {}
     forecast = cfo.get("forecast") or {}
     anomalies = cfo.get("anomalies") or []
     alerts    = cfo.get("alerts")   or []
@@ -240,7 +240,7 @@ def build_unified_report(
         "company_name":    company_name or ctx_data.get("company_name") or "Şirket",
         "reporting_period": reporting_period or ctx_data.get("reporting_period") or "",
         "agents_available": agents_available,
-        "generated_at":    datetime.now(timezone.utc).isoformat(),
+        "generated_at":    datetime.now(UTC).isoformat(),
     }
 
     # CFO headline
@@ -279,7 +279,7 @@ def _build_unified_html(report: dict[str, Any]) -> str:
     company    = summary["company_name"]
     period     = summary.get("reporting_period", "")
     agents     = ", ".join(summary["agents_available"])
-    gen_at     = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC")
+    gen_at     = datetime.now(UTC).strftime("%d %B %Y, %H:%M UTC")
     revenue    = summary.get("headline_revenue", "—")
     net_margin = summary.get("headline_net_margin", "—")
     risk_count = summary.get("cross_risk_count", 0)

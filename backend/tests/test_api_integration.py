@@ -1,0 +1,487 @@
+"""
+FastAPI API Integration Tests.
+
+Verifies end-to-end HTTP request/response flows against the FastAPI application
+using httpx.AsyncClient (ASGITransport) and in-memory test database:
+1. Health check
+2. Billing plans
+3. API key generation, SHA-256 hashing, and API key header authentication
+4. User registration and login (JWT access tokens)
+5. Authenticated profile endpoint
+6. Global 422 and 500 sanitized error handlers
+"""
+from __future__ import annotations
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.database import Base, get_db
+from app.main import app
+from app.services.auth import generate_api_key, hash_api_key
+
+
+@pytest_asyncio.fixture
+async def test_client():
+    """Async test client with in-memory SQLite database dependency override."""
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with TestSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Expose the test sessionmaker so tests can seed rows directly.
+        client._test_sessionmaker = TestSessionLocal  # type: ignore[attr-defined]
+        yield client
+
+    app.dependency_overrides.clear()
+    await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_health_check_endpoint(test_client):
+    """Verify standard /health endpoint returns 200 OK."""
+    resp = await test_client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("status") == "ok"
+
+
+@pytest.mark.asyncio
+async def test_billing_plans_public_endpoint(test_client):
+    """Verify /api/v1/billing/plans returns all subscription tiers."""
+    resp = await test_client.get("/api/v1/billing/plans")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get("error") is None
+    plans = body.get("data", {}).get("plans", [])
+    assert len(plans) >= 3
+    plan_ids = [p["id"] for p in plans]
+    assert "starter" in plan_ids
+    assert "pro" in plan_ids
+
+
+@pytest.mark.asyncio
+async def test_api_key_hashing_and_verification():
+    """Verify API keys are hashed with SHA-256."""
+    raw_key = generate_api_key()
+    assert raw_key.startswith("cfo_")
+
+    hashed_1 = hash_api_key(raw_key)
+    hashed_2 = hash_api_key(raw_key)
+    assert hashed_1 == hashed_2
+    assert len(hashed_1) == 64  # SHA-256 hex string
+
+
+@pytest.mark.asyncio
+async def test_user_registration_login_and_auth_flow(test_client):
+    """Verify registration, login with JWT, and accessing protected /auth/me."""
+    reg_resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "cfo.test@company.com",
+            "password": "StrongPassword123!",
+            "full_name": "Test CFO",
+            "role": "cfo",
+        },
+    )
+    assert reg_resp.status_code == 201
+    reg_body = reg_resp.json()
+    assert reg_body.get("data", {}).get("email") == "cfo.test@company.com"
+
+    # Login
+    login_resp = await test_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "cfo.test@company.com",
+            "password": "StrongPassword123!",
+        },
+    )
+    assert login_resp.status_code == 200
+    login_body = login_resp.json()
+    token = login_body.get("data", {}).get("access_token")
+    assert token is not None
+
+    # Access protected /auth/me
+    me_resp = await test_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_resp.status_code == 200
+    me_body = me_resp.json()
+    assert me_body.get("data", {}).get("email") == "cfo.test@company.com"
+    assert me_body.get("data", {}).get("role") == "cfo"
+
+
+@pytest.mark.asyncio
+async def test_api_key_generation_and_authentication(test_client):
+    """Verify API key creation and subsequent authentication via X-API-Key."""
+    # Register & login
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "api.user@company.com",
+            "password": "StrongPassword123!",
+            "full_name": "API User",
+            "role": "analyst",
+        },
+    )
+    login_resp = await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "api.user@company.com", "password": "StrongPassword123!"},
+    )
+    token = login_resp.json()["data"]["access_token"]
+
+    # Generate API key
+    key_resp = await test_client.post(
+        "/api/v1/auth/api-key",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert key_resp.status_code == 200
+    api_key = key_resp.json()["data"]["api_key"]
+    assert api_key.startswith("cfo_")
+
+    # Access /auth/me using X-API-Key header (no Bearer token)
+    me_resp = await test_client.get(
+        "/api/v1/auth/me",
+        headers={"X-API-Key": api_key},
+    )
+    assert me_resp.status_code == 200
+    assert me_resp.json()["data"]["email"] == "api.user@company.com"
+
+
+@pytest.mark.asyncio
+async def test_validation_error_handler_sanitized_format(test_client):
+    """Verify 422 validation errors return normalized secure envelope."""
+    resp = await test_client.post("/api/v1/auth/login", json={})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body.get("data") is None
+    assert "error" in body
+    assert body.get("status_code") == 422
+
+
+@pytest.mark.asyncio
+async def test_llm_costs_endpoint_empty_ledger(test_client):
+    """GET /api/v1/system/llm-costs returns a zeroed rollup on a fresh DB."""
+    resp = await test_client.get("/api/v1/system/llm-costs?days=7")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["window_days"] == 7
+    assert data["total_calls"] == 0
+    assert data["total_cost_usd"] == 0.0
+    assert data["by_model"] == []
+    assert data["by_org"] == []
+    assert "live_process_aggregate" in data
+
+
+@pytest.mark.asyncio
+async def test_llm_costs_endpoint_aggregates_rows(test_client):
+    """Insert LLMCallLog rows and verify the rollup groups them."""
+    from app.database import get_db
+    from app.models.llm_call_log import LLMCallLog
+
+    override = test_client._transport.app.dependency_overrides[get_db]
+    agen = override()
+    db = await agen.__anext__()
+    try:
+        db.add_all([
+            LLMCallLog(org_id="org-A", task_type="short_narrative", model="gpt-4o-mini",
+                       input_tokens=100, output_tokens=50, cost_usd=0.01, latency_ms=120, ok=True),
+            LLMCallLog(org_id="org-A", task_type="deep_analysis", model="gpt-4o",
+                       input_tokens=800, output_tokens=400, cost_usd=0.05, latency_ms=900, ok=True),
+            LLMCallLog(org_id="org-B", task_type="short_narrative", model="gpt-4o-mini",
+                       input_tokens=200, output_tokens=80, cost_usd=0.02, latency_ms=200, ok=False),
+        ])
+        await db.commit()
+    finally:
+        await agen.aclose()
+
+    data = (await test_client.get("/api/v1/system/llm-costs")).json()["data"]
+    assert data["total_calls"] == 3
+    assert data["ok_calls"] == 2
+    assert data["total_cost_usd"] == pytest.approx(0.08)
+    by_org = {r["key"]: r for r in data["by_org"]}
+    assert by_org["org-A"]["cost_usd"] == pytest.approx(0.06)
+    assert by_org["org-A"]["calls"] == 2
+    models = {r["key"] for r in data["by_model"]}
+    assert {"gpt-4o", "gpt-4o-mini"} <= models
+
+
+@pytest.mark.asyncio
+async def test_tr_vertical_l3_endpoint_end_to_end(test_client, tmp_path, monkeypatch):
+    """
+    Register → give the org the TR pack → create an AnalysisJob pointing at a
+    corpus CSV → POST /muhasebe/tr-vertical and verify the L3 autopilot result,
+    then GET the board-deck PDF back.
+    """
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.models.analysis_job import AnalysisJob
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    # keep the generated board-deck PDF out of the repo tree
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "smmm@buro.com", "password": "StrongPassword123!",
+              "full_name": "SMMM", "role": "owner"},
+    )
+    token = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "smmm@buro.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+
+    csv_path = str(
+        Path(__file__).parent / "fixtures" / "tr_corpus" / "technova_ocak_2024.csv"
+    )
+
+    async with test_client._test_sessionmaker() as db:
+        user = (await db.execute(
+            select(User).where(User.email == "smmm@buro.com")
+        )).scalar_one()
+        org = Organization(name="Büro A.Ş.", slug="buro-as", regional_packs=["tr"])
+        db.add(org)
+        await db.flush()
+        user.org_id = org.id
+        job = AnalysisJob(
+            filename="technova_ocak_2024.csv",
+            file_path=csv_path,
+            file_type="csv",
+            org_id=org.id,
+            user_id=user.id,
+        )
+        db.add(job)
+        await db.commit()
+        job_id = job.id
+
+    resp = await test_client.post(
+        "/api/v1/muhasebe/tr-vertical",
+        json={"job_id": job_id, "company_name": "TechNova", "donem": "2024-01"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["meta"] == {"depth_level": 3, "auto_approved": False}
+    data = body["data"]
+    assert data["stage"] == "done"
+    assert data["cfo"]["pnl"]["revenue"] == 39_200_000
+    assert data["accounting"] is not None
+    assert data["accounting"]["islem_sayisi"] == 12
+    assert data["board_deck_pdf_size"] > 50
+    assert isinstance(data["approval_required"], bool)
+
+    # ── board-deck PDF is fetchable ─────────────────────────────────────────
+    pdf_resp = await test_client.get(
+        f"/api/v1/muhasebe/tr-vertical/{job_id}/board-deck.pdf",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert pdf_resp.status_code == 200, pdf_resp.text
+    assert pdf_resp.headers["content-type"] == "application/pdf"
+    assert len(pdf_resp.content) > 50
+
+
+@pytest.mark.asyncio
+async def test_tr_vertical_board_deck_requires_tr_pack(test_client):
+    """A GET for the board-deck PDF from an org without the TR pack is refused."""
+    from sqlalchemy import select
+
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "noPack@buro.com", "password": "StrongPassword123!",
+              "full_name": "No Pack", "role": "owner"},
+    )
+    token = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "noPack@buro.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+
+    async with test_client._test_sessionmaker() as db:
+        user = (await db.execute(
+            select(User).where(User.email == "noPack@buro.com")
+        )).scalar_one()
+        org = Organization(name="No Pack Ltd", slug="no-pack-ltd", regional_packs=[])
+        db.add(org)
+        await db.flush()
+        user.org_id = org.id
+        await db.commit()
+
+    resp = await test_client.get(
+        "/api/v1/muhasebe/tr-vertical/any-job-id/board-deck.pdf",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypatch):
+    """Faz 13: connect GitHub → sync → canonical rows → CTO kernel flips to `real`."""
+    from datetime import UTC, datetime
+
+    # Offline fake for the raw GitHub REST client.
+    class _FakeCommit:
+        def __init__(self, i: int):
+            self.sha = f"sha{i:03d}"; self.message = "feat: ship"; self.author = "dev"
+            self.date = datetime.now(UTC).isoformat(); self.files_changed = 3
+            self.additions = 30; self.deletions = 5
+
+    class _FakeData:
+        error = None
+        commits = [_FakeCommit(i) for i in range(8)]
+        pull_requests = []
+        issues = []
+
+        def summary(self):
+            return {"commits_fetched": len(self.commits)}
+
+    class _FakeApi:
+        def __init__(self, *a, **k): ...
+        async def validate_token(self):
+            return {"login": "octocat", "name": "Octo", "type": "User"}
+        async def fetch(self, **k):
+            return _FakeData()
+
+    monkeypatch.setattr("app.services.github_connector.GitHubConnector", _FakeApi)
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "cto@startup.com", "password": "StrongPassword123!",
+              "full_name": "CTO", "role": "owner"},
+    )
+    token = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "cto@startup.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    h = {"Authorization": f"Bearer {token}"}
+
+    from sqlalchemy import select as _select
+
+    from app.models.organization import Organization
+    from app.models.user import User
+    async with test_client._test_sessionmaker() as db:
+        user = (await db.execute(
+            _select(User).where(User.email == "cto@startup.com")
+        )).scalar_one()
+        org = Organization(name="Startup", slug="startup-co")
+        db.add(org)
+        await db.flush()
+        user.org_id = org.id
+        await db.commit()
+
+    # list — github present, not connected
+    lst = (await test_client.get("/api/v1/connectors", headers=h)).json()["data"]["connectors"]
+    gh = next(c for c in lst if c["name"] == "github")
+    assert gh["connected"] is False and gh["kernel_role"] == "cto"
+
+    # connect
+    conn = await test_client.post(
+        "/api/v1/connectors/github/connect", headers=h,
+        json={"config": {"owner": "acme", "repo": "api"}, "secret": {"token": "ghp_x"}},
+    )
+    assert conn.status_code == 201, conn.text
+
+    # sync → writes canonical rows and re-runs the CTO kernel
+    sync = await test_client.post(
+        "/api/v1/connectors/github/sync", headers=h, json={"run_kernel": True}
+    )
+    assert sync.status_code == 200, sync.text
+    body = sync.json()["data"]
+    assert body["sync"]["ok"] is True
+    assert body["sync"]["records_written"] == 8
+    assert body["kernel"]["output"]["data_source"] == "real"
+    assert body["kernel"]["provenance"]["synthetic"] is False
+
+    # second sync is idempotent (still 8 rows)
+    sync2 = await test_client.post(
+        "/api/v1/connectors/github/sync", headers=h, json={"run_kernel": False}
+    )
+    assert sync2.json()["data"]["sync"]["ok"] is True
+
+    from app.models.canonical_eng_signal import CanonicalEngSignal
+    async with test_client._test_sessionmaker() as db:
+        rows = (await db.execute(
+            _select(CanonicalEngSignal).where(CanonicalEngSignal.source == "github")
+        )).scalars().all()
+    assert len(rows) == 8
+
+
+@pytest.mark.asyncio
+async def test_agent_run_ledger_records_tr_vertical_and_slo(test_client, tmp_path, monkeypatch):
+    """Faz 14: running the TR vertical writes an AgentRun row surfaced by /runs + /runs/slo."""
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.models.analysis_job import AnalysisJob
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "runs@buro.com", "password": "StrongPassword123!",
+              "full_name": "R", "role": "owner"},
+    )
+    token = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "runs@buro.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    h = {"Authorization": f"Bearer {token}"}
+
+    csv_path = str(Path(__file__).parent / "fixtures" / "tr_corpus" / "technova_ocak_2024.csv")
+    async with test_client._test_sessionmaker() as db:
+        user = (await db.execute(
+            select(User).where(User.email == "runs@buro.com")
+        )).scalar_one()
+        org = Organization(name="Runs Ltd", slug="runs-ltd", regional_packs=["tr"])
+        db.add(org)
+        await db.flush()
+        user.org_id = org.id
+        job = AnalysisJob(filename="a.csv", file_path=csv_path, file_type="csv",
+                          org_id=org.id, user_id=user.id)
+        db.add(job)
+        await db.commit()
+        job_id = job.id
+
+    resp = await test_client.post(
+        "/api/v1/muhasebe/tr-vertical",
+        json={"job_id": job_id, "company_name": "TechNova", "donem": "2024-01"},
+        headers=h,
+    )
+    assert resp.status_code == 201, resp.text
+
+    runs = (await test_client.get("/api/v1/runs", headers=h)).json()["data"]["runs"]
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["pipeline"] == "tr_vertical"
+    assert run["status"] in {"completed", "awaiting_review"}
+    assert run["latency_ms"] is not None
+    assert "done" in (run["node_history"] or [])
+
+    slo = (await test_client.get("/api/v1/runs/slo?days=1", headers=h)).json()["data"]
+    assert slo["total_runs"] == 1
+    tv = slo["by_pipeline"]["tr_vertical"]
+    assert tv["runs"] == 1
+    assert tv["p50_latency_ms"] is not None
+
+    one = (await test_client.get(f"/api/v1/runs/{run['id']}", headers=h)).json()["data"]
+    assert one["id"] == run["id"]

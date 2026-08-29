@@ -10,18 +10,16 @@ Handles:
 """
 from __future__ import annotations
 
-import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from app.parsers.accounting.netsis import NetsisParser
-from app.parsers.accounting.mikro import MikroParser
 from app.parsers.accounting.logo_tiger import LogoTigerParser
+from app.parsers.accounting.mikro import MikroParser
+from app.parsers.accounting.netsis import NetsisParser
 from app.services.data_sync.schemas import (
+    SyncBatch,
     SyncSourceType,
     SyncTransaction,
-    SyncBatch,
     TransactionType,
 )
 
@@ -60,7 +58,7 @@ class NetsisImporter(AccountingSoftwareImporter):
         """Parse Netsis CSV and normalize to SyncBatch."""
         batch = SyncBatch(
             source_type=self.source_type,
-            sync_timestamp=datetime.now(timezone.utc),
+            sync_timestamp=datetime.now(UTC),
         )
 
         try:
@@ -124,7 +122,7 @@ class MikroImporter(AccountingSoftwareImporter):
         """Parse Mikro export and normalize to SyncBatch."""
         batch = SyncBatch(
             source_type=self.source_type,
-            sync_timestamp=datetime.now(timezone.utc),
+            sync_timestamp=datetime.now(UTC),
         )
 
         try:
@@ -187,7 +185,7 @@ class LogoTigerImporter(AccountingSoftwareImporter):
         """Parse Logo Tiger export and normalize to SyncBatch."""
         batch = SyncBatch(
             source_type=self.source_type,
-            sync_timestamp=datetime.now(timezone.utc),
+            sync_timestamp=datetime.now(UTC),
         )
 
         try:
@@ -232,7 +230,7 @@ class LogoTigerImporter(AccountingSoftwareImporter):
         return batch
 
 
-def get_importer(source_type: SyncSourceType) -> Optional[AccountingSoftwareImporter]:
+def get_importer(source_type: SyncSourceType) -> AccountingSoftwareImporter | None:
     """Factory: return appropriate importer for source type."""
     importers = {
         SyncSourceType.NETSIS: NetsisImporter,

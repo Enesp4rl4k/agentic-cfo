@@ -133,8 +133,8 @@ class CashFlowNarrative(BaseModel):
                 parts.append(f"• {r.risk}")
         if self.actions:
             parts.append("\n**Öneriler:**")
-            for a in self.actions:
-                parts.append(f"• {a.action}")
+            for act in self.actions:
+                parts.append(f"• {act.action}")
         return "\n".join(parts)
 
 
@@ -174,8 +174,8 @@ class ForecastNarrative(BaseModel):
                 parts.append(f"• {r.risk}")
         if self.actions:
             parts.append("\n**Öneriler:**")
-            for a in self.actions:
-                parts.append(f"• {a.action}")
+            for act in self.actions:
+                parts.append(f"• {act.action}")
         return "\n".join(parts)
 
 
@@ -394,16 +394,61 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
 
 # ── LLM-powered structured output ─────────────────────────────────────────────
 
-def _make_llm(model_id: str, temperature: float, max_tokens: int, settings: Any):
-    """Build a ChatOpenAI instance. Imported lazily to avoid hard dependency."""
-    from langchain_openai import ChatOpenAI
-    return ChatOpenAI(
-        model=model_id,
+async def _structured(
+    *,
+    task: str,
+    schema: type[BaseModel],
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+) -> Any:
+    """
+    Run a structured-output completion through the single LLM egress point
+    (``app.platform.model_gateway``). Returns the validated pydantic instance.
+    """
+    from app.platform.model_gateway import complete
+
+    result = await complete(
+        task=task,
+        prompt=user_prompt,
+        system_prompt=system_prompt,
+        schema=schema,
         temperature=temperature,
         max_tokens=max_tokens,
-        api_key=settings.openai_api_key,
-        base_url=getattr(settings, "llm_base_url", None) or None,
     )
+    return result.parsed
+
+
+async def call_llm(
+    prompt: str,
+    *,
+    system_prompt: str | None = None,
+    max_tokens: int = 512,
+    task: str = "short_narrative",
+) -> str:
+    """
+    Plain-text completion through the single LLM egress point.
+
+    Returns "" when the model is unavailable (placeholder key) or errors, so
+    callers can fall back to a deterministic string without try/except noise.
+    """
+    try:
+        from app.platform.model_gateway import LLMUnavailable, complete
+
+        try:
+            result = await complete(
+                task=task,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+            )
+            return result.text or ""
+        except LLMUnavailable:
+            return ""
+    except Exception as exc:
+        logger.debug("call_llm failed: %s", exc)
+        return ""
 
 
 def _router_model_for(task: str) -> str:
@@ -433,12 +478,6 @@ async def get_pnl_narrative(
         return _pnl_narrative_template(pnl)
 
     try:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        model_id = _router_model_for("short_narrative")
-        llm = _make_llm(model_id, temperature=0.1, max_tokens=1024, settings=settings
-        ).with_structured_output(PnLNarrative)
-
         revenue = pnl.get("revenue", 0) / 100
         gross_margin = pnl.get("gross_margin", 0)
         net_margin = pnl.get("net_margin", 0)
@@ -461,19 +500,20 @@ async def get_pnl_narrative(
             )
             summary_text += f"\nGider Kalemleri:\n{opex_lines}"
 
-        messages = [
-            SystemMessage(content=(
+        return await _structured(
+            task="short_narrative",
+            schema=PnLNarrative,
+            system_prompt=(
                 "Sen deneyimli bir Türk KOBİ CFO'sunun yapay zeka asistanısın. "
                 "Verilen gelir tablosu verilerini analiz et ve Türkçe yapılandırılmış bir yönetici özeti oluştur. "
                 "Tüm metin alanlarını Türkçe yaz. "
                 "Somut, sayısal, eyleme dönüştürülebilir öneriler ver. "
                 "Sektör medyanı: brüt marj ~%35-40, net marj ~%5-10."
-            )),
-            HumanMessage(content=f"Gelir Tablosu:\n{summary_text}"),
-        ]
-
-        result = await llm.ainvoke(messages)
-        return result  # type: ignore[return-value]
+            ),
+            user_prompt=f"Gelir Tablosu:\n{summary_text}",
+            temperature=0.1,
+            max_tokens=1024,
+        )
 
     except Exception as exc:
         logger.warning("LLM structured P&L narrative failed (%s) — using template", exc)
@@ -491,12 +531,6 @@ async def get_cashflow_narrative(
         return _cashflow_narrative_template(cashflow)
 
     try:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        model_id = _router_model_for("metric_commentary")
-        llm = _make_llm(model_id, temperature=0.1, max_tokens=800, settings=settings
-        ).with_structured_output(CashFlowNarrative)
-
         operating = cashflow.get("operating", 0) / 100
         investing = cashflow.get("investing", 0) / 100
         financing = cashflow.get("financing", 0) / 100
@@ -513,16 +547,17 @@ async def get_cashflow_narrative(
             alert_text = "\n".join(f"  - {a.get('message', '')}" for a in alerts[:3])
             summary_text += f"\nMevcut Uyarılar:\n{alert_text}"
 
-        messages = [
-            SystemMessage(content=(
+        return await _structured(
+            task="metric_commentary",
+            schema=CashFlowNarrative,
+            system_prompt=(
                 "Sen bir CFO asistanısın. Nakit akışı verilerini analiz et ve "
                 "Türkçe yapılandırılmış likidite değerlendirmesi oluştur."
-            )),
-            HumanMessage(content=f"Nakit Akışı:\n{summary_text}"),
-        ]
-
-        result = await llm.ainvoke(messages)
-        return result  # type: ignore[return-value]
+            ),
+            user_prompt=f"Nakit Akışı:\n{summary_text}",
+            temperature=0.1,
+            max_tokens=800,
+        )
 
     except Exception as exc:
         logger.warning("LLM structured cashflow narrative failed (%s) — using template", exc)
@@ -540,12 +575,6 @@ async def get_forecast_narrative(
         return _forecast_narrative_template(forecast)
 
     try:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        model_id = _router_model_for("multi_period")
-        llm = _make_llm(model_id, temperature=0.1, max_tokens=800, settings=settings
-        ).with_structured_output(ForecastNarrative)
-
         scenarios = forecast.get("scenarios", {})
         lines = []
         for name, s in scenarios.items():
@@ -556,16 +585,17 @@ async def get_forecast_narrative(
                 + (f", nakit pisti {runway} ay" if runway else "")
             )
 
-        messages = [
-            SystemMessage(content=(
+        return await _structured(
+            task="multi_period",
+            schema=ForecastNarrative,
+            system_prompt=(
                 "Sen bir CFO asistanısın. 12 aylık finansal tahmin verilerini analiz et ve "
                 "Türkçe yapılandırılmış tahmin yorumu oluştur."
-            )),
-            HumanMessage(content="Tahmin Senaryoları:\n" + "\n".join(lines)),
-        ]
-
-        result = await llm.ainvoke(messages)
-        return result  # type: ignore[return-value]
+            ),
+            user_prompt="Tahmin Senaryoları:\n" + "\n".join(lines),
+            temperature=0.1,
+            max_tokens=800,
+        )
 
     except Exception as exc:
         logger.warning("LLM structured forecast narrative failed (%s) — using template", exc)

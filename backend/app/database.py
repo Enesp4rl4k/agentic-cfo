@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import threading
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
@@ -40,11 +40,18 @@ _lock = threading.Lock()
 
 def _build_engine():
     settings = get_settings()
-    kwargs: dict = {"echo": False, "pool_pre_ping": True}
     if settings.database_url.startswith("sqlite"):
-        kwargs = {
+        kwargs: dict = {
             "echo": False,
             "connect_args": {"check_same_thread": False},
+        }
+    else:
+        kwargs = {
+            "echo": False,
+            "pool_pre_ping": True,
+            "pool_size": 20,
+            "max_overflow": 10,
+            "pool_recycle": 1800,
         }
     return create_async_engine(settings.database_url, **kwargs)
 

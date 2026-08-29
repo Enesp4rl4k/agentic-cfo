@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Numeric
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -13,10 +13,10 @@ if TYPE_CHECKING:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-class TransactionCategory(str, Enum):
+class TransactionCategory(StrEnum):
     REVENUE = "revenue"
     COGS = "cogs"
     SALARY = "salary"
@@ -30,7 +30,7 @@ class TransactionCategory(str, Enum):
     OTHER_INCOME = "other_income"
 
 
-class TransactionType(str, Enum):
+class TransactionType(StrEnum):
     INCOME = "income"
     EXPENSE = "expense"
 
@@ -47,15 +47,15 @@ class Transaction(Base):
     # All amounts stored in kuruş (smallest unit) as integer
     amount_kurus: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="TRY", nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)  # income | expense
-    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # income | expense
+    category: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    vendor: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    vendor: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
 
     job: Mapped["AnalysisJob"] = relationship("AnalysisJob", back_populates="transactions")

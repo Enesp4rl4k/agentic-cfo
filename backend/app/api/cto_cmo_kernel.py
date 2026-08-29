@@ -16,8 +16,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -126,13 +126,20 @@ async def cto_kernel_from_job(
 ) -> dict[str, Any]:
     """CFO analiz job'undan CTO metrikleri uret."""
     from app.agents.cto.cto_kernel import run_cto_kernel
+    from app.services.eng_signals import cto_existing_data_from_signals
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} bulunamadi")
+    # Real engineering signals (from a connector) win over CFO-financial extrapolation.
+    org_id = str(current_user.org_id) if current_user.org_id else None
+    existing = (
+        await cto_existing_data_from_signals(org_id, db) if org_id else None
+    )
     try:
         return await run_cto_kernel(
             pnl=data.get("pnl"), cashflow=data.get("cashflow"),
-            forecast=data.get("forecast"), company_size=req.company_size,
+            forecast=data.get("forecast"), existing_cto_data=existing,
+            company_size=req.company_size,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -142,17 +149,23 @@ async def cto_kernel_from_job(
 async def cto_kernel_from_org(
     req: KernelFromOrgRequest,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """CompanyContext'ten CTO metrikleri uret."""
     from app.agents.cto.cto_kernel import run_cto_kernel
+    from app.services.eng_signals import cto_existing_data_from_signals
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")
+    existing = (
+        await cto_existing_data_from_signals(req.org_id, db)
+        or ctx.get("existing_cto_data")
+    )
     try:
         return await run_cto_kernel(
             pnl=ctx.get("pnl"), cashflow=ctx.get("cashflow"),
             forecast=ctx.get("forecast"), chro_data=ctx.get("chro_data"),
-            existing_cto_data=ctx.get("existing_cto_data"),
+            existing_cto_data=existing,
             company_size=req.company_size,
         )
     except Exception as exc:

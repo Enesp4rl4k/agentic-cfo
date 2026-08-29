@@ -3,19 +3,18 @@ Tests for OCR service and invoice parser — pure function tests.
 No real PDF files needed — uses synthetic text fixtures.
 """
 import pytest
-from app.services.ocr_service import (
-    _clean_ocr_text,
-    extract_invoice_fields,
-    OCRResult,
-    PageResult,
-)
+
 from app.parsers.invoice import (
-    TurkishInvoiceParser,
     InvoiceBatchParser,
+    TurkishInvoiceParser,
     _detect_invoice_type,
     _invoice_type_to_tx_type,
 )
-
+from app.services.ocr_service import (
+    OCRResult,
+    _clean_ocr_text,
+    extract_invoice_fields,
+)
 
 # ── Fixtures — synthetic invoice text ─────────────────────────────────────────
 
@@ -420,7 +419,7 @@ SAMPLE_UBL_TR_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <cbc:IssueDate>2024-03-15</cbc:IssueDate>
     <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
     <cbc:DocumentCurrencyCode>TRY</cbc:DocumentCurrencyCode>
-    
+
     <cac:AccountingSupplierParty>
         <cac:Party>
             <cac:PartyIdentification>
@@ -486,6 +485,7 @@ SAMPLE_UBL_TR_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 def test_ubl_tr_xml_invoice_parser():
     from decimal import Decimal
+
     from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
 
     parsed = UBLTRInvoiceParser.parse_xml(SAMPLE_UBL_TR_XML)
@@ -508,9 +508,9 @@ def test_ubl_tr_xml_invoice_parser():
 
 
 def test_bank_parsers_yapkredi_qnb_enpara():
-    from app.parsers.banks.yapkredi import YapiKrediParser
-    from app.parsers.banks.qnb import QNBParser
     from app.parsers.banks.enpara import EnparaParser
+    from app.parsers.banks.qnb import QNBParser
+    from app.parsers.banks.yapkredi import YapiKrediParser
 
     yk_text = """
     YAPI VE KREDİ BANKASI A.Ş.
@@ -542,6 +542,7 @@ def test_bank_parsers_yapkredi_qnb_enpara():
 
 def test_turkish_tax_engine():
     from decimal import Decimal
+
     from app.services.regional.tax_calculator import TurkishTaxEngine
 
     # Test KDV: 391 (20.000 TL) - 191 (12.000 TL) = 8.000 TL Ödenecek KDV

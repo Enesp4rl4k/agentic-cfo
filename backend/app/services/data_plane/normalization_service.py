@@ -4,23 +4,23 @@ import csv
 import hashlib
 import io
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
 def _to_datetime(raw: str | None) -> datetime:
     if not raw:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     candidates = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d")
     for fmt in candidates:
         try:
-            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=UTC)
         except Exception:
             continue
     try:
-        return datetime.fromisoformat(raw).astimezone(timezone.utc)
+        return datetime.fromisoformat(raw).astimezone(UTC)
     except Exception:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
 
 def _to_cents(raw: str | None) -> int:
@@ -33,7 +33,7 @@ def _to_cents(raw: str | None) -> int:
     elif "," in txt and "." not in txt:
         txt = txt.replace(",", ".")
     try:
-        return int(round(float(txt) * 100))
+        return round(float(txt) * 100)
     except Exception:
         return 0
 

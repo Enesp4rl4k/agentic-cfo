@@ -16,7 +16,6 @@ import logging
 import re
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +180,7 @@ class GenericParser(BankParser):
                     len(transactions),
                 )
                 statement.transactions = transactions
-                statement.bank_display_name = "Generic CSV (rule-based)"
+                statement.bank_name = "Generic CSV (rule-based)"
                 return statement
             else:
                 statement.parse_warnings.append(
@@ -219,17 +218,17 @@ class GenericParser(BankParser):
         return False
 
     def _extract_via_llm(self, text: str) -> list[ParsedTransaction]:
-        """Call GPT-4o to extract transactions from unstructured text."""
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        """
+        LLM extraction from unstructured text — the last-resort fallback.
 
-        settings = get_settings()
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.0,
-            max_tokens=4096,
-            api_key=settings.openai_api_key,
-        )
+        Runs the async Model Gateway from this sync ``BankParser.parse`` context
+        via a fresh event loop. When already inside a running loop (which the
+        production ingestion path is — and it has its own gateway-backed LLM
+        extraction), this returns [] and lets that path handle it.
+        """
+        import asyncio
+
+        from app.platform.model_gateway import LLMUnavailable, complete_text
 
         system = (
             "You are a financial data extraction specialist. "
@@ -241,12 +240,26 @@ class GenericParser(BankParser):
             "Return ONLY a valid JSON array. No markdown, no explanation."
         )
 
-        response = llm.invoke([
-            SystemMessage(content=system),
-            HumanMessage(content=f"Document:\n\n{text[:6000]}"),
-        ])
+        try:
+            asyncio.get_running_loop()
+            logger.debug("GenericParser._extract_via_llm called from async context — deferring")
+            return []
+        except RuntimeError:
+            pass
 
-        content = response.content.strip()
+        try:
+            content = asyncio.run(
+                complete_text(
+                    task="simple_extraction",
+                    system_prompt=system,
+                    prompt=f"Document:\n\n{text[:6000]}",
+                    temperature=0.0,
+                    max_tokens=4096,
+                )
+            ).strip()
+        except LLMUnavailable:
+            return []
+
         # Strip markdown code fences
         content = re.sub(r"^```[a-z]*\n?", "", content)
         content = re.sub(r"\n?```$", "", content)

@@ -41,9 +41,8 @@ import logging
 import math
 import sqlite3
 import time
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -78,7 +77,7 @@ class EpisodeRecord:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "EpisodeRecord":
+    def from_dict(cls, d: dict[str, Any]) -> EpisodeRecord:
         d = dict(d)
         if isinstance(d.get("summary"), str):
             d["summary"] = json.loads(d["summary"])
@@ -103,7 +102,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
     if not docs:
         return []
 
-    all_texts = [query] + docs
+    all_texts = [query, *docs]
     all_tokens = [_tokenise(t) for t in all_texts]
 
     # Build vocabulary
@@ -140,7 +139,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
 
     # Cosine similarity
     def _cosine(a: list[float], b: list[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         na = math.sqrt(sum(x * x for x in a))
         nb = math.sqrt(sum(x * x for x in b))
         if na == 0 or nb == 0:
@@ -453,7 +452,7 @@ class AgentMemoryStore:
             # Rank by similarity to query
             doc_texts = [f"{e.period} {e.narrative} {json.dumps(e.summary)}" for e in filtered]
             scores = _tfidf_similarity(query, doc_texts)
-            ranked = sorted(zip(scores, filtered), key=lambda x: -x[0])
+            ranked = sorted(zip(scores, filtered, strict=False), key=lambda x: -x[0])
             return [e for _, e in ranked[:top_k]]
         else:
             # Return most recent
@@ -476,7 +475,7 @@ class AgentMemoryStore:
         total = len(lines[0])
 
         for ep in episodes:
-            ts = datetime.fromtimestamp(ep.created_at, tz=timezone.utc).strftime("%Y-%m-%d")
+            ts = datetime.fromtimestamp(ep.created_at, tz=UTC).strftime("%Y-%m-%d")
             summary_str = ", ".join(
                 f"{k}: {v}" for k, v in list(ep.summary.items())[:4]
             )

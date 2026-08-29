@@ -1,0 +1,50 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-redis
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ include "agentic-cfo.fullname" . }}-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "agentic-cfo.fullname" . }}-redis
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentic-cfo.fullname" . }}-redis
+    spec:
+      containers:
+      - name: redis
+        image: {{ .Values.redis.image }}
+        command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "yes"]
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: data
+          mountPath: /data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.redis.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-redis
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: {{ include "agentic-cfo.fullname" . }}-redis
+{{- end }}

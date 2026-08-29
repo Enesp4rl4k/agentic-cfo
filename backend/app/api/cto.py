@@ -11,11 +11,8 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.database import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -104,23 +101,6 @@ async def run_cto_analysis(
         logger.exception("CTO pipeline failed for job=%s", job_id)
         raise HTTPException(status_code=500, detail=f"CTO analysis failed: {exc}")
 
-
-@router.get("/cto/summary/{job_id}")
-async def get_cto_summary(job_id: str) -> dict[str, Any]:
-    """
-    Get stored CTO summary for a given job_id.
-    Returns 404 if not found — use /cto/analyze to generate first.
-    """
-    # In a full implementation this would query a CTOJob DB table.
-    # For now we return a 404 — callers should use the sync endpoint or
-    # store results client-side.
-    raise HTTPException(
-        status_code=404,
-        detail=(
-            "CTO job results are not persisted yet. "
-            "Use POST /api/v1/cto/analyze to get results synchronously."
-        ),
-    )
 
 
 @router.get("/cto/health-check")

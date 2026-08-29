@@ -1,0 +1,13 @@
+tarih,açıklama,tutar,tip,kategori
+2024-01-03,Ocak Yazılım Lisans Geliri - ABC Holding,"285.000,00",income,sales
+2024-01-08,Danışmanlık Hizmet Bedeli - DEF Ltd,"65.000,00",income,services
+2024-01-05,Ocak Ofis Kirası - Levent İstanbul,"-28.500,00",expense,rent
+2024-01-12,Ocak Elektrik Faturası - İGDAŞ,"-4.200,00",expense,utilities
+2024-01-12,Ocak İnternet - Turkcell Superonline,"-2.800,00",expense,utilities
+2024-01-15,Ocak Maaş Ödemeleri - Mühendislik Ekibi,"-145.000,00",expense,salary
+2024-01-15,Ocak Maaş Ödemeleri - Satış Ekibi,"-52.000,00",expense,salary
+2024-01-18,Google Ads Ocak Kampanyası,"-18.500,00",expense,marketing
+2024-01-20,AWS Bulut Altyapı Faturası,"-22.000,00",expense,technology
+2024-01-25,Donanım Alımı - Sunucu Bileşenleri,"-15.000,00",expense,cogs
+2024-01-26,KDV Ödemesi - Aralık Dönemi,"-31.200,00",expense,tax
+2024-01-31,Aylık SaaS Abonelik Gelirleri,"42.000,00",income,sales

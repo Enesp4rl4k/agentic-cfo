@@ -13,10 +13,10 @@ Roles within an org:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Boolean, Text, ForeignKey, JSON
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Organization(Base):
@@ -75,7 +75,7 @@ class Organization(Base):
     )
 
     # Relationships
-    members: Mapped[list["User"]] = relationship(
+    members: Mapped[list[User]] = relationship(
         "User", back_populates="organization", foreign_keys="User.org_id"
     )
 
@@ -103,4 +103,4 @@ class OrgInvite(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    organization: Mapped["Organization"] = relationship("Organization")
+    organization: Mapped[Organization] = relationship("Organization")

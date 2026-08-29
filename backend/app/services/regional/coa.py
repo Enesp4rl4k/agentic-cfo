@@ -132,7 +132,7 @@ class TrThpAdapter:
     name = "tr_thp"
 
     def __init__(self) -> None:
-        from app.agents.accounting.thp_classifier import get_thp_classifier
+        from app.services.accounting.thp_classifier import get_thp_classifier
 
         self._inner = get_thp_classifier()
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.agents.ceo.state import CEOState, CEORunConfig, CEOSkillResult
+from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 
 logger = logging.getLogger(__name__)
 
@@ -148,9 +148,6 @@ async def run_strategic_priorities_agent(
     tech = state.get("tech_summary") or {}
 
     try:
-        from app.config import get_settings
-        settings = get_settings()
-
         priorities = _build_priorities_from_risks(cross_risks, fin, tech)
 
         if not priorities:
@@ -163,30 +160,24 @@ async def run_strategic_priorities_agent(
 
         # ── LLM: enrich top 3 with strategic rationale ────────────────────────
         try:
-            from langchain_openai import ChatOpenAI
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from app.platform.model_gateway import complete_text
 
-            llm = ChatOpenAI(
-                model=settings.llm_model,
-                temperature=0.2,
-                max_tokens=768,
-                api_key=settings.openai_api_key,
-                base_url=settings.llm_base_url or None,
-            )
             top3_text = "\n".join(
                 f"{p['rank']}. [{p['severity'].upper()}] {p['title']}: {p['rationale'][:120]}"
                 for p in priorities[:3]
             )
-            response = await llm.ainvoke([
-                SystemMessage(content=(
+            _resp_text = await complete_text(
+                task="short_narrative",
+                system_prompt=(
                     "Sen deneyimli bir CEO koçusun. Aşağıdaki her stratejik öncelik için "
                     "yönetim kuruluna sunulacak düzeyde tek bir Türkçe cümle ekle. "
                     "SADECE geliştirilmiş gerekçe satırlarını döndür, her öncelik için bir tane, numaralı. "
                     "Sade, doğrudan ve eylem odaklı yaz."
-                )),
-                HumanMessage(content=f"İlk 3 öncelik:\n{top3_text}"),
-            ])
-            lines = [l.strip() for l in response.content.strip().splitlines() if l.strip()]
+                ),
+                prompt=f"İlk 3 öncelik:\n{top3_text}",
+                max_tokens=768,
+            )
+            lines = [ln.strip() for ln in _resp_text.strip().splitlines() if ln.strip()]
             for i, line in enumerate(lines[:3]):
                 # Strip leading number/dot if present
                 clean = line.lstrip("0123456789. ")

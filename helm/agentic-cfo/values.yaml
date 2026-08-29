@@ -1,0 +1,132 @@
+global:
+  environment: production
+
+namespace: aicfo
+
+backend:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/agentic-cfo/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 75
+
+worker:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  keda:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 15
+    queueTarget: 5
+
+workerMaintenance:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1.5Gi
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/agentic-cfo/frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  database: aicfo
+  username: aicfo
+  storage:
+    size: 20Gi
+    storageClass: ""
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  storage:
+    size: 5Gi
+    storageClass: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  hosts:
+    - host: aicfo.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+          port: 8000
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 3000
+  tls:
+    - secretName: aicfo-tls
+      hosts:
+        - aicfo.example.com
+
+persistence:
+  uploads:
+    size: 20Gi
+    accessMode: ReadWriteOnce
+    storageClass: ""
+
+config:
+  llmModel: "deepseek-chat"
+  llmBaseUrl: "https://api.deepseek.com"
+  llmTemperature: "0"
+  llmMaxTokens: "16384"
+  pilotMode: "true"
+  pilotRequireInvite: "true"
+  pilotMaxUsers: "50"
+  storageBackend: "local"
+  maxUploadSizeMb: "25"
+  autoEnqueueAnalysis: "true"
+  ragBackfillEnabled: "true"
+  ragEmbeddingEnabled: "true"
+
+secrets:
+  openaiApiKey: "your-llm-api-key-here"
+  postgresPassword: "strong-db-password-here"
+  backendSecretKey: "change-this-to-a-random-secret-32-chars"
+  nextauthSecret: "change-this-to-a-random-32-char-secret"

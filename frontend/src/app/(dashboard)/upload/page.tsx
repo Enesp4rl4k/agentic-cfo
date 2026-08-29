@@ -275,17 +275,17 @@ function DropZone({
           {loading ? "Analiz ediliyor…" : "CSV dosyasını sürükleyin veya tıklayın"}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Logo Tiger · Paraşüt · Akbank · Garanti · GİB e-Fatura · Genel CSV
+          Logo Tiger · Paraşüt · Akbank · Garanti · GİB e-Fatura XML · Genel CSV/Excel
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Maksimum 10 MB · .csv, .txt, .tsv
+          Maksimum 10 MB · .csv, .xlsx, .xls, .pdf, .xml
         </p>
       </div>
 
       <input
         ref={inputRef}
         type="file"
-        accept=".csv,.txt,.tsv"
+        accept=".csv,.xlsx,.xls,.pdf,.xml,.txt,.tsv"
         className="sr-only"
         onChange={(e) => {
           const file = e.target.files?.[0];

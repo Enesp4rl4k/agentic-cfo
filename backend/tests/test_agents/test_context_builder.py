@@ -2,20 +2,18 @@
 Tests for ContextBuilder — context engineering layer.
 Pure function tests, no LLM, no DB.
 """
-import pytest
 from app.services.context_builder import (
     ContextBuilder,
     ContextResult,
     _count_tokens,
-    _summarise_transactions,
-    _summarise_pnl,
+    _summarise_alerts,
+    _summarise_anomalies,
     _summarise_cashflow,
     _summarise_forecast,
-    _summarise_anomalies,
-    _summarise_alerts,
+    _summarise_pnl,
+    _summarise_transactions,
     get_context_builder,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -16,6 +17,14 @@ import { apiClient } from "@/lib/api/client";
 import { formatCurrency, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { BaselineSourceBadge } from "@/components/ui/baseline-source-badge";
+import { SemanticMetricsPanel } from "@/components/ui/semantic-metrics-panel";
+import {
+  getSemanticMe,
+  getLiveDataStatus,
+  type LiveDataStatus,
+  type MetricPoint,
+} from "@/lib/api/semantic";
 
 // ── Type definitions ──────────────────────────────────────────────────────────
 
@@ -179,6 +188,36 @@ export default function IntelligencePage() {
   const [data, setData] = useState<KRIData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [semanticMetrics, setSemanticMetrics] = useState<MetricPoint[]>([]);
+  const [semanticPeriod, setSemanticPeriod] = useState<string | undefined>();
+  const [liveStatus, setLiveStatus] = useState<LiveDataStatus | null>(null);
+  const [semanticLoading, setSemanticLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [semantic, live] = await Promise.all([
+          getSemanticMe(),
+          getLiveDataStatus().catch(() => null),
+        ]);
+        if (cancelled) return;
+        setSemanticMetrics(semantic.snapshot?.metrics ?? []);
+        setSemanticPeriod(semantic.period_key);
+        setLiveStatus(live);
+      } catch {
+        if (!cancelled) {
+          setSemanticMetrics([]);
+          setLiveStatus(null);
+        }
+      } finally {
+        if (!cancelled) setSemanticLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!finalJobId) {
@@ -204,6 +243,9 @@ export default function IntelligencePage() {
     fetchKRI();
   }, [finalJobId]);
 
+  const hasSemantic = semanticMetrics.length > 0;
+  const baselineSource = liveStatus?.baseline_source ?? (hasSemantic ? "semantic" : "none");
+
   return (
     <main className="mx-auto max-w-screen-xl space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
@@ -211,10 +253,18 @@ export default function IntelligencePage() {
         <div className="flex items-center gap-3">
           <Zap className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold">Proaktif KRI Dashboard</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold">Proaktif KRI Dashboard</h1>
+              <BaselineSourceBadge source={baselineSource} />
+            </div>
             <p className="text-sm text-muted-foreground">
-              Key Risk Indicators — saatlik KRI taraması ve trend analizi
+              Key Risk Indicators — saatlik KRI taraması ve semantic metrikler
             </p>
+            {liveStatus?.golden_path_ready && (
+              <p className="text-xs text-emerald-400 mt-1">
+                Live sync + semantic brief ready
+              </p>
+            )}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
@@ -231,13 +281,43 @@ export default function IntelligencePage() {
         </div>
       )}
 
+      {/* Semantic metrics — available without CFO job when live sync / brief exists */}
+      {hasSemantic && (
+        <Card className="p-4">
+          <SemanticMetricsPanel
+            metrics={semanticMetrics}
+            periodKey={semanticPeriod}
+          />
+        </Card>
+      )}
+
       {/* Empty state */}
-      {!finalJobId && !loading && (
+      {!finalJobId && !loading && !semanticLoading && !hasSemantic && (
         <Card className="flex flex-col items-center justify-center py-16 text-center">
           <Zap className="h-12 w-12 text-muted-foreground/40 mb-3" />
           <p className="font-medium">KRI Analizi Beklemede</p>
           <p className="text-sm text-muted-foreground max-w-sm mt-1">
-            Finansal verisi yüklendikten sonra KRI göstergesi görüntülenecektir.
+            Finansal verisi yüklendikten veya live sync tamamlandıktan sonra
+            göstergeler görüntülenecektir.
+          </p>
+          <Link
+            href="/command-center"
+            className="mt-4 text-sm text-primary hover:underline"
+          >
+            Command Center →
+          </Link>
+        </Card>
+      )}
+
+      {!finalJobId && !loading && hasSemantic && !data && (
+        <Card className="p-4 border-dashed">
+          <p className="text-sm text-muted-foreground">
+            Semantic metrikler hazır. Tam KRI trend grafiği için CFO analizi
+            tamamlanmalı —{" "}
+            <Link href="/" className="text-primary hover:underline">
+              CFO analizi başlat
+            </Link>
+            .
           </p>
         </Card>
       )}

@@ -10,28 +10,24 @@ Entry point: sync_all_sources() → runs all enabled sources in parallel.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
-import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
+from app.services.data_sync.accounting.importers import get_importer
+from app.services.data_sync.accounting.parasut import ParasutClient
+from app.services.data_sync.audit import AuditTrail
+from app.services.data_sync.banking.psd2 import AkbankPSD2Client, GarantiPSD2Client
 from app.services.data_sync.schemas import (
-    SyncSourceType,
-    SyncBatch,
-    SyncStatus,
     AccountingSourceConfig,
     BankingSourceConfig,
+    SyncBatch,
+    SyncSourceType,
 )
-from app.services.data_sync.accounting.parasut import ParasutClient
-from app.services.data_sync.accounting.importers import get_importer
-from app.services.data_sync.banking.psd2 import GarantiPSD2Client, AkbankPSD2Client
 from app.services.data_sync.validators import (
+    ConflictResolver,
     DataQualityValidator,
     DuplicateDetector,
-    ConflictResolver,
 )
-from app.services.data_sync.audit import AuditTrail
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +80,7 @@ class DataSyncOrchestrator:
                 company_id=company_id,
             )
 
-            date_to = datetime.now(timezone.utc)
+            date_to = datetime.now(UTC)
             date_from = date_to - timedelta(days=date_range_days)
 
             # Fetch transactions and invoices
@@ -94,7 +90,7 @@ class DataSyncOrchestrator:
             # Merge batches
             merged = SyncBatch(
                 source_type=SyncSourceType.PARASUT,
-                sync_timestamp=datetime.now(timezone.utc),
+                sync_timestamp=datetime.now(UTC),
                 transactions=tx_batch.transactions + inv_batch.transactions,
                 warnings=tx_batch.warnings + inv_batch.warnings,
                 error_count=tx_batch.error_count + inv_batch.error_count,
@@ -166,7 +162,7 @@ class DataSyncOrchestrator:
                 account_ids = {a.get("id") for a in accounts if a.get("id")}
 
             # Fetch transactions for each account
-            date_to = datetime.now(timezone.utc)
+            date_to = datetime.now(UTC)
             date_from = date_to - timedelta(days=date_range_days)
 
             all_transactions = []
@@ -183,7 +179,7 @@ class DataSyncOrchestrator:
 
             merged = SyncBatch(
                 source_type=SyncSourceType.GARANTI,
-                sync_timestamp=datetime.now(timezone.utc),
+                sync_timestamp=datetime.now(UTC),
                 transactions=all_transactions,
                 warnings=all_warnings,
                 error_count=total_errors,
@@ -233,7 +229,7 @@ class DataSyncOrchestrator:
                 account_ids = {a.get("id") for a in accounts if a.get("id")}
 
             # Fetch transactions for each account
-            date_to = datetime.now(timezone.utc)
+            date_to = datetime.now(UTC)
             date_from = date_to - timedelta(days=date_range_days)
 
             all_transactions = []
@@ -250,7 +246,7 @@ class DataSyncOrchestrator:
 
             merged = SyncBatch(
                 source_type=SyncSourceType.AKBANK,
-                sync_timestamp=datetime.now(timezone.utc),
+                sync_timestamp=datetime.now(UTC),
                 transactions=all_transactions,
                 warnings=all_warnings,
                 error_count=total_errors,
@@ -308,7 +304,7 @@ class DataSyncOrchestrator:
             if source not in result_batches:
                 result_batches[source] = SyncBatch(
                     source_type=source,
-                    sync_timestamp=datetime.now(timezone.utc),
+                    sync_timestamp=datetime.now(UTC),
                 )
             result_batches[source].transactions.append(tx)
 

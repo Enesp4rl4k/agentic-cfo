@@ -45,7 +45,8 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # ── Structured JSON Log Formatter ─────────────────────────────────────────────
 
@@ -122,9 +123,9 @@ def _setup_otel() -> None:
 
     try:
         from opentelemetry import trace
+        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-        from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 
         resource = Resource(attributes={
             SERVICE_NAME: "aicfo-backend",

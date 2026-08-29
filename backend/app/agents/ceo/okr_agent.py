@@ -50,7 +50,7 @@ OKR schema produced:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -95,13 +95,13 @@ def _momentum_score(current: float | None, previous: float | None) -> tuple[floa
     """
     Calculate momentum (velocity of change).
     Returns: (momentum_value, momentum_label)
-    
+
     momentum_value: -1.0 to +1.0 (negative = decelerating, positive = accelerating)
     momentum_label: "decelerating" | "flat" | "accelerating"
     """
     if current is None or previous is None:
         return 0.0, "unknown"
-    
+
     delta = current - previous
     if abs(delta) < 0.02:
         return 0.0, "flat"
@@ -122,7 +122,7 @@ def _confidence_from_data_freshness(
     """
     if days_since_update is None:
         days_since_update = 0
-    
+
     if days_since_update <= 0:
         conf = 1.0
     elif days_since_update <= 7:
@@ -133,12 +133,12 @@ def _confidence_from_data_freshness(
         conf = 0.70
     else:
         conf = 0.55
-    
+
     if data_quality == "high":
         conf = min(1.0, conf + 0.10)
     elif data_quality == "low":
         conf = max(0.0, conf - 0.15)
-    
+
     return round(conf, 2)
 
 
@@ -175,7 +175,7 @@ def _infer_okrs(
     revenue_cents       = fin.get("revenue_cents")
     cash_runway_months  = fin.get("cash_runway_months")
     forecast_12m_cents  = fin.get("forecast_base_12m_cents")
-    prev_net_margin     = fin.get("prev_net_margin")
+    fin.get("prev_net_margin")
 
     infra_waste_cents   = tech.get("infra_waste_cents")
     infra_cost_cents    = tech.get("infra_cost_cents")
@@ -326,13 +326,13 @@ def _infer_okrs(
                 target=kr_def["target"],
                 higher_is_better=kr_def["higher_is_better"],
             )
-            
+
             # Momentum: compare actual vs previous actual
             momentum_val, momentum_label = _momentum_score(
                 kr_def.get("actual"),
                 kr_def.get("prev_actual"),
             )
-            
+
             # Confidence based on data freshness
             confidence = _confidence_from_data_freshness(
                 days_since_update=kr_def.get("data_freshness_days", 30),
@@ -354,7 +354,7 @@ def _infer_okrs(
         overall_status, avg_score = _overall_status(krs_out)
         weight = obj_def.get("weight", 0.20)
         weighted_score = round(avg_score * weight, 3)
-        
+
         # Objective-level momentum
         obj_momentum_vals = [kr["momentum"] for kr in krs_out if kr.get("momentum") is not None]
         if obj_momentum_vals:
@@ -396,8 +396,7 @@ async def _generate_okr_narrative(
 ) -> str:
     """Generate Türkçe OKR summary with weighted scores and momentum."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.platform.model_gateway import complete_text
 
         achieved  = [o for o in objectives if o["overall_status"] == "achieved"]
         on_track  = [o for o in objectives if o["overall_status"] == "on_track"]
@@ -430,18 +429,12 @@ async def _generate_okr_narrative(
             "yapılması gereken tek en önemli eylemi belirt. Sade ve doğrudan yaz."
         )
 
-        llm = ChatOpenAI(
-            model=getattr(settings, "llm_model", "gpt-4o-mini"),
-            api_key=settings.openai_api_key,
-            base_url=getattr(settings, "llm_base_url", None) or None,
-            temperature=0.3,
+        return (await complete_text(
+            task="short_narrative",
+            system_prompt="Sen Türkçe olarak kısa, öz ve aksiyon odaklı OKR durum güncellemeleri yazan deneyimli yönetim danışmanısın.",
+            prompt=prompt,
             max_tokens=450,
-        )
-        response = await llm.ainvoke([
-            SystemMessage(content="Sen Türkçe olarak kısa, öz ve aksiyon odaklı OKR durum güncellemeleri yazan deneyimli yönetim danışmanısın."),
-            HumanMessage(content=prompt),
-        ])
-        return response.content.strip()
+        )).strip()
 
     except Exception as exc:
         logger.warning("OKR narrative generation failed: %s", exc)
@@ -450,7 +443,7 @@ async def _generate_okr_narrative(
         at_risk_titles   = [o["title"] for o in objectives if o["overall_status"] == "at_risk"]
         off_track_titles = [o["title"] for o in objectives if o["overall_status"] == "off_track"]
         accel_titles     = [o["title"] for o in objectives if o.get("momentum_label") == "accelerating"]
-        decel_titles     = [o["title"] for o in objectives if o.get("momentum_label") == "decelerating"]
+        [o["title"] for o in objectives if o.get("momentum_label") == "decelerating"]
 
         parts: list[str] = []
         if achieved_titles:
@@ -478,13 +471,13 @@ async def run_okr_agent(
 ) -> dict[str, Any]:
     """
     OKR Tracking Agent node for the CEO LangGraph.
-    
+
     Enhancements:
     - Weighted scoring: strategic importance per objective
     - Momentum tracking: acceleration/deceleration indicators
     - Confidence intervals on estimates
     - Company-level weighted OKR score
-    
+
     Reads: financial_summary, tech_summary, cross_risks, period
     Writes: okr_status (with weighted_score, momentum, confidence)
     """
@@ -520,7 +513,7 @@ async def run_okr_agent(
             "objectives":              objectives,
             "period":                  state.get("period"),
             "company_weighted_okr_score": company_weighted_score,
-            "generated_at":            datetime.now(timezone.utc).isoformat(),
+            "generated_at":            datetime.now(UTC).isoformat(),
             "narrative":               narrative,
         }
 

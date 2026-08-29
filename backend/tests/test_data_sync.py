@@ -10,31 +10,27 @@ Tests:
 """
 from __future__ import annotations
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
 
-from app.services.data_sync.schemas import (
-    SyncSourceType,
-    SyncTransaction,
-    SyncBatch,
-    TransactionType,
-    DataQualityThresholds,
-)
-from app.services.data_sync.accounting.parasut import ParasutClient
+import pytest
+
 from app.services.data_sync.accounting.importers import (
-    NetsisImporter,
-    MikroImporter,
     LogoTigerImporter,
-)
-from app.services.data_sync.banking.psd2 import GarantiPSD2Client, AkbankPSD2Client
-from app.services.data_sync.validators import (
-    DataQualityValidator,
-    DuplicateDetector,
-    ConflictResolver,
+    MikroImporter,
+    NetsisImporter,
 )
 from app.services.data_sync.orchestrator import DataSyncOrchestrator
-
+from app.services.data_sync.schemas import (
+    SyncBatch,
+    SyncSourceType,
+    SyncTransaction,
+    TransactionType,
+)
+from app.services.data_sync.validators import (
+    ConflictResolver,
+    DataQualityValidator,
+    DuplicateDetector,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -45,7 +41,7 @@ from app.services.data_sync.orchestrator import DataSyncOrchestrator
 def sample_transaction():
     """Create sample transaction."""
     return SyncTransaction(
-        date=datetime.now(timezone.utc),
+        date=datetime.now(UTC),
         description="Test Transaction",
         amount_cents=100000,
         tx_type=TransactionType.INCOME,
@@ -61,7 +57,7 @@ def sample_batch():
     """Create sample batch."""
     return SyncBatch(
         source_type=SyncSourceType.PARASUT,
-        sync_timestamp=datetime.now(timezone.utc),
+        sync_timestamp=datetime.now(UTC),
         transactions=[],
     )
 
@@ -151,7 +147,7 @@ def test_data_quality_validator_detects_duplicates():
     validator = DataQualityValidator()
 
     tx1 = SyncTransaction(
-        date=datetime(2026, 1, 15, tzinfo=timezone.utc),
+        date=datetime(2026, 1, 15, tzinfo=UTC),
         description="Test",
         amount_cents=100000,
         tx_type=TransactionType.INCOME,
@@ -161,7 +157,7 @@ def test_data_quality_validator_detects_duplicates():
     )
 
     tx2 = SyncTransaction(
-        date=datetime(2026, 1, 15, tzinfo=timezone.utc),
+        date=datetime(2026, 1, 15, tzinfo=UTC),
         description="Test",
         amount_cents=100000,
         tx_type=TransactionType.INCOME,
@@ -172,7 +168,7 @@ def test_data_quality_validator_detects_duplicates():
 
     batch = SyncBatch(
         source_type=SyncSourceType.PARASUT,
-        sync_timestamp=datetime.now(timezone.utc),
+        sync_timestamp=datetime.now(UTC),
         transactions=[tx1, tx2, tx2, tx2, tx2],  # tx2 appears 4 times
     )
 
@@ -187,7 +183,7 @@ def test_data_quality_validator_detects_anomalies():
     # Build history
     for i in range(5):
         tx = SyncTransaction(
-            date=datetime(2026, 1, i + 1, tzinfo=timezone.utc),
+            date=datetime(2026, 1, i + 1, tzinfo=UTC),
             description="Normal",
             amount_cents=100000,  # 1000 TRY
             tx_type=TransactionType.INCOME,
@@ -199,7 +195,7 @@ def test_data_quality_validator_detects_anomalies():
 
     # Anomaly: 10x normal amount
     anomaly_tx = SyncTransaction(
-        date=datetime(2026, 1, 10, tzinfo=timezone.utc),
+        date=datetime(2026, 1, 10, tzinfo=UTC),
         description="Anomaly",
         amount_cents=1000000,  # 10,000 TRY
         tx_type=TransactionType.INCOME,
@@ -210,7 +206,7 @@ def test_data_quality_validator_detects_anomalies():
 
     batch = SyncBatch(
         source_type=SyncSourceType.PARASUT,
-        sync_timestamp=datetime.now(timezone.utc),
+        sync_timestamp=datetime.now(UTC),
         transactions=[anomaly_tx],
     )
 
@@ -223,7 +219,7 @@ def test_duplicate_detector_identifies_duplicates():
     detector = DuplicateDetector()
 
     tx = SyncTransaction(
-        date=datetime(2026, 1, 15, tzinfo=timezone.utc),
+        date=datetime(2026, 1, 15, tzinfo=UTC),
         description="Test",
         amount_cents=100000,
         tx_type=TransactionType.INCOME,
@@ -242,7 +238,7 @@ def test_conflict_resolver_prioritizes_api_data():
 
     # Same transaction from different sources
     bank_tx = SyncTransaction(
-        date=datetime(2026, 1, 15, tzinfo=timezone.utc),
+        date=datetime(2026, 1, 15, tzinfo=UTC),
         description="Transaction",
         amount_cents=100000,
         tx_type=TransactionType.INCOME,
@@ -252,7 +248,7 @@ def test_conflict_resolver_prioritizes_api_data():
     )
 
     csv_tx = SyncTransaction(
-        date=datetime(2026, 1, 15, tzinfo=timezone.utc),
+        date=datetime(2026, 1, 15, tzinfo=UTC),
         description="Transaction",
         amount_cents=100000,
         tx_type=TransactionType.INCOME,
@@ -279,10 +275,10 @@ async def test_orchestrator_processes_batches():
 
     batch1 = SyncBatch(
         source_type=SyncSourceType.PARASUT,
-        sync_timestamp=datetime.now(timezone.utc),
+        sync_timestamp=datetime.now(UTC),
         transactions=[
             SyncTransaction(
-                date=datetime(2026, 1, 15, tzinfo=timezone.utc),
+                date=datetime(2026, 1, 15, tzinfo=UTC),
                 description="TX1",
                 amount_cents=100000,
                 tx_type=TransactionType.INCOME,
@@ -294,10 +290,10 @@ async def test_orchestrator_processes_batches():
 
     batch2 = SyncBatch(
         source_type=SyncSourceType.GARANTI,
-        sync_timestamp=datetime.now(timezone.utc),
+        sync_timestamp=datetime.now(UTC),
         transactions=[
             SyncTransaction(
-                date=datetime(2026, 1, 16, tzinfo=timezone.utc),
+                date=datetime(2026, 1, 16, tzinfo=UTC),
                 description="TX2",
                 amount_cents=50000,
                 tx_type=TransactionType.EXPENSE,
@@ -349,7 +345,7 @@ def test_audit_trail_creates_sync_log(sample_batch):
     """Test audit trail creates sync log entry."""
     from app.services.data_sync.audit import AuditTrail
 
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     ended = started + timedelta(seconds=5)
 
     log = AuditTrail.create_sync_log(

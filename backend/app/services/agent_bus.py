@@ -27,16 +27,16 @@ Akis ornegi:
 
 Kullanim:
     bus = get_agent_bus()
-    
+
     # Soru sor, cevap bekle (max 10 saniye)
     response = await bus.ask(
         from_agent="cfo",
-        to_agent="chro", 
+        to_agent="chro",
         query_type="hiring_plan",
         payload={"months_ahead": 3},
         timeout=10.0,
     )
-    
+
     # Dinle (agent tarafinda)
     async for message in bus.listen("chro"):
         if message.query_type == "hiring_plan":
@@ -49,8 +49,9 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -76,14 +77,14 @@ class AgentMessage:
         return json.dumps(asdict(self))
 
     @classmethod
-    def from_json(cls, data: str) -> "AgentMessage":
+    def from_json(cls, data: str) -> AgentMessage:
         d = json.loads(data)
         return cls(**d)
 
     def is_expired(self) -> bool:
         return time.time() - self.created_at > self.ttl
 
-    def make_response(self, payload: dict[str, Any], from_agent: str) -> "AgentMessage":
+    def make_response(self, payload: dict[str, Any], from_agent: str) -> AgentMessage:
         """Bu mesaja cevap olustur."""
         return AgentMessage(
             msg_id     = str(uuid.uuid4()),
@@ -173,7 +174,7 @@ class InMemoryBus:
             await self.publish(msg)
             response = await asyncio.wait_for(fut, timeout=timeout)
             return response
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.debug("Agent query timeout: %s → %s (%s)", from_agent, to_agent, query_type)
             return None
         except Exception as exc:
@@ -220,7 +221,7 @@ class InMemoryBus:
                 msg = await asyncio.wait_for(q.get(), timeout=timeout)
                 if not msg.is_expired():
                     yield msg
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
 
     async def drain(self, agent: str) -> list[AgentMessage]:
@@ -243,7 +244,7 @@ class RedisAgentBus:
     """
     Redis pub/sub uzerinden agent mesajlasma.
     Production icin InMemoryBus yerine bu kullanilmali.
-    
+
     Redis channel naming:
       agent:{agent_name}:{org_id}  → tek agent'a mesaj
       agent:all:{org_id}           → broadcast

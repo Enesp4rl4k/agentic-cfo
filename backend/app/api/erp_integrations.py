@@ -22,8 +22,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -176,8 +176,8 @@ async def parasut_sync(
     db:             AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Parasut'tan manuel sync tetikle."""
+    from app.agents.orchestration.erp_sync_runner import run_erp_sync_and_analyze
     from app.services.erp.parasut_connector import ParasutConnector
-    from app.services.erp.erp_sync_runner   import run_erp_sync_and_analyze
 
     org_id    = _get_org_id(current_user)
     connector = ParasutConnector(db)
@@ -240,8 +240,8 @@ async def logo_tiger_sync(
     - Hesap Hareketleri
     - Mizan Raporu
     """
+    from app.agents.orchestration.erp_sync_runner import run_erp_sync_and_analyze
     from app.services.erp.logo_tiger_connector import LogoTigerConnector
-    from app.services.erp.erp_sync_runner      import run_erp_sync_and_analyze
 
     org_id = _get_org_id(current_user)
 
@@ -291,8 +291,8 @@ async def mikro_sync(
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Mikro ERP CSV dosyasini sync et."""
+    from app.agents.orchestration.erp_sync_runner import run_erp_sync_and_analyze
     from app.services.erp.logo_tiger_connector import MikroConnector
-    from app.services.erp.erp_sync_runner      import run_erp_sync_and_analyze
 
     org_id  = _get_org_id(current_user)
     content = await file.read()

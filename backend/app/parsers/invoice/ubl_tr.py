@@ -9,15 +9,15 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
 class InvoiceParty(BaseModel):
     vkn_tckn: str = ""
     title: str = ""
-    tax_office: Optional[str] = None
-    city: Optional[str] = None
+    tax_office: str | None = None
+    city: str | None = None
     country: str = "Türkiye"
 
 
@@ -57,15 +57,15 @@ class ParsedUBLInvoice(BaseModel):
     currency_code: str = "TRY"
     supplier: InvoiceParty
     customer: InvoiceParty
-    line_items: List[InvoiceLineItem] = Field(default_factory=list)
-    tax_subtotals: List[InvoiceTaxSubtotal] = Field(default_factory=list)
+    line_items: list[InvoiceLineItem] = Field(default_factory=list)
+    tax_subtotals: list[InvoiceTaxSubtotal] = Field(default_factory=list)
     line_extension_total: Decimal = Decimal("0.0")  # Mal/Hizmet Toplamı (Matrah)
     tax_exclusive_total: Decimal = Decimal("0.0")
     tax_inclusive_total: Decimal = Decimal("0.0")
     allowance_total: Decimal = Decimal("0.0")        # İskonto Toplamı
     payable_amount: Decimal = Decimal("0.0")         # Ödenecek Tutar
     withholding_tax_amount: Decimal = Decimal("0.0") # Tevkifat Tutarı
-    suggested_tdhp_entries: List[TDHPJournalEntry] = Field(default_factory=list)
+    suggested_tdhp_entries: list[TDHPJournalEntry] = Field(default_factory=list)
 
 
 class UBLTRInvoiceParser:
@@ -165,7 +165,10 @@ class UBLTRInvoiceParser:
             )
 
         # Total KDV amount
-        total_kdv = sum(t.tax_amount for t in tax_subtotals if "KDV" in t.tax_category_name.upper())
+        total_kdv = sum(
+            (t.tax_amount for t in tax_subtotals if "KDV" in t.tax_category_name.upper()),
+            Decimal("0"),
+        )
 
         # 6. Invoice Lines
         lines = []
@@ -225,7 +228,7 @@ class UBLTRInvoiceParser:
         total_kdv: Decimal,
         payable: Decimal,
         inv_no: str,
-    ) -> List[TDHPJournalEntry]:
+    ) -> list[TDHPJournalEntry]:
         """Auto-generates TDHP (Tek Düzen Hesap Planı) double-entry bookkeeping records."""
         entries = []
         desc = f"Fatura No: {inv_no} - {supplier.title or customer.title}"

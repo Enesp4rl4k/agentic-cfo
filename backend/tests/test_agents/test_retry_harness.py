@@ -2,21 +2,17 @@
 Tests for RetryHarness — loop engineering layer.
 Pure async tests, no LLM, no DB.
 """
-import asyncio
 import pytest
 
 from app.services.retry_harness import (
     RetryHarness,
-    RetryResult,
-    AttemptLog,
+    default_correction_builder,
     retry_with_correction,
-    validate_non_empty_string,
-    validate_non_empty_dict,
     validate_has_keys,
     validate_narrative_quality,
-    default_correction_builder,
+    validate_non_empty_dict,
+    validate_non_empty_string,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

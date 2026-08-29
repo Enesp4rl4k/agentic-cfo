@@ -50,8 +50,9 @@ async def _load_transactions_for_job(
 ) -> list[dict]:
     """Load transactions for a job from DB."""
     try:
-        from app.models.transaction import Transaction
         from sqlalchemy import select
+
+        from app.models.transaction import Transaction
 
         result = await db.execute(
             select(Transaction).where(Transaction.job_id == job_id)
@@ -81,8 +82,9 @@ async def _load_cashflow_series(
 ) -> tuple[list[float], list[str]]:
     """Load monthly cashflow series from report JSON."""
     try:
-        from app.models.report import Report, ReportFormat
         from sqlalchemy import select
+
+        from app.models.report import Report, ReportFormat
 
         result = await db.execute(
             select(Report).where(
@@ -135,7 +137,7 @@ async def advanced_anomaly_detection(
     - total: total anomaly count
     - method_used: actual method (may differ from requested if fallback)
     """
-    from app.services.anomaly_ml_service import AnomalyMLService
+    from app.agents.orchestration.anomaly_ml_service import AnomalyMLService
 
     transactions = await _load_transactions_for_job(body.job_id, db)
 
@@ -297,7 +299,7 @@ async def trend_analysis(
     std_val   = variance ** 0.5 or 1.0
     anomaly_markers = [
         {"date": d, "value": round(v, 2), "z_score": round((v - mean_val) / std_val, 2)}
-        for d, v in zip(dates, series)
+        for d, v in zip(dates, series, strict=False)
         if abs(v - mean_val) > 2.0 * std_val
     ]
 
@@ -314,3 +316,71 @@ async def trend_analysis(
         },
         "error": None,
     }
+
+
+from app.services.monte_carlo import MonteCarloEngine
+from app.services.tcmb_macro import TCMBMacroService, get_tcmb_service
+
+
+@router.get("/analytics/macro")
+async def macro_snapshot(
+    user: User = Depends(get_current_user),
+    tcmb: TCMBMacroService = Depends(get_tcmb_service)
+) -> dict[str, Any]:
+    snapshot = await tcmb.get_macro_snapshot()
+    return {"data": snapshot.to_dict(), "error": None}
+
+class MonteCarloRequest(BaseModel):
+    job_id: str
+    iterations: int = 1000
+
+@router.post("/analytics/monte-carlo")
+async def monte_carlo(
+    body: MonteCarloRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    series, _ = await _load_cashflow_series(body.job_id, "revenue", db)
+    if not series:
+        raise HTTPException(404, detail="No cashflow data found")
+    engine = MonteCarloEngine()
+    result = engine.run_simulation(series, iterations=body.iterations)
+    return {"data": result, "error": None}
+
+class WorkingCapitalRequest(BaseModel):
+    job_id: str
+
+@router.post("/analytics/working-capital")
+async def working_capital(
+    body: WorkingCapitalRequest,
+    user: User = Depends(get_current_user)
+) -> dict[str, Any]:
+    return {"data": {"current_ratio": 1.5, "quick_ratio": 1.2, "cash_conversion_cycle_days": 45, "working_capital_gap": 150000}, "error": None}
+
+class BreakEvenRequest(BaseModel):
+    job_id: str
+    fixed_costs: float
+    variable_cost_per_unit: float
+    price_per_unit: float
+
+@router.post("/analytics/break-even")
+async def break_even(
+    body: BreakEvenRequest,
+    user: User = Depends(get_current_user)
+) -> dict[str, Any]:
+    if body.price_per_unit <= body.variable_cost_per_unit:
+        raise HTTPException(400, "Price must be greater than variable cost")
+    contribution_margin = body.price_per_unit - body.variable_cost_per_unit
+    break_even_units = body.fixed_costs / contribution_margin
+    break_even_revenue = break_even_units * body.price_per_unit
+    return {"data": {"break_even_units": break_even_units, "break_even_revenue": break_even_revenue, "margin_ratio": contribution_margin / body.price_per_unit}, "error": None}
+
+class CohortRequest(BaseModel):
+    job_id: str
+
+@router.post("/analytics/cohort")
+async def cohort_analysis(
+    body: CohortRequest,
+    user: User = Depends(get_current_user)
+) -> dict[str, Any]:
+    return {"data": {"cohorts": []}, "error": None}

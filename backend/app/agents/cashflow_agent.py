@@ -9,13 +9,12 @@ done_when: state['cashflow'] contains operating, investing, financing, net_chang
 """
 from __future__ import annotations
 
-from app.services.telemetry import trace_agent
-
 import logging
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +116,6 @@ def _compute_ccc(
     For companies without explicit AR/AP tracking, we use
     income timing vs. expense timing as a proxy.
     """
-    from datetime import datetime, timezone
 
     if not transactions or total_revenue_cents == 0:
         return {"dso_days": None, "dpo_days": None, "ccc_days": None, "interpretation": "Yetersiz veri"}
@@ -145,11 +143,11 @@ def _compute_ccc(
             months_with_expense.add(m)
 
     n_income_months = max(1, len(months_with_income))
-    n_expense_months = max(1, len(months_with_expense))
+    max(1, len(months_with_expense))
 
     # Proxy DSO: transactions per month vs revenue size
     avg_monthly_revenue = total_revenue_cents / n_income_months
-    daily_revenue = avg_monthly_revenue / 30
+    avg_monthly_revenue / 30
 
     # High-value, few transactions → higher DSO (invoice-based)
     # Low-value, many transactions → lower DSO (retail/subscription)

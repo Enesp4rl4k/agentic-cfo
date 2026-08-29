@@ -29,13 +29,35 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+class IntentResult(str):
+    """String subclass that also behaves as a (intent, confidence) tuple when unpacked."""
+    confidence: float
+
+    def __new__(cls, intent: str, confidence: float = 0.0):
+        obj = str.__new__(cls, intent)
+        obj.confidence = confidence
+        return obj
+
+    def __iter__(self):
+        yield str(self)
+        yield self.confidence
+
+    def __getitem__(self, item):
+        if item == 0:
+            return str(self)
+        if item == 1:
+            return self.confidence
+        return super().__getitem__(item)
+
+
 # ── Simulasyon sorgu sonucu ────────────────────────────────────────────────────
+
 
 @dataclass
 class SimulationQueryResult:
@@ -66,42 +88,45 @@ class NLSimulationBridge:
     # ── Intent tespiti ─────────────────────────────────────────────────────────
 
     _HEADCOUNT_PATTERNS = [
-        r"(\d+)\s*(?:muhendis|kisi|calisan|personel|eleman|hire|isse al)",
-        r"(?:kadro|headcount|ekip).{0,20}(?:artir|buyut|genislet|ekle)",
-        r"(?:yeni|ek).{0,10}(?:muhendis|developer|yazilimci|satis)",
-        r"(\d+)\s*(?:kisi|pers).{0,20}(?:cikar|azalt|isik|layoff)",
-        r"(?:kadro|headcount).{0,20}(?:azalt|kisalt|dusur)",
+        r"(\d+)\s*(?:muhendis|mühendis|kisi|kişi|calisan|çalışan|personel|eleman|developer|yazilimci|yazılımcı|hire|işe\s*al|isse\s*al|alsak|alsam|alalım|alalim)",
+        r"(?:kadro|headcount|ekip).{0,20}(?:artir|artır|buyut|büyüt|genislet|genişlet|ekle|al)",
+        r"(?:yeni|ek).{0,10}(?:muhendis|mühendis|developer|yazilimci|yazılımcı|satis|satış)",
+        r"(\d+)\s*(?:kisi|kişi|pers).{0,20}(?:cikar|çıkar|azalt|isik|layoff)",
+        r"(?:kadro|headcount).{0,20}(?:azalt|kisalt|kısalt|dusur|düşür)",
     ]
 
     _MARKETING_PATTERNS = [
-        r"(?:pazarlama|marketing|reklam|ads).{0,30}(?:artir|yuksel|artis|\d+x|katina)",
-        r"(?:butce|budget).{0,20}(?:pazarlama|marketing)",
-        r"(?:roas|cac|musteri edinme).{0,20}(?:iyilestirsek|artirsa)",
+        r"(?:pazarlama|marketing|reklam|ads).{0,30}(?:artir|artır|yuksel|yüksel|artis|artış|\d+x|katina|katına)",
+        r"(?:butce|bütçe|budget).{0,20}(?:pazarlama|marketing)",
+        r"(?:roas|cac|musteri\s*edinme|müşteri\s*edinme).{0,20}(?:iyilestirsek|iyileştirsek|artirsa|artırsa)",
     ]
 
     _CASCADE_PATTERNS = [
-        r"(?:nakit|para|cash).{0,20}(?:biterse|tukensek|kalmazsa|kriz)",
-        r"(?:runway|nakit omru).{0,20}(?:\d+|biterse)",
-        r"(?:gelir|revenue).{0,20}(?:duserse|azalirsa|kaybolursa)",
-        r"(?:ayrılırsa|giderse|kaybetsek).{0,20}(?:cto|ceo|cfo|kto)",
-        r"(?:kur|dolar|euro).{0,20}(?:artarsa|ciksa|yukselirse)",
+        r"(?:nakit|para|cash).{0,20}(?:biterse|tukensek|tükensek|kalmazsa|kriz)",
+        r"(?:runway|nakit\s*omru|nakit\s*ömrü).{0,20}(?:\d+|biterse)",
+        r"(?:gelir|revenue).{0,20}(?:duserse|düşerse|azalirsa|azalırsa|kaybolursa)",
+        r"(?:ayrılırsa|ayrilirsa|giderse|kaybetsek).{0,20}(?:cto|ceo|cfo|kto)",
+        r"(?:kur|dolar|euro).{0,20}(?:artarsa|ciksa|çıksa|yukselirse|yükselirse)",
         r"(?:enflasyon|inflation).{0,20}(?:\d+|artarsa|devam)",
     ]
 
     _COST_CUT_PATTERNS = [
-        r"(?:gider|maliyet|cost|harcama).{0,20}(?:azalt|kes|duşür|kisit)",
-        r"(?:%\d+|yuzde \d+).{0,20}(?:tasarruf|kes|azalt)",
-        r"(?:ofis|kira|yazilim|abonelik).{0,20}(?:kapat|iptal|vazgec)",
+        r"(?:gider|maliyet|cost|harcama).{0,20}(?:azalt|kes|dusur|düşür|duşür|kisit|kısıt)",
+        r"(?:%\d+|yuzde\s*\d+|yüzde\s*\d+).{0,20}(?:tasarruf|kes|azalt)",
+        r"(?:ofis|kira|yazilim|yazılım|abonelik).{0,20}(?:kapat|iptal|vazgec|vazgeç)",
     ]
 
     _PRICE_PATTERNS = [
-        r"(?:fiyat|price|ucret|abonelik).{0,20}(?:artir|yuksel|zam|raise)",
-        r"(?:%\d+|yuzde \d+).{0,20}(?:fiyat|zam|artis)",
+        r"(?:fiyat|price|ucret|ücret|abonelik).{0,20}(?:artir|artır|yuksel|yüksel|zam|raise)",
+        r"(?:%\d+|yuzde\s*\d+|yüzde\s*\d+).{0,20}(?:fiyat|zam|artis|artış)",
     ]
 
-    def classify_intent(self, query: str) -> tuple[str, float]:
+
+    def classify_intent(self, query: str) -> IntentResult:
         """Intent siniflandir ve guven skoru dondur."""
-        q = query.lower().strip()
+        q = (query or "").replace("İ", "i").replace("I", "ı").replace("Ş", "ş").replace("Ğ", "ğ").replace("Ü", "ü").replace("Ö", "ö").replace("Ç", "ç").lower().strip()
+        if not q:
+            return IntentResult("unknown", 0.0)
 
         checks = [
             ("headcount", self._HEADCOUNT_PATTERNS, 0.85),
@@ -114,19 +139,36 @@ class NLSimulationBridge:
         for intent, patterns, base_conf in checks:
             for pattern in patterns:
                 if re.search(pattern, q, re.IGNORECASE):
-                    return intent, base_conf
+                    return IntentResult(intent, base_conf)
 
-        return "unknown", 0.0
+        return IntentResult("unknown", 0.0)
+
+    def extract_entities(self, query: str, intent: str | None = None) -> dict[str, Any]:
+        """Extract entity parameters from query for compatibility."""
+        if intent is None:
+            intent = self.classify_intent(query)
+        params = self.extract_params(query, str(intent))
+        if "count" in params:
+            params["headcount_delta"] = params["count"]
+        if "pct" in params:
+            params["increase_pct"] = params["pct"]
+            params["budget_increase_pct"] = params["pct"]
+        return params
 
     def extract_params(self, query: str, intent: str) -> dict[str, Any]:
         """Sorgudan sayisal parametreler cikar."""
-        q      = query.lower()
+        q      = (query or "").replace("İ", "i").replace("I", "ı").replace("Ş", "ş").replace("Ğ", "ğ").replace("Ü", "ü").replace("Ö", "ö").replace("Ç", "ç").lower()
         params: dict[str, Any] = {}
 
         # Kisi sayisi
-        m = re.search(r"(\d+)\s*(?:muhendis|kisi|calisan|personel|developer|yazilimci|satis|hire)", q)
+        m = re.search(r"(\d+)\s*(?:muhendis|mühendis|kisi|kişi|calisan|çalışan|personel|eleman|developer|yazilimci|yazılımcı|satis|satış|hire)", q)
         if m:
             params["count"] = int(m.group(1))
+        elif intent == "headcount":
+            m2 = re.search(r"(\d+)", q)
+            if m2:
+                params["count"] = int(m2.group(1))
+
 
         # Yuzde
         m = re.search(r"(%|yuzde)\s*(\d+(?:\.\d+)?)", q)
@@ -137,6 +179,7 @@ class NLSimulationBridge:
             if m:
                 val = float(m.group(1))
                 params["pct"] = val / 100 if val > 1 else val
+
 
         # Ay sayisi
         m = re.search(r"(\d+(?:\.\d+)?)\s*(?:ay|month)", q)

@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aicfo-db-migration
+  namespace: aicfo
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      name: aicfo-db-migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: db-migration
+        image: agentic-cfo-backend:latest
+        imagePullPolicy: IfNotPresent
+        command: ["alembic", "upgrade", "head"]
+        envFrom:
+        - configMapRef:
+            name: aicfo-config
+        - secretRef:
+            name: aicfo-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi

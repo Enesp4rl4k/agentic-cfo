@@ -1,0 +1,59 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-postgres
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  serviceName: {{ include "agentic-cfo.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "agentic-cfo.fullname" . }}-postgres
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentic-cfo.fullname" . }}-postgres
+    spec:
+      containers:
+      - name: postgres
+        image: {{ .Values.postgres.image }}
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: {{ .Values.postgres.database }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgres.username }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "agentic-cfo.fullname" . }}-secrets
+              key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.postgres.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-postgres
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: {{ include "agentic-cfo.fullname" . }}-postgres
+{{- end }}

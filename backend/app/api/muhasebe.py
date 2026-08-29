@@ -12,23 +12,26 @@ Endpoint'ler:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user, require_role
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
+from app.models.report import Report, ReportFormat
+from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
-from app.models.smmm_onay import SMMMOnayKaydi, OnayDurumu
 from app.models.user import User
 
-router = APIRouter(dependencies=[Depends(require_tr_pack)])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +42,12 @@ class MuhasebeAnalizRequest(BaseModel):
     company_name: str | None = None
     donem: str | None = Field(None, description="Dönem (ör. '2024-01')")
     use_llm_fallback: bool = True
+
+
+class TRVerticalRequest(BaseModel):
+    job_id: str
+    company_name: str | None = None
+    donem: str | None = Field(None, description="Dönem (ör. '2024-01')")
 
 
 class OnayRequest(BaseModel):
@@ -100,8 +109,20 @@ async def muhasebe_analiz(
         for tx in txs
     ]
 
-    # Muhasebe analizi çalıştır
-    agent = get_muhasebe_agent(use_llm_fallback=body.use_llm_fallback)
+    # Muhasebe analizi — CoA adapter follows org regional packs
+    packs: list[str] = []
+    if job.org_id:
+        from app.models.organization import Organization
+        from app.services.regional.packs import normalize_packs
+
+        org = await db.get(Organization, str(job.org_id))
+        if org:
+            packs = normalize_packs(getattr(org, "regional_packs", None))
+
+    agent = get_muhasebe_agent(
+        use_llm_fallback=body.use_llm_fallback,
+        regional_packs=packs,
+    )
     sonuc = await agent.run(
         job_id=body.job_id,
         transactions=tx_dicts,
@@ -109,29 +130,31 @@ async def muhasebe_analiz(
         donem=body.donem,
     )
 
-    # SMMM onay kuyruğuna ekle
+    # SMMM onay kuyruğu — Turkey pack only
     onay_eklendi = 0
-    for onay_item in sonuc.onay_kuyrugu:
-        kayit = SMMMOnayKaydi(
-            job_id=body.job_id,
-            org_id=str(job.org_id) if job.org_id else None,
-            created_by_user_id=current_user.id,
-            kayit_id=onay_item["kayit_id"],
-            orijinal_kayit=onay_item,
-            durum=OnayDurumu.BEKLIYOR,
-            otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
-            otomatik_confidence=onay_item.get("confidence"),
-            onay_neden=onay_item.get("onay_neden"),
-            tx_description=onay_item.get("tx_description"),
-            tx_amount_try=onay_item.get("tx_amount_try"),
-        )
-        db.add(kayit)
-        onay_eklendi += 1
+    if "tr" in packs:
+        for onay_item in sonuc.onay_kuyrugu:
+            kayit = SMMMOnayKaydi(
+                job_id=body.job_id,
+                org_id=str(job.org_id) if job.org_id else None,
+                created_by_user_id=current_user.id,
+                kayit_id=onay_item["kayit_id"],
+                orijinal_kayit=onay_item,
+                durum=OnayDurumu.BEKLIYOR,
+                otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
+                otomatik_confidence=onay_item.get("confidence"),
+                onay_neden=onay_item.get("onay_neden"),
+                tx_description=onay_item.get("tx_description"),
+                tx_amount_try=onay_item.get("tx_amount_try"),
+            )
+            db.add(kayit)
+            onay_eklendi += 1
 
     await db.commit()
 
     result_dict = sonuc.to_dict()
     result_dict["onay_kuyruguna_eklendi"] = onay_eklendi
+    result_dict["coa_adapter"] = "tr_thp" if "tr" in packs else "generic_gaap"
 
     logger.info(
         "Muhasebe analizi tamamlandı: job=%s kayıt=%d onay=%d",
@@ -141,13 +164,144 @@ async def muhasebe_analiz(
     return {"data": result_dict, "error": None}
 
 
+@router.post("/muhasebe/tr-vertical", status_code=status.HTTP_201_CREATED)
+async def muhasebe_tr_vertical(
+    body: TRVerticalRequest,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    L3 autopilot for the TR accounting vertical: runs the uploaded file through
+    the CFO pipeline → TR accounting → board deck in one unattended pass and
+    returns a single consolidated approval gate. Never auto-approves.
+    """
+    from app.agents.tr_vertical import run_tr_vertical
+
+    job = await db.get(AnalysisJob, body.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
+    if (
+        job.org_id
+        and job.org_id != current_user.org_id
+        and current_user.role not in ("admin", "owner")
+    ):
+        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+    if not job.file_path:
+        raise HTTPException(status_code=400, detail="Job'a ait dosya yolu yok.")
+
+    from app.agents.run_ledger import agent_run
+
+    async with agent_run(
+        db,
+        pipeline="tr_vertical",
+        org_id=str(job.org_id) if job.org_id else None,
+        job_id=body.job_id,
+    ) as _run:
+        result = await run_tr_vertical(
+            job_id=body.job_id,
+            file_path=job.file_path,
+            file_type=job.file_type,
+            org_id=str(job.org_id) if job.org_id else None,
+            period=body.donem,
+            company_name=body.company_name,
+        )
+        _run.node(result.stage)
+        if any(e for e in result.errors):
+            _run.row.error = "; ".join(result.errors)[:2000]
+        if result.stage != "done":
+            _run.row.status = "halted"
+        elif result.approval_required:
+            _run.row.status = "awaiting_review"
+        _run.row.result_ref = {
+            "stage": result.stage,
+            "approval_required": result.approval_required,
+            "board_deck_pdf_size": result.to_dict().get("board_deck_pdf_size"),
+        }
+
+    # Record the generated board deck so it can be fetched later (GET below).
+    if result.board_deck_pdf_path:
+        existing = (
+            await db.execute(
+                select(Report)
+                .where(
+                    Report.job_id == body.job_id,
+                    Report.report_type == "tr_board_deck",
+                    Report.report_format == ReportFormat.PDF,
+                )
+                .order_by(desc(Report.created_at))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing:
+            existing.file_path = result.board_deck_pdf_path
+        else:
+            db.add(
+                Report(
+                    job_id=body.job_id,
+                    report_type="tr_board_deck",
+                    report_format=ReportFormat.PDF,
+                    file_path=result.board_deck_pdf_path,
+                )
+            )
+        await db.commit()
+
+    logger.info(
+        "TR vertical (API): job=%s stage=%s approval_required=%s",
+        body.job_id, result.stage, result.approval_required,
+    )
+    return {
+        "data": result.to_dict(),
+        "error": ("; ".join(result.errors) or None) if result.errors else None,
+        "meta": {"depth_level": 3, "auto_approved": False},
+    }
+
+
+@router.get("/muhasebe/tr-vertical/{job_id}/board-deck.pdf")
+async def muhasebe_tr_vertical_board_deck(
+    job_id: str,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> FileResponse:
+    """Download the board-deck PDF produced by the last TR-vertical run for this job."""
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
+    if (
+        job.org_id
+        and job.org_id != current_user.org_id
+        and current_user.role not in ("admin", "owner")
+    ):
+        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+
+    report = (
+        await db.execute(
+            select(Report)
+            .where(
+                Report.job_id == job_id,
+                Report.report_type == "tr_board_deck",
+                Report.report_format == ReportFormat.PDF,
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if not report or not report.file_path or not os.path.exists(report.file_path):
+        raise HTTPException(status_code=404, detail="Yönetim kurulu sunumu bulunamadı.")
+
+    return FileResponse(
+        path=report.file_path,
+        media_type="application/pdf",
+        filename=f"yonetim-kurulu-{job_id}.pdf",
+    )
+
+
 @router.get("/muhasebe/onay-kuyrugu")
 async def onay_kuyrugu_listele(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
     durum: str = "bekliyor",
 ) -> dict[str, Any]:
-    """SMMM onay bekleyen kayıtları listele."""
+    """SMMM onay bekleyen kayıtları listele (Turkey pack)."""
     query = select(SMMMOnayKaydi).where(
         SMMMOnayKaydi.durum == durum,
     )
@@ -181,10 +335,11 @@ async def onay_kuyrugu_listele(
 async def onayla(
     onay_id: str,
     body: OnayRequest,
-    current_user: User = Depends(require_role("admin", "owner", "cfo")),
+    current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "owner", "cfo")),
 ) -> dict[str, Any]:
-    """SMMM: Kaydı onayla."""
+    """SMMM: Kaydı onayla (Turkey pack)."""
     kayit = await db.get(SMMMOnayKaydi, onay_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
@@ -193,7 +348,7 @@ async def onayla(
 
     kayit.durum = OnayDurumu.ONAYLANDI
     kayit.onaylayan_user_id = current_user.id
-    kayit.onay_zamani = datetime.now(timezone.utc)
+    kayit.onay_zamani = datetime.now(UTC)
     kayit.onay_notu = body.onay_notu
     await db.commit()
 
@@ -205,17 +360,18 @@ async def onayla(
 async def duzelt(
     onay_id: str,
     body: DuzeltiRequest,
-    current_user: User = Depends(require_role("admin", "owner", "cfo")),
+    current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "owner", "cfo")),
 ) -> dict[str, Any]:
-    """SMMM: Hesap kodunu düzelt ve onayla."""
+    """SMMM: Hesap kodunu düzelt ve onayla (Turkey pack)."""
     kayit = await db.get(SMMMOnayKaydi, onay_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
 
     kayit.durum = OnayDurumu.DUZELTILDI
     kayit.onaylayan_user_id = current_user.id
-    kayit.onay_zamani = datetime.now(timezone.utc)
+    kayit.onay_zamani = datetime.now(UTC)
     kayit.duzeltilmis_hesap_kodu = body.yeni_hesap_kodu
     kayit.duzeltilmis_hesap_adi = body.yeni_hesap_adi
     kayit.duzeltme_aciklama = body.duzeltme_aciklama
@@ -239,17 +395,18 @@ async def duzelt(
 async def reddet(
     onay_id: str,
     body: ReddetRequest,
-    current_user: User = Depends(require_role("admin", "owner", "cfo")),
+    current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin", "owner", "cfo")),
 ) -> dict[str, Any]:
-    """SMMM: Kaydı reddet."""
+    """SMMM: Kaydı reddet (Turkey pack)."""
     kayit = await db.get(SMMMOnayKaydi, onay_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
 
     kayit.durum = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = current_user.id
-    kayit.onay_zamani = datetime.now(timezone.utc)
+    kayit.onay_zamani = datetime.now(UTC)
     kayit.onay_notu = body.red_neden
     await db.commit()
 

@@ -23,14 +23,12 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.types import Message
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +60,8 @@ def _extract_user(request: Request) -> tuple[str | None, str | None, str | None]
             from app.services.auth import decode_token
             payload = decode_token(auth[7:])
             return payload.get("sub"), payload.get("email"), payload.get("role")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to extract user from Authorization header: %s", exc)
     return None, None, None
 
 
@@ -90,12 +88,17 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         raw_body: bytes = b""
         try:
             raw_body = await request.body()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not buffer request body for audit logging: %s", exc)
 
-        # Re-inject body so route handlers can still read it
-        async def _receive() -> Message:
-            return {"type": "http.request", "body": raw_body, "more_body": False}
+        body_sent = False
+
+        async def _receive():
+            nonlocal body_sent
+            if not body_sent:
+                body_sent = True
+                return {"type": "http.request", "body": raw_body, "more_body": False}
+            return {"type": "http.disconnect"}
 
         request = Request(request.scope, receive=_receive)
 
@@ -111,8 +114,8 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 content_type = request.headers.get("content-type", "")
                 if "application/json" in content_type:
                     request_body = _redact_body(json.loads(raw_body))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not parse JSON body for audit redaction: %s", exc)
 
         user_id, user_email, user_role = _extract_user(request)
 
@@ -129,7 +132,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             "user_agent":      request.headers.get("User-Agent", "")[:500],
             "duration_ms":     duration_ms,
             "reason":          request.headers.get("X-Audit-Reason"),
-            "created_at":      datetime.now(timezone.utc),
+            "created_at":      datetime.now(UTC),
         }
 
         import asyncio
@@ -149,12 +152,15 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
     @staticmethod
     async def _write_audit(data: dict) -> None:
         try:
-            from app.database import get_session_factory, engine
+            import asyncio
+
+            from app.database import engine, get_session_factory
             from app.models.audit_log import AuditLog
 
-            async with get_session_factory(engine())() as db:
-                log = AuditLog(**data)
-                db.add(log)
-                await db.commit()
+            async with asyncio.timeout(3.0):
+                async with get_session_factory(engine())() as db:
+                    log = AuditLog(**data)
+                    db.add(log)
+                    await db.commit()
         except Exception as exc:
-            logger.warning("Audit log write failed: %s", exc)
+            logger.debug("Audit log write skipped or timed out: %s", exc)

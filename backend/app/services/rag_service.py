@@ -1,28 +1,26 @@
 """
-RAG Service (v1)
+RAG Service
 
-Bu sürümde:
-  - Embedding + pgvector yok.
-  - chunk'lar DB'ye metin olarak yazılır.
-  - Retrieval: query vs chunk_text üzerinden Python TF-IDF benzerliği ile yapılır.
-
-Amaç: agentic sistemde “kanıt (evidence) grounding” ihtiyacını kapatmak.
-Sonraki iterasyonda embeddings/pgvector ile değiştirilebilir (interface kalır).
+Chunk storage + retrieval:
+  - Index: chunk text (+ optional OpenAI-compatible embeddings when configured)
+  - Retrieval: TF-IDF (all DBs) and pgvector cosine (PostgreSQL + embeddings)
+  - Hybrid merge lives in app.services.rag.retriever.HybridRagRetriever
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models.rag_chunk import RagChunk
 from app.database import session_factory
+from app.models.rag_chunk import RagChunk
 
 logger = logging.getLogger(__name__)
 _EVIDENCE_CACHE: dict[str, tuple[float, str]] = {}
@@ -42,7 +40,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
     if not docs:
         return []
 
-    all_texts = [query] + docs
+    all_texts = [query, *docs]
     all_tokens = [_tokenise(t) for t in all_texts]
 
     vocab = sorted({tok for toks in all_tokens for tok in toks})
@@ -78,7 +76,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
     doc_vecs = [_vec(toks) for toks in all_tokens[1:]]
 
     def _cosine(a: list[float], b: list[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         na = sum(x * x for x in a) ** 0.5
         nb = sum(x * x for x in b) ** 0.5
         if na == 0 or nb == 0:
@@ -177,7 +175,7 @@ async def index_job_text(
         )
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     embeddings = _embed_texts(chunks)
     settings = get_settings()
     for i, ch in enumerate(chunks):
@@ -265,7 +263,7 @@ async def retrieve_evidence(
         if not rows:
             return ""
 
-        job_ids: list[str | None] = [r[0] for r in rows]
+        row_job_ids: list[str | None] = [r[0] for r in rows]
         chunk_indices: list[int] = [r[1] for r in rows]
         chunk_texts: list[str] = [r[2] or "" for r in rows]
 
@@ -274,7 +272,7 @@ async def retrieve_evidence(
             return ""
 
         ranked = sorted(
-            zip(scores, job_ids, chunk_indices, chunk_texts),
+            zip(scores, row_job_ids, chunk_indices, chunk_texts, strict=False),
             key=lambda x: -x[0],
         )
 

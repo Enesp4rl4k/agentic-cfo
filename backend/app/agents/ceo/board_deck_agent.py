@@ -31,16 +31,10 @@ done_when: state['board_deck']['slides'] has >= 4 items with benchmarks.
 from __future__ import annotations
 
 import logging
-import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.ceo.state import CEOState, CEORunConfig, CEOSkillResult
-from app.services.benchmark_utils import (
-    cfo_benchmark_margins,
-    cfo_benchmark_returns,
-    cto_benchmark_cloud_efficiency,
-)
+from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 
 logger = logging.getLogger(__name__)
 
@@ -138,15 +132,15 @@ def _add_benchmark_overlay(
     """Convert benchmark comparison to board-deck metric overlay."""
     if not benchmark_data or not metric_value:
         return None
-    
+
     try:
         comparison = benchmark_data
         if "company_value" not in comparison:
             return None
-        
+
         vs_median_pct = comparison.get("vs_median_pct", 0)
         position = comparison.get("percentile_position", "p25_p50")
-        
+
         # Map to emoji
         if vs_median_pct < -20:
             emoji = "🔴"
@@ -156,7 +150,7 @@ def _add_benchmark_overlay(
             emoji = "🟡"
         else:
             emoji = "🟢"
-        
+
         return {
             "metric_name": metric_name,
             "company_value": comparison.get("company_value", metric_value),
@@ -490,7 +484,7 @@ def _build_one_page_summary(
         f"TOPLAM TAHMİNİ ETKİ (İlk 5 Öncelik): {_fmt_currency(total_roi)}",
         "",
         "─" * 80,
-        f"Hazırlanma: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+        f"Hazırlanma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
         "Denetim Komitesi & Yönetim Kurulu için hazırlanmıştır.",
     ]
 
@@ -509,9 +503,9 @@ async def run_board_deck_agent(
     tech        = state.get("tech_summary") or {}
     cross_risks = state.get("cross_risks") or []
     priorities  = state.get("strategic_priorities") or []
-    period      = state.get("period") or datetime.now(timezone.utc).strftime("%Y-%m")
+    period      = state.get("period") or datetime.now(UTC).strftime("%Y-%m")
     company     = state.get("company_name") or "Şirket"
-    settings    = (config or {}).get("settings")
+    (config or {}).get("settings")
 
     try:
         slides = _build_slides(fin, tech, cross_risks, priorities, period, company)
@@ -520,7 +514,7 @@ async def run_board_deck_agent(
         board_deck = {
             "title": f"{company} — Yönetim Kurulu Güncellemesi {period}",
             "period": period,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "slides": slides,
             "one_page_summary": one_pager,
             "slide_count": len(slides),

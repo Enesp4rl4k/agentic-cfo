@@ -15,7 +15,6 @@ from typing import Any
 
 from app.agents.risk.state import RiskState, RiskStepLog
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _parse_date(raw: str) -> datetime | None:
@@ -157,7 +156,7 @@ def _compute_loss_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
         "total_recovery":          total_rec,
         "recovery_rate":           round(recovery_rate, 3),
         "avg_net_loss_per_event":  int(total_net / total) if total > 0 else 0,
-        "by_category":             {k: v for k, v in sorted(cat_loss.items(), key=lambda x: -x[1])},
+        "by_category":             dict(sorted(cat_loss.items(), key=lambda x: -x[1])),
         "by_root_cause":           dict(rc_counts.most_common(5)),
         "top_loss_events": [
             {

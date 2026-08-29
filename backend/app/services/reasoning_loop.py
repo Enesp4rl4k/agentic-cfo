@@ -404,12 +404,13 @@ JSON formatında 2-4 adımlık plan:
                 prior_outputs = "\n".join(
                     f"Adım {a.step_id}: {a.output[:200]}" for a in prior_actions
                 )
+                prior_block = f"ÖNCEKİ ADIMLAR:\n{prior_outputs}" if prior_outputs else ""
                 prompt = f"""Soruya yanıt vermenin bir parçası olarak şu adımı gerçekleştir:
 
 ADIM: {step.description}
 SORU: {question}
 {think.to_prompt_block()}
-{"ÖNCEKİ ADIMLAR:\n" + prior_outputs if prior_outputs else ""}
+{prior_block}
 
 Kısa ve somut yanıt ver (max 3 cümle):"""
 

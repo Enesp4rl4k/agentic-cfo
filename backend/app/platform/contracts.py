@@ -7,11 +7,11 @@ These types are domain-neutral and stable; orchestrators map their state into th
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal, TypedDict
 
 
-class AgentRole(str, Enum):
+class AgentRole(StrEnum):
     CFO = "cfo"
     CEO = "ceo"
     CTO = "cto"
@@ -66,6 +66,32 @@ class EvidenceBundle:
                 f"source={c.source_type} score={c.score:.2f}: {c.preview}"
             )
         return "\n".join(lines)
+
+    def merge(self, other: EvidenceBundle, *, top_k: int = 6) -> EvidenceBundle:
+        """Combine citations from two retrieval passes (e.g. txs + semantic snapshot)."""
+        combined = list(self.citations) + list(other.citations)
+        combined.sort(key=lambda c: c.score, reverse=True)
+        seen: set[tuple[str | None, int, str]] = set()
+        deduped: list[EvidenceCitation] = []
+        for c in combined:
+            key = (c.job_id, c.chunk_index, c.source_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(c)
+        scope = self.job_scope
+        if other.job_scope == "org_wide" or self.job_scope == "org_wide":
+            scope = "org_wide"
+        version = self.retriever_version
+        if other.retriever_version != version:
+            version = f"{self.retriever_version}+{other.retriever_version}"
+        return EvidenceBundle(
+            query=self.query or other.query,
+            org_id=self.org_id or other.org_id,
+            citations=deduped[:top_k],
+            job_scope=scope,
+            retriever_version=version,
+        )
 
 
 @dataclass

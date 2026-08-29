@@ -12,17 +12,16 @@ FastAPI-specific concerns (UploadFile, HTTPException, Depends).
 """
 from __future__ import annotations
 
-import aiofiles
 import os
 import uuid
 from dataclasses import dataclass
 
+import aiofiles
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.analysis_job import AnalysisJob, JobStatus
-
 
 # ── File validation rules ─────────────────────────────────────────────────────
 
@@ -62,7 +61,7 @@ def validate_magic_bytes(ext: str, header: bytes) -> None:
 
     `header` is the first chunk of the file (at least as long as the magic bytes).
     """
-    expected = ALLOWED_EXTENSIONS.get(ext, None)
+    expected = ALLOWED_EXTENSIONS.get(ext)
     if expected is None:
         raise FileValidationError(f"Bilinmeyen uzantı: {ext}")
     if not expected:

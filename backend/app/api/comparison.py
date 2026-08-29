@@ -54,7 +54,7 @@ async def multi_period_comparison(
     Compare 2-3 completed analysis jobs.
     Returns period metrics, change indicators, trend series and narrative.
     """
-    org_id = str(user.org_id) if user.org_id else str(user.id)
+    str(user.org_id) if user.org_id else str(user.id)
 
     # Load jobs
     result = await db.execute(

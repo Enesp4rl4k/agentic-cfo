@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class GitHubData:
     commits: list[CommitRecord] = field(default_factory=list)
     pull_requests: list[PRRecord] = field(default_factory=list)
     issues: list[IssueRecord] = field(default_factory=list)
-    fetched_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    fetched_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     error: str | None = None
 
     def to_git_log_csv(self) -> str:
@@ -192,7 +192,7 @@ class GitHubConnector:
         Fetch commits, PRs, and issues for the past `days` days.
         Returns a GitHubData object with CSV conversion helpers.
         """
-        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         try:
             # Repo metadata

@@ -3,7 +3,7 @@
 > **Your entire C-Suite, powered by AI — globally.**  
 > Upload financial data. Get CFO reports, risk analysis, board decks, and multi-role insights in minutes.
 
-[![Tests](https://img.shields.io/badge/tests-941%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-1562%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -170,7 +170,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -v          # run all 941 tests
+pytest tests/ -v          # run all 1562 tests
 pytest tests/ -x          # stop on first failure
 pytest tests/ --co -q     # list tests only
 ```

@@ -32,9 +32,8 @@ from __future__ import annotations
 import logging
 import statistics
 from collections import defaultdict
+from datetime import UTC
 from typing import Any
-
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ def kaplan_meier(
     n = len(durations)
     # Build sorted event table
     event_table: dict[float, dict[str, int]] = defaultdict(lambda: {"events": 0, "censored": 0})
-    for t, e in zip(durations, events):
+    for t, e in zip(durations, events, strict=False):
         if e:
             event_table[t]["events"] += 1
         else:
@@ -106,14 +105,14 @@ def kaplan_meier(
 
     # Median survival: first t where S(t) ≤ 0.5
     median_survival: float | None = None
-    for t, s_val in zip(times, survival):
+    for t, s_val in zip(times, survival, strict=False):
         if s_val <= 0.5:
             median_survival = t
             break
 
     # Survival at specific horizons
     def _survival_at(horizon: float) -> float:
-        for t, s_val in zip(reversed(times), reversed(survival)):
+        for t, s_val in zip(reversed(times), reversed(survival), strict=False):
             if t <= horizon:
                 return s_val
         return 1.0  # No events before horizon
@@ -378,7 +377,7 @@ class SurvivalAnalyzer:
 
     def _compute_tenure_months(self, record: dict[str, Any]) -> float:
         """Compute tenure in months from hire_date and optional departure_date."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         try:
             hire_raw = (
                 record.get("start_date") or record.get("hire_date") or
@@ -387,13 +386,13 @@ class SurvivalAnalyzer:
             if not hire_raw:
                 return float(record.get("tenure_years", 1)) * 12
 
-            hire_date = datetime.fromisoformat(str(hire_raw)).replace(tzinfo=timezone.utc)
+            hire_date = datetime.fromisoformat(str(hire_raw)).replace(tzinfo=UTC)
 
             depart_raw = record.get("departure_date") or record.get("left_date")
             if depart_raw:
-                end_date = datetime.fromisoformat(str(depart_raw)).replace(tzinfo=timezone.utc)
+                end_date = datetime.fromisoformat(str(depart_raw)).replace(tzinfo=UTC)
             else:
-                end_date = datetime.now(timezone.utc)
+                end_date = datetime.now(UTC)
 
             months = (end_date - hire_date).days / 30.44
             return max(0.1, round(months, 1))

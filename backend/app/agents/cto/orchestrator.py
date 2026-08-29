@@ -18,24 +18,22 @@ At least one data source required to produce a meaningful summary.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
+from app.agents.cto.incident_agent import run_incident_agent
+from app.agents.cto.infra_agent import run_infra_agent
 from app.agents.cto.state import (
+    CTO_ROUTE_HOLD,
+    CTO_ROUTE_SUMMARY,
+    DEFAULT_CTO_RUN_CONFIG,
+    CTORunConfig,
     CTOState,
     CTOStepLog,
-    CTOSkillResult,
-    CTORunConfig,
-    DEFAULT_CTO_RUN_CONFIG,
-    CTO_ROUTE_HOLD,
-    CTO_ROUTE_END,
-    CTO_ROUTE_SUMMARY,
 )
-from app.agents.cto.infra_agent      import run_infra_agent
-from app.agents.cto.tech_debt_agent  import run_tech_debt_agent
-from app.agents.cto.incident_agent   import run_incident_agent
-from app.agents.cto.velocity_agent   import run_velocity_agent
+from app.agents.cto.tech_debt_agent import run_tech_debt_agent
+from app.agents.cto.velocity_agent import run_velocity_agent
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +104,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
     CTO Summary node — synthesizes all available agent outputs into a
     holistic tech health score and top-risk list.
     """
-    from app.config import get_settings
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    settings = get_settings()
+    from app.platform.model_gateway import complete_text
     infra     = state.get("infra") or {}
     tech_debt = state.get("tech_debt") or {}
     incidents = state.get("incidents") or {}
@@ -186,13 +180,6 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
 
     # ── LLM narrative (Türkçe + actionable) ──────────────────────────────────
     try:
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=800,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
         risks_text = "\n".join(
             f"- [{r['severity'].upper()}] {r['domain']}: {r['message']}"
             for r in top_risks[:5]
@@ -230,8 +217,9 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
             if cross_context_lines else ""
         )
 
-        response = await llm.ainvoke([
-            SystemMessage(content=(
+        narrative = (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir CTO'sun. Aşağıdaki teknoloji sağlık verilerini analiz et ve "
                 "Türkçe olarak kısa bir yönetici özeti yaz. "
                 "Yanıt şu yapıda olsun:\n"
@@ -239,15 +227,15 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
                 "2. En kritik 1-2 risk (altyapı, teknik borç veya olay)\n"
                 "3. CFO/CHRO bağlamını göz önüne alarak yapılması gereken 2-3 somut eylem\n"
                 "Teknik jargonu azalt, CEO'nun anlayacağı dilde yaz."
-            )),
-            HumanMessage(content=(
+            ),
+            prompt=(
                 f"Genel Teknoloji Sağlık Skoru: {overall_health}/10\n"
                 f"Bileşen Skorları: {scores_text}\n\n"
                 f"Önemli Riskler:\n{risks_text}"
                 f"{cross_context_block}"
-            )),
-        ])
-        narrative = response.content.strip()
+            ),
+            max_tokens=800,
+        )).strip()
     except Exception as exc:
         logger.warning("CTO summary narrative failed: %s", exc)
         narrative = f"Teknoloji sağlık skoru: {overall_health}/10. {len(scores)} alanda {len(top_risks)} risk tespit edildi."
@@ -300,32 +288,32 @@ def route_after_velocity(state: CTOState) -> str:
 def build_cto_graph() -> StateGraph:
     graph = StateGraph(CTOState)
 
-    graph.add_node("infra",           node_infra)
-    graph.add_node("tech_debt",       node_tech_debt)
-    graph.add_node("incidents",       node_incidents)
-    graph.add_node("velocity",        node_velocity)
-    graph.add_node("cto_summary",     node_cto_summary)
-    graph.add_node("hold_for_review", node_hold_for_review)
+    graph.add_node("infra_agent",     node_infra)
+    graph.add_node("debt_agent",      node_tech_debt)
+    graph.add_node("incidents_agent", node_incidents)
+    graph.add_node("velocity_agent",  node_velocity)
+    graph.add_node("summary_agent",   node_cto_summary)
+    graph.add_node("hold_agent",      node_hold_for_review)
 
-    graph.set_entry_point("infra")
+    graph.set_entry_point("infra_agent")
 
     # All data agents are non-fatal → linear pipeline
-    graph.add_edge("infra",      "tech_debt")
-    graph.add_edge("tech_debt",  "incidents")
-    graph.add_edge("incidents",  "velocity")
+    graph.add_edge("infra_agent",     "debt_agent")
+    graph.add_edge("debt_agent",      "incidents_agent")
+    graph.add_edge("incidents_agent", "velocity_agent")
 
     # After velocity → review gate OR summary
     graph.add_conditional_edges(
-        "velocity",
+        "velocity_agent",
         route_after_velocity,
         {
-            CTO_ROUTE_SUMMARY: "cto_summary",
-            CTO_ROUTE_HOLD:    "hold_for_review",
+            CTO_ROUTE_SUMMARY: "summary_agent",
+            CTO_ROUTE_HOLD:    "hold_agent",
         },
     )
 
-    graph.add_edge("cto_summary",     END)
-    graph.add_edge("hold_for_review", END)
+    graph.add_edge("summary_agent", END)
+    graph.add_edge("hold_agent",    END)
 
     return graph
 

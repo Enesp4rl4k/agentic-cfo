@@ -17,7 +17,8 @@ done_when: yanıt üretildi (streaming veya tek seferlik)
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ def _build_financial_context(
             reverse=True
         )[:max_transactions]:
             lines.append(
-                f"  {tx.get('transaction_date', '')[:10]} | "
+                f"  {(tx.get('transaction_date') or '')[:10]} | "
                 f"{tx.get('type', '')} | "
                 f"{tx.get('category', '')} | "
                 f"${tx.get('amount_cents', 0) / 100:,.0f} | "
@@ -262,40 +263,21 @@ async def chat_with_cfo(
     Returns:
         Assistant's response text
     """
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-    from app.config import get_settings
-
-    settings = get_settings()
+    from app.platform.model_gateway import complete_text
 
     if system_prompt_override:
-        # Universal agent mode — use the pre-built cross-agent context
         system_content = system_prompt_override
     else:
-        # Default CFO mode — build from financial data
         context = _build_financial_context(dashboard, transactions)
         system_content = CFO_SYSTEM_PROMPT.format(context=context)
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.1,
+    return (await complete_text(
+        task="deep_analysis",
+        system_prompt=system_content,
+        prompt=question,
+        history=conversation_history,
         max_tokens=1024,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
-
-    messages = [SystemMessage(content=system_content)]
-
-    for turn in (conversation_history or []):
-        if turn["role"] == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        elif turn["role"] == "assistant":
-            messages.append(AIMessage(content=turn["content"]))
-
-    messages.append(HumanMessage(content=question))
-
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+    )).strip()
 
 
 async def chat_with_ceo(
@@ -317,46 +299,23 @@ async def chat_with_ceo(
     Returns:
         Assistant's response text
     """
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-    from app.config import get_settings
-
-    settings = get_settings()
+    from app.platform.model_gateway import complete_text
 
     context_parts: list[str] = []
-
-    # Add financial context if available
     if dashboard:
-        fin_ctx = _build_financial_context(dashboard, transactions or [])
-        context_parts.append(fin_ctx)
-
-    # Add CEO/CTO executive context
+        context_parts.append(_build_financial_context(dashboard, transactions or []))
     exec_ctx = _build_executive_context(ceo_result=ceo_result, cto_result=cto_result)
     if exec_ctx.strip():
         context_parts.append(exec_ctx)
-
     context = "\n\n".join(context_parts) if context_parts else "No data available."
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.1,
+    return (await complete_text(
+        task="deep_analysis",
+        system_prompt=CEO_SYSTEM_PROMPT.format(context=context),
+        prompt=question,
+        history=conversation_history,
         max_tokens=1024,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
-
-    messages = [SystemMessage(content=CEO_SYSTEM_PROMPT.format(context=context))]
-
-    for turn in (conversation_history or []):
-        if turn["role"] == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        elif turn["role"] == "assistant":
-            messages.append(AIMessage(content=turn["content"]))
-
-    messages.append(HumanMessage(content=question))
-
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+    )).strip()
 
 
 async def stream_chat_with_cfo(
@@ -367,11 +326,7 @@ async def stream_chat_with_cfo(
     system_prompt_override: str | None = None,
 ) -> AsyncIterator[str]:
     """Streaming CFO chat — yields text chunks."""
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-    from app.config import get_settings
-
-    settings = get_settings()
+    from app.platform.model_gateway import stream as _gw_stream
 
     if system_prompt_override:
         system_content = system_prompt_override
@@ -379,26 +334,14 @@ async def stream_chat_with_cfo(
         context = _build_financial_context(dashboard, transactions)
         system_content = CFO_SYSTEM_PROMPT.format(context=context)
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.1,
+    async for piece in _gw_stream(
+        task="deep_analysis",
+        system_prompt=system_content,
+        prompt=question,
+        history=conversation_history,
         max_tokens=1024,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-        streaming=True,
-    )
-
-    messages = [SystemMessage(content=system_content)]
-    for turn in (conversation_history or []):
-        if turn["role"] == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        elif turn["role"] == "assistant":
-            messages.append(AIMessage(content=turn["content"]))
-    messages.append(HumanMessage(content=question))
-
-    async for chunk in llm.astream(messages):
-        if chunk.content:
-            yield chunk.content
+    ):
+        yield piece
 
 
 async def stream_chat_with_ceo(
@@ -410,11 +353,7 @@ async def stream_chat_with_ceo(
     conversation_history: list[dict[str, str]] | None = None,
 ) -> AsyncIterator[str]:
     """Streaming CEO chat — yields text chunks."""
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-    from app.config import get_settings
-
-    settings = get_settings()
+    from app.platform.model_gateway import stream as _gw_stream
 
     context_parts: list[str] = []
     if dashboard:
@@ -424,23 +363,11 @@ async def stream_chat_with_ceo(
         context_parts.append(exec_ctx)
     context = "\n\n".join(context_parts) if context_parts else "No data available."
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.1,
+    async for piece in _gw_stream(
+        task="deep_analysis",
+        system_prompt=CEO_SYSTEM_PROMPT.format(context=context),
+        prompt=question,
+        history=conversation_history,
         max_tokens=1024,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-        streaming=True,
-    )
-
-    messages = [SystemMessage(content=CEO_SYSTEM_PROMPT.format(context=context))]
-    for turn in (conversation_history or []):
-        if turn["role"] == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        elif turn["role"] == "assistant":
-            messages.append(AIMessage(content=turn["content"]))
-    messages.append(HumanMessage(content=question))
-
-    async for chunk in llm.astream(messages):
-        if chunk.content:
-            yield chunk.content
+    ):
+        yield piece

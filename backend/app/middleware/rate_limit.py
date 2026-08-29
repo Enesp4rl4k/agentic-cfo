@@ -35,10 +35,9 @@ HTTP 429 response includes:
 """
 from __future__ import annotations
 
-import time
 import logging
+import time
 from collections import defaultdict, deque
-from typing import Deque
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -85,7 +84,7 @@ def _get_limit(path: str) -> tuple[int, int]:
 
 # key → deque of timestamps (sliding window)
 # For Redis-backed multi-process: replace with redis.zrangebyscore / zadd
-_counters: dict[str, Deque[float]] = defaultdict(deque)
+_counters: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _get_client_key(request: Request) -> str:
@@ -156,7 +155,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         max_requests, window = _get_limit(path)
 
         # Apply endpoint cost multiplier — expensive endpoints count more
-        cost = 1
         for prefix, multiplier in _ENDPOINT_COST.items():
             if path.startswith(prefix):
                 # Reduce effective limit by multiplier

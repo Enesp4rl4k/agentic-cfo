@@ -11,28 +11,27 @@
 
 import pytest
 
-from app.agents.compliance.policies_agent import (
-    _parse_policies_csv,
-    _compute_policies_metrics,
-    _build_policies_alerts,
+from app.agents.ceo.synthesis_agent import (
+    _condense_compliance_summary,
+    _detect_cross_risks,
 )
-from app.agents.compliance.violations_agent import (
-    _parse_violations_csv,
-    _compute_violations_metrics,
-    _build_violations_alerts,
-    _build_remediation_recommendations,
+from app.agents.compliance.policies_agent import (
+    _build_policies_alerts,
+    _compute_policies_metrics,
+    _parse_policies_csv,
 )
 from app.agents.compliance.regulations_agent import (
-    _parse_regulations_csv,
-    _compute_regulations_metrics,
-    _build_regulations_alerts,
     _build_compliance_recommendations,
+    _build_regulations_alerts,
+    _compute_regulations_metrics,
+    _parse_regulations_csv,
 )
-from app.agents.ceo.synthesis_agent import (
-    _detect_cross_risks,
-    _condense_compliance_summary,
+from app.agents.compliance.violations_agent import (
+    _build_remediation_recommendations,
+    _build_violations_alerts,
+    _compute_violations_metrics,
+    _parse_violations_csv,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -439,10 +438,11 @@ class TestComplianceHealthScore:
     def test_run_compliance_pipeline_raises_with_no_data(self):
         """Pipeline raises ValueError when no CSV is provided."""
         import asyncio
+
         from app.agents.compliance.orchestrator import run_compliance_pipeline
 
         with pytest.raises(ValueError, match="At least one data source"):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 run_compliance_pipeline(job_id="test-empty")
             )
 

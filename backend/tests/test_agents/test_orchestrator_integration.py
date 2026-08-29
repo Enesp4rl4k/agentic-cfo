@@ -8,9 +8,7 @@ These tests use the mock LLM pattern — no real LLM or DB needed.
 """
 import sys
 import types
-from unittest.mock import MagicMock, patch, AsyncMock
-
-import pytest
+from unittest.mock import MagicMock
 
 # ── LangChain stub ────────────────────────────────────────────────────────────
 for mod in [
@@ -45,28 +43,18 @@ if not hasattr(lg, "StateGraph"):
     lg.END = "__end__"  # type: ignore
 
 # ── Import services after stubs ───────────────────────────────────────────────
-from app.services.capability_router import CapabilityRouter, AGENT_CAPABILITIES
-from app.services.reflection_agent import ReflectionAgent, ReflectionResult
-from app.services.agent_memory import AgentMemoryStore, EpisodeRecord
 from app.agents.orchestrator import (
     _is_skipped,
     _update_reflection,
-    node_data_ingestion,
-    node_pnl,
-    node_cashflow,
-    node_forecast,
-    node_anomaly,
-    node_multi_period,
-    node_tax,
-    node_budget,
 )
+from app.services.agent_memory import AgentMemoryStore, EpisodeRecord
+from app.services.capability_router import CapabilityRouter
+from app.services.reflection_agent import ReflectionAgent
 from tests.fixtures.llm_mock import (
-    make_sample_state,
-    make_sample_pnl,
     make_sample_cashflow,
-    patch_settings,
+    make_sample_pnl,
+    make_sample_state,
 )
-
 
 # ── _is_skipped helper ────────────────────────────────────────────────────────
 
@@ -300,7 +288,7 @@ class TestMemoryIntegration:
 class TestKernelServicesWired:
     def test_orchestrator_imports_kernel_services(self):
         """Verify all three kernel services are importable from orchestrator."""
-        from app.agents.orchestrator import _router, _reflector, _memory
+        from app.agents.orchestrator import _memory, _reflector, _router
         assert isinstance(_router, CapabilityRouter)
         assert isinstance(_reflector, ReflectionAgent)
         assert isinstance(_memory, AgentMemoryStore)
@@ -324,6 +312,7 @@ class TestKernelServicesWired:
 
     def test_run_cfo_pipeline_signature_has_org_id(self):
         import inspect
+
         from app.agents.orchestrator import run_cfo_pipeline
         sig = inspect.signature(run_cfo_pipeline)
         assert "org_id" in sig.parameters

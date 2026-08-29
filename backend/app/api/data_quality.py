@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
-from app.services.csv_validator import CSVValidator, FIELD_MAP_CANDIDATES
+from app.services.csv_validator import FIELD_MAP_CANDIDATES, CSVValidator
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["data-quality"])
@@ -117,11 +117,15 @@ async def validate_and_upload(
         started: bool
         blocked_reason: str | None — why analysis was not started
     """
-    from app.services.upload_service import (
-        FileValidationError, get_extension, validate_extension,
-        stream_to_disk, create_analysis_job,
-    )
     import io as _io
+
+    from app.services.upload_service import (
+        FileValidationError,
+        create_analysis_job,
+        get_extension,
+        stream_to_disk,
+        validate_extension,
+    )
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="Dosya adı gereklidir.")
@@ -231,9 +235,13 @@ async def accept_column_mapping(
     """
     import base64
     import io as _io
+
     from app.services.upload_service import (
-        FileValidationError, get_extension,
-        validate_extension, stream_to_disk, create_analysis_job,
+        FileValidationError,
+        create_analysis_job,
+        get_extension,
+        stream_to_disk,
+        validate_extension,
     )
 
     # Decode CSV content
@@ -269,9 +277,10 @@ async def accept_column_mapping(
 
         # Persist mapping in job metadata (for the pipeline to use)
         if job and body.column_mapping:
+
             from sqlalchemy import update
+
             from app.models.analysis_job import AnalysisJob
-            import json
             existing_meta = job.result_metadata or {}
             existing_meta["column_mapping"] = body.column_mapping
             await db.execute(

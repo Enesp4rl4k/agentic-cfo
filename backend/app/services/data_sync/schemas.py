@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,11 +34,11 @@ class SyncTransaction(BaseModel):
     amount_cents: int = Field(..., gt=0)  # Always positive; sign in tx_type
     tx_type: TransactionType
     currency: str = Field(default="TRY", pattern="^[A-Z]{3}$")
-    vendor: Optional[str] = Field(None, max_length=200)
-    balance_cents: Optional[int] = None
-    reference: Optional[str] = Field(None, max_length=100)
+    vendor: str | None = Field(None, max_length=200)
+    balance_cents: int | None = None
+    reference: str | None = Field(None, max_length=100)
     source_type: SyncSourceType
-    source_id: Optional[str] = Field(None, max_length=100)  # External transaction ID
+    source_id: str | None = Field(None, max_length=100)  # External transaction ID
     raw_row: str = ""
 
     class Config:
@@ -73,7 +72,7 @@ class SyncBatch(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     error_count: int = 0
     total_processed: int = 0
-    batch_id: Optional[str] = None
+    batch_id: str | None = None
 
 
 class SyncStatus(StrEnum):
@@ -90,13 +89,13 @@ class SyncJobLog(BaseModel):
     source_type: SyncSourceType
     status: SyncStatus
     started_at: datetime
-    ended_at: Optional[datetime] = None
-    duration_ms: Optional[int] = None
+    ended_at: datetime | None = None
+    duration_ms: int | None = None
     transactions_synced: int = 0
     transactions_failed: int = 0
     conflict_count: int = 0
     warnings: list[str] = Field(default_factory=list)
-    error_message: Optional[str] = None
+    error_message: str | None = None
     data_hash: str = ""  # SHA256 of synced data for audit trail
 
 
@@ -107,16 +106,16 @@ class AccountingSourceConfig(BaseModel):
     schedule_cron: str = "0 2 * * *"  # Default: 2 AM daily
     retry_count: int = 3
     timeout_seconds: int = 300
-    
+
     # OAuth2 (Paraşüt)
-    oauth_client_id: Optional[str] = None
-    oauth_client_secret: Optional[str] = None
-    oauth_refresh_token: Optional[str] = None
-    
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    oauth_refresh_token: str | None = None
+
     # Scheduled export (Netsis, Mikro, Logo Tiger)
-    export_format: Optional[str] = None  # "csv", "xls", "xlsx"
-    export_endpoint: Optional[str] = None
-    export_credentials: Optional[dict] = None
+    export_format: str | None = None  # "csv", "xls", "xlsx"
+    export_endpoint: str | None = None
+    export_credentials: dict | None = None
 
 
 class BankingSourceConfig(BaseModel):
@@ -126,14 +125,14 @@ class BankingSourceConfig(BaseModel):
     schedule_cron: str = "0 */4 * * *"  # Default: every 4 hours
     retry_count: int = 3
     timeout_seconds: int = 60
-    
+
     # PSD2 credentials
     client_id: str
     client_secret: str
     sandbox_mode: bool = True
-    
+
     # Account selection
-    account_ids: Optional[list[str]] = None  # If None, sync all accounts
+    account_ids: list[str] | None = None  # If None, sync all accounts
 
 
 class DataQualityThresholds(BaseModel):

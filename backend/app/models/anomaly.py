@@ -7,12 +7,12 @@ Severity: low | medium | high | critical
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-
-from sqlalchemy import String, DateTime, Text, JSON, Numeric, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
+
+from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class AnomalySeverity(StrEnum):
@@ -80,4 +80,4 @@ class Anomaly(Base):
         DateTime(timezone=True), default=utcnow, nullable=False
     )
 
-    job: Mapped["AnalysisJob"] = relationship("AnalysisJob")
+    job: Mapped[AnalysisJob] = relationship("AnalysisJob")

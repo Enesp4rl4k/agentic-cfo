@@ -14,9 +14,8 @@ Her connector:
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -122,7 +121,9 @@ class TurkiyeOpenBankingClient:
         return {
             "transaction_date": tx.get("bookingDate") or tx.get("valueDate", ""),
             "description":      tx.get("transactionText") or tx.get("description", ""),
-            "amount_try":       amount if currency == "TRY" else amount,
+            # TODO: convert non-TRY amounts to TRY; stored in original currency for now
+            "amount_try":       amount,
+            "currency":         currency,
             "type":             "income" if amount > 0 else "expense",
             "bank":             self.bank,
             "reference":        tx.get("transactionId", ""),
@@ -259,6 +260,7 @@ class GoogleSheetsConnector:
         """Build Google API credentials from service account JSON."""
         try:
             import json as _json
+
             from google.oauth2.service_account import Credentials
             info   = _json.loads(self._sa_json)
             scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -275,7 +277,6 @@ class GoogleSheetsConnector:
         range_name:     str = "Sheet1!A1:Z1000",
     ) -> list[list[Any]]:
         """Read data from a Google Sheet range."""
-        import asyncio
         creds = self._build_credentials()
         from googleapiclient.discovery import build
         service = build("sheets", "v4", credentials=creds)
@@ -394,8 +395,8 @@ class WebhookDispatcher:
         """SMTP ile email gönder."""
         import smtplib
         import ssl
-        from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
 
         from app.config import get_settings
         settings = get_settings()

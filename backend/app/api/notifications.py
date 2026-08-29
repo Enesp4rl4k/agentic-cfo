@@ -15,19 +15,19 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, update, desc
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.api.auth import get_current_user
-from app.models.user import User
-from app.models.in_app_notification import InAppNotification
+from app.database import get_db
 from app.models.alert_preference import AlertPreference
+from app.models.in_app_notification import InAppNotification
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ async def mark_read(
         raise HTTPException(status_code=404, detail="Bildirim bulunamadı.")
 
     notif.is_read = True
-    notif.read_at = datetime.now(timezone.utc)
+    notif.read_at = datetime.now(UTC)
     await db.commit()
 
     return {"data": {"id": notification_id, "is_read": True}, "error": None}
@@ -158,7 +158,7 @@ async def mark_all_read(
 ) -> dict[str, Any]:
     """Mark all notifications as read for this org."""
     org_id = _require_org(current_user)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     await db.execute(
         update(InAppNotification)
@@ -313,7 +313,7 @@ async def test_slack(
                 json={
                     "text": (
                         "✅ C-Level AI — Slack entegrasyonu başarıyla test edildi!\n"
-                        f"Org: `{org_id}` | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                        f"Org: `{org_id}` | {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
                     )
                 },
             )

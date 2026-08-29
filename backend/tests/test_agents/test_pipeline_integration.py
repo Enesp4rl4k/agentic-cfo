@@ -15,8 +15,10 @@ These tests verify:
 """
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+
 
 # ── LangChain stub (not installed in test env) ────────────────────────────────
 def _stub_langchain():
@@ -47,19 +49,17 @@ def _stub_langchain():
 
 _stub_langchain()
 
-from app.agents.state import AgentRunConfig, SkillResult, DEFAULT_RUN_CONFIG
-from app.agents.pnl_agent import _compute_pnl, run_pnl
 from app.agents.cashflow_agent import _classify_cashflow, run_cashflow
 from app.agents.forecast_agent import _compute_scenarios, run_forecast
-
+from app.agents.pnl_agent import _compute_pnl, run_pnl
+from app.agents.state import DEFAULT_RUN_CONFIG
 from tests.fixtures.llm_mock import (
-    make_sample_transactions,
-    make_sample_pnl,
     make_sample_cashflow,
+    make_sample_pnl,
     make_sample_state,
+    make_sample_transactions,
     patch_settings,
 )
-
 
 # ── Pure computation integration ──────────────────────────────────────────────
 

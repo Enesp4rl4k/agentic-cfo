@@ -73,6 +73,14 @@ export interface MultidomainCFResult {
   scenarios: MultidomainScenario[];
   executive_summary: string;
   confidence: number;
+  baseline_source?: string;
+}
+
+function unwrapCfResult(raw: unknown): MultidomainCFResult {
+  if (raw && typeof raw === "object" && "data" in raw && (raw as { data?: unknown }).data) {
+    return (raw as { data: MultidomainCFResult }).data;
+  }
+  return raw as MultidomainCFResult;
 }
 
 // ── Cascade Simulator ─────────────────────────────────────────────────────────
@@ -153,7 +161,7 @@ export async function analyzeHeadcount(
     "/multidomain-cf/headcount",
     req
   );
-  return res.data;
+  return unwrapCfResult(res.data);
 }
 
 export async function analyzeMarketing(
@@ -163,7 +171,7 @@ export async function analyzeMarketing(
     "/multidomain-cf/marketing",
     req
   );
-  return res.data;
+  return unwrapCfResult(res.data);
 }
 
 export async function analyzeTech(
@@ -173,7 +181,7 @@ export async function analyzeTech(
     "/multidomain-cf/tech",
     req
   );
-  return res.data;
+  return unwrapCfResult(res.data);
 }
 
 export async function getMultidomainActions(): Promise<{

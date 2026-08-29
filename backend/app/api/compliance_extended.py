@@ -21,7 +21,7 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -127,10 +127,11 @@ async def _get_org_id(user: User) -> str:
 async def _get_anomalies_for_sox(org_id: str, db: AsyncSession) -> dict[str, Any]:
     """Load anomaly stats for SOX 404 assessment."""
     try:
-        from sqlalchemy import text
         from datetime import timedelta
 
-        cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
+        from sqlalchemy import text
+
+        cutoff_30d = datetime.now(UTC) - timedelta(days=30)
         result = await db.execute(
             text(
                 "SELECT severity, COUNT(*) as cnt "
@@ -221,7 +222,7 @@ async def sox_status(
         section_409["triggers"].append({
             "type":        "critical_anomaly",
             "description": f"{critical_cnt} kritik anomaly tespit edildi",
-            "deadline":    (datetime.now(timezone.utc) + timedelta(days=4)).isoformat(),
+            "deadline":    (datetime.now(UTC) + timedelta(days=4)).isoformat(),
         })
         section_409["status"] = "disclosure_required"
         section_409["action_required"] = True
@@ -275,7 +276,7 @@ async def sox_certify(
         "certifier":    body.certifier_name,
         "role":         body.certifier_role,
         "statements":   body.statements,
-        "timestamp":    datetime.now(timezone.utc).isoformat(),
+        "timestamp":    datetime.now(UTC).isoformat(),
     }, sort_keys=True)
     signature_hash = hashlib.sha256(payload.encode()).hexdigest()
 
@@ -297,7 +298,7 @@ async def sox_certify(
                 "role":       body.certifier_role,
                 "statements": json.dumps(body.statements),
                 "sig_hash":   signature_hash,
-                "now":        datetime.now(timezone.utc),
+                "now":        datetime.now(UTC),
             },
         )
         await db.commit()
@@ -311,7 +312,7 @@ async def sox_certify(
             "period":          body.period,
             "certifier":       body.certifier_name,
             "role":            body.certifier_role,
-            "certified_at":    datetime.now(timezone.utc).isoformat(),
+            "certified_at":    datetime.now(UTC).isoformat(),
             "framework":       "sox_302",
             "message":         f"SOX Section 302 sertifikasyonu başarıyla imzalandı. Hash: {signature_hash[:16]}...",
         },
@@ -374,7 +375,7 @@ async def gdpr_article30_register(
             "organization":      "C-Level AI Platform",
             "controller_email":  "privacy@clevelai.com",
             "dpo_email":         "dpo@clevelai.com",
-            "last_updated":      datetime.now(timezone.utc).date().isoformat(),
+            "last_updated":      datetime.now(UTC).date().isoformat(),
             "activities":        activities,
             "total_activities":  len(activities),
         },
@@ -398,7 +399,7 @@ async def gdpr_breach_notification(
     """
     org_id = await _get_org_id(user)
 
-    discovered_at = datetime.now(timezone.utc)
+    discovered_at = datetime.now(UTC)
     if body.discovered_at:
         try:
             discovered_at = datetime.fromisoformat(body.discovered_at.replace("Z", "+00:00"))
@@ -426,14 +427,14 @@ async def gdpr_breach_notification(
                 "affected":  body.affected_users,
                 "discovered": discovered_at,
                 "deadline":  deadline_72h,
-                "now":       datetime.now(timezone.utc),
+                "now":       datetime.now(UTC),
             },
         )
         await db.commit()
     except Exception as exc:
         logger.warning("Breach notification persist failed: %s", exc)
 
-    hours_remaining = (deadline_72h - datetime.now(timezone.utc)).total_seconds() / 3600
+    hours_remaining = (deadline_72h - datetime.now(UTC)).total_seconds() / 3600
 
     return {
         "data": {
@@ -458,7 +459,7 @@ async def list_breaches(
 ) -> dict[str, Any]:
     """List active breach notifications with 72h countdown."""
     org_id = await _get_org_id(user)
-    now    = datetime.now(timezone.utc)
+    now    = datetime.now(UTC)
 
     try:
         from sqlalchemy import text
@@ -518,7 +519,7 @@ async def mark_breach_notified(
                 "SET status = 'notified', notified_at = :now "
                 "WHERE id = :id"
             ),
-            {"now": datetime.now(timezone.utc), "id": breach_id},
+            {"now": datetime.now(UTC), "id": breach_id},
         )
         await db.commit()
     except Exception as exc:
@@ -528,7 +529,7 @@ async def mark_breach_notified(
         "data": {
             "breach_id":   breach_id,
             "status":      "notified",
-            "notified_at": datetime.now(timezone.utc).isoformat(),
+            "notified_at": datetime.now(UTC).isoformat(),
         },
         "error": None,
     }
@@ -589,7 +590,7 @@ async def compliance_dashboard(
     Tüm framework'ler için birleşik uyum skoru.
     GDPR + SOX + ISO 27001 + Türkiye mevzuatı özeti.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # GDPR score: based on open breaches
     gdpr_score = 100

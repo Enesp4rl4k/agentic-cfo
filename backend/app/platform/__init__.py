@@ -21,14 +21,14 @@ from app.platform.policies import (
 )
 
 __all__ = [
+    "CONFIDENCE_AUTO_PROCEED_MIN",
+    "RAG_DEFAULT_CANDIDATE_LIMIT",
+    "RAG_DEFAULT_TOP_K",
+    "REFLECTION_HOLD_THRESHOLD",
     "AgentRole",
     "EvidenceBundle",
     "EvidenceCitation",
     "PlatformHandoff",
     "RoleDepthLevel",
     "VerifierVerdict",
-    "CONFIDENCE_AUTO_PROCEED_MIN",
-    "RAG_DEFAULT_CANDIDATE_LIMIT",
-    "RAG_DEFAULT_TOP_K",
-    "REFLECTION_HOLD_THRESHOLD",
 ]

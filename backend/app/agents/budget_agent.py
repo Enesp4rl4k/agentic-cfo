@@ -14,10 +14,9 @@ done_when: state['budget'] contains items, total_variance, narrative
 from __future__ import annotations
 
 import logging
-import statistics
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
 
@@ -165,41 +164,40 @@ def _budget_health_score(items: list[dict]) -> float:
 async def _generate_budget_narrative(
     budget: dict[str, Any], settings
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        from app.platform.model_gateway import complete_text
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+        items_text = "\n".join(
+            f"- {r['category'].replace('_', ' ').title()}: "
+            f"budgeted ${r['budgeted']/100:,.0f} / "
+            f"actual ${r['actual']/100:,.0f} / "
+            f"variance {r['variance_pct']:+.1f}% ({'OVER' if r['status'] == 'over' else 'UNDER' if r['status'] == 'under' else 'ON TARGET'})"
+            for r in budget.get("items", [])[:10]
+        )
+        total_line = (
+            f"Total: budgeted ${budget['total_budgeted']/100:,.0f} / "
+            f"actual ${budget['total_actual']/100:,.0f} / "
+            f"variance {budget['total_variance_pct']:+.1f}%"
+        )
 
-    items_text = "\n".join(
-        f"- {r['category'].replace('_', ' ').title()}: "
-        f"budgeted ${r['budgeted']/100:,.0f} / "
-        f"actual ${r['actual']/100:,.0f} / "
-        f"variance {r['variance_pct']:+.1f}% ({'OVER' if r['status'] == 'over' else 'UNDER' if r['status'] == 'under' else 'ON TARGET'})"
-        for r in budget.get("items", [])[:10]
-    )
-    total_line = (
-        f"Total: budgeted ${budget['total_budgeted']/100:,.0f} / "
-        f"actual ${budget['total_actual']/100:,.0f} / "
-        f"variance {budget['total_variance_pct']:+.1f}%"
-    )
-
-    messages = [
-        SystemMessage(content=(
-            "You are a CFO reviewing a budget variance report. "
-            "Write a concise management commentary (3-5 sentences). "
-            "Highlight the biggest variances, explain likely causes, "
-            "and recommend corrective actions."
-        )),
-        HumanMessage(content=f"Budget Variance Report:\n{items_text}\n\n{total_line}"),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        text = await complete_text(
+            task="metric_commentary",
+            system_prompt=(
+                "You are a CFO reviewing a budget variance report. "
+                "Write a concise management commentary (3-5 sentences). "
+                "Highlight the biggest variances, explain likely causes, "
+                "and recommend corrective actions."
+            ),
+            prompt=f"Budget Variance Report:\n{items_text}\n\n{total_line}",
+            max_tokens=512,
+        )
+        return text.strip()
+    except Exception as exc:
+        logger.debug("LLM budget narrative fallback: %s", exc)
+        return (
+            f"Total variance is {budget.get('total_variance_pct', 0):+.1f}%. "
+            f"{len(budget.get('over_budget_categories', []))} categories are over budget."
+        )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

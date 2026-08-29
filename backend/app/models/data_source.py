@@ -13,17 +13,17 @@ available files for the job and passes them to the appropriate sub-pipelines.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import String, DateTime, Text, Integer
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class DataSourceDomain(StrEnum):

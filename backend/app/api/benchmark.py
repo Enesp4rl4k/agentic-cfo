@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db

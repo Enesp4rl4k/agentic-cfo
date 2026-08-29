@@ -9,7 +9,7 @@ Provides unified operational visibility for:
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -33,6 +33,7 @@ ERROR_BUDGETS = {
 async def _check_redis() -> dict[str, Any]:
     try:
         import redis.asyncio as redis  # type: ignore[import]
+
         from app.config import get_settings
 
         settings = get_settings()
@@ -52,6 +53,7 @@ async def _check_redis() -> dict[str, Any]:
 async def _queue_depths() -> dict[str, int]:
     try:
         import redis.asyncio as redis  # type: ignore[import]
+
         from app.config import get_settings
 
         settings = get_settings()
@@ -103,7 +105,7 @@ def _percentile(values: list[int], pct: float) -> int | None:
     if len(values) == 1:
         return int(values[0])
     ordered = sorted(values)
-    k = max(0, min(len(ordered) - 1, int(round((pct / 100.0) * (len(ordered) - 1)))))
+    k = max(0, min(len(ordered) - 1, round((pct / 100.0) * (len(ordered) - 1))))
     return int(ordered[k])
 
 
@@ -120,9 +122,87 @@ def _derive_actions(*, failed_count: int, awaiting_review_count: int, breaches: 
     return actions[:3]
 
 
+@router.get("/system/llm-costs")
+async def llm_costs(
+    days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    LLM spend rollup from the LLMCallLog ledger over the last `days`:
+    totals plus per-model, per-org and per-day breakdowns. Also returns the
+    in-process gateway aggregate (resets on restart) for a live view.
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import String, cast
+    from sqlalchemy import func as sa_func
+
+    from app.models.llm_call_log import LLMCallLog
+    from app.platform.model_gateway import ledger_snapshot
+
+    since = datetime.now(UTC) - timedelta(days=days)
+    day_key = sa_func.substr(cast(LLMCallLog.created_at, String), 1, 10)  # YYYY-MM-DD, portable
+
+    async def _grouped(col) -> list[dict[str, Any]]:
+        rows = (
+            await db.execute(
+                select(
+                    col,
+                    func.count().label("calls"),
+                    func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0).label("cost_usd"),
+                    func.coalesce(func.sum(LLMCallLog.input_tokens), 0).label("in_tok"),
+                    func.coalesce(func.sum(LLMCallLog.output_tokens), 0).label("out_tok"),
+                )
+                .where(LLMCallLog.created_at >= since)
+                .group_by(col)
+                .order_by(func.sum(LLMCallLog.cost_usd).desc())
+            )
+        ).all()
+        return [
+            {
+                "key": r[0],
+                "calls": int(r.calls),
+                "cost_usd": round(float(r.cost_usd), 6),
+                "input_tokens": int(r.in_tok),
+                "output_tokens": int(r.out_tok),
+            }
+            for r in rows
+        ]
+
+    total = (
+        await db.execute(
+            select(
+                func.count().label("calls"),
+                func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0).label("cost_usd"),
+            ).where(LLMCallLog.created_at >= since)
+        )
+    ).first()
+
+    ok_calls = await db.scalar(
+        select(func.count()).where(
+            LLMCallLog.created_at >= since, LLMCallLog.ok.is_(True)
+        )
+    )
+
+    return {
+        "data": {
+            "window_days": days,
+            "total_calls": int(total.calls if total else 0),
+            "ok_calls": int(ok_calls or 0),
+            "total_cost_usd": round(float(total.cost_usd if total else 0.0), 6),
+            "by_model": await _grouped(LLMCallLog.model),
+            "by_org": await _grouped(LLMCallLog.org_id),
+            "by_task": await _grouped(LLMCallLog.task_type),
+            "by_day": await _grouped(day_key),
+            "live_process_aggregate": ledger_snapshot(),
+        },
+        "error": None,
+    }
+
+
 @router.get("/system/health")
 async def system_health(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # DB check
     db_ok = True
@@ -280,7 +360,7 @@ async def system_ops(
             AnalysisJob.status.in_(("pending", "analyzing"))
         )
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sla_breaches: list[dict[str, Any]] = []
     for row in breach_rows.all():
         if not row.updated_at:
@@ -377,6 +457,26 @@ async def system_ops(
             "avg_cost_usd": float(stats.get("avg_cost_usd") or 0.0),
             "cache_size": int(stats.get("cache_size") or 0),
         }
+    except Exception:
+        pass
+
+    # Model Gateway ledger — every LLM egress call (all task types), broken
+    # down by model and by org. In-process aggregate; resets on restart.
+    try:
+        from app.platform.model_gateway import ledger_snapshot
+
+        gw = ledger_snapshot()
+        llm_cost["gateway"] = {
+            "calls": gw["calls"],
+            "ok_calls": gw["ok_calls"],
+            "total_cost_usd": gw["total_cost_usd"],
+            "avg_cost_usd": gw["avg_cost_usd"],
+            "total_input_tokens": gw["total_input_tokens"],
+            "total_output_tokens": gw["total_output_tokens"],
+            "by_model": gw["by_model"],
+            "by_org": ({org_id: gw["by_org"].get(org_id, {})} if org_id else gw["by_org"]),
+        }
+        llm_cost["available"] = True
     except Exception:
         pass
 

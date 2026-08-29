@@ -17,12 +17,12 @@ import logging
 from collections import Counter
 from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
-from app.agents.audit.state import AuditState, AuditStepLog
-from app.agents.audit.findings_agent import run_findings_agent
 from app.agents.audit.controls_agent import run_controls_agent
 from app.agents.audit.coverage_agent import run_coverage_agent
+from app.agents.audit.findings_agent import run_findings_agent
+from app.agents.audit.state import AuditState, AuditStepLog
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ async def node_coverage(state: AuditState, config: dict) -> AuditState:
 # Main summary node
 # ---------------------------------------------------------------------------
 
-async def node_audit_summary(state: AuditState, config: dict) -> AuditState:  # noqa: C901
+async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     """
     Synthesise findings + controls + coverage into Internal Audit Score.
     Score 0-100 (higher = healthier audit posture).
@@ -172,8 +172,6 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:  # 
     ctrl = state.get("controls") or {}
     cov  = state.get("coverage") or {}
     logs: list[AuditStepLog] = list(state.get("logs") or [])
-
-    settings = (config or {}).get("configurable", {}).get("settings")
 
     # -- Audit Health Score (0-100) -----------------------------------------
     # findings_score  : finding_health_score (0-100), weight 35 %
@@ -307,16 +305,10 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:  # 
     )
 
     try:
-        if settings and getattr(settings, "openai_api_key", None):
-            from langchain_openai import ChatOpenAI
-            from langchain_core.messages import SystemMessage, HumanMessage
+        # Model Gateway handles the missing-key case (LLMUnavailable → caught below).
+        if True:
+            from app.platform.model_gateway import complete_text
 
-            llm = ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=0.2,
-                api_key=settings.openai_api_key,
-                max_tokens=500,
-            )
             context = {
                 "audit_health": audit_health,
                 "maturity": maturity_label,
@@ -349,12 +341,14 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:  # 
                 f"Denetim evreni kapsamı: {context['coverage_rate_pct']} (yüksek riskli: {context['high_risk_coverage_pct']})\n\n"
                 "Özet; mevcut durumu, kritik riskleri ve öncelikli 2-3 aksiyonu içermeli."
             )
-            response = await llm.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=human_prompt),
-            ])
-            if response and response.content:
-                narrative = response.content.strip()
+            text = await complete_text(
+                task="short_narrative",
+                system_prompt=system_prompt,
+                prompt=human_prompt,
+                max_tokens=500,
+            )
+            if text and text.strip():
+                narrative = text.strip()
     except Exception as exc:
         logger.warning("Audit LLM narrative failed: %s", exc)
 
@@ -452,17 +446,17 @@ def _build_rule_based_narrative(
 
 def build_audit_graph() -> StateGraph:
     builder = StateGraph(AuditState)
-    builder.add_node("findings",      node_findings)
-    builder.add_node("controls",      node_controls)
-    builder.add_node("coverage",      node_coverage)
-    builder.add_node("audit_summary", node_audit_summary)
+    builder.add_node("findings_agent",  node_findings)
+    builder.add_node("controls_agent",  node_controls)
+    builder.add_node("coverage_agent",  node_coverage)
+    builder.add_node("summary_agent",   node_audit_summary)
 
-    builder.add_edge("findings",      "controls")
-    builder.add_edge("controls",      "coverage")
-    builder.add_edge("coverage",      "audit_summary")
-    builder.add_edge("audit_summary", END)
+    builder.add_edge("findings_agent",  "controls_agent")
+    builder.add_edge("controls_agent",  "coverage_agent")
+    builder.add_edge("coverage_agent",  "summary_agent")
+    builder.add_edge("summary_agent",   END)
 
-    builder.set_entry_point("findings")
+    builder.set_entry_point("findings_agent")
     return builder.compile()
 
 

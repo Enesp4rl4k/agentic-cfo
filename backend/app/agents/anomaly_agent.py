@@ -17,10 +17,10 @@ from __future__ import annotations
 import logging
 import statistics
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ def _z_score(value: float, values: list[float]) -> float | None:
         return None
     try:
         import math
+
         import numpy as np
         from scipy import stats as sp_stats
         arr = np.array(values, dtype=float)
@@ -385,36 +386,32 @@ async def _generate_anomaly_narrative(
     if not anomalies:
         return "Bu dönemde önemli bir anomali tespit edilmedi."
 
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        from app.platform.model_gateway import complete_text
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=600,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+        summary = "\n".join(
+            f"- [{a['severity'].upper()}] {a['title']}: {a['description']}"
+            for a in anomalies[:8]
+        )
 
-    summary = "\n".join(
-        f"- [{a['severity'].upper()}] {a['title']}: {a['description']}"
-        for a in anomalies[:8]
-    )
-
-    messages = [
-        SystemMessage(content=(
-            "Sen deneyimli bir CFO ve adli muhasebecisisin. "
-            "Aşağıdaki finansal anomalileri inceleyip Türkçe olarak kısa bir özet yaz. "
-            "Yanıt şu yapıda olsun:\n"
-            "1. Toplam anomali sayısı ve önem seviyesinin 1 cümlelik özeti\n"
-            "2. En kritik 1-2 bulgu (varsa)\n"
-            "3. Yöneticinin hemen yapması gereken 2-3 somut eylem (madde madde)\n"
-            "Teknik muhasebe dili kullanma, KOBİ sahibinin anlayacağı sade Türkçe yaz."
-        )),
-        HumanMessage(content=f"Tespit edilen anomaliler:\n{summary}"),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        text = await complete_text(
+            task="short_narrative",
+            system_prompt=(
+                "Sen deneyimli bir CFO ve adli muhasebecisisin. "
+                "Aşağıdaki finansal anomalileri inceleyip Türkçe olarak kısa bir özet yaz. "
+                "Yanıt şu yapıda olsun:\n"
+                "1. Toplam anomali sayısı ve önem seviyesinin 1 cümlelik özeti\n"
+                "2. En kritik 1-2 bulgu (varsa)\n"
+                "3. Yöneticinin hemen yapması gereken 2-3 somut eylem (madde madde)\n"
+                "Teknik muhasebe dili kullanma, KOBİ sahibinin anlayacağı sade Türkçe yaz."
+            ),
+            prompt=f"Tespit edilen anomaliler:\n{summary}",
+            max_tokens=600,
+        )
+        return text.strip()
+    except Exception as exc:
+        logger.debug("LLM anomaly narrative fallback: %s", exc)
+        return f"Toplam {len(anomalies)} adet anomali tespit edildi. İnceleme önerilir."
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────

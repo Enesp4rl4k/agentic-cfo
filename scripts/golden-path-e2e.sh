@@ -116,6 +116,44 @@ while true; do
   sleep 5
 done
 
+# ── Semantic brief (post-analysis) ───────────────────────────────────────────
+INFO "GET /semantic/me/brief"
+BRIEF_RESP=$(curl -sf --max-time 20 "${AUTH_HDR[@]}" "$API/semantic/me/brief" || true)
+BRIEF_OK=$(echo "$BRIEF_RESP" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print('0'); raise SystemExit
+brief = (d.get('data') or {}).get('brief')
+if brief and brief.get('headline'):
+    print('1')
+else:
+    print('0')
+" 2>/dev/null || true)
+
+if [[ "$BRIEF_OK" == "1" ]]; then
+  OK "semantic decision brief present"
+else
+  INFO "POST /semantic/me/rebuild (brief missing after analysis)"
+  REBUILD=$(curl -sf --max-time 60 -X POST "${AUTH_HDR[@]}" "$API/semantic/me/rebuild" || true)
+  BRIEF2=$(curl -sf --max-time 20 "${AUTH_HDR[@]}" "$API/semantic/me/brief" || true)
+  BRIEF2_OK=$(echo "$BRIEF2" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print('0'); raise SystemExit
+brief = (d.get('data') or {}).get('brief')
+print('1' if brief and brief.get('health_score') is not None else '0')
+" 2>/dev/null || true)
+  if [[ "$BRIEF2_OK" == "1" ]]; then
+    OK "semantic brief after rebuild"
+  else
+    WARN "semantic brief not available (non-fatal if context empty)"
+  fi
+fi
+
 # ── CEO from job (board deck path) ────────────────────────────────────────────
 INFO "POST /ceo/analyze-from-job/$JOB_ID"
 CEO_RESP=$(curl -sf --max-time 180 -X POST "$API/ceo/analyze-from-job/$JOB_ID" \

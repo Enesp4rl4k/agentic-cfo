@@ -19,7 +19,7 @@ import io
 import logging
 from typing import Any
 
-from app.agents.cmo.state import CMOState, CMOSkillResult
+from app.agents.cmo.state import CMOState
 
 logger = logging.getLogger(__name__)
 
@@ -258,16 +258,7 @@ async def _generate_campaign_narrative(
 ) -> str:
     """Türkçe CMO narrative — attribution ve sektör benchmark bağlamıyla."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.3,
-            max_tokens=700,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
+        from app.platform.model_gateway import complete_text
 
         roas  = metrics["overall_roas"]
         spend = metrics["total_spend_cents"] / 100
@@ -278,7 +269,7 @@ async def _generate_campaign_narrative(
         # Attribution context
         attr_context = ""
         if attribution and attribution.get("insight"):
-            top_ch = max(
+            max(
                 attribution.get("markov", {}).get("attribution") or attribution.get("time_decay", {}),
                 key=lambda k: (attribution.get("markov", {}).get("attribution") or {}).get(k, 0),
                 default=""
@@ -304,8 +295,9 @@ async def _generate_campaign_narrative(
             + bm_context
         )
 
-        response = await llm.ainvoke([
-            SystemMessage(content=(
+        return (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir CMO'sun. Kampanya performans verilerini analiz et ve "
                 "Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
                 "Yanıt şu yapıda olsun:\n"
@@ -313,10 +305,10 @@ async def _generate_campaign_narrative(
                 "2. Attribution modelinden öne çıkan içgörü (varsa)\n"
                 "3. Pazarlama ekibinin hemen yapması gereken 2-3 somut eylem\n"
                 "Rakamları Türkçe birimlerle (₺, %) kullan."
-            )),
-            HumanMessage(content=context),
-        ])
-        return response.content.strip()
+            ),
+            prompt=context,
+            max_tokens=700,
+        )).strip()
 
     except Exception:
         roas  = metrics.get("overall_roas", 0)

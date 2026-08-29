@@ -10,8 +10,13 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.auth import get_current_user
+from app.database import get_db
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,7 +39,11 @@ class CMOAnalyzeRequest(BaseModel):
 # -- Endpoints ----------------------------------------------------------------
 
 @router.post("/cmo/analyze")
-async def run_cmo_analysis(body: CMOAnalyzeRequest) -> dict[str, Any]:
+async def run_cmo_analysis(
+    body: CMOAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """
     Run CMO analysis pipeline and return results synchronously.
     At least one of campaign_csv, funnel_csv, cohort_csv is required.
@@ -61,6 +70,24 @@ async def run_cmo_analysis(body: CMOAnalyzeRequest) -> dict[str, Any]:
             funnel_csv=body.funnel_csv,
             cohort_csv=body.cohort_csv,
         )
+
+        if current_user.org_id and not result.get("error"):
+            try:
+                from app.agents.orchestration.auto_chain import on_agent_complete
+                from app.services.context_persist import persist_agent_completion
+
+                await persist_agent_completion(
+                    str(current_user.org_id),
+                    "cmo",
+                    dict(result),
+                    db,
+                    job_id=job_id,
+                    company_name=body.company_name,
+                    reporting_period=body.period,
+                    auto_chain_hook=on_agent_complete,
+                )
+            except Exception as exc:
+                logger.warning("CMO context persist failed: %s", exc)
 
         logs_serializable = [
             {

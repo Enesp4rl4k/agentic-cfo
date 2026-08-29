@@ -6,9 +6,10 @@ import {
   Search, LayoutDashboard, Upload, TrendingUp, DollarSign, Waves,
   BarChart2, MessageSquare, Brain, Zap, Users, ShieldAlert,
   FileText, Cpu, Crown, Megaphone, Layers, Shield, Settings,
-  ArrowRight, Clock, Star, Hash,
+  ArrowRight, Clock, Star, Hash, Sparkles, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCompanyContextStore } from "@/store/companyContext";
 
 // ── Command definitions ───────────────────────────────────────────────────────
 
@@ -98,6 +99,15 @@ export function CommandPalette() {
   const inputRef       = useRef<HTMLInputElement>(null);
   const listRef        = useRef<HTMLDivElement>(null);
 
+  // AI Query Mode state
+  const [aiMode,       setAiMode]       = useState(false);
+  const [aiAnswer,     setAiAnswer]     = useState("");
+  const [aiLoading,    setAiLoading]    = useState(false);
+  const [followUps,    setFollowUps]    = useState<string[]>([]);
+  const abortRef       = useRef<AbortController | null>(null);
+
+  const { activeCFOJobId } = useCompanyContextStore();
+
   // Open with Cmd+K or Ctrl+K
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -111,17 +121,75 @@ export function CommandPalette() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // Load recent on open
+  // Load recent on open + reset AI state on close
   useEffect(() => {
     if (open) {
       setRecentIds(getRecentIds());
       setQuery("");
       setActive(0);
+      setAiMode(false);
+      setAiAnswer("");
+      setFollowUps([]);
       setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      abortRef.current?.abort();
     }
   }, [open]);
 
-  // Filtered + sorted commands
+  // Stream AI answer from /query/stream
+  const streamAIQuery = useCallback(async (q: string) => {
+    if (!activeCFOJobId) {
+      setAiAnswer("Önce bir CSV yükleyip analiz çalıştırın, ardından sorularınızı yanıtlayabilirim.");
+      setAiLoading(false);
+      return;
+    }
+    setAiLoading(true);
+    setAiAnswer("");
+    setFollowUps([]);
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      // POST to stream endpoint via fetch (SSE)
+      const res = await fetch(`${API_URL}/api/v1/query/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, job_id: activeCFOJobId }),
+        signal: ctrl.signal,
+      });
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) return;
+
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") { setAiLoading(false); return; }
+          if (payload.startsWith("\x00FOLLOW_UPS:")) {
+            try { setFollowUps(JSON.parse(payload.slice(12))); } catch {}
+            continue;
+          }
+          setAiAnswer((prev) => prev + payload);
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== "AbortError") setAiAnswer("Bir hata oluştu. Tekrar deneyin.");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [activeCFOJobId]);
+
+  // Detect AI mode: query typed but no command matches
   const filtered = query.trim()
     ? COMMANDS
         .map((cmd) => ({ cmd, s: score(cmd, query) }))
@@ -132,6 +200,21 @@ export function CommandPalette() {
         ...recentIds.map((id) => COMMANDS.find((c) => c.id === id)).filter(Boolean) as Command[],
         ...COMMANDS.filter((c) => !recentIds.includes(c.id)).slice(0, 8),
       ];
+
+  const shouldAiMode = query.trim().length > 4 && filtered.length === 0;
+
+  // Trigger AI mode
+  useEffect(() => {
+    if (shouldAiMode && !aiMode) {
+      setAiMode(true);
+      streamAIQuery(query.trim());
+    } else if (!shouldAiMode && aiMode) {
+      setAiMode(false);
+      setAiAnswer("");
+      setFollowUps([]);
+      abortRef.current?.abort();
+    }
+  }, [shouldAiMode]);
 
   // Keyboard navigation
   const handleKey = useCallback((e: React.KeyboardEvent) => {
@@ -189,9 +272,37 @@ export function CommandPalette() {
         </div>
 
         {/* Results */}
-        <div ref={listRef} className="max-h-80 overflow-y-auto py-2" role="listbox" aria-label="Komutlar">
-          {filtered.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">Sonuç bulunamadı</p>
+        <div ref={listRef} className="max-h-[22rem] overflow-y-auto py-2" role="listbox" aria-label="Komutlar">
+          {aiMode ? (
+            // ── AI Query Mode ──────────────────────────────────────────────
+            <div className="px-4 py-3 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>CFO Yapay Zeka Yanıtı</span>
+                {aiLoading && <Loader2 className="h-3 w-3 animate-spin ml-auto" />}
+              </div>
+              <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap min-h-[2rem]">
+                {aiAnswer || (aiLoading ? <span className="text-muted-foreground animate-pulse">Yanıt oluşturuluyor…</span> : null)}
+              </p>
+              {followUps.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Takip Soruları</p>
+                  <div className="flex flex-wrap gap-2">
+                    {followUps.map((fu, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { setQuery(fu); setAiMode(false); setAiAnswer(""); streamAIQuery(fu); }}
+                        className="rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                      >
+                        {fu}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">Sonuç bulunamadı — daha uzun bir soru yazarak CFO AI'ı sorgulayabilirsiniz</p>
           ) : (
             Object.entries(grouped).map(([group, cmds]) => (
               <div key={group}>

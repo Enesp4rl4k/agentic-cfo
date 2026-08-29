@@ -11,6 +11,8 @@ import { Separator } from "@/components/ui/separator";
 import { healthColor, healthLabel, type CTOResult } from "@/components/cto/types";
 import { useCTOKernelFromJob, useCTOKernelFromOrg } from "@/hooks/useKernels";
 import { velocityColor } from "@/lib/api/kernels";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import { GitHubConnectorCard } from "@/components/cto/GitHubConnectorCard";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { cn } from "@/lib/utils";
 import {
@@ -121,6 +123,16 @@ export default function CTODashboardPage() {
         )}
       </div>
 
+      <GitHubConnectorCard onSynced={loadKernel} />
+
+      {kernelData && kernelData.data_source !== "real" && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          Bu görünüm bağlı bir mühendislik veri kaynağı (GitHub, Jira, CI) olmadan
+          CFO finansallarından sektör varsayımlarıyla türetilmiştir. Karar dayanağı
+          değildir ve otomatik olarak başka bir ajanı tetiklemez.
+        </div>
+      )}
+
       {/* Kernel banner — CFO verisinden otomatik hesaplanan metrikler */}
       {kernelData && (
         <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
@@ -128,9 +140,10 @@ export default function CTODashboardPage() {
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-cyan-400" />
               <span className="text-sm font-semibold text-cyan-400">Otomatik Analiz</span>
-              <span className="text-xs text-muted-foreground">
-                ({kernelData.data_source === "real" ? "Gerçek veri" : kernelData.data_source === "estimated" ? "CFO'dan tahmin" : "Benchmark"})
-              </span>
+              <ProvenanceBadge
+                dataSource={kernelData.data_source}
+                confidence={kernelData.confidence}
+              />
             </div>
             <button onClick={loadKernel} className="text-xs text-muted-foreground hover:text-foreground">
               <RefreshCw className="h-3 w-3" />

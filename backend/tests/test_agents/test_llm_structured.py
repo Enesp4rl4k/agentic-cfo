@@ -2,19 +2,17 @@
 Tests for llm_structured.py — template-based fallback functions.
 No LLM key needed — all tests use _is_placeholder_key=True path.
 """
-import pytest
 from app.services.llm_structured import (
-    PnLNarrative,
+    ActionItem,
     CashFlowNarrative,
     ForecastNarrative,
-    ActionItem,
+    PnLNarrative,
     RiskItem,
-    _pnl_narrative_template,
     _cashflow_narrative_template,
     _forecast_narrative_template,
     _is_placeholder_key,
+    _pnl_narrative_template,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

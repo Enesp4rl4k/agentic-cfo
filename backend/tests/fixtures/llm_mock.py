@@ -20,10 +20,9 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
+from unittest.mock import MagicMock, patch
 
 # ── Mock message type ─────────────────────────────────────────────────────────
 

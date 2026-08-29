@@ -18,12 +18,10 @@ from __future__ import annotations
 import csv
 import io
 import logging
-import re
-import statistics
 from collections import defaultdict
 from typing import Any
 
-from app.agents.cto.state import CTOState, CTORunConfig, CTOSkillResult
+from app.agents.cto.state import CTORunConfig, CTOSkillResult, CTOState
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +185,7 @@ def _build_infra_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
             ),
         })
 
-    total = metrics.get("total_cost_cents", 0)
+    metrics.get("total_cost_cents", 0)
     top_drivers = metrics.get("top_cost_drivers", [])
     if top_drivers and top_drivers[0]["pct"] > 60:
         alerts.append({
@@ -206,16 +204,7 @@ async def _generate_infra_narrative(
     alerts: list[dict[str, str]],
     settings,
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import complete_text
 
     top = metrics.get("top_cost_drivers", [])[:5]
     top_text = "\n".join(
@@ -229,8 +218,9 @@ async def _generate_infra_narrative(
     waste = metrics.get("waste_estimate_cents", 0)
     mom = metrics.get("mom_change_pct")
 
-    messages = [
-        SystemMessage(content=(
+    return (await complete_text(
+        task="short_narrative",
+        system_prompt=(
             "Sen deneyimli bir CTO ve bulut mimarısın. "
             "Altyapı maliyet verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
             "Yanıt şu yapıda olsun:\n"
@@ -238,17 +228,16 @@ async def _generate_infra_narrative(
             "2. En kritik maliyet riski veya optimizasyon fırsatı\n"
             "3. Ekibin hemen yapması gereken 2-3 somut maliyet iyileştirmesi (öncelik sırasıyla, TL cinsinden etki belirt)\n"
             "FinOps perspektifinden pratik öneriler ekle."
-        )),
-        HumanMessage(content=(
+        ),
+        prompt=(
             f"Aylık Toplam Bulut Harcaması: {metrics.get('total_cost_cents', 0)/100:,.0f} ₺\n"
             f"Aylık Değişim: {f'{mom:+.1f}%' if mom is not None else 'N/A'}\n"
             f"Tahmini İsraf: {waste/100:,.0f} ₺/ay\n\n"
             f"En Yüksek Maliyetli Servisler:\n{top_text}\n\n"
             f"Uyarılar:\n{alert_text}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        ),
+        max_tokens=512,
+    )).strip()
 
 
 async def run_infra_agent(

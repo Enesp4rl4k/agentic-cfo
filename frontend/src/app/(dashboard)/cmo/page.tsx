@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   TrendingUp, Target, Users, BarChart2,
   AlertTriangle, Megaphone, RefreshCw,
@@ -8,10 +8,12 @@ import {
 import { useAgentJob, type AgentJobRequest } from "@/hooks/useAgentJob";
 import { AgentJobPanel } from "@/components/ui/agent-job-panel";
 import { AgentCsvInput } from "@/components/ui/agent-csv-input";
+import { apiClient } from "@/lib/api/client";
+import { useCompanyContextStore } from "@/store/companyContext";
+
+const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 // ── API (legacy — kept for reference, no longer called directly) ───────────────
-
-import { apiClient } from "@/lib/api/client";
 
 async function runCMOAnalysis(body: CMOFormData) {
   const res = await apiClient.post<{ data: CMOResult; error: string | null }>(
@@ -473,7 +475,7 @@ Product Launch,email,800,4200,210`;
           label="Campaign CSV (Google Ads / Meta Ads)"
           value={form.campaign_csv ?? ""}
           onChange={(v) => setForm(f => ({ ...f, campaign_csv: v }))}
-          sampleData={SAMPLE_CAMPAIGN}
+          sampleData={IS_DEMO ? SAMPLE_CAMPAIGN : undefined}
           description="Campaign, Channel, Spend, Revenue, Conversions"
           disabled={disabled}
         />
@@ -481,7 +483,7 @@ Product Launch,email,800,4200,210`;
           label="Funnel CSV (HubSpot / Salesforce)"
           value={form.funnel_csv ?? ""}
           onChange={(v) => setForm(f => ({ ...f, funnel_csv: v }))}
-          sampleData={SAMPLE_FUNNEL}
+          sampleData={IS_DEMO ? SAMPLE_FUNNEL : undefined}
           description="id, stage, source, created, closed"
           disabled={disabled}
         />
@@ -489,7 +491,7 @@ Product Launch,email,800,4200,210`;
           label="Cohort CSV (Mixpanel / Amplitude)"
           value={form.cohort_csv ?? ""}
           onChange={(v) => setForm(f => ({ ...f, cohort_csv: v }))}
-          sampleData={SAMPLE_COHORT}
+          sampleData={IS_DEMO ? SAMPLE_COHORT : undefined}
           description="cohort, users, retention_30d, retention_90d, ltv, cac"
           disabled={disabled}
         />
@@ -516,13 +518,35 @@ Product Launch,email,800,4200,210`;
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CMODashboardPage() {
+  const { orgId } = useCompanyContextStore();
+  const [liveResult, setLiveResult] = useState<CMOResult | null>(null);
   const {
     enqueue, reset,
     status, progress, result, logs, error,
     isActive, isEnqueueing,
   } = useAgentJob("cmo");
 
-  const cmoResult = result as CMOResult | null;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        const last = ctx?.last_cmo_result;
+        if (!cancelled && last && typeof last === "object") {
+          setLiveResult(last as CMOResult);
+        }
+      } catch {
+        /* empty until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
+  const cmoResult = (result as CMOResult | null) ?? liveResult;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">

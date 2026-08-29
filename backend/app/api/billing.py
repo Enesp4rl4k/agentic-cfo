@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_role
 from app.database import get_db
 from app.models.organization import Organization
 from app.models.user import User
@@ -50,7 +50,7 @@ async def list_plans() -> dict[str, Any]:
     Public endpoint — no authentication required.
     """
     plans_out = []
-    for plan_id, cfg in PLANS.items():
+    for _plan_id, cfg in PLANS.items():
         plans_out.append({
             "id": cfg.id,
             "name": cfg.name,
@@ -119,7 +119,7 @@ async def get_subscription(
 @router.post("/billing/checkout")
 async def create_checkout_session(
     body: CheckoutRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_role("owner", "admin", "cfo")),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -156,7 +156,7 @@ async def create_checkout_session(
 
 @router.post("/billing/portal")
 async def create_billing_portal(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_role("owner", "admin", "cfo")),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -196,7 +196,7 @@ async def create_billing_portal(
 @router.post("/billing/cancel")
 async def cancel_subscription(
     body: CancelRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_role("owner", "admin", "cfo")),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Cancel the organization's current subscription."""
@@ -300,8 +300,9 @@ async def check_resource_limit(
     Use this for frontend gates before showing upload/run buttons.
     """
     from app.services.usage_meter import (
-        get_org_plan, get_monthly_usage, PLAN_LIMITS,
-        check_upload_limit, UsageLimitExceeded,
+        PLAN_LIMITS,
+        get_monthly_usage,
+        get_org_plan,
     )
 
     valid_resources = {"upload", "agent_run", "connector_sync"}
@@ -335,5 +336,3 @@ async def check_resource_limit(
         },
         "error": None,
     }
-
-    return {"received": True, **result}

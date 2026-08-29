@@ -36,7 +36,7 @@ Model stored in PostgreSQL (sync_schedules table via Alembic migration).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -66,6 +66,10 @@ class SyncSourceType(StrEnum):
     ERP_NETSIS     = "erp_netsis"
     OPEN_BANKING   = "open_banking"
     GIB_EFATURA    = "gib_efatura"
+    BILLING_STRIPE = "billing_stripe"
+    CRM_EXPORT     = "crm_export"
+    HR_EXPORT      = "hr_export"
+    GITHUB_ACTIVITY = "github_activity"
     MANUAL_CSV     = "manual_csv"
 
 
@@ -77,9 +81,17 @@ class SyncScheduleConfig:
     In production this is backed by the sync_schedules DB table.
     """
     __slots__ = (
-        "schedule_id", "org_id", "source_type", "frequency",
-        "hour_utc", "enabled", "last_run_at", "last_status",
-        "source_config", "auto_analyze", "notify_on_completion",
+        "auto_analyze",
+        "enabled",
+        "frequency",
+        "hour_utc",
+        "last_run_at",
+        "last_status",
+        "notify_on_completion",
+        "org_id",
+        "schedule_id",
+        "source_config",
+        "source_type",
     )
 
     def __init__(
@@ -115,7 +127,7 @@ class SyncScheduleConfig:
         if self.frequency == SyncFrequency.MANUAL:
             return False
 
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
 
         # Hour check
         if now.hour != self.hour_utc:
@@ -139,9 +151,16 @@ class SyncScheduleConfig:
 class SyncResult:
     """Result of a single sync run."""
     __slots__ = (
-        "schedule_id", "org_id", "source_type",
-        "status", "job_id", "row_count", "health_score",
-        "error", "duration_ms", "ran_at",
+        "duration_ms",
+        "error",
+        "health_score",
+        "job_id",
+        "org_id",
+        "ran_at",
+        "row_count",
+        "schedule_id",
+        "source_type",
+        "status",
     )
 
     def __init__(
@@ -166,7 +185,7 @@ class SyncResult:
         self.health_score = health_score
         self.error = error
         self.duration_ms = duration_ms
-        self.ran_at = ran_at or datetime.now(timezone.utc)
+        self.ran_at = ran_at or datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -213,6 +232,9 @@ class ScheduledSyncRunner:
         sync_run_id: str | None = None
 
         try:
+            if schedule.source_type == SyncSourceType.GITHUB_ACTIVITY:
+                return await self._run_github_overlay(schedule, db, t0)
+
             csv_bytes, filename = await self._pull_data(schedule, settings, db=db)
             if not csv_bytes:
                 return SyncResult(
@@ -357,6 +379,23 @@ class ScheduledSyncRunner:
                 else:
                     db.add(CanonicalTransaction(**row_data))
 
+            await db.commit()
+
+            # Live path: partial semantic brief from canonical rows (before CFO completes)
+            try:
+                from app.services.data_plane.sync_complete import on_sync_canonical_persisted
+
+                await on_sync_canonical_persisted(
+                    org_id=schedule.org_id,
+                    db=db,
+                    source_type=schedule.source_type,
+                    row_count=len(canonical_rows),
+                    quality_score=quality.quality_score,
+                    sync_run_id=sync_run_id,
+                )
+            except Exception as sync_exc:
+                logger.debug("ScheduledSync: sync_complete hook failed: %s", sync_exc)
+
             # Create analysis job (idempotent when fingerprint unchanged)
             job_id: str | None = None
             if schedule.auto_analyze:
@@ -485,8 +524,8 @@ class ScheduledSyncRunner:
         sr.quality_score = quality_score
         sr.triggered_job_id = triggered_job_id
         sr.error_message = error_message
-        sr.completed_at = datetime.now(timezone.utc)
-        sr.updated_at = datetime.now(timezone.utc)
+        sr.completed_at = datetime.now(UTC)
+        sr.updated_at = datetime.now(UTC)
 
     async def _find_reusable_job(
         self,
@@ -497,6 +536,7 @@ class ScheduledSyncRunner:
     ) -> str | None:
         """Reuse a recent analysis job when sync fingerprint is unchanged."""
         from sqlalchemy import select
+
         from app.models.analysis_job import AnalysisJob
 
         if not fingerprint:
@@ -536,8 +576,82 @@ class ScheduledSyncRunner:
             return await self._pull_open_banking(cfg, settings)
         elif source == SyncSourceType.GIB_EFATURA:
             return await self._pull_efatura(cfg, settings)
+        elif source == SyncSourceType.BILLING_STRIPE:
+            return await self._pull_billing_stripe(schedule.org_id, db=db)
+        elif source == SyncSourceType.CRM_EXPORT:
+            return await self._pull_crm_export(cfg)
+        elif source == SyncSourceType.HR_EXPORT:
+            return await self._pull_hr_export(cfg)
+        elif source == SyncSourceType.GITHUB_ACTIVITY:
+            return b"", ""
         else:
-            raise ValueError(f"Desteklenmeyen kaynak tipi: {source}")
+            raise ValueError(f"Unsupported source type: {source}")
+
+    async def _pull_billing_stripe(
+        self,
+        org_id: str,
+        db: Any = None,
+    ) -> tuple[bytes, str]:
+        if db is None:
+            return b"", ""
+        from app.services.connectors.billing_stripe import pull_stripe_revenue_csv
+
+        return await pull_stripe_revenue_csv(org_id, db)
+
+    async def _pull_crm_export(self, cfg: dict) -> tuple[bytes, str]:
+        from app.services.connectors.crm_export import pull_crm_export_csv
+
+        return await pull_crm_export_csv(cfg)
+
+    async def _pull_hr_export(self, cfg: dict) -> tuple[bytes, str]:
+        from app.services.connectors.hr_export import pull_hr_export_csv
+
+        return await pull_hr_export_csv(cfg)
+
+    async def _run_github_overlay(self, schedule: SyncScheduleConfig, db: Any, t0: int) -> SyncResult:
+        """GitHub is not a ledger source — write CTO velocity onto company context."""
+        from app.services.company_context import get_company_context, save_company_context
+        from app.services.connectors.github_activity import pull_github_cto_overlay
+        from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+        overlay = await pull_github_cto_overlay(schedule.source_config)
+        duration = int(__import__("time").time() * 1000) - t0
+        if not overlay:
+            return SyncResult(
+                schedule_id=schedule.schedule_id,
+                org_id=schedule.org_id,
+                source_type=schedule.source_type,
+                status=SyncStatus.SKIPPED,
+                error="GitHub overlay empty — check token/owner/repo",
+                duration_ms=duration,
+            )
+        try:
+            ctx = await get_company_context(schedule.org_id, db)
+            cto = dict(ctx.last_cto_result or {})
+            cto.update(overlay)
+            ctx.update_agent_result("cto", cto)
+            await save_company_context(ctx, db)
+            await rebuild_semantic_snapshot(schedule.org_id, db, include_brief=True)
+        except Exception as exc:
+            logger.warning("GitHub overlay persist failed: %s", exc)
+            return SyncResult(
+                schedule_id=schedule.schedule_id,
+                org_id=schedule.org_id,
+                source_type=schedule.source_type,
+                status=SyncStatus.FAILED,
+                error=str(exc),
+                duration_ms=duration,
+            )
+        activity = overlay.get("github_activity") or {}
+        return SyncResult(
+            schedule_id=schedule.schedule_id,
+            org_id=schedule.org_id,
+            source_type=schedule.source_type,
+            status=SyncStatus.SUCCESS,
+            row_count=int(activity.get("commit_count") or 0),
+            health_score=80,
+            duration_ms=duration,
+        )
 
     async def _pull_logo_tiger(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:
@@ -662,12 +776,16 @@ class ScheduledSyncRunner:
     ) -> str | None:
         """Create an AnalysisJob from the pulled CSV data."""
         import io
+
         from fastapi import UploadFile
-        from app.services.upload_service import (
-            stream_to_disk, create_analysis_job, FileValidationError
-        )
-        from app.models.user import User
         from sqlalchemy import select
+
+        from app.models.user import User
+        from app.services.upload_service import (
+            FileValidationError,
+            create_analysis_job,
+            stream_to_disk,
+        )
 
         try:
             fake_file = UploadFile(filename=filename, file=io.BytesIO(csv_bytes))
@@ -721,6 +839,7 @@ class ScheduledSyncRunner:
             # Save column mapping to job metadata
             if job:
                 from sqlalchemy import update as sql_update
+
                 from app.models.analysis_job import AnalysisJob
                 meta = job.result_metadata or {}
                 if column_mapping:
@@ -764,7 +883,7 @@ class ScheduledSyncRunner:
                 f"{row_count} işlem çekildi."
             )
             if job_id:
-                message += f" Analiz başlatıldı."
+                message += " Analiz başlatıldı."
             await svc.send_org_notification(
                 org_id=schedule.org_id,
                 title="Otomatik Sync Tamamlandı",
@@ -780,7 +899,7 @@ class ScheduledSyncRunner:
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 def _today_str() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d")
+    return datetime.now(UTC).strftime("%Y%m%d")
 
 
 def _canonical_fingerprint(rows: list[Any]) -> str:
@@ -817,7 +936,7 @@ def _transactions_to_csv(transactions: list[dict[str, Any]]) -> bytes:
     if not transactions:
         return b""
 
-    all_keys = list({k for tx in transactions for k in tx.keys()})
+    all_keys = list({k for tx in transactions for k in tx})
     # Ensure date and amount come first
     priority = ["date", "amount", "description", "category", "reference"]
     ordered_keys = [k for k in priority if k in all_keys] + \
@@ -858,7 +977,7 @@ async def run_due_syncs(db: Any, settings: Any) -> list[SyncResult]:
     # Load schedules from DB (placeholder — full impl uses ORM)
     schedules = await _load_active_schedules(db)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for schedule in schedules:
         if schedule.is_due(now):
             result = await runner.run(schedule, db, settings)
@@ -874,7 +993,9 @@ async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
     """
     try:
         import json
+
         from sqlalchemy import select
+
         from app.models.sync_schedule import SyncSchedule
 
         result = await db.execute(

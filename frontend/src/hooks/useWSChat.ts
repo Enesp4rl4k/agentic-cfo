@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ export interface WSChatMessage {
   content: string;
   /** True while the assistant is still streaming tokens */
   streaming?: boolean;
+  evidence?: ChatEvidenceMeta;
 }
 
 interface SendOptions {
@@ -185,6 +187,11 @@ export function useWSChat(options: UseWSChatOptions = {}) {
           content?:   string;
           full_text?: string;
           message?:   string;
+          evidence_found?: boolean;
+          evidence_tx_count?: number;
+          evidence_semantic_count?: number;
+          evidence_retriever_version?: string;
+          grounding_validated?: boolean;
         };
 
         switch (data.type) {
@@ -214,6 +221,13 @@ export function useWSChat(options: UseWSChatOptions = {}) {
                   ...last,
                   content:   data.full_text ?? last.content,
                   streaming: false,
+                  evidence: {
+                    evidence_found: data.evidence_found,
+                    evidence_tx_count: data.evidence_tx_count,
+                    evidence_semantic_count: data.evidence_semantic_count,
+                    evidence_retriever_version: data.evidence_retriever_version,
+                    grounding_validated: data.grounding_validated,
+                  },
                 };
               }
               return updated;

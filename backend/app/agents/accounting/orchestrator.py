@@ -19,14 +19,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.accounting.thp_classifier import (
-    THPClassifier, THPSonucu, get_thp_classifier,
-)
 from app.agents.accounting.double_entry import (
-    DoubleEntryEngine, YevmiyeKaydi, get_double_entry_engine,
+    DoubleEntryEngine,
+    YevmiyeKaydi,
+    get_double_entry_engine,
+)
+from app.services.accounting.thp_classifier import (
+    THPSonucu,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,19 +89,25 @@ class MuhasebeAgent:
     """
     Muhasebe Agent Orchestrator.
 
-    Verilen işlem listesini THP sınıflandırması + double-entry ile
-    tam muhasebe kaydına dönüştürür.
+    Uses ChartOfAccountsAdapter when regional pack is not TR;
+    TR pack keeps native THPClassifier (+ optional LLM fallback).
     """
 
     def __init__(
         self,
-        classifier: THPClassifier | None = None,
+        classifier: Any | None = None,
         engine: DoubleEntryEngine | None = None,
         use_llm_fallback: bool = True,
+        regional_packs: list[str] | None = None,
     ) -> None:
-        self.classifier = classifier or get_thp_classifier()
+        from app.services.regional.coa_bridge import build_classifier_for_packs
+
+        self.regional_packs = [p.lower() for p in (regional_packs or [])]
+        self.classifier = classifier or build_classifier_for_packs(
+            self.regional_packs, use_llm_fallback=use_llm_fallback
+        )
         self.engine = engine or get_double_entry_engine()
-        self.use_llm_fallback = use_llm_fallback
+        self.use_llm_fallback = use_llm_fallback and ("tr" in self.regional_packs)
 
     async def run(
         self,
@@ -135,7 +143,7 @@ class MuhasebeAgent:
                 onay_bekleyen=0,
                 dengeli=True,
                 hata="İşlem listesi boş",
-                tamamlanma_zamani=datetime.now(timezone.utc).isoformat(),
+                tamamlanma_zamani=datetime.now(UTC).isoformat(),
             )
 
         # ── 1. THP Sınıflandırma ──────────────────────────────────────────────
@@ -212,7 +220,7 @@ class MuhasebeAgent:
             dusuk_confidence_sayisi=dusuk_conf,
             yevmiye_kayitlari=[k.to_dict() for k in kayitlar],
             onay_kuyrugu=onay_kuyrugu,
-            tamamlanma_zamani=datetime.now(timezone.utc).isoformat(),
+            tamamlanma_zamani=datetime.now(UTC).isoformat(),
         )
 
         logger.info(
@@ -247,12 +255,26 @@ class MuhasebeAgent:
 # ── Modül düzeyinde singleton ─────────────────────────────────────────────────
 
 _agent: MuhasebeAgent | None = None
+_agent_key: str | None = None
 
 
-def get_muhasebe_agent(use_llm_fallback: bool = True) -> MuhasebeAgent:
-    global _agent
-    if _agent is None:
-        _agent = MuhasebeAgent(use_llm_fallback=use_llm_fallback)
+def get_muhasebe_agent(
+    use_llm_fallback: bool = True,
+    regional_packs: list[str] | None = None,
+) -> MuhasebeAgent:
+    """
+    Return a MuhasebeAgent for the given regional packs.
+    Cache key includes packs so TR vs generic adapters don't collide.
+    """
+    global _agent, _agent_key
+    packs = tuple(sorted(p.lower() for p in (regional_packs or [])))
+    key = f"{packs}:{use_llm_fallback}"
+    if _agent is None or _agent_key != key:
+        _agent = MuhasebeAgent(
+            use_llm_fallback=use_llm_fallback,
+            regional_packs=list(packs),
+        )
+        _agent_key = key
     return _agent
 
 
@@ -261,11 +283,12 @@ async def run_muhasebe_pipeline(
     transactions: list[dict[str, Any]],
     company_name: str | None = None,
     donem: str | None = None,
+    regional_packs: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Convenience wrapper — auto_chain ve worker entegrasyonu için.
     """
-    agent = get_muhasebe_agent()
+    agent = get_muhasebe_agent(regional_packs=regional_packs)
     sonuc = await agent.run(
         job_id=job_id,
         transactions=transactions,

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,8 +21,8 @@ from app.database import get_db
 from app.models.sync_schedule import SyncSchedule
 from app.models.user import User
 from app.services.scheduled_sync import (
-    SyncScheduleConfig,
     SyncFrequency,
+    SyncScheduleConfig,
     SyncSourceType,
     get_sync_runner,
 )
@@ -92,6 +92,45 @@ SOURCE_TYPES = [
         "description": "Turkey e-invoice (Turkey pack)",
         "pack": "tr",
         "config_fields": [],
+    },
+    {
+        "id": SyncSourceType.BILLING_STRIPE,
+        "label": "Stripe Revenue",
+        "description": "Paid Stripe invoices → revenue canonical rows",
+        "pack": None,
+        "config_fields": [],
+    },
+    {
+        "id": SyncSourceType.CRM_EXPORT,
+        "label": "CRM export (CSV)",
+        "description": "HubSpot/Salesforce closed-won deals → revenue rows",
+        "pack": None,
+        "config_fields": [
+            {"key": "csv_url", "label": "CSV URL", "type": "url", "required": False},
+            {"key": "csv_base64", "label": "Inline CSV (base64)", "type": "text", "required": False},
+        ],
+    },
+    {
+        "id": SyncSourceType.HR_EXPORT,
+        "label": "HR / payroll CSV",
+        "description": "Employee payroll export → expense canonical rows",
+        "pack": None,
+        "config_fields": [
+            {"key": "csv_url", "label": "CSV URL", "type": "url", "required": False},
+            {"key": "csv_base64", "label": "Inline CSV (base64)", "type": "text", "required": False},
+        ],
+    },
+    {
+        "id": SyncSourceType.GITHUB_ACTIVITY,
+        "label": "GitHub activity",
+        "description": "Commits/PRs → CTO velocity overlay (not ledger rows)",
+        "pack": None,
+        "config_fields": [
+            {"key": "github_token", "label": "GitHub token", "type": "password", "required": True},
+            {"key": "owner", "label": "Owner", "type": "text", "required": True},
+            {"key": "repo", "label": "Repo", "type": "text", "required": True},
+            {"key": "days", "label": "Lookback days", "type": "number", "required": False},
+        ],
     },
     {
         "id": SyncSourceType.MANUAL_CSV,
@@ -229,7 +268,7 @@ async def update_schedule(
         row.notify_on_completion = body.notify_on_completion
     if body.source_config is not None:
         row.source_config = json.dumps(body.source_config)
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"updated": True, "schedule_id": schedule_id}, "error": None}
 
@@ -285,7 +324,7 @@ async def trigger_manual_run(
     row.last_row_count = sync_result.row_count
     row.last_health_score = sync_result.health_score
     row.last_error = sync_result.error
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     await db.commit()
 
     return {"data": sync_result.to_dict(), "error": None}

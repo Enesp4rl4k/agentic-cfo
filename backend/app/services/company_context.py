@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -97,8 +97,8 @@ class CompanyContext:
     last_ceo_result:        dict[str, Any] | None = field(default=None)
 
     # Timestamps (ISO strings)
-    created_at:  str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at:  str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at:  str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at:  str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -118,7 +118,7 @@ class CompanyContext:
         attr = mapping.get(agent.lower())
         if attr:
             setattr(self, attr, result)
-            self.updated_at = datetime.now(timezone.utc).isoformat()
+            self.updated_at = datetime.now(UTC).isoformat()
         else:
             logger.warning("update_agent_result: unknown agent '%s'", agent)
 
@@ -164,7 +164,7 @@ class CompanyContext:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CompanyContext":
+    def from_dict(cls, data: dict[str, Any]) -> CompanyContext:
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         filtered = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**filtered)
@@ -193,8 +193,9 @@ async def get_company_context(
     # 2. Try DB snapshot
     if db is not None:
         try:
-            from app.models.company_context import CompanyContextSnapshot
             from sqlalchemy import select
+
+            from app.models.company_context import CompanyContextSnapshot
             result = await db.execute(
                 select(CompanyContextSnapshot).where(
                     CompanyContextSnapshot.org_id == org_id
@@ -265,9 +266,7 @@ def _trim_context_payload(data: dict[str, Any]) -> dict[str, Any]:
             if isinstance(value, dict):
                 lightweight: dict[str, Any] = {}
                 for k, v in value.items():
-                    if isinstance(v, (str, int, float, bool)) or v is None:
-                        lightweight[k] = v
-                    elif isinstance(v, dict) and len(json.dumps(v)) < 2000:
+                    if isinstance(v, (str, int, float, bool)) or v is None or (isinstance(v, dict) and len(json.dumps(v)) < 2000):
                         lightweight[k] = v
                     else:
                         lightweight[k] = f"[trimmed — {len(json.dumps(v))} chars]"
@@ -290,7 +289,7 @@ async def save_company_context(
     - Warns when context exceeds 512 KB (unbounded growth risk)
     - Trims large agent result fields when context exceeds 2 MB
     """
-    ctx.updated_at = datetime.now(timezone.utc).isoformat()
+    ctx.updated_at = datetime.now(UTC).isoformat()
     raw_data = ctx.to_dict()
     raw_payload = json.dumps(raw_data)
     raw_size = len(raw_payload.encode("utf-8"))
@@ -328,8 +327,9 @@ async def save_company_context(
     # 2. Write to DB (upsert)
     if db is not None:
         try:
-            from app.models.company_context import CompanyContextSnapshot
             from sqlalchemy import select
+
+            from app.models.company_context import CompanyContextSnapshot
             result = await db.execute(
                 select(CompanyContextSnapshot).where(
                     CompanyContextSnapshot.org_id == ctx.org_id
@@ -338,7 +338,7 @@ async def save_company_context(
             snapshot = result.scalar_one_or_none()
             if snapshot:
                 snapshot.context_json = payload
-                snapshot.updated_at = datetime.now(timezone.utc)
+                snapshot.updated_at = datetime.now(UTC)
             else:
                 snapshot = CompanyContextSnapshot(
                     org_id=ctx.org_id,
@@ -361,8 +361,9 @@ async def invalidate_company_context(org_id: str, db: Any = None) -> None:
 
     if db is not None:
         try:
-            from app.models.company_context import CompanyContextSnapshot
             from sqlalchemy import select
+
+            from app.models.company_context import CompanyContextSnapshot
             result = await db.execute(
                 select(CompanyContextSnapshot).where(
                     CompanyContextSnapshot.org_id == org_id

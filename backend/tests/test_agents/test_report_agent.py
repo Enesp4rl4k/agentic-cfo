@@ -2,8 +2,8 @@
 Tests for report_agent.py — pure function _build_dashboard_json (no LLM, no disk I/O).
 """
 import pytest
-from app.agents.report_agent import _build_dashboard_json, _fmt
 
+from app.agents.report_agent import _build_dashboard_json, _fmt
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

@@ -15,13 +15,9 @@ import logging
 import statistics
 from typing import Any
 
-from app.services.telemetry import trace_agent
-
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +117,7 @@ def _extrapolate(
     last_month = monthly_series[-1]["month"]
     year, month = int(last_month[:4]), int(last_month[5:7])
 
-    for i in range(1, months_ahead + 1):
+    for _i in range(1, months_ahead + 1):
         month += 1
         if month > 12:
             month = 1
@@ -183,6 +179,7 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
             "label": "İyimser",
             "description": opt_desc,
             "revenue_rate": 1.05,
+            "growth_rate": 1.05,
             "cost_rate":    0.99,
             "months": _extrapolate(series, 12, revenue_rate=1.05, cost_rate=0.99,
                                    seasonality_indices=seasonality_indices or None),
@@ -192,6 +189,7 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
             "label": "Baz",
             "description": base_desc,
             "revenue_rate": 1.01,
+            "growth_rate": 1.01,
             "cost_rate":    1.01,
             "months": _extrapolate(series, 12, revenue_rate=1.01, cost_rate=1.01,
                                    seasonality_indices=seasonality_indices or None),
@@ -201,6 +199,7 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
             "label": "Kötümser",
             "description": pess_desc,
             "revenue_rate": 0.97,
+            "growth_rate": 0.97,
             "cost_rate":    1.01,
             "months": _extrapolate(series, 12, revenue_rate=0.97, cost_rate=1.01,
                                    seasonality_indices=seasonality_indices or None),
@@ -208,8 +207,9 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
         },
     }
 
+
     # Runway calculation: how many months until cumulative net goes negative
-    for key, scenario in scenarios.items():
+    for _key, scenario in scenarios.items():
         cumulative = 0
         runway_months: int | None = None
         for i, m in enumerate(scenario["months"], start=1):
@@ -251,7 +251,7 @@ def _monte_carlo_simulation(
         import numpy as np
 
         # Extract net cash values
-        nets = np.array([m["net"] for m in monthly_series], dtype=float)
+        np.array([m["net"] for m in monthly_series], dtype=float)
         ins  = np.array([m["in"] for m in monthly_series], dtype=float)
 
         # Estimate growth statistics from historical data

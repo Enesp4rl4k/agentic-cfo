@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -43,8 +43,9 @@ PARASUT_SCOPES = [
 def _encrypt(plaintext: str) -> str:
     """Fernet ile sifrele."""
     try:
-        from cryptography.fernet import Fernet
         import os
+
+        from cryptography.fernet import Fernet
         key = os.environ.get("ENCRYPTION_KEY", "").encode()
         if not key or len(key) < 32:
             # Fernet key gerektirir; yoksa base64 placeholder
@@ -60,8 +61,9 @@ def _encrypt(plaintext: str) -> str:
 def _decrypt(ciphertext: str) -> str:
     """Fernet ile coz."""
     try:
-        from cryptography.fernet import Fernet
         import os
+
+        from cryptography.fernet import Fernet
         key = os.environ.get("ENCRYPTION_KEY", "").encode()
         if not key or len(key) < 32:
             import base64
@@ -104,8 +106,9 @@ class ParasutConnector:
         OAuth2 authorization URL olustur.
         Kullaniciyi bu URL'e yonlendir.
         """
-        from app.models.erp_integration import ERPIntegration
         from sqlalchemy import select
+
+        from app.models.erp_integration import ERPIntegration
 
         # Mevcut entegrasyon var mi kontrol et
         stmt = (
@@ -163,9 +166,10 @@ class ParasutConnector:
         """
         OAuth2 callback isle, token kaydet.
         """
-        from app.models.erp_integration import ERPIntegration
-        from sqlalchemy import select
         import httpx
+        from sqlalchemy import select
+
+        from app.models.erp_integration import ERPIntegration
 
         stmt = (
             select(ERPIntegration)
@@ -196,12 +200,12 @@ class ParasutConnector:
         # Token'lari sifreli kaydet
         integration.access_token_enc  = _encrypt(token_data["access_token"])
         integration.refresh_token_enc = _encrypt(token_data.get("refresh_token", ""))
-        integration.token_expires_at  = datetime.now(timezone.utc) + timedelta(
+        integration.token_expires_at  = datetime.now(UTC) + timedelta(
             seconds=token_data.get("expires_in", 7200)
         )
         integration.scopes       = token_data.get("scope", " ".join(PARASUT_SCOPES))
         integration.status       = "active"
-        integration.connected_at = datetime.now(timezone.utc)
+        integration.connected_at = datetime.now(UTC)
 
         await self.db.commit()
         logger.info("Parasut OAuth tamamlandi: org=%s", org_id)
@@ -237,7 +241,7 @@ class ParasutConnector:
         integration.access_token_enc = _encrypt(token_data["access_token"])
         if token_data.get("refresh_token"):
             integration.refresh_token_enc = _encrypt(token_data["refresh_token"])
-        integration.token_expires_at = datetime.now(timezone.utc) + timedelta(
+        integration.token_expires_at = datetime.now(UTC) + timedelta(
             seconds=token_data.get("expires_in", 7200)
         )
         integration.status = "active"
@@ -249,10 +253,12 @@ class ParasutConnector:
         Parasut'tan islemleri cek, SyncBatch olustur.
         Returns: {transactions, sync_count, errors}
         """
+        import time
+
+        from sqlalchemy import select
+
         from app.models.erp_integration import ERPIntegration, ERPSyncLog
         from app.services.data_sync.accounting.parasut import ParasutClient
-        from sqlalchemy import select
-        import time
 
         start = time.time()
 
@@ -274,7 +280,7 @@ class ParasutConnector:
             org_id         = integration.org_id,
             provider       = "parasut",
             status         = "running",
-            started_at     = datetime.now(timezone.utc),
+            started_at     = datetime.now(UTC),
         )
         self.db.add(log)
         await self.db.commit()
@@ -292,20 +298,20 @@ class ParasutConnector:
                 if integration.token_expires_at:
                     client._token_expires_at = integration.token_expires_at
 
-            date_to = datetime.now(timezone.utc)
+            date_to = datetime.now(UTC)
             date_from = date_to - timedelta(days=int(config.get("lookback_days", 90)))
             batch = await client.sync_transactions(date_from=date_from, date_to=date_to)
             tx_count = len(batch.transactions) if batch else 0
 
             # Integration guncelle
-            integration.last_sync_at     = datetime.now(timezone.utc)
+            integration.last_sync_at     = datetime.now(UTC)
             integration.last_sync_status = "success"
             integration.last_sync_count  = tx_count
             integration.last_error       = None
 
             log.status               = "success"
             log.transactions_synced  = tx_count
-            log.finished_at          = datetime.now(timezone.utc)
+            log.finished_at          = datetime.now(UTC)
             log.duration_seconds     = int(time.time() - start)
             await self.db.commit()
 
@@ -323,12 +329,12 @@ class ParasutConnector:
 
         except Exception as exc:
             err_msg = str(exc)
-            integration.last_sync_at     = datetime.now(timezone.utc)
+            integration.last_sync_at     = datetime.now(UTC)
             integration.last_sync_status = "error"
             integration.last_error       = err_msg[:500]
             log.status        = "error"
             log.error_message = err_msg[:500]
-            log.finished_at   = datetime.now(timezone.utc)
+            log.finished_at   = datetime.now(UTC)
             log.duration_seconds = int(time.time() - start)
             await self.db.commit()
             logger.error("Parasut sync hatasi: org=%s err=%s", integration.org_id, exc)
@@ -336,8 +342,9 @@ class ParasutConnector:
 
     async def disconnect(self, integration_id: str) -> None:
         """Entegrasyonu devre disi birak (token'lari sil)."""
-        from app.models.erp_integration import ERPIntegration
         from sqlalchemy import select
+
+        from app.models.erp_integration import ERPIntegration
 
         stmt = select(ERPIntegration).where(ERPIntegration.id == integration_id)
         integration = (await self.db.execute(stmt)).scalar_one_or_none()
@@ -345,5 +352,5 @@ class ParasutConnector:
             integration.access_token_enc  = None
             integration.refresh_token_enc = None
             integration.status            = "disconnected"
-            integration.disconnected_at   = datetime.now(timezone.utc)
+            integration.disconnected_at   = datetime.now(UTC)
             await self.db.commit()
