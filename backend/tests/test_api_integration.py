@@ -485,3 +485,84 @@ async def test_agent_run_ledger_records_tr_vertical_and_slo(test_client, tmp_pat
 
     one = (await test_client.get(f"/api/v1/runs/{run['id']}", headers=h)).json()["data"]
     assert one["id"] == run["id"]
+
+
+@pytest.mark.asyncio
+async def test_smmm_defensibility_packet_build_and_export(test_client):
+    """#4: build a defensibility packet from a persisted journal, then export it."""
+    from sqlalchemy import select
+
+    from app.models.analysis_job import AnalysisJob
+    from app.models.organization import Organization
+    from app.models.report import Report, ReportFormat
+    from app.models.user import User
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "smmm2@buro.com", "password": "StrongPassword123!",
+              "full_name": "SM", "role": "owner"},
+    )
+    token = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "smmm2@buro.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    h = {"Authorization": f"Bearer {token}"}
+
+    async with test_client._test_sessionmaker() as db:
+        user = (await db.execute(
+            select(User).where(User.email == "smmm2@buro.com")
+        )).scalar_one()
+        org = Organization(name="Def Ltd", slug="def-ltd", regional_packs=["tr"])
+        db.add(org)
+        await db.flush()
+        user.org_id = org.id
+        job = AnalysisJob(filename="j.csv", file_path="/x.csv", file_type="csv",
+                          org_id=org.id, user_id=user.id)
+        db.add(job)
+        await db.flush()
+        job_id = job.id
+        db.add(Report(
+            job_id=job_id, report_type="tr_muhasebe_journal",
+            report_format=ReportFormat.JSON,
+            data={
+                "dengeli": True, "denge_hatalari": [], "ortalama_confidence": 0.9,
+                "thp_dagilim": {"770": 1},
+                "yevmiye_kayitlari": [{
+                    "kayit_id": "k1", "tarih": "2024-01-10T00:00:00+00:00",
+                    "aciklama": "kira gideri", "toplam_borc": 120000, "toplam_alacak": 120000,
+                    "dengeli": True, "confidence": 0.95, "onay_gerekli": False,
+                    "onay_neden": "", "thp_hesap_kodu": "770", "kaynak_islem_id": "tx1",
+                    "satirlar": [],
+                }],
+            },
+        ))
+        await db.commit()
+
+    built = await test_client.post(
+        f"/api/v1/smmm/defensibility/{job_id}/build?period=2024-01", headers=h
+    )
+    assert built.status_code == 201, built.text
+    pid = built.json()["data"]["id"]
+    assert built.json()["data"]["summary"]["ai_auto_posted"] == 1
+    assert built.json()["data"]["summary"]["pending_review"] == 0
+
+    full = (await test_client.get(f"/api/v1/smmm/defensibility/{pid}", headers=h)).json()["data"]
+    assert full["payload"]["entries"][0]["decision_source"] == "ai_auto_posted"
+
+    fin = await test_client.post(
+        f"/api/v1/smmm/defensibility/{pid}/finalize", headers=h,
+        json={"statement": "2024/01 kayıtlarını inceledim, uygundur. SM. Test"},
+    )
+    assert fin.status_code == 200, fin.text
+    assert fin.json()["data"]["status"] == "finalized"
+
+    exp = await test_client.get(f"/api/v1/smmm/defensibility/{pid}/export", headers=h)
+    assert exp.status_code == 200
+    assert exp.headers["content-type"].split(";")[0] in ("application/pdf", "text/plain")
+    assert len(exp.content) > 50
+
+    # regenerating a finalized packet is refused
+    again = await test_client.post(
+        f"/api/v1/smmm/defensibility/{job_id}/build?period=2024-01", headers=h
+    )
+    assert again.status_code == 409

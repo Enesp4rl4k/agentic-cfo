@@ -34,6 +34,38 @@ from app.models.user import User
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_MUHASEBE_JOURNAL_REPORT = "tr_muhasebe_journal"
+
+
+async def _persist_muhasebe_journal(
+    db: AsyncSession, job_id: str, full_result: dict[str, Any]
+) -> None:
+    """Upsert the full THP journal for a job as a JSON Report — the durable
+    source the defensibility packet itemises from."""
+    existing = (
+        await db.execute(
+            select(Report)
+            .where(
+                Report.job_id == job_id,
+                Report.report_type == _MUHASEBE_JOURNAL_REPORT,
+                Report.report_format == ReportFormat.JSON,
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.data = full_result
+    else:
+        db.add(
+            Report(
+                job_id=job_id,
+                report_type=_MUHASEBE_JOURNAL_REPORT,
+                report_format=ReportFormat.JSON,
+                data=full_result,
+            )
+        )
+
 
 # ── Pydantic şemaları ─────────────────────────────────────────────────────────
 
@@ -150,6 +182,10 @@ async def muhasebe_analiz(
             db.add(kayit)
             onay_eklendi += 1
 
+    # Persist the full journal (incl. auto-posted entries) so the defensibility
+    # packet can itemise every decision later. Upsert the latest per job.
+    await _persist_muhasebe_journal(db, body.job_id, sonuc.to_full_dict())
+
     await db.commit()
 
     result_dict = sonuc.to_dict()
@@ -216,7 +252,19 @@ async def muhasebe_tr_vertical(
             "stage": result.stage,
             "approval_required": result.approval_required,
             "board_deck_pdf_size": result.to_dict().get("board_deck_pdf_size"),
+            "reconciliation": result.reconciliation,
+            "confidence_breakdown": (result.cfo or {}).get("confidence_breakdown"),
+            "min_confidence": (result.cfo or {}).get("min_confidence"),
         }
+
+    # Persist the full THP journal for the defensibility packet.
+    if result.accounting is not None:
+        await _persist_muhasebe_journal(
+            db,
+            body.job_id,
+            {**result.accounting, "yevmiye_kayitlari": result.accounting_journal or []},
+        )
+        await db.commit()
 
     # Record the generated board deck so it can be fetched later (GET below).
     if result.board_deck_pdf_path:

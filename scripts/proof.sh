@@ -118,6 +118,9 @@ check "Connector Platform (Faz 13) smoke" \
 check "Durable Runs (Faz 14) smoke" \
   bash scripts/durable-runs-smoke.sh
 
+check "SMMM Defensibility Packet (#4) smoke" \
+  bash scripts/smmm-defensibility-smoke.sh
+
 check "provenance honesty pass wired" \
   test -f backend/app/platform/provenance.py && \
   grep -q "attach_provenance" backend/app/agents/cto/cto_kernel.py && \

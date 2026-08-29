@@ -39,6 +39,7 @@ class TRVerticalResult:
     cfo: dict[str, Any] = field(default_factory=dict)
     reconciliation: dict[str, Any] | None = None
     accounting: dict[str, Any] | None = None
+    accounting_journal: list[dict[str, Any]] | None = None  # full journal, not serialized
     board_deck_pdf_bytes: bytes | None = None
     board_deck_pdf_path: str | None = None
 
@@ -200,7 +201,10 @@ async def run_tr_vertical(
             company_name=company,
             donem=donem,
             regional_packs=["tr"],
+            include_full_journal=True,
         )
+        # Keep the trimmed view on the result; hand the full journal to the caller.
+        res.accounting_journal = acc.pop("yevmiye_kayitlari", None)
         res.accounting = acc
         if acc.get("hata"):
             res.errors.append(str(acc["hata"]))

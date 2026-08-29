@@ -12,6 +12,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfidenceBreakdown } from "@/components/ui/confidence-breakdown";
+import { DefensibilityPacketCard } from "@/components/smmm/DefensibilityPacketCard";
 import { listJobs, type JobSummary } from "@/lib/api/cfo";
 import {
   runTrVertical, downloadTrBoardDeck, type TrVerticalResult,
@@ -297,6 +298,9 @@ export default function TrVerticalPage() {
           <PnlSnapshot result={result} />
           <ConfidenceBreakdown data={result.cfo.confidence_breakdown} />
           <AccountingSummary result={result} />
+          {result.stage === "done" && jobId && (
+            <DefensibilityPacketCard jobId={jobId} />
+          )}
 
           {result.reconciliation && result.reconciliation.action !== "proceed" && (
             <Card className="border-amber-500/40 bg-amber-500/5 p-4 text-sm">

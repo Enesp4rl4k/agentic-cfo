@@ -33,6 +33,7 @@ import app.models.company_context  # noqa: F401
 import app.models.company_semantic_snapshot  # noqa: F401
 import app.models.connector_connection  # noqa: F401
 import app.models.data_source  # noqa: F401
+import app.models.defensibility_packet  # noqa: F401
 import app.models.erp_integration  # noqa: F401
 import app.models.in_app_notification  # noqa: F401
 import app.models.llm_call_log  # noqa: F401

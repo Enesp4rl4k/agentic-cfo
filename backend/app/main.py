@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
     import app.models.company_context
     import app.models.connector_connection
     import app.models.data_source
+    import app.models.defensibility_packet
     import app.models.in_app_notification
     import app.models.llm_call_log
     import app.models.organization

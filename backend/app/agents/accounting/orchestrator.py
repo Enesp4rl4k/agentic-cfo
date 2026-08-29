@@ -82,6 +82,11 @@ class MuhasebeSonucu:
             "hata":                  self.hata,
         }
 
+    def to_full_dict(self) -> dict[str, Any]:
+        """Like `to_dict()` but includes every journal entry — for durable
+        persistence (defensibility packet), not the lean API response."""
+        return {**self.to_dict(), "yevmiye_kayitlari": self.yevmiye_kayitlari}
+
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
@@ -284,9 +289,13 @@ async def run_muhasebe_pipeline(
     company_name: str | None = None,
     donem: str | None = None,
     regional_packs: list[str] | None = None,
+    include_full_journal: bool = False,
 ) -> dict[str, Any]:
     """
     Convenience wrapper — auto_chain ve worker entegrasyonu için.
+
+    `include_full_journal=True` adds `yevmiye_kayitlari` (every entry, not just
+    the review queue) — used by the defensibility packet path.
     """
     agent = get_muhasebe_agent(regional_packs=regional_packs)
     sonuc = await agent.run(
@@ -295,4 +304,4 @@ async def run_muhasebe_pipeline(
         company_name=company_name,
         donem=donem,
     )
-    return sonuc.to_dict()
+    return sonuc.to_full_dict() if include_full_journal else sonuc.to_dict()
