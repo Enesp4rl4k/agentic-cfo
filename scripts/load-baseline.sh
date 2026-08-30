@@ -14,6 +14,19 @@
 # =============================================================================
 set -euo pipefail
 
+# Detect a working python. On Windows `python3` is often the Microsoft Store
+# stub that errors out, so try `python` first and verify it actually runs.
+_PY_BIN=""
+for _c in python "$_PY_BIN" py; do
+  if command -v "$_c" >/dev/null 2>&1 && "$_c" -c "import sys" >/dev/null 2>&1; then
+    _PY_BIN="$_c"; break
+  fi
+done
+if [[ -z "$_PY_BIN" ]]; then
+  echo "No working python interpreter found (tried python, python3, py)." >&2
+  exit 1
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
 OK()   { echo -e "${GREEN}✓${NC} $*"; }
 FAIL() { echo -e "${RED}✗${NC} $*"; }
@@ -33,9 +46,9 @@ trap 'rm -f "$LATENCY_FILE"' EXIT
 
 single_request() {
   local start_ms end_ms elapsed
-  start_ms=$(date +%s%3N 2>/dev/null || python3 -c 'import time; print(int(time.time()*1000))')
+  start_ms=$(date +%s%3N 2>/dev/null || "$_PY_BIN" -c 'import time; print(int(time.time()*1000))')
   if curl -sf --max-time 10 "$TARGET" > /dev/null; then
-    end_ms=$(date +%s%3N 2>/dev/null || python3 -c 'import time; print(int(time.time()*1000))')
+    end_ms=$(date +%s%3N 2>/dev/null || "$_PY_BIN" -c 'import time; print(int(time.time()*1000))')
     elapsed=$((end_ms - start_ms))
     echo "$elapsed" >> "$LATENCY_FILE"
   else
@@ -57,7 +70,7 @@ fi
 
 # Compute stats with python (portable)
 read -r TOTAL OK_COUNT FAIL_COUNT P50 P95 MAX <<< "$(
-python3 - "$LATENCY_FILE" <<'PY'
+"$_PY_BIN" - "$LATENCY_FILE" <<'PY'
 import pathlib
 import sys
 

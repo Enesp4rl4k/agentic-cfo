@@ -53,3 +53,6 @@ post_agentic_ai/
 langgraph_checkpoints.sqlite
 agent_memory.db
 knowledge_integrator/
+
+# stale local dev DB snapshots
+*.db.stale-backup-*

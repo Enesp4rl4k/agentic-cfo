@@ -14,6 +14,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Detect a working python. On Windows `python3` is often the Microsoft Store
+# stub that errors out, so try `python` first and verify it actually runs.
+_PY_BIN=""
+for _c in python "$_PY_BIN" py; do
+  if command -v "$_c" >/dev/null 2>&1 && "$_c" -c "import sys" >/dev/null 2>&1; then
+    _PY_BIN="$_c"; break
+  fi
+done
+if [[ -z "$_PY_BIN" ]]; then
+  echo "No working python interpreter found (tried python, python3, py)." >&2
+  exit 1
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
 OK()   { echo -e "${GREEN}✓${NC} $*"; }
 FAIL() { echo -e "${RED}✗${NC} $*"; }
@@ -44,6 +57,13 @@ fi
 
 INFO "Using fixture: $CSV_FILE"
 
+# curl is a native binary: on Git Bash / MSYS it cannot open a POSIX-style
+# "/c/Users/..." path for -F @upload. Hand it a Windows path when available.
+CSV_FILE_FOR_CURL="$CSV_FILE"
+if command -v cygpath >/dev/null 2>&1; then
+  CSV_FILE_FOR_CURL="$(cygpath -w "$CSV_FILE")"
+fi
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 if [[ -z "${AUTH_TOKEN:-}" ]]; then
   if [[ -n "${GOLDEN_EMAIL:-}" && -n "${GOLDEN_PASSWORD:-}" ]]; then
@@ -51,7 +71,7 @@ if [[ -z "${AUTH_TOKEN:-}" ]]; then
     LOGIN_BODY=$(curl -sf --max-time 20 -X POST "$API/auth/login" \
       -H "Content-Type: application/json" \
       -d "{\"email\":\"$GOLDEN_EMAIL\",\"password\":\"$GOLDEN_PASSWORD\"}" || true)
-    AUTH_TOKEN=$(echo "$LOGIN_BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token') or d.get('data',{}).get('access_token',''))" 2>/dev/null || true)
+    AUTH_TOKEN=$(echo "$LOGIN_BODY" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token') or d.get('data',{}).get('access_token',''))" 2>/dev/null || true)
   fi
 fi
 
@@ -81,9 +101,9 @@ fi
 INFO "POST /upload"
 UPLOAD_RESP=$(curl -sf --max-time 60 -X POST "$API/upload" \
   "${AUTH_HDR[@]}" \
-  -F "file=@${CSV_FILE};type=text/csv" || true)
+  -F "file=@${CSV_FILE_FOR_CURL};type=text/csv" || true)
 
-JOB_ID=$(echo "$UPLOAD_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('job_id') or d.get('job_id',''))" 2>/dev/null || true)
+JOB_ID=$(echo "$UPLOAD_RESP" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('job_id') or d.get('job_id',''))" 2>/dev/null || true)
 
 if [[ -z "$JOB_ID" ]]; then
   FAIL "upload did not return job_id — response: ${UPLOAD_RESP:0:200}"
@@ -103,7 +123,7 @@ while true; do
     break
   fi
   RESP=$(curl -sf --max-time 15 "${AUTH_HDR[@]}" "$API/analysis/$JOB_ID" || true)
-  STATUS=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or d).get('status',''))" 2>/dev/null || true)
+  STATUS=$(echo "$RESP" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or d).get('status',''))" 2>/dev/null || true)
   if [[ "$STATUS" == "completed" || "$STATUS" == "awaiting_review" ]]; then
     OK "analysis status=$STATUS"
     break
@@ -119,7 +139,7 @@ done
 # ── Semantic brief (post-analysis) ───────────────────────────────────────────
 INFO "GET /semantic/me/brief"
 BRIEF_RESP=$(curl -sf --max-time 20 "${AUTH_HDR[@]}" "$API/semantic/me/brief" || true)
-BRIEF_OK=$(echo "$BRIEF_RESP" | python3 -c "
+BRIEF_OK=$(echo "$BRIEF_RESP" | "$_PY_BIN" -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -138,7 +158,7 @@ else
   INFO "POST /semantic/me/rebuild (brief missing after analysis)"
   REBUILD=$(curl -sf --max-time 60 -X POST "${AUTH_HDR[@]}" "$API/semantic/me/rebuild" || true)
   BRIEF2=$(curl -sf --max-time 20 "${AUTH_HDR[@]}" "$API/semantic/me/brief" || true)
-  BRIEF2_OK=$(echo "$BRIEF2" | python3 -c "
+  BRIEF2_OK=$(echo "$BRIEF2" | "$_PY_BIN" -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -161,7 +181,7 @@ CEO_RESP=$(curl -sf --max-time 180 -X POST "$API/ceo/analyze-from-job/$JOB_ID" \
   -H "Content-Type: application/json" \
   -d '{}' || true)
 
-HAS_DECK=$(echo "$CEO_RESP" | python3 - <<'PY'
+HAS_DECK=$(echo "$CEO_RESP" | "$_PY_BIN" - <<'PY'
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -192,9 +212,9 @@ elif [[ "$HAS_DECK" == async:* ]]; then
       break
     fi
     CSTAT=$(curl -sf --max-time 15 "${AUTH_HDR[@]}" "$API/ceo/status/$CEO_JOB_ID" || true)
-    CSTATUS=$(echo "$CSTAT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status') or (d.get('data') or {}).get('status',''))" 2>/dev/null || true)
+    CSTATUS=$(echo "$CSTAT" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print(d.get('status') or (d.get('data') or {}).get('status',''))" 2>/dev/null || true)
     if [[ "$CSTATUS" == "completed" ]]; then
-      DECK_OK=$(echo "$CSTAT" | python3 -c "import sys,json; d=json.load(sys.stdin); r=(d.get('result') or (d.get('data') or {}).get('result') or {}); print('1' if r.get('board_deck') else '0')" 2>/dev/null || true)
+      DECK_OK=$(echo "$CSTAT" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); r=(d.get('result') or (d.get('data') or {}).get('result') or {}); print('1' if r.get('board_deck') else '0')" 2>/dev/null || true)
       if [[ "$DECK_OK" == "1" ]]; then
         OK "CEO board deck completed"
       else

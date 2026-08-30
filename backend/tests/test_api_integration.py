@@ -695,3 +695,37 @@ async def test_institutionalization_index_compute_and_history(test_client):
     hist = (await test_client.get("/api/v1/institutionalization/history", headers=h)).json()["data"]
     assert len(hist["points"]) >= 2
     assert all("overall_score" in p for p in hist["points"])
+
+
+@pytest.mark.asyncio
+async def test_system_ops_handles_naive_db_timestamps(test_client):
+    """Regression: /system/ops 500'd once a pending job existed.
+
+    SQLite returns naive datetimes for DateTime(timezone=True) columns, so
+    `datetime.now(UTC) - row.updated_at` raised TypeError. It only surfaced with
+    rows present, which is why an empty-DB smoke test passed. See
+    app/core/timeutil.as_utc.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.analysis_job import AnalysisJob
+
+    async with test_client._test_sessionmaker() as db:
+        old = datetime.now(UTC) - timedelta(hours=6)
+        db.add(AnalysisJob(
+            filename="pending.csv", file_path="/x.csv", file_type="csv",
+            status="pending", created_at=old, updated_at=old,
+        ))
+        db.add(AnalysisJob(
+            filename="done.csv", file_path="/y.csv", file_type="csv",
+            status="completed", created_at=old,
+            completed_at=old + timedelta(minutes=3), updated_at=old,
+        ))
+        await db.commit()
+
+    resp = await test_client.get("/api/v1/system/ops")
+    assert resp.status_code == 200, resp.text
+    sla = resp.json()["data"]["sla"]
+    # the 6h-old pending job must be reported as an SLA breach, not crash
+    assert any(b["status"] == "pending" for b in sla["breaches"]), sla["breaches"]
+    assert sla["job_completion_p95_ms"] is not None

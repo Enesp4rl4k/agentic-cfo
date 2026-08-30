@@ -4,7 +4,7 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-1756%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-1757%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -224,7 +224,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 1756 tests
+pytest tests/ -q          # run all 1757 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```
@@ -240,6 +240,29 @@ the golden-case eval:
 ./scripts/proof.sh --fast          # 32 checks
 python scripts/verify.py --backend # backend only (Windows-friendly)
 ```
+
+### Live checks against a running instance
+
+`proof.sh` has live checks that are **skipped unless `BACKEND_URL` is set** — and
+skipped checks hide real bugs. You do not need a deployment to run them: the API
+boots standalone on SQLite with no Postgres, Redis or Docker.
+
+```bash
+cd backend
+USE_SQLITE=true BACKEND_SECRET_KEY=<32+ chars> OPENAI_API_KEY=llm-placeholder   uvicorn app.main:app --port 8000
+
+# in another shell, from the repo root
+BACKEND_URL=http://127.0.0.1:8000 ./scripts/staging-smoke.sh
+BACKEND_URL=http://127.0.0.1:8000 ./scripts/proof.sh --fast   # 33 checks
+```
+
+The **worker path** (upload → queued analysis) additionally needs Redis, so
+`golden-path-e2e.sh` will time out polling the job without it. Use the Docker
+demo stack for the full path.
+
+If a previously-created `backend/aicfo_dev.db` predates a migration, endpoints
+will 500 with `no such column` — `create_all` never alters existing tables.
+Delete the file and let it rebuild.
 
 ---
 

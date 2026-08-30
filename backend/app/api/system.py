@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timeutil import as_utc
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 
@@ -363,9 +364,10 @@ async def system_ops(
     now = datetime.now(UTC)
     sla_breaches: list[dict[str, Any]] = []
     for row in breach_rows.all():
-        if not row.updated_at:
+        updated_at = as_utc(row.updated_at)
+        if not updated_at:
             continue
-        age_minutes = int((now - row.updated_at).total_seconds() // 60)
+        age_minutes = int((now - updated_at).total_seconds() // 60)
         if age_minutes >= SLA_ANALYZING_BREACH_MINUTES:
             sla_breaches.append(
                 {
@@ -390,17 +392,19 @@ async def system_ops(
     completion_ms_samples: list[int] = []
     first_result_ms_samples: list[int] = []
     for row in completed_rows.all():
-        if row.created_at and row.completed_at:
+        created_at = as_utc(row.created_at)
+        completed_at = as_utc(row.completed_at)
+        if created_at and completed_at:
             completion_ms_samples.append(
-                int((row.completed_at - row.created_at).total_seconds() * 1000)
+                int((completed_at - created_at).total_seconds() * 1000)
             )
         meta = row.result_metadata or {}
         started_iso = meta.get("analysis_started_at") if isinstance(meta, dict) else None
-        if started_iso and row.created_at:
+        if started_iso and created_at:
             try:
-                started_at = datetime.fromisoformat(str(started_iso))
+                started_at = as_utc(datetime.fromisoformat(str(started_iso)))
                 first_result_ms_samples.append(
-                    int((started_at - row.created_at).total_seconds() * 1000)
+                    int((started_at - created_at).total_seconds() * 1000)  # type: ignore[operator]
                 )
             except Exception:
                 pass
