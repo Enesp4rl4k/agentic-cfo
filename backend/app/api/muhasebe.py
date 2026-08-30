@@ -151,6 +151,12 @@ async def muhasebe_analiz(
         if org:
             packs = normalize_packs(getattr(org, "regional_packs", None))
 
+    from app.platform.authority_matrix import load_active_rules
+
+    authority_rules = await load_active_rules(
+        str(job.org_id) if job.org_id else None, db
+    )
+
     agent = get_muhasebe_agent(
         use_llm_fallback=body.use_llm_fallback,
         regional_packs=packs,
@@ -160,6 +166,7 @@ async def muhasebe_analiz(
         transactions=tx_dicts,
         company_name=body.company_name,
         donem=body.donem,
+        authority_rules=authority_rules,
     )
 
     # SMMM onay kuyruğu — Turkey pack only
@@ -226,6 +233,11 @@ async def muhasebe_tr_vertical(
         raise HTTPException(status_code=400, detail="Job'a ait dosya yolu yok.")
 
     from app.agents.run_ledger import agent_run
+    from app.platform.authority_matrix import load_active_rules
+
+    authority_rules = await load_active_rules(
+        str(job.org_id) if job.org_id else None, db
+    )
 
     async with agent_run(
         db,
@@ -240,6 +252,7 @@ async def muhasebe_tr_vertical(
             org_id=str(job.org_id) if job.org_id else None,
             period=body.donem,
             company_name=body.company_name,
+            authority_rules=authority_rules,
         )
         _run.node(result.stage)
         if any(e for e in result.errors):

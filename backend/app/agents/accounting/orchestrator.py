@@ -120,6 +120,7 @@ class MuhasebeAgent:
         transactions: list[dict[str, Any]],
         company_name: str | None = None,
         donem: str | None = None,
+        authority_rules: list[dict[str, Any]] | None = None,
     ) -> MuhasebeSonucu:
         """
         Ana entry point: işlem listesinden tam muhasebe analizi.
@@ -178,7 +179,7 @@ class MuhasebeAgent:
 
         # ── 2. Yevmiye Kayıtları ──────────────────────────────────────────────
         kayitlar: list[YevmiyeKaydi] = self.engine.create_entries_batch(
-            transactions, thp_sonuclari
+            transactions, thp_sonuclari, authority_rules=authority_rules
         )
 
         # ── 3. Denge kontrolü ─────────────────────────────────────────────────
@@ -290,12 +291,14 @@ async def run_muhasebe_pipeline(
     donem: str | None = None,
     regional_packs: list[str] | None = None,
     include_full_journal: bool = False,
+    authority_rules: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Convenience wrapper — auto_chain ve worker entegrasyonu için.
 
     `include_full_journal=True` adds `yevmiye_kayitlari` (every entry, not just
     the review queue) — used by the defensibility packet path.
+    `authority_rules` — the org's Delegation-of-Authority matrix; None → default.
     """
     agent = get_muhasebe_agent(regional_packs=regional_packs)
     sonuc = await agent.run(
@@ -303,5 +306,6 @@ async def run_muhasebe_pipeline(
         transactions=transactions,
         company_name=company_name,
         donem=donem,
+        authority_rules=authority_rules,
     )
     return sonuc.to_full_dict() if include_full_journal else sonuc.to_dict()

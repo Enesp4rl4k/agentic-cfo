@@ -24,6 +24,7 @@ import app.models.agent_job  # noqa: F401
 import app.models.alert_preference  # noqa: F401
 import app.models.agent_run  # noqa: F401
 import app.models.analysis_job  # noqa: F401
+import app.models.authority_policy  # noqa: F401
 import app.models.anomaly  # noqa: F401
 import app.models.audit_log  # noqa: F401
 import app.models.canonical_eng_signal  # noqa: F401

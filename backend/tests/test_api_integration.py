@@ -566,3 +566,89 @@ async def test_smmm_defensibility_packet_build_and_export(test_client):
         f"/api/v1/smmm/defensibility/{job_id}/build?period=2024-01", headers=h
     )
     assert again.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_authority_matrix_policy_lifecycle(test_client):
+    """Yetki Matrisi: default → owner edits → versioned → dry-run evaluate."""
+    from sqlalchemy import select
+
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "owner@firma.com", "password": "StrongPassword123!",
+              "full_name": "Patron", "role": "owner"},
+    )
+    otok = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@firma.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    oh = {"Authorization": f"Bearer {otok}"}
+
+    async with test_client._test_sessionmaker() as db:
+        u = (await db.execute(select(User).where(User.email == "owner@firma.com"))).scalar_one()
+        org = Organization(name="Firma", slug="firma")
+        db.add(org)
+        await db.flush()
+        u.org_id = org.id
+        await db.commit()
+
+    # default policy
+    d = (await test_client.get("/api/v1/authority/policy", headers=oh)).json()["data"]
+    assert d["is_default"] is True and d["version"] == 0
+    assert any(r["id"] == "high_value" for r in d["rules"])
+
+    # owner installs a custom matrix
+    new_rules = [
+        {"id": "small", "domain": "spending", "when": {"amount_kurus_lt": 5_000_000},
+         "decision": "auto_approve", "note": "₺50k altı serbest"},
+        {"id": "big", "domain": "spending", "when": {"amount_kurus_gte": 5_000_000},
+         "decision": "require_approvals",
+         "approvals": [{"role": "finance_manager", "count": 1}, {"role": "owner", "count": 1}],
+         "note": "₺50k üzeri"},
+        {"id": "catch", "domain": "*", "when": {}, "decision": "auto_approve", "note": "-"},
+    ]
+    put = await test_client.put("/api/v1/authority/policy", headers=oh,
+                                json={"rules": new_rules, "note": "ilk sürüm"})
+    assert put.status_code == 200, put.text
+    assert put.json()["data"]["version"] == 1
+
+    d2 = (await test_client.get("/api/v1/authority/policy", headers=oh)).json()["data"]
+    assert d2["is_default"] is False and d2["version"] == 1
+
+    # dry-run: ₺80k spending → needs finance + owner
+    ev = (await test_client.post(
+        "/api/v1/authority/evaluate", headers=oh,
+        json={"domain": "spending", "amount_kurus": 8_000_000},
+    )).json()["data"]
+    assert ev["outcome"] == "needs_approval"
+    assert [a["role"] for a in ev["required_approvals"]] == ["finance_manager", "owner"]
+
+    # invalid policy is rejected
+    bad = await test_client.put("/api/v1/authority/policy", headers=oh,
+                                json={"rules": [{"id": "x", "decision": "nope", "when": {}, "domain": "*"}]})
+    assert bad.status_code == 422
+
+    vers = (await test_client.get("/api/v1/authority/policy/versions", headers=oh)).json()["data"]
+    assert len(vers["versions"]) == 1 and vers["versions"][0]["active"] is True
+
+
+@pytest.mark.asyncio
+async def test_authority_matrix_put_requires_owner(test_client):
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "staff@firma.com", "password": "StrongPassword123!",
+              "full_name": "Personel", "role": "analyst"},
+    )
+    tok = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "staff@firma.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    resp = await test_client.put(
+        "/api/v1/authority/policy",
+        headers={"Authorization": f"Bearer {tok}"},
+        json={"rules": [{"id": "c", "domain": "*", "when": {}, "decision": "auto_approve"}]},
+    )
+    assert resp.status_code == 403

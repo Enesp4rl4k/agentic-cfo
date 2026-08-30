@@ -56,6 +56,7 @@ class YevmiyeKaydi:
     confidence: float = 1.0
     onay_gerekli: bool = False      # SMMM onayı gerekiyor mu?
     onay_neden: str = ""
+    authority: dict[str, Any] = field(default_factory=dict)  # Yetki Matrisi kararı
 
     @property
     def toplam_borc(self) -> int:
@@ -80,6 +81,7 @@ class YevmiyeKaydi:
             "confidence":        self.confidence,
             "onay_gerekli":      self.onay_gerekli,
             "onay_neden":        self.onay_neden,
+            "authority":         self.authority,
             "thp_hesap_kodu":    self.thp_hesap_kodu,
             "kaynak_islem_id":   self.kaynak_islem_id,
             "satirlar": [
@@ -150,6 +152,8 @@ class DoubleEntryEngine:
         self,
         transaction: dict[str, Any],
         thp_result: THPSonucu,
+        *,
+        authority_rules: list[dict[str, Any]] | None = None,
     ) -> YevmiyeKaydi:
         """
         Tek bir işlem için yevmiye kaydı oluştur.
@@ -222,26 +226,26 @@ class DoubleEntryEngine:
                 KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
             ]
 
-        # ── SMMM onay kontrolü ────────────────────────────────────────────────
-        onay_gerekli = False
-        onay_nedenler: list[str] = []
+        # ── Yetki Matrisi: does this entry need human approval, and whose? ────
+        from app.platform.authority_matrix import (
+            DEFAULT_POLICY_RULES,
+            AuthorityRequest,
+            evaluate,
+        )
 
-        if thp_result.confidence < 0.6:
-            onay_gerekli = True
-            onay_nedenler.append(f"Düşük güven skoru ({thp_result.confidence:.2f})")
-
-        if amount > self.ONAY_LIMIT_TRY:
-            onay_gerekli = True
-            onay_nedenler.append(f"Yüksek tutar ({amount / 100:,.0f} TRY)")
-
-        if thp_result.yontem == "varsayılan":
-            onay_gerekli = True
-            onay_nedenler.append("Otomatik sınıflandırılamadı")
-
-        # Duran varlık alımı her zaman onay gerektirir
-        if thp_result.hesap_kodu.startswith("2") and tx_type == "expense":
-            onay_gerekli = True
-            onay_nedenler.append("Duran varlık alımı")
+        decision = evaluate(
+            authority_rules or DEFAULT_POLICY_RULES,
+            AuthorityRequest(
+                domain="journal_entry",
+                amount_kurus=amount,
+                category=thp_result.hesap_kodu,
+                counterparty=transaction.get("vendor"),
+                is_related_party=bool(transaction.get("is_related_party")),
+                is_fixed_asset=thp_result.hesap_kodu.startswith("2") and tx_type == "expense",
+                confidence=thp_result.confidence,
+                classification_method=thp_result.yontem,
+            ),
+        )
 
         kayit = YevmiyeKaydi(
             tarih=tx_date,
@@ -250,9 +254,10 @@ class DoubleEntryEngine:
             kaynak_islem_id=tx_id,
             thp_hesap_kodu=thp_result.hesap_kodu,
             confidence=thp_result.confidence,
-            onay_gerekli=onay_gerekli,
-            onay_neden="; ".join(onay_nedenler),
+            onay_gerekli=decision.needs_review,
+            onay_neden=decision.rationale,
         )
+        kayit.authority = decision.to_dict()
 
         if not kayit.dengeli:
             logger.error(
@@ -266,10 +271,12 @@ class DoubleEntryEngine:
         self,
         transactions: list[dict[str, Any]],
         thp_results: list[THPSonucu],
+        *,
+        authority_rules: list[dict[str, Any]] | None = None,
     ) -> list[YevmiyeKaydi]:
         """Toplu yevmiye kaydı oluştur."""
         return [
-            self.create_entry(tx, thp)
+            self.create_entry(tx, thp, authority_rules=authority_rules)
             for tx, thp in zip(transactions, thp_results, strict=False)
         ]
 

@@ -156,6 +156,7 @@ async def run_tr_vertical(
     company_name: str | None = None,
     run_config: AgentRunConfig | None = None,
     build_board_deck: bool = True,
+    authority_rules: list[dict[str, Any]] | None = None,
 ) -> TRVerticalResult:
     """Run the full TR accounting vertical end-to-end and stop at the approval gate."""
     company = company_name or "Şirket"
@@ -202,6 +203,7 @@ async def run_tr_vertical(
             donem=donem,
             regional_packs=["tr"],
             include_full_journal=True,
+            authority_rules=authority_rules,
         )
         # Keep the trimmed view on the result; hand the full journal to the caller.
         res.accounting_journal = acc.pop("yevmiye_kayitlari", None)

@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
     import app.models.analysis_job
     import app.models.anomaly
     import app.models.audit_log
+    import app.models.authority_policy
     import app.models.canonical_eng_signal
     import app.models.canonical_transaction
     import app.models.category_rule
