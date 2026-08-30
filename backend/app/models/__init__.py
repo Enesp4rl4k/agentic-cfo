@@ -10,6 +10,7 @@ from app.models.data_source import (
     DataSourceType,
 )
 from app.models.defensibility_packet import DefensibilityPacket
+from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
 from app.models.llm_call_log import LLMCallLog
 from app.models.report import Report, ReportFormat, ReportType
 from app.models.transaction import Transaction, TransactionCategory, TransactionType
@@ -25,6 +26,7 @@ __all__ = [
     "DataSourceDomain",
     "DataSourceType",
     "DefensibilityPacket",
+    "InstitutionalizationSnapshot",
     "JobStatus",
     "LLMCallLog",
     "Report",

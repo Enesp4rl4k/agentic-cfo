@@ -652,3 +652,46 @@ async def test_authority_matrix_put_requires_owner(test_client):
         json={"rules": [{"id": "c", "domain": "*", "when": {}, "decision": "auto_approve"}]},
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_institutionalization_index_compute_and_history(test_client):
+    """Kurumsallaşma Endeksi: compute stores a snapshot; history returns the trend."""
+    from sqlalchemy import select
+
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"email": "idx@firma.com", "password": "StrongPassword123!",
+              "full_name": "Idx", "role": "owner"},
+    )
+    tok = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "idx@firma.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+
+    async with test_client._test_sessionmaker() as db:
+        u = (await db.execute(select(User).where(User.email == "idx@firma.com"))).scalar_one()
+        org = Organization(name="Idx Ltd", slug="idx-ltd")
+        db.add(org)
+        await db.flush()
+        u.org_id = org.id
+        await db.commit()
+
+    # GET with no prior snapshot computes one
+    first = (await test_client.get("/api/v1/institutionalization", headers=h)).json()["data"]
+    assert 0 <= first["overall_score"] <= 100
+    assert first["grade"] in {"A", "B", "C", "D", "E"}
+    assert len(first["dimensions"]) == 6
+    assert "recommendations" in first
+
+    # explicit compute stores another
+    comp = await test_client.post("/api/v1/institutionalization/compute", headers=h)
+    assert comp.status_code == 201
+
+    hist = (await test_client.get("/api/v1/institutionalization/history", headers=h)).json()["data"]
+    assert len(hist["points"]) >= 2
+    assert all("overall_score" in p for p in hist["points"])

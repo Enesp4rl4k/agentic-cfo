@@ -124,6 +124,9 @@ check "SMMM Defensibility Packet (#4) smoke" \
 check "Yetki Matrisi (Delegation of Authority) smoke" \
   bash scripts/authority-matrix-smoke.sh
 
+check "Kurumsallaşma Endeksi smoke" \
+  bash scripts/institutionalization-smoke.sh
+
 check "provenance honesty pass wired" \
   test -f backend/app/platform/provenance.py && \
   grep -q "attach_provenance" backend/app/agents/cto/cto_kernel.py && \
