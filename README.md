@@ -1,38 +1,68 @@
 # Agentic Management OS
 
-> **Your entire C-Suite, powered by AI — globally.**  
-> Upload financial data. Get CFO reports, risk analysis, board decks, and multi-role insights in minutes.
+> **A management operating system for the growing family business.**
+> Runs finance, accounting and reporting with a real approval structure and a
+> full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-1562%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-1756%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
 ---
 
-## What is Agentic Management OS?
+## The problem
 
-An **international** agentic management platform: one data plane, many executive lenses.
-Turkey-specific accounting (Paraşüt, THP/SMMM, GİB) is an optional **Regional Pack** — not the product identity.
+Most Turkish companies are family businesses. Roughly a third survive into the
+second generation, and far fewer into the third — and what usually kills them is
+**governance, not the market**: every decision routes through the founder, there
+is no delegated authority, no audit-ready record of why anything was booked, and
+no institutional memory when a key person leaves.
 
-| Agent | Coverage |
-|-------|----------|
-| **CFO** | P&L, cash flow, budget variance, tax calendar, anomaly detection |
-| **CEO** | OKR tracking, strategic priorities, board deck synthesis |
-| **CTO** | Technical debt, system health, sprint velocity |
-| **COO** | Process efficiency, SLA compliance, resource utilization |
-| **CMO** | CAC, LTV, campaign ROI, market growth |
-| **CHRO** | Attrition risk, compensation analysis, department health |
-| **Compliance** | Regulatory coverage, policy gaps, violation tracking |
-| **Risk** | KRI monitoring, correlation matrix, cascade simulation |
-| **Internal Audit** | Anomaly flagging, audit trail, finding management |
+This is the *institutionalisation* ("kurumsallaşma") problem. Software cannot do
+the human half of it — that is advisory, legal and family work. What software
+**can** do is make the disciplined half automatic: a delegation policy that
+decides and escalates, a defensible record of every entry, and a measurable
+score for how far along you are.
 
-See [INTERNATIONAL_PLATFORM.md](INTERNATIONAL_PLATFORM.md) for locale / regional pack contracts.
+The wedge in is the boring, painful, daily work: **CFO-grade financial analysis
+plus deep Turkish accounting** (THP/SMMM, GİB e-Fatura, bank statement parsers)
+for companies that cannot hire a CFO.
 
 ---
 
-## What is C-Level AI?
+## The two halves
 
-C-Level AI is the product family name for this Agentic Management OS.
+### 1. The executive lenses — what the data says
+
+| Agent | Coverage | Data basis |
+|-------|----------|------------|
+| **CFO** | P&L, cash flow, forecast, budget variance, tax calendar, anomaly detection | **Your uploaded data** |
+| **Accounting (TR)** | THP classification, double-entry journal, trial balance, SMMM review queue | **Your uploaded data** |
+| **CEO** | Strategic priorities, SWOT, OKR, board deck synthesis | Aggregates the other agents |
+| **Risk / Audit / Compliance** | KRI monitoring, cascade simulation, anomaly flagging, TR regulation catalog | Derived + rule-based |
+| **CTO** | Tech debt, incidents, engineering velocity | **Connect GitHub** for real data, otherwise estimated |
+| **CMO / CHRO / COO** | CAC/LTV, attrition, SLA, resource utilisation | Paste CSV for real data, otherwise estimated |
+
+**About "estimated":** with no connected domain source, the CTO/CMO/CHRO/COO
+kernels extrapolate from your CFO financials times fixed sector benchmarks. The
+platform labels that everywhere it appears (`data_source: real | estimated |
+benchmark`), badges it red in the UI, and **refuses to let a synthetic result
+auto-trigger any downstream agent**. See `app/platform/provenance.py`.
+
+### 2. The governance layer — why you can trust it
+
+| Capability | What it does |
+|---|---|
+| **Yetki Matrisi** (delegation of authority) | Ordered policy rules — amount bands, confidence, related-party, fixed asset → auto-approve, require named approvers, or block. Versioned per org, edited by the owner. Replaces "ask the boss". |
+| **Kurumsallaşma Endeksi** | 0–100 institutionalisation score across financial discipline, delegated authority, decision traceability, human oversight, process cadence and key-person risk — computed from real platform activity, tracked over time. |
+| **SMMM Savunulabilirlik Paketi** | One hash-sealed record per period: every journal entry with its basis, AI confidence, and whether a human approved/corrected it or the AI posted it automatically. Built for a tax inspection. |
+| **Confidence gate + decomposition** | Runs below the confidence threshold hold for a human — and the UI shows *which step* dragged the score down, not just that it did. |
+| **Independent reconciliation** | A separate graph step re-checks the arithmetic identities and flags narrative figures unsupported by computed values. Nothing grades its own homework. |
+| **Durable run ledger** | Every pipeline run is recorded, resumable, and reported on (`/runs/slo` — success rate, p50/p95 latency, cost). |
+
+See [INTERNATIONAL_PLATFORM.md](INTERNATIONAL_PLATFORM.md) for the locale /
+regional-pack contracts — the Turkish pack is the deepest, but the data plane is
+locale-agnostic.
 
 ## Quick Start
 
@@ -45,8 +75,8 @@ C-Level AI is the product family name for this Agentic Management OS.
 ### 1. Clone & configure
 
 ```bash
-git clone https://github.com/yourorg/clevelai.git
-cd clevelai
+git clone https://github.com/Enesp4rl4k/agentic-cfo.git
+cd agentic-cfo
 cp .env.example .env
 # Edit .env — add your LLM API key and NEXTAUTH_SECRET
 ```
@@ -80,11 +110,12 @@ npm run dev   # start on :3000
 ## One-command demo (Docker)
 
 ```bash
-cp .env.demo .env
 docker compose -f docker-compose.demo.yml up
 ```
 
-Then open http://localhost:3000 — sample data is pre-loaded automatically.
+Brings up Postgres, Redis, the API, the worker and the frontend. Configuration is
+read from `.env.demo.example` directly — no copy step needed. Then open
+http://localhost:3000.
 
 ---
 
@@ -98,13 +129,26 @@ Then open http://localhost:3000 — sample data is pre-loaded automatically.
                    │ REST + SSE
 ┌──────────────────▼──────────────────────────────┐
 │                FastAPI Backend                  │
-│  Upload → Data Ingestion → Agent Orchestrator   │
 │                                                 │
 │  ┌──────────────────────────────────────────┐   │
-│  │           LangGraph Pipeline             │   │
-│  │  CFO → CEO → CTO → COO → CMO → CHRO     │   │
-│  │  Risk → Compliance → Audit → Synthesis   │   │
+│  │   CFO pipeline (LangGraph, checkpointed) │   │
+│  │   ingest → pnl → cashflow → forecast →   │   │
+│  │   anomaly → tax → budget → alert →       │   │
+│  │   reconcile → verifier → report          │   │
+│  └───────────────┬──────────────────────────┘   │
+│                  │ approval gate (human)        │
+│  ┌───────────────▼──────────────────────────┐   │
+│  │   TR accounting → board deck  (L3 auto)  │   │
 │  └──────────────────────────────────────────┘   │
+│                                                 │
+│  Other roles (CEO/Risk/CTO/…) are separate      │
+│  graphs, composed by the conductor.             │
+│                                                 │
+│  Model Gateway — the single LLM egress point:   │
+│  routing · retry · cost ledger · org budget     │
+│                                                 │
+│  Connector Platform — ports & adapters for      │
+│  external sources → canonical tables            │
 │                                                 │
 │  PostgreSQL · Redis · Alembic migrations        │
 └─────────────────────────────────────────────────┘
@@ -121,8 +165,18 @@ Then open http://localhost:3000 — sample data is pre-loaded automatically.
 - **Budget Variance** — planned vs actual with alert thresholds
 - **Tax Calendar** — VAT, withholding, corporate tax payment schedule
 
+### Governance & trust
+- **Delegation of authority** — versioned per-org policy decides auto-approve vs named approvers vs block
+- **Institutionalisation index** — 0–100 across six dimensions, tracked over time
+- **Defensibility packet** — hash-sealed, per-period audit-defence record for the SMMM
+- **Provenance labelling** — every metric carries `real | estimated | benchmark`; synthetic results cannot auto-trigger downstream agents
+- **Confidence gate + decomposition** — low-confidence runs hold for a human, and the weakest step is named
+- **Independent reconciliation** — a separate step re-checks arithmetic and flags ungrounded narrative figures
+- **Durable runs** — resumable pipelines, run ledger, `/runs/slo` latency + cost reporting
+
 ### AI & Agents
-- **12 specialized agents** running in a LangGraph pipeline
+- **Specialised agents** across finance, accounting and the C-suite lenses
+- **Model Gateway** — one LLM egress point with routing, retry, per-org budget and a cost ledger
 - **Real-time SSE streaming** — watch each agent step live
 - **Natural language queries** — ask anything about your finances
 - **Structured LLM output** — Pydantic schemas, template fallbacks for dev mode
@@ -170,23 +224,42 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -v          # run all 1562 tests
+pytest tests/ -q          # run all 1756 tests
+pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
-pytest tests/ --co -q     # list tests only
 ```
 
-All tests are pure-function — no LLM calls, no database required.
+No test makes a live LLM call — the Model Gateway short-circuits on a placeholder
+key and agents fall back to deterministic templates. Tests that need persistence
+use an in-memory SQLite database.
+
+Full gate — unit tests, lint, the strict-typing allowlist, structural checks and
+the golden-case eval:
+
+```bash
+./scripts/proof.sh --fast          # 32 checks
+python scripts/verify.py --backend # backend only (Windows-friendly)
+```
 
 ---
 
 ## Roadmap
 
-- [ ] Stripe billing integration
-- [ ] Scheduled weekly email reports (Resend)
-- [ ] SSO / SAML for enterprise
-- [ ] WhatsApp / Slack notifications for alerts
-- [ ] Mobile-responsive dashboard
-- [ ] Custom KPI builder
+**Now — getting it in front of real users**
+- [ ] Deploy a live environment (the live checks in `proof.sh` are skipped without one)
+- [ ] One polished end-to-end demo path: upload → analysis → journal → approval → sealed packet → index moves
+- [ ] Process a real company's bank statement and e-Fatura
+
+**Next — governance depth**
+- [ ] Governance calendar — monthly board pack with action-item tracking
+- [ ] Related-party (ilişkili taraf) register — detect, disclose, monitor
+- [ ] Owner vs operator dashboard split
+- [ ] Decision provenance graph — click any board-deck figure down to its source row
+
+**Later**
+- [ ] Second connector (accounting/payroll) to take another C-level off estimated data
+- [ ] Eval corpora for every L2+ agent, with per-agent calibration in CI
+- [ ] Stripe billing, SSO/SAML, Slack alerts
 
 ---
 

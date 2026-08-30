@@ -88,7 +88,6 @@ _ROUTERS = [
     ("app.api.reports_pdf",             "router", "reports-pdf"),                  # M2: PDF report generation (WeasyPrint)
     ("app.api.system",                  "router", "system"),                       # Global management/ops health
     ("app.api.actions",                 "router", "actions"),                      # Human-in-the-Loop Action Execution
-    ("app.api.ingestion_webhooks",      "router", "webhooks"),                     # Autonomous e-Fatura & Bank Webhooks
     ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
 ]
 
