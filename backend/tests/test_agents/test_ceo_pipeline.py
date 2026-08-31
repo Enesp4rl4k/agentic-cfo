@@ -355,3 +355,35 @@ def test_overall_health_range():
         score = _compute_overall_health({"financial_summary": fin, "tech_summary": tech})
         assert score is not None
         assert 0.0 <= score <= 100.0, f"Score out of range: {score}"
+
+
+# ── BoardDeck node contract ───────────────────────────────────────────────────
+# The tests above only exercise the private slide builders. `run_board_deck_agent`
+# — the node LangGraph actually calls — was never invoked, so a leftover
+# `(config or {}).get("settings")` crashed the whole CEO deck path in production
+# while the suite stayed green. Call the real entry point with the real config
+# type.
+
+import pytest
+
+from app.agents.ceo.board_deck_agent import run_board_deck_agent
+from app.agents.ceo.state import DEFAULT_CEO_RUN_CONFIG
+
+
+@pytest.mark.asyncio
+async def test_run_board_deck_agent_accepts_ceo_run_config() -> None:
+    state = {
+        "financial_summary": HEALTHY_FIN,
+        "tech_summary": {},
+        "cross_risks": [],
+        "strategic_priorities": [],
+        "period": "2024-Q1",
+        "company_name": "Test A.Ş.",
+    }
+
+    result = await run_board_deck_agent(state, DEFAULT_CEO_RUN_CONFIG)
+
+    assert result.ok, getattr(result, "detail", result)
+    deck = (result.patch or {}).get("board_deck") or {}
+    assert len(deck.get("slides") or []) >= 4
+    assert deck.get("one_page_summary")

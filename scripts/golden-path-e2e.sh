@@ -176,12 +176,28 @@ fi
 
 # ── CEO from job (board deck path) ────────────────────────────────────────────
 INFO "POST /ceo/analyze-from-job/$JOB_ID"
-CEO_RESP=$(curl -sf --max-time 180 -X POST "$API/ceo/analyze-from-job/$JOB_ID" \
+# NOT `curl -sf`: -f discards the body on an HTTP error, so a 500 arrived here
+# as an empty string and was reported as "may need worker" — an infra excuse
+# for an application bug. Keep the body and the status; say which one it was.
+# Status appended to stdout rather than written with -o: this script also runs
+# under Git Bash, where native curl cannot open a POSIX temp path.
+CEO_RAW=$(curl -s --max-time 180 -w '\n%{http_code}' \
+  -X POST "$API/ceo/analyze-from-job/$JOB_ID" \
   "${AUTH_HDR[@]}" \
   -H "Content-Type: application/json" \
   -d '{}' || true)
+CEO_HTTP=$(printf '%s' "$CEO_RAW" | tail -n1)
+CEO_RESP=$(printf '%s' "$CEO_RAW" | sed '$d')
+[[ -z "$CEO_HTTP" ]] && CEO_HTTP="000"
+if [[ "$CEO_HTTP" != "200" ]]; then
+  FAIL "CEO analyze-from-job returned HTTP $CEO_HTTP"
+  echo "    $(echo "$CEO_RESP" | head -c 400)"
+fi
 
-HAS_DECK=$(echo "$CEO_RESP" | "$_PY_BIN" - <<'PY'
+# `python - <<PY` would make the heredoc stdin, so json.load(sys.stdin) always
+# read empty and this check silently reported "no deck" on every run. Pass the
+# program with -c and keep the pipe as the real stdin.
+HAS_DECK=$(echo "$CEO_RESP" | "$_PY_BIN" -c '
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -192,11 +208,9 @@ deck = data.get("board_deck") or (data.get("result") or {}).get("board_deck")
 if deck:
     print("1")
 else:
-    # async path?
     jid = data.get("job_id") or ""
-    print("async:"+jid if jid else "0")
-PY
-)
+    print("async:" + jid if jid else "0")
+')
 
 if [[ "$HAS_DECK" == "1" ]]; then
   OK "board deck present in CEO response"
@@ -231,7 +245,7 @@ elif [[ "$HAS_DECK" == async:* ]]; then
     sleep 5
   done
 else
-  WARN "CEO analyze-from-job did not return deck (may need worker); continuing"
+  FAIL "CEO analyze-from-job returned no board deck (HTTP $CEO_HTTP)"
   FAILURES=$((FAILURES+1))
 fi
 

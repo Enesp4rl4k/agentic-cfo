@@ -16,6 +16,7 @@ Usage:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -30,6 +31,20 @@ logger = logging.getLogger(__name__)
 
 class TransientWorkerError(RuntimeError):
     """Retryable infra error (network/redis/timeout)."""
+
+
+# Strong refs to inline fallback runs — without these asyncio may garbage-collect
+# a running task mid-pipeline.
+_inline_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _log_inline_failure(task: asyncio.Task[Any]) -> None:
+    """Inline runs have no worker to surface their traceback. Log it here."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.exception("Inline CFO analysis failed", exc_info=exc)
 
 
 def _is_transient_error(exc: Exception) -> bool:
@@ -469,11 +484,18 @@ _pool: ArqRedis | None = None
 
 
 async def get_arq_pool() -> ArqRedis:
-    """Return singleton ARQ Redis pool (created lazily)."""
+    """Return singleton ARQ Redis pool (created lazily).
+
+    The API is a producer, not a consumer: it must fail fast so the caller can
+    fall back, not hold an HTTP request open through ARQ's default retry ladder
+    (5 attempts x 1s delay = ~17s before the first error surfaces).
+    """
     global _pool
     if _pool is None:
         settings = get_settings()
-        _pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        redis_settings = RedisSettings.from_dsn(settings.redis_url)
+        redis_settings.conn_retries = settings.arq_producer_conn_retries
+        _pool = await create_pool(redis_settings)
     return _pool
 
 
@@ -734,15 +756,42 @@ async def enqueue_analysis(
     job_id: str,
     budget_input: dict[str, Any] | None = None,
 ) -> None:
-    """Enqueue a CFO analysis job. Called from FastAPI endpoint."""
-    pool = await get_arq_pool()
+    """Enqueue a CFO analysis job. Called from FastAPI endpoint.
+
+    If the broker is unreachable and `allow_inline_job_fallback` is set, the
+    pipeline runs inline in the calling process rather than being silently
+    dropped. That keeps upload -> analysis working with no Redis, at the cost of
+    the durability the queue exists to provide — the run dies with the process
+    and is not retried. Any other failure propagates to the caller.
+    """
     settings = get_settings()
-    await pool.enqueue_job(
-        "run_cfo_analysis",
-        job_id,
-        budget_input,
-        _queue_name=settings.arq_analysis_queue_name,
-    )
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job(
+            "run_cfo_analysis",
+            job_id,
+            budget_input,
+            _queue_name=settings.arq_analysis_queue_name,
+        )
+    except Exception as exc:
+        if not (settings.allow_inline_job_fallback and _is_transient_error(exc)):
+            raise
+        global _pool
+        _pool = None  # poisoned singleton — force a fresh connect next time
+        logger.warning(
+            "Broker unreachable (%s) — running CFO analysis inline for job=%s. "
+            "No durability: this run will not survive a restart and is not retried.",
+            exc,
+            job_id,
+        )
+        # Fire-and-forget: `enqueue_analysis` must return immediately — callers
+        # poll job status / subscribe to SSE. Awaiting here would hold the HTTP
+        # request open for the whole pipeline.
+        task = asyncio.create_task(run_cfo_analysis({}, job_id, budget_input))
+        _inline_tasks.add(task)
+        task.add_done_callback(_inline_tasks.discard)
+        task.add_done_callback(_log_inline_failure)
+        return
     logger.info("Enqueued CFO analysis: job=%s", job_id)
 
 

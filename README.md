@@ -4,7 +4,7 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-1757%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-1762%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -224,7 +224,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 1757 tests
+pytest tests/ -q          # run all 1762 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```
@@ -256,9 +256,23 @@ BACKEND_URL=http://127.0.0.1:8000 ./scripts/staging-smoke.sh
 BACKEND_URL=http://127.0.0.1:8000 ./scripts/proof.sh --fast   # 33 checks
 ```
 
-The **worker path** (upload → queued analysis) additionally needs Redis, so
-`golden-path-e2e.sh` will time out polling the job without it. Use the Docker
-demo stack for the full path.
+The **worker path** (upload → queued analysis) needs no broker either. If Redis
+is unreachable, `enqueue_analysis` runs the pipeline inline in the API process
+instead of dropping the job — loudly, and only for connection errors:
+
+```
+WARNING app.worker  Broker unreachable (...) — running CFO analysis inline for
+job=... No durability: this run will not survive a restart and is not retried.
+```
+
+That is a laptop convenience, not a production mode: an inline run dies with the
+process and is never retried. Set `ALLOW_INLINE_JOB_FALLBACK=false` in any
+deployment that has a worker, so a broker outage fails loudly instead of quietly
+degrading. The full path end to end:
+
+```bash
+BACKEND_URL=http://127.0.0.1:8000 GOLDEN_EMAIL=you@example.com   GOLDEN_PASSWORD=... ./scripts/golden-path-e2e.sh
+```
 
 If a previously-created `backend/aicfo_dev.db` predates a migration, endpoints
 will 500 with `no such column` — `create_all` never alters existing tables.

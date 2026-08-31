@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # ARQ queue partitioning (analysis vs maintenance) + backpressure knobs
     arq_analysis_queue_name: str = "arq:queue:analysis"
+    # Enqueue-side connect attempts. Low on purpose: a blocked HTTP request is
+    # worse than an early fallback. The worker process keeps ARQ's own defaults.
+    arq_producer_conn_retries: int = 1
     arq_maintenance_queue_name: str = "arq:queue:maintenance"
     arq_analysis_max_jobs: int = 10
     arq_maintenance_max_jobs: int = 3
@@ -155,6 +158,11 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 10
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.
     auto_enqueue_analysis_on_upload: bool = True
+    # No Redis? Run the enqueued analysis inline in the API process instead of
+    # dropping it. Keeps the upload -> analysis path working on a laptop with no
+    # broker. Never a substitute for the worker in production: the job dies with
+    # the request process and there is no retry.
+    allow_inline_job_fallback: bool = True
     # Confidence gate: min lowest-skill confidence to auto-proceed without a
     # human. Below this the run holds for review. Env-tunable per deployment.
     agent_auto_proceed_min_confidence: float = 0.80

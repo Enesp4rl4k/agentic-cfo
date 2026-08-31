@@ -505,7 +505,6 @@ async def run_board_deck_agent(
     priorities  = state.get("strategic_priorities") or []
     period      = state.get("period") or datetime.now(UTC).strftime("%Y-%m")
     company     = state.get("company_name") or "Şirket"
-    (config or {}).get("settings")
 
     try:
         slides = _build_slides(fin, tech, cross_risks, priorities, period, company)

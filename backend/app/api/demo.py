@@ -145,8 +145,12 @@ async def seed_demo(
     await db.commit()
 
     # ── Enqueue analysis ──────────────────────────────────────────────────────
+    # `enqueue_analysis` takes (job_id, budget_input) — the file is read from the
+    # AnalysisJob row above. Passing file_path/file_type here used to raise
+    # TypeError into the swallowing `except` below, so the demo job was created
+    # but never ran.
     try:
-        await enqueue_analysis(job_id=job_id, file_path=str(file_path), file_type="csv")
+        await enqueue_analysis(job_id)
     except Exception as exc:
         logger.error("Demo seed: enqueue failed for job=%s: %s", job_id, exc)
         # Don't fail the request — worker may pick it up via polling
