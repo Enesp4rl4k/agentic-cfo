@@ -214,6 +214,22 @@ else:
 
 if [[ "$HAS_DECK" == "1" ]]; then
   OK "board deck present in CEO response"
+  # Presence is not correctness: for months the deck came back with 6 slides and
+  # every figure blank, because the graph dropped the CFO result. Assert on a
+  # number that can only come from the uploaded file.
+  DECK_REAL=$(echo "$CEO_RESP" | "$_PY_BIN" -c '
+import sys, json
+d = json.load(sys.stdin); data = d.get("data") or d
+deck = data.get("board_deck") or {}
+fin = data.get("financial_summary") or {}
+print("1" if len(deck.get("slides") or []) >= 4 and (fin.get("revenue_cents") or 0) > 0 else "0")
+')
+  if [[ "$DECK_REAL" == "1" ]]; then
+    OK "board deck carries real financials"
+  else
+    FAIL "board deck is empty — slides or revenue missing (sub-pipeline did not reach the deck)"
+    FAILURES=$((FAILURES+1))
+  fi
 elif [[ "$HAS_DECK" == async:* ]]; then
   CEO_JOB_ID="${HAS_DECK#async:}"
   INFO "Polling CEO async job $CEO_JOB_ID"

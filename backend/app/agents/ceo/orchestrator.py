@@ -140,6 +140,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
         try:
             from app.agents.cmo.orchestrator import run_cmo_pipeline
             result = await run_cmo_pipeline(
+                job_id=f"{job_id}-cmo",
                 campaign_csv=cmo_input.get("campaign_csv"),
                 funnel_csv=cmo_input.get("funnel_csv"),
                 cohort_csv=cmo_input.get("cohort_csv"),
@@ -156,9 +157,10 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
         try:
             from app.agents.coo.orchestrator import run_coo_pipeline
             result = await run_coo_pipeline(
-                headcount_csv=coo_input.get("headcount_csv"),
-                attrition_csv=coo_input.get("attrition_csv"),
-                compensation_csv=coo_input.get("compensation_csv"),
+                job_id=f"{job_id}-coo",
+                process_csv=coo_input.get("process_csv"),
+                resource_csv=coo_input.get("resource_csv"),
+                sla_csv=coo_input.get("sla_csv"),
             )
             coo_result = dict(result)
             logger.info("CEO: COO pipeline finished for job=%s", job_id)
@@ -172,9 +174,9 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
         try:
             from app.agents.chro.orchestrator import run_chro_pipeline
             result = await run_chro_pipeline(
-                headcount_csv=chro_input.get("headcount_csv"),
-                attrition_csv=chro_input.get("attrition_csv"),
-                compensation_csv=chro_input.get("compensation_csv"),
+                headcount_csv=chro_input.get("headcount_csv") or "",
+                attrition_csv=chro_input.get("attrition_csv") or "",
+                compensation_csv=chro_input.get("compensation_csv") or "",
             )
             chro_result = dict(result)
             logger.info("CEO: CHRO pipeline finished for job=%s", job_id)
@@ -420,6 +422,18 @@ async def run_ceo_pipeline(
     git_log_text: str | None = None,
     incident_csv: str | None = None,
     sprint_csv: str | None = None,
+    # CMO inputs
+    campaign_csv: str | None = None,
+    funnel_csv: str | None = None,
+    cohort_csv: str | None = None,
+    # COO inputs
+    process_csv: str | None = None,
+    resource_csv: str | None = None,
+    sla_csv: str | None = None,
+    # CHRO inputs
+    headcount_csv: str | None = None,
+    attrition_csv: str | None = None,
+    compensation_csv: str | None = None,
     # Meta
     company_name: str | None = None,
     period: str | None = None,
@@ -457,12 +471,42 @@ async def run_ceo_pipeline(
             "sprint_csv":        sprint_csv,
         }
 
+    # The graph already knows how to run CMO/COO/CHRO, but nothing ever handed
+    # them input — every DataSource in those domains was read by the API and then
+    # dropped on the floor. Names match DOMAIN_SOURCE_KWARGS in models/data_source.
+    cmo_input: dict[str, Any] = {}
+    if any([campaign_csv, funnel_csv, cohort_csv]):
+        cmo_input = {
+            "campaign_csv": campaign_csv,
+            "funnel_csv":   funnel_csv,
+            "cohort_csv":   cohort_csv,
+        }
+
+    coo_input: dict[str, Any] = {}
+    if any([process_csv, resource_csv, sla_csv]):
+        coo_input = {
+            "process_csv":  process_csv,
+            "resource_csv": resource_csv,
+            "sla_csv":      sla_csv,
+        }
+
+    chro_input: dict[str, Any] = {}
+    if any([headcount_csv, attrition_csv, compensation_csv]):
+        chro_input = {
+            "headcount_csv":    headcount_csv,
+            "attrition_csv":    attrition_csv,
+            "compensation_csv": compensation_csv,
+        }
+
     initial_state: CEOState = {
         "job_id":      job_id,
         "company_name": company_name,
         "period":      period,
-        "_cfo_input":  cfo_input,  # type: ignore[typeddict-unknown-key]
-        "_cto_input":  cto_input,  # type: ignore[typeddict-unknown-key]
+        "_cfo_input":  cfo_input,
+        "_cto_input":  cto_input,
+        "_cmo_input":  cmo_input,
+        "_coo_input":  coo_input,
+        "_chro_input": chro_input,
         "logs":            [],
         "min_confidence":  1.0,
         "awaiting_review": False,
