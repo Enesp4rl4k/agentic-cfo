@@ -31,11 +31,11 @@ async def download_report(
     if not report.file_path or not os.path.exists(report.file_path):
         raise HTTPException(status_code=404, detail="Report file not available on disk.")
 
-    media_types = {
-        ReportFormat.EXCEL: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ReportFormat.PDF: "application/pdf",
+    media_types: dict[str, str] = {
+        ReportFormat.EXCEL.value: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ReportFormat.PDF.value: "application/pdf",
     }
-    media_type = media_types.get(report.report_format, "application/octet-stream")
+    media_type = media_types.get(str(report.report_format), "application/octet-stream")
     filename = f"financial_report_{report.job_id}.{report.report_format}"
 
     return FileResponse(

@@ -49,7 +49,7 @@ def _warn(msg: str) -> None:
 def _run(name: str, argv: list[str], *, cwd: Path | None = None) -> bool:
     _info(f"Running: {name}")
     try:
-        result = subprocess.run(argv, cwd=str(cwd or ROOT), check=False)
+        result = subprocess.run(argv, cwd=str(cwd or ROOT), check=False, shell=(sys.platform == "win32"))
     except FileNotFoundError:
         _fail(f"{name} (executable not found: {argv[0]})")
         return False
@@ -160,7 +160,13 @@ def main() -> int:
                 _info("node_modules not found — running npm install...")
                 subprocess.run([npm, "install", "--prefix", str(frontend), "--silent"], check=False)
             checks += 1
-            if not _run("tsc (type check)", [npm, "run", "--prefix", str(frontend), "typecheck"]):
+            if not _run("tsc (type check)", ["npm", "run", "--prefix", str(frontend), "typecheck"]):
+                failures += 1
+            checks += 1
+            if not _run("vitest (unit tests)", ["npm", "test", "--prefix", str(frontend), "--", "--run"]):
+                failures += 1
+            checks += 1
+            if not _run("next (lint)", ["npm", "run", "--prefix", str(frontend), "lint"]):
                 failures += 1
 
     print()

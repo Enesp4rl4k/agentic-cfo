@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SyncSourceType(StrEnum):
@@ -29,20 +29,8 @@ class TransactionType(StrEnum):
 
 class SyncTransaction(BaseModel):
     """Normalized transaction from any source."""
-    date: datetime
-    description: str = Field(..., min_length=1, max_length=500)
-    amount_cents: int = Field(..., gt=0)  # Always positive; sign in tx_type
-    tx_type: TransactionType
-    currency: str = Field(default="TRY", pattern="^[A-Z]{3}$")
-    vendor: str | None = Field(None, max_length=200)
-    balance_cents: int | None = None
-    reference: str | None = Field(None, max_length=100)
-    source_type: SyncSourceType
-    source_id: str | None = Field(None, max_length=100)  # External transaction ID
-    raw_row: str = ""
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "date": "2026-01-15T10:30:00Z",
                 "description": "Müşteri A - Hizmet Faturalandırması",
@@ -54,6 +42,19 @@ class SyncTransaction(BaseModel):
                 "source_id": "TXN-12345",
             }
         }
+    )
+
+    date: datetime
+    description: str = Field(..., min_length=1, max_length=500)
+    amount_cents: int = Field(..., gt=0)  # Always positive; sign in tx_type
+    tx_type: TransactionType
+    currency: str = Field(default="TRY", pattern="^[A-Z]{3}$")
+    vendor: str | None = Field(None, max_length=200)
+    balance_cents: int | None = None
+    reference: str | None = Field(None, max_length=100)
+    source_type: SyncSourceType
+    source_id: str | None = Field(None, max_length=100)  # External transaction ID
+    raw_row: str = ""
 
     @field_validator("amount_cents")
     @classmethod

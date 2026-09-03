@@ -59,7 +59,7 @@ async def _load_from_org(org_id: str) -> dict[str, Any]:
         ctx = await get_company_context(org_id)
         if not ctx:
             return {}
-        results = ctx.get("agent_results") or {}
+        results = getattr(ctx, "agent_results", {}) or {}
         cfo_r   = results.get("cfo") or {}
         return {
             "pnl":       cfo_r.get("pnl") or {},

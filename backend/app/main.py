@@ -48,9 +48,9 @@ async def lifespan(app: FastAPI):
     SQLite (dev): create_all ensures tables exist without running Alembic.
     PostgreSQL (prod): skip create_all — run `alembic upgrade head` in CI/CD.
     """
-    import app.models.agent_job
-
     # Register all models so SQLAlchemy sees them before create_all
+    import app.models.agent_conflict
+    import app.models.agent_job
     import app.models.agent_run
     import app.models.alert_preference
     import app.models.analysis_job
@@ -61,9 +61,11 @@ async def lifespan(app: FastAPI):
     import app.models.canonical_transaction
     import app.models.category_rule
     import app.models.company_context
+    import app.models.company_semantic_snapshot
     import app.models.connector_connection
     import app.models.data_source
     import app.models.defensibility_packet
+    import app.models.erp_integration
     import app.models.in_app_notification
     import app.models.institutionalization_snapshot
     import app.models.llm_call_log
@@ -74,6 +76,7 @@ async def lifespan(app: FastAPI):
     import app.models.smmm_onay
     import app.models.smmm_portal
     import app.models.sync_run
+    import app.models.sync_schedule
     import app.models.transaction
     import app.models.user  # noqa: F401
     from app.database import Base, engine

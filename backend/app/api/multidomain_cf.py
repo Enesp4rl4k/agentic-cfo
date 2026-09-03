@@ -119,17 +119,17 @@ async def _load_ctx(
             logger.debug("Semantic/context CF baseline failed: %s", exc)
 
     if job_id:
-        from app.models.report import Report, ReportFormat  # type: ignore[attr-defined]
+        from app.models.report import Report, ReportFormat
         stmt = (
             select(Report)
-            .where(Report.job_id == job_id, Report.format == ReportFormat.JSON)
+            .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
             .order_by(desc(Report.created_at))
             .limit(1)
         )
         row = (await db.execute(stmt)).scalar_one_or_none()
         raw = None
         if row is not None:
-            raw = getattr(row, "data", None) or getattr(row, "content", None)
+            raw = getattr(row, "data", None)
         if raw:
             try:
                 import json

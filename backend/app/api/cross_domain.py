@@ -61,18 +61,18 @@ class CrossDomainFromOrgRequest(BaseModel):
 
 async def _load_from_job(job_id: str, db: AsyncSession) -> dict[str, Any]:
     try:
-        from app.models.report import Report, ReportFormat  # type: ignore[attr-defined]
+        from app.models.report import Report, ReportFormat
         stmt = (
             select(Report)
-            .where(Report.job_id == job_id, Report.format == ReportFormat.JSON)
+            .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
             .order_by(desc(Report.created_at))
             .limit(1)
         )
         row = (await db.execute(stmt)).scalar_one_or_none()
-        if not row or not row.content:
+        if not row or not row.data:
             return {}
         import json
-        data = json.loads(row.content) if isinstance(row.content, str) else row.content
+        data = json.loads(row.data) if isinstance(row.data, str) else row.data
         return data if isinstance(data, dict) else {}
     except Exception as exc:
         logger.debug("Job yuklenemedi: %s", exc)
@@ -85,7 +85,7 @@ async def _load_from_org(org_id: str) -> dict[str, Any]:
         ctx = await get_company_context(org_id)
         if not ctx:
             return {}
-        results = ctx.get("agent_results") or {}
+        results = getattr(ctx, "agent_results", {}) or {}
         cfo_r   = results.get("cfo") or {}
         return {
             "pnl":      cfo_r.get("pnl") or {},

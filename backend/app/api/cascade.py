@@ -76,20 +76,20 @@ async def _load_context_from_job(
     db: AsyncSession,
 ) -> dict[str, Any]:
     """Job ID'den P&L, cashflow, forecast verisi çek."""
-    from app.models.report import Report, ReportFormat  # type: ignore[attr-defined]
+    from app.models.report import Report, ReportFormat
 
     stmt = (
         select(Report)
-        .where(Report.job_id == job_id, Report.format == ReportFormat.JSON)
+        .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
         .order_by(desc(Report.created_at))
         .limit(1)
     )
     row = (await db.execute(stmt)).scalar_one_or_none()
-    if not row or not row.content:
+    if not row or not row.data:
         return {}
     try:
         import json
-        data = json.loads(row.content) if isinstance(row.content, str) else row.content
+        data = json.loads(row.data) if isinstance(row.data, str) else row.data
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
@@ -220,7 +220,7 @@ async def simulate_cascade(
             raise HTTPException(status_code=422, detail="key_person_loss parametreleri gerekli")
         kwargs["role"] = req.key_person_loss.role
     elif trigger == TriggerType.MARKET_SHOCK:
-        p = req.market_shock or MarketShockParams()
+        p = req.market_shock or MarketShockParams(usd_try_increase_pct=30.0, inflation_pct=50.0)
         kwargs["usd_try_increase_pct"] = p.usd_try_increase_pct
         kwargs["inflation_pct"]        = p.inflation_pct
 
