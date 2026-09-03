@@ -1,0 +1,91 @@
+{
+  "rules": [
+    {
+      "id": "related_party",
+      "domain": "*",
+      "when": {
+        "is_related_party": true
+      },
+      "decision": "require_approvals",
+      "approvals": [
+        {
+          "role": "owner",
+          "count": 1
+        }
+      ],
+      "require_evidence": [
+        "disclosure"
+      ],
+      "note": "İlişkili taraf işlemi — sahibin onayı ve beyan zorunlu"
+    },
+    {
+      "id": "low_confidence",
+      "domain": "*",
+      "when": {
+        "confidence_lt": 0.6
+      },
+      "decision": "require_approvals",
+      "approvals": [
+        {
+          "role": "smmm",
+          "count": 1
+        }
+      ],
+      "note": "Düşük güven skoru"
+    },
+    {
+      "id": "unclassified",
+      "domain": "journal_entry",
+      "when": {
+        "classification_method_in": [
+          "varsayılan"
+        ]
+      },
+      "decision": "require_approvals",
+      "approvals": [
+        {
+          "role": "smmm",
+          "count": 1
+        }
+      ],
+      "note": "Otomatik sınıflandırılamadı"
+    },
+    {
+      "id": "fixed_asset",
+      "domain": "journal_entry",
+      "when": {
+        "is_fixed_asset": true
+      },
+      "decision": "require_approvals",
+      "approvals": [
+        {
+          "role": "smmm",
+          "count": 1
+        }
+      ],
+      "note": "Duran varlık alımı"
+    },
+    {
+      "id": "high_value",
+      "domain": "*",
+      "when": {
+        "amount_kurus_gt": 10000000
+      },
+      "decision": "require_approvals",
+      "approvals": [
+        {
+          "role": "owner",
+          "count": 1
+        }
+      ],
+      "note": "Yüksek tutarlı işlem (₺100.000 üzeri)"
+    },
+    {
+      "id": "default_auto",
+      "domain": "*",
+      "when": {},
+      "decision": "auto_approve",
+      "note": "Politika eşiklerinin altında — otomatik"
+    }
+  ]
+}

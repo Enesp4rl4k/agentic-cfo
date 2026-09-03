@@ -24,7 +24,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_user
+from app.api.auth import _cache_invalidate, get_current_user
 from app.database import get_db
 from app.models.organization import Organization, OrgInvite
 from app.models.user import User, UserRole
@@ -45,17 +45,30 @@ def _slugify(name: str) -> str:
     return slug[:80]
 
 
-def _require_org(user: User) -> Organization:
-    if not user.organization:
+# `get_current_user` serves users out of a 60-second cache, so `current_user` is
+# routinely an ORM instance whose session has already closed. Touching
+# `user.organization` then raises DetachedInstanceError instead of loading the
+# org, and mutating the instance raises "not persistent within this Session" —
+# which is why creating a workspace failed for every request after the first.
+# Load the org through the request's own session, and mutate only instances
+# fetched from it. Same rule deps_regional.py already follows.
+
+async def _load_org(user: User, db: AsyncSession) -> Organization:
+    org = await db.get(Organization, str(user.org_id)) if user.org_id else None
+    if org is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Henüz bir organizasyona üye değilsiniz. Önce bir workspace oluşturun.",
         )
-    return user.organization
+    return org
 
 
-def _require_admin(user: User) -> Organization:
-    org = _require_org(user)
+async def _require_org(user: User, db: AsyncSession) -> Organization:
+    return await _load_org(user, db)
+
+
+async def _require_admin(user: User, db: AsyncSession) -> Organization:
+    org = await _load_org(user, db)
     if user.role not in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -64,8 +77,8 @@ def _require_admin(user: User) -> Organization:
     return org
 
 
-def _require_owner(user: User) -> Organization:
-    org = _require_org(user)
+async def _require_owner(user: User, db: AsyncSession) -> Organization:
+    org = await _load_org(user, db)
     if user.role != UserRole.OWNER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -174,13 +187,21 @@ async def create_org(
     db.add(org)
     await db.flush()  # get org.id before commit
 
-    # Set user as owner of the new org
-    current_user.org_id = org.id
-    current_user.role = UserRole.OWNER
+    # Set user as owner of the new org. `current_user` may be a cached instance
+    # from a closed session — mutating it raises "not persistent within this
+    # Session", so re-load the row through this request's session first.
+    user_row = await db.get(User, str(current_user.id))
+    if user_row is None:  # pragma: no cover - the token resolved a moment ago
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
+    user_row.org_id = org.id
+    user_row.role = UserRole.OWNER
 
     await db.commit()
     await db.refresh(org)
-    await db.refresh(current_user)
+
+    # Drop the stale cached copy so the next request sees the new org and role
+    # instead of the pre-creation snapshot.
+    _cache_invalidate(str(current_user.id))
 
     logger.info("Org created: %s (slug=%s) by user %s", org.name, org.slug, current_user.email)
 
@@ -193,7 +214,7 @@ async def get_my_org(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Get the current user's organization."""
-    org = _require_org(current_user)
+    org = await _require_org(current_user, db)
     # Count members
     result = await db.execute(
         select(User).where(User.org_id == org.id, User.is_active)
@@ -211,7 +232,7 @@ async def update_org(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Update org settings. Requires admin role."""
-    org = _require_admin(current_user)
+    org = await _require_admin(current_user, db)
     if body.name is not None:
         org.name = body.name
     if body.description is not None:
@@ -236,12 +257,13 @@ async def update_org(
 @router.get("/org/me/tax-rates")
 async def get_org_tax_rates(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Pack-aware tax rate table for the tax lens."""
     from app.services.regional.packs import normalize_packs
     from app.services.regional.tax import tax_rates_for_org
 
-    org = _require_org(current_user)
+    org = await _require_org(current_user, db)
     data = tax_rates_for_org(
         country_code=getattr(org, "country_code", None) or "US",
         regional_packs=normalize_packs(getattr(org, "regional_packs", None)),
@@ -255,7 +277,7 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """List all members of the current user's org."""
-    org = _require_org(current_user)
+    org = await _require_org(current_user, db)
     result = await db.execute(
         select(User).where(User.org_id == org.id).order_by(User.created_at)
     )
@@ -277,7 +299,7 @@ async def remove_member(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Remove a member from the org. Owners can remove anyone; admins can remove analysts/viewers."""
-    org = _require_admin(current_user)
+    org = await _require_admin(current_user, db)
 
     if user_id == current_user.id:
         raise HTTPException(400, detail="Kendinizi org'dan çıkaramazsınız.")
@@ -305,7 +327,7 @@ async def invite_member(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Invite someone to join the org by email."""
-    org = _require_admin(current_user)
+    org = await _require_admin(current_user, db)
 
     # Check member limit
     result = await db.execute(
@@ -445,7 +467,7 @@ async def list_invites(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """List pending invites for the org."""
-    org = _require_admin(current_user)
+    org = await _require_admin(current_user, db)
     result = await db.execute(
         select(OrgInvite)
         .where(OrgInvite.org_id == org.id, not OrgInvite.accepted)
@@ -474,7 +496,7 @@ async def cancel_invite(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Cancel a pending invite."""
-    org = _require_admin(current_user)
+    org = await _require_admin(current_user, db)
     result = await db.execute(
         select(OrgInvite).where(OrgInvite.id == invite_id, OrgInvite.org_id == org.id)
     )

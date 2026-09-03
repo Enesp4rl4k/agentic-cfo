@@ -78,6 +78,12 @@ check "rag staging proof" \
 check "golden path e2e script present" \
   test -f scripts/golden-path-e2e.sh
 
+check "tr governance e2e script present" \
+  test -f scripts/tr-governance-e2e.sh
+
+check "authority policy fixture" \
+  test -f scripts/fixtures/authority_policy_default.json
+
 check "golden path fixture csv" \
   test -f scripts/fixtures/golden_path_sample.csv
 
@@ -178,8 +184,15 @@ if [[ -n "${BACKEND_URL:-}" ]]; then
   chmod +x scripts/staging-smoke.sh
   check "staging smoke ($BACKEND_URL)" \
     env BACKEND_URL="$BACKEND_URL" ./scripts/staging-smoke.sh
+
+  # The governance chain: journal, approval, sealed packet, authority policy,
+  # institutionalisation index. Needs no broker — the API falls back to an
+  # inline run when Redis is absent, so this works against plain `uvicorn`.
+  chmod +x scripts/tr-governance-e2e.sh
+  check "tr governance e2e ($BACKEND_URL)" \
+    env BACKEND_URL="$BACKEND_URL" ./scripts/tr-governance-e2e.sh
 else
-  WARN "BACKEND_URL not set — skipping staging smoke (set to enable live proof)"
+  WARN "BACKEND_URL not set — skipping staging smoke + governance e2e (set to enable live proof)"
   echo ""
 fi
 
