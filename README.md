@@ -6,6 +6,7 @@
 
 [![Tests](https://img.shields.io/badge/tests-2541%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
+[![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
 ---
 
@@ -361,4 +362,8 @@ contact addresses resolve to nothing and the app says so — the KVKK/GDPR
 processing-activity record returns `contact_configured: false` rather than
 naming a mailbox nobody owns.
 
-No `LICENSE` file yet: the copyright holder has not been decided.
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright is held under the product name; if
+C-Suite is later incorporated, update the notice to the registered entity so
+there is a legal person able to enforce it.
