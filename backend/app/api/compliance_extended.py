@@ -26,10 +26,13 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.timeutil import as_utc
 from app.database import get_db
+from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.user import User
 
 router = APIRouter(tags=["compliance-extended"])
@@ -129,22 +132,17 @@ async def _get_anomalies_for_sox(org_id: str, db: AsyncSession) -> dict[str, Any
     try:
         from datetime import timedelta
 
-        from sqlalchemy import text
+        from app.models.analysis_job import AnalysisJob
+        from app.models.anomaly import Anomaly
 
         cutoff_30d = datetime.now(UTC) - timedelta(days=30)
         result = await db.execute(
-            text(
-                "SELECT severity, COUNT(*) as cnt "
-                "FROM anomalies a "
-                "JOIN analysis_jobs j ON a.job_id = j.id "
-                "WHERE j.org_id = :org_id "
-                "AND a.created_at >= :cutoff "
-                "GROUP BY severity"
-            ),
-            {"org_id": org_id, "cutoff": cutoff_30d},
+            select(Anomaly.severity, func.count())
+            .join(AnalysisJob, Anomaly.job_id == AnalysisJob.id)
+            .where(AnalysisJob.org_id == org_id, Anomaly.created_at >= cutoff_30d)
+            .group_by(Anomaly.severity)
         )
-        rows = result.fetchall()
-        counts = {row[0]: row[1] for row in rows}
+        counts = {str(sev): int(cnt) for sev, cnt in result.all()}
         return {
             "critical_unacked": counts.get("critical", 0),
             "medium_count":     counts.get("medium", 0),
@@ -173,25 +171,29 @@ async def sox_status(
 
     # Section 302: Check last certification
     try:
-        from sqlalchemy import text
         cert_result = await db.execute(
-            text(
-                "SELECT id, certifier_name, certifier_role, period, certified_at "
-                "FROM compliance_certifications "
-                "WHERE org_id = :org_id AND framework LIKE 'sox%' "
-                "ORDER BY certified_at DESC LIMIT 1"
-            ),
-            {"org_id": org_id},
+            select(ComplianceCertification)
+            .where(
+                ComplianceCertification.org_id == org_id,
+                ComplianceCertification.framework.like("sox%"),
+            )
+            .order_by(ComplianceCertification.certified_at.desc())
+            .limit(1)
         )
-        last_cert = cert_result.fetchone()
+        last_cert = cert_result.scalar_one_or_none()
     except Exception:
+        logger.exception("SOX certification lookup failed for org=%s", org_id)
         last_cert = None
 
     section_302 = {
         "status":         "certified" if last_cert else "pending",
-        "last_certifier": last_cert[1] if last_cert else None,
-        "last_period":    last_cert[3] if last_cert else None,
-        "certified_at":   last_cert[4].isoformat() if last_cert and last_cert[4] else None,
+        "last_certifier": last_cert.certifier_name if last_cert else None,
+        "last_period":    last_cert.period if last_cert else None,
+        "certified_at":   (
+            last_cert.certified_at.isoformat()
+            if last_cert and last_cert.certified_at
+            else None
+        ),
         "action_required": last_cert is None,
     }
 
@@ -281,30 +283,22 @@ async def sox_certify(
     signature_hash = hashlib.sha256(payload.encode()).hexdigest()
 
     try:
-        from sqlalchemy import text
-        await db.execute(
-            text(
-                "INSERT INTO compliance_certifications "
-                "(id, org_id, framework, period, certifier_name, certifier_role, "
-                " statements, signature_hash, certified_at) "
-                "VALUES (:id, :org_id, 'sox_302', :period, :name, :role, "
-                ":statements, :sig_hash, :now)"
-            ),
-            {
-                "id":         uuid.uuid4().hex,
-                "org_id":     org_id,
-                "period":     body.period,
-                "name":       body.certifier_name,
-                "role":       body.certifier_role,
-                "statements": json.dumps(body.statements),
-                "sig_hash":   signature_hash,
-                "now":        datetime.now(UTC),
-            },
-        )
+        db.add(ComplianceCertification(
+            id             = uuid.uuid4().hex,
+            org_id         = org_id,
+            framework      = "sox_302",
+            period         = body.period,
+            certifier_name = body.certifier_name,
+            certifier_role = body.certifier_role,
+            statements     = json.dumps(body.statements),
+            signature_hash = signature_hash,
+            certified_at   = datetime.now(UTC),
+        ))
         await db.commit()
-    except Exception as exc:
-        logger.warning("SOX cert persist failed: %s", exc)
-        # Still return success — hash was generated correctly
+    except Exception:
+        await db.rollback()
+        logger.exception("SOX cert persist failed for org=%s", org_id)
+        # Still return success — the hash itself was generated correctly
 
     return {
         "data": {
@@ -410,29 +404,21 @@ async def gdpr_breach_notification(
     breach_id    = uuid.uuid4().hex
 
     try:
-        from sqlalchemy import text
-        await db.execute(
-            text(
-                "INSERT INTO breach_notifications "
-                "(id, org_id, description, severity, affected_users, "
-                " discovered_at, deadline_72h, status, created_at) "
-                "VALUES (:id, :org_id, :desc, :severity, :affected, "
-                ":discovered, :deadline, 'pending', :now)"
-            ),
-            {
-                "id":        breach_id,
-                "org_id":    org_id,
-                "desc":      body.description[:2000],
-                "severity":  body.severity,
-                "affected":  body.affected_users,
-                "discovered": discovered_at,
-                "deadline":  deadline_72h,
-                "now":       datetime.now(UTC),
-            },
-        )
+        db.add(BreachNotification(
+            id             = breach_id,
+            org_id         = org_id,
+            description    = body.description[:2000],
+            severity       = body.severity,
+            affected_users = body.affected_users,
+            discovered_at  = discovered_at,
+            deadline_72h   = deadline_72h,
+            status         = "pending",
+            created_at     = datetime.now(UTC),
+        ))
         await db.commit()
-    except Exception as exc:
-        logger.warning("Breach notification persist failed: %s", exc)
+    except Exception:
+        await db.rollback()
+        logger.exception("Breach notification persist failed for org=%s", org_id)
 
     hours_remaining = (deadline_72h - datetime.now(UTC)).total_seconds() / 3600
 
@@ -462,38 +448,28 @@ async def list_breaches(
     now    = datetime.now(UTC)
 
     try:
-        from sqlalchemy import text
         result = await db.execute(
-            text(
-                "SELECT id, description, severity, affected_users, "
-                "discovered_at, deadline_72h, notified_at, status, created_at "
-                "FROM breach_notifications "
-                "WHERE org_id = :org_id "
-                "ORDER BY created_at DESC LIMIT 20"
-            ),
-            {"org_id": org_id},
+            select(BreachNotification)
+            .where(BreachNotification.org_id == org_id)
+            .order_by(BreachNotification.created_at.desc())
+            .limit(20)
         )
-        rows = result.fetchall()
+        rows = list(result.scalars().all())
     except Exception:
+        logger.exception("breach list failed for org=%s", org_id)
         rows = []
 
     breaches = []
     for row in rows:
-        deadline = row[5]
+        deadline = as_utc(row.deadline_72h)
         hours_left = (deadline - now).total_seconds() / 3600 if deadline else None
         is_overdue = hours_left is not None and hours_left < 0
 
         breaches.append({
-            "id":              row[0],
-            "description":     row[1],
-            "severity":        row[2],
-            "affected_users":  row[3],
-            "discovered_at":   row[4].isoformat() if row[4] else None,
-            "deadline_72h":    deadline.isoformat() if deadline else None,
+            **row.to_dict(),
             "hours_remaining": round(max(0, hours_left or 0), 1),
             "is_overdue":      is_overdue,
-            "notified_at":     row[6].isoformat() if row[6] else None,
-            "status":          "overdue" if is_overdue else row[7],
+            "status":          "overdue" if is_overdue else row.status,
         })
 
     return {
@@ -511,18 +487,23 @@ async def mark_breach_notified(
     db:        AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Mark a breach as officially notified to KVKK/DPA."""
+    # The raw UPDATE this replaces had no tenant predicate at all: any
+    # authenticated user could mark any organisation's breach as notified.
+    org_id = await _get_org_id(user)
     try:
-        from sqlalchemy import text
-        await db.execute(
-            text(
-                "UPDATE breach_notifications "
-                "SET status = 'notified', notified_at = :now "
-                "WHERE id = :id"
-            ),
-            {"now": datetime.now(UTC), "id": breach_id},
-        )
+        row = await db.get(BreachNotification, breach_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
+        if row.org_id != org_id:
+            raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
+        row.status = "notified"
+        row.notified_at = datetime.now(UTC)
         await db.commit()
+    except HTTPException:
+        raise
     except Exception as exc:
+        await db.rollback()
+        logger.exception("breach notify failed for id=%s", breach_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {
@@ -595,10 +576,13 @@ async def compliance_dashboard(
     # GDPR score: based on open breaches
     gdpr_score = 100
     try:
-        from sqlalchemy import text
         breach_cnt = await db.execute(
-            text("SELECT COUNT(*) FROM breach_notifications WHERE org_id = :org_id AND status = 'pending'"),
-            {"org_id": org_id},
+            select(func.count())
+            .select_from(BreachNotification)
+            .where(
+                BreachNotification.org_id == org_id,
+                BreachNotification.status == "pending",
+            )
         )
         open_breaches = breach_cnt.scalar() or 0
         gdpr_score = max(0, 100 - open_breaches * 25)
@@ -608,10 +592,13 @@ async def compliance_dashboard(
     # SOX score: check certifications
     sox_score = 100
     try:
-        from sqlalchemy import text
         cert_count = await db.execute(
-            text("SELECT COUNT(*) FROM compliance_certifications WHERE org_id = :org_id AND framework LIKE 'sox%'"),
-            {"org_id": org_id},
+            select(func.count())
+            .select_from(ComplianceCertification)
+            .where(
+                ComplianceCertification.org_id == org_id,
+                ComplianceCertification.framework.like("sox%"),
+            )
         )
         has_cert = (cert_count.scalar() or 0) > 0
         if not has_cert:

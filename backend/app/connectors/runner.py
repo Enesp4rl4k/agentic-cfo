@@ -32,6 +32,10 @@ class ConnectorSyncResult:
     records_written: int = 0
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
+    # True when the org has no (or a disconnected) connection. That is a caller
+    # mistake, not an upstream failure, and the API maps it to 409 rather than
+    # 502 — which is what "sync before connect" used to return.
+    not_connected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +47,7 @@ class ConnectorSyncResult:
             "records_written": self.records_written,
             "warnings": self.warnings,
             "error": self.error,
+            "not_connected": self.not_connected,
         }
 
 
@@ -145,6 +150,7 @@ async def run_connector_sync(
         conn = await _load_connection(connector_name, org_id, db)
     except ConnectorError as exc:
         result.error = str(exc)
+        result.not_connected = True
         return result
 
     sync_run = SyncRun(

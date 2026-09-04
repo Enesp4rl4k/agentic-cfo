@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
     import app.models.agent_job
     import app.models.agent_run
     import app.models.alert_preference
+    import app.models.alert_rule
     import app.models.analysis_job
     import app.models.anomaly
     import app.models.audit_log
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI):
     import app.models.category_rule
     import app.models.company_context
     import app.models.company_semantic_snapshot
+    import app.models.compliance_extended
     import app.models.connector_connection
     import app.models.data_source
     import app.models.defensibility_packet

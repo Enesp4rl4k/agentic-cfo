@@ -123,8 +123,10 @@ async def seed_demo(
         logger.warning("Demo seed: existing check failed: %s", exc)
 
     # ── Write demo CSV to upload dir ──────────────────────────────────────────
+    # There is no `upload_dir` setting — the hasattr guard silently sent every
+    # demo file to a bare "/tmp/uploads", which on Windows is a stray C:	mp.
     demo_content = await _get_demo_csv_content()
-    upload_dir   = Path(settings.upload_dir) if hasattr(settings, "upload_dir") else Path("/tmp/uploads")
+    upload_dir   = Path(settings.storage_local_path)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     job_id    = str(uuid.uuid4())
@@ -138,6 +140,7 @@ async def seed_demo(
         status    = JobStatus.PENDING,
         filename  = filename,
         file_path = str(file_path),
+        file_type = "csv",   # NOT NULL — omitting it made every seed 500
         org_id    = org_id,
         user_id   = str(current_user.id),
     )

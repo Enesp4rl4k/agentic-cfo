@@ -2,6 +2,7 @@ from app.models.agent_conflict import AgentConflict
 from app.models.agent_job import AgentJob
 from app.models.agent_run import AgentRun
 from app.models.alert_preference import AlertPreference
+from app.models.alert_rule import AlertHistory, AlertRule
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
 from app.models.audit_log import AuditLog
@@ -11,6 +12,7 @@ from app.models.canonical_transaction import CanonicalTransaction
 from app.models.category_rule import CategoryRule
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
+from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.connector_connection import ConnectorConnection
 from app.models.data_source import (
     DOMAIN_SOURCE_KWARGS,
@@ -39,16 +41,20 @@ __all__ = [
     "AgentConflict",
     "AgentJob",
     "AgentRun",
+    "AlertHistory",
     "AlertPreference",
+    "AlertRule",
     "AnalysisJob",
     "Anomaly",
     "AuditLog",
     "AuthorityPolicy",
+    "BreachNotification",
     "CanonicalEngSignal",
     "CanonicalTransaction",
     "CategoryRule",
     "CompanyContextSnapshot",
     "CompanySemanticSnapshotRow",
+    "ComplianceCertification",
     "ConnectorConnection",
     "DataSource",
     "DataSourceDomain",

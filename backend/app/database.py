@@ -43,7 +43,14 @@ def _build_engine():
     if settings.database_url.startswith("sqlite"):
         kwargs: dict = {
             "echo": False,
-            "connect_args": {"check_same_thread": False},
+            "connect_args": {
+                "check_same_thread": False,
+                # SQLite defaults busy_timeout to 0: a second writer fails
+                # instantly with "database is locked" rather than waiting. Two
+                # concurrent requests in dev were enough to hit it. Postgres
+                # (prod) has no equivalent problem.
+                "timeout": settings.sqlite_busy_timeout_sec,
+            },
         }
     else:
         kwargs = {

@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.timeutil import as_utc
 from app.database import get_db
+from app.models.agent_conflict import AgentConflict
 from app.models.analysis_job import AnalysisJob
+from app.models.sync_run import SyncRun
 
 router = APIRouter(tags=["system"])
 OPS_SCHEMA_VERSION = "v1.2"
@@ -249,15 +251,9 @@ async def _management_summary(db: AsyncSession, org_id: str | None = None) -> di
         return out
     try:
         rows = await db.execute(
-            text(
-                """
-                SELECT topic, status, COUNT(*) AS cnt
-                FROM agent_conflicts
-                WHERE org_id = :org_id AND status = 'open'
-                GROUP BY topic, status
-                """
-            ),
-            {"org_id": org_id},
+            select(AgentConflict.topic, AgentConflict.status, func.count())
+            .where(AgentConflict.org_id == org_id, AgentConflict.status == "open")
+            .group_by(AgentConflict.topic, AgentConflict.status)
         )
         items = rows.all()
         out["conflicts_available"] = True
@@ -265,16 +261,17 @@ async def _management_summary(db: AsyncSession, org_id: str | None = None) -> di
         out["topics"] = [{"topic": str(r[0]), "count": int(r[2])} for r in items]
 
         recent = await db.execute(
-            text(
-                """
-                SELECT id, topic, status, consensus_score, resolution, created_at
-                FROM agent_conflicts
-                WHERE org_id = :org_id
-                ORDER BY created_at DESC
-                LIMIT 10
-                """
-            ),
-            {"org_id": org_id},
+            select(
+                AgentConflict.id,
+                AgentConflict.topic,
+                AgentConflict.status,
+                AgentConflict.consensus_score,
+                AgentConflict.resolution,
+                AgentConflict.created_at,
+            )
+            .where(AgentConflict.org_id == org_id)
+            .order_by(AgentConflict.created_at.desc())
+            .limit(10)
         )
         recent_conflicts: list[dict[str, Any]] = []
         for row in recent.all():
@@ -415,14 +412,9 @@ async def system_ops(
     # Sync summary is optional because table may not exist in every env.
     sync_summary: dict[str, Any] = {"available": False, "by_status": {}}
     try:
+        status_col = func.coalesce(SyncRun.status, "unknown")
         sync_rows = await db.execute(
-            text(
-                """
-                SELECT COALESCE(status, 'unknown') AS status, COUNT(*) AS cnt
-                FROM sync_runs
-                GROUP BY COALESCE(status, 'unknown')
-                """
-            )
+            select(status_col.label("status"), func.count().label("cnt")).group_by(status_col)
         )
         sync_summary = {
             "available": True,

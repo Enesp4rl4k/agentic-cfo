@@ -101,8 +101,8 @@ async def _process_parsed_email(
             duplicate = next(
                 (
                     j for j in existing_jobs
-                    if j.metadata
-                    and j.metadata.get("sha256") == content_hash
+                    if j.result_metadata
+                    and j.result_metadata.get("sha256") == content_hash
                     and j.status not in (JobStatus.FAILED,)  # allow re-processing failed jobs
                 ),
                 None,
@@ -346,9 +346,10 @@ async def get_email_history(
     query = (
         select(AnalysisJob)
         .where(
-            # JSON metadata contains ingest_source: email
-            # Use text match as a pragmatic approach
-            cast(AnalysisJob.metadata, String).contains("email_ingest")
+            # The column is `result_metadata`. `AnalysisJob.metadata` is
+            # SQLAlchemy's own MetaData object on every declarative class, so
+            # this route raised ArgumentError on every call.
+            cast(AnalysisJob.result_metadata, String).contains("email_ingest")
         )
         .order_by(AnalysisJob.created_at.desc())
         .limit(limit)
@@ -369,7 +370,7 @@ async def get_email_history(
                     "filename":  j.filename,
                     "status":    str(j.status),
                     "created_at": j.created_at.isoformat() if j.created_at else None,
-                    "email_meta": (j.metadata or {}) if hasattr(j, "metadata") else {},
+                    "email_meta": j.result_metadata or {},
                 }
                 for j in jobs
             ],

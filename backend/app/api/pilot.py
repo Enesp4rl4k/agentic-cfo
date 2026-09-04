@@ -21,7 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -82,8 +82,14 @@ async def pilot_status(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     # Count unused invites
     inv_result = await db.execute(
         select(func.count()).select_from(PilotInvite).where(
-            not PilotInvite.used,
-            (PilotInvite.expires_at is None) | (PilotInvite.expires_at > datetime.now(UTC)),
+            # `not Column` and `Column is None` are evaluated by Python, not
+            # SQL: the first raises on SQLAlchemy's __bool__, the second is
+            # always False. Neither ever reached the database.
+            PilotInvite.used.is_(False),
+            or_(
+                PilotInvite.expires_at.is_(None),
+                PilotInvite.expires_at > datetime.now(UTC),
+            ),
         )
     )
     available_slots = inv_result.scalar() or 0
@@ -169,7 +175,9 @@ async def use_invite(
 ) -> dict[str, Any]:
     """Mark an invite as used after successful registration."""
     result = await db.execute(
-        select(PilotInvite).where(PilotInvite.code == code, not PilotInvite.used)
+        select(PilotInvite).where(
+            PilotInvite.code == code, PilotInvite.used.is_(False)
+        )
     )
     invite = result.scalar_one_or_none()
     if not invite:

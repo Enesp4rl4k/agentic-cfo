@@ -95,9 +95,23 @@ async def rebuild_my_semantic(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     org_id = _org_id(current_user)
-    snap = await rebuild_semantic_snapshot(org_id, db, include_brief=True)
+    # strict=True: rebuild_semantic_snapshot swallows its exception and returns
+    # None by default, which turned every failure into an opaque
+    # "Semantic rebuild failed" with no way to tell a locked database from a bad
+    # projection. Its own docstring names this endpoint as the case that must
+    # not swallow errors.
+    try:
+        snap = await rebuild_semantic_snapshot(org_id, db, include_brief=True, strict=True)
+    except Exception as exc:
+        logger.exception("Semantic rebuild failed for org=%s", org_id)
+        raise HTTPException(
+            status_code=500, detail=f"Semantic rebuild failed: {exc}"
+        ) from exc
     if snap is None:
-        raise HTTPException(status_code=500, detail="Semantic rebuild failed")
+        raise HTTPException(
+            status_code=409,
+            detail="Yeniden projeksiyon için yeterli veri yok — önce bir analiz çalıştırın.",
+        )
     return {"data": snap.to_dict(), "error": None}
 
 

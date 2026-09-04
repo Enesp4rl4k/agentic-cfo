@@ -253,10 +253,22 @@ async def rebuild_semantic_snapshot(
             except Exception as exc:
                 logger.debug("mirror decision_brief failed: %s", exc)
 
-        # Index semantic snapshot for RAG (non-fatal)
+        # Index semantic snapshot for RAG (non-fatal).
+        #
+        # `index_job_text` deletes and re-inserts chunk rows and deliberately
+        # does not commit — "caller manages the transaction boundary". This is
+        # that caller, and it never did: every rebuild left an open write
+        # transaction behind. On SQLite that holds a RESERVED lock on the whole
+        # file, so a rebuild running on a session that outlives the request
+        # (the trailing rebuild task, auto-chain) wedged the instance: every
+        # later INSERT anywhere failed with "database is locked" until restart.
         try:
             await index_semantic_for_rag(org_id, snapshot, db)
+            if db is not None:
+                await db.commit()
         except Exception as exc:
+            if db is not None:
+                await db.rollback()
             logger.debug("semantic RAG index skipped: %s", exc)
 
         logger.info(

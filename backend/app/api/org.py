@@ -342,7 +342,7 @@ async def invite_member(
         select(OrgInvite).where(
             OrgInvite.org_id == org.id,
             OrgInvite.email == str(body.email),
-            not OrgInvite.accepted,
+            OrgInvite.accepted.is_(False),
         )
     )
     for inv in old.scalars().all():
@@ -406,7 +406,9 @@ async def accept_invite(
     from app.services.auth import create_access_token, create_refresh_token, hash_password
 
     result = await db.execute(
-        select(OrgInvite).where(OrgInvite.token == body.token, not OrgInvite.accepted)
+        select(OrgInvite).where(
+            OrgInvite.token == body.token, OrgInvite.accepted.is_(False)
+        )
     )
     invite = result.scalar_one_or_none()
     if not invite:
@@ -470,7 +472,7 @@ async def list_invites(
     org = await _require_admin(current_user, db)
     result = await db.execute(
         select(OrgInvite)
-        .where(OrgInvite.org_id == org.id, not OrgInvite.accepted)
+        .where(OrgInvite.org_id == org.id, OrgInvite.accepted.is_(False))
         .order_by(OrgInvite.created_at.desc())
     )
     invites = result.scalars().all()

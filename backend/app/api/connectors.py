@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.connectors import get_connector, has_connector, list_connectors, run_connector_sync
+from app.connectors.base import ConnectorError
 from app.connectors.crypto import encrypt_secret
 from app.database import get_db
 from app.models.connector_connection import ConnectorConnection
@@ -91,7 +92,13 @@ async def connect_connector(
     org_id = _org_id(current_user)
     connector = get_connector(name)
 
-    health = await connector.health(config=body.config, secret=body.secret)
+    # A connector is an adapter: its errors are caller mistakes (bad token, bad
+    # config), not server faults. Map them here so no adapter can produce a 500
+    # by raising out of health().
+    try:
+        health = await connector.health(config=body.config, secret=body.secret)
+    except ConnectorError as exc:
+        raise HTTPException(status_code=400, detail=f"Bağlantı doğrulanamadı: {exc}") from exc
     if not health.ok:
         raise HTTPException(status_code=400, detail=f"Bağlantı doğrulanamadı: {health.detail}")
 
@@ -132,7 +139,15 @@ async def sync_connector(
     _known(name)
     org_id = _org_id(current_user)
 
-    result = await run_connector_sync(connector_name=name, org_id=org_id, db=db)
+    # 502 means "the upstream failed". Having no connection at all is a client
+    # error — the caller must connect first. run_connector_sync never raises for
+    # a connector-level failure, so the distinction comes off the result.
+    try:
+        result = await run_connector_sync(connector_name=name, org_id=org_id, db=db)
+    except ConnectorError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if result.not_connected:
+        raise HTTPException(status_code=409, detail=result.error or "bağlantı yok")
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error or "sync başarısız")
 

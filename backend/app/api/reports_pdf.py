@@ -212,17 +212,15 @@ async def generate_compliance_cert_pdf(
 
     # Load certification from DB
     try:
-        from sqlalchemy import text
-        result = await db.execute(
-            text(
-                "SELECT org_id, framework, period, certifier_name, certifier_role, "
-                "signature_hash, certified_at "
-                "FROM compliance_certifications WHERE id = :id"
-            ),
-            {"id": body.certification_id},
-        )
-        cert = result.fetchone()
+        from app.models.compliance_extended import ComplianceCertification
+
+        cert = await db.get(ComplianceCertification, body.certification_id)
+        # Scope to the caller's org — the raw SELECT looked up the id alone, so
+        # any certification could be rendered by anyone who knew its id.
+        if cert is not None and str(cert.org_id) != str(getattr(user, "org_id", "")):
+            cert = None
     except Exception:
+        logger.exception("certification lookup failed id=%s", body.certification_id)
         cert = None
 
     if not cert:
@@ -236,12 +234,14 @@ async def generate_compliance_cert_pdf(
     # Build simple compliance cert HTML
     cert_html = _build_compliance_cert_html(
         company_name   = company_name,
-        framework      = cert[1] or "sox_302",
-        period         = cert[2] or "",
-        certifier_name = cert[3] or "",
-        certifier_role = cert[4] or "",
-        signature_hash = cert[5] or "",
-        certified_at   = cert[6].strftime("%d.%m.%Y %H:%M UTC") if cert[6] else "",
+        framework      = cert.framework or "sox_302",
+        period         = cert.period or "",
+        certifier_name = cert.certifier_name or "",
+        certifier_role = cert.certifier_role or "",
+        signature_hash = cert.signature_hash or "",
+        certified_at   = (
+            cert.certified_at.strftime("%d.%m.%Y %H:%M UTC") if cert.certified_at else ""
+        ),
         cert_id        = body.certification_id,
     )
 

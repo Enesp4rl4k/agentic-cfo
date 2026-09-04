@@ -28,10 +28,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.alert_rule import AlertHistory, AlertRule
 from app.models.user import User
 
 router = APIRouter(tags=["ws-alerts"])
@@ -159,44 +161,20 @@ async def alert_history(
     try:
         from datetime import timedelta
 
-        from sqlalchemy import text
-
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        query  = (
-            "SELECT id, message, severity, source, channels_sent, "
-            "acknowledged, acknowledged_by, acknowledged_at, created_at "
-            "FROM alert_history "
-            "WHERE org_id = :org_id AND created_at >= :cutoff"
+        stmt = (
+            select(AlertHistory)
+            .where(AlertHistory.org_id == org_id, AlertHistory.created_at >= cutoff)
         )
-        params: dict[str, Any] = {"org_id": org_id, "cutoff": cutoff}
-
         if severity:
-            query += " AND severity = :severity"
-            params["severity"] = severity
-
+            stmt = stmt.where(AlertHistory.severity == severity)
         if acknowledged is not None:
-            query += " AND acknowledged = :acked"
-            params["acked"] = acknowledged
+            stmt = stmt.where(AlertHistory.acknowledged.is_(acknowledged))
+        stmt = stmt.order_by(AlertHistory.created_at.desc()).limit(200)
 
-        query += " ORDER BY created_at DESC LIMIT 200"
+        rows = list((await db.execute(stmt)).scalars().all())
 
-        result = await db.execute(text(query), params)
-        rows   = result.fetchall()
-
-        alerts = [
-            {
-                "id":              row[0],
-                "message":         row[1],
-                "severity":        row[2],
-                "source":          row[3],
-                "channels_sent":   row[4],
-                "acknowledged":    row[5],
-                "acknowledged_by": row[6],
-                "acknowledged_at": row[7].isoformat() if row[7] else None,
-                "created_at":      row[8].isoformat() if row[8] else None,
-            }
-            for row in rows
-        ]
+        alerts = [row.to_dict() for row in rows]
 
         return {
             "data":  {"org_id": org_id, "alerts": alerts, "count": len(alerts)},
@@ -223,26 +201,17 @@ async def acknowledge_alert(
     from app.services.ws_alert_manager import get_ws_alert_manager
 
     try:
-        from sqlalchemy import text
-
-        # Update DB
-        await db.execute(
-            text(
-                "UPDATE alert_history "
-                "SET acknowledged = true, "
-                "    acknowledged_by = :user_id, "
-                "    acknowledged_at = :now "
-                "WHERE id = :id"
-            ),
-            {
-                "user_id": str(user.id),
-                "now":     datetime.now(UTC),
-                "id":      alert_id,
-            },
-        )
-        await db.commit()
-    except Exception as exc:
-        logger.warning("Alert acknowledge DB update failed: %s", exc)
+        # The raw UPDATE had no tenant predicate — any user could acknowledge
+        # any organisation's alert.
+        row = await db.get(AlertHistory, alert_id)
+        if row is not None and str(row.org_id) == str(user.org_id):
+            row.acknowledged = True
+            row.acknowledged_by = str(user.id)
+            row.acknowledged_at = datetime.now(UTC)
+            await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Alert acknowledge DB update failed for id=%s", alert_id)
 
     # Also broadcast to in-app notifications
     org_id = str(user.org_id) if user.org_id else None
@@ -343,29 +312,15 @@ async def list_alert_rules(
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
 
     try:
-        from sqlalchemy import text
         result = await db.execute(
-            text("SELECT id, name, metric, operator, threshold, channels, severity, enabled, created_at "
-                 "FROM alert_rules WHERE org_id = :org_id ORDER BY created_at DESC"),
-            {"org_id": org_id},
+            select(AlertRule)
+            .where(AlertRule.org_id == org_id)
+            .order_by(AlertRule.created_at.desc())
         )
-        rows = result.fetchall()
-        rules = [
-            {
-                "id":        row[0],
-                "name":      row[1],
-                "metric":    row[2],
-                "operator":  row[3],
-                "threshold": row[4],
-                "channels":  row[5],
-                "severity":  row[6],
-                "enabled":   row[7],
-                "created_at": row[8].isoformat() if row[8] else None,
-            }
-            for row in rows
-        ]
+        rules = [row.to_dict() for row in result.scalars().all()]
         return {"data": {"org_id": org_id, "rules": rules, "count": len(rules)}, "error": None}
     except Exception:
+        logger.exception("Alert rule list failed for org=%s", org_id)
         return {"data": {"org_id": org_id, "rules": [], "count": 0}, "error": None}
 
 
@@ -384,29 +339,22 @@ async def create_alert_rule(
     rule_id = _uuid.uuid4().hex
 
     try:
-        from sqlalchemy import text
-        await db.execute(
-            text(
-                "INSERT INTO alert_rules (id, org_id, name, metric, operator, threshold, "
-                "channels, severity, enabled, created_at) "
-                "VALUES (:id, :org_id, :name, :metric, :op, :threshold, "
-                ":channels, :severity, :enabled, :now)"
-            ),
-            {
-                "id":        rule_id,
-                "org_id":    org_id,
-                "name":      body.name,
-                "metric":    body.metric,
-                "op":        body.operator,
-                "threshold": body.threshold,
-                "channels":  json.dumps(body.channels),
-                "severity":  body.severity,
-                "enabled":   body.enabled,
-                "now":       datetime.now(UTC),
-            },
-        )
+        db.add(AlertRule(
+            id        = rule_id,
+            org_id    = org_id,
+            name      = body.name,
+            metric    = body.metric,
+            operator  = body.operator,
+            threshold = body.threshold,
+            channels  = json.dumps(body.channels),
+            severity  = body.severity,
+            enabled   = body.enabled,
+            created_at = datetime.now(UTC),
+        ))
         await db.commit()
     except Exception as exc:
+        await db.rollback()
+        logger.exception("Alert rule create failed for org=%s", org_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {
@@ -422,10 +370,17 @@ async def delete_alert_rule(
     db:      AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Delete an alert rule."""
+    # The raw DELETE was unscoped: any user could delete any org's rule.
     try:
-        from sqlalchemy import text
-        await db.execute(text("DELETE FROM alert_rules WHERE id = :id"), {"id": rule_id})
+        row = await db.get(AlertRule, rule_id)
+        if row is None or str(row.org_id) != str(user.org_id):
+            raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found.")
+        await db.delete(row)
         await db.commit()
+    except HTTPException:
+        raise
     except Exception as exc:
+        await db.rollback()
+        logger.exception("Alert rule delete failed for id=%s", rule_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"data": {"rule_id": rule_id, "deleted": True}, "error": None}

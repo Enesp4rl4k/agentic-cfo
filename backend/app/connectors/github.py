@@ -61,8 +61,11 @@ class GitHubConnector(Connector):
     async def health(
         self, *, config: Mapping[str, Any], secret: Mapping[str, Any]
     ) -> ConnectorHealth:
-        client = self._client(secret)
+        # `_client` raises ConnectorAuthError on a missing token. Building it
+        # outside the try let that escape health(), which by contract returns a
+        # verdict rather than raising — the API turned it into a 500.
         try:
+            client = self._client(secret)
             user = await client.validate_token()
         except Exception as exc:
             return ConnectorHealth(ok=False, detail=f"token check failed: {exc}")

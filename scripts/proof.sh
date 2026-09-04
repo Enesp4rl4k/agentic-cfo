@@ -78,6 +78,9 @@ check "rag staging proof" \
 check "golden path e2e script present" \
   test -f scripts/golden-path-e2e.sh
 
+check "route sweep script present" \
+  test -f scripts/route_sweep.py
+
 check "tr governance e2e script present" \
   test -f scripts/tr-governance-e2e.sh
 
@@ -191,8 +194,14 @@ if [[ -n "${BACKEND_URL:-}" ]]; then
   chmod +x scripts/tr-governance-e2e.sh
   check "tr governance e2e ($BACKEND_URL)" \
     env BACKEND_URL="$BACKEND_URL" ./scripts/tr-governance-e2e.sh
+
+  # Liveness probe over every registered route. Only 500s fail it: a 401/404/
+  # 422 means the route is alive and rejecting input properly. This is the
+  # check that finds handlers nobody has ever called.
+  check "route sweep ($BACKEND_URL)" \
+    env BACKEND_URL="$BACKEND_URL" python scripts/route_sweep.py
 else
-  WARN "BACKEND_URL not set — skipping staging smoke + governance e2e (set to enable live proof)"
+  WARN "BACKEND_URL not set — skipping staging smoke, governance e2e and route sweep (set to enable live proof)"
   echo ""
 fi
 

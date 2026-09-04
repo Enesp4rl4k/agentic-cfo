@@ -267,6 +267,15 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
             detail=f"Job {job_id} not found or expired.",
         )
 
+    if status == "unavailable":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "CEO iş durumu şu anda okunamıyor — kuyruk (Redis) erişilemez "
+                "durumda. Analiz sürüyor olabilir; birazdan tekrar deneyin."
+            ),
+        )
+
     # For completed jobs, compute overall_health_score from nested result
     if status == "completed":
         inner = status_data.get("result") or {}

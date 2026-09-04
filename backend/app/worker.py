@@ -845,8 +845,20 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
     Returns: {"status": "pending"|"completed"|"failed", "job_id": ..., "result": ...}
     """
     import json
-    pool = await get_arq_pool()
-    raw = await pool.get(f"ceo:{job_id}")
+
+    # CEO job status lives only in Redis. With no broker there is nothing to
+    # poll — say so, rather than letting a connection timeout become a 500 the
+    # caller cannot act on.
+    try:
+        pool = await get_arq_pool()
+        raw = await pool.get(f"ceo:{job_id}")
+    except Exception as exc:
+        if not _is_transient_error(exc):
+            raise
+        global _pool
+        _pool = None
+        logger.warning("CEO job status unavailable — broker unreachable: %s", exc)
+        return {"status": "unavailable", "job_id": job_id, "error": str(exc)}
     if raw is None:
         return {"status": "not_found", "job_id": job_id}
     return json.loads(raw)

@@ -175,6 +175,11 @@ class Settings(BaseSettings):
 
     # Dev mode: use SQLite instead of PostgreSQL
     use_sqlite: bool = True
+    # Seconds a writer waits for the SQLite lock before giving up. The driver
+    # default is 0: any concurrent write fails instantly rather than queueing.
+    # This buys patience for honest contention — it is not a substitute for
+    # closing transactions, which is what actually wedged this app.
+    sqlite_busy_timeout_sec: float = 15.0
 
     # Demo mode: enables /demo/seed endpoint and pre-loaded sample data
     demo_mode:         bool = False

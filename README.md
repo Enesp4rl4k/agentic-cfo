@@ -4,7 +4,7 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-1765%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-2538%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -224,7 +224,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 1765 tests
+pytest tests/ -q          # run all 2538 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```
@@ -237,7 +237,7 @@ Full gate — unit tests, lint, the strict-typing allowlist, structural checks a
 the golden-case eval:
 
 ```bash
-./scripts/proof.sh --fast          # 33 checks; 36 with BACKEND_URL set
+./scripts/proof.sh --fast          # 34 checks; 38 with BACKEND_URL set
 python scripts/verify.py --backend # backend only (Windows-friendly)
 ```
 
@@ -253,7 +253,7 @@ USE_SQLITE=true BACKEND_SECRET_KEY=<32+ chars> OPENAI_API_KEY=llm-placeholder   
 
 # in another shell, from the repo root
 BACKEND_URL=http://127.0.0.1:8000 ./scripts/staging-smoke.sh
-BACKEND_URL=http://127.0.0.1:8000 ./scripts/proof.sh --fast   # 36 checks
+BACKEND_URL=http://127.0.0.1:8000 ./scripts/proof.sh --fast   # 38 checks
 ```
 
 The **worker path** (upload → queued analysis) needs no broker either. If Redis
@@ -290,7 +290,30 @@ packet (+ PDF) → delegation-of-authority policy → institutionalisation index
 The last assertion is the one that matters: the index is computed from real
 platform activity, so it can only rise if every step above actually did
 something. On the sample fixture it goes **26 (E) → 61 (C)**. `proof.sh` runs
-this whenever `BACKEND_URL` is set (36 checks instead of 33).
+this whenever `BACKEND_URL` is set.
+
+### Route liveness sweep
+
+```bash
+BACKEND_URL=http://127.0.0.1:8000 python scripts/route_sweep.py
+```
+
+Reads `/openapi.json`, calls every registered route once, and reports only the
+500s — a 401/404/422 means the route is alive and rejecting input properly. It
+registers a user, creates a workspace and enables the TR pack first, because the
+gated routes are the ones most worth probing. Destructive and outbound routes
+(DELETE, webhooks, anything that sends mail or money) are skipped by name, each
+with its reason in `SKIP`.
+
+This is the check that finds handlers nobody has ever called. Its first run over
+309 routes turned up ten, including a board deck that had always come back blank
+and a workspace endpoint no user could call twice.
+
+It does not retry and has no tolerance band. Every `database is locked` the
+sweep produced turned out to be a single missing commit in the semantic rebuild
+that held a write transaction open for the life of the process — after one
+rebuild the instance accepted no further writes at all. Smoothing that over as
+"probably contention" is exactly how it stayed hidden.
 
 If a previously-created `backend/aicfo_dev.db` predates a migration, endpoints
 will 500 with `no such column` — `create_all` never alters existing tables.
