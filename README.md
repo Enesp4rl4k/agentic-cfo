@@ -1,10 +1,10 @@
-# Agentic Management OS
+# C-Suite
 
 > **A management operating system for the growing family business.**
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-2540%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-2541%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 
 ---
@@ -223,7 +223,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 2540 tests
+pytest tests/ -q          # run all 2541 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```
@@ -342,10 +342,19 @@ Delete the file and let it rebuild.
 
 ## Naming and identity
 
-The product name, domain and contact addresses live in configuration, not in the
-code: `backend/app/core/branding.py` and `frontend/src/lib/branding.ts` resolve
-every user-visible mention from `BRAND_*` / `NEXT_PUBLIC_BRAND_*`. Renaming is an
-env change.
+The product is **C-Suite** — the umbrella term for the CEO/CFO/CTO/CMO/CHRO/COO
+roles the agents actually play.
+
+The name, domain and contact addresses live in configuration, not in the code:
+`backend/app/core/branding.py` and `frontend/src/lib/branding.ts` resolve every
+user-visible mention from `BRAND_*` / `NEXT_PUBLIC_BRAND_*`. Renaming is an env
+change.
+
+Two things are deliberately still open. There is **no domain yet**, so
+`BRAND_DOMAIN` is empty (see below for what that does). And "C-Suite" is an
+ordinary industry term, which makes it clear to a buyer but very hard to
+register as a trademark — if exclusivity matters later, the mark would need to
+be a distinctive compound rather than the bare phrase.
 
 `BRAND_DOMAIN` is empty by default and that is deliberate. With no domain set,
 contact addresses resolve to nothing and the app says so — the KVKK/GDPR

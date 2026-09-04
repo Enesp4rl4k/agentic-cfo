@@ -15,7 +15,7 @@
 
 const env = (key: string): string => (process.env[key] ?? "").trim();
 
-const NAME = env("NEXT_PUBLIC_BRAND_NAME") || "Agentic CFO";
+const NAME = env("NEXT_PUBLIC_BRAND_NAME") || "C-Suite";
 const DOMAIN = env("NEXT_PUBLIC_BRAND_DOMAIN").toLowerCase();
 
 const address = (local: string): string | null =>
