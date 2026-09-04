@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,23 @@ _bearer = HTTPBearer(auto_error=False)
 
 import time as _time
 
+# PERF-2: one PK lookup per request adds up, so the resolved user is cached for
+# a minute. The catch is what gets cached.
+#
+# This used to hold the ORM instance straight out of the request's session.
+# After that request finished, the session closed and the cached object outlived
+# it: reads of already-loaded columns still worked, but a lazy relationship
+# raised DetachedInstanceError and a mutation raised "not persistent within this
+# Session". `POST /org/create` did exactly that, so creating a workspace failed
+# for every request after the first — and no test caught it, because each test
+# starts with a cold cache and takes the `db.get` branch, which returns a live
+# instance where everything works.
+#
+# The fix is to make both paths behave identically instead of only one of them
+# being broken: the instance is expunged before it is cached, so *every* caller
+# gets a detached user. Reads are fine, lazy loads and writes fail immediately
+# and on the first request. Endpoints that need to change the user re-load it
+# through their own session — see `create_org`.
 _USER_CACHE: dict[str, tuple[User, float]] = {}
 _USER_CACHE_TTL = 60  # seconds
 
@@ -86,10 +103,16 @@ def _cache_invalidate(user_id: str) -> None:
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
+    # No `role` field. It used to be here with an ANALYST default, which meant
+    # anyone could POST `{"role": "owner"}` and self-register as an owner —
+    # privilege escalation through an ordinary public endpoint. Role is assigned
+    # by the server: everyone starts as an analyst, and creating a workspace
+    # promotes the creator to owner (see POST /org/create).
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     password: str = Field(min_length=8, description="Min 8 characters")
     full_name: str | None = None
-    role: UserRole = UserRole.ANALYST
 
 
 class LoginRequest(BaseModel):
@@ -151,6 +174,10 @@ async def get_current_user(
         if not user or not user.is_active:
             raise credentials_exception
 
+        # Detach before caching *and* before returning, so the cached path and
+        # the fresh path hand back the same kind of object. Every column is
+        # already loaded by the get() above, so reads keep working.
+        db.expunge(user)
         _cache_set(user_id, user)
         return user
 
@@ -217,7 +244,7 @@ async def register(
         email=str(body.email),
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
-        role=body.role,
+        role=UserRole.ANALYST,
     )
     db.add(user)
     await db.commit()
@@ -346,12 +373,21 @@ async def create_api_key(
     The key is returned once — store it securely. It cannot be retrieved again.
     To get a new key, call this endpoint again (old key is revoked).
     """
+    # `current_user` is detached (see the cache note above), so the row has to be
+    # re-loaded through this request's session before it can be written to.
+    # Assigning to the detached instance committed nothing: the key came back to
+    # the caller while the database still held the old one, so every request
+    # made with the new key answered 401.
+    user_row = await db.get(User, str(current_user.id))
+    if user_row is None:  # pragma: no cover - the token resolved a moment ago
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
+
     new_key = generate_api_key()
-    current_user.api_key = hash_api_key(new_key)
+    user_row.api_key = hash_api_key(new_key)
     await db.commit()
 
     # Invalidate cache so next request reloads the updated user from DB
-    _cache_invalidate(current_user.id)
+    _cache_invalidate(str(current_user.id))
     logger.info("API key rotated for user: %s", current_user.email)
 
     return {
@@ -370,6 +406,10 @@ async def revoke_api_key(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Revoke the current API key."""
-    current_user.api_key = None
+    user_row = await db.get(User, str(current_user.id))
+    if user_row is None:  # pragma: no cover - the token resolved a moment ago
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
+    user_row.api_key = None
     await db.commit()
+    _cache_invalidate(str(current_user.id))
     return {"data": {"revoked": True}, "error": None}

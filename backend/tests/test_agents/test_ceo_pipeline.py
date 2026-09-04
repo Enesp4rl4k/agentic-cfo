@@ -451,7 +451,7 @@ async def test_board_deck_survives_missing_runway_and_burn() -> None:
     result = await run_board_deck_agent(state, DEFAULT_CEO_RUN_CONFIG)
 
     assert result.ok, result.detail
-    assert len((result.patch["board_deck"].get("slides") or [])) >= 4
+    assert len(result.patch["board_deck"].get("slides") or []) >= 4
 
 
 def test_ceo_state_declares_every_channel_the_graph_writes() -> None:

@@ -91,7 +91,6 @@ async def test_user_registration_login_and_auth_flow(test_client):
             "email": "cfo.test@company.com",
             "password": "StrongPassword123!",
             "full_name": "Test CFO",
-            "role": "cfo",
         },
     )
     assert reg_resp.status_code == 201
@@ -119,7 +118,33 @@ async def test_user_registration_login_and_auth_flow(test_client):
     assert me_resp.status_code == 200
     me_body = me_resp.json()
     assert me_body.get("data", {}).get("email") == "cfo.test@company.com"
-    assert me_body.get("data", {}).get("role") == "cfo"
+    # The server assigns the role; a registrant does not get to pick one.
+    assert me_body.get("data", {}).get("role") == "analyst"
+
+
+@pytest.mark.asyncio
+async def test_registration_cannot_self_assign_a_role(test_client):
+    """`role` used to be a field on RegisterRequest with an analyst default, so
+    anyone could POST {"role": "owner"} and register as an owner. The field is
+    gone and extras are rejected, so the attempt fails loudly rather than being
+    silently ignored."""
+    resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "escalate@company.com",
+            "password": "StrongPassword123!",
+            "full_name": "Would-be owner",
+            "role": "owner",
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+    # And the account was not created as a side effect.
+    login = await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "escalate@company.com", "password": "StrongPassword123!"},
+    )
+    assert login.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -132,7 +157,6 @@ async def test_api_key_generation_and_authentication(test_client):
             "email": "api.user@company.com",
             "password": "StrongPassword123!",
             "full_name": "API User",
-            "role": "analyst",
         },
     )
     login_resp = await test_client.post(
@@ -231,7 +255,7 @@ async def test_tr_vertical_l3_endpoint_end_to_end(test_client, tmp_path, monkeyp
     from app.config import get_settings
     from app.models.analysis_job import AnalysisJob
     from app.models.organization import Organization
-    from app.models.user import User
+    from app.models.user import User, UserRole
 
     # keep the generated board-deck PDF out of the repo tree
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
@@ -239,7 +263,7 @@ async def test_tr_vertical_l3_endpoint_end_to_end(test_client, tmp_path, monkeyp
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "smmm@buro.com", "password": "StrongPassword123!",
-              "full_name": "SMMM", "role": "owner"},
+              "full_name": "SMMM"},
     )
     token = (await test_client.post(
         "/api/v1/auth/login",
@@ -258,6 +282,7 @@ async def test_tr_vertical_l3_endpoint_end_to_end(test_client, tmp_path, monkeyp
         db.add(org)
         await db.flush()
         user.org_id = org.id
+        user.role = UserRole.OWNER
         job = AnalysisJob(
             filename="technova_ocak_2024.csv",
             file_path=csv_path,
@@ -301,12 +326,12 @@ async def test_tr_vertical_board_deck_requires_tr_pack(test_client):
     from sqlalchemy import select
 
     from app.models.organization import Organization
-    from app.models.user import User
+    from app.models.user import User, UserRole
 
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "noPack@buro.com", "password": "StrongPassword123!",
-              "full_name": "No Pack", "role": "owner"},
+              "full_name": "No Pack"},
     )
     token = (await test_client.post(
         "/api/v1/auth/login",
@@ -321,6 +346,7 @@ async def test_tr_vertical_board_deck_requires_tr_pack(test_client):
         db.add(org)
         await db.flush()
         user.org_id = org.id
+        user.role = UserRole.OWNER
         await db.commit()
 
     resp = await test_client.get(
@@ -363,7 +389,7 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "cto@startup.com", "password": "StrongPassword123!",
-              "full_name": "CTO", "role": "owner"},
+              "full_name": "CTO"},
     )
     token = (await test_client.post(
         "/api/v1/auth/login",
@@ -374,7 +400,7 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     from sqlalchemy import select as _select
 
     from app.models.organization import Organization
-    from app.models.user import User
+    from app.models.user import User, UserRole
     async with test_client._test_sessionmaker() as db:
         user = (await db.execute(
             _select(User).where(User.email == "cto@startup.com")
@@ -383,6 +409,7 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
         db.add(org)
         await db.flush()
         user.org_id = org.id
+        user.role = UserRole.OWNER
         await db.commit()
 
     # list — github present, not connected
@@ -432,14 +459,14 @@ async def test_agent_run_ledger_records_tr_vertical_and_slo(test_client, tmp_pat
     from app.config import get_settings
     from app.models.analysis_job import AnalysisJob
     from app.models.organization import Organization
-    from app.models.user import User
+    from app.models.user import User, UserRole
 
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
 
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "runs@buro.com", "password": "StrongPassword123!",
-              "full_name": "R", "role": "owner"},
+              "full_name": "R"},
     )
     token = (await test_client.post(
         "/api/v1/auth/login",
@@ -456,6 +483,7 @@ async def test_agent_run_ledger_records_tr_vertical_and_slo(test_client, tmp_pat
         db.add(org)
         await db.flush()
         user.org_id = org.id
+        user.role = UserRole.OWNER
         job = AnalysisJob(filename="a.csv", file_path=csv_path, file_type="csv",
                           org_id=org.id, user_id=user.id)
         db.add(job)
@@ -495,12 +523,12 @@ async def test_smmm_defensibility_packet_build_and_export(test_client):
     from app.models.analysis_job import AnalysisJob
     from app.models.organization import Organization
     from app.models.report import Report, ReportFormat
-    from app.models.user import User
+    from app.models.user import User, UserRole
 
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "smmm2@buro.com", "password": "StrongPassword123!",
-              "full_name": "SM", "role": "owner"},
+              "full_name": "SM"},
     )
     token = (await test_client.post(
         "/api/v1/auth/login",
@@ -516,6 +544,7 @@ async def test_smmm_defensibility_packet_build_and_export(test_client):
         db.add(org)
         await db.flush()
         user.org_id = org.id
+        user.role = UserRole.OWNER
         job = AnalysisJob(filename="j.csv", file_path="/x.csv", file_type="csv",
                           org_id=org.id, user_id=user.id)
         db.add(job)
@@ -574,12 +603,12 @@ async def test_authority_matrix_policy_lifecycle(test_client):
     from sqlalchemy import select
 
     from app.models.organization import Organization
-    from app.models.user import User
+    from app.models.user import User, UserRole
 
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "owner@firma.com", "password": "StrongPassword123!",
-              "full_name": "Patron", "role": "owner"},
+              "full_name": "Patron"},
     )
     otok = (await test_client.post(
         "/api/v1/auth/login",
@@ -593,6 +622,7 @@ async def test_authority_matrix_policy_lifecycle(test_client):
         db.add(org)
         await db.flush()
         u.org_id = org.id
+        u.role = UserRole.OWNER
         await db.commit()
 
     # default policy
@@ -640,7 +670,7 @@ async def test_authority_matrix_put_requires_owner(test_client):
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "staff@firma.com", "password": "StrongPassword123!",
-              "full_name": "Personel", "role": "analyst"},
+              "full_name": "Personel"},
     )
     tok = (await test_client.post(
         "/api/v1/auth/login",
@@ -660,12 +690,12 @@ async def test_institutionalization_index_compute_and_history(test_client):
     from sqlalchemy import select
 
     from app.models.organization import Organization
-    from app.models.user import User
+    from app.models.user import User, UserRole
 
     await test_client.post(
         "/api/v1/auth/register",
         json={"email": "idx@firma.com", "password": "StrongPassword123!",
-              "full_name": "Idx", "role": "owner"},
+              "full_name": "Idx"},
     )
     tok = (await test_client.post(
         "/api/v1/auth/login",
@@ -679,6 +709,7 @@ async def test_institutionalization_index_compute_and_history(test_client):
         db.add(org)
         await db.flush()
         u.org_id = org.id
+        u.role = UserRole.OWNER
         await db.commit()
 
     # GET with no prior snapshot computes one
@@ -729,3 +760,45 @@ async def test_system_ops_handles_naive_db_timestamps(test_client):
     # the 6h-old pending job must be reported as an SLA breach, not crash
     assert any(b["status"] == "pending" for b in sla["breaches"]), sla["breaches"]
     assert sla["job_completion_p95_ms"] is not None
+
+
+@pytest.mark.asyncio
+async def test_api_key_survives_a_warm_user_cache(test_client):
+    """Rotate the key on a *second* request, when the cached user is detached.
+
+    `get_current_user` serves users from a 60-second cache, so the first request
+    of a session gets a live ORM instance and every later one gets a detached
+    copy. Endpoints that wrote to `current_user` therefore worked exactly once
+    per minute and then silently stopped committing. The existing key test never
+    saw it: one request per test, always a cold cache.
+    """
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "warm.cache@company.com",
+            "password": "StrongPassword123!",
+            "full_name": "Warm Cache",
+        },
+    )
+    token = (await test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "warm.cache@company.com", "password": "StrongPassword123!"},
+    )).json()["data"]["access_token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # First authenticated call fills the cache.
+    assert (await test_client.get("/api/v1/auth/me", headers=auth)).status_code == 200
+
+    # Second one is served from it — this is where the write used to vanish.
+    key_resp = await test_client.post("/api/v1/auth/api-key", headers=auth)
+    assert key_resp.status_code == 200
+    api_key = key_resp.json()["data"]["api_key"]
+
+    me = await test_client.get("/api/v1/auth/me", headers={"X-API-Key": api_key})
+    assert me.status_code == 200, "the rotated key was never committed"
+    assert me.json()["data"]["email"] == "warm.cache@company.com"
+
+    # Revoking has to stick too.
+    assert (await test_client.delete("/api/v1/auth/api-key", headers=auth)).status_code == 200
+    revoked = await test_client.get("/api/v1/auth/me", headers={"X-API-Key": api_key})
+    assert revoked.status_code == 401, "the revoked key still authenticates"
