@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Zap, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { brand } from "@/lib/branding";
 
 // ── Animated number counter ───────────────────────────────────────────────────
 function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: string }) {
@@ -299,7 +300,7 @@ export function HeroSection() {
                   <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
                 </div>
                 <div className="flex-1 rounded-md border border-white/8 bg-white/4 px-3 py-1 text-center text-xs text-white/40">
-                  app.clevelai.com/dashboard
+                  {brand.domain ? `app.${brand.domain}/dashboard` : "/dashboard"}
                 </div>
                 <div className="h-4 w-4 rounded-full bg-white/10" aria-hidden="true" />
               </div>

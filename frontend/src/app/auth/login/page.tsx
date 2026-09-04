@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { brand } from "@/lib/branding";
 
 // ── Brand panel feature list ──────────────────────────────────────────────────
 const FEATURES = [
@@ -111,7 +112,7 @@ export default function LoginPage() {
             >
               C
             </span>
-            <span>C-Level AI</span>
+            <span>{brand.name}</span>
           </Link>
         </div>
 

@@ -4,9 +4,8 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-2538%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-2540%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
-[![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
 ---
 
@@ -224,7 +223,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 2538 tests
+pytest tests/ -q          # run all 2540 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```
@@ -341,6 +340,16 @@ Delete the file and let it rebuild.
 
 ---
 
-## License
+## Naming and identity
 
-MIT © 2025 C-Level AI
+The product name, domain and contact addresses live in configuration, not in the
+code: `backend/app/core/branding.py` and `frontend/src/lib/branding.ts` resolve
+every user-visible mention from `BRAND_*` / `NEXT_PUBLIC_BRAND_*`. Renaming is an
+env change.
+
+`BRAND_DOMAIN` is empty by default and that is deliberate. With no domain set,
+contact addresses resolve to nothing and the app says so — the KVKK/GDPR
+processing-activity record returns `contact_configured: false` rather than
+naming a mailbox nobody owns.
+
+No `LICENSE` file yet: the copyright holder has not been decided.

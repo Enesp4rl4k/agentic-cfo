@@ -23,6 +23,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.branding import get_brand
+
 logger = logging.getLogger(__name__)
 
 
@@ -280,6 +282,7 @@ def _build_unified_html(report: dict[str, Any]) -> str:
     period     = summary.get("reporting_period", "")
     agents     = ", ".join(summary["agents_available"])
     gen_at     = datetime.now(UTC).strftime("%d %B %Y, %H:%M UTC")
+    brand_name = get_brand().name
     revenue    = summary.get("headline_revenue", "—")
     net_margin = summary.get("headline_net_margin", "—")
     risk_count = summary.get("cross_risk_count", 0)
@@ -381,7 +384,7 @@ def _build_unified_html(report: dict[str, Any]) -> str:
 {sections_html}
 
 <div class="footer">
-  Gizlilik: Bu rapor C-Level AI tarafından {gen_at} tarihinde üretilmiştir. Yalnızca yönetim kurulu kullanımı içindir.
+  Gizlilik: Bu rapor {brand_name} tarafından {gen_at} tarihinde üretilmiştir. Yalnızca yönetim kurulu kullanımı içindir.
 </div>
 </body>
 </html>"""

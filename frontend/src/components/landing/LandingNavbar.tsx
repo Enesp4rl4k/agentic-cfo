@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
+import { brand } from "@/lib/branding";
 
 const NAV_LINKS = [
   { href: "#özellikler",    label: "Özellikler"     },
@@ -55,7 +56,7 @@ export function LandingNavbar() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
 
           {/* Logo */}
-          <Link href="/" aria-label="C-Level AI — Ana Sayfa">
+          <Link href="/" aria-label={`${brand.name} — Ana Sayfa`}>
             <Logo size="md" />
           </Link>
 

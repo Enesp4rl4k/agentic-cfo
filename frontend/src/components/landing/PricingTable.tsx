@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Check, ArrowRight, Zap } from "lucide-react";
+import { contactHref } from "@/lib/branding";
 
 const PLANS = [
   {
@@ -66,7 +67,7 @@ const PLANS = [
       "Dedicated müşteri başarı",
     ],
     cta: "Teklif Alın",
-    href: "mailto:hello@clevelai.com",
+    href: contactHref() ?? "#",
     variant: "outline" as const,
   },
 ];

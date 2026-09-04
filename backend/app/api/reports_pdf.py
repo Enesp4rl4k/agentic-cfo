@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.branding import get_brand
 from app.database import get_db
 from app.models.user import User
 
@@ -268,6 +269,10 @@ def _build_compliance_cert_html(
         "gdpr_dpa": "GDPR — Veri İşleme Sözleşmesi",
     }.get(framework, framework.upper())
 
+    brand = get_brand()
+    brand_name = brand.name
+    brand_legal = brand.legal_name
+
     return f"""
 <!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">
 <style>
@@ -308,10 +313,10 @@ def _build_compliance_cert_html(
 
 <div class="seal">
   <div class="circle">ONAY</div>
-  <div style="font-size:10px;color:#555;margin-top:8px;">C-Level AI Platform tarafından doğrulandı</div>
+  <div style="font-size:10px;color:#555;margin-top:8px;">{brand_legal} tarafından doğrulandı</div>
 </div>
 
 <div class="footer">
-  Bu belge C-Level AI tarafından otomatik olarak üretilmiştir. &nbsp;|&nbsp; {certified_at}
+  Bu belge {brand_name} tarafından otomatik olarak üretilmiştir. &nbsp;|&nbsp; {certified_at}
 </div>
 </body></html>"""

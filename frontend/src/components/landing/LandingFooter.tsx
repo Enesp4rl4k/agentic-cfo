@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/logo";
+import { brand, contactHref } from "@/lib/branding";
 
 const FOOTER_LINKS = {
   Ürün: [
@@ -21,11 +22,11 @@ const FOOTER_LINKS = {
     { label: "API Referansı", href: "#" },
     { label: "Blog",          href: "#" },
     { label: "Durum Sayfası", href: "#" },
-    { label: "Destek",        href: "mailto:hello@clevelai.com" },
+    { label: "Destek",        href: contactHref() ?? "#" },
   ],
   Şirket: [
     { label: "Hakkımızda",   href: "#" },
-    { label: "İletişim",     href: "mailto:hello@clevelai.com" },
+    { label: "İletişim",     href: contactHref() ?? "#" },
     { label: "Gizlilik",     href: "#" },
     { label: "Kullanım Şartları", href: "#" },
     { label: "KVKK",         href: "#" },
@@ -104,19 +105,23 @@ export function LandingFooter() {
         {/* Bottom bar */}
         <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border pt-6 sm:flex-row">
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} C-Level AI. Tüm hakları saklıdır.
+            © {new Date().getFullYear()} {brand.name}. Tüm hakları saklıdır.
           </p>
 
           <div className="flex items-center gap-4">
-            <a
-              href="mailto:hello@clevelai.com"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              hello@clevelai.com
-            </a>
+            {/* Rendered only when a domain is configured — a mailto: that
+                bounces is worse than no link at all. */}
+            {brand.contactEmail && (
+              <a
+                href={contactHref()!}
+                className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {brand.contactEmail}
+              </a>
+            )}
             {/* Social links */}
             <a
-              href="https://twitter.com/clevelai"
+              href={brand.twitterUrl ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Twitter / X"
@@ -141,7 +146,7 @@ export function LandingFooter() {
               </svg>
             </a>
             <a
-              href="https://linkedin.com/company/clevelai"
+              href={brand.linkedinUrl ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="LinkedIn"

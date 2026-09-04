@@ -30,6 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.branding import get_brand
 from app.core.timeutil import as_utc
 from app.database import get_db
 from app.models.compliance_extended import BreachNotification, ComplianceCertification
@@ -364,11 +365,16 @@ async def gdpr_article30_register(
         },
     ]
 
+    brand = get_brand()
     return {
         "data": {
-            "organization":      "C-Level AI Platform",
-            "controller_email":  "privacy@clevelai.com",
-            "dpo_email":         "dpo@clevelai.com",
+            # An unset contact comes back null, not a plausible-looking
+            # address. A KVKK record naming a mailbox nobody owns is worse
+            # than one that admits the deployment has not configured it.
+            "organization":      brand.legal_name,
+            "controller_email":  brand.privacy_email or None,
+            "dpo_email":         brand.dpo_email or None,
+            "contact_configured": brand.has_domain,
             "last_updated":      datetime.now(UTC).date().isoformat(),
             "activities":        activities,
             "total_activities":  len(activities),

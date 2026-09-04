@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { brand } from "@/lib/branding";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -16,7 +17,7 @@ type Step = "account" | "workspace";
 
 // ── Brand panel testimonial ───────────────────────────────────────────────────
 const TESTIMONIAL = {
-  quote: "C-Level AI sayesinde aylık CFO raporumuzu artık 5 dakikada alıyoruz. Muhasebecimizle toplantı saatlerimiz %60 azaldı.",
+  quote: `${brand.name} sayesinde aylık CFO raporumuzu artık 5 dakikada alıyoruz. Muhasebecimizle toplantı saatlerimiz %60 azaldı.`,
   author: "Mehmet K.",
   role: "Kurucu & CEO, B2B SaaS Girişimi",
 };
@@ -128,7 +129,7 @@ export default function RegisterPage() {
             >
               C
             </span>
-            <span>C-Level AI</span>
+            <span>{brand.name}</span>
           </Link>
         </div>
 

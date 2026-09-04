@@ -25,6 +25,8 @@ import logging
 from datetime import UTC
 from typing import Any
 
+from app.core.branding import get_brand
+
 logger = logging.getLogger(__name__)
 
 # ── HTML Templates ─────────────────────────────────────────────────────────────
@@ -70,7 +72,7 @@ _CFO_SUMMARY_TEMPLATE = """
   <div class="subtitle">{{ company_name or "Şirket" }}</div>
   <div class="meta">
     Dönem: {{ period or "Güncel" }} &nbsp;|&nbsp;
-    Hazırlayan: C-Level AI &nbsp;|&nbsp;
+    Hazırlayan: {{ brand_name }} &nbsp;|&nbsp;
     {{ generated_at }}
   </div>
 </div>
@@ -173,7 +175,7 @@ _CFO_SUMMARY_TEMPLATE = """
 {% endif %}
 
 <div class="footer">
-  Bu rapor C-Level AI tarafından otomatik olarak üretilmiştir. &nbsp;|&nbsp; {{ generated_at }} &nbsp;|&nbsp;
+  Bu rapor {{ brand_name }} tarafından otomatik olarak üretilmiştir. &nbsp;|&nbsp; {{ generated_at }} &nbsp;|&nbsp;
   Gizlilik seviyesi: Ticari Sır
 </div>
 
@@ -210,7 +212,7 @@ _EXECUTIVE_BRIEF_TEMPLATE = """
 {% for alert in alerts[:3] %}<div class="alert">⚠ {{ alert.message }}</div>{% endfor %}
 {% for rec in recommendations[:3] %}<div class="rec">→ {{ rec }}</div>{% endfor %}
 
-<p style="font-size:9px;color:#aaa;margin-top:30px;">C-Level AI &nbsp;|&nbsp; {{ generated_at }}</p>
+<p style="font-size:9px;color:#aaa;margin-top:30px;">{{ brand_name }} &nbsp;|&nbsp; {{ generated_at }}</p>
 </body>
 </html>
 """
@@ -252,6 +254,10 @@ class PDFEngine:
         }
 
         template_str = template_map.get(template_name, _EXECUTIVE_BRIEF_TEMPLATE)
+
+        # Templates never name the product directly — one env change renames
+        # every report footer.
+        context = {"brand_name": get_brand().name, **context}
 
         try:
             from jinja2 import Template

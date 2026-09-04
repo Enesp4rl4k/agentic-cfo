@@ -159,3 +159,27 @@ def test_no_raw_sql_in_api_layer() -> None:
                 continue
             offenders.append(f"{rel}:{lineno}: {sql.strip()[:90]}")
     assert not offenders, "raw SQL in the API layer:\n  " + "\n  ".join(offenders)
+
+
+# ── Brand identity stays in configuration ─────────────────────────────────────
+# The product name and domain were typed into thirteen places, including the
+# KVKK/GDPR processing record, which published a contact address at a domain the
+# project does not own. Renaming meant a grep. Both now resolve through
+# app/core/branding.py; this keeps them there.
+
+_BRAND_LITERALS = ("clevelai", "C-Level AI")
+
+
+def test_no_hardcoded_brand_in_backend() -> None:
+    offenders: list[str] = []
+    for path in sorted(APP.rglob("*.py")):
+        if "__pycache__" in path.parts or path.name == "branding.py":
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for lit in _BRAND_LITERALS:
+                if lit in line:
+                    offenders.append(f"{_rel(path)}:{i}: {line.strip()[:80]}")
+    assert not offenders, (
+        "brand name hard-coded — read it from app.core.branding.get_brand():\n  "
+        + "\n  ".join(offenders)
+    )

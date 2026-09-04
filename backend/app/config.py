@@ -19,6 +19,18 @@ _INSECURE_SECRETS: frozenset[str] = frozenset({
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # ── Product identity ──────────────────────────────────────────────────────
+    # Resolved through app/core/branding.py; never typed into a template. The
+    # domain defaults to empty on purpose: with no domain configured, contact
+    # addresses come back empty and callers say "unconfigured" rather than
+    # printing an address the project does not own.
+    brand_name: str = "Agentic CFO"
+    brand_domain: str = ""
+    brand_app_url: str = "http://localhost:3000"
+    brand_contact_email: str = ""
+    brand_privacy_email: str = ""
+    brand_dpo_email: str = ""
+
     # OpenAI — optional for dev/test without LLM
     openai_api_key: str = "llm-placeholder-dev"
 

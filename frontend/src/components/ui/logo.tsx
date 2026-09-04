@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { brand } from "@/lib/branding";
 
 interface LogoProps {
   size?: "sm" | "md" | "lg" | "xl";
@@ -16,7 +17,7 @@ const SIZE_MAP = {
 };
 
 /**
- * C-Level AI logo mark — a stylized "C" with a neural spark inside.
+ * Logo mark — a stylized "C" with a neural spark inside.
  * The outer arc represents the "C" letterform; the inner dots represent
  * AI nodes / executive decision points.
  */
@@ -117,10 +118,7 @@ export function Logo({ size = "md", variant = "full", className }: LogoProps) {
   if (variant === "wordmark") {
     return (
       <span className={cn("inline-flex items-center font-bold tracking-tight", cfg.text, className)}>
-        <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-          Agentic
-        </span>
-        <span className="ml-1 text-foreground/90">OS</span>
+        <Wordmark />
       </span>
     );
   }
@@ -130,12 +128,30 @@ export function Logo({ size = "md", variant = "full", className }: LogoProps) {
     <span className={cn("inline-flex items-center", cfg.gap, className)}>
       <LogoMark size={cfg.icon} />
       <span className={cn("font-bold tracking-tight leading-none", cfg.text)}>
-        <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-          Agentic
-        </span>
-        <span className="ml-1 text-foreground/90">OS</span>
+        <Wordmark />
       </span>
     </span>
+  );
+}
+
+/**
+ * The name, split so the last word carries the plain treatment and everything
+ * before it takes the gradient. Reads from `brand` rather than hard-coding, so
+ * the logo does not become the one place still showing the old name — this
+ * wordmark said "Agentic OS" while the footer said something else entirely.
+ */
+function Wordmark() {
+  const words = brand.name.trim().split(/\s+/);
+  const tail = words.length > 1 ? words.pop()! : "";
+  const head = words.join(" ");
+
+  return (
+    <>
+      <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
+        {head}
+      </span>
+      {tail && <span className="ml-1 text-foreground/90">{tail}</span>}
+    </>
   );
 }
 

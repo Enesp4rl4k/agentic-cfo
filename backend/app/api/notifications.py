@@ -24,6 +24,7 @@ from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.branding import get_brand
 from app.database import get_db
 from app.models.alert_preference import AlertPreference
 from app.models.in_app_notification import InAppNotification
@@ -312,7 +313,7 @@ async def test_slack(
                 webhook_url,
                 json={
                     "text": (
-                        "✅ C-Level AI — Slack entegrasyonu başarıyla test edildi!\n"
+                        f"✅ {get_brand().name} — Slack entegrasyonu başarıyla test edildi!\n"
                         f"Org: `{org_id}` | {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
                     )
                 },

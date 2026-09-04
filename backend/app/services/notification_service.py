@@ -19,6 +19,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.branding import get_brand
 from app.services.alert_router import AlertAction, AlertDecision
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ def _build_email_body(decisions: list[AlertDecision], org_name: str = "") -> tup
 
     lines += [
         "—",
-        "Bu e-posta C-Level AI platformu tarafından otomatik olarak gönderilmiştir.",
+        f"Bu e-posta {get_brand().name} platformu tarafından otomatik olarak gönderilmiştir.",
         "Bildirim tercihlerinizi Dashboard > Settings > Notifications bölümünden yönetebilirsiniz.",
     ]
 
@@ -304,7 +305,7 @@ class NotificationService:
 
         Free-tier note: Meta Cloud API has a 1000 free conversations/month limit.
         Templates must be pre-approved for business-initiated messages.
-        Use a text template for alerts — e.g. "C-Level AI Alert: {{1}}"
+        Use a text template for alerts — e.g. "<Brand> Alert: {{1}}"
         """
         from app.config import get_settings
         settings = get_settings()
@@ -315,13 +316,15 @@ class NotificationService:
             return 0
 
         org_label = f"[{org_name}] " if org_name else ""
-        lines = [f"🔔 C-Level AI Alert {org_label}"]
+        brand = get_brand()
+        lines = [f"🔔 {brand.name} Alert {org_label}"]
         for d in actionable[:5]:  # max 5 alerts per message
             emoji = _alert_emoji(d.alert.level)
             lines.append(f"{emoji} {d.alert.domain.upper()}: {d.alert.message[:120]}")
         if len(actionable) > 5:
             lines.append(f"... ve {len(actionable) - 5} uyarı daha. Dashboard'da görüntüleyin.")
-        lines.append("📊 Dashboard: https://app.clevelai.com")
+        if brand.app_url:
+            lines.append(f"📊 Dashboard: {brand.app_url}")
         message_text = "\n".join(lines)
 
         # ── Meta Cloud API ────────────────────────────────────────────────────
