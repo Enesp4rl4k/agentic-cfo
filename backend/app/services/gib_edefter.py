@@ -5,16 +5,29 @@ Gelir İdaresi Başkanlığı (GİB) e-Defter standartlarına uygun:
 - Aylık Yevmiye Defteri (Journal) XML
 - Defter-i Kebir (General Ledger) XML
 - KDV-1 ve Muhtasar Beyanname Özetleri
+
+Girdi, `tr_muhasebe_journal` Report'unda saklanan yevmiye kayıtlarıdır —
+SMMM'nin onayladığı, savunulabilirlik paketinin mühürlediği satırların ta
+kendisi. Ajanın bellek içi dataclass'ı yerine kalıcı kaydı tüketmesi hem katman
+kuralına uyar (services, agents'ı import edemez) hem de tek gerçeği kalıcı
+artefakt üzerinden zorunlu kılar: paket neyi mühürlediyse defter onu beyan eder.
+
+Daha önce `app/services/thp_classifier.py` içindeki ikinci bir sınıflandırıcının
+`SuggestedJournalEntry`'sini tüketiyordu. O motoru üretimde hiçbir şey
+çalıştırmıyordu, yani GİB'e gidecek yasal defter, denetlenen yevmiyeden *farklı*
+bir mantıkla üretilecekti. Bir savunulabilirlik paketinin bütün anlamı, mühürlü
+kaydın beyan edilenle aynı olmasıdır; o sapma paketin kendisini çürütüyordu.
 """
 from __future__ import annotations
 
 import logging
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from app.core.financial import cents_to_amount
-from app.services.thp_classifier import SuggestedJournalEntry
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +50,21 @@ class EDefterGenerator:
 
     @staticmethod
     def generate_journal_xml(
-        entries: list[SuggestedJournalEntry],
+        entries: Sequence[Mapping[str, Any]],
         period: str,
         vkn: str,
         company_title: str,
     ) -> EDefterPackage:
-        """
-        Build an e-Defter compliant Journal XML tree and package.
+        """Build an e-Defter compliant Journal XML tree and package.
+
+        `entries` are `YevmiyeKaydi.to_dict()` rows exactly as persisted in the
+        `tr_muhasebe_journal` report — the same list the defensibility packet
+        itemises.
         """
         import hashlib
 
-        total_debit = sum(e.total_debit_cents for e in entries)
-        total_credit = sum(e.total_credit_cents for e in entries)
+        total_debit = sum(int(e.get("toplam_borc") or 0) for e in entries)
+        total_credit = sum(int(e.get("toplam_alacak") or 0) for e in entries)
 
         root = ET.Element("edefter:journal", {
             "xmlns:edefter": "http://www.edefter.gov.tr",
@@ -61,18 +77,23 @@ class EDefterGenerator:
         for idx, entry in enumerate(entries, start=1):
             entry_el = ET.SubElement(root, "edefter:entry", {
                 "journal_number": str(idx),
-                "date": entry.entry_date,
-                "document_number": entry.document_number,
-                "description": entry.description,
+                # `tarih` is stored as an ISO timestamp; the defter wants a date.
+                "date": str(entry.get("tarih") or "")[:10],
+                # The source transaction is the belge referansı; falling back to
+                # the entry id keeps the attribute present for manual entries.
+                "document_number": str(
+                    entry.get("kaynak_islem_id") or entry.get("kayit_id") or ""
+                ),
+                "description": str(entry.get("aciklama") or ""),
             })
-            for line_idx, line in enumerate(entry.lines, start=1):
+            for line_idx, line in enumerate(entry.get("satirlar") or [], start=1):
                 ET.SubElement(entry_el, "edefter:line", {
                     "line_number": str(line_idx),
-                    "account_code": line.account_code,
-                    "account_name": line.account_name,
-                    "debit": f"{cents_to_amount(line.debit_cents):.2f}",
-                    "credit": f"{cents_to_amount(line.credit_cents):.2f}",
-                    "description": line.description,
+                    "account_code": str(line.get("hesap_kodu") or ""),
+                    "account_name": str(line.get("hesap_adi") or ""),
+                    "debit": f"{cents_to_amount(int(line.get('borc') or 0)):.2f}",
+                    "credit": f"{cents_to_amount(int(line.get('alacak') or 0)):.2f}",
+                    "description": str(line.get("aciklama") or ""),
                 })
 
         xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)

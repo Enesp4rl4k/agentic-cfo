@@ -16,7 +16,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
@@ -24,8 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user, require_role
 from app.api.deps_regional import require_tr_pack
+from app.config import get_settings
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
+from app.models.organization import Organization
 from app.models.report import Report, ReportFormat
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
@@ -353,6 +355,73 @@ async def muhasebe_tr_vertical_board_deck(
         path=report.file_path,
         media_type="application/pdf",
         filename=f"yonetim-kurulu-{job_id}.pdf",
+    )
+
+
+@router.get("/muhasebe/{job_id}/e-defter.xml")
+async def muhasebe_edefter_xml(
+    job_id: str,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """GİB e-Defter yevmiye XML'i — savunulabilirlik paketiyle aynı kayıtlardan.
+
+    Kaynak, `tr_muhasebe_journal` raporudur: SMMM'nin onayladığı ve paketin
+    mühürlediği satırların ta kendisi. Beyan edilen defterin denetlenen kayıttan
+    ayrışmaması bunun tek amacı.
+    """
+    from app.services.gib_edefter import EDefterGenerator
+    from app.services.smmm_defensibility import DefensibilityError, _load_journal
+
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
+    if (
+        job.org_id
+        and job.org_id != current_user.org_id
+        and current_user.role not in ("admin", "owner")
+    ):
+        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+
+    settings = get_settings()
+    if not settings.gib_vkn:
+        raise HTTPException(
+            status_code=503,
+            detail="GİB VKN yapılandırılmamış — e-Defter üretilemez (GIB_VKN).",
+        )
+
+    try:
+        journal = await _load_journal(db, job_id)
+    except DefensibilityError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    org = await db.get(Organization, str(current_user.org_id)) if current_user.org_id else None
+    period = str(journal.get("donem") or "")[:7] or job.created_at.strftime("%Y-%m")
+
+    package = EDefterGenerator.generate_journal_xml(
+        entries=journal.get("yevmiye_kayitlari") or [],
+        period=period,
+        vkn=settings.gib_vkn,
+        company_title=(org.name if org else "Şirket"),
+    )
+    if not package.is_valid:
+        # An unbalanced defter is not something to hand to the tax authority.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Yevmiye dengeli değil (borç {package.total_debit_cents} / "
+                f"alacak {package.total_credit_cents}) — e-Defter üretilmedi."
+            ),
+        )
+
+    return Response(
+        content=package.journal_xml,
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": f'attachment; filename="e-defter-{period}-{job_id}.xml"',
+            "X-EDefter-SHA256": package.sha256_hash,
+            "X-EDefter-Entry-Count": str(package.entry_count),
+        },
     )
 
 

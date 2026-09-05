@@ -13,7 +13,6 @@ from app.services.audit_trail import ImmutableAuditTrail
 from app.services.gib_edefter import EDefterGenerator
 from app.services.monte_carlo import MonteCarloEngine
 from app.services.open_banking_reconciliation import BankReconciliationEngine
-from app.services.thp_classifier import THPClassifier
 
 # ── Phase 1: Open Banking Reconciliation ──────────────────────────────────────
 
@@ -60,24 +59,41 @@ def test_monte_carlo_simulation_runs_10000_iterations():
 # ── Phase 3: THP Yevmiye & e-Defter XML ────────────────────────────────────────
 
 def test_thp_classifier_and_edefter_xml():
-    tx_income = {
+    """The journal the pipeline books is the journal the defter declares.
+
+    This used to exercise a second THPClassifier that production never ran, and
+    fed its output to e-Defter — so the legal filing would have been generated
+    by different logic than the entries the SMMM approved and the defensibility
+    packet sealed. Both now go through `create_entry`.
+    """
+    from app.agents.accounting.double_entry import get_double_entry_engine
+    from app.services.accounting.thp_classifier import get_thp_classifier
+
+    transaction = {
         "id": "tx-101",
-        "amount_cents": 120000,  # 1,200 TL (%20 KDV dahil)
-        "description": "Danışmanlık Fatura Tahsilatı",
+        "amount_cents": 120_000,           # 1.200 TL
+        "description": "Danışmanlık hizmet bedeli faturası",
         "type": "income",
-        "category": "services",
         "transaction_date": "2024-03-01",
     }
-    entry = THPClassifier.classify_transaction(tx_income)
-    assert entry.is_balanced
-    assert entry.total_debit_cents == entry.total_credit_cents == 120000
-    assert any(line.account_code.startswith("102") for line in entry.lines)
-    assert any(line.account_code.startswith("600") for line in entry.lines)
-    assert any(line.account_code.startswith("391") for line in entry.lines)
+    thp = get_thp_classifier().classify(
+        description=transaction["description"],
+        vendor=None,
+        transaction_type=transaction["type"],
+        amount_kurus=transaction["amount_cents"],
+    )
+    entry = get_double_entry_engine().create_entry(transaction, thp)
 
-    # e-Defter XML generation
+    assert entry.dengeli
+    assert entry.toplam_borc == entry.toplam_alacak == 120_000
+    # Karşı hesap (nakit ayağı) ile sınıflandırılan gelir hesabı ayrı satırlarda.
+    kodlar = {s.hesap_kodu for s in entry.satirlar}
+    assert "102" in kodlar, f"nakit ayağı yok: {kodlar}"
+    assert kodlar - {"102"}, f"karşı hesaptan başka satır yok: {kodlar}"
+
+    # e-Defter consumes the persisted journal rows, not an in-memory dataclass.
     edefter_pkg = EDefterGenerator.generate_journal_xml(
-        entries=[entry],
+        entries=[entry.to_dict()],
         period="2024-03",
         vkn="1234567890",
         company_title="Test CFO A.S.",
@@ -85,6 +101,8 @@ def test_thp_classifier_and_edefter_xml():
     assert edefter_pkg.is_valid
     assert "<edefter:journal" in edefter_pkg.journal_xml
     assert edefter_pkg.sha256_hash != ""
+    # The amounts in the XML come from the same entry, in lira.
+    assert "1200.00" in edefter_pkg.journal_xml
 
 
 # ── Phase 4: Cryptographic Immutable Audit Trail ──────────────────────────────
