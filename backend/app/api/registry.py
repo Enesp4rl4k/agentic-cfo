@@ -52,6 +52,7 @@ _ROUTERS = [
     ("app.api.connectors",          "router", "connectors"),      # Connector Platform (Faz 13)
     ("app.api.runs",                "router", "runs"),            # Agent run ledger (Faz 14)
     ("app.api.authority",           "router", "authority"),       # Yetki Matrisi / Delegation of Authority
+    ("app.api.related_party",       "router", "related-parties"), # İlişkili Taraf Sicili
     ("app.api.institutionalization", "router", "institutionalization"),  # Kurumsallaşma Endeksi
     ("app.api.smmm_defensibility",  "router", "smmm-defensibility"),  # SMMM audit-defence packet (#4)
     ("app.api.muhasebe",            "router", "muhasebe"),         # MUHASEBE-6

@@ -159,6 +159,20 @@ async def muhasebe_analiz(
         str(job.org_id) if job.org_id else None, db
     )
 
+    # İlişkili taraf sicili: eşleşen işlemler `is_related_party` ile
+    # işaretlenir. Yetki matrisinin ilişkili-taraf kuralı bu bayrağı okur ama
+    # bugüne kadar onu kimse doldurmuyordu, yani kural hiç ateşlenmedi.
+    related_flagged = 0
+    if job.org_id:
+        from app.services.related_party import annotate_transactions, load_active_parties
+
+        parties = await load_active_parties(str(job.org_id), db)
+        related_flagged = annotate_transactions(tx_dicts, parties)
+        if related_flagged:
+            logger.info(
+                "İlişkili taraf: %d işlem işaretlendi (job=%s)", related_flagged, body.job_id
+            )
+
     agent = get_muhasebe_agent(
         use_llm_fallback=body.use_llm_fallback,
         regional_packs=packs,
@@ -199,6 +213,7 @@ async def muhasebe_analiz(
 
     result_dict = sonuc.to_dict()
     result_dict["onay_kuyruguna_eklendi"] = onay_eklendi
+    result_dict["iliskili_taraf_isaretlendi"] = related_flagged
     result_dict["coa_adapter"] = "tr_thp" if "tr" in packs else "generic_gaap"
 
     logger.info(

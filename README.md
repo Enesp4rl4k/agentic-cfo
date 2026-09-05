@@ -4,7 +4,7 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-2541%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-2583%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -55,6 +55,8 @@ auto-trigger any downstream agent**. See `app/platform/provenance.py`.
 |---|---|
 | **Yetki Matrisi** (delegation of authority) | Ordered policy rules — amount bands, confidence, related-party, fixed asset → auto-approve, require named approvers, or block. Versioned per org, edited by the owner. Replaces "ask the boss". |
 | **Kurumsallaşma Endeksi** | 0–100 institutionalisation score across financial discipline, delegated authority, decision traceability, human oversight, process cadence and key-person risk — computed from real platform activity, tracked over time. |
+| **İlişkili Taraf Sicili** | The register of parties the company is connected to — partners, directors, family, affiliates — matched against every counterparty. A match sets `is_related_party`, which the delegation matrix escalates to the owner with a disclosure requirement. The undisclosed ordinary transaction (rent to a family building, a service from a brother-in-law's company) is the classic family-business governance failure, and TMS 24 requires it disclosed. |
+| **e-Defter (GİB)** | The monthly journal XML is generated from the same stored entries the SMMM approved and the packet sealed, so the legal filing cannot diverge from the audited record. |
 | **SMMM Savunulabilirlik Paketi** | One hash-sealed record per period: every journal entry with its basis, AI confidence, and whether a human approved/corrected it or the AI posted it automatically. Built for a tax inspection. |
 | **Confidence gate + decomposition** | Runs below the confidence threshold hold for a human — and the UI shows *which step* dragged the score down, not just that it did. |
 | **Independent reconciliation** | A separate graph step re-checks the arithmetic identities and flags narrative figures unsupported by computed values. Nothing grades its own homework. |
@@ -224,7 +226,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 2541 tests
+pytest tests/ -q          # run all 2583 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```

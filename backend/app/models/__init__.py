@@ -28,6 +28,7 @@ from app.models.llm_call_log import LLMCallLog
 from app.models.organization import Organization
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.rag_chunk import RagChunk
+from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.report import Report, ReportFormat, ReportType
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
@@ -38,6 +39,7 @@ from app.models.user import User
 
 __all__ = [
     "DOMAIN_SOURCE_KWARGS",
+    "RELATIONSHIP_TYPES",
     "AgentConflict",
     "AgentJob",
     "AgentRun",
@@ -70,6 +72,7 @@ __all__ = [
     "Organization",
     "PilotInvite",
     "RagChunk",
+    "RelatedParty",
     "Report",
     "ReportFormat",
     "ReportType",

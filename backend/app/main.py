@@ -74,6 +74,7 @@ async def lifespan(app: FastAPI):
     import app.models.organization
     import app.models.pilot
     import app.models.rag_chunk
+    import app.models.related_party
     import app.models.report
     import app.models.smmm_onay
     import app.models.smmm_portal
