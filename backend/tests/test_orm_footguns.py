@@ -183,3 +183,28 @@ def test_no_hardcoded_brand_in_backend() -> None:
         "brand name hard-coded — read it from app.core.branding.get_brand():\n  "
         + "\n  ".join(offenders)
     )
+
+
+# ── Middleware ordering ───────────────────────────────────────────────────────
+# Starlette runs middleware in reverse registration order: the last one added is
+# the outermost. CORS sat inside the rate limiter, so a 429 short-circuited
+# before CORS could run and went out with no Access-Control-Allow-Origin. The
+# browser then reported an opaque CORS failure rather than a 429, and the client
+# could never read the Retry-After the CORS config already exposes.
+#
+# This is a source-order assertion on purpose: importing app.main to inspect the
+# stack drags in the whole application, and the ordering is a property of how it
+# is written.
+
+def test_cors_middleware_is_registered_last() -> None:
+    src = (APP / "main.py").read_text(encoding="utf-8")
+    registrations = [
+        (m.start(), m.group(1))
+        for m in re.finditer(r"app\.add_middleware\(\s*\n?\s*(\w+)", src)
+    ]
+    assert registrations, "no add_middleware calls found — did main.py move?"
+    names = [name for _, name in registrations]
+    assert names[-1] == "CORSMiddleware", (
+        "CORSMiddleware must be added last so it is the outermost middleware; "
+        f"anything registered after it short-circuits without CORS headers. Order: {names}"
+    )

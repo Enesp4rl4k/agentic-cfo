@@ -116,7 +116,22 @@ app.add_middleware(SecurityHeadersMiddleware)
 # ── PERF: GZip Compression for payloads > 1KB ────────────────────────────────
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# ── SEC-4: Rate limiting ──────────────────────────────────────────────────────
+app.add_middleware(RateLimitMiddleware)
+
+# ── Audit logging ─────────────────────────────────────────────────────────────
+app.add_middleware(AuditLogMiddleware)
+
 # ── SEC-5: Hardened CORS ──────────────────────────────────────────────────────
+# Registered LAST on purpose. Starlette runs middleware in reverse registration
+# order, so the last one added is the outermost. CORS used to sit *inside* the
+# rate limiter, which meant a 429 short-circuited before CORS could run: the
+# response went out with no Access-Control-Allow-Origin, the browser reported an
+# opaque CORS failure instead of a 429, and the client could not read the
+# Retry-After this very config already tries to expose.
+#
+# Outermost also means preflight OPTIONS are answered here and never reach the
+# limiter — a browser's own preflight should not spend a user's request budget.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -130,12 +145,6 @@ app.add_middleware(
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After", "X-RateLimit-Reset"],
     max_age=600,
 )
-
-# ── SEC-4: Rate limiting ──────────────────────────────────────────────────────
-app.add_middleware(RateLimitMiddleware)
-
-# ── Audit logging ─────────────────────────────────────────────────────────────
-app.add_middleware(AuditLogMiddleware)
 
 # ── SEC-8: Global Exception Handlers (Prevent traceback leakage) ──────────────
 from fastapi import Request
