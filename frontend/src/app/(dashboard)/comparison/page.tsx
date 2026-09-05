@@ -224,8 +224,13 @@ export default function ComparisonPage() {
   useEffect(() => {
     async function fetchJobs() {
       try {
-        const res = await apiClient.get<{ data: JobSummary[] }>("/comparison/jobs");
-        setJobs(res.data.data || []);
+        // The endpoint returns {data: {jobs, total}}, not {data: [...]}. Reading
+        // it as an array put an object in state and every render died on
+        // `jobs.map is not a function`.
+        const res = await apiClient.get<{ data: { jobs: JobSummary[]; total: number } }>(
+          "/comparison/jobs",
+        );
+        setJobs(res.data.data?.jobs ?? []);
       } catch (err) {
         setError(err instanceof Error ? err.message : "İşler yüklenemedi");
       }

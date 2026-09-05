@@ -175,7 +175,9 @@ function AddIntegrationCard({
 function SyncLogsPanel() {
   const { data, isLoading } = useERPSyncLogs(undefined, 8);
   if (isLoading) return <p className="text-sm text-muted-foreground">Yükleniyor...</p>;
-  if (!data?.logs.length) return <p className="text-sm text-muted-foreground">Henüz sync yapılmadı.</p>;
+  // `data?.logs.length` guards `data` and then dereferences `logs` anyway —
+  // an absent `logs` threw and took the page to the error boundary.
+  if (!data?.logs?.length) return <p className="text-sm text-muted-foreground">Henüz sync yapılmadı.</p>;
 
   return (
     <div className="space-y-1.5">

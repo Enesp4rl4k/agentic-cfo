@@ -309,6 +309,29 @@ This is the check that finds handlers nobody has ever called. Its first run over
 309 routes turned up ten, including a board deck that had always come back blank
 and a workspace endpoint no user could call twice.
 
+### Page render sweep
+
+```bash
+FRONTEND_URL=http://localhost:3000 BACKEND_URL=http://localhost:8000   python scripts/page_sweep.py
+```
+
+The same probe for the frontend. It registers a user, creates a workspace,
+enables the TR pack, logs in through the real form, then visits every page found
+under `frontend/src/app` and fails on any of four things: a rendered error
+boundary, an uncaught exception, a page that rendered almost nothing, or a page
+that calls one endpoint more than a dozen times.
+
+That last check is not cosmetic. The first run found two dead pages — one
+reading `{data: {jobs}}` as an array, one dereferencing through an optional
+chain that stopped a level too early — and, underneath them, every page firing
+`/org/me` eight or nine times because `useOrgSettings` kept its own state
+instead of sharing a query. Over a full sweep that was 3,540 calls and 3,212
+rate-limited responses; it is 42 calls and 3 now.
+
+`proof.sh` runs it whenever `FRONTEND_URL` is set. Playwright drives an already
+installed Chrome or Edge in preference to its own bundled Chromium, which needs
+an MSVC runtime that a stock Windows box does not have.
+
 It does not retry and has no tolerance band. Every `database is locked` the
 sweep produced turned out to be a single missing commit in the semantic rebuild
 that held a write transaction open for the life of the process — after one

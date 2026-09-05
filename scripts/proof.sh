@@ -78,6 +78,9 @@ check "rag staging proof" \
 check "golden path e2e script present" \
   test -f scripts/golden-path-e2e.sh
 
+check "page sweep script present" \
+  test -f scripts/page_sweep.py
+
 check "route sweep script present" \
   test -f scripts/route_sweep.py
 
@@ -200,6 +203,19 @@ if [[ -n "${BACKEND_URL:-}" ]]; then
   # check that finds handlers nobody has ever called.
   check "route sweep ($BACKEND_URL)" \
     env BACKEND_URL="$BACKEND_URL" python scripts/route_sweep.py
+
+  # The same probe for the frontend: render every page as a logged-in user and
+  # fail on an error boundary, an uncaught exception, a blank render, or a page
+  # that calls one endpoint dozens of times. Needs a running Next server, so it
+  # is gated separately from BACKEND_URL.
+  if [[ -n "${FRONTEND_URL:-}" ]]; then
+    check "page sweep ($FRONTEND_URL)" \
+      env FRONTEND_URL="$FRONTEND_URL" BACKEND_URL="$BACKEND_URL" \
+      python scripts/page_sweep.py
+  else
+    WARN "FRONTEND_URL not set — skipping page sweep"
+    echo ""
+  fi
 else
   WARN "BACKEND_URL not set — skipping staging smoke, governance e2e and route sweep (set to enable live proof)"
   echo ""

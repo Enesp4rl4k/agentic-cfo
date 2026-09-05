@@ -114,7 +114,9 @@ export default function DashboardError({ error, reset }: ErrorPageProps) {
   }, [error, pathname, agentKey, errorCategory]);
 
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center p-8 text-center">
+    // Marker for scripts/page_sweep.py: a rendered error boundary is how the
+    // sweep knows a page blew up, without matching on Turkish copy.
+    <div data-error-boundary="dashboard" className="flex min-h-[60vh] flex-col items-center justify-center p-8 text-center">
       <div className="w-full max-w-md">
 
         {/* Agent context badge */}

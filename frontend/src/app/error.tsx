@@ -25,7 +25,9 @@ export default function GlobalError({ error, reset }: ErrorPageProps) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4 text-foreground">
+    // Marker for scripts/page_sweep.py: a rendered error boundary is how the
+    // sweep knows a page blew up, without matching on Turkish copy.
+    <div data-error-boundary="root" className="flex min-h-screen flex-col items-center justify-center bg-background p-4 text-foreground">
       <div className="w-full max-w-md rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
 
         {/* Icon */}

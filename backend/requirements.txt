@@ -76,6 +76,7 @@ pytest==8.2.2
 pytest-asyncio==0.23.7
 pytest-cov==5.0.0
 pytest-randomly==3.15.0    # randomised test order — surfaces cross-test state pollution
+playwright==1.47.0         # scripts/page_sweep.py — renders every page against a live app
 
 # Linting / type checking
 ruff==0.16.4    # pinned — ruff.toml selects the rule set; CI gate is blocking
