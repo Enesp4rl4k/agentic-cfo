@@ -67,7 +67,9 @@ THP_HESAPLARI: dict[str, THPHesap] = {
 
     # ── Duran Varlıklar (2xx) ─────────────────────────────────────────────────
     "253": THPHesap("253", "Tesis, Makine ve Cihazlar", "2 - Duran Varlıklar", "borç", "varlık",
-                    ["makine", "ekipman", "cihaz", "demirbaş", "donanım"]),
+                    # "demirbaş" 255'in adıdır; burada da durunca eşleşme
+                    # sözlük sırasına kalıyordu.
+                    ["makine", "ekipman", "cihaz", "donanım"]),
     "255": THPHesap("255", "Demirbaşlar", "2 - Duran Varlıklar", "borç", "varlık",
                     ["demirbaş", "ofis ekipman", "mobilya", "bilgisayar alım"]),
     "260": THPHesap("260", "Haklar", "2 - Duran Varlıklar", "borç", "varlık",
@@ -77,14 +79,21 @@ THP_HESAPLARI: dict[str, THPHesap] = {
     "320": THPHesap("320", "Satıcılar", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
                     ["satıcı", "tedarikçi", "supplier", "borç fatura", "alım borcu"]),
     "360": THPHesap("360", "Ödenecek Vergi ve Fonlar", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
+                    # "sgk" ve "bağkur" buradan çıkarıldı: sosyal güvenlik
+                    # kesintisi 361'e ait. İki hesapta birden bulundukları için
+                    # "SGK primi ödemesi" eşit puan alıp sözlük sırasıyla vergi
+                    # hesabına yazılıyordu.
                     ["kdv", "stopaj", "gelir vergisi ödeme", "kurumlar vergisi", "muhtasar",
-                     "vergi öde", "sgk", "bağkur"]),
+                     "vergi öde"]),
     "361": THPHesap("361", "Ödenecek Sosyal Güvenlik Kesintileri", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
-                    ["sgk", "sigorta primi", "sosyal güvenlik", "işçi sigortası"]),
+                    ["sgk", "bağkur", "sigorta primi", "sosyal güvenlik", "işçi sigortası"]),
 
     # ── Gelir Tablosu — Satışlar (6xx) ────────────────────────────────────────
     "600": THPHesap("600", "Yurt İçi Satışlar", "6 - Gelir Tablosu", "alacak", "gelir",
-                    ["satış", "gelir", "hizmet bedeli", "fatura gelir", "tahsilat",
+                    # "tahsilat" 120'ye ait: tahsilat alacağı kapatır, geliri
+                    # fatura kesildiğinde tanıdık. İkisinde birden durması
+                    # geliri iki kez yazma riski taşıyordu.
+                    ["satış", "gelir", "hizmet bedeli", "fatura gelir",
                      "revenue", "income", "ciro", "satıştan gelir"]),
     "601": THPHesap("601", "Yurt Dışı Satışlar", "6 - Gelir Tablosu", "alacak", "gelir",
                     ["ihracat", "export", "döviz gelir", "yurt dışı satış"]),
@@ -122,12 +131,18 @@ THP_HESAPLARI: dict[str, THPHesap] = {
     "657": THPHesap("657", "Reeskont Faiz Giderleri", "6 - Gelir Tablosu", "borç", "gider",
                     ["faiz gider", "kredi faiz", "loan interest", "interest expense",
                      "banka faiz", "finansman gider"]),
+    # Anahtar kelimesi yok, bilerek: 644 konusu kalmayan karşılıkların
+    # iptalidir, faizle ilgisi yoktur. "faiz gelir" / "mevduat faiz" burada
+    # yanlış hesaba iliştirilmişti; faiz geliri 602'ye gider. Açıklamadan
+    # otomatik atanmaması gereken bir hesap.
     "644": THPHesap("644", "Konusu Kalmayan Karşılıklar", "6 - Gelir Tablosu", "alacak", "gelir",
-                    ["faiz gelir", "banka faiz gelir", "mevduat faiz"]),
+                    []),
 
     # ── Vergiler (69x) ───────────────────────────────────────────────────────
     "690": THPHesap("690", "Dönem Karı veya Zararı", "6 - Gelir Tablosu", "borç", "gider",
-                    ["kurumlar vergisi", "gelir vergisi yıllık", "vergi karşılık"]),
+                    # "kurumlar vergisi" 360'a ait: ekstredeki ödeme borcu
+                    # kapatır. 690 dönem sonunda karşılığın kapatıldığı yerdir.
+                    ["gelir vergisi yıllık", "vergi karşılık"]),
     "193": THPHesap("193", "Peşin Ödenen Vergi ve Fonlar", "1 - Dönen Varlıklar", "borç", "varlık",
                     ["geçici vergi", "peşin vergi", "vergi avans"]),
 
@@ -166,6 +181,14 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^\w\s]", " ", text)
 
 
+# Kasa ve Bankalar sınıflandırma adayı değildir: çift taraflı kaydın nakit
+# ayağını `double_entry._karsi_hesap_belirle` zaten koyar, sınıflandırıcının işi
+# *diğer* tarafı adlandırmaktır. Aday bırakılınca "havale", "eft", "banka" gibi
+# ödeme aracı kelimeleri 102'yi kazandırıyor ve 102/102 gibi anlamsız bir kayıt
+# çıkıyordu — "Müşteri tahsilatı havale" 120 Alıcılar yerine 102'ye yazılıyordu.
+_KARSI_HESAPLAR = frozenset({"100", "102"})
+
+
 def _kural_motoru_siniflandir(
     description: str,
     vendor: str | None,
@@ -184,6 +207,8 @@ def _kural_motoru_siniflandir(
     best_score: float = 0.0
 
     for kod, hesap in THP_HESAPLARI.items():
+        if kod in _KARSI_HESAPLAR:
+            continue
         # Tip uyum kontrolü
         if transaction_type == "income" and hesap.tip not in ("gelir", "varlık"):
             # Gelir işlemi → sadece gelir veya varlık hesapları
@@ -194,13 +219,26 @@ def _kural_motoru_siniflandir(
         for anahtar in hesap.anahtar_kelimeler:
             anahtar_norm = _normalize(anahtar)
             if anahtar_norm in combined:
-                # Tam eşleşme daha yüksek puan
-                if f" {anahtar_norm} " in f" {combined} ":
-                    score += 1.0
-                else:
-                    score += 0.6
+                # Uzun anahtar daha spesifiktir: "banka faizi" (657), yalın
+                # "banka"dan (102) daha güçlü bir sinyaldir. Ağırlıksız puanlama
+                # "Banka kredi faizi gideri"ni 102 Bankalar'a yazıyordu.
+                agirlik = len(anahtar_norm.split())
+                # Tam kelime eşleşmesi, kelime içi eşleşmeden daha güçlü
+                tam = f" {anahtar_norm} " in f" {combined} "
+                puan = (1.0 if tam else 0.6) * agirlik
+                # Toplama değil, en güçlü tek kanıt. Toplamak, eşanlamlı
+                # listeleyen hesabı ödüllendiriyordu: 102 aynı metne karşı hem
+                # "banka" hem "bank" sayıp 657'nin spesifik "kredi faiz"ini
+                # geçiyordu.
+                score = max(score, puan)
 
-        if score > best_score:
+        # Eşitlikte kazananı sözlük sırası belirlemesin: "SGK primi ödemesi"
+        # hem 360 hem 361 için aynı puanı alıyor, 360 sadece önce tanımlandığı
+        # için kazanıyordu — SGK kesintisi vergi hesabına yazılıyordu.
+        # Eşitlik hâlâ mümkün; en azından tekrarlanabilir olsun.
+        if score > best_score or (score == best_score and score > 0 and (
+            best_kod is None or kod < best_kod
+        )):
             best_score = score
             best_kod = kod
 
