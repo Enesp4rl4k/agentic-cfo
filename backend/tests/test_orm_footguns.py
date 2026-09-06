@@ -312,6 +312,35 @@ def test_direction_is_not_inferred_from_invoice_type() -> None:
     )
 
 
+# ── A tax is identified by its code, never by its printed name ────────────────
+# GİB writes tax type 0015 under four different names in its own package: "KDV",
+# "Katma Değer Vergisi", "GERÇEK USULDE KATMA DEĞER VERGİSİ", and once with no
+# name at all. Filtering on `"KDV" in name` caught 21 of 26 subtotals and
+# silently dropped five, so several of GİB's own invoices produced a journal
+# short by exactly the VAT.
+
+_TAX_NAME_MATCH = re.compile(
+    r"[\"']KDV[\"']\s+in\s+\w*(?:name|ad)\w*|\w*(?:name|ad)\w*\.upper\(\)\s*==\s*[\"']KDV",
+    re.IGNORECASE,
+)
+
+
+def test_tax_type_is_not_matched_on_its_display_name() -> None:
+    offenders: list[str] = []
+    for path in sorted(APP.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if _TAX_NAME_MATCH.search(line):
+                offenders.append(f"{_rel(path)}:{i}: {line.strip()[:90]}")
+    assert not offenders, (
+        "vergi türü adına göre eşleştirilemez — TaxTypeCode kullanın "
+        "(0015 = KDV, 0071 = ÖTV):\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_every_upload_path_enqueues_the_analysis() -> None:
     paths = {
         "app/api/upload.py": "/upload",

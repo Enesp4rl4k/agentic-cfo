@@ -39,6 +39,7 @@
             <cac:TaxCategory>
                 <cac:TaxScheme>
                     <cbc:Name>KDV</cbc:Name>
+                    <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>
                 </cac:TaxScheme>
             </cac:TaxCategory>
         </cac:TaxSubtotal>

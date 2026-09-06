@@ -411,10 +411,14 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
             inv.payable_amount or inv.tax_inclusive_total or inv.line_extension_total
         )
 
-        # Direction settled by VKN is as certain as a structured parser gets;
-        # unresolved direction is a coin flip on the sign of the money.
-        confidence = 0.95 if inv.direction != "unknown" else 0.4
+        # Direction settled by VKN is as certain as a structured parser gets.
+        # `needs_review` covers more than direction: a foreign currency with no
+        # rate, or tax components that do not reach the invoice's own total,
+        # also mean we did not understand the document well enough to book it.
+        confidence = 0.4 if inv.needs_review else 0.95
         note = f" | Yön: {inv.direction} ({inv.direction_basis})"
+        if inv.posting_note:
+            note += f" | Kayıt üretilmedi: {inv.posting_note}"
 
         return [{
             "amount_cents": abs(amount_cents),

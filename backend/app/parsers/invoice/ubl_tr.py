@@ -36,6 +36,15 @@ class NotAnInvoiceError(ValueError):
 # issued it. Direction is settled by whose VKN sits in AccountingSupplierParty.
 InvoiceDirection = Literal["sale", "purchase", "unknown"]
 
+# GİB tax type codes. 0015 is KDV; 0071 is ÖTV. The display name cannot stand in
+# for these — GİB writes KDV under four different names in its own samples.
+KDV_TAX_CODE = "0015"
+
+# What a journal is allowed to be out by before we stop calling it balanced.
+# Wide enough for per-line rounding on a long invoice, far too narrow to absorb
+# a missing tax component.
+BALANCE_TOLERANCE = Decimal("0.05")
+
 
 class InvoiceParty(BaseModel):
     vkn_tckn: str = ""
@@ -49,8 +58,10 @@ class InvoiceTaxSubtotal(BaseModel):
     taxable_amount: Decimal
     tax_amount: Decimal
     percent: Decimal
-    tax_category_code: str = "0015"  # KDV
-    tax_category_name: str = "KDV"
+    # Empty means the invoice declared no code. Defaulting these to KDV is how
+    # an unidentified tax used to end up in the deductible VAT account.
+    tax_category_code: str = ""
+    tax_category_name: str = ""
 
 
 class InvoiceLineItem(BaseModel):
@@ -98,11 +109,19 @@ class ParsedUBLInvoice(BaseModel):
     direction: InvoiceDirection = "unknown"
     # What the direction keyed on, so a reviewer can judge it rather than trust it.
     direction_basis: str = ""
+    # Empty when the invoice was posted. Otherwise it says, in the reviewer's
+    # language, why no entry was generated.
+    posting_note: str = ""
 
     @property
     def needs_review(self) -> bool:
-        """An invoice whose side we cannot establish must not post itself."""
-        return self.direction == "unknown"
+        """No entry means a human has to decide.
+
+        Either we could not establish which side of the invoice we are on, or
+        the components we read do not add up to a balanced journal — in both
+        cases the parse is incomplete and posting it would be a guess.
+        """
+        return not self.suggested_tdhp_entries
 
 
 class UBLTRInvoiceParser:
@@ -226,32 +245,74 @@ class UBLTRInvoiceParser:
         tax_incl_total = Decimal("0.0")
         payable_amount = Decimal("0.0")
 
+        allowance_total = Decimal("0.0")
         if monetary_node is not None:
             line_ext_total = _to_decimal(_find_text(monetary_node, "cbc:LineExtensionAmount"))
             tax_excl_total = _to_decimal(_find_text(monetary_node, "cbc:TaxExclusiveAmount"))
             tax_incl_total = _to_decimal(_find_text(monetary_node, "cbc:TaxInclusiveAmount"))
             payable_amount = _to_decimal(_find_text(monetary_node, "cbc:PayableAmount"))
+            # İskonto. Declared on the model since the beginning and never read,
+            # so it was always 0,00 whatever the invoice said.
+            allowance_total = _to_decimal(
+                _find_text(monetary_node, "cbc:AllowanceTotalAmount")
+            )
 
-        # 5. Tax Subtotals (KDV & Tevkifat)
+        # 5. Tax Subtotals — identified by TaxTypeCode, not by display name.
+        #
+        # GİB writes the same tax under four different names in its own package:
+        # "KDV", "Katma Değer Vergisi", "GERÇEK USULDE KATMA DEĞER VERGİSİ", and
+        # once with no name at all. Matching on `"KDV" in name` caught 21 of the
+        # 26 KDV subtotals and silently dropped five, which is why several of
+        # GİB's own invoices produced a journal short by exactly the VAT.
+        # 0015 is KDV; 0071 is ÖTV; the rest are other taxes we must not merge.
         tax_subtotals = []
-        withholding_tax = Decimal("0.0")
         for t_sub in root.findall("cac:TaxTotal/cac:TaxSubtotal", cls.NAMESPACES):
-            taxable = _to_decimal(_find_text(t_sub, "cbc:TaxableAmount"))
-            tax_amt = _to_decimal(_find_text(t_sub, "cbc:TaxAmount"))
-            pct = _to_decimal(_find_text(t_sub, "cbc:Percent"))
-            cat_name = _find_text(t_sub, "cac:TaxCategory/cac:TaxScheme/cbc:Name", "KDV")
             tax_subtotals.append(
                 InvoiceTaxSubtotal(
-                    taxable_amount=taxable,
-                    tax_amount=tax_amt,
-                    percent=pct,
-                    tax_category_name=cat_name,
+                    taxable_amount=_to_decimal(_find_text(t_sub, "cbc:TaxableAmount")),
+                    tax_amount=_to_decimal(_find_text(t_sub, "cbc:TaxAmount")),
+                    percent=_to_decimal(_find_text(t_sub, "cbc:Percent")),
+                    tax_category_code=_find_text(
+                        t_sub, "cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode"
+                    ),
+                    tax_category_name=_find_text(
+                        t_sub, "cac:TaxCategory/cac:TaxScheme/cbc:Name"
+                    ),
                 )
             )
 
-        # Total KDV amount
         total_kdv = sum(
-            (t.tax_amount for t in tax_subtotals if "KDV" in t.tax_category_name.upper()),
+            (t.tax_amount for t in tax_subtotals if t.tax_category_code == KDV_TAX_CODE),
+            Decimal("0"),
+        )
+        # Every other declared tax — ÖTV and friends. On a sale we owe it; on a
+        # purchase it is part of what the goods cost us. Either way it is not
+        # deductible VAT and must never be added to 191.
+        other_taxes = sum(
+            (
+                t.tax_amount
+                for t in tax_subtotals
+                if t.tax_category_code and t.tax_category_code != KDV_TAX_CODE
+            ),
+            Decimal("0"),
+        )
+        # A subtotal with no code at all is a tax we cannot classify. Counting it
+        # as KDV was the old default and would put someone else's tax into the
+        # deductible account.
+        unclassified_tax = sum(
+            (t.tax_amount for t in tax_subtotals if not t.tax_category_code),
+            Decimal("0"),
+        )
+
+        # Tevkifat lives in its own element, not in TaxTotal. The field existed
+        # on the model from the start and was assigned a hardcoded 0.0, so every
+        # withheld invoice reported no withholding and its journal came out
+        # short by exactly the amount withheld.
+        withholding_tax = sum(
+            (
+                _to_decimal(_find_text(w, "cbc:TaxAmount"))
+                for w in root.findall("cac:WithholdingTaxTotal", cls.NAMESPACES)
+            ),
             Decimal("0"),
         )
 
@@ -277,13 +338,19 @@ class UBLTRInvoiceParser:
         direction, basis = cls._resolve_direction(own_vkn, supplier, customer)
 
         # 8. Generate Turkish Uniform Chart of Accounts (TDHP) Journal Entries
-        journal_entries = cls._generate_tdhp_entries(
+        journal_entries, posting_note = cls._generate_tdhp_entries(
             direction=direction,
             supplier=supplier,
             customer=customer,
-            subtotal=tax_excl_total or line_ext_total,
+            tax_exclusive=tax_excl_total or line_ext_total,
+            tax_inclusive=tax_incl_total,
             total_kdv=total_kdv,
+            other_taxes=other_taxes,
+            unclassified_tax=unclassified_tax,
+            withheld=withholding_tax,
             payable=payable_amount or tax_incl_total,
+            currency=currency,
+            profile_id=profile_id,
             inv_no=inv_no,
         )
 
@@ -303,9 +370,11 @@ class UBLTRInvoiceParser:
             tax_inclusive_total=tax_incl_total,
             payable_amount=payable_amount,
             withholding_tax_amount=withholding_tax,
+            allowance_total=allowance_total,
             suggested_tdhp_entries=journal_entries,
             direction=direction,
             direction_basis=basis,
+            posting_note=posting_note,
         )
 
     @classmethod
@@ -343,91 +412,108 @@ class UBLTRInvoiceParser:
     @classmethod
     def _generate_tdhp_entries(
         cls,
+        *,
         direction: InvoiceDirection,
         supplier: InvoiceParty,
         customer: InvoiceParty,
-        subtotal: Decimal,
+        tax_exclusive: Decimal,
+        tax_inclusive: Decimal,
         total_kdv: Decimal,
+        other_taxes: Decimal,
+        unclassified_tax: Decimal,
+        withheld: Decimal,
         payable: Decimal,
+        currency: str,
+        profile_id: str,
         inv_no: str,
-    ) -> list[TDHPJournalEntry]:
-        """Auto-generates TDHP (Tek Düzen Hesap Planı) double-entry bookkeeping records.
+    ) -> tuple[list[TDHPJournalEntry], str]:
+        """TDHP (Tek Düzen Hesap Planı) double-entry records, or a reason there are none.
 
-        Returns nothing when the direction is unknown. A journal line posted to
-        the wrong side is not a smaller error than a missing one — it is the
-        same money booked backwards, and it reconciles perfectly while doing so.
+        Returns `(entries, note)`. An empty list is never a silent outcome: the
+        note says what stopped us, and the caller holds the invoice for a human.
+
+        The one rule this function will not bend is that the entry must balance
+        against the invoice's own figures. It would be easy to derive revenue as
+        whatever makes the two sides equal — and that would turn every tax we
+        failed to read into revenue, reconciled perfectly and wrong. So each
+        component is read from the document, the entry is built from them, and
+        the balance is then checked rather than assumed.
         """
         if direction == "unknown":
-            return []
+            return [], "fatura yönü belirlenemedi — kayıt üretilmedi"
+        if payable <= 0:
+            return [], "ödenecek tutar yok — kayıt üretilmedi"
+        if unclassified_tax > 0:
+            # A subtotal with no TaxTypeCode is a tax we cannot name. It used to
+            # default to KDV, which puts somebody else's tax into 191.
+            return [], (
+                f"sınıflandırılamayan vergi ({unclassified_tax}) — "
+                "TaxTypeCode yok, kayıt üretilmedi"
+            )
+        if currency and currency.upper() != "TRY":
+            # UBL carries the rate in cac:PricingExchangeRate when there is one;
+            # GİB's own foreign-currency samples omit it. Booking the foreign
+            # figure into a TRY ledger is the exact error the integer-kuruş rule
+            # exists to prevent, and it is invisible afterwards.
+            return [], (
+                f"fatura {currency} cinsinden ve kur bilgisi yok — "
+                "TRY deftere kursuz işlenemez"
+            )
 
-        entries = []
+        # Özel matrah and the like: KDV is declared but already inside the price,
+        # so the inclusive and exclusive totals are equal. Adding it on top
+        # double-counted it and broke the balance by exactly the VAT.
+        kdv_inside_price = total_kdv > 0 and tax_inclusive == tax_exclusive
+        net = tax_exclusive - total_kdv if kdv_inside_price else tax_exclusive
+
+        entries: list[TDHPJournalEntry] = []
         desc = f"Fatura No: {inv_no} - {supplier.title or customer.title}"
 
-        if direction == "sale":
-            # Sales Invoice (Satış Faturası)
-            # Borç: 120 Alıcılar
+        def add(code: str, name: str, *, debit: Decimal = Decimal("0.0"),
+                credit: Decimal = Decimal("0.0")) -> None:
+            if debit == 0 and credit == 0:
+                return
             entries.append(
                 TDHPJournalEntry(
-                    account_code="120.01",
-                    account_name=f"Alıcılar - {customer.title or 'Müşteri'}",
-                    debit_amount=payable,
-                    credit_amount=Decimal("0.0"),
-                    description=desc,
-                )
-            )
-            # Alacak: 600 Yurtiçi Satışlar
-            entries.append(
-                TDHPJournalEntry(
-                    account_code="600.01",
-                    account_name="Yurtiçi Satışlar Geliri",
-                    debit_amount=Decimal("0.0"),
-                    credit_amount=subtotal,
-                    description=desc,
-                )
-            )
-            # Alacak: 391 Hesaplanan KDV
-            if total_kdv > 0:
-                entries.append(
-                    TDHPJournalEntry(
-                        account_code="391.01",
-                        account_name="Hesaplanan KDV",
-                        debit_amount=Decimal("0.0"),
-                        credit_amount=total_kdv,
-                        description=desc,
-                    )
-                )
-        else:
-            # Purchase / Expense Invoice (Alış / Gider Faturası)
-            # Borç: 770 Genel Yönetim Giderleri (veya 153 Ticari Mallar)
-            entries.append(
-                TDHPJournalEntry(
-                    account_code="770.01",
-                    account_name="Genel Yönetim Giderleri (Alış/Hizmet)",
-                    debit_amount=subtotal,
-                    credit_amount=Decimal("0.0"),
-                    description=desc,
-                )
-            )
-            # Borç: 191 İndirilecek KDV
-            if total_kdv > 0:
-                entries.append(
-                    TDHPJournalEntry(
-                        account_code="191.01",
-                        account_name="İndirilecek KDV",
-                        debit_amount=total_kdv,
-                        credit_amount=Decimal("0.0"),
-                        description=desc,
-                    )
-                )
-            # Alacak: 320 Satıcılar
-            entries.append(
-                TDHPJournalEntry(
-                    account_code="320.01",
-                    account_name=f"Satıcılar - {supplier.title or 'Tedarikçi'}",
-                    debit_amount=Decimal("0.0"),
-                    credit_amount=payable,
+                    account_code=code,
+                    account_name=name,
+                    debit_amount=debit,
+                    credit_amount=credit,
                     description=desc,
                 )
             )
 
-        return entries
+        if direction == "sale":
+            add("120.01", f"Alıcılar - {customer.title or 'Müşteri'}", debit=payable)
+            # An export is 601, not 600. GİB marks it on the profile, so this is
+            # read rather than inferred from the currency or the customer.
+            if profile_id.upper() == "IHRACAT":
+                add("601.01", "Yurtdışı Satışlar", credit=net)
+            else:
+                add("600.01", "Yurtiçi Satışlar Geliri", credit=net)
+            # Tevkifatta KDV'nin tevkif edilen kısmını alıcı doğrudan beyan eder;
+            # satıcı yalnızca kalanı hesaplanan KDV olarak taşır.
+            add("391.01", "Hesaplanan KDV", credit=total_kdv - withheld)
+            add("360.01", "Ödenecek Vergi ve Fonlar (ÖTV vb.)", credit=other_taxes)
+        else:
+            # Other taxes are part of what the goods cost us — never deductible.
+            add(
+                "770.01",
+                "Genel Yönetim Giderleri (Alış/Hizmet)",
+                debit=net + other_taxes,
+            )
+            add("191.01", "İndirilecek KDV", debit=total_kdv)
+            add("320.01", f"Satıcılar - {supplier.title or 'Tedarikçi'}", credit=payable)
+            # Tevkif edilen KDV, 2 no'lu beyanname ile sorumlu sıfatıyla ödenir.
+            add("360.02", "Ödenecek Vergi ve Fonlar (Tevkifat)", credit=withheld)
+
+        debit_total = sum((e.debit_amount for e in entries), Decimal("0"))
+        credit_total = sum((e.credit_amount for e in entries), Decimal("0"))
+        gap = abs(debit_total - credit_total)
+        if gap > BALANCE_TOLERANCE:
+            return [], (
+                f"yevmiye dengelenmedi (borç {debit_total} / alacak {credit_total}, "
+                f"fark {gap}) — faturanın bileşenleri kendi toplamıyla tutmuyor"
+            )
+
+        return entries, ""

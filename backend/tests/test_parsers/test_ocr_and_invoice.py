@@ -456,6 +456,7 @@ SAMPLE_UBL_TR_XML = """<?xml version="1.0" encoding="UTF-8"?>
             <cac:TaxCategory>
                 <cac:TaxScheme>
                     <cbc:Name>KDV</cbc:Name>
+                    <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>
                 </cac:TaxScheme>
             </cac:TaxCategory>
         </cac:TaxSubtotal>
