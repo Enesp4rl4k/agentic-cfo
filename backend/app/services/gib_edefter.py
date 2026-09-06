@@ -1,10 +1,17 @@
 """
-GİB e-Defter XML & Beyanname Hazırlık Motoru (Phase 3).
+Aylık yevmiye dökümü — SMMM'ye giden, GİB'e gitmeyen.
 
-Gelir İdaresi Başkanlığı (GİB) e-Defter standartlarına uygun:
-- Aylık Yevmiye Defteri (Journal) XML
-- Defter-i Kebir (General Ledger) XML
-- KDV-1 ve Muhtasar Beyanname Özetleri
+Bu modül **e-Defter üretmez.** GİB'in e-Defteri XBRL GL'dir: kök elemanı
+`defter`, gl-cor/gl-bus altında 78 ayrı eleman kullanır ve `edefter.xsd`
+tarafından doğrulanır. Burada üretilen düz bir yevmiye dökümüdür ve o şemadan
+kök elemanda, içeriğe hiç bakılmadan reddedilir. Bir süre GİB'in namespace'ini
+taşıdı; taşımaması gerekiyordu.
+
+Ne için var: mühürlü savunulabilirlik paketindeki yevmiye satırlarının makine
+okunur dökümü. Mali müşavire, denetime ve arşive gider.
+
+Beyan için gereken (`app/services/edefter_xbrl.py` bunu üretir): XBRL GL
+yevmiye + kebir, GİB dosya adlandırması, berat ve mali mühürle XAdES imza.
 
 Girdi, `tr_muhasebe_journal` Report'unda saklanan yevmiye kayıtlarıdır —
 SMMM'nin onayladığı, savunulabilirlik paketinin mühürlediği satırların ta
@@ -41,7 +48,13 @@ class EDefterPackage:
     total_debit_cents: int
     total_credit_cents: int
     journal_xml: str
-    is_valid: bool = True
+    # Debit equals credit. This used to be called `is_valid`, which reads as a
+    # statement about the document and is not one: it says nothing about whether
+    # GİB would accept the file.
+    is_balanced: bool = True
+    # Whether the XML validates against GİB's published edefter.xsd. None until
+    # something actually checks.
+    schema_valid: bool | None = None
     sha256_hash: str = ""
 
 
@@ -55,7 +68,10 @@ class EDefterGenerator:
         vkn: str,
         company_title: str,
     ) -> EDefterPackage:
-        """Build an e-Defter compliant Journal XML tree and package.
+        """Build the monthly journal listing.
+
+        Not an e-Defter: see the module docstring. `EDefterXBRLGenerator`
+        produces the XBRL GL document GİB's schema accepts.
 
         `entries` are `YevmiyeKaydi.to_dict()` rows exactly as persisted in the
         `tr_muhasebe_journal` report — the same list the defensibility packet
@@ -66,8 +82,14 @@ class EDefterGenerator:
         total_debit = sum(int(e.get("toplam_borc") or 0) for e in entries)
         total_credit = sum(int(e.get("toplam_alacak") or 0) for e in entries)
 
-        root = ET.Element("edefter:journal", {
-            "xmlns:edefter": "http://www.edefter.gov.tr",
+        # NOT the GİB namespace. This document is a flat journal listing of
+        # our own design; GİB's e-Defter is XBRL GL, whose root element is
+        # `defter` and which uses 78 distinct gl-cor/gl-bus elements. Putting
+        # http://www.edefter.gov.tr on this made a claim the file cannot meet —
+        # it is rejected by edefter.xsd at the root element, before any content
+        # is examined.
+        root = ET.Element("yevmiye:dokum", {
+            "xmlns:yevmiye": "urn:c-suite:yevmiye-dokum:1",
             "period": period,
             "vkn": vkn,
             "company": company_title,
@@ -75,7 +97,7 @@ class EDefterGenerator:
         })
 
         for idx, entry in enumerate(entries, start=1):
-            entry_el = ET.SubElement(root, "edefter:entry", {
+            entry_el = ET.SubElement(root, "yevmiye:kayit", {
                 "journal_number": str(idx),
                 # `tarih` is stored as an ISO timestamp; the defter wants a date.
                 "date": str(entry.get("tarih") or "")[:10],
@@ -87,7 +109,7 @@ class EDefterGenerator:
                 "description": str(entry.get("aciklama") or ""),
             })
             for line_idx, line in enumerate(entry.get("satirlar") or [], start=1):
-                ET.SubElement(entry_el, "edefter:line", {
+                ET.SubElement(entry_el, "yevmiye:satir", {
                     "line_number": str(line_idx),
                     "account_code": str(line.get("hesap_kodu") or ""),
                     "account_name": str(line.get("hesap_adi") or ""),
@@ -108,6 +130,6 @@ class EDefterGenerator:
             total_debit_cents=total_debit,
             total_credit_cents=total_credit,
             journal_xml=xml_str,
-            is_valid=(total_debit == total_credit),
+            is_balanced=(total_debit == total_credit),
             sha256_hash=sha256_hash,
         )

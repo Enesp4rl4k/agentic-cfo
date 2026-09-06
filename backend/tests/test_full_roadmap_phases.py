@@ -98,8 +98,12 @@ def test_thp_classifier_and_edefter_xml():
         vkn="1234567890",
         company_title="Test CFO A.S.",
     )
-    assert edefter_pkg.is_valid
-    assert "<edefter:journal" in edefter_pkg.journal_xml
+    assert edefter_pkg.is_balanced
+    # Deliberately NOT the GİB namespace: this is a flat journal listing, and
+    # edefter.xsd rejects it at the root element. Claiming e-Defter for it made
+    # a promise the file cannot keep.
+    assert "<yevmiye:dokum" in edefter_pkg.journal_xml
+    assert "edefter.gov.tr" not in edefter_pkg.journal_xml
     assert edefter_pkg.sha256_hash != ""
     # The amounts in the XML come from the same entry, in lira.
     assert "1200.00" in edefter_pkg.journal_xml

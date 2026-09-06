@@ -429,17 +429,21 @@ async def muhasebe_tr_vertical_board_deck(
     )
 
 
-@router.get("/muhasebe/{job_id}/e-defter.xml")
-async def muhasebe_edefter_xml(
+@router.get("/muhasebe/{job_id}/yevmiye-dokumu.xml")
+async def muhasebe_yevmiye_dokumu(
     job_id: str,
     current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """GİB e-Defter yevmiye XML'i — savunulabilirlik paketiyle aynı kayıtlardan.
+    """Aylık yevmiye dökümü — savunulabilirlik paketiyle aynı kayıtlardan.
+
+    **Bu bir e-Defter değildir ve GİB'e beyan edilemez.** GİB'in e-Defteri
+    XBRL GL'dir ve `edefter.xsd` ile doğrulanır; bu döküm o şemadan kök
+    elemanda reddedilir. Beyan edilebilir defter için
+    `GET /muhasebe/{job_id}/e-defter.xml` kullanın.
 
     Kaynak, `tr_muhasebe_journal` raporudur: SMMM'nin onayladığı ve paketin
-    mühürlediği satırların ta kendisi. Beyan edilen defterin denetlenen kayıttan
-    ayrışmaması bunun tek amacı.
+    mühürlediği satırların ta kendisi.
     """
     from app.services.gib_edefter import EDefterGenerator
     from app.services.smmm_defensibility import DefensibilityError, _load_journal
@@ -458,7 +462,7 @@ async def muhasebe_edefter_xml(
     if not settings.gib_vkn:
         raise HTTPException(
             status_code=503,
-            detail="GİB VKN yapılandırılmamış — e-Defter üretilemez (GIB_VKN).",
+            detail="GİB VKN yapılandırılmamış — döküm üretilemez (GIB_VKN).",
         )
 
     try:
@@ -475,13 +479,13 @@ async def muhasebe_edefter_xml(
         vkn=settings.gib_vkn,
         company_title=(org.name if org else "Şirket"),
     )
-    if not package.is_valid:
+    if not package.is_balanced:
         # An unbalanced defter is not something to hand to the tax authority.
         raise HTTPException(
             status_code=409,
             detail=(
                 f"Yevmiye dengeli değil (borç {package.total_debit_cents} / "
-                f"alacak {package.total_credit_cents}) — e-Defter üretilmedi."
+                f"alacak {package.total_credit_cents}) — döküm üretilmedi."
             ),
         )
 
@@ -489,9 +493,12 @@ async def muhasebe_edefter_xml(
         content=package.journal_xml,
         media_type="application/xml",
         headers={
-            "Content-Disposition": f'attachment; filename="e-defter-{period}-{job_id}.xml"',
-            "X-EDefter-SHA256": package.sha256_hash,
-            "X-EDefter-Entry-Count": str(package.entry_count),
+            "Content-Disposition": f'attachment; filename="yevmiye-dokumu-{period}-{job_id}.xml"',
+            "X-Yevmiye-SHA256": package.sha256_hash,
+            "X-Yevmiye-Entry-Count": str(package.entry_count),
+            # Said in the response as well as the docstring: a client that only
+            # reads headers must not mistake this for a filing.
+            "X-Not-A-GIB-Filing": "true",
         },
     )
 
