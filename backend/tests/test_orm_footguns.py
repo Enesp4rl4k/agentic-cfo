@@ -252,6 +252,66 @@ def test_cors_middleware_is_registered_last() -> None:
 # enqueue, so every file uploaded through the interface produced a job that sat
 # pending forever while the response said `started: true`.
 
+# ── Invoice direction is never read off the type code ─────────────────────────
+# `InvoiceTypeCode` names the kind of invoice, never who issued it. Reading
+# direction from it made one of GİB's fourteen real codes an income and thirteen
+# an expense. The mapping lived in two places that had drifted apart, so this
+# guards the shape rather than one call site.
+
+# The one function allowed to read direction off the wording: it is the last
+# resort, it is called only when the VKNs settle nothing, and its result is
+# marked uncertain so it stops at the review gate.
+_DIRECTION_FALLBACK = "app/parsers/invoice/__init__.py"
+
+
+def _direction_offenders(tree: ast.AST, rel: str) -> list[str]:
+    """Comparisons of an invoice type against a literal, outside docstrings.
+
+    Walking the AST rather than the text keeps prose about the old bug — of
+    which there is now a fair amount — from tripping the guard.
+    """
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        left = node.left
+        name = (
+            left.id if isinstance(left, ast.Name)
+            else left.attr if isinstance(left, ast.Attribute)
+            else ""
+        )
+        if name not in ("invoice_type", "inv_type"):
+            continue
+        if not isinstance(node.ops[0], (ast.Eq, ast.In)):
+            continue
+        out.append(f"{rel}:{node.lineno}: {name} bir literal ile karşılaştırılıyor")
+    return out
+
+
+def test_direction_is_not_inferred_from_invoice_type() -> None:
+    """`InvoiceTypeCode` names the kind of invoice, never who issued it.
+
+    Reading direction from it made one of GİB's fourteen real codes an income
+    and thirteen an expense — YTBSATIS, a sale by name, was booked as a cost.
+    The mapping lived in three places that had each drifted, so this guards the
+    shape rather than any one call site.
+    """
+    offenders: list[str] = []
+    for path in sorted(APP.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        rel = _rel(path)
+        if rel == _DIRECTION_FALLBACK:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        offenders.extend(_direction_offenders(tree, rel))
+    assert not offenders, (
+        "fatura yönü fatura tipinden çıkarılamaz — VKN karşılaştırması kullanın "
+        "(UBLTRInvoiceParser.parse_xml(..., own_vkn=...)):\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 def test_every_upload_path_enqueues_the_analysis() -> None:
     paths = {
         "app/api/upload.py": "/upload",

@@ -25,6 +25,13 @@ class ParsedTransaction:
     balance_cents: int | None = None   # Running balance if available
     reference: str | None = None       # Bank reference / cheque number
     raw_row: str = ""                  # Original text row for audit
+    # How sure the parser is about THIS row. The invoice parser has always
+    # computed a confidence and had nowhere to put it, so a row whose direction
+    # was guessed off the page reached the ledger indistinguishable from one
+    # settled by VKN. 1.0 keeps every existing parser's behaviour unchanged.
+    confidence: float = 1.0
+    # Why it is not 1.0, in the reviewer's language.
+    confidence_note: str = ""
 
 
 @dataclass

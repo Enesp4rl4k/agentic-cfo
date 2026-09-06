@@ -8,6 +8,7 @@ Amounts are consistently represented as INTEGER cents/kuruş.
 from __future__ import annotations
 
 import math
+from decimal import ROUND_HALF_UP, Decimal
 
 
 def safe_div(
@@ -32,10 +33,19 @@ def cents_to_amount(cents: float | None) -> float:
     return round(float(cents) / 100.0, 2)
 
 
-def amount_to_cents(amount: float | str | None) -> int:
-    """Convert major currency amount to integer cents/kuruş (e.g. 100.50 -> 10050)."""
+def amount_to_cents(amount: float | str | Decimal | None) -> int:
+    """Convert major currency amount to integer cents/kuruş (e.g. 100.50 -> 10050).
+
+    A `Decimal` is converted without ever becoming a float. Invoice totals reach
+    us as exact decimals from UBL-TR; routing them through binary floating point
+    to obey a law about integer kuruş is the one place the law is least
+    affordable. Half-up rounding is what an invoice line expects, not Python's
+    bankers' rounding.
+    """
     if amount is None:
         return 0
+    if isinstance(amount, Decimal):
+        return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     try:
         return round(float(amount) * 100)
     except (ValueError, TypeError):

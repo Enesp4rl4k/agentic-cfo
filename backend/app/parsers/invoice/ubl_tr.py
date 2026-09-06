@@ -9,8 +9,32 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# UBL-TR ships more than invoices. Of the 43 documents GİB publishes in its own
+# package, 15 are DespatchAdvice, ApplicationResponse or ReceiptAdvice — an
+# e-İrsaliye is not a fatura and carries no monetary total. They parsed happily
+# into a 0,00 TL SATIS invoice with a balanced journal behind it, because every
+# `find` returned None and every default held.
+INVOICE_ROOT = "{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice"
+
+
+class NotAnInvoiceError(ValueError):
+    """The document is well-formed UBL, but it is not an Invoice."""
+
+    def __init__(self, root_tag: str) -> None:
+        self.root_tag = root_tag
+        super().__init__(
+            f"UBL kök elemanı 'Invoice' değil: {root_tag!r} — bu belge bir fatura değil."
+        )
+
+
+# Which side of the invoice we are on. `InvoiceTypeCode` cannot answer this: it
+# names the *kind* of invoice (SATIS, TEVKIFAT, ISTISNA, OZELMATRAH…), never who
+# issued it. Direction is settled by whose VKN sits in AccountingSupplierParty.
+InvoiceDirection = Literal["sale", "purchase", "unknown"]
 
 
 class InvoiceParty(BaseModel):
@@ -51,7 +75,10 @@ class TDHPJournalEntry(BaseModel):
 class ParsedUBLInvoice(BaseModel):
     invoice_uuid: str
     invoice_number: str  # ETTN / Fatura No (e.g. GIB2024000000001)
-    invoice_type: str = "SATIS"  # SATIS, IADE, TEVKIFAT, IHRACAT
+    # GİB's own package emits fourteen distinct codes: SATIS, IADE, TEVKIFAT,
+    # TEVKIFATIADE, ISTISNA, OZELMATRAH, KOMISYONCU, SARJ, SARJANLIK and the
+    # YTB* family. The list is open — treat it as a label, never as direction.
+    invoice_type: str = "SATIS"
     profile_id: str = "TICARIFATURA"  # TEMELFATURA, TICARIFATURA, EARSIVFATURA
     issue_date: date
     currency_code: str = "TRY"
@@ -67,6 +94,16 @@ class ParsedUBLInvoice(BaseModel):
     withholding_tax_amount: Decimal = Decimal("0.0") # Tevkifat Tutarı
     suggested_tdhp_entries: list[TDHPJournalEntry] = Field(default_factory=list)
 
+    # Are we the seller or the buyer? Settled by VKN, never by invoice type.
+    direction: InvoiceDirection = "unknown"
+    # What the direction keyed on, so a reviewer can judge it rather than trust it.
+    direction_basis: str = ""
+
+    @property
+    def needs_review(self) -> bool:
+        """An invoice whose side we cannot establish must not post itself."""
+        return self.direction == "unknown"
+
 
 class UBLTRInvoiceParser:
     """Production parser for Turkish Revenue Administration (GİB) UBL-TR XML Invoices."""
@@ -78,14 +115,62 @@ class UBLTRInvoiceParser:
     }
 
     @classmethod
-    def parse_xml(cls, xml_content: str | bytes) -> ParsedUBLInvoice:
-        """Parses UBL-TR XML string or bytes and returns validated structured model."""
+    def _party_identifier(cls, party_node: ET.Element) -> str:
+        """The party's VKN/TCKN, chosen by schemeID rather than by position.
+
+        `cac:PartyIdentification` is a repeating element and its order is not
+        fixed. GİB's own HKS samples list MERSISNO before VKN, so taking the
+        first one read a MERSİS number as the tax number. The same slot also
+        carries PLAKA, SAYACNO, TESISATNO and SEVKIYATNO — a licence plate is
+        not something to decide the direction of a ledger with.
+        """
+        fallback = ""
+        for node in party_node.findall(
+            "cac:PartyIdentification/cbc:ID", cls.NAMESPACES
+        ):
+            value = (node.text or "").strip()
+            if not value:
+                continue
+            scheme = (node.get("schemeID") or "").upper()
+            if scheme in ("VKN", "TCKN"):
+                return value
+            if not scheme and not fallback:
+                # An unlabelled identifier is all a foreign customer has.
+                fallback = value
+        return fallback
+
+    @staticmethod
+    def normalize_vkn(raw: str | None) -> str:
+        """VKN (10 hane) / TCKN (11 hane), noktalama ve boşluklardan arındırılmış.
+
+        Anything of another length is not an identifier and must not be compared:
+        a truncated or padded number that happened to match would decide which
+        side of the ledger an invoice posts to.
+        """
+        digits = re.sub(r"\D", "", raw or "")
+        return digits if len(digits) in (10, 11) else ""
+
+    @classmethod
+    def parse_xml(
+        cls, xml_content: str | bytes, *, own_vkn: str = ""
+    ) -> ParsedUBLInvoice:
+        """Parse a UBL-TR invoice.
+
+        `own_vkn` is the VKN of the organisation whose books these are. Without
+        it the invoice can still be read, but its direction stays "unknown" and
+        no journal entry is generated — posting to a guessed side is worse than
+        posting nothing, and the confidence gate is there to hold it.
+
+        Raises `NotAnInvoiceError` for well-formed UBL that is not an Invoice.
+        """
         if isinstance(xml_content, str):
             xml_bytes = xml_content.encode("utf-8")
         else:
             xml_bytes = xml_content
 
         root = ET.fromstring(xml_bytes)
+        if root.tag != INVOICE_ROOT:
+            raise NotAnInvoiceError(root.tag)
 
         # Helper to find text safely
         def _find_text(element, xpath: str, default: str = "") -> str:
@@ -116,7 +201,7 @@ class UBLTRInvoiceParser:
         supplier_node = root.find("cac:AccountingSupplierParty/cac:Party", cls.NAMESPACES)
         supplier = InvoiceParty()
         if supplier_node is not None:
-            vkn = _find_text(supplier_node, "cac:PartyIdentification/cbc:ID")
+            vkn = cls._party_identifier(supplier_node)
             title = _find_text(supplier_node, "cac:PartyName/cbc:Name") or _find_text(
                 supplier_node, "cac:PartyLegalEntity/cbc:RegistrationName"
             )
@@ -127,7 +212,7 @@ class UBLTRInvoiceParser:
         customer_node = root.find("cac:AccountingCustomerParty/cac:Party", cls.NAMESPACES)
         customer = InvoiceParty()
         if customer_node is not None:
-            vkn = _find_text(customer_node, "cac:PartyIdentification/cbc:ID")
+            vkn = cls._party_identifier(customer_node)
             title = _find_text(customer_node, "cac:PartyName/cbc:Name") or _find_text(
                 customer_node, "cac:PartyLegalEntity/cbc:RegistrationName"
             )
@@ -188,9 +273,12 @@ class UBLTRInvoiceParser:
                 )
             )
 
-        # 7. Generate Turkish Uniform Chart of Accounts (TDHP) Journal Entries
+        # 7. Which side are we on?
+        direction, basis = cls._resolve_direction(own_vkn, supplier, customer)
+
+        # 8. Generate Turkish Uniform Chart of Accounts (TDHP) Journal Entries
         journal_entries = cls._generate_tdhp_entries(
-            inv_type=inv_type,
+            direction=direction,
             supplier=supplier,
             customer=customer,
             subtotal=tax_excl_total or line_ext_total,
@@ -216,12 +304,46 @@ class UBLTRInvoiceParser:
             payable_amount=payable_amount,
             withholding_tax_amount=withholding_tax,
             suggested_tdhp_entries=journal_entries,
+            direction=direction,
+            direction_basis=basis,
+        )
+
+    @classmethod
+    def _resolve_direction(
+        cls, own_vkn: str, supplier: InvoiceParty, customer: InvoiceParty
+    ) -> tuple[InvoiceDirection, str]:
+        """Sale or purchase, decided by whose VKN issued the invoice.
+
+        This used to be read off `InvoiceTypeCode`, with everything outside
+        {SATIS, IHRACAT} treated as a purchase. Of the fourteen codes GİB
+        actually emits, that made one an income and thirteen an expense —
+        YTBSATIS, a sale by name, was booked as a cost. Two of the three codes
+        in the income list (IHRACAT, KOMISYON) are not codes GİB issues at all;
+        exports carry ISTISNA and the broker case is KOMISYONCU.
+        """
+        mine = cls.normalize_vkn(own_vkn)
+        if not mine:
+            return "unknown", "kendi VKN'miz yapılandırılmamış (GIB_VKN)"
+
+        sup = cls.normalize_vkn(supplier.vkn_tckn)
+        cus = cls.normalize_vkn(customer.vkn_tckn)
+        if sup and sup == cus:
+            # Both sides carry the same VKN, so neither side is ours in
+            # particular. Branch transfers look like this, and so do malformed
+            # invoices; either way the direction is not knowable from the VKN.
+            return "unknown", f"satıcı ve alıcı aynı VKN'yi taşıyor ({sup})"
+        if mine == sup:
+            return "sale", f"satıcı VKN {sup} bizim VKN'mizle eşleşti"
+        if mine == cus:
+            return "purchase", f"alıcı VKN {cus} bizim VKN'mizle eşleşti"
+        return "unknown", (
+            f"VKN {mine} ne satıcıyla ({sup or 'yok'}) ne alıcıyla ({cus or 'yok'}) eşleşti"
         )
 
     @classmethod
     def _generate_tdhp_entries(
         cls,
-        inv_type: str,
+        direction: InvoiceDirection,
         supplier: InvoiceParty,
         customer: InvoiceParty,
         subtotal: Decimal,
@@ -229,11 +351,19 @@ class UBLTRInvoiceParser:
         payable: Decimal,
         inv_no: str,
     ) -> list[TDHPJournalEntry]:
-        """Auto-generates TDHP (Tek Düzen Hesap Planı) double-entry bookkeeping records."""
+        """Auto-generates TDHP (Tek Düzen Hesap Planı) double-entry bookkeeping records.
+
+        Returns nothing when the direction is unknown. A journal line posted to
+        the wrong side is not a smaller error than a missing one — it is the
+        same money booked backwards, and it reconciles perfectly while doing so.
+        """
+        if direction == "unknown":
+            return []
+
         entries = []
         desc = f"Fatura No: {inv_no} - {supplier.title or customer.title}"
 
-        if "SATIS" in inv_type or "IHRACAT" in inv_type:
+        if direction == "sale":
             # Sales Invoice (Satış Faturası)
             # Borç: 120 Alıcılar
             entries.append(

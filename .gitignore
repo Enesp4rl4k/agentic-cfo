@@ -56,3 +56,7 @@ knowledge_integrator/
 
 # stale local dev DB snapshots
 *.db.stale-backup-*
+
+# GİB resmî belge paketleri — scripts/fetch_gib_corpus.py ile indirilir,
+# vendor edilmez: standarttan sessizce sapmasın.
+backend/tests/fixtures/gib_corpus/

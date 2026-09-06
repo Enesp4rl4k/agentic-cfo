@@ -488,8 +488,12 @@ def test_ubl_tr_xml_invoice_parser():
 
     from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
 
-    parsed = UBLTRInvoiceParser.parse_xml(SAMPLE_UBL_TR_XML)
+    # The supplier's VKN is ours, so this is a sale. Without `own_vkn` the
+    # direction is unknowable and the parser deliberately posts nothing —
+    # see test_ubl_tr_without_own_vkn_posts_nothing below.
+    parsed = UBLTRInvoiceParser.parse_xml(SAMPLE_UBL_TR_XML, own_vkn="1234567890")
 
+    assert parsed.direction == "sale"
     assert parsed.invoice_number == "GIB2024000000042"
     assert parsed.supplier.vkn_tckn == "1234567890"
     assert parsed.supplier.title == "ACME Yazılım ve Bilişim A.Ş."
@@ -505,6 +509,50 @@ def test_ubl_tr_xml_invoice_parser():
     assert any(entry.account_code == "120.01" for entry in tdhp)  # Alıcılar
     assert any(entry.account_code == "600.01" for entry in tdhp)  # Satış Geliri
     assert any(entry.account_code == "391.01" for entry in tdhp)  # KDV
+
+
+def test_ubl_tr_same_invoice_read_from_the_buyers_books():
+    """One document, two organisations, opposite entries.
+
+    Direction cannot come from `InvoiceTypeCode` — the code is identical in
+    both readings. Only the VKN distinguishes them.
+    """
+    from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
+
+    parsed = UBLTRInvoiceParser.parse_xml(SAMPLE_UBL_TR_XML, own_vkn="9876543210")
+
+    assert parsed.direction == "purchase"
+    codes = {e.account_code for e in parsed.suggested_tdhp_entries}
+    assert "320.01" in codes   # Satıcılar
+    assert "191.01" in codes   # İndirilecek KDV
+    assert "600.01" not in codes
+
+
+def test_ubl_tr_without_own_vkn_posts_nothing():
+    """No VKN, no direction, no entry — and the invoice still parses."""
+    from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
+
+    parsed = UBLTRInvoiceParser.parse_xml(SAMPLE_UBL_TR_XML)
+
+    assert parsed.invoice_number == "GIB2024000000042"
+    assert parsed.direction == "unknown"
+    assert parsed.needs_review
+    assert parsed.suggested_tdhp_entries == []
+
+
+def test_ubl_tr_refuses_a_despatch_advice():
+    """e-İrsaliye is valid UBL with no monetary total; it used to parse into a
+    balanced 0,00 TL sale."""
+    import pytest
+
+    from app.parsers.invoice.ubl_tr import NotAnInvoiceError, UBLTRInvoiceParser
+
+    irsaliye = (
+        '<DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:'
+        'DespatchAdvice-2"><ID>IRS2024000000001</ID></DespatchAdvice>'
+    )
+    with pytest.raises(NotAnInvoiceError):
+        UBLTRInvoiceParser.parse_xml(irsaliye)
 
 
 def test_bank_parsers_yapkredi_qnb_enpara():
@@ -572,3 +620,62 @@ def test_turkish_tax_engine():
     )
     assert len(calendar) == 2
     assert sum(c.amount for c in calendar) == Decimal("14000.00")
+
+
+# ── OCR invoice direction ─────────────────────────────────────────────────────
+# The wording on the page is a poor witness: "ALIŞ FATURASI" is the buyer's
+# phrase and is printed on almost no invoice, while ETTN, TEMELFATURA and
+# TICARIFATURA — all promoted to `satis` — appear on every e-Fatura whichever
+# direction it travelled. Used alone this booked nearly everything as revenue.
+
+_OCR_INVOICE = """
+FATURA
+Fatura No: ABC2024000000123
+Fatura Tarihi: 15.03.2024
+Satıcı: Demir Yazılım A.Ş.
+Vergi Kimlik No: 1234567890
+Alıcı: Global Lojistik Ltd. Şti.
+Vergi No: 9876543210
+Mal Hizmet Tutarı: 100.000,00
+KDV Dahil Toplam: 120.000,00
+ETTN: b3d9a2f1-7c44-4e18-9a2b-5f6e1c0d8a44
+"""
+
+
+def _parse_ocr_invoice(own_vkn: str):
+    from unittest.mock import patch
+
+    from app.parsers.invoice import TurkishInvoiceParser
+
+    with patch("app.config.get_settings") as gs:
+        gs.return_value.gib_vkn = own_vkn
+        return TurkishInvoiceParser().parse(_OCR_INVOICE)
+
+
+def test_ocr_invoice_direction_follows_the_vkn_not_the_wording():
+    """Same document, both readings — only the VKN separates them."""
+    sale = _parse_ocr_invoice("1234567890")
+    assert sale.transactions[0].tx_type == "income"
+    assert sale.transactions[0].confidence > 0.60
+
+    purchase = _parse_ocr_invoice("9876543210")
+    assert purchase.transactions[0].tx_type == "expense"
+    assert purchase.transactions[0].confidence > 0.60
+
+
+def test_ocr_invoice_without_our_vkn_is_held_for_review():
+    """An unqualified "FATURA" with an ETTN reads as a sale on wording alone.
+
+    That guess is exactly how a supplier's invoice became revenue, so it must
+    not clear the gate on its own.
+    """
+    stmt = _parse_ocr_invoice("")
+    tx = stmt.transactions[0]
+    assert tx.confidence <= 0.60, "yönü tahmin edilen kayıt kapıdan geçmemeli"
+    assert tx.confidence_note
+    assert any("yönü kesin değil" in w for w in stmt.parse_warnings)
+
+
+def test_ocr_invoice_from_a_third_party_is_also_held():
+    stmt = _parse_ocr_invoice("5555555555")
+    assert stmt.transactions[0].confidence <= 0.60

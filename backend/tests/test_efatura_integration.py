@@ -95,8 +95,17 @@ def test_ubl_tr_parser_standalone():
 
 
 @pytest.mark.asyncio
-async def test_cfo_pipeline_runs_with_ubl_tr_xml():
-    """CFO pipeline processes native GİB UBL-TR XML end-to-end with 100% confidence."""
+async def test_cfo_pipeline_runs_with_ubl_tr_xml(monkeypatch):
+    """CFO pipeline processes native GİB UBL-TR XML end to end.
+
+    The supplier VKN on this invoice is ours, so the pipeline can settle the
+    direction and post it. It used to assert a flat confidence of 1.0, which is
+    what let an invoice booked on a guessed side clear the review gate.
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "gib_vkn", "1234567890", raising=False)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False, encoding="utf-8") as f:
         f.write(SAMPLE_UBL_TR_XML)
         xml_path = f.name
@@ -114,9 +123,45 @@ async def test_cfo_pipeline_runs_with_ubl_tr_xml():
         txs = result.get("transactions") or []
         assert len(txs) >= 1
         assert txs[0]["amount_cents"] == 12000000  # 120,000 TRY = 12,000,000 cents
-        assert txs[0]["confidence"] == 1.0
+        assert txs[0]["type"] == "income"      # we issued it
+        assert txs[0]["confidence"] == 0.95     # settled by VKN, not by type code
         assert "GIB2024000000042" in txs[0]["description"]
 
+    finally:
+        if os.path.exists(xml_path):
+            os.unlink(xml_path)
+
+
+@pytest.mark.asyncio
+async def test_ubl_invoice_from_a_stranger_is_held_for_review(monkeypatch):
+    """Neither party is us, so the direction is a coin flip on the sign.
+
+    The pipeline still ingests the row — a withheld invoice is not a discarded
+    one — but below the gate, where a human decides which way it goes.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "gib_vkn", "5555555555", raising=False)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".xml", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(SAMPLE_UBL_TR_XML)
+        xml_path = f.name
+
+    try:
+        result: CFOState = await run_cfo_pipeline(
+            job_id="test-efatura-002",
+            file_path=xml_path,
+            file_type="xml",
+            run_config=AgentRunConfig(
+                dry_run=False, require_review=False, auto_proceed_min_confidence=0.0
+            ),
+        )
+        txs = result.get("transactions") or []
+        assert len(txs) >= 1
+        assert txs[0]["confidence"] < 0.80, "yönü belirsiz fatura kapıdan geçmemeli"
+        assert "unknown" in txs[0]["raw_text"]
     finally:
         if os.path.exists(xml_path):
             os.unlink(xml_path)

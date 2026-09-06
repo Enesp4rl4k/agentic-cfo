@@ -87,11 +87,17 @@ def _detect_invoice_type(text: str) -> str:
 
 
 def _invoice_type_to_tx_type(invoice_type: str, context: str = "") -> str:
-    """Convert invoice type to transaction type.
+    """Guess direction from the wording on the page. Last resort only.
 
-    satis (satış) → income: We issued a sales invoice → we receive money
-    alis  (alış)  → expense: We received a purchase invoice → we pay money
-    iade          → income: Default is refund received (alış iadesi)
+    The wording is a poor witness and always has been. "ALIŞ FATURASI" is the
+    buyer's phrase and is printed on almost no invoice — a supplier heads its
+    own document "FATURA", which this reads as a sale. Worse, the markers that
+    promote to `satis` include ETTN, TEMELFATURA and TICARIFATURA, and every
+    e-Fatura carries those whichever direction it travelled. Used alone this
+    books nearly everything as revenue.
+
+    `_resolve_direction` calls this only when the VKNs settle nothing, and
+    marks the result uncertain so it stops at the review gate.
     """
     if invoice_type == "satis":
         return "income"    # We sold something → we receive money
@@ -103,6 +109,41 @@ def _invoice_type_to_tx_type(invoice_type: str, context: str = "") -> str:
         return "expense" if "satis_iade" in context.lower() else "income"
     else:
         return "expense"   # Default: treat unknown as expense
+
+
+def _normalize_vkn(raw: Any) -> str:
+    digits = re.sub(r"\D", "", str(raw or ""))
+    return digits if len(digits) in (10, 11) else ""
+
+
+def _resolve_direction(
+    fields: dict[str, Any], invoice_type: str, own_vkn: str
+) -> tuple[str, str, bool]:
+    """Which way the money goes: `(tx_type, basis, certain)`.
+
+    Decided by whose VKN is on the document, exactly as the UBL-TR parser does
+    it. `extract_invoice_fields` has always pulled `vendor_tax_id` and
+    `buyer_tax_id` off the page; nothing read them.
+    """
+    mine = _normalize_vkn(own_vkn)
+    vendor = _normalize_vkn(fields.get("vendor_tax_id"))
+    buyer = _normalize_vkn(fields.get("buyer_tax_id"))
+
+    if mine and vendor and buyer and vendor == buyer:
+        pass  # same number twice: the extraction, not the invoice, is telling
+    elif mine and mine == vendor:
+        return "income", f"satıcı VKN {vendor} bizim VKN'mizle eşleşti", True
+    elif mine and mine == buyer:
+        return "expense", f"alıcı VKN {buyer} bizim VKN'mizle eşleşti", True
+
+    reason = "kendi VKN'miz yapılandırılmamış" if not mine else (
+        f"VKN {mine} ne satıcıyla ({vendor or 'yok'}) ne alıcıyla ({buyer or 'yok'}) eşleşti"
+    )
+    return (
+        _invoice_type_to_tx_type(invoice_type),
+        f"{reason} — yön belge metninden tahmin edildi ({invoice_type})",
+        False,
+    )
 
 
 def _extract_line_items(text: str) -> list[dict[str, Any]]:
@@ -193,7 +234,16 @@ class TurkishInvoiceParser(BankParser):
         # Extract structured fields using regex patterns
         fields = extract_invoice_fields(text)
         invoice_type = _detect_invoice_type(text)
-        tx_type = _invoice_type_to_tx_type(invoice_type)
+
+        own_vkn = ""
+        try:
+            from app.config import get_settings
+            own_vkn = get_settings().gib_vkn
+        except Exception:  # pragma: no cover - parser must work without settings
+            pass
+        tx_type, direction_basis, direction_certain = _resolve_direction(
+            fields, invoice_type, own_vkn
+        )
 
         # Amount: prefer total_amount, fall back to subtotal
         amount_float = fields.get("total_amount") or fields.get("subtotal")
@@ -253,6 +303,13 @@ class TurkishInvoiceParser(BankParser):
         if fields.get("vendor_tax_id"):
             confidence += 0.05
         confidence = min(0.98, confidence)
+        if not direction_certain:
+            # Every other field can be right and the entry still lands on the
+            # wrong side of the ledger, where it will reconcile perfectly.
+            confidence = min(confidence, 0.60)
+            statement.parse_warnings.append(
+                f"Fatura yönü kesin değil: {direction_basis}"
+            )
 
         tx = ParsedTransaction(
             date=parsed_date or datetime.now(UTC),
@@ -263,6 +320,8 @@ class TurkishInvoiceParser(BankParser):
             vendor=vendor,
             reference=fields.get("invoice_no"),
             raw_row=text[:500],  # first 500 chars for audit
+            confidence=confidence,
+            confidence_note=direction_basis if not direction_certain else "",
         )
         statement.transactions.append(tx)
 

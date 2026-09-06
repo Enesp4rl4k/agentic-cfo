@@ -60,7 +60,10 @@ async def test_tr_corpus_csv_case(case: dict) -> None:
 
 def test_tr_corpus_efatura_ubl_tr() -> None:
     xml = (EXP.CORPUS_DIR / EXP.EFATURA["file"]).read_text(encoding="utf-8")
-    parsed = UBLTRInvoiceParser.parse_xml(xml)
+    # The supplier is us, so this is a sale. Direction is settled by VKN, never
+    # by InvoiceTypeCode: without `own_vkn` the parser refuses to post at all.
+    parsed = UBLTRInvoiceParser.parse_xml(xml, own_vkn=EXP.EFATURA["supplier_vkn"])
+    assert parsed.direction == "sale"
 
     assert parsed.invoice_number == EXP.EFATURA["invoice_number"]
     assert parsed.supplier.vkn_tckn == EXP.EFATURA["supplier_vkn"]

@@ -300,8 +300,14 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             "description": tx.description,
             "vendor": tx.vendor,
             "transaction_date": tx.date.isoformat() if tx.date else None,
-            "raw_text": tx.raw_row,
-            "confidence": 0.95,  # structured parsers are high-confidence
+            "raw_text": (
+                f"{tx.raw_row}\n[yön] {tx.confidence_note}"
+                if tx.confidence_note else tx.raw_row
+            ),
+            # Structured parsers are high-confidence about the *rows*; they are
+            # not automatically right about which way the money went. A parser
+            # that knows better says so, and only then does this cap apply.
+            "confidence": min(0.95, tx.confidence),
         })
     return transactions
 
@@ -365,20 +371,50 @@ def _read_xml(file_path: str) -> str:
 
 
 def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
-    """Parse Turkish e-Fatura / e-Arşiv UBL-TR 1.2 XML into CFO transactions."""
+    """Parse Turkish e-Fatura / e-Arşiv UBL-TR 1.2 XML into CFO transactions.
+
+    Whether an invoice is income or expense is read from the direction the
+    parser establishes by VKN, not from `InvoiceTypeCode`. The old mapping
+    (`invoice_type in ("SATIS", "IHRACAT", "KOMISYON")`) treated one of GİB's
+    fourteen real codes as income and thirteen as expense, and two of the three
+    codes it listed are not codes GİB issues.
+
+    When the direction cannot be established the rows are still returned — a
+    withheld invoice is not a discarded one — but at a confidence that keeps
+    them the other side of the review gate.
+    """
     if "<Invoice" not in raw_text and ":Invoice" not in raw_text:
         return None
     try:
-        from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
-        inv = UBLTRInvoiceParser.parse_xml(raw_text)
-        is_income = inv.invoice_type in ("SATIS", "IHRACAT", "KOMISYON")
+        from app.config import get_settings
+        from app.core.financial import amount_to_cents
+        from app.parsers.invoice.ubl_tr import NotAnInvoiceError, UBLTRInvoiceParser
+
+        try:
+            inv = UBLTRInvoiceParser.parse_xml(
+                raw_text, own_vkn=get_settings().gib_vkn
+            )
+        except NotAnInvoiceError as exc:
+            # e-İrsaliye, uygulama yanıtı and the like are valid UBL documents
+            # with no monetary total. They used to parse into a 0,00 TL sale.
+            logger.info("UBL belgesi fatura değil, atlandı: %s", exc)
+            return None
+
+        is_income = inv.direction == "sale"
         tx_type = "income" if is_income else "expense"
         category = "sales" if is_income else "cogs"
-        counterparty = inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
+        counterparty = (
+            inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
+        )
 
-        amount_cents = round(float(inv.payable_amount or inv.tax_inclusive_total) * 100)
-        if amount_cents == 0:
-            amount_cents = round(float(inv.line_extension_total) * 100)
+        amount_cents = amount_to_cents(
+            inv.payable_amount or inv.tax_inclusive_total or inv.line_extension_total
+        )
+
+        # Direction settled by VKN is as certain as a structured parser gets;
+        # unresolved direction is a coin flip on the sign of the money.
+        confidence = 0.95 if inv.direction != "unknown" else 0.4
+        note = f" | Yön: {inv.direction} ({inv.direction_basis})"
 
         return [{
             "amount_cents": abs(amount_cents),
@@ -388,8 +424,11 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
             "description": f"e-Fatura {inv.invoice_number}: {counterparty}",
             "vendor": counterparty if not is_income else None,
             "transaction_date": inv.issue_date.isoformat() if inv.issue_date else None,
-            "raw_text": f"UUID: {inv.invoice_uuid} | No: {inv.invoice_number} | Type: {inv.invoice_type}",
-            "confidence": 1.0,
+            "raw_text": (
+                f"UUID: {inv.invoice_uuid} | No: {inv.invoice_number} "
+                f"| Type: {inv.invoice_type}{note}"
+            ),
+            "confidence": confidence,
         }]
     except Exception as exc:
         logger.debug("UBL-TR parser skipped: %s", exc)
@@ -439,13 +478,24 @@ async def run_data_ingestion(
         if file_type == "xml" or "<Invoice" in raw_text or ":Invoice" in raw_text:
             ubl_txs = _try_parse_ubl_xml(raw_text)
             if ubl_txs:
-                logger.info("job=%s — UBL-TR XML parser parsed %d invoice transactions", state.get("job_id"), len(ubl_txs))
+                # The rows carry their own confidence — an invoice whose
+                # direction could not be settled by VKN is not a certainty, and
+                # this branch used to assert 1.0 regardless, which is precisely
+                # how a backwards posting would reach the ledger unreviewed.
+                ubl_confidence = min(float(t.get("confidence", 0.8)) for t in ubl_txs)
+                logger.info(
+                    "job=%s — UBL-TR XML parser parsed %d invoice transactions (conf=%.2f)",
+                    state.get("job_id"), len(ubl_txs), ubl_confidence,
+                )
                 return SkillResult(
                     ok=True,
                     patch={"raw_text": raw_text, "transactions": ubl_txs},
-                    confidence=1.0,
-                    needs_review=False,
-                    detail=f"Parsed {len(ubl_txs)} transactions via GİB UBL-TR XML parser",
+                    confidence=ubl_confidence,
+                    needs_review=ubl_confidence < 0.80,
+                    detail=(
+                        f"Parsed {len(ubl_txs)} transactions via GİB UBL-TR XML "
+                        f"parser (confidence={ubl_confidence:.2f})"
+                    ),
                 )
 
         # ── Strategy 1: Bank-specific rule-based parser ────────────────────
@@ -464,6 +514,12 @@ async def run_data_ingestion(
                     if tx["amount_cents"] > 0 and tx["transaction_date"]
                 )
                 overall_confidence = 0.95 if parseable / len(transactions) >= 0.8 else 0.75
+                # A well-formed row booked on the wrong side is still wrong, so
+                # the rows' own doubt caps the file's confidence.
+                overall_confidence = min(
+                    overall_confidence,
+                    min(float(tx.get("confidence", 0.95)) for tx in transactions),
+                )
                 detail = (
                     f"[{detected_bank.bank_display_name}] Parsed {len(transactions)} transactions "
                     f"({parseable} fully parsed, confidence={overall_confidence:.2f})"
