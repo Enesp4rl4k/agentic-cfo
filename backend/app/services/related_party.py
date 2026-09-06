@@ -163,3 +163,50 @@ def annotate_transactions(
         tx["related_party"] = match.to_dict()
         flagged += 1
     return flagged
+
+
+# A single transaction is a one-off supplier; the shape worth surfacing is the
+# counterparty paid again and again.
+MIN_RECURRENCE = 2
+
+
+def group_counterparties(
+    rows: list[tuple[str, int, int]],
+    known: set[str],
+    *,
+    limit: int = 25,
+    min_recurrence: int = MIN_RECURRENCE,
+) -> list[dict[str, Any]]:
+    """Collapse (vendor, count, total) rows into suggestions by normalised name.
+
+    Recurrence has to be counted *after* normalising. Grouping and thresholding
+    in SQL measures how often a company was spelled one particular way, so
+    "OZTURK HOLDING", "Ozturk Holding A.S." and "OZTURK HOLDING ANONIM SIRKETI"
+    each counted once, each fell under the threshold, and the one counterparty
+    the register exists to surface was the one that got filtered out — while
+    Migros, spelled identically twice, survived.
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    for vendor, tx_count, total in rows:
+        normalized = normalize_name(vendor)
+        if not normalized or normalized in known:
+            continue
+        entry = grouped.setdefault(normalized, {
+            # Longest spelling wins: it carries the most information for someone
+            # deciding whether they recognise the counterparty.
+            "vendor": vendor,
+            "normalized_name": normalized,
+            "transaction_count": 0,
+            "total_kurus": 0,
+            "spellings": 0,
+        })
+        if len(vendor) > len(str(entry["vendor"])):
+            entry["vendor"] = vendor
+        entry["transaction_count"] += int(tx_count or 0)
+        entry["total_kurus"] += int(total or 0)
+        entry["spellings"] += 1
+
+    return sorted(
+        (g for g in grouped.values() if g["transaction_count"] >= min_recurrence),
+        key=lambda g: (-int(g["transaction_count"]), -int(g["total_kurus"])),
+    )[:limit]

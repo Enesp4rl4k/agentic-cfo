@@ -4,6 +4,7 @@
     POST   /related-parties            — kayıt ekle
     PATCH  /related-parties/{id}       — güncelle / pasifleştir
     DELETE /related-parties/{id}       — pasifleştir (silmez)
+    GET    /related-parties/suggestions — geçmiş işlemlerden aday karşı taraflar
     POST   /related-parties/check      — bir karşı tarafı sicille dene
 
 Editing the register is an owner/admin action: it decides which transactions get
@@ -18,14 +19,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.related_party import (
+    group_counterparties,
     load_active_parties,
     match_transaction,
     normalize_name,
@@ -207,6 +211,58 @@ async def deactivate_party(
     party.updated_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"id": party_id, "active": False}, "error": None}
+
+
+@router.get("/related-parties/suggestions")
+async def suggest_counterparties(
+    limit: int = 25,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Recurring counterparties from past transactions, not yet in the register.
+
+    An empty register flags nothing, so the feature is dead until somebody fills
+    it — and nobody sits down to list their own related parties from memory.
+    This turns it around: here are the counterparties you actually pay, ranked
+    by how often and how much, tell us which ones you are connected to.
+
+    Recurrence is the signal. A one-off supplier is noise; rent paid to the same
+    name every month for a year is exactly the shape of the transaction this
+    register exists to surface.
+    """
+    org_id = _org_id(current_user)
+
+    rows = (
+        await db.execute(
+            select(
+                Transaction.vendor,
+                func.count().label("tx_count"),
+                func.sum(func.abs(Transaction.amount_kurus)).label("total_kurus"),
+            )
+            .join(AnalysisJob, Transaction.job_id == AnalysisJob.id)
+            .where(
+                AnalysisJob.org_id == org_id,
+                Transaction.vendor.is_not(None),
+                Transaction.vendor != "",
+            )
+            .group_by(Transaction.vendor)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    known = {p.normalized_name for p in await load_active_parties(org_id, db)}
+    suggestions = group_counterparties(
+        [(v, int(c or 0), int(t or 0)) for v, c, t in rows], known, limit=limit
+    )
+
+    return {
+        "data": {
+            "suggestions": suggestions,
+            "count": len(suggestions),
+            "registry_size": len(known),
+        },
+        "error": None,
+    }
 
 
 @router.post("/related-parties/check")

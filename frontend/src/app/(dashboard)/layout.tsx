@@ -43,6 +43,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/command-center", label: "Command Center", icon: Activity },
       { href: "/kurumsallasma",  label: "Kurumsallaşma",  icon: TrendingUp },
+      { href: "/iliskili-taraf", label: "İlişkili Taraf",  icon: Users },
       { href: "/pnl",            label: "Dashboard",      icon: LayoutDashboard },
       { href: "/upload",         label: "Upload",         icon: Upload },
     ],

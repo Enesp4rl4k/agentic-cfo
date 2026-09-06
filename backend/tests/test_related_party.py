@@ -11,6 +11,7 @@ from app.platform.authority_matrix import (
 )
 from app.services.related_party import (
     annotate_transactions,
+    group_counterparties,
     match_transaction,
     normalize_name,
     normalize_tax_id,
@@ -148,3 +149,60 @@ def test_same_entry_without_the_flag_is_auto_approved() -> None:
     )
     assert decision.matched_rule_id != "related_party"
     assert not decision.needs_review
+
+
+# ── The suggestion flow ───────────────────────────────────────────────────────
+# An empty register flags nothing, so the feature is dead until somebody fills
+# it — and nobody lists their own related parties from memory. These cover the
+# ranking rule the suggestion endpoint applies.
+
+def test_suggestion_normalisation_dedupes_spellings() -> None:
+    """The same counterparty spelled three ways is one suggestion.
+
+    A statement will carry "OZTURK HOLDING", "Öztürk Holding A.Ş." and
+    "Ozturk Hold." for one company; offering all three as separate candidates
+    makes the list unusable.
+    """
+    spellings = ["OZTURK HOLDING", "Öztürk Holding A.Ş.", "Ozturk Holding Anonim Şirketi"]
+    assert len({normalize_name(s) for s in spellings}) == 1
+
+
+def test_already_registered_party_is_not_suggested_again() -> None:
+    party = _party("Öztürk Holding")
+    known = {party.normalized_name}
+    assert normalize_name("OZTURK HOLDING A.S.") in known
+
+
+def test_recurrence_is_counted_after_normalising_not_before() -> None:
+    """The regression that made this endpoint useless on its first live run.
+
+    Grouping and thresholding in SQL counts how often a company was spelled one
+    particular way. A landlord whose name lands differently every month is the
+    exact counterparty the register exists to surface, and it was the one the
+    threshold filtered out — while a supermarket spelled identically twice
+    sailed through.
+    """
+    rows = [
+        ("OZTURK HOLDING", 1, 25_000_00),
+        ("Ozturk Holding A.S.", 1, 25_000_00),
+        ("OZTURK HOLDING ANONIM SIRKETI", 1, 25_000_00),
+        ("Migros", 2, 1_750_00),
+        ("Acme Ltd", 1, 150_000_00),   # genuinely a one-off
+    ]
+    out = group_counterparties(rows, known=set())
+
+    names = [g["normalized_name"] for g in out]
+    assert names == ["ozturk", "migros"], names
+
+    ozturk = out[0]
+    assert ozturk["transaction_count"] == 3
+    assert ozturk["spellings"] == 3
+    # The longest spelling is shown: most information for someone deciding
+    # whether they recognise the name.
+    assert ozturk["vendor"] == "OZTURK HOLDING ANONIM SIRKETI"
+
+
+def test_registered_parties_drop_out_of_suggestions() -> None:
+    rows = [("OZTURK HOLDING", 2, 100), ("Migros", 2, 100)]
+    out = group_counterparties(rows, known={"ozturk"})
+    assert [g["normalized_name"] for g in out] == ["migros"]
