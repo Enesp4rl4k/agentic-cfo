@@ -3,6 +3,7 @@
 import { useEffect, useState, createContext, useContext } from "react";
 import { Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { STORAGE_PREFIX } from "@/lib/branding";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   resolvedTheme: "dark",
 });
 
-const STORAGE_KEY = "clevelai_theme";
+const STORAGE_KEY = `${STORAGE_PREFIX}_theme`;
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 

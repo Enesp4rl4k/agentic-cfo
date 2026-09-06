@@ -1,8 +1,9 @@
 import type { MessageTree } from "./en";
+import { brand } from "@/lib/branding";
 
 export const tr: MessageTree = {
   product: {
-    name: "Agentic Management OS",
+    name: brand.name,
     tagline: "Tüm C-Suite zekası — tek platformda.",
   },
   nav: {
@@ -28,7 +29,7 @@ export const tr: MessageTree = {
   },
   billing: {
     title: "Planınızı seçin",
-    subtitle: "Startup'tan enterprise'a Agentic Management OS.",
+    subtitle: "Startup'tan enterprise'a yönetim işletim sistemi.",
     monthly: "Aylık",
     yearly: "Yıllık",
     currentPlan: "Mevcut plan",

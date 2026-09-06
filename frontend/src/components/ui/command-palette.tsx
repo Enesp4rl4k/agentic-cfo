@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { STORAGE_PREFIX } from "@/lib/branding";
 
 // ── Command definitions ───────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ function score(cmd: Command, query: string): number {
 
 // ── Recent commands (localStorage) ───────────────────────────────────────────
 
-const RECENT_KEY = "clevelai_recent_commands";
+const RECENT_KEY = `${STORAGE_PREFIX}_recent_commands`;
 const MAX_RECENT  = 5;
 
 function getRecentIds(): string[] {

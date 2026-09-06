@@ -28,6 +28,7 @@ try:
 except ImportError:  # pragma: no cover - exercised only in minimal installs
     REPORTLAB_AVAILABLE = False
 
+from app.core.branding import get_brand
 from app.core.financial import cents_to_amount
 from app.core.interfaces import IReportExporter
 
@@ -485,7 +486,7 @@ class BoardDeckPDFBuilder:
         story.append(HRFlowable(width="100%", thickness=0.5,
                                 color=colors.HexColor("#CBD5E1"), spaceAfter=6))
         story.append(Paragraph(
-            "Auto-synthesized by the Agentic Management OS. "
+            f"Auto-synthesized by {get_brand().name}. "
             "Execute decisions only with board and licensed-advisor approval.",
             ParagraphStyle("BD_Foot", parent=styles["Normal"], fontSize=7.5,
                            leading=10, textColor=colors.HexColor("#94A3B8")),

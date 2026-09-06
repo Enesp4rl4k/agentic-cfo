@@ -167,20 +167,55 @@ def test_no_raw_sql_in_api_layer() -> None:
 # project does not own. Renaming meant a grep. Both now resolve through
 # app/core/branding.py; this keeps them there.
 
-_BRAND_LITERALS = ("clevelai", "C-Level AI")
+# Assembled from the names actually in the tree, in two passes. The first
+# listed only the ones I already knew about and missed "Agentic Management OS"
+# sitting in the page title, both i18n dictionaries and a PDF footer — a guard
+# is only as good as its list. The frontend was outside it entirely, which is
+# how that fourth name survived the rename.
+_BRAND_LITERALS = (
+    "clevelai",
+    "C-Level AI",
+    "Agentic Management OS",
+    "Agentic OS",
+)
+
+
+def _brand_offenders(
+    root: Path, suffixes: tuple[str, ...], skip: tuple[str, ...]
+) -> list[str]:
+    found: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix not in suffixes:
+            continue
+        if any(part in {"__pycache__", "node_modules"} for part in path.parts):
+            continue
+        if path.name in skip:
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            # A comment explaining why the old name is gone is not a usage.
+            if line.lstrip().startswith(("#", "*", "//")):
+                continue
+            for lit in _BRAND_LITERALS:
+                if lit in line:
+                    found.append(f"{path.name}:{i}: {line.strip()[:80]}")
+    return found
 
 
 def test_no_hardcoded_brand_in_backend() -> None:
-    offenders: list[str] = []
-    for path in sorted(APP.rglob("*.py")):
-        if "__pycache__" in path.parts or path.name == "branding.py":
-            continue
-        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for lit in _BRAND_LITERALS:
-                if lit in line:
-                    offenders.append(f"{_rel(path)}:{i}: {line.strip()[:80]}")
+    offenders = _brand_offenders(APP, (".py",), ("branding.py",))
     assert not offenders, (
         "brand name hard-coded — read it from app.core.branding.get_brand():\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_no_hardcoded_brand_in_frontend() -> None:
+    frontend = APP.parents[1] / "frontend" / "src"
+    if not frontend.is_dir():  # pragma: no cover - backend-only checkouts
+        pytest.skip("frontend not present")
+    offenders = _brand_offenders(frontend, (".ts", ".tsx"), ("branding.ts",))
+    assert not offenders, (
+        "brand name hard-coded — read it from @/lib/branding:\n  "
         + "\n  ".join(offenders)
     )
 
@@ -208,3 +243,25 @@ def test_cors_middleware_is_registered_last() -> None:
         "CORSMiddleware must be added last so it is the outermost middleware; "
         f"anything registered after it short-circuits without CORS headers. Order: {names}"
     )
+
+
+# ── Upload paths must behave the same ─────────────────────────────────────────
+# There are two: POST /upload, which every test and the golden-path script use,
+# and POST /data-quality/validate-and-upload, which is what the UI actually
+# posts to. The second copied the job creation from the first and not the
+# enqueue, so every file uploaded through the interface produced a job that sat
+# pending forever while the response said `started: true`.
+
+def test_every_upload_path_enqueues_the_analysis() -> None:
+    paths = {
+        "app/api/upload.py": "/upload",
+        "app/api/data_quality.py": "/data-quality/validate-and-upload",
+    }
+    missing: list[str] = []
+    for rel, route in paths.items():
+        src = (APP.parent / rel).read_text(encoding="utf-8")
+        if "create_analysis_job(" not in src:
+            continue  # no longer an upload path
+        if "enqueue_analysis(" not in src:
+            missing.append(f"{rel} ({route}) creates a job but never enqueues it")
+    assert not missing, "\n  ".join(missing)

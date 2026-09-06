@@ -4,7 +4,7 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-2583%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-2589%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -226,7 +226,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 2583 tests
+pytest tests/ -q          # run all 2589 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```
@@ -333,6 +333,20 @@ rate-limited responses; it is 42 calls and 3 now.
 `proof.sh` runs it whenever `FRONTEND_URL` is set. Playwright drives an already
 installed Chrome or Edge in preference to its own bundled Chromium, which needs
 an MSVC runtime that a stock Windows box does not have.
+
+### The chain, clicked
+
+```bash
+FRONTEND_URL=http://localhost:3000 BACKEND_URL=http://localhost:8000   python scripts/flow_e2e.py
+```
+
+`tr-governance-e2e.sh` proves the governance chain over the API. This proves it
+is reachable by clicking: the file picker on `/upload`, the autopilot button on
+`/tr-vertical`, the approve control on `/smmm-onay`, then the packet and the
+index. Rendering is not the same as working, and the API path is not the path a
+user takes — its first run found that uploading through the interface created a
+job that never ran, and that the autopilot silently dropped every entry the
+authority matrix had reserved for a human.
 
 It does not retry and has no tolerance band. Every `database is locked` the
 sweep produced turned out to be a single missing commit in the semantic rebuild

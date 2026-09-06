@@ -296,6 +296,13 @@ function DropZone({
   );
 }
 
+// Where a finished upload goes. This used to be "/", which was the dashboard
+// until a marketing landing page took that route — after which someone who had
+// just uploaded their financials was sent to a page inviting them to sign up,
+// with their job id sitting unread in the query string. /pnl is the route the
+// nav labels "Dashboard" and one of the pages that actually reads ?job=.
+const POST_UPLOAD_ROUTE = "/pnl";
+
 // ── Main upload page ──────────────────────────────────────────────────────────
 
 type Phase = "idle" | "validating" | "review" | "uploading" | "done" | "error";
@@ -320,7 +327,7 @@ export default function UploadPage() {
 
       // Small delay so the user sees the success state briefly
       const t = setTimeout(() => {
-        router.push(`/?job=${jobId}`);
+        router.push(`${POST_UPLOAD_ROUTE}?job=${jobId}`);
       }, 1200);
       return () => clearTimeout(t);
     }
@@ -402,7 +409,7 @@ export default function UploadPage() {
 
   // Navigate to results
   function goToDashboard() {
-    if (jobId) router.push(`/?job=${jobId}`);
+    if (jobId) router.push(`${POST_UPLOAD_ROUTE}?job=${jobId}`);
   }
 
   const [uploadMode, setUploadMode] = useState<"single" | "batch">("single");

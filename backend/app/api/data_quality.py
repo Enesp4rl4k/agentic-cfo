@@ -181,7 +181,31 @@ async def validate_and_upload(
                 db=db,
             )
             job_id = job.id
-            started = True
+
+            # Queue the analysis. The comment above says "same as /upload" and
+            # the job creation was indeed copied — the enqueue was not, so every
+            # file uploaded through the UI (which posts here, not to /upload)
+            # created a job that sat pending forever while `started: true` said
+            # otherwise. Nothing caught it because the API path, which every
+            # test and the golden-path script use, is /upload.
+            if settings.auto_enqueue_analysis_on_upload:
+                try:
+                    from app.worker import enqueue_analysis
+
+                    await enqueue_analysis(job.id)
+                    started = True
+                except Exception:
+                    # The upload itself succeeded; the user can retrigger. Say so
+                    # rather than reporting a start that did not happen.
+                    logger.exception("Analysis enqueue failed for job=%s", job.id)
+                    blocked_reason = (
+                        "Dosya yüklendi ancak analiz başlatılamadı. "
+                        "Analizi panelden yeniden tetikleyebilirsiniz."
+                    )
+            else:
+                blocked_reason = (
+                    "Dosya yüklendi. Otomatik analiz kapalı, analizi elle başlatın."
+                )
         except FileValidationError as exc:
             blocked_reason = str(exc)
         except Exception as exc:

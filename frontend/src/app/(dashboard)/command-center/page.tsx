@@ -21,6 +21,7 @@ import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe,
 import { ConflictCard } from "@/components/command-center/ConflictCard";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
+import { brand } from "@/lib/branding";
 
 // ── Types (re-use API types, add icon/color locally) ──────────────────────────
 
@@ -777,7 +778,7 @@ export default function CommandCenterPage() {
               {ctxSummary?.company_name
                 ? <><Building2 className="inline h-3.5 w-3.5 mr-1 opacity-60" aria-hidden="true" />{ctxSummary.company_name} · </>
                 : null}
-              Agentic Management OS · {agents.length || 9} agents
+              {brand.name} · {agents.length || 9} agents
               {liveStatus?.live_sync_enabled && (
                 <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
                   live sync · {liveStatus.baseline_source}

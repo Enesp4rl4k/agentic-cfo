@@ -39,6 +39,51 @@ logger = logging.getLogger(__name__)
 _MUHASEBE_JOURNAL_REPORT = "tr_muhasebe_journal"
 
 
+async def _org_packs(db: AsyncSession, org_id: str | None) -> list[str]:
+    if not org_id:
+        return []
+    from app.services.regional.packs import normalize_packs
+
+    org = await db.get(Organization, str(org_id))
+    return normalize_packs(getattr(org, "regional_packs", None)) if org else []
+
+
+async def _enqueue_smmm_review(
+    db: AsyncSession,
+    *,
+    job_id: str,
+    org_id: str | None,
+    user_id: str,
+    items: list[dict[str, Any]],
+    packs: list[str],
+) -> int:
+    """Write the review records for entries policy reserved for a human.
+
+    Shared by both journal-producing routes. It was inline in one of them, and
+    the other simply did not do it — the same shape as the two upload paths,
+    where a second entry point copied part of the first.
+    """
+    if "tr" not in packs:
+        return 0
+    added = 0
+    for onay_item in items:
+        db.add(SMMMOnayKaydi(
+            job_id=job_id,
+            org_id=org_id,
+            created_by_user_id=user_id,
+            kayit_id=onay_item["kayit_id"],
+            orijinal_kayit=onay_item,
+            durum=OnayDurumu.BEKLIYOR,
+            otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
+            otomatik_confidence=onay_item.get("confidence"),
+            onay_neden=onay_item.get("onay_neden"),
+            tx_description=onay_item.get("tx_description"),
+            tx_amount_try=onay_item.get("tx_amount_try"),
+        ))
+        added += 1
+    return added
+
+
 async def _persist_muhasebe_journal(
     db: AsyncSession, job_id: str, full_result: dict[str, Any]
 ) -> None:
@@ -186,24 +231,14 @@ async def muhasebe_analiz(
     )
 
     # SMMM onay kuyruğu — Turkey pack only
-    onay_eklendi = 0
-    if "tr" in packs:
-        for onay_item in sonuc.onay_kuyrugu:
-            kayit = SMMMOnayKaydi(
-                job_id=body.job_id,
-                org_id=str(job.org_id) if job.org_id else None,
-                created_by_user_id=current_user.id,
-                kayit_id=onay_item["kayit_id"],
-                orijinal_kayit=onay_item,
-                durum=OnayDurumu.BEKLIYOR,
-                otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
-                otomatik_confidence=onay_item.get("confidence"),
-                onay_neden=onay_item.get("onay_neden"),
-                tx_description=onay_item.get("tx_description"),
-                tx_amount_try=onay_item.get("tx_amount_try"),
-            )
-            db.add(kayit)
-            onay_eklendi += 1
+    onay_eklendi = await _enqueue_smmm_review(
+        db,
+        job_id=body.job_id,
+        org_id=str(job.org_id) if job.org_id else None,
+        user_id=current_user.id,
+        items=sonuc.onay_kuyrugu,
+        packs=packs,
+    )
 
     # Persist the full journal (incl. auto-posted entries) so the defensibility
     # packet can itemise every decision later. Upsert the latest per job.
@@ -294,7 +329,28 @@ async def muhasebe_tr_vertical(
             body.job_id,
             {**result.accounting, "yevmiye_kayitlari": result.accounting_journal or []},
         )
+
+        # Queue the entries the authority matrix held back. The autopilot may
+        # auto-post what policy lets it auto-post; it does not get to discard
+        # what policy reserved for a human. This path produced the journal and
+        # the sealable packet but never wrote a single review record, so the
+        # related-party escalations, the low-confidence holds and the
+        # owner-approval rules all evaporated — and /smmm-onay, the only place
+        # a human reviews anything, stayed empty no matter what was uploaded.
+        onay_eklendi = await _enqueue_smmm_review(
+            db,
+            job_id=body.job_id,
+            org_id=str(job.org_id) if job.org_id else None,
+            user_id=current_user.id,
+            items=(result.accounting.get("onay_kuyrugu") or []),
+            packs=await _org_packs(db, job.org_id),
+        )
         await db.commit()
+        if onay_eklendi:
+            logger.info(
+                "tr-vertical: %d kayıt SMMM onayına düştü (job=%s)",
+                onay_eklendi, body.job_id,
+            )
 
     # Record the generated board deck so it can be fetched later (GET below).
     if result.board_deck_pdf_path:

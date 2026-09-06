@@ -1,3 +1,5 @@
+import { brand } from "@/lib/branding";
+
 export type MessageTree = {
   product: {
     name: string;
@@ -46,7 +48,7 @@ export type MessageTree = {
 
 export const en: MessageTree = {
   product: {
-    name: "Agentic Management OS",
+    name: brand.name,
     tagline: "Your entire C-Suite, powered by AI — globally.",
   },
   nav: {
@@ -72,7 +74,7 @@ export const en: MessageTree = {
   },
   billing: {
     title: "Choose your plan",
-    subtitle: "Agentic Management OS for startups to enterprise.",
+    subtitle: "A management operating system, from startup to enterprise.",
     monthly: "Monthly",
     yearly: "Yearly",
     currentPlan: "Current plan",

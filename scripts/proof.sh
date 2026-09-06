@@ -78,6 +78,9 @@ check "rag staging proof" \
 check "golden path e2e script present" \
   test -f scripts/golden-path-e2e.sh
 
+check "flow e2e script present" \
+  test -f scripts/flow_e2e.py
+
 check "page sweep script present" \
   test -f scripts/page_sweep.py
 
@@ -212,8 +215,15 @@ if [[ -n "${BACKEND_URL:-}" ]]; then
     check "page sweep ($FRONTEND_URL)" \
       env FRONTEND_URL="$FRONTEND_URL" BACKEND_URL="$BACKEND_URL" \
       python scripts/page_sweep.py
+
+    # And the chain a user actually walks: file picker, autopilot button,
+    # approve control. Page sweep proves every page renders; this proves the
+    # steps do their job when clicked.
+    check "flow e2e ($FRONTEND_URL)" \
+      env FRONTEND_URL="$FRONTEND_URL" BACKEND_URL="$BACKEND_URL" \
+      python scripts/flow_e2e.py
   else
-    WARN "FRONTEND_URL not set — skipping page sweep"
+    WARN "FRONTEND_URL not set — skipping page sweep and flow e2e"
     echo ""
   fi
 else

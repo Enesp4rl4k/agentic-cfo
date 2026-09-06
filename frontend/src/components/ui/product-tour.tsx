@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { X, ChevronRight, ChevronLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { STORAGE_PREFIX } from "@/lib/branding";
 
 // ── Tour step definition ──────────────────────────────────────────────────────
 
@@ -57,8 +58,8 @@ export const DASHBOARD_TOUR: TourStep[] = [
 
 // ── Tour storage ──────────────────────────────────────────────────────────────
 
-const TOUR_STORAGE_KEY        = "clevelai_tour_completed";
-const TOUR_PENDING_STORAGE_KEY = "clevelai_tour_pending";
+const TOUR_STORAGE_KEY        = `${STORAGE_PREFIX}_tour_completed`;
+const TOUR_PENDING_STORAGE_KEY = `${STORAGE_PREFIX}_tour_pending`;
 
 export function isTourCompleted(): boolean {
   if (typeof window === "undefined") return true;

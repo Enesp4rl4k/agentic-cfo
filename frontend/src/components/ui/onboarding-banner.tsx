@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { STORAGE_PREFIX } from "@/lib/branding";
 
 // ── Step definitions ──────────────────────────────────────────────────────────
 
@@ -101,8 +102,8 @@ const ONBOARDING_STEPS = [
   },
 ] as const;
 
-const STORAGE_KEY    = "clevelai_onboarding_dismissed";
-const WIZARD_STORAGE = "clevelai_onboarding_wizard_shown";
+const STORAGE_KEY    = `${STORAGE_PREFIX}_onboarding_dismissed`;
+const WIZARD_STORAGE = `${STORAGE_PREFIX}_onboarding_wizard_shown`;
 
 // ── Feature chip ──────────────────────────────────────────────────────────────
 
