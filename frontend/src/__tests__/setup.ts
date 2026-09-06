@@ -45,6 +45,26 @@ vi.mock("next/image", () => ({
   },
 }));
 
+// ── Mock IntersectionObserver for JSDOM ───────────────────────────────────────
+class MockIntersectionObserver {
+  callback: (entries: Array<{ isIntersecting: boolean; target: Element }>) => void;
+  constructor(callback: (entries: Array<{ isIntersecting: boolean; target: Element }>) => void) {
+    this.callback = callback;
+  }
+  observe = vi.fn((el: Element) => {
+    if (this.callback) {
+      this.callback([{ isIntersecting: true, target: el }]);
+    }
+  });
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+Object.defineProperty(globalThis, "IntersectionObserver", {
+  writable: true,
+  configurable: true,
+  value: MockIntersectionObserver,
+});
+
 // ── Suppress console.error noise in tests ─────────────────────────────────────
 const originalError = console.error;
 beforeAll(() => {

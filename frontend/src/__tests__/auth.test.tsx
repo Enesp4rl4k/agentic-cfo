@@ -3,6 +3,7 @@
  *
  * Mocks: next-auth/react, next/navigation (both in setup.ts)
  */
+import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -15,16 +16,17 @@ import { signIn } from "next-auth/react";
  * without importing the full Next.js page (which pulls in many providers).
  */
 function LoginFormStub() {
-  const [email, setEmail] = ([] as unknown as [string, (v: string) => void]);
-  // We test via a real-ish DOM simulation; just re-export the key logic.
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
+        const email = fd.get("email");
+        const password = fd.get("password");
+        if (!email || !password) return;
         await signIn("credentials", {
-          email:    fd.get("email"),
-          password: fd.get("password"),
+          email,
+          password,
           redirect: false,
         });
       }}

@@ -4,16 +4,17 @@
  * We test the pure utility functions and a minimal component tree.
  * Heavy chart components (recharts) are mocked.
  */
+import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 // ── Mock recharts (uses SVG/canvas not available in jsdom) ────────────────────
 vi.mock("recharts", () => ({
-  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  LineChart:     () => <div data-testid="line-chart" />,
-  AreaChart:     () => <div data-testid="area-chart" />,
-  BarChart:      () => <div data-testid="bar-chart" />,
-  ComposedChart: () => <div data-testid="composed-chart" />,
+  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
+  LineChart:     () => React.createElement("div", { "data-testid": "line-chart" }),
+  AreaChart:     () => React.createElement("div", { "data-testid": "area-chart" }),
+  BarChart:      () => React.createElement("div", { "data-testid": "bar-chart" }),
+  ComposedChart: () => React.createElement("div", { "data-testid": "composed-chart" }),
   Line:          () => null,
   Area:          () => null,
   Bar:           () => null,
@@ -99,8 +100,9 @@ import { SocialProofSection } from "@/components/landing/SocialProofSection";
 describe("SocialProofSection", () => {
   it("renders all four stat blocks", () => {
     render(<SocialProofSection />);
-    expect(screen.getByText("12+")).toBeDefined();
-    expect(screen.getByText("5 dk")).toBeDefined();
-    expect(screen.getByText("941")).toBeDefined();
+    expect(screen.getByText("AI Ajan")).toBeDefined();
+    expect(screen.getByText("İlk Analize Kadar")).toBeDefined();
+    expect(screen.getByText("Test Geçiyor")).toBeDefined();
+    expect(screen.getByText("ERP Entegrasyonu")).toBeDefined();
   });
 });

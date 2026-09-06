@@ -532,8 +532,7 @@ function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
 
 export default function WorkspaceSettingsPage() {
   const { data: session } = useSession();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- NextAuth session token shape
-  const accessToken = (session as any)?.accessToken as string | undefined;
+  const accessToken = (session as { accessToken?: string } | null)?.accessToken;
 
   const [org, setOrg]           = useState<OrgData | null>(null);
   const [members, setMembers]   = useState<Member[]>([]);

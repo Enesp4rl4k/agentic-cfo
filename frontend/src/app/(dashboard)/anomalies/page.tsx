@@ -463,30 +463,7 @@ export default function AnomaliesPage() {
   const { data, isLoading } = useAnomalies(jobId);
   const scan = useScanAnomalies(jobId);
 
-  if (!jobId || (!isLoading && !data)) return <EmptyState />;
-
-  if (isLoading) {
-    return (
-      <div className="space-y-3 p-5">
-        <div className="h-6 w-48 animate-pulse rounded bg-muted" />
-        <div className="grid grid-cols-5 gap-px overflow-hidden rounded-lg border border-border bg-border">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="bg-card px-4 py-4">
-              <div className="mx-auto h-3 w-12 animate-pulse rounded bg-muted" />
-              <div className="mx-auto mt-2 h-6 w-8 animate-pulse rounded bg-muted" />
-            </div>
-          ))}
-        </div>
-        <div className="space-y-2">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const allAnomalies = data!.anomalies;
+  const allAnomalies = useMemo(() => data?.anomalies ?? [], [data?.anomalies]);
 
   // Counts per severity (from all, ignoring ack filter)
   const bySeverity = useMemo(() => {
@@ -528,6 +505,29 @@ export default function AnomaliesPage() {
     });
     return groups;
   }, [filtered]);
+
+  if (!jobId || (!isLoading && !data)) return <EmptyState />;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3 p-5">
+        <div className="h-6 w-48 animate-pulse rounded bg-muted" />
+        <div className="grid grid-cols-5 gap-px overflow-hidden rounded-lg border border-border bg-border">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="bg-card px-4 py-4">
+              <div className="mx-auto h-3 w-12 animate-pulse rounded bg-muted" />
+              <div className="mx-auto mt-2 h-6 w-8 animate-pulse rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const acknowledgedCount = allAnomalies.filter((a) => a.acknowledged).length;
   const hasFilters = filterSeverity !== "all" || filterType !== "all";
