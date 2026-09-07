@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.user import User
 
@@ -227,7 +228,7 @@ async def board_deck_pdf(
             iter([pdf_bytes]),
             media_type = "application/pdf",
             headers    = {
-                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Disposition": content_disposition(f"{filename}"),
                 "Content-Length":      str(len(pdf_bytes)),
             },
         )

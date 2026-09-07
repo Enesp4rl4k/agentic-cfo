@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.core.branding import get_brand
+from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.user import User
 
@@ -52,7 +53,7 @@ def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
         content          = pdf_bytes,
         media_type       = "application/pdf",
         headers          = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": content_disposition(f"{filename}"),
             "Content-Length":      str(len(pdf_bytes)),
             "X-PDF-Size-KB":       str(round(len(pdf_bytes) / 1024, 1)),
         },

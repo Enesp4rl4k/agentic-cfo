@@ -30,6 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.user import User
 
@@ -184,7 +185,7 @@ async def export_personal_data(
         io.BytesIO(json_bytes),
         media_type="application/json",
         headers={
-            "Content-Disposition": f'attachment; filename="my-data-{current_user.id[:8]}.json"',
+            "Content-Disposition": content_disposition(f"my-data-{current_user.id[:8]}.json"),
             "Content-Length": str(len(json_bytes)),
         },
     )

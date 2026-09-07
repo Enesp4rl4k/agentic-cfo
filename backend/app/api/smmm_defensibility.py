@@ -17,6 +17,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps_regional import require_tr_pack
+from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.defensibility_packet import DefensibilityPacket
@@ -143,7 +144,7 @@ async def export_defensibility_packet(
         content=body,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="savunulabilirlik-{packet.job_id}.{ext}"',
+            "Content-Disposition": content_disposition(f"savunulabilirlik-{packet.job_id}.{ext}"),
             "Content-Length": str(len(body)),
         },
     )

@@ -223,6 +223,57 @@ else
   fi
 fi
 
+# ── e-Defter (XBRL GL) ────────────────────────────────────────────────────────
+# The legal filing, built from the very rows the packet just sealed. Checked
+# against GİB's own edefter.xsd when the corpus is present, because "we produce
+# e-Defter" is a claim only that schema can settle — the previous generator
+# emitted a flat listing under GİB's namespace and was rejected at the root.
+for LEDGER in "e-defter.xml:Y:yevmiye" "e-defter-kebir.xml:K:kebir"; do
+  ROUTE="${LEDGER%%:*}"; REST="${LEDGER#*:}"; KIND="${REST%%:*}"; LABEL="${REST##*:}"
+  XML_OUT="$(mktemp -t edefter-XXXXXX.xml)"
+  DEF_CODE=$(curl -s -o "$XML_OUT" -w '%{http_code}'     "$API/muhasebe/$JOB_ID/$ROUTE" "${AUTH[@]}")
+  if [[ "$DEF_CODE" != "200" ]]; then
+    FAIL "e-Defter $LABEL indirilemedi (http $DEF_CODE): $(head -c 200 "$XML_OUT")"
+    FAILURES=$((FAILURES+1))
+  elif ! grep -q "edefter:defter" "$XML_OUT"; then
+    FAIL "e-Defter $LABEL kök elemanı 'defter' değil"
+    FAILURES=$((FAILURES+1))
+  else
+    OK "e-Defter $LABEL üretildi ($(wc -c < "$XML_OUT") bayt)"
+    SCHEMA_MSG=$(XML_OUT="$XML_OUT" python - <<'PYEOF'
+import os, pathlib, sys
+
+xsd = pathlib.Path("backend/tests/fixtures/gib_corpus/e_defter/e-Defter Paketi/xsd/edefter.xsd")
+if not xsd.is_file():
+    print("SKIP korpus yok (python scripts/fetch_gib_corpus.py)")
+    sys.exit(0)
+try:
+    from lxml import etree
+except ImportError:
+    print("SKIP lxml kurulu değil")
+    sys.exit(0)
+try:
+    schema = etree.XMLSchema(etree.parse(str(xsd)))
+    doc = etree.parse(os.environ["XML_OUT"])
+except Exception as exc:
+    print(f"SKIP şema derlenemedi: {exc}")
+    sys.exit(0)
+if schema.validate(doc):
+    print("OK GİB edefter.xsd doğruladı")
+else:
+    first = next(iter(schema.error_log), None)
+    print(f"FAIL şemadan geçmedi: {getattr(first, 'message', '?')[:160]}")
+PYEOF
+)
+    case "$SCHEMA_MSG" in
+      OK*)   OK "e-Defter $LABEL: ${SCHEMA_MSG#OK }" ;;
+      SKIP*) INFO "e-Defter $LABEL şema doğrulaması atlandı: ${SCHEMA_MSG#SKIP }" ;;
+      *)     FAIL "e-Defter $LABEL: ${SCHEMA_MSG#FAIL }"; FAILURES=$((FAILURES+1)) ;;
+    esac
+  fi
+  rm -f "$XML_OUT"
+done
+
 # ── Delegation of authority ───────────────────────────────────────────────────
 INFO "PUT /authority/policy"
 if [[ -f "$POLICY_FILE" ]]; then

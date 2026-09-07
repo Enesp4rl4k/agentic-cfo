@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
@@ -28,6 +28,12 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.organization import Organization
+
+if TYPE_CHECKING:
+    # Imported for annotations only: the service is loaded lazily inside the
+    # handlers, like every other service in this module.
+    from app.services.edefter_xbrl import EDefterXBRL, LedgerOwner
+from app.core.http_headers import content_disposition
 from app.models.report import Report, ReportFormat
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
@@ -493,7 +499,7 @@ async def muhasebe_yevmiye_dokumu(
         content=package.journal_xml,
         media_type="application/xml",
         headers={
-            "Content-Disposition": f'attachment; filename="yevmiye-dokumu-{period}-{job_id}.xml"',
+            "Content-Disposition": content_disposition(f"yevmiye-dokumu-{period}-{job_id}.xml"),
             "X-Yevmiye-SHA256": package.sha256_hash,
             "X-Yevmiye-Entry-Count": str(package.entry_count),
             # Said in the response as well as the docstring: a client that only
@@ -501,6 +507,138 @@ async def muhasebe_yevmiye_dokumu(
             "X-Not-A-GIB-Filing": "true",
         },
     )
+
+
+
+# ── e-Defter (XBRL GL) ───────────────────────────────────────────────────────
+# The real thing: validated against the edefter.xsd GİB publishes, in the
+# format its own samples use. Still unsigned — see the response headers.
+
+async def _edefter_context(
+    job_id: str, current_user: User, db: AsyncSession
+) -> tuple[list[dict], str, LedgerOwner]:
+    """Shared preflight for both ledgers, so they cannot describe different books."""
+    from app.core.branding import get_brand
+    from app.services.edefter_xbrl import LedgerOwner
+    from app.services.smmm_defensibility import DefensibilityError, _load_journal
+
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
+    if (
+        job.org_id
+        and job.org_id != current_user.org_id
+        and current_user.role not in ("admin", "owner")
+    ):
+        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+
+    settings = get_settings()
+    if not settings.gib_vkn:
+        raise HTTPException(
+            status_code=503,
+            detail="GİB VKN yapılandırılmamış — e-Defter üretilemez (GIB_VKN).",
+        )
+
+    try:
+        journal = await _load_journal(db, job_id)
+    except DefensibilityError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    org = (
+        await db.get(Organization, str(current_user.org_id))
+        if current_user.org_id else None
+    )
+    period = str(journal.get("donem") or "")[:7] or job.created_at.strftime("%Y-%m")
+    brand = get_brand()
+
+    owner = LedgerOwner(
+        vkn=settings.gib_vkn,
+        title=(org.name if org else "Şirket"),
+        # Address, phone and accountant details are left blank rather than
+        # filled with something plausible. GİB's format for the producer is
+        # VKN##üretici##yazılım##sürüm.
+        software_name=f"{settings.gib_vkn}##{brand.name}##{brand.name} e-Defter##1.0",
+    )
+    return list(journal.get("yevmiye_kayitlari") or []), period, owner
+
+
+def _edefter_response(pkg: EDefterXBRL, job_id: str) -> Response:
+    if not pkg.is_balanced:
+        # An unbalanced ledger is not something to hand to the tax authority.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Defter dengeli değil (borç {pkg.total_debit_kurus} / "
+                f"alacak {pkg.total_credit_kurus}) — e-Defter üretilmedi."
+            ),
+        )
+    return Response(
+        content=pkg.xml,
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": content_disposition(f"{pkg.file_name}"),
+            "X-EDefter-SHA256": pkg.sha256_hash,
+            "X-EDefter-Entry-Count": str(pkg.entry_count),
+            "X-EDefter-Line-Count": str(pkg.line_count),
+            # Structurally complete, legally incomplete. Said in the response
+            # so a client that only reads headers cannot miss it — as a stable
+            # code, because a header is latin-1 and the reason is Turkish prose.
+            # The prose lives in the OpenAPI description, where it can be read.
+            "X-EDefter-Filable": "false",
+            "X-EDefter-Unfilable-Code": "unsigned-no-berat",
+        },
+    )
+
+
+@router.get("/muhasebe/{job_id}/e-defter.xml")
+async def muhasebe_edefter_yevmiye(
+    job_id: str,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """GİB e-Defter yevmiye defteri (XBRL GL) — `edefter.xsd`'den geçer.
+
+    **Beyan edilebilir değildir.** Yükleyebilmek için mali mühür ya da nitelikli
+    e-imza ile XAdES imzalanması ve beratının alınması gerekir; ikisi de bu
+    sunucuda yok. Belge yapısal olarak tamdır, hukuken eksiktir — yanıt
+    başlıkları bunu açıkça söyler.
+
+    Kaynak, `tr_muhasebe_journal` raporudur: SMMM'nin onayladığı ve
+    savunulabilirlik paketinin mühürlediği satırların ta kendisi. Beyan edilen
+    defterin denetlenen kayıttan ayrışmaması bunun tek amacı.
+    """
+    from app.services.edefter_xbrl import EDefterError, EDefterXBRLGenerator
+
+    entries, period, owner = await _edefter_context(job_id, current_user, db)
+    try:
+        pkg = EDefterXBRLGenerator.generate_journal(
+            entries, period=period, owner=owner
+        )
+    except EDefterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _edefter_response(pkg, job_id)
+
+
+@router.get("/muhasebe/{job_id}/e-defter-kebir.xml")
+async def muhasebe_edefter_kebir(
+    job_id: str,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """GİB e-Defter büyük defteri (kebir, XBRL GL).
+
+    Kebir ikinci bir gerçek kaynağı değildir: aynı yevmiye satırlarının hesap
+    kırılımında okunmuş hâlidir. GİB ikisinin tutmasını kontrol eder, ve tek
+    kaynaktan türetmek tutmalarının tek yoludur.
+    """
+    from app.services.edefter_xbrl import EDefterError, EDefterXBRLGenerator
+
+    entries, period, owner = await _edefter_context(job_id, current_user, db)
+    try:
+        pkg = EDefterXBRLGenerator.generate_ledger(entries, period=period, owner=owner)
+    except EDefterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _edefter_response(pkg, job_id)
 
 
 @router.get("/muhasebe/onay-kuyrugu")
