@@ -19,6 +19,7 @@ import { CrossAgentIntelligence } from "@/components/ui/cross-agent-intelligence
 import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary, type LiveDataStatus } from "@/lib/api/semantic";
 import { ConflictCard } from "@/components/command-center/ConflictCard";
+import { AgentRunLedger } from "@/components/ops/AgentRunLedger";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
 import { brand } from "@/lib/branding";
@@ -904,6 +905,11 @@ export default function CommandCenterPage() {
           </p>
         )}
       </div>
+
+      {/* What the agents actually did. The run ledger and its SLO rollup
+          shipped as a completed phase and had no caller, so a run that stopped
+          halfway left a record nobody could see. */}
+      <AgentRunLedger />
 
       {/* Cross-Agent Intelligence — rule-based, instant, no LLM cost */}
       {fullCtx && (
