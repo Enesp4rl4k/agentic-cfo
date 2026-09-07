@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ActionCenter } from "@/components/ActionCenter";
+import { DomainDataSources } from "@/components/ceo/DomainDataSources";
 
 import { BoardDeckViewer }     from "@/components/ceo/BoardDeckViewer";
 import { OKRWeightedScorecard } from "@/components/ceo/OKRScorecard";
@@ -325,6 +326,11 @@ export default function CEODashboardPage() {
       </div>
 
       <ActionCenter />
+
+      {/* The three-step flow POST /ceo/analyze-from-job describes in its own
+          docstring: upload the statement, attach domain files, run. Neither of
+          the last two routes had a door, so every C-level stayed derived. */}
+      <DomainDataSources />
 
       {/* Input form */}
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
