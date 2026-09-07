@@ -256,6 +256,14 @@ jobs:
             --exclude '(migrations|alembic)' \
             2>&1 | tail -20 || true  # ~590 legacy errors; greened module-by-module into mypy_strict.ini
 
+      # GİB's own published packages: 43 e-Fatura samples covering every invoice
+      # type code it issues, and the e-Defter XBRL GL schemas a ledger is
+      # validated against. Not vendored — a copy in the tree drifts from the
+      # standard, and drift is what these tests exist to catch. The corpus tests
+      # skip without it, so a failure here must not be silent.
+      - name: Fetch GİB corpus
+        run: python scripts/fetch_gib_corpus.py
+
       - name: Run tests
         working-directory: backend
         env:

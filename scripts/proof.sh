@@ -102,6 +102,35 @@ check "board deck smoke" \
 check "TR SMMM checklist" \
   bash scripts/tr-smmm-checklist.sh
 
+# The e-Fatura parser and the e-Defter writer are checked against GİB's own
+# published documents, not against fixtures written to match our regexes.
+check "GİB corpus fetch script" \
+  test -f scripts/fetch_gib_corpus.py && \
+  grep -q "edefter.gov.tr" scripts/fetch_gib_corpus.py
+
+check "GİB corpus wired into CI" \
+  grep -q "fetch_gib_corpus.py" .github/workflows/ci.yml
+
+check "e-Defter is XBRL GL, validated against edefter.xsd" \
+  test -f backend/app/services/edefter_xbrl.py && \
+  grep -q "edefter:defter" backend/app/services/edefter_xbrl.py && \
+  grep -q "edefter.xsd" backend/tests/test_edefter_xbrl.py
+
+check "e-Defter never claims to be filable" \
+  grep -q "filable: bool = False" backend/app/services/edefter_xbrl.py
+
+check "invoice direction comes from the VKN" \
+  grep -q "own_vkn" backend/app/parsers/invoice/ubl_tr.py && \
+  grep -q "own_vkn" backend/app/agents/data_ingestion.py
+
+check "header values survive latin-1" \
+  test -f backend/app/core/http_headers.py && \
+  grep -qF "filename*=UTF-8" backend/app/core/http_headers.py
+
+check "one bank statement shape, one parser" \
+  test -f backend/app/parsers/banks/_shapes.py && \
+  grep -q "SingleSignedColumnParser" backend/app/parsers/banks/yapkredi.py
+
 check "LangGraph checkpointer module" \
   test -f backend/app/agents/checkpointer.py && \
   grep -q "get_checkpointer" backend/app/agents/orchestrator.py
