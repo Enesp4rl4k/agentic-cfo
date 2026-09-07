@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Link2, RefreshCw, CheckCircle, AlertCircle, Clock, Trash2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { EFaturaCard } from "@/components/integrations/EFaturaCard";
 import { Button } from "@/components/ui/button";
 import {
   useERPIntegrations,
@@ -335,6 +336,10 @@ export default function IntegrationsPage() {
           )}
         </div>
       </div>
+
+      {/* GİB e-Fatura — the one connector that brings a real company's real
+          invoices in. It had endpoints and no surface. */}
+      <EFaturaCard />
 
       {/* Aktif panel */}
       {activePanel === "logo_tiger" && (

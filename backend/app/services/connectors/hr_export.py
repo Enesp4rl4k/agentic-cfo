@@ -57,7 +57,7 @@ def normalize_hr_payroll_csv(raw: bytes) -> bytes:
                     "date": rec.get(date_col) or "",
                     "amount": rec.get(amount_col) or "0",
                     "description": (rec.get(name_col) if name_col else None) or f"Payroll {i}",
-                    "category": "payroll",
+                    "category": "salary",   # the vocabulary's term; "payroll" is not one
                     "reference": (rec.get(id_col) if id_col else None) or f"hr-{i}",
                 }
             )

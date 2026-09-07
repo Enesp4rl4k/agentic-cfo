@@ -96,7 +96,11 @@ def test_hr_payroll_maps_to_expense_rows() -> None:
         assert name == "hr_export.csv"
         text = data.decode()
         assert "Ada Lovelace" in text
-        assert "payroll" in text
+        # The pipeline's vocabulary term is "salary"; "payroll" is not a
+        # category it groups by, so rows carrying it vanished from every
+        # report on cost.
+        assert "salary" in text
+        assert "payroll" not in text
 
     asyncio.run(_run())
 

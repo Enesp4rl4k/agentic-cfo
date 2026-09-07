@@ -34,9 +34,12 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import httpx
+
+from app.core.financial import amount_to_cents
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +188,7 @@ class EFaturaClient:
         """
         items = raw if isinstance(raw, list) else raw.get("documents", raw.get("data", []))
         invoices: list[dict[str, Any]] = []
+        skipped = 0
 
         for item in items:
             # Fatura tarihi
@@ -218,6 +222,20 @@ class EFaturaClient:
                 )
                 tx_type = "income"
 
+            # Every field above is read by guessing among three key spellings,
+            # because this client was written against a response nobody had
+            # seen. When all the guesses miss, the result is a transaction with
+            # no date and no amount — a phantom row that reconciles to nothing.
+            # Say so rather than emitting it.
+            if gross_amount <= 0 or not invoice_date:
+                logger.warning(
+                    "GİB faturası atlandı — beklenen alanlar yok "
+                    "(tarih=%r tutar=%r, anahtarlar=%s)",
+                    invoice_date, gross_amount, sorted(item)[:12],
+                )
+                skipped += 1
+                continue
+
             invoices.append({
                 "invoice_id":    item.get("uuid") or item.get("faturaNo") or str(uuid.uuid4()),
                 "invoice_number": item.get("invoiceId") or item.get("faturaNo", ""),
@@ -233,13 +251,22 @@ class EFaturaClient:
                 "status":        item.get("status") or item.get("durum", "accepted"),
                 "tx_type":       tx_type,
                 # CFO pipeline formatına dönüştürülmüş hali
-                "amount_cents":  int(gross_amount * 100),
+                # int() truncates: 19.99 * 100 is 1998.9999… in binary
+                # floating point, so int() gave 1998 kuruş. Always
+                # downward, on a large share of ordinary amounts.
+                "amount_cents":  amount_to_cents(Decimal(str(gross_amount))),
                 "transaction_date": invoice_date,
                 "vendor":        counterparty if direction == "inbound" else None,
                 "category":      "cogs" if direction == "inbound" else "revenue",
                 "raw_source":    "gib_efatura",
             })
 
+        if skipped:
+            logger.warning(
+                "GİB %s listesinde %d/%d fatura okunamadı — alan adları "
+                "beklenenden farklı olabilir",
+                direction, skipped, skipped + len(invoices),
+            )
         return invoices
 
     async def get_all_transactions(

@@ -82,6 +82,12 @@ _CATEGORY_MAP: list[tuple[str, list[str], int]] = [
 # Public alias for tests / callers that still import CATEGORY_KEYWORDS.
 CATEGORY_KEYWORDS: dict[str, list[str]] = {cat: list(kws) for cat, kws, _pri in _CATEGORY_RULES}
 
+# The categories anything downstream knows how to group by. A row carrying
+# anything else is invisible to every report that groups on category, and
+# nothing complains — so a category read off a file has to be checked against
+# this before it is believed.
+KNOWN_CATEGORIES: frozenset[str] = frozenset(cat for cat, _kw, _pri in _CATEGORY_RULES)
+
 
 def _guess_category(description: str) -> str:
     """
@@ -346,7 +352,16 @@ def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
                     amount_cents = 0
 
             tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
-            category = raw_cat or _guess_category(raw_desc)
+            # A category column is the uploader's word, not ours. "Gıda",
+            # "payroll", "sales" — all reasonable to write and none of them
+            # something this pipeline groups by, so an unrecognised value is
+            # worse than a guessed one: it disappears from every report
+            # silently. Keep it only when it is a category we know.
+            cat_lower = raw_cat.strip().lower()
+            category = (
+                cat_lower if cat_lower in KNOWN_CATEGORIES
+                else _guess_category(raw_desc or raw_cat)
+            )
             parsed_dt = _parse_date(raw_dt)
 
             transactions.append({
@@ -402,7 +417,11 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
 
         is_income = inv.direction == "sale"
         tx_type = "income" if is_income else "expense"
-        category = "sales" if is_income else "cogs"
+        # "sales" is not in _CATEGORY_MAP; the vocabulary's income term is
+        # "revenue". Every other producer uses _guess_category, which can
+        # only return a known category — this line was the one that could
+        # not, so nothing downstream recognised what it emitted.
+        category = "revenue" if is_income else "cogs"
         counterparty = (
             inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
         )
