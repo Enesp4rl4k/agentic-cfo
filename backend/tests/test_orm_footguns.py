@@ -354,3 +354,49 @@ def test_every_upload_path_enqueues_the_analysis() -> None:
         if "enqueue_analysis(" not in src:
             missing.append(f"{rel} ({route}) creates a job but never enqueues it")
     assert not missing, "\n  ".join(missing)
+
+
+# ── One statement shape, one parser ───────────────────────────────────────────
+# Yapı Kredi, QNB and Enpara shipped as three modules whose logic was identical
+# once the bank name and marker list were removed — 96–98% the same file, three
+# times. This codebase has already had two other duplicated engines drift apart
+# (a second THP classifier nothing ran, and an e-Defter writer that disagreed
+# with the audited journal), so the shape is worth a guard rather than a memo.
+
+def _parser_logic(path: Path) -> list[str]:
+    """Source with docstrings, comments and bank identity stripped out."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    body: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            stripped = list(node.body)
+            if (
+                stripped
+                and isinstance(stripped[0], ast.Expr)
+                and isinstance(stripped[0].value, ast.Constant)
+            ):
+                stripped = stripped[1:]  # docstring
+            body.extend(ast.dump(n) for n in stripped)
+    return body
+
+
+def test_no_two_bank_parsers_share_their_logic() -> None:
+    import difflib
+
+    banks = sorted(
+        p for p in (APP / "parsers" / "banks").glob("*.py")
+        if p.stem not in ("__init__", "_shapes")
+    )
+    duplicates: list[str] = []
+    for i, a in enumerate(banks):
+        for b in banks[i + 1:]:
+            la, lb = _parser_logic(a), _parser_logic(b)
+            if not la or not lb:
+                continue  # a parser with no logic of its own — that is the point
+            ratio = difflib.SequenceMatcher(None, la, lb).ratio()
+            if ratio > 0.90:
+                duplicates.append(f"{a.stem} ↔ {b.stem}: %{ratio * 100:.0f} aynı")
+    assert not duplicates, (
+        "iki banka parser'ı aynı mantığı taşıyor — ortak biçimi "
+        "app/parsers/banks/_shapes.py içine alın:\n  " + "\n  ".join(duplicates)
+    )

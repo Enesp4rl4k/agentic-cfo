@@ -83,15 +83,31 @@ class BankParser(ABC):
     # ── Shared utilities ───────────────────────────────────────────────────
 
     @staticmethod
+    def is_negative_amount(raw: str) -> bool:
+        """Does this cell carry a minus sign?
+
+        `parse_turkish_amount` returns a magnitude, so the sign has to be read
+        from the raw text. Three parsers each did that themselves, and each also
+        carried an `or amount_cents < 0` clause that could never fire.
+        U+2212 is the real minus sign, which is what a PDF often contains.
+        """
+        return raw.strip().lstrip("₺TL$€£ ").strip().startswith(("-", "−"))
+
+    @staticmethod
     def parse_turkish_amount(raw: str) -> int | None:
         """
-        Convert Turkish-formatted amount string to cents.
+        Convert a Turkish-formatted amount to integer kuruş.
+
+        Returns the **magnitude**: a leading minus is discarded, because
+        `ParsedTransaction.amount_cents` is always positive and the direction is
+        carried by `tx_type`. Read the sign with `is_negative_amount`.
 
         Handles:
-          "1.234,56"  → 123456   (Turkish: dot=thousands, comma=decimal)
-          "1.234"     → 350000   wait, "3.500" → 3500 TL → 350000 kuruş
-          "500,00"    → 50000
-          "1234.56"   → 123456   (US format fallback)
+          "1.234,56"    → 123456      Turkish: dot=thousands, comma=decimal
+          "500,00"      → 50000
+          "3.500"       → 350000      a bare dot with three digits is thousands
+          "1.234.567"   → 123456700   several thousands groups, no decimals
+          "1234.56"     → 123456      US format fallback
         """
         import re
         cleaned = raw.strip().replace(" ", "").replace("\xa0", "")
@@ -109,13 +125,16 @@ class BankParser(ABC):
             # only comma → decimal separator "500,00"
             cleaned = cleaned.replace(",", ".")
         elif "." in cleaned:
-            # only dot: could be thousands separator ("3.500") or decimal ("3.5")
-            # Rule: if exactly 3 digits after dot → thousands separator
+            # Only dots. Every group after the first is a thousands separator if
+            # it is exactly three digits — "3.500" is three thousand five
+            # hundred, "3.5" is three and a half.
+            #
+            # This used to require exactly two parts, so "1.234.567" fell
+            # through to float(), raised, and the row was dropped without a
+            # word: any amount over a million written without kuruş vanished.
             parts = cleaned.split(".")
-            if len(parts) == 2 and len(parts[1]) == 3:
-                # "3.500" → 3500 (thousands separator, no decimal)
-                cleaned = cleaned.replace(".", "")
-            # else: "3.5" → decimal, leave as-is
+            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+                cleaned = "".join(parts)
 
         try:
             return round(float(cleaned) * 100)

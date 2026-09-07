@@ -1,6 +1,21 @@
-"""
-Tests for bank statement parsers.
-Uses synthetic text fixtures — no real PDF files needed.
+"""Banka ekstresi parser'ları.
+
+**Bu dosyadaki fixture'lar parser'ı doğrulamaz.** Her biri, sınadığı regex'e
+bakılarak yazılmış: sütunlar tam da desenin beklediği yerde hizalı, tutarlar tam
+da beklediği biçimde. Böyle bir fixture düşemez — parser'ın kendi varsayımını
+tekrar etmekten başka bir şey yapmıyor. Kaldırmıyoruz, çünkü `can_parse`
+ayrımını ve dizilim mantığını gerçekten sınıyorlar; ama neyi kanıtlamadıklarını
+bilerek okumak gerekiyor.
+
+Düzenden bağımsız olarak sınanabilenler `test_amount_primitives.py` içinde: bir
+Türk bankasının gerçekten bastığı sayı biçimleri. İki gerçek kusur oradan
+çıktı — bir milyon üstü ondalıksız tutarların sessizce düşmesi ve işaretin
+kaybolması.
+
+Eksik olan tek şey gerçek bir ekstre PDF'i: pdfplumber'ın gerçek bir çıktısı,
+kolonların hizasıyla, sarkan satırlarıyla, çok satırlı açıklamalarıyla. Bunlar
+uydurulamaz; uydurulduğunda tam da bu dosyadaki gibi bir fixture çıkar.
+
 done_when: pytest tests/test_parsers/ -q → all pass
 """
 

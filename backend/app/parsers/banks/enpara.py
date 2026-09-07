@@ -1,72 +1,10 @@
 """Enpara.com statement parser."""
 from __future__ import annotations
 
-import re
-
-from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.banks._shapes import SingleSignedColumnParser
 
 
-class EnparaParser(BankParser):
+class EnparaParser(SingleSignedColumnParser):
     bank_id = "enpara"
     bank_display_name = "Enpara.com"
-    _MARKERS = ["ENPARA.COM", "Enpara", "ENPARA", "enpara.com"]
-
-    @classmethod
-    def can_parse(cls, text: str) -> bool:
-        return any(m.upper() in text.upper() for m in cls._MARKERS)
-
-    def parse(self, text: str, file_path: str = "") -> ParsedStatement:
-        statement = ParsedStatement(
-            bank_name=self.bank_display_name,
-            account_number=self._extract_account(text),
-            statement_period_start=None,
-            statement_period_end=None,
-        )
-        statement.transactions = self._parse_table(text)
-        if not statement.transactions:
-            statement.parse_warnings.append("No transactions extracted from Enpara statement.")
-        return statement
-
-    def _extract_account(self, text: str) -> str | None:
-        m = re.search(r"Hesap\s+(?:No|Numarası)\s*[:\-]?\s*(\d[\d\s\-]+)", text, re.IGNORECASE)
-        return m.group(1).strip() if m else None
-
-    def _parse_table(self, text: str) -> list[ParsedTransaction]:
-        """
-        Enpara format: DD/MM/YYYY  Açıklama  Tutar (TL)  Bakiye (TL)
-        """
-        transactions: list[ParsedTransaction] = []
-        row_pattern = re.compile(
-            r"(\d{2}[./]\d{2}[./]\d{4})\s+"
-            r"(.+?)\s+"
-            r"([+-]?[\d.,]+)\s+"
-            r"([\d.,]+)\s*$",
-            re.MULTILINE,
-        )
-        for m in row_pattern.finditer(text):
-            date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
-            description = m.group(2).strip()
-            amount_raw = m.group(3)
-            balance_raw = m.group(4)
-
-            amount_cents = self.parse_turkish_amount(amount_raw)
-            if amount_cents is None or amount_cents == 0:
-                continue
-
-            tx_type = "expense" if amount_raw.startswith("-") or amount_cents < 0 else "income"
-            balance_cents = self.parse_turkish_amount(balance_raw)
-
-            transactions.append(
-                ParsedTransaction(
-                    date=date,
-                    description=description,
-                    amount_cents=abs(amount_cents),
-                    tx_type=tx_type,
-                    currency="TRY",
-                    balance_cents=balance_cents,
-                    raw_row=m.group(0),
-                )
-            )
-        return transactions
+    _MARKERS = ["ENPARA.COM", "Enpara.com", "ENPARA", "Enpara"]
