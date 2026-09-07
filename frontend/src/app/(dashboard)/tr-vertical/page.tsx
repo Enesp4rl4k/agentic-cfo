@@ -13,9 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfidenceBreakdown } from "@/components/ui/confidence-breakdown";
 import { DefensibilityPacketCard } from "@/components/smmm/DefensibilityPacketCard";
+import { EDefterCard } from "@/components/smmm/EDefterCard";
 import { listJobs, type JobSummary } from "@/lib/api/cfo";
 import {
-  runTrVertical, downloadTrBoardDeck, type TrVerticalResult,
+  runTrVertical, downloadTrBoardDeck, hasApprovedJournal,
+  type TrVerticalResult,
 } from "@/lib/api/muhasebe";
 
 const STAGES: Array<TrVerticalResult["stage"]> = [
@@ -222,6 +224,11 @@ export default function TrVerticalPage() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<TrVerticalResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The run result lives only in page state, so the tail of the chain —
+  // the sealed packet and the e-Defter built from it — used to vanish the
+  // moment the user walked to the approval queue and came back. Ask the
+  // server instead of relying on what this page happens to remember.
+  const [journalReady, setJournalReady] = useState(false);
 
   useEffect(() => {
     listJobs()
@@ -232,6 +239,13 @@ export default function TrVerticalPage() {
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (!jobId) { setJournalReady(false); return; }
+    let live = true;
+    hasApprovedJournal(jobId).then((ok) => { if (live) setJournalReady(ok); });
+    return () => { live = false; };
+  }, [jobId]);
 
   const run = useCallback(async () => {
     if (!jobId) return;
@@ -298,9 +312,7 @@ export default function TrVerticalPage() {
           <PnlSnapshot result={result} />
           <ConfidenceBreakdown data={result.cfo.confidence_breakdown} />
           <AccountingSummary result={result} />
-          {result.stage === "done" && jobId && (
-            <DefensibilityPacketCard jobId={jobId} />
-          )}
+
 
           {result.reconciliation && result.reconciliation.action !== "proceed" && (
             <Card className="border-amber-500/40 bg-amber-500/5 p-4 text-sm">
@@ -329,6 +341,18 @@ export default function TrVerticalPage() {
               ))}
             </Card>
           )}
+        </div>
+      )}
+
+      {/* The tail of the chain, shown whenever the job actually has an approved
+          journal — not only while this page still remembers running it. The
+          natural path is run → approve the queue → come back and seal, and that
+          walk used to leave both cards behind. */}
+      {jobId && (journalReady || result?.stage === "done") && (
+        <div className="space-y-4">
+          <DefensibilityPacketCard jobId={jobId} />
+          {/* Built from the rows the packet seals, so it belongs next to it. */}
+          <EDefterCard jobId={jobId} />
         </div>
       )}
     </div>

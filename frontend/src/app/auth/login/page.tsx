@@ -3,6 +3,7 @@
 import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { APP_HOME } from "@/lib/routes";
 import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -46,7 +47,9 @@ const SSO_PROVIDERS = [
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+  // Defaulting to "/" sent people who signed in straight to the marketing
+  // page — the same trap as the post-upload redirect.
+  const callbackUrl = searchParams.get("callbackUrl") ?? APP_HOME;
 
   const [email, setEmail]           = useState("");
   const [password, setPassword]     = useState("");

@@ -72,6 +72,18 @@ class Failure(Exception):
 
 # ── Backend helpers (setup only; the flow itself goes through the UI) ─────────
 
+def _api_raw(base: str, path: str, *, token: str) -> bytes:
+    """Fetch a non-JSON response (a ledger, a PDF) and return its bytes."""
+    req = urllib.request.Request(
+        f"{base}{path}", headers={"Authorization": f"Bearer {token}"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        raise Failure(f"GET {path} -> {exc.code}: {exc.read()[:200]!r}") from exc
+
+
 def _api(base: str, method: str, path: str, body: dict | None = None,
          token: str | None = None) -> dict:
     data = json.dumps(body or {}).encode() if method in {"POST", "PUT", "PATCH"} else None
@@ -312,6 +324,64 @@ class Flow:
         ok(f"approved {approved} entries by clicking")
         return approved
 
+    def seal_and_download_edefter(self) -> None:
+        """Come back for the packet and the ledger — without re-running anything.
+
+        This is the natural path: run the autopilot, walk to the queue, approve,
+        come back and seal. It used to end on an empty page, because the run
+        result lived only in page state and both cards were gated on it. So the
+        assertion that matters here is that the cards are present on a *fresh*
+        load, with no autopilot click in between.
+        """
+        step("tr-vertical — seal the packet and download the e-Defter")
+        self.goto("/tr-vertical")
+
+        build = self.page.get_by_role("button", name="Paketi oluştur")
+        if build.count() == 0:
+            self.shot("no-packet-card")
+            raise Failure(
+                "no 'Paketi oluştur' on a fresh /tr-vertical after approving the "
+                "queue — the tail of the chain is unreachable without re-running "
+                "the whole autopilot"
+            )
+        build.first.click()
+        self.page.wait_for_timeout(1500)
+
+        statement = self.page.locator("textarea")
+        if statement.count() == 0:
+            self.shot("no-statement-box")
+            raise Failure("packet built but no statement box to finalize it")
+        statement.first.fill(
+            "Donem kayitlari SMMM tarafindan incelenmis ve onaylanmistir."
+        )
+        self.page.get_by_role("button", name="Kesinleştir ve mühürle").first.click()
+        self.page.wait_for_timeout(2000)
+        self.shot("packet-sealed")
+        ok("packet sealed by clicking")
+
+        for label in ("Yevmiye defteri", "Defter-i kebir"):
+            button = self.page.get_by_role("button", name=label)
+            if button.count() == 0:
+                self.shot("no-edefter-button")
+                raise Failure(f"no '{label}' download on /tr-vertical")
+            with self.page.expect_download(timeout=NAV_TIMEOUT_MS) as dl:
+                button.first.click()
+            name = dl.value.suggested_filename
+            # GİB naming: VKN-YYYYMM-Y-000000.xml
+            if not name.endswith(".xml") or "-Y-" not in name and "-K-" not in name:
+                raise Failure(f"'{label}' downloaded as {name!r}, not a GİB ledger name")
+            ok(f"{label} downloaded as {name}")
+
+        # The warning is the point: a download next to a sealed packet reads as
+        # "this is done", and this file cannot be filed.
+        if self.page.get_by_text("GİB'e yüklenemez").count() == 0:
+            raise Failure(
+                "the e-Defter card does not say the ledger cannot be filed — "
+                "a user would reasonably think this is a filing"
+            )
+        ok("card states plainly that the ledger is not filable")
+
+
 
 def verify_outcome(backend: str, token: str, job_id: str) -> None:
     """The chain's own record, checked after the UI drove it.
@@ -328,19 +398,32 @@ def verify_outcome(backend: str, token: str, job_id: str) -> None:
         raise Failure(f"{pending} entries still pending after approving through the UI")
     ok("review queue is empty")
 
-    built = _api(backend, "POST", f"/api/v1/smmm/defensibility/{job_id}/build",
-                 {}, token=token).get("data") or {}
-    packet_id = str(built.get("id") or "")
-    entry_count = int((built.get("summary") or {}).get("entry_count") or 0)
-    if not packet_id or entry_count == 0:
-        raise Failure(f"packet did not build over the UI-produced journal: {built}")
-    ok(f"packet built over {entry_count} entries")
+    # The UI sealed the packet by clicking, so this reads the record rather than
+    # producing one. Building it here again would test the API path and quietly
+    # excuse a UI that never sealed anything.
+    packets = (_api(backend, "GET", "/api/v1/smmm/defensibility", token=token)
+               .get("data") or {}).get("packets") or []
+    sealed = [p for p in packets
+              if str(p.get("job_id")) == job_id and str(p.get("status")) == "finalized"]
+    if not sealed:
+        raise Failure(
+            f"no finalized packet for job {job_id} after sealing through the UI "
+            f"(packets seen: {[(p.get('job_id'), p.get('status')) for p in packets]})"
+        )
+    packet = sealed[0]
+    entry_count = int((packet.get("summary") or {}).get("entry_count") or 0)
+    if not packet.get("content_hash"):
+        raise Failure(f"packet is finalized but carries no hash: {packet}")
+    ok(f"packet sealed through the UI over {entry_count} entries "
+       f"({str(packet['content_hash'])[:16]}…)")
 
-    sealed = _api(backend, "POST", f"/api/v1/smmm/defensibility/{packet_id}/finalize",
-                  {"statement": "UI akışı ile onaylanmıştır."}, token=token).get("data") or {}
-    if str(sealed.get("status")) != "finalized" or not sealed.get("content_hash"):
-        raise Failure(f"packet did not seal: {sealed}")
-    ok(f"packet sealed ({str(sealed['content_hash'])[:16]}…)")
+    # The ledger has to come out of that same sealed record, over HTTP, exactly
+    # as the browser fetched it.
+    for kind, route in (("yevmiye", "e-defter.xml"), ("kebir", "e-defter-kebir.xml")):
+        xml = _api_raw(backend, f"/api/v1/muhasebe/{job_id}/{route}", token=token)
+        if b"edefter:defter" not in xml:
+            raise Failure(f"e-Defter {kind} is not an XBRL GL defter document")
+    ok("both ledgers fetch from the sealed journal")
 
     # Human review is what the index's oversight dimension measures, so a chain
     # driven by clicking has to move it exactly as the API path does.
@@ -397,6 +480,7 @@ def main() -> int:
 
             flow.run_autopilot()
             flow.approve_queue()
+            flow.seal_and_download_edefter()
 
             context.close()
             browser.close()

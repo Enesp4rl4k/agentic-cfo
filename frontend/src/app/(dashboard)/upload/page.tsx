@@ -12,6 +12,7 @@ import {
   type ValidationResult, type ColumnInfo,
 } from "@/lib/api/data_quality";
 import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
+import { POST_UPLOAD_ROUTE } from "@/lib/routes";
 
 // ── Health score helpers ──────────────────────────────────────────────────────
 
@@ -301,7 +302,6 @@ function DropZone({
 // just uploaded their financials was sent to a page inviting them to sign up,
 // with their job id sitting unread in the query string. /pnl is the route the
 // nav labels "Dashboard" and one of the pages that actually reads ?job=.
-const POST_UPLOAD_ROUTE = "/pnl";
 
 // ── Main upload page ──────────────────────────────────────────────────────────
 

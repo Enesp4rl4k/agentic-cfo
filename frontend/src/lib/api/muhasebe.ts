@@ -116,3 +116,74 @@ export async function getLlmCosts(days = 30): Promise<LlmCosts> {
   });
   return res.data.data;
 }
+
+// ── e-Defter (XBRL GL) ──────────────────────────────────────────────────────
+
+export type EDefterKind = "yevmiye" | "kebir";
+
+export interface EDefterFile {
+  blob: Blob;
+  /** GİB naming: VKN-YYYYMM-Y-000000.xml */
+  fileName: string;
+  entryCount: number;
+  lineCount: number;
+  /**
+   * Signed with a mali mühür and berat obtained? Always false today: the
+   * document is structurally complete and legally incomplete, and the UI has
+   * to keep those apart rather than let a download imply a filing.
+   */
+  filable: boolean;
+  unfilableCode: string;
+  sha256: string;
+}
+
+const EDEFTER_ROUTE: Record<EDefterKind, string> = {
+  yevmiye: "e-defter.xml",
+  kebir: "e-defter-kebir.xml",
+};
+
+export async function downloadEDefter(
+  jobId: string,
+  kind: EDefterKind,
+): Promise<EDefterFile> {
+  const res = await apiClient.get(`/muhasebe/${jobId}/${EDEFTER_ROUTE[kind]}`, {
+    responseType: "blob",
+  });
+  const h = res.headers as Record<string, string | undefined>;
+  // The server names the file to GİB's convention; keeping its name matters,
+  // because that name is part of what makes the file identifiable.
+  const disposition = h["content-disposition"] ?? "";
+  const utf8 = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+  const plain = /filename="([^"]+)"/.exec(disposition)?.[1];
+
+  return {
+    blob: new Blob([res.data], { type: "application/xml" }),
+    fileName: utf8 ? decodeURIComponent(utf8) : (plain ?? `e-defter-${kind}.xml`),
+    entryCount: Number(h["x-edefter-entry-count"] ?? 0),
+    lineCount: Number(h["x-edefter-line-count"] ?? 0),
+    filable: h["x-edefter-filable"] === "true",
+    unfilableCode: h["x-edefter-unfilable-code"] ?? "",
+    sha256: h["x-edefter-sha256"] ?? "",
+  };
+}
+
+/**
+ * Has this job been through the accounting chain?
+ *
+ * The autopilot result only lives in page state, so a user who runs it, walks
+ * to the approval queue and comes back finds an empty page — and the sealed
+ * packet and the e-Defter built from it become unreachable without re-running
+ * the whole pipeline. This is the cheap question that lets the page recover:
+ * approved journal entries exist for this job, therefore the tail of the chain
+ * is real and should be on screen.
+ */
+export async function hasApprovedJournal(jobId: string): Promise<boolean> {
+  try {
+    const res = await apiClient.get<{ data: { kayit_sayisi?: number } }>(
+      `/muhasebe/mizan/${jobId}`,
+    );
+    return (res.data.data?.kayit_sayisi ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}

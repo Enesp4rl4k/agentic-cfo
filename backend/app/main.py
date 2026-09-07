@@ -143,7 +143,27 @@ app.add_middleware(
         "X-Audit-Reason", "X-Requested-With",
         "Accept", "Accept-Language", "Cache-Control",
     ],
-    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After", "X-RateLimit-Reset"],
+    # A browser hands JavaScript only the CORS-safelisted response headers
+    # unless the server names the others here. Everything the client is meant
+    # to read has to be on this list, and anything set but missing from it is
+    # a header the browser silently drops — see
+    # tests/test_cors_exposed_headers.py, which keeps the two in step.
+    expose_headers=[
+        # Rate limiting: without these a 429 cannot tell the client when to retry.
+        "X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After", "X-RateLimit-Reset",
+        # Downloads. The server names files deliberately — GİB's e-Defter
+        # convention among them — and without this the browser cannot see the
+        # name, so every download in the app fell back to a filename the client
+        # guessed.
+        "Content-Disposition",
+        # e-Defter: what was produced, and the fact that it cannot be filed.
+        "X-EDefter-Entry-Count", "X-EDefter-Line-Count", "X-EDefter-SHA256",
+        "X-EDefter-Filable", "X-EDefter-Unfilable-Code",
+        # Journal listing — deliberately not an e-Defter, and it says so.
+        "X-Yevmiye-Entry-Count", "X-Yevmiye-SHA256", "X-Not-A-GIB-Filing",
+        # Board deck size, so the UI can show it before opening the file.
+        "X-PDF-Size-KB",
+    ],
     max_age=600,
 )
 

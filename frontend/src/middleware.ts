@@ -4,7 +4,7 @@
  * Auth guard (unauthenticated → /auth/login):
  *   Everything under /dashboard, /upload, /pnl, etc.
  *
- * Role guard (insufficient role → /dashboard):
+ * Role guard (insufficient role → ACCESS_DENIED_ROUTE):
  *   Certain routes require specific roles. Viewers and analysts
  *   cannot access write-sensitive or admin-only pages.
  *
@@ -22,6 +22,7 @@
 
 import { withAuth, type NextRequestWithAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { ACCESS_DENIED_ROUTE } from "@/lib/routes";
 
 // ── Role definitions ───────────────────────────────────────────────────────────
 
@@ -53,8 +54,13 @@ const ROLE_RULES: Array<{ prefix: string; minRole: UserRole }> = [
   { prefix: "/settings/alerts",    minRole: "admin" },
   // Billing — owner only
   { prefix: "/settings/billing",   minRole: "owner" },
-  // File upload — editor and above (viewers/analysts are read-only)
-  { prefix: "/upload",             minRole: "editor" },
+  // File upload — analyst and above. The backend guards POST /upload with
+  // authentication only, and Organization documents an analyst as someone
+  // who "can upload, run analysis, view results". Requiring editor here made
+  // the browser stricter than the server and locked every newly registered
+  // user — who is an analyst until they create a workspace — out of the
+  // first thing the product asks them to do.
+  { prefix: "/upload",             minRole: "analyst" },
   // Pilot program management — admin and above
   { prefix: "/pilot",              minRole: "admin" },
 ];
@@ -71,9 +77,11 @@ export default withAuth(
     const rule = ROLE_RULES.find((r) => pathname.startsWith(r.prefix));
 
     if (rule && !hasRole(role, rule.minRole)) {
-      // Redirect to dashboard with an informative query param
+      // `(dashboard)` is a route group, not a URL segment: there is no
+      // /dashboard page, so every denial used to land on Next's 404 with
+      // an informative query param attached to nothing.
       const redirectUrl = req.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
+      redirectUrl.pathname = ACCESS_DENIED_ROUTE;
       redirectUrl.searchParams.set("unauthorized", "1");
       redirectUrl.searchParams.set("required", rule.minRole);
       return NextResponse.redirect(redirectUrl);
