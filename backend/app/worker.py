@@ -23,6 +23,7 @@ from typing import Any
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from redis import exceptions as redis_exc
 
 from app.config import get_settings
 
@@ -47,17 +48,41 @@ def _log_inline_failure(task: asyncio.Task[Any]) -> None:
         logger.exception("Inline CFO analysis failed", exc_info=exc)
 
 
+# Broker faults worth running inline for: the queue is unreachable right now.
+# Deliberately excludes authentication and protocol errors — a wrong password or
+# a refused command is a misconfiguration, and falling back to inline would hide
+# it for as long as the deployment lives.
+# redis-py's exceptions descend from RedisError, *not* from the builtins of the
+# same name, so both families have to be named. AuthenticationError subclasses
+# redis's ConnectionError, which is why the message check below is not optional.
+_TRANSIENT_BROKER_ERRORS: tuple[type[BaseException], ...] = (
+    ConnectionError,             # builtins
+    TimeoutError,                # builtins
+    OSError,                     # socket-level: refused, reset, unreachable host
+    redis_exc.ConnectionError,
+    redis_exc.TimeoutError,
+    redis_exc.BusyLoadingError,  # the server is starting up
+)
+
+
 def _is_transient_error(exc: Exception) -> bool:
+    """Is this the broker being briefly unavailable, or something we should show?
+
+    Classified by type first. The string markers used to include a bare
+    "redis", which made any exception mentioning Redis transient — an
+    authentication failure among them, so a wrong password would silently run
+    every job inline and never be reported.
+    """
+    if isinstance(exc, _TRANSIENT_BROKER_ERRORS):
+        # An auth error can arrive wrapped; the message is the only tell.
+        txt = str(exc).lower()
+        return not any(m in txt for m in ("auth", "wrongpass", "noperm", "denied"))
     txt = str(exc).lower()
-    transient_markers = (
-        "timeout",
-        "temporar",
-        "connection reset",
-        "connection refused",
-        "network",
-        "redis",
+    return any(
+        m in txt
+        for m in ("timeout", "temporar", "connection reset",
+                  "connection refused", "network unreachable")
     )
-    return any(m in txt for m in transient_markers)
 
 
 # ── Task functions ─────────────────────────────────────────────────────────────
@@ -755,14 +780,19 @@ async def enqueue_maintenance_job(task_name: str, *args: Any, **kwargs: Any) -> 
 async def enqueue_analysis(
     job_id: str,
     budget_input: dict[str, Any] | None = None,
-) -> None:
+) -> str:
     """Enqueue a CFO analysis job. Called from FastAPI endpoint.
 
-    If the broker is unreachable and `allow_inline_job_fallback` is set, the
-    pipeline runs inline in the calling process rather than being silently
-    dropped. That keeps upload -> analysis working with no Redis, at the cost of
-    the durability the queue exists to provide — the run dies with the process
-    and is not retried. Any other failure propagates to the caller.
+    Returns how the work was dispatched: `"queued"` when the broker took it, or
+    `"inline"` when it ran in this process instead. Callers report that rather
+    than a bare boolean, because the two are not the same promise — an inline
+    run dies with the process and is never retried, and a caller that says
+    "queued" either way tells the user their work is safe when it is not.
+
+    Inline only happens for a broker that is briefly unreachable and only when
+    `allow_inline_job_fallback` is set. An authentication or protocol failure
+    propagates: that is a misconfiguration, and hiding it behind a working
+    upload would keep it hidden for the life of the deployment.
     """
     settings = get_settings()
     try:
@@ -791,8 +821,9 @@ async def enqueue_analysis(
         _inline_tasks.add(task)
         task.add_done_callback(_inline_tasks.discard)
         task.add_done_callback(_log_inline_failure)
-        return
+        return "inline"
     logger.info("Enqueued CFO analysis: job=%s", job_id)
+    return "queued"
 
 
 async def enqueue_ceo_analysis(

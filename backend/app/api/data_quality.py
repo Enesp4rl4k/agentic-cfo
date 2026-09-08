@@ -152,6 +152,7 @@ async def validate_and_upload(
     # Phase 2: decide whether to start analysis
     job_id: str | None = None
     started = False
+    dispatch = "not_requested"
     blocked_reason: str | None = None
 
     should_proceed = force or (
@@ -192,12 +193,15 @@ async def validate_and_upload(
                 try:
                     from app.worker import enqueue_analysis
 
-                    await enqueue_analysis(job.id)
+                    # "queued" or "inline": an inline run dies with the process
+                    # and is never retried, so the two are not the same promise.
+                    dispatch = await enqueue_analysis(job.id)
                     started = True
                 except Exception:
                     # The upload itself succeeded; the user can retrigger. Say so
                     # rather than reporting a start that did not happen.
                     logger.exception("Analysis enqueue failed for job=%s", job.id)
+                    dispatch = "failed"
                     blocked_reason = (
                         "Dosya yüklendi ancak analiz başlatılamadı. "
                         "Analizi panelden yeniden tetikleyebilirsiniz."
@@ -217,6 +221,10 @@ async def validate_and_upload(
             "validation": validation_result.to_dict() if validation_result else None,
             "job_id": job_id,
             "started": started,
+            # queued | inline | failed | not_requested — `started` cannot tell a
+            # durable job from one running in this process.
+            "dispatch": dispatch,
+            "durable": dispatch == "queued",
             "blocked_reason": blocked_reason,
         },
         "error": None,

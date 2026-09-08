@@ -8,6 +8,7 @@ This module handles:
   - Usage metering: plan limit check before upload
   - Returning the HTTP response
 """
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -29,6 +30,8 @@ from app.services.usage_meter import (
     check_upload_limit,
     record_usage_event,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -88,15 +91,22 @@ async def upload_file(
 
     # Full automation: upload tamamlandığında analizi otomatik kuyruğa al.
     queued = False
+    dispatch = "not_requested"
     if settings.auto_enqueue_analysis_on_upload:
         try:
             from app.worker import enqueue_analysis
 
-            await enqueue_analysis(job.id)
-            queued = True
+            # "queued" or "inline" — not the same promise. An inline run dies
+            # with the process and is never retried, so reporting both as
+            # queued tells the user their work is safe when it is not.
+            dispatch = await enqueue_analysis(job.id)
+            queued = dispatch == "queued"
         except Exception:
-            # Upload başarılı kalsın; enqueue başarısız olursa kullanıcı manuel tetikleyebilir.
+            # The upload stands and the user can trigger the analysis by hand,
+            # but an operator has to be able to find out why it did not start.
+            logger.exception("Analysis enqueue failed for job=%s", job.id)
             queued = False
+            dispatch = "failed"
 
     # Event bus signal (best-effort): downstream automation listeners can subscribe.
     try:
@@ -129,6 +139,11 @@ async def upload_file(
             "status": job.status,
             "queue_status": "queued" if queued else "not_queued",
             "auto_queued": queued,
+            # How it was dispatched: queued | inline | failed | not_requested.
+            # `queued` alone cannot distinguish a durable job from one running
+            # in this process that will not survive a restart.
+            "dispatch": dispatch,
+            "durable": dispatch == "queued",
             "queued_at": datetime.now(UTC).isoformat() if queued else None,
         },
         "error": None,
