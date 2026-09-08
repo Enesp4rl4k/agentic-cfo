@@ -23,6 +23,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from app.services.classifier import classify_by_keywords
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,7 +144,13 @@ class LogoTigerConnector:
                         "amount_cents": abs(tx.amount_cents),
                         "type":        tx.tx_type or "expense",
                         "description": tx.description or "",
-                        "category":    tx.category or "other",
+                        # ParsedTransaction has no `category` — it never has.
+                        # Reading one raised AttributeError inside the per-row
+                        # try below, so every transaction was counted as
+                        # "skipped" and the sync reported success having
+                        # imported nothing. "other" was not a category either;
+                        # the vocabulary's fallback is other_expense.
+                        "category":    classify_by_keywords(tx.description or ""),
                         "source":      "logo_tiger",
                         "reference":   tx.reference or "",
                     })
@@ -181,8 +189,17 @@ class LogoTigerConnector:
                 "statement_info": {
                     "bank_name":     statement.bank_name,
                     "account_number": statement.account_number,
-                    "period_start":  statement.period_start.isoformat() if statement.period_start else None,
-                    "period_end":    statement.period_end.isoformat() if statement.period_end else None,
+                    # The fields are statement_period_start/end; the short
+                    # names never existed, so this raised straight into the
+                    # outer handler and marked every sync an error.
+                    "period_start": (
+                        statement.statement_period_start.isoformat()
+                        if statement.statement_period_start else None
+                    ),
+                    "period_end": (
+                        statement.statement_period_end.isoformat()
+                        if statement.statement_period_end else None
+                    ),
                 },
             }
 
@@ -275,7 +292,7 @@ class MikroConnector:
                     "amount_cents": abs(tx.amount_cents),
                     "type":         tx.tx_type or "expense",
                     "description":  tx.description or "",
-                    "category":     tx.category or "other",
+                    "category":     classify_by_keywords(tx.description or ""),
                     "source":       "mikro",
                 }
                 for tx in statement.transactions if tx.amount_cents != 0
