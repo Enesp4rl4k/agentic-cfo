@@ -23,6 +23,7 @@ from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core.turkish import fold
 from app.parsers.base import ParsedStatement
 from app.parsers.registry import ParserRegistry
 
@@ -99,14 +100,16 @@ def _guess_category(description: str) -> str:
     """
     if not description:
         return "other_expense"
-    desc_lower = description.lower()
+    # Folded on both sides: statements write "maas" and "dogalgaz" at least as
+    # often as "maaş" and "doğalgaz".
+    desc_lower = fold(description)
     best_category = "other_expense"
     best_priority = -1
 
     for category, keywords, priority in _CATEGORY_MAP:
         if priority <= best_priority:
             continue  # can't beat current winner even if matched
-        if any(kw in desc_lower for kw in keywords):
+        if any(fold(kw) in desc_lower for kw in keywords):
             best_category = category
             best_priority = priority
 

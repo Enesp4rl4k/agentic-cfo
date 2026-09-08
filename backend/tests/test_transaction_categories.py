@@ -70,7 +70,7 @@ def _hardcoded_categories() -> dict[str, str]:
             keys = _dict_keys(node)
             if "category" not in keys or not keys & {"amount_cents", "amount", "tutar"}:
                 continue
-            for key, value in zip(node.keys, node.values):
+            for key, value in zip(node.keys, node.values, strict=False):
                 if not (isinstance(key, ast.Constant) and key.value == "category"):
                     continue
                 # Only a literal, or a conditional between literals. Walking the
@@ -169,3 +169,43 @@ def test_an_uploaded_category_column_is_checked_against_the_vocabulary() -> None
     assert rows[0]["category"] == "rent"
     # A category we do know is kept as written.
     assert rows[1]["category"] == "revenue"
+
+
+# ── Turkish written without its diacritics ───────────────────────────────────
+# ERP exports, bank statements and older accounting systems write "maas
+# odemesi" and "dogalgaz faturasi" at least as often as the accented forms. A
+# keyword list spelled only one way matches half of them, and a payroll line
+# that misses `salary` lands in other_expense — where every report that groups
+# by category is then quietly wrong about where the money went.
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Personel maas odemesi", "salary"),
+        ("Personel maaş ödemesi", "salary"),
+        ("Dogalgaz faturasi", "utilities"),
+        ("Doğalgaz faturası", "utilities"),
+        ("Ocak ofis kirasi Levent", "rent"),
+        ("SGK primi odemesi", "salary"),
+        ("Yazilim lisans geliri", "revenue"),
+        ("Kurumlar vergisi odemesi", "tax"),
+    ],
+)
+def test_categories_match_with_or_without_turkish_diacritics(
+    description: str, expected: str
+) -> None:
+    from app.services.classifier import classify_by_keywords
+
+    assert _guess_category(description) == expected
+    assert classify_by_keywords(description) == expected
+
+
+def test_folding_is_for_matching_not_for_display() -> None:
+    """The company is "Yıldız Tekstil", not "Yildiz Tekstil"."""
+    from app.core.turkish import contains, fold
+
+    assert fold("Yıldız Tekstil") == "yildiz tekstil"
+    assert contains("DOGALGAZ FATURASI", "doğalgaz")
+    assert contains("Doğalgaz faturası", "dogalgaz")
+    # `"İ".lower()` is i + U+0307; the combining mark folds away too.
+    assert fold("İnşaat") == "insaat"

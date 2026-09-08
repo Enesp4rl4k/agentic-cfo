@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.core.turkish import fold
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,10 +39,17 @@ KEYWORD_RULES: dict[str, list[str]] = {
 
 
 def classify_by_keywords(description: str) -> str:
-    """Rule-based classification using built-in keyword heuristics."""
-    desc_lower = description.lower()
+    """Rule-based classification using built-in keyword heuristics.
+
+    Matched with Turkish diacritics folded on both sides. ERP exports and bank
+    statements write "maas odemesi" and "dogalgaz faturasi" far more often than
+    "maaş ödemesi" and "doğalgaz faturası", and a payroll line that misses
+    `salary` lands in other_expense — where every report that groups by
+    category is then quietly wrong about where the money went.
+    """
+    folded = fold(description)
     for category, keywords in KEYWORD_RULES.items():
-        if any(kw in desc_lower for kw in keywords):
+        if any(fold(kw) in folded for kw in keywords):
             return category
     return "other_expense"
 
