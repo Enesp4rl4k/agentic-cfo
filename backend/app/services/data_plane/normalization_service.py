@@ -4,23 +4,15 @@ import csv
 import hashlib
 import io
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from app.core.dates import parse_transaction_date
 
-def _to_datetime(raw: str | None) -> datetime:
-    if not raw:
-        return datetime.now(UTC)
-    candidates = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d")
-    for fmt in candidates:
-        try:
-            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=UTC)
-        except Exception:
-            continue
-    try:
-        return datetime.fromisoformat(raw).astimezone(UTC)
-    except Exception:
-        return datetime.now(UTC)
+
+def _to_datetime(raw: str | None) -> tuple[datetime, bool]:
+    """`(date, is_estimated)` — see app.core.dates for why the flag travels."""
+    return parse_transaction_date(raw)
 
 
 def _to_cents(raw: str | None) -> int:
@@ -42,6 +34,9 @@ def _to_cents(raw: str | None) -> int:
 class CanonicalTxRow:
     source_record_id: str
     transaction_date: datetime
+    # True when the source carried no readable date, so the one above is a
+    # placeholder. See app.core.dates.
+    date_is_estimated: bool
     amount_cents: int
     currency: str
     direction: str
@@ -71,6 +66,7 @@ def normalize_csv_transactions(
     reference_col = mapping.get("reference", "reference")
 
     for i, raw in enumerate(reader, start=1):
+        tx_date, tx_date_estimated = _to_datetime(raw.get(date_col))
         amount_cents = _to_cents(raw.get(amount_col))
         direction = "income" if amount_cents >= 0 else "expense"
         source_record_id = (raw.get(reference_col) or "").strip()
@@ -87,7 +83,8 @@ def normalize_csv_transactions(
         rows.append(
             CanonicalTxRow(
                 source_record_id=source_record_id,
-                transaction_date=_to_datetime(raw.get(date_col)),
+                transaction_date=tx_date,
+                date_is_estimated=tx_date_estimated,
                 amount_cents=abs(amount_cents),
                 currency=(raw.get("currency") or "TRY").strip() or "TRY",
                 direction=direction,
@@ -113,6 +110,7 @@ def to_insert_dict(
         "source_record_id": row.source_record_id,
         "sync_run_id": sync_run_id,
         "transaction_date": row.transaction_date,
+        "date_is_estimated": row.date_is_estimated,
         "amount_cents": row.amount_cents,
         "currency": row.currency,
         "direction": row.direction,

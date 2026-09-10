@@ -52,6 +52,10 @@ class YevmiyeKaydi:
     aciklama: str = ""
     satirlar: list[KayitSatiri] = field(default_factory=list)
     kaynak_islem_id: str = ""       # Transaction.id
+    # Did `tarih` come from the transaction, or did we have to invent it?
+    # "islem" = the transaction's own date; "belirsiz" = unparseable or absent,
+    # so the value above is a placeholder and the entry must not be filed on it.
+    tarih_kaynagi: str = "islem"
     thp_hesap_kodu: str = ""
     confidence: float = 1.0
     onay_gerekli: bool = False      # SMMM onayı gerekiyor mu?
@@ -84,6 +88,7 @@ class YevmiyeKaydi:
             "authority":         self.authority,
             "thp_hesap_kodu":    self.thp_hesap_kodu,
             "kaynak_islem_id":   self.kaynak_islem_id,
+            "tarih_kaynagi":     self.tarih_kaynagi,
             "satirlar": [
                 {
                     "hesap_kodu": s.hesap_kodu,
@@ -165,14 +170,42 @@ class DoubleEntryEngine:
         tx_type = transaction.get("type", "expense")
         description = transaction.get("description") or transaction.get("vendor") or ""
         tx_id = transaction.get("id", "")
+        # A transaction whose date will not parse used to be dated *today*,
+        # silently. That date then flows into the journal, into the sealed
+        # defensibility packet, and into the e-Defter's postingDate — so a
+        # January transaction could be filed as September, in the wrong
+        # accounting period, on a legal document, with nothing said about it.
+        # The CSV parser emits transaction_date=None for every date it cannot
+        # read, so this is an ordinary path rather than an edge case.
         tx_date = transaction.get("transaction_date")
+        # Two shapes reach here. The in-memory pipeline passes None for a date
+        # it could not read; the database cannot hold a null, so a row that was
+        # persisted with a placeholder carries `date_is_estimated` instead.
+        # Both mean the same thing and both have to be believed.
+        tarih_kaynagi = "belirsiz" if transaction.get("date_is_estimated") else "islem"
+        if tarih_kaynagi == "belirsiz":
+            logger.warning(
+                "İşlem tarihi kaynakta okunamamıştı (işlem=%s) — kayıt onaya "
+                "gönderildi", tx_id,
+            )
         if isinstance(tx_date, str):
             try:
                 tx_date = datetime.fromisoformat(tx_date)
-            except Exception:
+            except ValueError:
+                logger.warning(
+                    "İşlem tarihi okunamadı (işlem=%s, değer=%r) — kayıt "
+                    "belirsiz tarihle işaretlendi ve onaya gönderildi",
+                    tx_id, tx_date,
+                )
                 tx_date = datetime.now(UTC)
+                tarih_kaynagi = "belirsiz"
         elif tx_date is None:
+            logger.warning(
+                "İşlem tarihi yok (işlem=%s) — kayıt belirsiz tarihle "
+                "işaretlendi ve onaya gönderildi", tx_id,
+            )
             tx_date = datetime.now(UTC)
+            tarih_kaynagi = "belirsiz"
 
         karsi_hesap_kodu = _karsi_hesap_belirle(transaction)
         karsi_hesap = THP_HESAPLARI.get(karsi_hesap_kodu)
@@ -247,15 +280,25 @@ class DoubleEntryEngine:
             ),
         )
 
+        # An invented date is not something the autopilot may decide on its own:
+        # the period an entry belongs to is the one fact a reviewer can settle
+        # from the source document and the machine cannot.
+        needs_review = decision.needs_review or tarih_kaynagi == "belirsiz"
+        rationale = decision.rationale
+        if tarih_kaynagi == "belirsiz":
+            date_note = "işlem tarihi okunamadı — dönem doğrulanmalı"
+            rationale = f"{rationale}; {date_note}" if rationale else date_note
+
         kayit = YevmiyeKaydi(
             tarih=tx_date,
+            tarih_kaynagi=tarih_kaynagi,
             aciklama=f"{description[:100]} [{thp_result.hesap_kodu}]",
             satirlar=satirlar,
             kaynak_islem_id=tx_id,
             thp_hesap_kodu=thp_result.hesap_kodu,
             confidence=thp_result.confidence,
-            onay_gerekli=decision.needs_review,
-            onay_neden=decision.rationale,
+            onay_gerekli=needs_review,
+            onay_neden=rationale,
         )
         kayit.authority = decision.to_dict()
 

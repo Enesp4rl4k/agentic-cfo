@@ -96,7 +96,7 @@ def test_no_route_builds_content_disposition_by_hand() -> None:
         for node in ast.walk(tree):
             if not isinstance(node, ast.Dict):
                 continue
-            for key, value in zip(node.keys, node.values):
+            for key, value in zip(node.keys, node.values, strict=False):
                 if not (isinstance(key, ast.Constant) and key.value == "Content-Disposition"):
                     continue
                 ok = (
@@ -126,7 +126,7 @@ def test_no_route_puts_turkish_prose_in_a_custom_header() -> None:
         for node in ast.walk(tree):
             if not isinstance(node, ast.Dict):
                 continue
-            for key, value in zip(node.keys, node.values):
+            for key, value in zip(node.keys, node.values, strict=False):
                 if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
                     continue
                 if not key.value.lower().startswith("x-"):

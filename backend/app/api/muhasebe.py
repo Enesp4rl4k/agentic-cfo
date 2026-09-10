@@ -190,6 +190,10 @@ async def muhasebe_analiz(
             "description":      tx.description,
             "vendor":           tx.vendor,
             "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+            # The column is not nullable, so a row whose date could not be read
+            # already holds a placeholder. Without this flag the engine sees a
+            # perfectly ordinary date and books it into the wrong period.
+            "date_is_estimated": bool(tx.date_is_estimated),
         }
         for tx in txs
     ]

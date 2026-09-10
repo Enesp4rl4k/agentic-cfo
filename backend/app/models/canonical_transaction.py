@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -42,6 +42,10 @@ class CanonicalTransaction(Base):
     )
 
     transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # See Transaction.date_is_estimated — same reason, same rule.
+    date_is_estimated: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="0"
+    )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="TRY")
     direction: Mapped[str] = mapped_column(String(20), nullable=False, default="expense")

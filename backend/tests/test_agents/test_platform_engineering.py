@@ -242,6 +242,9 @@ def test_canonical_fingerprint_stable() -> None:
     row = CanonicalTxRow(
         source_record_id="r1",
         transaction_date=datetime(2026, 1, 1, tzinfo=UTC),
+        # Required rather than defaulted: a row that does not say where its
+        # date came from is claiming a certainty nobody established.
+        date_is_estimated=False,
         amount_cents=1000,
         currency="TRY",
         direction="expense",

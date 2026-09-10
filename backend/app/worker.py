@@ -26,6 +26,7 @@ from arq.connections import ArqRedis, RedisSettings
 from redis import exceptions as redis_exc
 
 from app.config import get_settings
+from app.core.dates import parse_transaction_date
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +269,14 @@ async def run_cfo_analysis(
 
             # Persist transactions
             for tx_data in result.get("transactions") or []:
+                # An unreadable date used to become today's, silently. It still
+                # becomes today's — the column is not nullable and the row has
+                # to exist to be reviewed — but the row now says so, because
+                # this date decides the accounting period and the period ends
+                # up on the e-Defter.
+                tx_date, tx_date_estimated = parse_transaction_date(
+                    tx_data.get("transaction_date")
+                )
                 tx = Transaction(
                     job_id=job_id,
                     amount_kurus=tx_data.get("amount_cents", 0),
@@ -276,9 +285,8 @@ async def run_cfo_analysis(
                     category=tx_data.get("category", "other_expense"),
                     description=tx_data.get("description", ""),
                     vendor=tx_data.get("vendor"),
-                    transaction_date=datetime.fromisoformat(tx_data["transaction_date"])
-                    if tx_data.get("transaction_date")
-                    else datetime.now(UTC),
+                    transaction_date=tx_date,
+                    date_is_estimated=tx_date_estimated,
                     raw_text=tx_data.get("raw_text"),
                     confidence=tx_data.get("confidence"),
                 )

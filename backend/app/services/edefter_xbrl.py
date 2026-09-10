@@ -178,6 +178,16 @@ class EDefterXBRLGenerator:
                 warnings.append(f"{idx}. kayıtta satır yok, atlandı")
                 continue
 
+            # A posting date the machine invented cannot go on a filing. The
+            # journal marks these `belirsiz`; a reviewer settles the period from
+            # the source document, and until they do the ledger is not one we
+            # are willing to put a hash on.
+            if str(entry.get("tarih_kaynagi") or "islem") != "islem":
+                raise EDefterError(
+                    f"{idx}. kaydın tarihi belirsiz (işlem={entry.get('kaynak_islem_id') or '?'}) "
+                    "— dönem doğrulanmadan e-Defter üretilemez"
+                )
+
             posting_date = str(entry.get("tarih") or "")[:10] or f"{period}-01"
             comment = str(entry.get("aciklama") or "")
             doc_ref = str(
@@ -268,6 +278,10 @@ class EDefterXBRLGenerator:
         # account code -> the movements booked to it, in journal order
         by_account: dict[str, list[dict[str, Any]]] = {}
         for idx, entry in enumerate(entries, start=1):
+            if str(entry.get("tarih_kaynagi") or "islem") != "islem":
+                raise EDefterError(
+                    f"{idx}. kaydın tarihi belirsiz — kebir de üretilemez"
+                )
             posting_date = str(entry.get("tarih") or "")[:10] or f"{period}-01"
             comment = str(entry.get("aciklama") or "")
             doc_ref = str(
