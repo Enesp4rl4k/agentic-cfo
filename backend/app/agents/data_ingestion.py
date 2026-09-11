@@ -383,6 +383,35 @@ def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
         return None
 
 
+_EBELGE_MARKERS = ("urn:oasis:names:specification:ubl:schema:xsd:", "http://earsiv.efatura.gov.tr")
+_EMBEDDED_XML_LIMIT = 10 * 1024 * 1024   # the upload cap; an attachment cannot exceed its file
+
+
+def _pdf_embedded_xml(file_path: str) -> list[str]:
+    """XML attachments in a PDF that are GİB e-Belge documents, in PDF order.
+
+    Only attachments that declare a UBL or e-Arşiv namespace are returned;
+    anything else a PDF carries (an XSLT, an image) is not a document.
+    """
+    try:
+        import pymupdf
+    except ImportError:  # pragma: no cover - pinned in requirements
+        return []
+    found: list[str] = []
+    try:
+        with pymupdf.open(file_path) as doc:
+            for i in range(doc.embfile_count()):
+                data = doc.embfile_get(i)
+                if not data or len(data) > _EMBEDDED_XML_LIMIT:
+                    continue
+                text = data.decode("utf-8", errors="replace").lstrip("﻿")
+                if text.lstrip().startswith("<") and any(m in text[:4000] for m in _EBELGE_MARKERS):
+                    found.append(text)
+    except Exception as exc:
+        logger.warning("PDF ekleri okunamadı (%s): %s", file_path, exc)
+    return found
+
+
 def _read_xml(file_path: str) -> str:
     with open(file_path, encoding="utf-8", newline="") as f:
         return f.read()
@@ -401,7 +430,11 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
     withheld invoice is not a discarded one — but at a confidence that keeps
     them the other side of the review gate.
     """
-    if "<Invoice" not in raw_text and ":Invoice" not in raw_text:
+    # A substring decides only whether to look; the root element decides what
+    # the document is. An earlier version sent anything containing the word
+    # "CreditNote" to the receipt parser — which GİB's own e-Arşiv sale does,
+    # in a reference — and the invoice was dropped as "not a receipt".
+    if not any(m in raw_text for m in ("<Invoice", ":Invoice", "CreditNote", "eArsivVeri")):
         return None
     try:
         from app.config import get_settings
@@ -413,10 +446,12 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
                 raw_text, own_vkn=get_settings().gib_vkn
             )
         except NotAnInvoiceError as exc:
-            # e-İrsaliye, uygulama yanıtı and the like are valid UBL documents
-            # with no monetary total. They used to parse into a 0,00 TL sale.
-            logger.info("UBL belgesi fatura değil, atlandı: %s", exc)
-            return None
+            # e-Müstahsil is a UBL CreditNote and e-SMM is e-Arşiv data; both
+            # used to stop here as "not an invoice, skipped". e-İrsaliye,
+            # uygulama yanıtı and the like are neither and are still skipped —
+            # they carry no monetary total and once parsed into a 0,00 TL sale.
+            logger.info("UBL belgesi fatura değil, makbuz olarak deneniyor: %s", exc)
+            return _try_parse_makbuz(raw_text)
 
         is_income = inv.direction == "sale"
         tx_type = "income" if is_income else "expense"
@@ -442,8 +477,29 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
         if inv.posting_note:
             note += f" | Kayıt üretilmedi: {inv.posting_note}"
 
+        # The invoice states its KDV; carry it so the journal splits it rather
+        # than holding the entry as "no rate in the source". Only when nothing
+        # else is in play: withheld KDV and other taxes (ÖTV…) change which
+        # part of the payable the KDV is, and the engine does not model them.
+        from decimal import Decimal
+
+        from app.parsers.invoice.ubl_tr import KDV_TAX_CODE
+
+        only_kdv = all(
+            t.tax_category_code == KDV_TAX_CODE for t in inv.tax_subtotals if t.tax_amount
+        )
+        kdv_cents = (
+            abs(amount_to_cents(sum(
+                (t.tax_amount for t in inv.tax_subtotals if t.tax_category_code == KDV_TAX_CODE),
+                Decimal("0"),
+            )))
+            if not inv.needs_review and only_kdv and not inv.withholding_tax_amount
+            else None
+        )
+
         return [{
             "amount_cents": abs(amount_cents),
+            "kdv_cents": kdv_cents,
             "currency": inv.currency_code or "TRY",
             "type": tx_type,
             "category": category,
@@ -457,7 +513,68 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
             "confidence": confidence,
         }]
     except Exception as exc:
-        logger.debug("UBL-TR parser skipped: %s", exc)
+        # Was logged at debug. A NameError in this function turned every
+        # uploaded e-Fatura into "no transactions" with nothing in the log at
+        # the default level — the test for it is the only reason it was seen.
+        logger.warning("UBL-TR ayrıştırılamadı, fatura atlandı: %s", exc, exc_info=True)
+        return None
+
+
+def _try_parse_makbuz(raw_text: str) -> list[dict[str, Any]] | None:
+    """e-Müstahsil / e-SMM into one CFO transaction, held when not understood.
+
+    Same contract as the invoice path: the side we are on is settled by VKN,
+    and a receipt the parser could not post still comes back as a row — at a
+    confidence that keeps it behind the review gate, with the reason attached.
+    """
+    try:
+        from app.config import get_settings
+        from app.core.financial import amount_to_cents
+        from app.parsers.invoice.makbuz import NotAMakbuzError, parse_makbuz
+
+        try:
+            m = parse_makbuz(raw_text, own_vkn=get_settings().gib_vkn)
+        except NotAMakbuzError as exc:
+            logger.info("e-Arşiv belgesi müstahsil/SMM değil, atlandı: %s", exc)
+            return None
+
+        is_income = m.direction == "sale"
+        label = "e-Müstahsil" if m.kind == "mustahsil" else "e-SMM"
+        if is_income:
+            category = "revenue"
+        else:
+            category = "cogs" if m.kind == "mustahsil" else "other_expense"
+        other = m.payer if is_income else m.payee
+        note = f" | Yön: {m.direction} ({m.direction_basis})"
+        if m.stopaj:
+            note += f" | Stopaj: {m.stopaj}"
+        if m.posting_note:
+            note += f" | Kayıt üretilmedi: {m.posting_note}"
+
+        who = other.title or other.vkn_tckn or "karşı taraf"
+        what = f" — {m.items[0]}" if m.items else ""
+        understood = bool(m.suggested_tdhp_entries)
+        return [{
+            # What changes hands. Stopaj is paid to the tax office by the payer,
+            # so it is not part of this movement.
+            "amount_cents": abs(amount_to_cents(m.payable or m.gross)),
+            # The document states both; the journal needs both to book the fee
+            # at its gross and the tax where it belongs. Carried only when the
+            # receipt was understood — otherwise the entry is held, not split.
+            "kdv_cents": abs(amount_to_cents(m.kdv)) if understood else None,
+            "stopaj_cents": abs(amount_to_cents(m.stopaj)) if understood else None,
+            "currency": m.currency or "TRY",
+            "type": "income" if is_income else "expense",
+            "category": category,
+            "description": f"{label} {m.number}: {who}{what}",
+            # e-SMM data carries the professional's VKN but not their name.
+            "vendor": None if is_income else who,
+            "transaction_date": m.issue_date.isoformat() if m.issue_date else None,
+            "raw_text": f"UUID: {m.uuid} | No: {m.number} | Tür: {label}{note}",
+            "confidence": 0.4 if m.needs_review else 0.95,
+        }]
+    except Exception as exc:
+        logger.warning("e-Müstahsil/e-SMM ayrıştırılamadı: %s", exc)
         return None
 
 
@@ -500,8 +617,25 @@ async def run_data_ingestion(
                 confidence=0.0,
             )
 
+        # ── Strategy 1.2: an e-Belge carried inside a PDF ────────────────────
+        # GİB delivers e-SMM as a PAdES-signed PDF with the receipt data
+        # attached as XML (e-Arşiv Kılavuzu §7), and integrators ship e-Fatura
+        # and e-Arşiv the same way. The page text of such a PDF is a rendering;
+        # the attachment is the document. Reading only the text meant the data
+        # GİB made the payer's copy of record was never looked at.
+        if file_type == "pdf":
+            embedded = _pdf_embedded_xml(file_path)
+            if embedded:
+                raw_text = embedded[0]
+
         # ── Strategy 1.25: GİB UBL-TR 1.2 / 2.1 e-Fatura / e-Arşiv XML Parser ──
-        if file_type == "xml" or "<Invoice" in raw_text or ":Invoice" in raw_text:
+        if (
+            file_type == "xml"
+            or "<Invoice" in raw_text
+            or ":Invoice" in raw_text
+            or "CreditNote" in raw_text
+            or "eArsivVeri" in raw_text
+        ):
             ubl_txs = _try_parse_ubl_xml(raw_text)
             if ubl_txs:
                 # The rows carry their own confidence — an invoice whose

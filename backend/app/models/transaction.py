@@ -59,6 +59,12 @@ class Transaction(Base):
     date_is_estimated: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, server_default="0"
     )
+    # KDV and gelir vergisi stopajı, in kuruş, as the source document states
+    # them — an e-Fatura, e-Müstahsil or e-SMM. Null when the source said
+    # nothing (a bank line), which is different from zero (stated exempt): the
+    # journal splits a stated amount and holds an unstated one for review.
+    kdv_kurus: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stopaj_kurus: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

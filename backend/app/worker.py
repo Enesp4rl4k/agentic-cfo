@@ -287,6 +287,9 @@ async def run_cfo_analysis(
                     vendor=tx_data.get("vendor"),
                     transaction_date=tx_date,
                     date_is_estimated=tx_date_estimated,
+                    # As the document stated them; None when it did not.
+                    kdv_kurus=tx_data.get("kdv_cents"),
+                    stopaj_kurus=tx_data.get("stopaj_cents"),
                     raw_text=tx_data.get("raw_text"),
                     confidence=tx_data.get("confidence"),
                 )

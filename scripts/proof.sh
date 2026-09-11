@@ -126,6 +126,15 @@ check "berat derived from the defter, checked against GİB's pair" \
   grep -q "1234567808-201804-YB-000000.xml" backend/tests/test_edefter_berat.py && \
   grep -q "class Signer(Protocol)" backend/app/services/edefter_berat.py
 
+# e-Müstahsil (UBL-TR CreditNote) and e-SMM (e-Arşiv data) are read, not
+# skipped as "not an invoice"; the e-SMM fixture must pass GİB's own schema,
+# and a PDF is read from its attachment, which is where GİB puts the data.
+check "e-Müstahsil / e-SMM read, checked against GİB's e-Arşiv schema" \
+  test -f backend/app/parsers/invoice/makbuz.py && \
+  grep -q "eArsivVeri.xsd" backend/tests/test_makbuz.py && \
+  grep -q "earsiv_paket" scripts/fetch_gib_corpus.py && \
+  grep -q "_pdf_embedded_xml" backend/app/agents/data_ingestion.py
+
 check "no unsigned package, no unsigned SOAP call" \
   grep -q "defter imzasız" backend/app/services/edefter_package.py && \
   grep -q "GibWsNotConfigured" backend/app/services/gib_edefter_ws.py && \

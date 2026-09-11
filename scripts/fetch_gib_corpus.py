@@ -47,6 +47,10 @@ PACKAGES = {
         "https://www.edefter.gov.tr/dosyalar/paketler/e-Defter_Paketi.zip",
         "e-Defter paketi — XBRL GL şemaları ve GİB'in kendi yevmiye/kebir/berat örnekleri",
     ),
+    "e_arsiv": (
+        "https://ebelge.gib.gov.tr/dosyalar/kilavuzlar/earsiv_paket_v1.1_8.zip",
+        "e-Arşiv paketi — rapor şemaları (EArsiv.xsd, eArsivVeri.xsd), schematron, WSDL",
+    ),
 }
 
 

@@ -152,18 +152,48 @@ _INDIRILECEK_KDV = ("191", "İndirilecek KDV")
 def _kdv_bol(
     satirlar: list[KayitSatiri], ana_hesap: str, kdv: int, aciklama: str
 ) -> bool:
-    """Move `kdv` off the main line onto 391 or 191. False if it cannot."""
+    """Move a stated `kdv` off the main line: 391 on the income side, 191 on
+    the cost side. The side is read from the line, not from the account list —
+    a document that states its KDV is right about it even when the classifier
+    chose an account we did not expect to carry any. False if it cannot."""
     for i, s in enumerate(satirlar):
         if s.hesap_kodu != ana_hesap:
             continue
-        if ana_hesap in KDV_TASIYAN_GELIR and s.alacak > kdv:
+        if s.alacak > kdv:
             s.alacak -= kdv
             satirlar.insert(i + 1, KayitSatiri(*_HESAPLANAN_KDV, alacak=kdv, aciklama=aciklama))
             return True
-        if ana_hesap in KDV_TASIYAN_GIDER and s.borc > kdv:
+        if s.borc > kdv:
             s.borc -= kdv
             satirlar.insert(i + 1, KayitSatiri(*_INDIRILECEK_KDV, borc=kdv, aciklama=aciklama))
             return True
+        return False
+    return False
+
+
+# Gelir vergisi stopajı. The payer keeps it and owes it to the tax office
+# (360); the payee has had it paid on its behalf, a prepayment of its own
+# income tax (193). The movement in the bank is net of it, so the fee is the
+# bank amount plus the stopaj.
+_ODENECEK_STOPAJ = ("360", "Ödenecek Vergi ve Fonlar (gelir vergisi stopajı)")
+_PESIN_ODENEN = ("193", "Peşin Ödenen Vergiler ve Fonlar")
+
+
+def _stopaj_ekle(
+    satirlar: list[KayitSatiri], ana_hesap: str, stopaj: int, aciklama: str
+) -> bool:
+    for i, s in enumerate(satirlar):
+        if s.hesap_kodu != ana_hesap:
+            continue
+        if s.borc:
+            s.borc += stopaj
+            satirlar.insert(i + 1, KayitSatiri(*_ODENECEK_STOPAJ, alacak=stopaj, aciklama=aciklama))
+            return True
+        if s.alacak:
+            s.alacak += stopaj
+            satirlar.insert(i + 1, KayitSatiri(*_PESIN_ODENEN, borc=stopaj, aciklama=aciklama))
+            return True
+        return False
     return False
 
 
@@ -310,14 +340,13 @@ class DoubleEntryEngine:
         ana = thp_result.hesap_kodu
         kdv_durumu = "yok"
         kdv_note = ""
-        if ana in KDV_TASIYAN_GELIR or ana in KDV_TASIYAN_GIDER:
-            raw_kdv = transaction.get("kdv_kurus")
-            kdv = abs(int(raw_kdv)) if raw_kdv not in (None, "") else None
-            if kdv is None:
-                kdv_durumu = "ayristirilmadi"
-                kdv_note = "KDV ayrıştırılmadı — tutar brüt, oran kaynakta yok; faturadan doğrulanmalı"
-            elif kdv == 0:
-                kdv_durumu = "ayrildi"      # stated as zero: exempt, nothing to move
+        raw_kdv = transaction.get("kdv_kurus")
+        kdv = abs(int(raw_kdv)) if raw_kdv not in (None, "") else None
+        kdv_tasir = ana in KDV_TASIYAN_GELIR or ana in KDV_TASIYAN_GIDER
+        if kdv is not None:
+            if kdv == 0:
+                # Stated as zero: exempt, nothing to move.
+                kdv_durumu = "ayrildi" if kdv_tasir else "yok"
             elif _kdv_bol(satirlar, ana, kdv, description):
                 kdv_durumu = "ayrildi"
             else:
@@ -326,6 +355,16 @@ class DoubleEntryEngine:
                     f"kaynaktaki KDV ({kdv} kuruş) tutardan ({amount}) küçük değil "
                     "— ayrıştırılmadı, doğrulanmalı"
                 )
+        elif kdv_tasir:
+            kdv_durumu = "ayristirilmadi"
+            kdv_note = "KDV ayrıştırılmadı — tutar brüt, oran kaynakta yok; faturadan doğrulanmalı"
+
+        # ── Stopaj: only as the document states it ───────────────────────────
+        raw_stopaj = transaction.get("stopaj_kurus")
+        stopaj = abs(int(raw_stopaj)) if raw_stopaj not in (None, "") else 0
+        stopaj_note = ""
+        if stopaj and not _stopaj_ekle(satirlar, ana, stopaj, description):
+            stopaj_note = f"kaynaktaki stopaj ({stopaj} kuruş) kayda işlenemedi — doğrulanmalı"
 
         # ── Yetki Matrisi: does this entry need human approval, and whose? ────
         from app.platform.authority_matrix import (
@@ -356,12 +395,15 @@ class DoubleEntryEngine:
             decision.needs_review
             or tarih_kaynagi == "belirsiz"
             or kdv_durumu == "ayristirilmadi"
+            or bool(stopaj_note)
         )
         notes = [decision.rationale] if decision.rationale else []
         if tarih_kaynagi == "belirsiz":
             notes.append("işlem tarihi okunamadı — dönem doğrulanmalı")
         if kdv_note:
             notes.append(kdv_note)
+        if stopaj_note:
+            notes.append(stopaj_note)
         rationale = "; ".join(notes)
 
         kayit = YevmiyeKaydi(
