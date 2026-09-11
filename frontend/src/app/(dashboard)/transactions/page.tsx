@@ -220,15 +220,24 @@ function EmptyState() {
 // ── CSV export helper ─────────────────────────────────────────────────────────
 
 function exportCsv(rows: ReturnType<typeof buildRows>, filename: string) {
-  const header = ["Date", "Description", "Vendor", "Category", "Type", "Amount"];
+  // The export carries the same provenance the table shows. A file taken to
+  // an accountant that drops "this date was invented" is a different record.
+  const header = [
+    "Date", "Date estimated", "Description", "Vendor", "Category", "Type",
+    "Amount", "KDV (stated)", "Stopaj (stated)",
+  ];
+  const money = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
   const lines = rows.map((tx) =>
     [
       tx.transaction_date?.slice(0, 10) ?? "",
+      tx.date_is_estimated ? "yes" : "no",
       `"${(tx.description ?? "").replace(/"/g, '""')}"`,
       `"${(tx.vendor ?? "").replace(/"/g, '""')}"`,
       tx.category,
       tx.type,
       (tx.amount_cents / 100).toFixed(2),
+      money(tx.kdv_cents),
+      money(tx.stopaj_cents),
     ].join(",")
   );
   const blob = new Blob([header.join(",") + "\n" + lines.join("\n")], {
@@ -252,6 +261,10 @@ function buildRows<T>(arr: T[]) {
     category: string;
     type: string;
     amount_cents: number;
+    date_is_estimated?: boolean;
+    kdv_cents?: number | null;
+    stopaj_cents?: number | null;
+    raw_text?: string | null;
   })[];
 }
 
@@ -533,9 +546,35 @@ export default function TransactionsPage() {
                 >
                   <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-muted-foreground">
                     {tx.transaction_date?.slice(0, 10) ?? "—"}
+                    {/* The source had no readable date; this one is a
+                        placeholder and decides nothing until reviewed. */}
+                    {tx.date_is_estimated && (
+                      <span
+                        className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[10px] font-medium text-amber-400"
+                        title="The source had no readable date. This is a placeholder; the entry is held for review."
+                      >
+                        estimated
+                      </span>
+                    )}
                   </td>
-                  <td className="max-w-[180px] truncate px-4 py-2.5 text-sm">
-                    {tx.description || "—"}
+                  <td className="max-w-[260px] px-4 py-2.5 text-sm">
+                    <div className="truncate" title={tx.raw_text ?? undefined}>
+                      {tx.description || "—"}
+                    </div>
+                    {(tx.kdv_cents != null || tx.stopaj_cents != null) && (
+                      <div className="mt-0.5 flex gap-1.5 text-[10px] text-muted-foreground">
+                        {tx.kdv_cents != null && (
+                          <span title="KDV as the source document states it">
+                            KDV {formatCurrency(tx.kdv_cents / 100)}
+                          </span>
+                        )}
+                        {tx.stopaj_cents != null && tx.stopaj_cents > 0 && (
+                          <span title="Income-tax withholding as the source document states it">
+                            · stopaj {formatCurrency(tx.stopaj_cents / 100)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="max-w-[120px] truncate px-4 py-2.5 text-xs text-muted-foreground">
                     {tx.vendor ?? "—"}

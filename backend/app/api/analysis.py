@@ -188,6 +188,14 @@ async def list_transactions(
                     "vendor": tx.vendor,
                     "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
                     "confidence": float(tx.confidence) if tx.confidence else None,
+                    # Provenance. Each was persisted and none was returned, so
+                    # the one screen a reviewer reads could not say why a row
+                    # was held: that its date was invented, what the source
+                    # document stated for tax, or what the parser noted.
+                    "date_is_estimated": bool(tx.date_is_estimated),
+                    "kdv_cents": tx.kdv_kurus,
+                    "stopaj_cents": tx.stopaj_kurus,
+                    "raw_text": tx.raw_text,
                 }
                 for tx in txs
             ],

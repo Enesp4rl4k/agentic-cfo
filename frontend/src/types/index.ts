@@ -86,6 +86,17 @@ export interface Transaction {
   vendor: string | null;
   transaction_date: string | null;
   confidence: number | null;
+  /** The source had no readable date; `transaction_date` is a placeholder. */
+  date_is_estimated?: boolean;
+  /**
+   * Tax as the source document stated it (e-Fatura, e-Müstahsil, e-SMM), in
+   * kuruş. Null means the source said nothing — a bank line — which is not
+   * the same as zero (stated exempt).
+   */
+  kdv_cents?: number | null;
+  stopaj_cents?: number | null;
+  /** What the parser noted: direction, stopaj, why no entry was produced. */
+  raw_text?: string | null;
 }
 
 export interface AnomalyItem {
