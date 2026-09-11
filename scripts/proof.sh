@@ -131,6 +131,13 @@ check "no unsigned package, no unsigned SOAP call" \
   grep -q "GibWsNotConfigured" backend/app/services/gib_edefter_ws.py && \
   grep -q '"test": "https://edeftertest' backend/app/services/gib_edefter_ws.py
 
+# The MCP server is a client of the API, and it cannot approve.
+check "MCP server: API client only, no approval tool" \
+  test -f backend/app/mcp/server.py && \
+  grep -q "X-API-Key" backend/app/mcp/server.py && \
+  grep -q "test_there_is_no_way_to_approve_from_here" backend/tests/test_mcp_server.py && \
+  grep -q "test_the_mcp_package_imports_nothing_from_the_app" backend/tests/test_mcp_server.py
+
 check "invoice direction comes from the VKN" \
   grep -q "own_vkn" backend/app/parsers/invoice/ubl_tr.py && \
   grep -q "own_vkn" backend/app/agents/data_ingestion.py
