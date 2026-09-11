@@ -444,6 +444,7 @@ async def muhasebe_yevmiye_dokumu(
     job_id: str,
     current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
+    donem: str | None = None,
 ) -> Response:
     """Aylık yevmiye dökümü — savunulabilirlik paketiyle aynı kayıtlardan.
 
@@ -481,10 +482,15 @@ async def muhasebe_yevmiye_dokumu(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     org = await db.get(Organization, str(current_user.org_id)) if current_user.org_id else None
-    period = str(journal.get("donem") or "")[:7] or job.created_at.strftime("%Y-%m")
+    from app.services.edefter_xbrl import EDefterError, ledger_period
+
+    try:
+        period, chosen = ledger_period(list(journal.get("yevmiye_kayitlari") or []), donem)
+    except EDefterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     package = EDefterGenerator.generate_journal_xml(
-        entries=journal.get("yevmiye_kayitlari") or [],
+        entries=[dict(e) for e in chosen],
         period=period,
         vkn=settings.gib_vkn,
         company_title=(org.name if org else "Şirket"),
@@ -519,7 +525,7 @@ async def muhasebe_yevmiye_dokumu(
 # format its own samples use. Still unsigned — see the response headers.
 
 async def _edefter_context(
-    job_id: str, current_user: User, db: AsyncSession
+    job_id: str, current_user: User, db: AsyncSession, donem: str | None = None
 ) -> tuple[list[dict], str, LedgerOwner]:
     """Shared preflight for both ledgers, so they cannot describe different books."""
     from app.core.branding import get_brand
@@ -552,7 +558,14 @@ async def _edefter_context(
         await db.get(Organization, str(current_user.org_id))
         if current_user.org_id else None
     )
-    period = str(journal.get("donem") or "")[:7] or job.created_at.strftime("%Y-%m")
+    from app.services.edefter_xbrl import EDefterError, ledger_period
+
+    # The period is the month the entries are in. It used to be read from a
+    # `donem` field nothing wrote, falling back to the job's creation month.
+    try:
+        period, entries = ledger_period(list(journal.get("yevmiye_kayitlari") or []), donem)
+    except EDefterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     brand = get_brand()
 
     owner = LedgerOwner(
@@ -563,7 +576,7 @@ async def _edefter_context(
         # VKN##üretici##yazılım##sürüm.
         software_name=f"{settings.gib_vkn}##{brand.name}##{brand.name} e-Defter##1.0",
     )
-    return list(journal.get("yevmiye_kayitlari") or []), period, owner
+    return [dict(e) for e in entries], period, owner
 
 
 def _edefter_response(pkg: EDefterXBRL, job_id: str) -> Response:
@@ -599,6 +612,7 @@ async def muhasebe_edefter_yevmiye(
     job_id: str,
     current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
+    donem: str | None = None,
 ) -> Response:
     """GİB e-Defter yevmiye defteri (XBRL GL) — `edefter.xsd`'den geçer.
 
@@ -613,7 +627,7 @@ async def muhasebe_edefter_yevmiye(
     """
     from app.services.edefter_xbrl import EDefterError, EDefterXBRLGenerator
 
-    entries, period, owner = await _edefter_context(job_id, current_user, db)
+    entries, period, owner = await _edefter_context(job_id, current_user, db, donem)
     try:
         pkg = EDefterXBRLGenerator.generate_journal(
             entries, period=period, owner=owner
@@ -628,6 +642,7 @@ async def muhasebe_edefter_kebir(
     job_id: str,
     current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
+    donem: str | None = None,
 ) -> Response:
     """GİB e-Defter büyük defteri (kebir, XBRL GL).
 
@@ -637,12 +652,145 @@ async def muhasebe_edefter_kebir(
     """
     from app.services.edefter_xbrl import EDefterError, EDefterXBRLGenerator
 
-    entries, period, owner = await _edefter_context(job_id, current_user, db)
+    entries, period, owner = await _edefter_context(job_id, current_user, db, donem)
     try:
         pkg = EDefterXBRLGenerator.generate_ledger(entries, period=period, owner=owner)
     except EDefterError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _edefter_response(pkg, job_id)
+
+
+async def _edefter_build(
+    job_id: str, kind: str, current_user: User, db: AsyncSession, donem: str | None = None
+) -> EDefterXBRL:
+    from app.services.edefter_xbrl import EDefterError, EDefterXBRLGenerator
+
+    if kind not in ("yevmiye", "kebir"):
+        raise HTTPException(status_code=422, detail="kind yevmiye ya da kebir olmalı")
+    entries, period, owner = await _edefter_context(job_id, current_user, db, donem)
+    build = (
+        EDefterXBRLGenerator.generate_journal if kind == "yevmiye"
+        else EDefterXBRLGenerator.generate_ledger
+    )
+    try:
+        pkg = build(entries, period=period, owner=owner)
+    except EDefterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not pkg.is_balanced:
+        raise HTTPException(status_code=409, detail="Defter dengeli değil — berat üretilmedi.")
+    return pkg
+
+
+@router.get("/muhasebe/{job_id}/e-defter-berat.xml")
+async def muhasebe_edefter_berat(
+    job_id: str,
+    kind: str = "yevmiye",
+    donem: str | None = None,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """e-Defter beratı — **önizleme**, bu sunucudaki imzasız defterden.
+
+    Every value is derived from the defter file itself: entry count, size in
+    MiB, the 391/191/600/601/602 tax detail, and the value that binds the pair.
+    That last one is the defter's XAdES signature value — which an unsigned
+    defter does not have. So this berat carries the defter's HashValue in its
+    place and is a preview of the real one: once the taxpayer signs the defter
+    with their mali mühür, the berat is regenerated from the signed file
+    (`build_berat` takes it as it is) and then signed itself.
+
+    **Beyan edilemez**, ve başlıklar bunu kod olarak söyler.
+    """
+    from app.services.edefter_berat import BeratError, build_berat
+
+    pkg = await _edefter_build(job_id, kind, current_user, db, donem)
+    try:
+        berat = build_berat(pkg.xml.encode("utf-8"), defter_file_name=pkg.file_name)
+    except BeratError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(
+        content=berat.xml,
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": content_disposition(berat.file_name),
+            "X-EDefter-Berat-Of": pkg.file_name,
+            "X-EDefter-Berat-Unique-ID": berat.unique_id,
+            "X-EDefter-Berat-Size-MiB": berat.size_mib,
+            "X-EDefter-Entry-Count": str(berat.number_of_entries or pkg.entry_count),
+            "X-EDefter-Filable": "false",
+            "X-EDefter-Unfilable-Code": "berat-preview-defter-unsigned",
+        },
+    )
+
+
+@router.get("/muhasebe/{job_id}/e-defter/durum")
+async def muhasebe_edefter_durum(
+    job_id: str,
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+    donem: str | None = None,
+) -> dict[str, Any]:
+    """Beyana giden yolun her adımı, yapılıp yapılmadığıyla.
+
+    A single "not filable" flag hides how far the file got. This lists the
+    steps GİB's process has, in order, and marks only what actually happened
+    on this server. Nothing is inferred as done because a later step would
+    need it.
+    """
+    from app.services.edefter_berat import BeratError, build_berat
+
+    settings = get_settings()
+    steps: list[dict[str, Any]] = []
+    defter_detail = ""
+    berat_detail = "Defter olmadan berat olmaz."
+    berat_ok = False
+    try:
+        pkg = await _edefter_build(job_id, "yevmiye", current_user, db, donem)
+        defter_detail = f"{pkg.file_name} — {pkg.entry_count} kayıt, dengeli"
+        try:
+            build_berat(pkg.xml.encode("utf-8"), defter_file_name=pkg.file_name)
+            berat_ok = True
+        except BeratError as exc:
+            berat_detail = str(exc)
+        defter_ok = True
+    except HTTPException as exc:
+        if exc.status_code in (403, 404):
+            raise
+        defter_ok = False
+        defter_detail = str(exc.detail)
+
+    steps.append({"key": "defter", "label": "Yevmiye ve kebir üretildi",
+                  "done": defter_ok, "detail": defter_detail})
+    steps.append({"key": "defter_imzasi", "label": "Defter mali mühürle imzalandı",
+                  "done": False,
+                  "detail": "Bu sunucuda imzalayıcı yok — mükellefin mali mührü gerekir."})
+    steps.append({"key": "berat", "label": "Berat üretildi",
+                  "done": False,
+                  "preview": berat_ok,
+                  "detail": (
+                      "Önizleme hazır; imzalı defterden yeniden üretilecek."
+                      if berat_ok else (locals().get("berat_detail") or "Defter olmadan berat olmaz.")
+                  )})
+    steps.append({"key": "berat_imzasi", "label": "Berat mali mühürle imzalandı",
+                  "done": False, "detail": "Defter imzasından sonra gelir."})
+    steps.append({"key": "paket", "label": "Yükleme paketi (VKN-YYYYAA-YB-000000.zip)",
+                  "done": False, "detail": "İki imza olmadan paket kurulmaz."})
+    steps.append({"key": "gonderim", "label": "GİB'e gönderildi",
+                  "done": False,
+                  "detail": (
+                      f"Web servis istemcisi hazır (ortam: {settings.gib_edefter_env}); "
+                      "WS-Security imzalayıcısı yok, gönderim yapılmaz."
+                  )})
+    next_step = next((s for s in steps if not s["done"]), None)
+    return {
+        "data": {
+            "job_id": job_id,
+            "filable": False,
+            "steps": steps,
+            "next_step": next_step["key"] if next_step else None,
+        },
+        "error": None,
+    }
 
 
 @router.get("/muhasebe/onay-kuyrugu")

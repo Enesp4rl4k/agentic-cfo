@@ -119,6 +119,18 @@ check "e-Defter is XBRL GL, validated against edefter.xsd" \
 check "e-Defter never claims to be filable" \
   grep -q "filable: bool = False" backend/app/services/edefter_xbrl.py
 
+# The berat is derived from the finished defter and checked against GİB's own
+# signed pair; nothing signs or sends without a mali mühür behind an interface.
+check "berat derived from the defter, checked against GİB's pair" \
+  test -f backend/app/services/edefter_berat.py && \
+  grep -q "1234567808-201804-YB-000000.xml" backend/tests/test_edefter_berat.py && \
+  grep -q "class Signer(Protocol)" backend/app/services/edefter_berat.py
+
+check "no unsigned package, no unsigned SOAP call" \
+  grep -q "defter imzasız" backend/app/services/edefter_package.py && \
+  grep -q "GibWsNotConfigured" backend/app/services/gib_edefter_ws.py && \
+  grep -q '"test": "https://edeftertest' backend/app/services/gib_edefter_ws.py
+
 check "invoice direction comes from the VKN" \
   grep -q "own_vkn" backend/app/parsers/invoice/ubl_tr.py && \
   grep -q "own_vkn" backend/app/agents/data_ingestion.py

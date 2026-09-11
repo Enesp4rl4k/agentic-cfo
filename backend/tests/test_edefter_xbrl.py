@@ -226,8 +226,11 @@ def test_period_end_is_the_last_day_of_the_month() -> None:
         ("2023-02", "2023-02-28"),
         ("2024-12", "2024-12-31"),
     ):
+        # Entries dated inside the period: the generator refuses another
+        # month's posting, so the fixture moves with the month under test.
+        moved = [{**e, "tarih": f"{period}-15T00:00:00"} for e in ENTRIES]
         pkg = EDefterXBRLGenerator.generate_journal(
-            ENTRIES, period=period, owner=OWNER
+            moved, period=period, owner=OWNER
         )
         assert f">{expected}<" in pkg.xml, period
 

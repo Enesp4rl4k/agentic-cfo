@@ -167,6 +167,64 @@ export async function downloadEDefter(
   };
 }
 
+export interface BeratPreview {
+  blob: Blob;
+  fileName: string;
+  /** The defter file this berat was derived from. */
+  of: string;
+  uniqueId: string;
+  sizeMiB: string;
+  unfilableCode: string;
+}
+
+/**
+ * The berat for this job's ledger — a preview. Its binding value is the
+ * defter's signature, which an unsigned defter does not have, so it is
+ * regenerated from the signed file before it can be filed.
+ */
+export async function downloadBeratPreview(
+  jobId: string,
+  kind: EDefterKind,
+): Promise<BeratPreview> {
+  const res = await apiClient.get(`/muhasebe/${jobId}/e-defter-berat.xml`, {
+    params: { kind },
+    responseType: "blob",
+  });
+  const h = res.headers as Record<string, string | undefined>;
+  const disposition = h["content-disposition"] ?? "";
+  const utf8 = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+  const plain = /filename="([^"]+)"/.exec(disposition)?.[1];
+  return {
+    blob: new Blob([res.data], { type: "application/xml" }),
+    fileName: utf8 ? decodeURIComponent(utf8) : (plain ?? `berat-${kind}.xml`),
+    of: h["x-edefter-berat-of"] ?? "",
+    uniqueId: h["x-edefter-berat-unique-id"] ?? "",
+    sizeMiB: h["x-edefter-berat-size-mib"] ?? "",
+    unfilableCode: h["x-edefter-unfilable-code"] ?? "",
+  };
+}
+
+export interface EDefterStep {
+  key: string;
+  label: string;
+  done: boolean;
+  /** A draft exists, but the step is not done. */
+  preview?: boolean;
+  detail: string;
+}
+
+export interface EDefterDurum {
+  job_id: string;
+  filable: boolean;
+  steps: EDefterStep[];
+  next_step: string | null;
+}
+
+export async function getEDefterDurum(jobId: string): Promise<EDefterDurum> {
+  const res = await apiClient.get(`/muhasebe/${jobId}/e-defter/durum`);
+  return res.data.data;
+}
+
 /**
  * Has this job been through the accounting chain?
  *

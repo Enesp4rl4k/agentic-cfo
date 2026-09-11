@@ -1,14 +1,36 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { AlertTriangle, BookOpen, Download, Loader2, ShieldAlert } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Circle,
+  CircleDashed,
+  Download,
+  FileSignature,
+  Loader2,
+  ShieldAlert,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  downloadBeratPreview,
   downloadEDefter,
+  getEDefterDurum,
+  type EDefterDurum,
   type EDefterFile,
   type EDefterKind,
 } from "@/lib/api/muhasebe";
+
+function save(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const LABEL: Record<EDefterKind, string> = {
   yevmiye: "Yevmiye defteri",
@@ -28,22 +50,33 @@ const LABEL: Record<EDefterKind, string> = {
  * ledger built from it.
  */
 export function EDefterCard({ jobId }: { jobId: string }) {
-  const [busy, setBusy] = useState<EDefterKind | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [last, setLast] = useState<EDefterFile | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [durum, setDurum] = useState<EDefterDurum | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getEDefterDurum(jobId)
+      .then((d) => live && setDurum(d))
+      .catch(() => live && setDurum(null));
+    return () => {
+      live = false;
+    };
+  }, [jobId]);
 
   const grab = useCallback(
-    async (kind: EDefterKind) => {
-      setBusy(kind);
+    async (kind: EDefterKind, berat = false) => {
+      setBusy(berat ? `${kind}-berat` : kind);
       setErr(null);
       try {
+        if (berat) {
+          const file = await downloadBeratPreview(jobId, kind);
+          save(file.blob, file.fileName);
+          return;
+        }
         const file = await downloadEDefter(jobId, kind);
-        const url = URL.createObjectURL(file.blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = file.fileName;
-        a.click();
-        URL.revokeObjectURL(url);
+        save(file.blob, file.fileName);
         setLast(file);
       } catch (e) {
         // A 409 here means the journal does not balance, which is worth
@@ -93,17 +126,58 @@ export function EDefterCard({ jobId }: { jobId: string }) {
             {LABEL[kind]}
           </Button>
         ))}
+        {(Object.keys(LABEL) as EDefterKind[]).map((kind) => (
+          <Button
+            key={`${kind}-berat`}
+            onClick={() => grab(kind, true)}
+            disabled={busy !== null}
+            variant="ghost"
+            className="gap-2"
+            title="Önizleme: imzalı defterden yeniden üretilecek"
+          >
+            {busy === `${kind}-berat` ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSignature className="h-4 w-4" />
+            )}
+            {LABEL[kind]} beratı (önizleme)
+          </Button>
+        ))}
       </div>
+
+      {/* Every step of GİB's process, marked only if it actually happened here.
+          A single "not filable" flag hides how far the file got. */}
+      {durum && (
+        <ol className="space-y-1.5 text-xs">
+          {durum.steps.map((s) => (
+            <li key={s.key} className="flex items-start gap-2">
+              {s.done ? (
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              ) : s.preview ? (
+                <CircleDashed className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+              ) : (
+                <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span>
+                <span className={s.done ? "" : "text-muted-foreground"}>{s.label}</span>
+                {s.detail && (
+                  <span className="block text-[11px] text-muted-foreground/80">{s.detail}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
 
       {/* Never hidden behind a tooltip or shown only after a download: someone
           who takes this file to their accountant has to know what it is not. */}
       <div className="flex items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/10 p-2.5">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
         <p className="text-xs text-amber-200/90">
-          <strong>Bu defter GİB&apos;e yüklenemez.</strong> Beyan için mali mühür
-          ya da nitelikli e-imza ile XAdES imzalanması ve beratının alınması
-          gerekir; ikisi de bu sistemde yok. Dosya yapısal olarak tamdır, hukuken
-          eksiktir — mali müşavirinizle birlikte kullanın.
+          <strong>Bu defter GİB&apos;e yüklenemez.</strong> Beyan için defterin ve
+          beratının mükellefin mali mührüyle XAdES imzalanması gerekir; bu
+          sistemde imzalayıcı yok. Berat burada yalnızca önizlemedir — bağlayıcı
+          değeri defterin imzasıdır, defter imzalanınca yeniden üretilir.
         </p>
       </div>
 

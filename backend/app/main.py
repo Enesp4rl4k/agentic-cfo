@@ -159,6 +159,8 @@ app.add_middleware(
         # e-Defter: what was produced, and the fact that it cannot be filed.
         "X-EDefter-Entry-Count", "X-EDefter-Line-Count", "X-EDefter-SHA256",
         "X-EDefter-Filable", "X-EDefter-Unfilable-Code",
+        # Berat preview: which defter it was derived from, and what it says.
+        "X-EDefter-Berat-Of", "X-EDefter-Berat-Unique-ID", "X-EDefter-Berat-Size-MiB",
         # Journal listing — deliberately not an e-Defter, and it says so.
         "X-Yevmiye-Entry-Count", "X-Yevmiye-SHA256", "X-Not-A-GIB-Filing",
         # Board deck size, so the UI can show it before opening the file.

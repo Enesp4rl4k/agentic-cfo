@@ -142,6 +142,9 @@ class Settings(BaseSettings):
     gib_username: str  = ""      # e-Fatura portal kullanıcı adı
     gib_password: str  = ""      # e-Fatura portal şifresi
     gib_sandbox:  bool = True    # True = test ortamı
+    # GİB e-Defter web servisi ortamı. "prod" yalnızca biri bilerek yazarsa;
+    # imzalayıcı olmadan hiçbir ortamda gönderim yapılmaz.
+    gib_edefter_env: str = "test"
 
     # Open Banking — Turkish banks (sandbox credentials from developer portals)
     # Akbank: https://developer.akbank.com

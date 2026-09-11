@@ -143,6 +143,44 @@ def _split_account(code: str) -> tuple[str, str]:
     return main, code
 
 
+def ledger_period(
+    entries: Sequence[Mapping[str, Any]], requested: str | None = None
+) -> tuple[str, list[Mapping[str, Any]]]:
+    """The month these entries belong to — read from the entries themselves.
+
+    The route used to take the period from a `donem` field that nothing ever
+    wrote, and fell back to the month the job was created. So January 2024's
+    books, uploaded in September 2026, came out as the September 2026 ledger:
+    the right movements filed under the wrong period, on a legal document.
+
+    An e-Defter part covers one month. If the entries span several, the caller
+    names one (`requested`) and gets that month's entries; otherwise this
+    refuses rather than pick.
+    """
+    undated = [i for i, e in enumerate(entries, start=1) if not str(e.get("tarih") or "")[:7]]
+    if undated:
+        raise EDefterError(
+            f"{len(undated)} kaydın tarihi yok (ilk: {undated[0]}.) — hangi aya ait olduğu bilinmeden deftere yazılamaz"
+        )
+    months = sorted({str(e.get("tarih"))[:7] for e in entries})
+    if requested:
+        EDefterXBRLGenerator._require_period(requested)
+        chosen = [e for e in entries if str(e.get("tarih"))[:7] == requested]
+        if not chosen:
+            raise EDefterError(
+                f"{requested} döneminde kayıt yok — kayıtların ayları: {', '.join(months) or 'yok'}"
+            )
+        return requested, chosen
+    if not months:
+        raise EDefterError("defterde kayıt yok")
+    if len(months) > 1:
+        raise EDefterError(
+            f"e-Defter aylıktır; kayıtlar {len(months)} aya yayılıyor ({', '.join(months)}) "
+            "— donem=YYYY-AA ile bir ay seçin"
+        )
+    return months[0], list(entries)
+
+
 class EDefterXBRLGenerator:
     """Yevmiye ve kebir defterlerini XBRL GL olarak üretir."""
 
@@ -189,6 +227,13 @@ class EDefterXBRLGenerator:
                 )
 
             posting_date = str(entry.get("tarih") or "")[:10] or f"{period}-01"
+            if posting_date[:7] != period:
+                # Whatever period the caller passed, this month's ledger does
+                # not carry another month's posting.
+                raise EDefterError(
+                    f"{idx}. kayıt {posting_date} tarihli, defter dönemi {period} "
+                    "— başka ayın kaydı bu deftere yazılamaz"
+                )
             comment = str(entry.get("aciklama") or "")
             doc_ref = str(
                 entry.get("kaynak_islem_id") or entry.get("kayit_id") or f"{idx:06d}"
@@ -283,6 +328,13 @@ class EDefterXBRLGenerator:
                     f"{idx}. kaydın tarihi belirsiz — kebir de üretilemez"
                 )
             posting_date = str(entry.get("tarih") or "")[:10] or f"{period}-01"
+            if posting_date[:7] != period:
+                # Whatever period the caller passed, this month's ledger does
+                # not carry another month's posting.
+                raise EDefterError(
+                    f"{idx}. kayıt {posting_date} tarihli, defter dönemi {period} "
+                    "— başka ayın kaydı bu deftere yazılamaz"
+                )
             comment = str(entry.get("aciklama") or "")
             doc_ref = str(
                 entry.get("kaynak_islem_id") or entry.get("kayit_id") or f"{idx:06d}"
