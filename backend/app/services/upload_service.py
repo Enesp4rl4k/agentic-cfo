@@ -149,8 +149,15 @@ async def create_analysis_job(
     user_id: str,
     org_id: str | None,
     db: AsyncSession,
+    smmm_client_id: str | None = None,
 ) -> AnalysisJob:
-    """Insert an AnalysisJob record scoped to the uploading user's org."""
+    """Insert an AnalysisJob record scoped to the uploading user's org.
+
+    `smmm_client_id` names one of an accountant's client companies when the
+    uploader is working on someone else's books. Callers must have checked that
+    the accountant owns that client — this does not, because it has no session
+    context to check it with.
+    """
     job = AnalysisJob(
         id=result.job_id,
         status=JobStatus.PENDING,
@@ -159,6 +166,7 @@ async def create_analysis_job(
         file_type=result.ext,
         user_id=user_id,
         org_id=org_id,
+        smmm_client_id=smmm_client_id,
     )
     db.add(job)
     await db.commit()

@@ -32,6 +32,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
 from app.services.csv_validator import FIELD_MAP_CANDIDATES, CSVValidator
+from app.services.smmm_clients import ClientNotOwned, assert_owns_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["data-quality"])
@@ -50,6 +51,10 @@ class AcceptMappingRequest(BaseModel):
     # Raw CSV content (base64 if binary, or plain text)
     csv_content: str
     encoding: str = "utf-8"
+    # Which of an accountant's clients this file belongs to. The mapping step
+    # is where the UI's upload actually completes, so the client has to survive
+    # it or the attribution is lost between the two halves of one upload.
+    client_id: str | None = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -103,6 +108,10 @@ async def validate_and_upload(
     file: UploadFile = File(description="CSV file to validate and optionally analyze"),
     min_score: int = MIN_AUTO_PROCEED_SCORE,
     force: bool = False,
+    # The UI posts here rather than to /upload, so without this an accountant's
+    # upload lands unattributed — the same divergence between these two routes
+    # that once left every UI upload unqueued.
+    client_id: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -151,6 +160,12 @@ async def validate_and_upload(
 
     # Phase 2: decide whether to start analysis
     job_id: str | None = None
+    if client_id:
+        try:
+            client_id = await assert_owns_client(db, str(user.id), client_id)
+        except ClientNotOwned as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     started = False
     dispatch = "not_requested"
     blocked_reason: str | None = None
@@ -180,6 +195,7 @@ async def validate_and_upload(
                 user_id=user.id,
                 org_id=user.org_id,
                 db=db,
+                smmm_client_id=client_id,
             )
             job_id = job.id
 
@@ -265,6 +281,14 @@ async def accept_column_mapping(
     Accept user-confirmed column mapping and start analysis.
     Called after the user reviews and adjusts the auto-detected mapping in the UI (DQ-2).
     """
+    if body.client_id:
+        try:
+            body.client_id = await assert_owns_client(
+                db, str(user.id), body.client_id
+            )
+        except ClientNotOwned as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     import base64
     import io as _io
 
@@ -305,6 +329,7 @@ async def accept_column_mapping(
             user_id=user.id,
             org_id=user.org_id,
             db=db,
+            smmm_client_id=body.client_id,
         )
 
         # Persist mapping in job metadata (for the pipeline to use)

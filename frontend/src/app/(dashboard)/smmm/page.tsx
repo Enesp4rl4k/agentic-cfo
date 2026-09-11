@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import {
   Users, Plus, Trash2, BarChart3, RefreshCw, Building2,
@@ -26,6 +27,18 @@ interface SMMMMuhasebeci {
   is_active: boolean;
 }
 
+/** Where a client actually stands in the chain, derived from their jobs. */
+interface ClientDurum {
+  job_count:        number;
+  last_job_id:      string | null;
+  last_job_status:  string | null;
+  last_analysis_at: string | null;
+  pending_review:   number;
+  packet_sealed:    boolean;
+  needs_attention:  boolean;
+  stage: "veri_yok" | "basarisiz" | "onay_bekliyor" | "muhurlendi" | "analiz_edildi";
+}
+
 interface SMMMMusteriSummary {
   id:            string;
   firma_adi:     string;
@@ -34,9 +47,12 @@ interface SMMMMusteriSummary {
   buyukluk:      string | null;
   il:            string | null;
   is_active:     boolean;
-  health_score:  number | null;
-  last_analysis: string | null;
-  alert_count:   number;
+  /**
+   * `health_score` used to be shown here. Nothing in the codebase ever
+   * computed one, so the column read "—" for every client of every accountant.
+   * This is the same question answered from the jobs themselves.
+   */
+  durum:         ClientDurum;
 }
 
 interface SMMMMusteriCreate {
@@ -49,38 +65,32 @@ interface SMMMMusteriCreate {
 }
 
 interface DashboardData {
-  total_clients:     number;
-  active_clients:    number;
-  avg_health_score:  number | null;
-  critical_clients:  number;
-  clients:           SMMMMusteriSummary[];
+  /** The server nests these; reading them flat is why the tiles were blank. */
+  summary: {
+    total_clients:    number;
+    analyzed_clients: number;
+    needs_attention:  number;
+    sealed_clients:   number;
+    pending_entries:  number;
+  };
+  clients:        SMMMMusteriSummary[];
+  attention_list: SMMMMusteriSummary[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function healthColor(score: number | null): string {
-  if (score === null) return "text-muted-foreground";
-  if (score >= 7)  return "text-emerald-400";
-  if (score >= 5)  return "text-yellow-400";
-  if (score >= 3)  return "text-orange-400";
-  return "text-red-400";
-}
-
-function healthBg(score: number | null): string {
-  if (score === null) return "bg-muted/50";
-  if (score >= 7)  return "bg-emerald-500/10 border-emerald-500/30";
-  if (score >= 5)  return "bg-yellow-500/10 border-yellow-500/30";
-  if (score >= 3)  return "bg-orange-500/10 border-orange-500/30";
-  return "bg-red-500/10 border-red-500/30";
-}
-
-function healthLabel(score: number | null): string {
-  if (score === null) return "Analiz yok";
-  if (score >= 7)  return "İyi";
-  if (score >= 5)  return "Orta";
-  if (score >= 3)  return "Riskli";
-  return "Kritik";
-}
+/**
+ * Each stage names something that has or has not happened, rather than scoring
+ * the company. An accountant opening this on a Monday is asking one question:
+ * whose work is waiting on me.
+ */
+const STAGE: Record<ClientDurum["stage"], { label: string; tone: string; dot: string }> = {
+  veri_yok:      { label: "Veri yok",      tone: "bg-muted/50 border-border text-muted-foreground", dot: "bg-muted-foreground" },
+  basarisiz:     { label: "Başarısız",     tone: "bg-red-500/10 border-red-500/30 text-red-400",    dot: "bg-red-400" },
+  onay_bekliyor: { label: "Onay bekliyor", tone: "bg-amber-500/10 border-amber-500/30 text-amber-300", dot: "bg-amber-400" },
+  analiz_edildi: { label: "Analiz edildi", tone: "bg-blue-500/10 border-blue-500/30 text-blue-300",  dot: "bg-blue-400" },
+  muhurlendi:    { label: "Mühürlendi",    tone: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400", dot: "bg-emerald-400" },
+};
 
 function fmt(d: string | null): string {
   if (!d) return "—";
@@ -287,27 +297,35 @@ function ClientRow({
         ) : "—"}
       </td>
       <td className="py-3 px-3">
-        <div className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium border", healthBg(client.health_score))}>
-          <span className={cn("h-1.5 w-1.5 rounded-full", client.health_score === null ? "bg-muted-foreground" : client.health_score >= 7 ? "bg-emerald-400" : client.health_score >= 5 ? "bg-yellow-400" : client.health_score >= 3 ? "bg-orange-400" : "bg-red-400")} />
-          <span className={healthColor(client.health_score)}>
-            {client.health_score !== null ? `${client.health_score.toFixed(1)}/10` : "—"} {healthLabel(client.health_score)}
-          </span>
+        <div className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
+          STAGE[client.durum.stage].tone,
+        )}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", STAGE[client.durum.stage].dot)} />
+          {STAGE[client.durum.stage].label}
+          {client.durum.pending_review > 0 && ` · ${client.durum.pending_review}`}
         </div>
       </td>
+      {/* `alert_count` was another field with no producer. What is true here is
+          whether this client is waiting on the accountant. */}
       <td className="py-3 px-3 text-xs text-muted-foreground">
-        {client.alert_count > 0 ? (
-          <span className="flex items-center gap-1 text-orange-400">
+        {client.durum.needs_attention ? (
+          <span className="flex items-center gap-1 text-amber-400">
             <AlertTriangle className="h-3 w-3" />
-            {client.alert_count} uyarı
+            {client.durum.pending_review > 0
+              ? `${client.durum.pending_review} kayıt onayınızda`
+              : "İnceleme gerekiyor"}
           </span>
+        ) : client.durum.job_count === 0 ? (
+          <span className="text-muted-foreground">Henüz dosya yüklenmedi</span>
         ) : (
           <span className="flex items-center gap-1 text-emerald-400">
             <CheckCircle2 className="h-3 w-3" />
-            Temiz
+            Bekleyen yok
           </span>
         )}
       </td>
-      <td className="py-3 px-3 text-xs text-muted-foreground">{fmt(client.last_analysis)}</td>
+      <td className="py-3 px-3 text-xs text-muted-foreground">{fmt(client.durum.last_analysis_at)}</td>
       <td className="py-3 px-3">
         <div className="flex items-center gap-1">
           <button
@@ -336,6 +354,7 @@ function ClientRow({
 
 export default function SMMMMuhasebecPage() {
   const [profile,    setProfile]    = useState<SMMMMuhasebeci | null>(null);
+  const router = useRouter();
   const [dashboard,  setDashboard]  = useState<DashboardData | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
@@ -344,8 +363,6 @@ export default function SMMMMuhasebecPage() {
   const [showRegister,  setShowRegister]  = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
 
-  const [analyzeId, setAnalyzeId]   = useState<string | null>(null);
-  const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -373,28 +390,25 @@ export default function SMMMMuhasebecPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   async function handleDelete(id: string) {
-    if (!confirm("Bu müşteriyi silmek istediğinizden emin misiniz?")) return;
+    // Deactivated, not deleted: the client's approved entries and sealed
+    // packets have to stay explainable after the engagement ends.
+    if (!confirm("Bu müşteriyi listeden çıkarmak istiyor musunuz? Geçmiş kayıtlar saklanır.")) return;
     try {
       await apiClient.delete(`/smmm/clients/${id}`);
       fetchData();
     } catch {
-      setError("Müşteri silinemedi");
+      setError("Müşteri listeden çıkarılamadı");
     }
   }
 
-  async function handleAnalyze(id: string) {
-    setAnalyzeId(id);
-    setAnalyzeMsg(null);
-    try {
-      const res = await apiClient.post<{ job_id?: string; message?: string }>(
-        `/smmm/clients/${id}/analyze`, {}
-      );
-      setAnalyzeMsg(res.data.message ?? `Analiz başlatıldı (${res.data.job_id ?? ""})`);
-    } catch {
-      setAnalyzeMsg("Analiz başlatılamadı");
-    } finally {
-      setAnalyzeId(null);
-    }
+  /**
+   * Analysing a client means uploading their file, not calling a separate
+   * endpoint. The page used to POST /smmm/clients/{id}/analyze — a route the
+   * module docstring advertised and nobody ever wrote, so the button answered
+   * 404. /upload takes `client_id` and the chain runs from there.
+   */
+  function handleAnalyze(id: string) {
+    router.push(`/upload?client=${id}`);
   }
 
   // ── Not registered ───────────────────────────────────────────────────────────
@@ -423,7 +437,6 @@ export default function SMMMMuhasebecPage() {
   }
 
   const clients = dashboard?.clients ?? [];
-  const critical = clients.filter((c) => c.health_score !== null && c.health_score < 3).length;
 
   return (
     <main className="mx-auto max-w-screen-xl space-y-6 p-4 sm:p-6 lg:p-8">
@@ -456,35 +469,38 @@ export default function SMMMMuhasebecPage() {
         </div>
       )}
 
-      {/* Analyze feedback */}
-      {analyzeMsg && (
-        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-400 flex items-center justify-between">
-          {analyzeMsg}
-          <button onClick={() => setAnalyzeMsg(null)} aria-label="Kapat"><X className="h-4 w-4" /></button>
-        </div>
-      )}
-
       {/* Summary cards */}
       {dashboard && (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Card className="p-4 space-y-1">
             <p className="text-xs text-muted-foreground">Toplam Müşteri</p>
-            <p className="text-2xl font-bold tabular-nums">{dashboard.total_clients}</p>
+            <p className="text-2xl font-bold tabular-nums">{dashboard.summary.total_clients}</p>
           </Card>
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Aktif</p>
-            <p className="text-2xl font-bold tabular-nums text-emerald-400">{dashboard.active_clients}</p>
-          </Card>
-          <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Ort. Sağlık</p>
-            <p className={cn("text-2xl font-bold tabular-nums", healthColor(dashboard.avg_health_score))}>
-              {dashboard.avg_health_score !== null ? `${dashboard.avg_health_score.toFixed(1)}/10` : "—"}
+            <p className="text-xs text-muted-foreground">Analiz Edilen</p>
+            <p className="text-2xl font-bold tabular-nums text-blue-400">
+              {dashboard.summary.analyzed_clients}
             </p>
           </Card>
+          {/* The one an accountant opens the page for. */}
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Kritik Müşteri</p>
-            <p className={cn("text-2xl font-bold tabular-nums", critical > 0 ? "text-red-400" : "text-foreground")}>
-              {critical}
+            <p className="text-xs text-muted-foreground">Sizi Bekleyen</p>
+            <p className={cn(
+              "text-2xl font-bold tabular-nums",
+              dashboard.summary.needs_attention > 0 ? "text-amber-400" : "text-foreground",
+            )}>
+              {dashboard.summary.needs_attention}
+            </p>
+            {dashboard.summary.pending_entries > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {dashboard.summary.pending_entries} kayıt
+              </p>
+            )}
+          </Card>
+          <Card className="p-4 space-y-1">
+            <p className="text-xs text-muted-foreground">Mühürlenen</p>
+            <p className="text-2xl font-bold tabular-nums text-emerald-400">
+              {dashboard.summary.sealed_clients}
             </p>
           </Card>
         </div>

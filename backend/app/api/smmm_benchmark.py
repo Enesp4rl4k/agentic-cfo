@@ -8,7 +8,11 @@ SMMM (muhasebeci) endpoint'leri:
   POST /smmm/clients               -- Yeni müşteri ekle
   PUT  /smmm/clients/{id}          -- Müşteri güncelle
   DELETE /smmm/clients/{id}        -- Müşteri sil
-  POST /smmm/clients/{id}/analyze  -- Müşteri için analiz başlat
+  DELETE /smmm/clients/{id}        -- Müşteriyi pasife al (kayıt silinmez)
+
+  Bir müşteri için analiz ayrı bir uç değildir: POST /upload dosyayı
+  `client_id` ile alır ve zincir oradan yürür. Burada bir /analyze ucu
+  ilan ediliyordu ama hiç yazılmamıştı.
   GET  /smmm/dashboard             -- Tüm müşterilerin özet durumu
 
 Benchmark endpoint'leri:
@@ -29,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
+from app.services.smmm_clients import status_for_clients
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -154,10 +159,13 @@ async def smmm_list_clients(
         .order_by(desc(SMMMMusteriKayit.updated_at))
     )
     clients = (await db.execute(clients_stmt)).scalars().all()
+    statuses = await status_for_clients(db, [str(c.id) for c in clients])
 
     return {
         "ok":      True,
-        "clients": [c.to_dict() for c in clients],
+        "clients": [
+            {**c.to_dict(), "durum": statuses[str(c.id)].to_dict()} for c in clients
+        ],
         "count":   len(clients),
     }
 
@@ -234,6 +242,48 @@ async def smmm_update_client(
     return {"data": {"client": client.to_dict()}, "error": None}
 
 
+@router.delete("/smmm/clients/{client_id}")
+async def smmm_deactivate_client(
+    client_id:    str,
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Müşteriyi listeden çıkar — kaydı silmeden.
+
+    Deactivated rather than deleted: the client's jobs, approved entries and
+    sealed packets stay explainable, and a sealed period must remain readable
+    after the engagement ends. The same rule the related-party register follows.
+
+    The portal page has been calling this since it was written; the route did
+    not exist, so the button answered 404 and the row stayed on screen.
+    """
+    from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
+
+    user_id = _get_user_id(current_user)
+    m = (
+        await db.execute(
+            select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
+
+    client = (
+        await db.execute(
+            select(SMMMMusteriKayit).where(
+                SMMMMusteriKayit.id == client_id,
+                SMMMMusteriKayit.muhasebeci_id == m.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
+
+    client.is_active = False
+    await db.commit()
+    return {"data": {"id": client.id, "is_active": False}, "error": None}
+
+
 @router.get("/smmm/dashboard")
 async def smmm_dashboard(
     current_user: User = Depends(get_current_user),
@@ -254,25 +304,32 @@ async def smmm_dashboard(
     )
     clients = (await db.execute(clients_stmt)).scalars().all()
 
-    # Özet istatistikler
-    with_analysis     = [c for c in clients if c.health_score is not None]
-    critical_clients  = [c for c in with_analysis if c.health_label in ("critical", "at_risk")]
-    healthy_clients   = [c for c in with_analysis if c.health_label in ("excellent", "good")]
+    # These counts used to come from `health_score` and `health_label` on the
+    # client record — fields the model calls a cache and which nothing has ever
+    # written, so `analyzed_clients` was always 0 for every accountant who has
+    # ever opened this page. They are derived from the jobs now, which cannot
+    # go stale.
+    statuses = await status_for_clients(db, [str(c.id) for c in clients])
+    rows = [{**c.to_dict(), "durum": statuses[str(c.id)].to_dict()} for c in clients]
+
+    analysed = [r for r in rows if r["durum"]["job_count"] > 0]
+    # What an accountant actually needs first: whose work is waiting on them.
+    attention = [r for r in rows if r["durum"]["needs_attention"]]
+    sealed = [r for r in rows if r["durum"]["packet_sealed"]]
+    pending_total = sum(r["durum"]["pending_review"] for r in rows)
 
     return {
         "ok":              True,
         "muhasebeci":      m.to_dict(),
         "summary": {
-            "total_clients":    len(clients),
-            "analyzed_clients": len(with_analysis),
-            "critical":         len(critical_clients),
-            "healthy":          len(healthy_clients),
-            "avg_health_score": round(
-                sum(c.health_score for c in with_analysis) / max(1, len(with_analysis)), 1
-            ) if with_analysis else None,
+            "total_clients":     len(clients),
+            "analyzed_clients":  len(analysed),
+            "needs_attention":   len(attention),
+            "sealed_clients":    len(sealed),
+            "pending_entries":   pending_total,
         },
-        "clients":        [c.to_dict() for c in clients],
-        "critical_list":  [c.to_dict() for c in critical_clients],
+        "clients":         rows,
+        "attention_list":  attention,
     }
 
 

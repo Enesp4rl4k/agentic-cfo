@@ -52,6 +52,18 @@ class AnalysisJob(Base):
     )
 
     # Agent run audit trail (list of StepLog dicts)
+    # Which of an accountant's client companies this job is for, when the
+    # uploader is an SMMM working on someone else's books. Null for a company
+    # analysing itself, which is the ordinary case.
+    #
+    # Without this, the SMMM portal and the compliance chain were two islands:
+    # an accountant could register forty clients and run the chain for none of
+    # them, and the portal's dashboard counted analyses from fields nothing
+    # ever wrote.
+    smmm_client_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+
     logs: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Confidence score from lowest-confidence skill in the run (0–1)

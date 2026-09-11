@@ -11,13 +11,14 @@ This module handles:
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
+from app.services.smmm_clients import ClientNotOwned, assert_owns_client
 from app.services.upload_service import (
     FileValidationError,
     create_analysis_job,
@@ -39,6 +40,13 @@ router = APIRouter()
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = File(description="Financial document: PDF, Excel, or CSV"),
+    client_id: str | None = Form(
+        default=None,
+        description=(
+            "SMMM müşteri kaydı id'si — muhasebeci başka bir firmanın defterini "
+            "işliyorsa. Kendi verisini analiz eden şirket için boş bırakılır."
+        ),
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -55,6 +63,15 @@ async def upload_file(
     settings = get_settings()
     ext = get_extension(file.filename or "")
     org_id = current_user.org_id
+
+    # Ownership is checked rather than trusted: `client_id` arrives as a plain
+    # form field, and an accountant must not be able to file work against
+    # somebody else's client by guessing an id.
+    if client_id:
+        try:
+            client_id = await assert_owns_client(db, str(current_user.id), client_id)
+        except ClientNotOwned as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     # ── Usage metering: check plan limit before processing ────────────────────
     if org_id:
@@ -78,6 +95,7 @@ async def upload_file(
         validate_extension(ext)
         upload_result = await stream_to_disk(file, ext, settings.max_upload_size_mb)
         job = await create_analysis_job(
+            smmm_client_id=client_id,
             result=upload_result,
             user_id=current_user.id,
             org_id=org_id,

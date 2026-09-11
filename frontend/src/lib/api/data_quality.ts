@@ -71,7 +71,7 @@ export async function validateCSV(file: File): Promise<ValidationResult> {
 
 export async function validateAndUpload(
   file: File,
-  options?: { minScore?: number; force?: boolean }
+  options?: { minScore?: number; force?: boolean; clientId?: string | null }
 ): Promise<ValidateAndUploadResult> {
   const form = new FormData();
   form.append("file", file);
@@ -79,6 +79,9 @@ export async function validateAndUpload(
   const params = new URLSearchParams();
   if (options?.minScore != null) params.set("min_score", String(options.minScore));
   if (options?.force) params.set("force", "true");
+  // Which of an accountant's clients this file is for. Without it the upload
+  // lands unattributed and the portal cannot show whose work is waiting.
+  if (options?.clientId) params.set("client_id", options.clientId);
 
   const res = await apiClient.post<{ data: ValidateAndUploadResult }>(
     `/data-quality/validate-and-upload?${params.toString()}`,
@@ -98,6 +101,12 @@ export async function acceptColumnMapping(params: {
   column_mapping: Record<string, string>;
   csv_content: string;  // base64
   encoding?: string;
+  /**
+   * The mapping step is where a UI upload actually completes, so the client
+   * has to survive it — otherwise the attribution is lost between the two
+   * halves of one upload.
+   */
+  client_id?: string | null;
 }): Promise<{ job_id: string; column_mapping: Record<string, string>; status: string }> {
   const res = await apiClient.post<{ data: { job_id: string; column_mapping: Record<string, string>; status: string } }>(
     "/data-quality/accept-mapping",

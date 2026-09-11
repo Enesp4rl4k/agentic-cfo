@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Upload, AlertTriangle, CheckCircle2, XCircle,
-  RefreshCw, ArrowRight, ChevronDown, ChevronUp, Info, Files,
+  RefreshCw, ArrowRight, ChevronDown, ChevronUp, Info, Files, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@/lib/api/data_quality";
 import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
 import { POST_UPLOAD_ROUTE } from "@/lib/routes";
+import { apiClient } from "@/lib/api/client";
 
 // ── Health score helpers ──────────────────────────────────────────────────────
 
@@ -309,6 +311,27 @@ type Phase = "idle" | "validating" | "review" | "uploading" | "done" | "error";
 
 export default function UploadPage() {
   const router = useRouter();
+  // Set when an accountant arrives from the client list ("/upload?client=…").
+  // Every upload path has to carry it or the file lands unattributed and the
+  // portal cannot say whose work is waiting.
+  const clientId = useSearchParams().get("client");
+  const [clientName, setClientName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!clientId) return;
+    let live = true;
+    apiClient
+      .get<{ clients: Array<{ id: string; firma_adi: string }> }>("/smmm/clients")
+      .then((res) => {
+        const match = res.data.clients?.find((c) => c.id === clientId);
+        if (live) setClientName(match?.firma_adi ?? null);
+      })
+      .catch(() => {
+        /* The banner falls back to "seçili müşteri"; the upload still carries
+           the id, which is what actually matters. */
+      });
+    return () => { live = false; };
+  }, [clientId]);
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -341,7 +364,7 @@ export default function UploadPage() {
     setValidation(null);
 
     try {
-      const result = await validateAndUpload(file, { minScore: 40 });
+      const result = await validateAndUpload(file, { minScore: 40, clientId });
 
       if (result.validation) {
         setValidation(result.validation);
@@ -361,14 +384,16 @@ export default function UploadPage() {
       setErrorMsg(e instanceof Error ? e.message : "Dosya işlenemedi");
       setPhase("error");
     }
-  }, []);
+    // `clientId` is read inside: without it here, an accountant who switched
+    // clients would keep uploading against the previous one.
+  }, [clientId]);
 
   // Force upload despite low score
   async function handleForceUpload() {
     if (!selectedFile) return;
     setPhase("uploading");
     try {
-      const result = await validateAndUpload(selectedFile, { force: true });
+      const result = await validateAndUpload(selectedFile, { force: true, clientId });
       if (result.job_id) {
         setJobId(result.job_id);
         setPhase("done");
@@ -398,6 +423,7 @@ export default function UploadPage() {
         column_mapping: columnMapping,
         csv_content: base64,
         encoding: validation.encoding,
+        client_id: clientId,
       });
       setJobId(result.job_id);
       setPhase("done");
@@ -416,6 +442,24 @@ export default function UploadPage() {
 
   return (
     <main className="mx-auto max-w-screen-md space-y-6 p-4 sm:p-6 lg:p-8">
+
+      {/* Whose books these are. An accountant working through forty companies
+          must not have to remember which tab they are on. */}
+      {clientId && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+          <Building2 className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <span>
+            Bu dosya <strong>{clientName ?? "seçili müşteri"}</strong> için
+            yüklenecek.
+          </span>
+          <Link
+            href="/smmm"
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+          >
+            Değiştir
+          </Link>
+        </div>
+      )}
 
       {/* Mode tabs */}
       <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" aria-label="Yükleme modu">
