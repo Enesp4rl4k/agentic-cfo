@@ -161,6 +161,7 @@ app.add_middleware(
         "X-EDefter-Filable", "X-EDefter-Unfilable-Code",
         # Berat preview: which defter it was derived from, and what it says.
         "X-EDefter-Berat-Of", "X-EDefter-Berat-Unique-ID", "X-EDefter-Berat-Size-MiB",
+        "X-EDefter-KDV-Unverified",
         # Journal listing — deliberately not an e-Defter, and it says so.
         "X-Yevmiye-Entry-Count", "X-Yevmiye-SHA256", "X-Not-A-GIB-Filing",
         # Board deck size, so the UI can show it before opening the file.

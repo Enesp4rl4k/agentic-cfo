@@ -56,6 +56,12 @@ class YevmiyeKaydi:
     # "islem" = the transaction's own date; "belirsiz" = unparseable or absent,
     # so the value above is a placeholder and the entry must not be filed on it.
     tarih_kaynagi: str = "islem"
+    # KDV, as far as the source let us know it:
+    #   "ayrildi"        — the source gave the amount, and it is on 391 / 191
+    #   "ayristirilmadi" — the account normally carries KDV, the source gave no
+    #                      amount, so the line is gross and the entry is held
+    #   "yok"            — the account does not carry KDV (salary, SGK, tax…)
+    kdv_durumu: str = "yok"
     thp_hesap_kodu: str = ""
     confidence: float = 1.0
     onay_gerekli: bool = False      # SMMM onayı gerekiyor mu?
@@ -89,6 +95,7 @@ class YevmiyeKaydi:
             "thp_hesap_kodu":    self.thp_hesap_kodu,
             "kaynak_islem_id":   self.kaynak_islem_id,
             "tarih_kaynagi":     self.tarih_kaynagi,
+            "kdv_durumu":        self.kdv_durumu,
             "satirlar": [
                 {
                     "hesap_kodu": s.hesap_kodu,
@@ -118,6 +125,46 @@ def _karsi_hesap_belirle(tx: dict[str, Any]) -> str:
         return _KARSIHESAP_BANKA
     # Varsayılan: banka (modern işletmelerde nakit az)
     return _KARSIHESAP_BANKA
+
+
+# ── KDV ───────────────────────────────────────────────────────────────────────
+# A bank movement is a gross amount. For a domestic sale it includes the
+# output KDV that belongs on 391; for a purchase of goods or services, the
+# input KDV that belongs on 191. Booking the gross figure straight to 600 or
+# 770 overstates revenue or cost by the tax and reports zero KDV — and the
+# e-Defter berat carries exactly those totals to GİB.
+#
+# The rate is not in a bank line. 20, 10 and 1 percent all exist, and so do
+# exemptions, so a rate assumed here would be an invented number on a legal
+# document. The amount is split only when the source states it; otherwise the
+# entry is marked and held for the accountant, who has the invoice.
+
+# Accounts whose movements normally carry KDV. Salaries, SGK, tax payments,
+# exports (601, exempt) and interest/other income (602) are left out.
+KDV_TASIYAN_GELIR = frozenset({"600"})
+KDV_TASIYAN_GIDER = frozenset({
+    "153", "253", "255", "260", "620", "621", "740", "770", "771", "772",
+})
+_HESAPLANAN_KDV = ("391", "Hesaplanan KDV")
+_INDIRILECEK_KDV = ("191", "İndirilecek KDV")
+
+
+def _kdv_bol(
+    satirlar: list[KayitSatiri], ana_hesap: str, kdv: int, aciklama: str
+) -> bool:
+    """Move `kdv` off the main line onto 391 or 191. False if it cannot."""
+    for i, s in enumerate(satirlar):
+        if s.hesap_kodu != ana_hesap:
+            continue
+        if ana_hesap in KDV_TASIYAN_GELIR and s.alacak > kdv:
+            s.alacak -= kdv
+            satirlar.insert(i + 1, KayitSatiri(*_HESAPLANAN_KDV, alacak=kdv, aciklama=aciklama))
+            return True
+        if ana_hesap in KDV_TASIYAN_GIDER and s.borc > kdv:
+            s.borc -= kdv
+            satirlar.insert(i + 1, KayitSatiri(*_INDIRILECEK_KDV, borc=kdv, aciklama=aciklama))
+            return True
+    return False
 
 
 # ── Double-entry engine ───────────────────────────────────────────────────────
@@ -259,6 +306,27 @@ class DoubleEntryEngine:
                 KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
             ]
 
+        # ── KDV: split only what the source states ───────────────────────────
+        ana = thp_result.hesap_kodu
+        kdv_durumu = "yok"
+        kdv_note = ""
+        if ana in KDV_TASIYAN_GELIR or ana in KDV_TASIYAN_GIDER:
+            raw_kdv = transaction.get("kdv_kurus")
+            kdv = abs(int(raw_kdv)) if raw_kdv not in (None, "") else None
+            if kdv is None:
+                kdv_durumu = "ayristirilmadi"
+                kdv_note = "KDV ayrıştırılmadı — tutar brüt, oran kaynakta yok; faturadan doğrulanmalı"
+            elif kdv == 0:
+                kdv_durumu = "ayrildi"      # stated as zero: exempt, nothing to move
+            elif _kdv_bol(satirlar, ana, kdv, description):
+                kdv_durumu = "ayrildi"
+            else:
+                kdv_durumu = "ayristirilmadi"
+                kdv_note = (
+                    f"kaynaktaki KDV ({kdv} kuruş) tutardan ({amount}) küçük değil "
+                    "— ayrıştırılmadı, doğrulanmalı"
+                )
+
         # ── Yetki Matrisi: does this entry need human approval, and whose? ────
         from app.platform.authority_matrix import (
             DEFAULT_POLICY_RULES,
@@ -283,15 +351,23 @@ class DoubleEntryEngine:
         # An invented date is not something the autopilot may decide on its own:
         # the period an entry belongs to is the one fact a reviewer can settle
         # from the source document and the machine cannot.
-        needs_review = decision.needs_review or tarih_kaynagi == "belirsiz"
-        rationale = decision.rationale
+        # Unsplit KDV likewise: the tax on this line is a fact on the invoice.
+        needs_review = (
+            decision.needs_review
+            or tarih_kaynagi == "belirsiz"
+            or kdv_durumu == "ayristirilmadi"
+        )
+        notes = [decision.rationale] if decision.rationale else []
         if tarih_kaynagi == "belirsiz":
-            date_note = "işlem tarihi okunamadı — dönem doğrulanmalı"
-            rationale = f"{rationale}; {date_note}" if rationale else date_note
+            notes.append("işlem tarihi okunamadı — dönem doğrulanmalı")
+        if kdv_note:
+            notes.append(kdv_note)
+        rationale = "; ".join(notes)
 
         kayit = YevmiyeKaydi(
             tarih=tx_date,
             tarih_kaynagi=tarih_kaynagi,
+            kdv_durumu=kdv_durumu,
             aciklama=f"{description[:100]} [{thp_result.hesap_kodu}]",
             satirlar=satirlar,
             kaynak_islem_id=tx_id,

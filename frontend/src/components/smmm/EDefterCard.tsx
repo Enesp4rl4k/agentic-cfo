@@ -190,6 +190,13 @@ export function EDefterCard({ jobId }: { jobId: string }) {
           <div className="break-all font-mono text-[10px]">
             SHA-256: {last.sha256}
           </div>
+          {last.kdvUnverified > 0 && (
+            <div className="text-amber-300/90">
+              {last.kdvUnverified} kayıtta KDV ayrıştırılmadı (brüt tutar) — 391/191
+              toplamları ve beratın vergi detayı eksik olabilir. Bu kayıtlar onay
+              kuyruğunda.
+            </div>
+          )}
         </div>
       )}
 

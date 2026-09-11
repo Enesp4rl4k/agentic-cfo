@@ -87,6 +87,9 @@ class EDefterXBRL:
         "mali mühürle XAdES imzalanmadı ve beratı alınmadı — GİB'e yüklenemez"
     )
     warnings: list[str] = field(default_factory=list)
+    # Entries booked gross because the source gave no KDV amount. Their 391/191
+    # totals — and so the berat's tax detail — are understated by that tax.
+    kdv_unverified: int = 0
 
     @property
     def is_balanced(self) -> bool:
@@ -285,7 +288,7 @@ class EDefterXBRLGenerator:
             total_debit += entry_debit
             total_credit += entry_credit
 
-        return cls._finish(
+        return cls._with_kdv(entries, cls._finish(
             root,
             kind="Y",
             period=period,
@@ -296,7 +299,7 @@ class EDefterXBRLGenerator:
             total_debit=total_debit,
             total_credit=total_credit,
             warnings=warnings,
-        )
+        ))
 
     @classmethod
     def generate_ledger(
@@ -388,7 +391,7 @@ class EDefterXBRLGenerator:
             total_debit += debit
             total_credit += credit
 
-        return cls._finish(
+        return cls._with_kdv(entries, cls._finish(
             root,
             kind="K",
             period=period,
@@ -399,9 +402,26 @@ class EDefterXBRLGenerator:
             total_debit=total_debit,
             total_credit=total_credit,
             warnings=[],
-        )
+        ))
 
     # ── building blocks ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _with_kdv(entries: Sequence[Mapping[str, Any]], pkg: EDefterXBRL) -> EDefterXBRL:
+        """Say how many entries went in gross, with their KDV unsplit.
+
+        Not a refusal: the accountant may have booked the tax elsewhere, and
+        the approval queue already holds these entries. But the count travels
+        with the file, because the berat's tax detail is summed from it.
+        """
+        n = sum(1 for e in entries if e.get("kdv_durumu") == "ayristirilmadi")
+        pkg.kdv_unverified = n
+        if n:
+            pkg.warnings.append(
+                f"{n} kayıtta KDV ayrıştırılmadı (brüt tutar) — 391/191 toplamları "
+                "ve beratın vergi detayı eksik olabilir"
+            )
+        return pkg
 
     @staticmethod
     def _require_period(period: str) -> None:

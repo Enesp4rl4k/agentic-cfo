@@ -597,6 +597,7 @@ def _edefter_response(pkg: EDefterXBRL, job_id: str) -> Response:
             "X-EDefter-SHA256": pkg.sha256_hash,
             "X-EDefter-Entry-Count": str(pkg.entry_count),
             "X-EDefter-Line-Count": str(pkg.line_count),
+            "X-EDefter-KDV-Unverified": str(pkg.kdv_unverified),
             # Structurally complete, legally incomplete. Said in the response
             # so a client that only reads headers cannot miss it — as a stable
             # code, because a header is latin-1 and the reason is Turkish prose.
@@ -714,6 +715,9 @@ async def muhasebe_edefter_berat(
         headers={
             "Content-Disposition": content_disposition(berat.file_name),
             "X-EDefter-Berat-Of": pkg.file_name,
+            # The tax detail is summed from the defter; entries booked gross
+            # leave it short by their KDV.
+            "X-EDefter-KDV-Unverified": str(pkg.kdv_unverified),
             "X-EDefter-Berat-Unique-ID": berat.unique_id,
             "X-EDefter-Berat-Size-MiB": berat.size_mib,
             "X-EDefter-Entry-Count": str(berat.number_of_entries or pkg.entry_count),
@@ -747,6 +751,11 @@ async def muhasebe_edefter_durum(
     try:
         pkg = await _edefter_build(job_id, "yevmiye", current_user, db, donem)
         defter_detail = f"{pkg.file_name} — {pkg.entry_count} kayıt, dengeli"
+        if pkg.kdv_unverified:
+            defter_detail += (
+                f"; {pkg.kdv_unverified} kayıtta KDV ayrıştırılmadı — "
+                "beratın vergi detayı eksik olabilir"
+            )
         try:
             build_berat(pkg.xml.encode("utf-8"), defter_file_name=pkg.file_name)
             berat_ok = True

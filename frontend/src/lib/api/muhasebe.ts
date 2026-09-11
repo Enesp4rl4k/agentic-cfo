@@ -135,6 +135,8 @@ export interface EDefterFile {
   filable: boolean;
   unfilableCode: string;
   sha256: string;
+  /** Entries booked gross because the source stated no KDV amount. */
+  kdvUnverified: number;
 }
 
 const EDEFTER_ROUTE: Record<EDefterKind, string> = {
@@ -164,6 +166,7 @@ export async function downloadEDefter(
     filable: h["x-edefter-filable"] === "true",
     unfilableCode: h["x-edefter-unfilable-code"] ?? "",
     sha256: h["x-edefter-sha256"] ?? "",
+    kdvUnverified: Number(h["x-edefter-kdv-unverified"] ?? 0),
   };
 }
 
