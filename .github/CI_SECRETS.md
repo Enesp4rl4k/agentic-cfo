@@ -12,6 +12,16 @@ Add these under: **Settings → Secrets and variables → Actions → New reposi
 
 These are **throwaway CI-only values** — not production credentials. Use any random strings; they never leave GitHub Actions.
 
+`CI_PG_PASS` and `CI_BACKEND_SECRET` are also used by the **Migrations on
+Postgres** job, which applies every Alembic migration to the service container,
+checks the result against the models (`alembic check`), rolls everything back,
+and applies the chain again. If either secret is missing that job fails at
+startup rather than skipping — the migration chain cannot run on SQLite, so
+this job is the only place it is exercised before production.
+
+Settings reads `DATABASE_URL_OVERRIDE` and `USE_SQLITE`; a bare `DATABASE_URL`
+is ignored. `backend/tests/test_ci_database.py` fails if a job sets it again.
+
 Generate locally (do not commit output):
 
 ```bash

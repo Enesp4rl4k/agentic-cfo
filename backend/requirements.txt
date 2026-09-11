@@ -80,6 +80,10 @@ playwright==1.47.0         # scripts/page_sweep.py — renders every page agains
 lxml==6.1.2                # tests/test_edefter_xbrl.py — XSD validation against GİB's own
                            # edefter.xsd. The generator itself is stdlib ElementTree; only
                            # the check needs a schema validator.
+pyyaml==6.0.3              # tests/test_ci_database.py — reads .github/workflows/ci.yml so
+                           # the workflow is held to what it claims. Pinned rather than
+                           # inherited: a guard that skips when its parser is absent
+                           # passes exactly where it is needed.
 
 # Linting / type checking
 ruff==0.16.4    # pinned — ruff.toml selects the rule set; CI gate is blocking

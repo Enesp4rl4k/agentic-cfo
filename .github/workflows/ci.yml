@@ -1,10 +1,13 @@
 name: CI/CD — Agentic CFO
 
 on:
+  # `master` is this repository's default branch. The list used to name only
+  # `main` and `develop`, so a push to the branch that actually ships ran none
+  # of the gates below.
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main, master, develop]
 
 # Avoid concurrent runs on the same branch
 concurrency:
@@ -93,7 +96,11 @@ jobs:
 
       - name: Run consolidation proof gate
         env:
-          DATABASE_URL:       postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
+          # The suite runs on SQLite (per-test in-memory databases). This job
+          # used to set DATABASE_URL, which Settings does not read, so it looked
+          # like a Postgres run and was not one. Migrations get their Postgres
+          # run in `migrations-postgres` below.
+          USE_SQLITE:         "true"
           REDIS_URL:          redis://localhost:6379/0
           BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
           OPENAI_API_KEY:     llm-placeholder-ci
@@ -102,6 +109,69 @@ jobs:
         run: |
           chmod +x verify.sh scripts/*.sh
           ./scripts/proof.sh --fast
+
+  # ── Migrations against a real Postgres ────────────────────────────────────
+  # The chain cannot run on SQLite (migration 005 alters constraints), and no
+  # job ran it anywhere, so a broken migration surfaced only in production.
+  # Four separate steps so a red run says which property failed: the chain
+  # applies from empty, the result matches the models, every downgrade runs,
+  # and the chain applies again after it.
+  migrations-postgres:
+    name: Migrations on Postgres (upgrade, drift, downgrade)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER:     ${{ env.CI_PG_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_PG_PASS }}
+          POSTGRES_DB:       ${{ env.CI_PG_DB }}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      USE_SQLITE:            "false"
+      DATABASE_URL_OVERRIDE: postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
+      BACKEND_SECRET_KEY:    ${{ secrets.CI_BACKEND_SECRET }}
+      OPENAI_API_KEY:        llm-placeholder-ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Apply every migration from an empty database
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Models and migrations describe the same schema
+        working-directory: backend
+        run: alembic check
+
+      - name: Every migration can be rolled back
+        working-directory: backend
+        run: alembic downgrade base
+
+      - name: The chain applies again after a full rollback
+        working-directory: backend
+        run: alembic upgrade head
 
   # ── Optional load baseline (non-blocking artifact) ────────────────────────
   load-baseline:
@@ -154,7 +224,10 @@ jobs:
       - name: Start API briefly for baseline
         working-directory: backend
         env:
-          DATABASE_URL:       postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
+          # DATABASE_URL_OVERRIDE is the name Settings reads; DATABASE_URL was
+          # ignored, so with USE_SQLITE=false this connected to the postgres_*
+          # defaults rather than the service container.
+          DATABASE_URL_OVERRIDE: postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
           REDIS_URL:          redis://localhost:6379/0
           BACKEND_SECRET_KEY: ${{ secrets.CI_BACKEND_SECRET }}
           OPENAI_API_KEY:     llm-placeholder-ci
@@ -267,7 +340,9 @@ jobs:
       - name: Run tests
         working-directory: backend
         env:
-          DATABASE_URL:         postgresql+asyncpg://${{ env.CI_PG_USER }}:${{ secrets.CI_PG_PASS }}@localhost:5432/${{ env.CI_PG_DB }}
+          # SQLite, said plainly — see proof-gate. DATABASE_URL is not a
+          # setting and was silently ignored.
+          USE_SQLITE:           "true"
           REDIS_URL:            redis://localhost:6379/0
           BACKEND_SECRET_KEY:   ${{ secrets.CI_BACKEND_SECRET }}
           OPENAI_API_KEY:       llm-placeholder-ci

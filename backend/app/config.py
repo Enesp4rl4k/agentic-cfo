@@ -227,6 +227,16 @@ class Settings(BaseSettings):
 
     @property
     def database_url_sync(self) -> str:
+        # The async URL honoured the override and this did not, so a caller
+        # asking for the sync DSN (agent_memory's pgvector path) got the
+        # postgres_* defaults — or a SQLite path — while the app itself was
+        # talking to the overridden database.
+        if self.database_url_override:
+            return (
+                self.database_url_override
+                .replace("+asyncpg", "")
+                .replace("+aiosqlite", "")
+            )
         if self.use_sqlite:
             return "sqlite:///./aicfo_dev.db"
         return (

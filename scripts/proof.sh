@@ -108,6 +108,10 @@ check "GİB corpus fetch script" \
   test -f scripts/fetch_gib_corpus.py && \
   grep -q "edefter.gov.tr" scripts/fetch_gib_corpus.py
 
+check "migrations run on Postgres in CI (SQLite cannot run the chain)" \
+  grep -q "alembic upgrade head" .github/workflows/ci.yml && \
+  grep -q "alembic check" .github/workflows/ci.yml
+
 check "GİB corpus wired into CI" \
   grep -q "fetch_gib_corpus.py" .github/workflows/ci.yml
 
