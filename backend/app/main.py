@@ -87,8 +87,14 @@ async def lifespan(app: FastAPI):
 
     # SOLID-4: create_all only in SQLite dev mode
     if settings.use_sqlite:
+        from app.core.dev_schema import sync_dev_schema
+
         async with engine().begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # create_all never adds a column to a table that already exists,
+            # so a developer's database older than the models failed on the
+            # first query naming a new column. Adds only; never drops.
+            await conn.run_sync(sync_dev_schema, Base.metadata)
         logger.info("SQLite: tables ensured via create_all.")
     else:
         logger.info("PostgreSQL mode: skipping create_all — expecting Alembic migrations.")

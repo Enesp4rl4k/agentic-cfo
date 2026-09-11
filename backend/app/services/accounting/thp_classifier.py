@@ -189,6 +189,23 @@ def _normalize(text: str) -> str:
 _KARSI_HESAPLAR = frozenset({"100", "102"})
 
 
+# What the other side of a movement can be, given which way the cash went.
+# Money in: revenue, borrowing (300/400: a loan drawn), or a customer paying
+# what they owe (120). Money out: a cost, an asset bought, a debt settled —
+# never revenue.
+_GIRIS_TIPLERI = frozenset({"gelir", "borç"})
+_GIRIS_VARLIKLARI = frozenset({"120"})
+_CIKIS_TIPLERI = frozenset({"gider", "varlık", "borç"})
+
+
+def _tip_uyumlu(kod: str, tip: str, transaction_type: str) -> bool:
+    if transaction_type == "income":
+        return tip in _GIRIS_TIPLERI or kod in _GIRIS_VARLIKLARI
+    if transaction_type == "expense":
+        return tip in _CIKIS_TIPLERI
+    return True
+
+
 def _kural_motoru_siniflandir(
     description: str,
     vendor: str | None,
@@ -209,11 +226,14 @@ def _kural_motoru_siniflandir(
     for kod, hesap in THP_HESAPLARI.items():
         if kod in _KARSI_HESAPLAR:
             continue
-        # Tip uyum kontrolü
-        if transaction_type == "income" and hesap.tip not in ("gelir", "varlık"):
-            # Gelir işlemi → sadece gelir veya varlık hesapları
-            # (ama alacak tahsilatı varlık azaltır, borç ödemesi borç azaltır)
-            pass  # type kontrolü anahtar kelime eşleşmesine bırak
+        # Tip uyumu. This block used to end in `pass`, so a keyword alone
+        # picked the account whichever way the money moved: "Maaş Ödemeleri -
+        # Satış Ekibi", an outgoing salary, matched "satış" and was booked to
+        # 600 as revenue — the engine then debited the bank for money that
+        # left it. "Yazılım Lisans Geliri", income, matched "lisans" and went
+        # to 260 Haklar, reducing an asset instead of recognising revenue.
+        if not _tip_uyumlu(kod, hesap.tip, transaction_type):
+            continue
 
         score = 0.0
         for anahtar in hesap.anahtar_kelimeler:

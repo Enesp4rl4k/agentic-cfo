@@ -67,6 +67,14 @@ THP_GOLDEN_CASES: list[tuple[str, str, str, str]] = [
      "İhracat yurt dışı satışa"),
     ("Musteri tahsilati havale", "income", "120",
      "Tahsilat alacağı azaltır; gelir fatura kesildiğinde tanınmıştı"),
+
+    # ── Direction ─────────────────────────────────────────────────────────────
+    # Both came from a live run on the TechNova fixture. The classifier ignored
+    # which way the money moved and let one keyword decide.
+    ("Ocak Yazılım Lisans Geliri - ABC Holding", "income", "600",
+     "Lisans *geliri* hasılattır; 260 Haklar bir varlık alımıdır, gelir değil"),
+    ("Ocak Maaş Ödemeleri - Satış Ekibi", "expense", "730",
+     "Satış ekibinin maaşı bir giderdir; çıkan para 600 hasılata yazılamaz"),
 ]
 
 # Accounts `double_entry` supplies structurally as the cash side of every entry.
