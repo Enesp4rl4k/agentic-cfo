@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -139,6 +140,9 @@ async def advanced_anomaly_detection(
     """
     from app.agents.orchestration.anomaly_ml_service import AnomalyMLService
 
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, user)
     transactions = await _load_transactions_for_job(body.job_id, db)
 
     if not transactions:
@@ -204,6 +208,9 @@ async def forecast_v2(
     """
     from app.services.forecasting_service import ForecastingService
 
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, user)
     series, dates = await _load_cashflow_series(body.job_id, body.metric, db)
 
     if not series:
@@ -239,6 +246,7 @@ async def trend_analysis(
     window:  int = 3,
     user:    User = Depends(get_current_user),
     db:      AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Quick trend analysis for a given metric.
@@ -318,6 +326,7 @@ async def trend_analysis(
     }
 
 
+from app.models.analysis_job import AnalysisJob
 from app.services.monte_carlo import MonteCarloEngine
 from app.services.tcmb_macro import TCMBMacroService, get_tcmb_service
 
@@ -340,6 +349,9 @@ async def monte_carlo(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, user)
     series, _ = await _load_cashflow_series(body.job_id, "revenue", db)
     if not series:
         raise HTTPException(404, detail="No cashflow data found")

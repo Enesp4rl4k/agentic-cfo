@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches, load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -136,6 +137,9 @@ async def risk_cascade_from_job(
 ) -> dict[str, Any]:
     """CFO analiz job'undan tam risk + cascade analizi."""
     from app.agents.orchestration.risk_cascade_bridge import run_risk_cascade_analysis
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} bulunamadi")
@@ -158,6 +162,9 @@ async def risk_cascade_from_org(
 ) -> dict[str, Any]:
     """CompanyContext'teki tum agent verilerinden risk + cascade analizi."""
     from app.agents.orchestration.risk_cascade_bridge import run_risk_cascade_analysis
+    # The organisation came from the request, never compared with the caller's.
+    if not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")

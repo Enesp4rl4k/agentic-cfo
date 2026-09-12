@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -128,6 +129,7 @@ async def get_alert_digest(
     job_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Smart alert digest for a specific analysis job.
@@ -140,9 +142,6 @@ async def get_alert_digest(
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
-    # Org isolation — only allow access to own org's jobs
-    if current_user.org_id and job.org_id and job.org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Access denied.")
 
     if job.status not in (JobStatus.COMPLETED, JobStatus.AWAITING_REVIEW):
         raise HTTPException(
@@ -260,6 +259,7 @@ async def get_top_alerts(
     limit: int = 3,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Return the top N most actionable alerts for a job — prioritized for the
@@ -273,8 +273,6 @@ async def get_top_alerts(
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
-    if current_user.org_id and job.org_id and job.org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Access denied.")
 
     result = await db.execute(
         select(Report)
@@ -345,6 +343,7 @@ async def acknowledge_alert(
     alert_fingerprint: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Mark an alert as acknowledged.

@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
@@ -59,7 +60,10 @@ class CEOAnalyzeRequest(BaseModel):
 
 
 @router.post("/ceo/analyze")
-async def run_ceo_analysis(body: CEOAnalyzeRequest) -> dict[str, Any]:
+async def run_ceo_analysis(
+    body: CEOAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Run full CEO analysis pipeline synchronously.
 
@@ -67,6 +71,16 @@ async def run_ceo_analysis(body: CEOAnalyzeRequest) -> dict[str, Any]:
     Results are cross-correlated into strategic priorities and board deck.
     """
     from app.agents.ceo.orchestrator import run_ceo_pipeline
+
+    if body.cfo_file_path:
+        # A path on this server, taken from the request body and handed to the
+        # file parser — with no authentication, any file the process could read.
+        # A file reaches the CEO pipeline only through a job its caller owns.
+        raise HTTPException(
+            status_code=422,
+            detail="cfo_file_path kabul edilmiyor — yüklenen dosya için POST /ceo/analyze-from-job/{job_id} kullanın.",
+        )
+
 
     has_cfo_file = bool(body.cfo_file_path and body.cfo_file_type)
     has_cfo_json = bool(body.transactions)
@@ -187,14 +201,27 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
 
 
 @router.post("/ceo/analyze-async")
-async def run_ceo_analysis_async(body: CEOAnalyzeRequest) -> dict[str, Any]:
+async def run_ceo_analysis_async(
+    body: CEOAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Enqueue CEO analysis as a background ARQ job.
 
     Returns job_id immediately. Poll GET /ceo/status/{job_id} for results.
     Status values: "pending" → "completed" | "failed"
     """
-    from app.worker import enqueue_ceo_analysis
+    from app.worker import enqueue_ceo_analysis, record_ceo_job_owner
+
+    if body.cfo_file_path:
+        # A path on this server, taken from the request body and handed to the
+        # file parser — with no authentication, any file the process could read.
+        # A file reaches the CEO pipeline only through a job its caller owns.
+        raise HTTPException(
+            status_code=422,
+            detail="cfo_file_path kabul edilmiyor — yüklenen dosya için POST /ceo/analyze-from-job/{job_id} kullanın.",
+        )
+
 
     has_cfo_file = bool(body.cfo_file_path and body.cfo_file_type)
     has_cfo_json = bool(body.transactions)
@@ -219,6 +246,9 @@ async def run_ceo_analysis_async(body: CEOAnalyzeRequest) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
 
     try:
+        # Recorded before the job exists, so there is no moment in which its
+        # status can be polled by someone who did not start it.
+        await record_ceo_job_owner(job_id, org_id=current_user.org_id, user_id=current_user.id)
         await enqueue_ceo_analysis(
             job_id=job_id,
             cfo_file_path=body.cfo_file_path,
@@ -247,7 +277,10 @@ async def run_ceo_analysis_async(body: CEOAnalyzeRequest) -> dict[str, Any]:
 
 
 @router.get("/ceo/status/{job_id}")
-async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
+async def get_ceo_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Poll CEO async job status.
 
@@ -257,7 +290,15 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
       - status "failed"    → error is in the "error" field
       - status "not_found" → job_id unknown or expired (24h TTL)
     """
+    from app.api.access import can_access
+    from app.worker import get_ceo_job_owner
     from app.worker import get_ceo_job_status as _get_status
+
+    owner = await get_ceo_job_owner(job_id)
+    if owner is None or not can_access(current_user, **owner):
+        # A job with no recorded owner is refused, not shown: it predates the
+        # owner record, or the id is a guess.
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found or expired.")
 
     status_data = await _get_status(job_id)
     status = status_data.get("status", "not_found")
@@ -300,7 +341,10 @@ class CEOExportRequest(BaseModel):
 
 
 @router.post("/ceo/export-pdf")
-async def export_board_deck_pdf(body: CEOExportRequest) -> Response:
+async def export_board_deck_pdf(
+    body: CEOExportRequest,
+    current_user: User = Depends(get_current_user),
+) -> Response:
     """
     Render board deck (+ optional OKR appendix) to a downloadable PDF.
 
@@ -360,13 +404,10 @@ async def run_ceo_from_job(
     Supported domains: cfo (bank_statement), cto, chro, cmo, coo
     """
     from app.agents.ceo.orchestrator import run_ceo_pipeline
-    from app.models.analysis_job import AnalysisJob
     from app.models.data_source import DataSource, DataSourceDomain, DataSourceType
 
     # ── Validate parent job ───────────────────────────────────────────────────
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    job = await load_owned_job(db, job_id, current_user)
 
     # ── Load all data sources for this job ────────────────────────────────────
     result = await db.execute(
@@ -614,7 +655,7 @@ async def synthesize_ceo_from_context(
 
 
 @router.get("/ceo/health-check")
-async def ceo_health() -> dict[str, Any]:
+async def ceo_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify CEO pipeline agents are importable and graph compiles."""
     from app.agents.ceo.orchestrator import ceo_graph
     return {

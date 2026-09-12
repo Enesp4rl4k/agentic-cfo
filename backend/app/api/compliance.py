@@ -10,8 +10,11 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from app.api.auth import get_current_user
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,6 +51,7 @@ class ComplianceAnalyzeRequest(BaseModel):
 @router.post("/compliance/analyze")
 async def run_compliance_analysis(
     body: ComplianceAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Run Compliance analysis pipeline and return results synchronously.
@@ -115,7 +119,7 @@ async def run_compliance_analysis(
 
 
 @router.get("/compliance/health-check")
-async def compliance_health() -> dict[str, Any]:
+async def compliance_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify Compliance pipeline agents are importable and graph compiles."""
     from app.agents.compliance.orchestrator import compliance_graph
     return {

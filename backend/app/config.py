@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     # Slack Bot (for Events API and chat.postMessage)
     slack_bot_token:     str = ""  # xoxb-...
     slack_signing_secret: str = "" # From Slack App Basic Information page
+    # Meta App Secret — signs every WhatsApp webhook (X-Hub-Signature-256).
+    # Without it the webhook refuses all posts rather than accepting unsigned ones.
+    whatsapp_app_secret: str = ""
 
     # SMTP email notifications
     smtp_host:         str = "smtp.gmail.com"

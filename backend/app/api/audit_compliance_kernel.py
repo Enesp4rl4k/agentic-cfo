@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.models.user import User
 
@@ -104,6 +105,9 @@ async def audit_kernel_from_org(
 ) -> dict[str, Any]:
     """CompanyContext'teki tum agent verilerinden denetim bulgulari uret."""
     from app.agents.audit.audit_kernel import run_audit_kernel
+    # The organisation came from the request, never compared with the caller's.
+    if not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")
@@ -156,6 +160,9 @@ async def compliance_kernel_from_org(
 ) -> dict[str, Any]:
     """CompanyContext'teki verilerden uyum degerlendirmesi yap."""
     from app.agents.compliance.compliance_kernel import run_compliance_kernel
+    # The organisation came from the request, never compared with the caller's.
+    if not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ctx = await _load_from_org(req.org_id)
     try:
         return await run_compliance_kernel(

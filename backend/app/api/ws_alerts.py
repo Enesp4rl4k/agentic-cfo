@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.alert_rule import AlertHistory, AlertRule
@@ -158,6 +159,10 @@ async def alert_history(
     Persistent alert history from DB.
     Replaces Redis TTL-based storage — alerts are kept forever.
     """
+    # The organisation came from the URL and was never compared with the
+    # caller's: any user could read any organisation's alert history by changing it.
+    if not current_user_org_matches(user, org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     try:
         from datetime import timedelta
 
@@ -204,7 +209,8 @@ async def acknowledge_alert(
         # The raw UPDATE had no tenant predicate — any user could acknowledge
         # any organisation's alert.
         row = await db.get(AlertHistory, alert_id)
-        if row is not None and str(row.org_id) == str(user.org_id):
+        # str(None) == str(None) let a user without an org acknowledge org-less rows.
+        if row is not None and current_user_org_matches(user, row.org_id):
             row.acknowledged = True
             row.acknowledged_by = str(user.id)
             row.acknowledged_at = datetime.now(UTC)
@@ -373,7 +379,7 @@ async def delete_alert_rule(
     # The raw DELETE was unscoped: any user could delete any org's rule.
     try:
         row = await db.get(AlertRule, rule_id)
-        if row is None or str(row.org_id) != str(user.org_id):
+        if row is None or not current_user_org_matches(user, row.org_id):
             raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found.")
         await db.delete(row)
         await db.commit()

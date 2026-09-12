@@ -12,15 +12,18 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches
+from app.api.auth import get_current_user
 from app.core.timeutil import as_utc
 from app.database import get_db
 from app.models.agent_conflict import AgentConflict
 from app.models.analysis_job import AnalysisJob
 from app.models.sync_run import SyncRun
+from app.models.user import User
 
 router = APIRouter(tags=["system"])
 OPS_SCHEMA_VERSION = "v1.2"
@@ -129,6 +132,7 @@ def _derive_actions(*, failed_count: int, awaiting_review_count: int, breaches: 
 async def llm_costs(
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     LLM spend rollup from the LLMCallLog ledger over the last `days`:
@@ -141,9 +145,13 @@ async def llm_costs(
     from sqlalchemy import func as sa_func
 
     from app.models.llm_call_log import LLMCallLog
-    from app.platform.model_gateway import ledger_snapshot
 
     since = datetime.now(UTC) - timedelta(days=days)
+    # Spend was reported across every organisation, with a per-org breakdown,
+    # to an unauthenticated caller. There is no platform-operator role in this
+    # codebase — owner and admin are roles inside one organisation — so the
+    # ledger is scoped to the caller's own.
+    scope = LLMCallLog.org_id == current_user.org_id
     day_key = sa_func.substr(cast(LLMCallLog.created_at, String), 1, 10)  # YYYY-MM-DD, portable
 
     async def _grouped(col) -> list[dict[str, Any]]:
@@ -156,7 +164,7 @@ async def llm_costs(
                     func.coalesce(func.sum(LLMCallLog.input_tokens), 0).label("in_tok"),
                     func.coalesce(func.sum(LLMCallLog.output_tokens), 0).label("out_tok"),
                 )
-                .where(LLMCallLog.created_at >= since)
+                .where(LLMCallLog.created_at >= since, scope)
                 .group_by(col)
                 .order_by(func.sum(LLMCallLog.cost_usd).desc())
             )
@@ -177,13 +185,13 @@ async def llm_costs(
             select(
                 func.count().label("calls"),
                 func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0).label("cost_usd"),
-            ).where(LLMCallLog.created_at >= since)
+            ).where(LLMCallLog.created_at >= since, scope)
         )
     ).first()
 
     ok_calls = await db.scalar(
         select(func.count()).where(
-            LLMCallLog.created_at >= since, LLMCallLog.ok.is_(True)
+            LLMCallLog.created_at >= since, LLMCallLog.ok.is_(True), scope
         )
     )
 
@@ -194,10 +202,8 @@ async def llm_costs(
             "ok_calls": int(ok_calls or 0),
             "total_cost_usd": round(float(total.cost_usd if total else 0.0), 6),
             "by_model": await _grouped(LLMCallLog.model),
-            "by_org": await _grouped(LLMCallLog.org_id),
             "by_task": await _grouped(LLMCallLog.task_type),
             "by_day": await _grouped(day_key),
-            "live_process_aggregate": ledger_snapshot(),
         },
         "error": None,
     }
@@ -308,11 +314,25 @@ async def _management_summary(db: AsyncSession, org_id: str | None = None) -> di
 @router.get("/system/ops")
 async def system_ops(
     db: AsyncSession = Depends(get_db),
-    org_id: str | None = Query(default=None, description="Optional org scope for management summary"),
+    org_id: str | None = Query(default=None, description="Ignored unless it is the caller's own org"),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
+    # This reported every organisation's job counts, recent failures with their
+    # error messages, SLA breaches and LLM spend by org — to an unauthenticated
+    # caller, with an `org_id` query parameter anyone could set. There is no
+    # platform-operator role here, so every figure is now the caller's own.
+    if org_id and not current_user_org_matches(current_user, org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
+    org_id = str(current_user.org_id) if current_user.org_id else None
+    jobs_scope = (
+        AnalysisJob.org_id == org_id if org_id else AnalysisJob.user_id == current_user.id
+    )
+
     # Job status counters
     status_rows = await db.execute(
-        select(AnalysisJob.status, func.count(AnalysisJob.id)).group_by(AnalysisJob.status)
+        select(AnalysisJob.status, func.count(AnalysisJob.id))
+        .where(jobs_scope)
+        .group_by(AnalysisJob.status)
     )
     status_counts = {str(status): int(count) for status, count in status_rows.all()}
     total_jobs = sum(status_counts.values())
@@ -321,7 +341,7 @@ async def system_ops(
     awaiting_review_count = int(
         (
             await db.execute(
-                select(func.count(AnalysisJob.id)).where(AnalysisJob.awaiting_review.is_(True))
+                select(func.count(AnalysisJob.id)).where(AnalysisJob.awaiting_review.is_(True), jobs_scope)
             )
         ).scalar_one()
         or 0
@@ -334,7 +354,7 @@ async def system_ops(
             AnalysisJob.error_message,
             AnalysisJob.updated_at,
         )
-        .where(AnalysisJob.status == "failed")
+        .where(AnalysisJob.status == "failed", jobs_scope)
         .order_by(AnalysisJob.updated_at.desc())
         .limit(10)
     )
@@ -355,7 +375,8 @@ async def system_ops(
             AnalysisJob.status,
             AnalysisJob.updated_at,
         ).where(
-            AnalysisJob.status.in_(("pending", "analyzing"))
+            AnalysisJob.status.in_(("pending", "analyzing")),
+            jobs_scope,
         )
     )
     now = datetime.now(UTC)
@@ -382,7 +403,7 @@ async def system_ops(
             AnalysisJob.completed_at,
             AnalysisJob.result_metadata,
         )
-        .where(AnalysisJob.status == "completed")
+        .where(AnalysisJob.status == "completed", jobs_scope)
         .order_by(AnalysisJob.completed_at.desc())
         .limit(200)
     )
@@ -414,7 +435,9 @@ async def system_ops(
     try:
         status_col = func.coalesce(SyncRun.status, "unknown")
         sync_rows = await db.execute(
-            select(status_col.label("status"), func.count().label("cnt")).group_by(status_col)
+            select(status_col.label("status"), func.count().label("cnt"))
+            .where(SyncRun.org_id == (org_id or ""))
+            .group_by(status_col)
         )
         sync_summary = {
             "available": True,
@@ -433,48 +456,10 @@ async def system_ops(
         breaches=sla_breaches,
     )
 
-    llm_cost: dict[str, Any] = {
-        "available": False,
-        "calls": 0,
-        "total_cost_usd": 0.0,
-        "saved_usd": 0.0,
-        "avg_cost_usd": 0.0,
-        "cache_size": 0,
-    }
-    try:
-        from app.services.llm_router import get_llm_router
-
-        stats = get_llm_router().get_stats()
-        llm_cost = {
-            "available": True,
-            "calls": int(stats.get("calls") or 0),
-            "total_cost_usd": float(stats.get("total_cost_usd") or 0.0),
-            "saved_usd": float(stats.get("saved_usd") or 0.0),
-            "avg_cost_usd": float(stats.get("avg_cost_usd") or 0.0),
-            "cache_size": int(stats.get("cache_size") or 0),
-        }
-    except Exception:
-        pass
-
-    # Model Gateway ledger — every LLM egress call (all task types), broken
-    # down by model and by org. In-process aggregate; resets on restart.
-    try:
-        from app.platform.model_gateway import ledger_snapshot
-
-        gw = ledger_snapshot()
-        llm_cost["gateway"] = {
-            "calls": gw["calls"],
-            "ok_calls": gw["ok_calls"],
-            "total_cost_usd": gw["total_cost_usd"],
-            "avg_cost_usd": gw["avg_cost_usd"],
-            "total_input_tokens": gw["total_input_tokens"],
-            "total_output_tokens": gw["total_output_tokens"],
-            "by_model": gw["by_model"],
-            "by_org": ({org_id: gw["by_org"].get(org_id, {})} if org_id else gw["by_org"]),
-        }
-        llm_cost["available"] = True
-    except Exception:
-        pass
+    # The process-wide router and gateway aggregates hold every organisation's
+    # spend and cannot be scoped to one; this organisation's ledger is
+    # GET /system/llm-costs.
+    llm_cost: dict[str, Any] = {"available": False, "scoped_ledger": "/api/v1/system/llm-costs"}
 
     stripe_health: dict[str, Any] = {"configured": False, "ok": False}
     try:

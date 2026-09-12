@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -392,6 +393,9 @@ async def benchmark_from_org(
     from app.services.company_context import get_company_context
 
     try:
+        # The organisation came from the request, never compared with the caller's.
+        if not current_user_org_matches(current_user, req.org_id):
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
         ctx     = await get_company_context(req.org_id) or {}
         results = ctx.get("agent_results") or {}
         cfo_r   = results.get("cfo") or {}

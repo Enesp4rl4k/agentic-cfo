@@ -51,6 +51,21 @@ apiClient.interceptors.response.use(
   }
 );
 
+// ── streamUrl — an authenticated URL for EventSource ─────────────────────────
+/**
+ * EventSource cannot send an Authorization header, which is why the progress
+ * stream used to take no user at all. The backend now wants a short-lived
+ * ticket scoped to one job; ask for one right before each connect (tickets
+ * expire, and a reconnect should not reuse a stale one).
+ */
+export async function streamUrl(jobId: string): Promise<string> {
+  const res = await apiClient.post<{ data: { ticket: string } }>(
+    `/stream/${jobId}/ticket`,
+  );
+  const ticket = encodeURIComponent(res.data.data.ticket);
+  return `${API_URL}/api/v1/stream/${jobId}?ticket=${ticket}`;
+}
+
 // ── fetchWithAuth — for native fetch() calls (e.g. file downloads) ────────────
 /**
  * Drop-in replacement for window.fetch() that attaches the current

@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
@@ -214,6 +215,9 @@ async def board_deck_pdf(
         from app.api.reports_pdf import _load_dashboard_for_job
         from app.services.board_deck_pdf import BoardDeckPDFBuilder
 
+        # A job id from the request body, loaded without asking whose it was.
+        if req.job_id:
+            await load_owned_job(db, req.job_id, current_user)
         dashboard = await _load_dashboard_for_job(req.job_id, db) if req.job_id else {}
         deck = _assemble_board_deck(
             dashboard,

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -66,7 +67,10 @@ async def run_consensus(
     """
     from app.services.negotiation import TOPIC_WEIGHTS, ConsensusEngine
 
-    org_id = body.org_id or (str(user.org_id) if user.org_id else None)
+    # A body org id other than the caller's used to be honoured.
+    if body.org_id and not current_user_org_matches(user, body.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
+    org_id = str(user.org_id) if user.org_id else None
     if not org_id:
         raise HTTPException(status_code=400, detail="Organizasyon bulunamadı.")
 
@@ -142,6 +146,10 @@ async def list_conflicts(
     - status: "open" | "resolved" | "escalated" | "all"
     - topic:  filter by topic (optional)
     """
+    # The organisation came from the URL and was never compared with the
+    # caller's: any user could read any organisation's agent conflicts by changing it.
+    if not current_user_org_matches(user, org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     try:
         from app.services.semantic.conflicts import list_org_conflicts
 
@@ -184,7 +192,7 @@ async def resolve_conflict(
         from app.services.semantic.conflicts import _parse_json_field
 
         row = await db.get(AgentConflict, conflict_id)
-        if row is None:
+        if row is None or not current_user_org_matches(user, row.org_id):
             raise HTTPException(status_code=404, detail="Çelişki bulunamadı.")
 
         now = datetime.now(UTC)
@@ -276,7 +284,8 @@ async def start_boardroom_debate(
         result = await run_boardroom_debate(
             topic=body.topic,
             context=body.context,
-            agents=body.agents
+            agents=body.agents,
+            org_id=str(user.org_id) if user.org_id else None,
         )
         return {"status": "success", "debate": result.model_dump()}
     except Exception as e:

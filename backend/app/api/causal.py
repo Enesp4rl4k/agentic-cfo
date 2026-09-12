@@ -18,8 +18,10 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
 from app.models.user import User
 
@@ -57,6 +59,7 @@ async def run_causal_analysis(
     body: CausalAnalysisRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Nedensellik analizi: Granger causality + lagged correlation + feature importance.
@@ -124,6 +127,7 @@ async def get_feature_importance(
     job_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Hangi gider kalemi net kâra en yüksek etkiyi yapıyor?

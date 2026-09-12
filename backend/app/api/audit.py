@@ -10,10 +10,12 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.agents.audit.orchestrator import run_audit_pipeline
+from app.api.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ class AuditAnalyzeRequest(BaseModel):
 
 
 @router.post("/audit/analyze")
-async def run_audit_analysis(body: AuditAnalyzeRequest) -> dict[str, Any]:
+async def run_audit_analysis(body: AuditAnalyzeRequest, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Run Internal Audit pipeline — findings, controls, coverage."""
     try:
         job_id = str(uuid.uuid4())
@@ -57,7 +59,7 @@ async def run_audit_analysis(body: AuditAnalyzeRequest) -> dict[str, Any]:
 
 
 @router.get("/audit/health-check")
-async def audit_health() -> dict[str, Any]:
+async def audit_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     return {
         "status": "healthy",
         "service": "internal_audit",

@@ -20,8 +20,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
 from app.models.user import User
 
@@ -92,6 +94,7 @@ async def _get_pnl_for_job(job_id: str, db: AsyncSession) -> dict[str, Any]:
 async def list_sensitivity_variables(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """List all available sensitivity variables and their default ranges."""
     from app.agents.sensitivity_agent import DEFAULT_RANGES, VARIABLE_LABELS
@@ -117,6 +120,7 @@ async def compute_sensitivity_matrix(
     body: SensitivityMatrixRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Compute a 2D sensitivity matrix.
@@ -174,6 +178,7 @@ async def compute_single_sensitivity(
     body: SensitivityVariableRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     1D sensitivity analysis for a single variable.

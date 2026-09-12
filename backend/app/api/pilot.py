@@ -68,7 +68,7 @@ def _require_admin(user: User) -> User:
 # ── Pilot status (public) ────────────────────────────────────────────────────
 
 @router.get("/pilot/status")
-async def pilot_status(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def pilot_status(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Return current pilot program status — public endpoint."""
     settings = get_settings()
     max_users = getattr(settings, "pilot_max_users", PILOT_MAX_USERS)
@@ -170,8 +170,8 @@ async def validate_invite(
 @router.post("/pilot/invite/use")
 async def use_invite(
     code: str,
-    user_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Mark an invite as used after successful registration."""
     result = await db.execute(
@@ -184,7 +184,7 @@ async def use_invite(
         raise HTTPException(400, detail="Geçersiz veya kullanılmış davet kodu.")
 
     invite.used = True
-    invite.used_by_user_id = user_id
+    invite.used_by_user_id = current_user.id   # was a query parameter: burn any invite for anyone
     invite.used_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"used": True}, "error": None}
@@ -244,7 +244,9 @@ async def revoke_invite(
 async def submit_feedback(
     body: FeedbackRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(lambda: None),  # auth optional
+    # Was `Depends(lambda: None)`: "auth optional" that could never see a
+    # user, so every piece of feedback was anonymous and anyone could post it.
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Submit post-analysis feedback. Auth optional — anonymous feedback allowed."""
     fb = UserFeedback(

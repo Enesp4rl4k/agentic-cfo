@@ -339,7 +339,7 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
 
 
 @router.post("/risk/cascade")
-async def run_cascade_simulation(body: CascadeRequest) -> dict[str, Any]:
+async def run_cascade_simulation(body: CascadeRequest, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """
     Cascade Risk Simulator — "What if X happens?" → all domain impacts.
 
@@ -419,7 +419,7 @@ async def run_risk_analysis(
 
 
 @router.get("/risk/health-check")
-async def risk_health() -> dict[str, Any]:
+async def risk_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     return {
         "status": "healthy",
         "service": "risk",

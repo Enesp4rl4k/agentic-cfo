@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches, load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -127,6 +128,9 @@ async def cto_kernel_from_job(
     """CFO analiz job'undan CTO metrikleri uret."""
     from app.agents.cto.cto_kernel import run_cto_kernel
     from app.services.eng_signals import cto_existing_data_from_signals
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} bulunamadi")
@@ -154,6 +158,9 @@ async def cto_kernel_from_org(
     """CompanyContext'ten CTO metrikleri uret."""
     from app.agents.cto.cto_kernel import run_cto_kernel
     from app.services.eng_signals import cto_existing_data_from_signals
+    # The organisation came from the request, never compared with the caller's.
+    if not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")
@@ -203,6 +210,9 @@ async def cmo_kernel_from_job(
 ) -> dict[str, Any]:
     """CFO analiz job'undan CMO metrikleri uret."""
     from app.agents.cmo.cmo_kernel import run_cmo_kernel
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} bulunamadi")
@@ -222,6 +232,9 @@ async def cmo_kernel_from_org(
 ) -> dict[str, Any]:
     """CompanyContext'ten CMO metrikleri uret."""
     from app.agents.cmo.cmo_kernel import run_cmo_kernel
+    # The organisation came from the request, never compared with the caller's.
+    if not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(status_code=404, detail=f"Org {req.org_id} verisi bulunamadi")

@@ -32,6 +32,10 @@ class ActionItemRecord:
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     executed_at: str | None = None
     execution_result: dict[str, Any] | None = None
+    # None for records written before this field existed. Such actions are
+    # shown to nobody and cannot be executed: there is no way to know whose
+    # ERP or ads account they were meant for.
+    org_id: str | None = None
 
 
 @dataclass
@@ -46,6 +50,7 @@ class DebateMemoryRecord:
     action_items: list[ActionItemRecord]
     transcript: dict[str, Any]
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    org_id: str | None = None
 
 
 class BoardroomMemoryService:
@@ -89,6 +94,7 @@ class BoardroomMemoryService:
         context: str,
         agents: list[str],
         debate_result: Any,
+        org_id: str | None = None,
     ) -> DebateMemoryRecord:
         """Yeni bir debate sonucunu ve aksiyonlarını hafızaya kaydeder."""
         debate_id = f"deb-{uuid.uuid4().hex[:8]}"
@@ -110,6 +116,7 @@ class BoardroomMemoryService:
                     description=desc,
                     responsible_agent=agent,
                     status="pending",
+                    org_id=org_id,
                 )
             )
 
@@ -128,21 +135,30 @@ class BoardroomMemoryService:
             confidence_score=float(debate_result.consensus.confidence_score),
             action_items=actions,
             transcript=transcript,
+            org_id=org_id,
         )
 
         self._records[debate_id] = record
         self._save_records()
         return record
 
-    def get_past_context_for_topic(self, topic: str, max_records: int = 3) -> str:
-        """Yeni bir müzakere başlarken geçmiş benzer kararları özet metin olarak döner."""
-        if not self._records:
+    def get_past_context_for_topic(
+        self, topic: str, max_records: int = 3, org_id: str | None = None
+    ) -> str:
+        """Yeni bir müzakere başlarken geçmiş benzer kararları özet metin olarak döner.
+
+        Only this organisation's decisions. The memory used to be one pool, so
+        a debate was primed with other companies' board decisions — sent to the
+        LLM, and echoed into this company's transcript.
+        """
+        own = [r for r in self._records.values() if org_id and r.org_id == org_id]
+        if not own:
             return "Geçmişte bu veya benzer konularda alınmış kayıtlı bir Yönetim Kurulu kararı bulunmuyor."
 
         # Basit anahtar kelime eşleşmesi veya son kararları alma
         words = set(topic.lower().split())
         matched = []
-        for rec in reversed(list(self._records.values())):
+        for rec in reversed(own):
             rec_words = set(rec.topic.lower().split())
             overlap = len(words.intersection(rec_words))
             matched.append((overlap, rec))
@@ -160,12 +176,12 @@ class BoardroomMemoryService:
 
         return "Geçmiş Yönetim Kurulu Kararları ve Hafızası:\n" + "\n".join(summary_parts)
 
-    def list_pending_actions(self) -> list[ActionItemRecord]:
-        """CEO onayı veya icraat bekleyen tüm aksiyonları listeler."""
+    def list_pending_actions(self, org_id: str | None) -> list[ActionItemRecord]:
+        """Bu organizasyonun CEO onayı veya icraat bekleyen aksiyonları."""
         pending = []
         for rec in self._records.values():
             for action in rec.action_items:
-                if action.status == "pending":
+                if action.status == "pending" and org_id and action.org_id == org_id:
                     pending.append(action)
         return pending
 

@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
-from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
 from app.models.user import User
 
@@ -19,11 +19,8 @@ async def get_dashboard(
 ) -> dict:
     """Return the dashboard JSON payload for a completed job."""
     # Verify the job belongs to the user's org before returning data
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
-    if current_user.org_id and job.org_id and job.org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="Access denied.")
+    # The old test skipped itself when either side had no organisation.
+    await load_owned_job(db, job_id, current_user)
 
     result = await db.execute(
         select(Report).where(

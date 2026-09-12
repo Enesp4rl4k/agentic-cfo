@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -219,12 +220,16 @@ class AcknowledgeRequest(BaseModel):
 async def acknowledge_anomaly(
     anomaly_id: str,
     body: AcknowledgeRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Mark an anomaly as acknowledged (dismissed by the CFO)."""
     anomaly = await db.get(Anomaly, anomaly_id)
     if not anomaly:
         raise HTTPException(status_code=404, detail="Anomaly not found.")
+    # Dismissing an alert is a write; it took no user, so anyone could
+    # silence any organisation's anomalies.
+    await load_owned_job(db, anomaly.job_id, current_user)
 
     anomaly.acknowledged = body.acknowledged
     anomaly.acknowledged_at = datetime.now(UTC) if body.acknowledged else None
@@ -253,6 +258,11 @@ async def explain_anomaly(
     Final event: data: [DONE]
     """
     anomaly = await db.get(Anomaly, anomaly_id)
+    if anomaly is not None:
+        try:
+            await load_owned_job(db, anomaly.job_id, current_user)
+        except HTTPException:
+            anomaly = None      # someone else's: answered exactly like a missing one
     if not anomaly:
         async def _not_found():
             yield "data: Anomali bulunamadı.\n\n"

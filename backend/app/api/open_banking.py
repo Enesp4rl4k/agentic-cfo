@@ -40,7 +40,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -107,6 +109,7 @@ async def list_banks() -> dict[str, Any]:
 async def start_oauth(
     bank_id: str,
     body: ConnectRequest,
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Start the OAuth2 authorization flow for a bank.
@@ -234,6 +237,7 @@ async def sync_transactions(
     access_token:  str = Query(..., description="Access token from OAuth flow"),
     days_back:     int = Query(default=90, description="How many days of history to fetch"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Sync transactions from a connected bank account.
@@ -270,6 +274,9 @@ async def sync_transactions(
         filename=f"{bank_id}_open_banking_{end_date}.json",
         file_path="",  # No file — transactions injected directly
         file_type="json",
+        # A job with neither is visible to nobody, and was created by nobody.
+        org_id=current_user.org_id,
+        user_id=current_user.id,
     )
     db.add(job)
     await db.commit()

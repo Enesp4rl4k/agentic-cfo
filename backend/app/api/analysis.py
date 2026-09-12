@@ -16,9 +16,14 @@ router = APIRouter()
 
 
 def _check_job_access(job: AnalysisJob, user: User) -> None:
-    """Raise 403 if the user's org does not own this job."""
-    if user.org_id and job.org_id and job.org_id != user.org_id:
-        raise HTTPException(status_code=403, detail="Access denied.")
+    """Raise 404 unless the user owns this job.
+
+    Delegates to `app.api.access`. The old test skipped itself when either
+    side had no organisation — a user without one reached every job.
+    """
+    from app.api.access import ensure_tenant
+
+    ensure_tenant(user, org_id=job.org_id, user_id=job.user_id)
 
 
 class AnalyzeRequest(BaseModel):
@@ -118,9 +123,12 @@ async def list_jobs(
 ) -> dict:
     """List the most recent analysis jobs for the current org."""
     q = select(AnalysisJob).order_by(desc(AnalysisJob.created_at)).limit(limit)
-    # Scope to org when available
+    # Scoped to the org — and, for a user without one, to their own jobs.
+    # The filter used to be skipped instead, listing every organisation's.
     if current_user.org_id:
         q = q.where(AnalysisJob.org_id == current_user.org_id)
+    else:
+        q = q.where(AnalysisJob.user_id == current_user.id)
     result = await db.execute(q)
     jobs = result.scalars().all()
     return {

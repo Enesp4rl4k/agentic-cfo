@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches, load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -155,6 +156,9 @@ async def swot_from_job(
     """
     from app.agents.ceo.swot_agent import run_swot_from_context
 
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     data = await _load_from_job(req.job_id, db)
     if not data:
         raise HTTPException(
@@ -188,6 +192,9 @@ async def swot_from_org(
     """
     from app.agents.ceo.swot_agent import run_swot_from_context
 
+    # The organisation came from the request, never compared with the caller's.
+    if not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ctx = await _load_from_org(req.org_id)
     if not ctx:
         raise HTTPException(

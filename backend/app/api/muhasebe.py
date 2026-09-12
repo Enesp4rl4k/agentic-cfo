@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     # Imported for annotations only: the service is loaded lazily inside the
     # handlers, like every other service in this module.
     from app.services.edefter_xbrl import EDefterXBRL, LedgerOwner
+from app.api.access import load_owned_job, owned_job
 from app.core.http_headers import content_disposition
 from app.models.report import Report, ReportFormat
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
@@ -164,11 +165,9 @@ async def muhasebe_analiz(
     from app.agents.accounting.orchestrator import get_muhasebe_agent
 
     # Job kontrolü
-    job = await db.get(AnalysisJob, body.job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
-    if job.org_id and job.org_id != current_user.org_id and current_user.role not in ("admin", "owner"):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+    # `owner`/`admin` are roles inside one organisation; this used to let
+    # them into every other organisation's jobs.
+    job = await load_owned_job(db, body.job_id, current_user)
 
     # İşlemleri yükle
     tx_result = await db.execute(
@@ -286,15 +285,9 @@ async def muhasebe_tr_vertical(
     """
     from app.agents.tr_vertical import run_tr_vertical
 
-    job = await db.get(AnalysisJob, body.job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
-    if (
-        job.org_id
-        and job.org_id != current_user.org_id
-        and current_user.role not in ("admin", "owner")
-    ):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+    # `owner`/`admin` are roles inside one organisation; this used to let
+    # them into every other organisation's jobs.
+    job = await load_owned_job(db, body.job_id, current_user)
     if not job.file_path:
         raise HTTPException(status_code=400, detail="Job'a ait dosya yolu yok.")
 
@@ -411,15 +404,9 @@ async def muhasebe_tr_vertical_board_deck(
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
     """Download the board-deck PDF produced by the last TR-vertical run for this job."""
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
-    if (
-        job.org_id
-        and job.org_id != current_user.org_id
-        and current_user.role not in ("admin", "owner")
-    ):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+    # `owner`/`admin` are roles inside one organisation; this used to let
+    # them into every other organisation's jobs.
+    await load_owned_job(db, job_id, current_user)
 
     report = (
         await db.execute(
@@ -463,15 +450,9 @@ async def muhasebe_yevmiye_dokumu(
     from app.services.gib_edefter import EDefterGenerator
     from app.services.smmm_defensibility import DefensibilityError, _load_journal
 
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
-    if (
-        job.org_id
-        and job.org_id != current_user.org_id
-        and current_user.role not in ("admin", "owner")
-    ):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+    # `owner`/`admin` are roles inside one organisation; this used to let
+    # them into every other organisation's jobs.
+    await load_owned_job(db, job_id, current_user)
 
     settings = get_settings()
     if not settings.gib_vkn:
@@ -536,15 +517,9 @@ async def _edefter_context(
     from app.services.edefter_xbrl import LedgerOwner
     from app.services.smmm_defensibility import DefensibilityError, _load_journal
 
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
-    if (
-        job.org_id
-        and job.org_id != current_user.org_id
-        and current_user.role not in ("admin", "owner")
-    ):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+    # `owner`/`admin` are roles inside one organisation; this used to let
+    # them into every other organisation's jobs.
+    await load_owned_job(db, job_id, current_user)
 
     settings = get_settings()
     if not settings.gib_vkn:
@@ -854,6 +829,8 @@ async def onayla(
     kayit = await db.get(SMMMOnayKaydi, onay_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
+    # The record was loaded by id and changed; whose it was went unasked.
+    await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten '{kayit.durum}' durumunda.")
 
@@ -879,6 +856,8 @@ async def duzelt(
     kayit = await db.get(SMMMOnayKaydi, onay_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
+    # The record was loaded by id and changed; whose it was went unasked.
+    await load_owned_job(db, kayit.job_id, current_user)
 
     kayit.durum = OnayDurumu.DUZELTILDI
     kayit.onaylayan_user_id = current_user.id
@@ -914,6 +893,8 @@ async def reddet(
     kayit = await db.get(SMMMOnayKaydi, onay_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
+    # The record was loaded by id and changed; whose it was went unasked.
+    await load_owned_job(db, kayit.job_id, current_user)
 
     kayit.durum = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = current_user.id
@@ -928,7 +909,7 @@ async def reddet(
 @router.get("/muhasebe/mizan/{job_id}")
 async def mizan_ozet(
     job_id: str,
-    current_user: User = Depends(get_current_user),
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """

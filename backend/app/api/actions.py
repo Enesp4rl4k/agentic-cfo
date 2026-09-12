@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.services.execution.action_runner import get_action_runner
@@ -34,7 +35,7 @@ async def get_pending_actions(
 ) -> dict[str, Any]:
     """CEO onayını bekleyen aksiyon maddelerini listeler."""
     memory = get_boardroom_memory()
-    pending = memory.list_pending_actions()
+    pending = memory.list_pending_actions(str(user.org_id) if user.org_id else None)
     return {
         "status": "success",
         "count": len(pending),
@@ -59,6 +60,11 @@ async def approve_action(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """CEO'nun aksiyonu onaylayarak ilgili sisteme (ERP, Ads vb.) göndermesini sağlar."""
+    # An approved action is sent to an external system (ERP, ads). Actions had
+    # no organisation, so any user could execute any company's.
+    action = get_boardroom_memory().get_action_by_id(action_id)
+    if action is None or not current_user_org_matches(user, action.org_id):
+        raise HTTPException(status_code=404, detail="Aksiyon bulunamadı.")
     runner = get_action_runner()
     params = body.custom_params if body else None
     result = await runner.execute_action(
@@ -89,6 +95,11 @@ async def reject_action(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """CEO'nun aksiyonu reddetmesi."""
+    # An approved action is sent to an external system (ERP, ads). Actions had
+    # no organisation, so any user could execute any company's.
+    action = get_boardroom_memory().get_action_by_id(action_id)
+    if action is None or not current_user_org_matches(user, action.org_id):
+        raise HTTPException(status_code=404, detail="Aksiyon bulunamadı.")
     runner = get_action_runner()
     success = await runner.reject_action(
         action_id=action_id,

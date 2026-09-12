@@ -17,7 +17,7 @@ import {
 import { useDashboard, useTopAlerts, useReports } from "@/hooks/useCFO";
 import { useActiveCFOJob } from "@/hooks/useCompanyContext";
 import { formatCurrency, formatPercent, cn } from "@/lib/utils";
-import { getDownloadUrl } from "@/lib/api/cfo";
+import { downloadReport } from "@/lib/api/cfo";
 import type { DashboardData } from "@/types";
 
 // ── Tooltip / axis shared styles ─────────────────────────────────────────────
@@ -383,8 +383,9 @@ function ReportsSection({ jobId }: { jobId: string }) {
             </div>
           </div>
           <a
-            href={getDownloadUrl(r.id)}
-            download
+            href="#"
+            // A plain link cannot carry the session the download now requires.
+            onClick={(e) => { e.preventDefault(); void downloadReport(r.id, r.report_type); }}
             className={cn(
               "ml-3 flex shrink-0 items-center gap-1.5 rounded-md border border-border",
               "px-3 py-1.5 text-xs font-medium text-muted-foreground",

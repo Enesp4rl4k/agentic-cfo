@@ -19,8 +19,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.user import User
 
 router = APIRouter()
@@ -89,6 +91,9 @@ async def simulate_headcount(
     - 3 senaryo (iyimser/baz/kötümser)
     - Cashflow risk değerlendirmesi
     """
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, current_user)
     pnl, cashflow, forecast = await _load_pnl_cashflow_forecast(body.job_id, db)
     if not pnl:
         raise HTTPException(
@@ -129,6 +134,9 @@ async def simulate_cost_reduction(
     - Break-even (geçiş maliyeti varsa)
     - Cashflow etkisi
     """
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, current_user)
     pnl, cashflow, forecast = await _load_pnl_cashflow_forecast(body.job_id, db)
     if not pnl:
         raise HTTPException(
@@ -161,6 +169,9 @@ async def simulate_price_increase(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Fiyat artışı simülasyonu — gelir artışı vs. churn dengesi."""
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, current_user)
     pnl, cashflow, forecast = await _load_pnl_cashflow_forecast(body.job_id, db)
     if not pnl:
         raise HTTPException(status_code=404, detail="P&L verisi bulunamadı.")
@@ -182,6 +193,7 @@ async def get_preset_scenarios(
     job_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Job'a özgü hazır "ne olurdu?" senaryoları.

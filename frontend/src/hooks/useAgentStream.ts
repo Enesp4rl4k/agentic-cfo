@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { streamUrl } from "@/lib/api/client";
 
 // ── Event types ───────────────────────────────────────────────────────────────
 
@@ -150,8 +151,22 @@ export function useAgentStream(
     completedStepsRef.current = [];
     retriesRef.current = 0;
 
-    function connect() {
-      const url = `${baseUrl}/api/v1/stream/${jobId}`;
+    let cancelled = false;
+
+    async function connect() {
+      // A fresh ticket per connect: the stream authenticates by ticket, since
+      // EventSource cannot send the session header.
+      let url: string;
+      try {
+        url = await streamUrl(jobId!);
+      } catch {
+        if (!cancelled) {
+          setErrorMessage("Canlı akış için yetki alınamadı.");
+          setStatus("error");
+        }
+        return;
+      }
+      if (cancelled) return;
       const es = new EventSource(url);
       esRef.current = es;
 
@@ -216,7 +231,7 @@ export function useAgentStream(
           retriesRef.current++;
           setStatus("connecting");
           const delay = Math.min(1000 * 2 ** retriesRef.current, 10_000);
-          setTimeout(connect, delay);
+          setTimeout(() => void connect(), delay);
         } else {
           setStatus("error");
           setErrorMessage(
@@ -226,9 +241,10 @@ export function useAgentStream(
       };
     }
 
-    connect();
+    void connect();
 
     return () => {
+      cancelled = true;
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -45,6 +46,7 @@ class CEOChatRequest(BaseModel):
 async def chat(
     job_id: str,
     body: ChatRequest,
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
@@ -130,6 +132,7 @@ async def chat(
 # NOTE: /chat/job/{job_id} uses explicit /job/ prefix to avoid clashing with /chat/ceo
 async def chat_ceo(
     body: CEOChatRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
@@ -162,8 +165,8 @@ async def chat_ceo(
     tx_dicts: list[dict[str, Any]] = []
 
     if body.job_id:
-        job = await db.get(AnalysisJob, body.job_id)
-        if job and job.status == JobStatus.COMPLETED:
+        job = await load_owned_job(db, body.job_id, current_user)
+        if job.status == JobStatus.COMPLETED:
             report_result = await db.execute(
                 select(Report).where(
                     Report.job_id == body.job_id,
@@ -235,6 +238,7 @@ class NLQueryRequest(BaseModel):
 @router.post("/query")
 async def natural_language_query(
     body: NLQueryRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -256,6 +260,8 @@ async def natural_language_query(
 
     from app.agents.nl_query_engine import execute_nl_query, generate_nl_insight
     from app.config import get_settings
+
+    await load_owned_job(db, body.job_id, current_user)
 
     # Load dashboard JSON
     report_result = await db.execute(
@@ -326,6 +332,7 @@ async def natural_language_query(
 @router.post("/query/stream", response_model=None)
 async def natural_language_query_stream(
     body: NLQueryRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """
@@ -343,6 +350,8 @@ async def natural_language_query_stream(
 
     from app.agents.nl_query_engine import execute_nl_query, generate_nl_insight_stream
     from app.config import get_settings
+
+    await load_owned_job(db, body.job_id, current_user)
 
     report_result = await db.execute(
         select(Report)

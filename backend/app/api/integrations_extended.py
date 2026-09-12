@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import can_access
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -251,6 +252,10 @@ async def export_to_sheets(
         try:
             from app.models.analysis_job import AnalysisJob
             job = await db.get(AnalysisJob, req.job_id)
+            # Exported to a spreadsheet the caller chooses — another
+            # organisation's results included, before this check.
+            if job and not can_access(current_user, org_id=job.org_id, user_id=job.user_id):
+                job = None
             if job and job.result:
                 cfo_result = job.result
         except Exception:

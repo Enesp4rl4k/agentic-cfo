@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches, load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -189,7 +190,13 @@ async def multidomain_headcount(
     """
     from app.services.multidomain_counterfactual import get_multidomain_cf
 
-    org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    # A body org id other than the caller's used to be honoured.
+    if req.org_id and not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
+    org = str(current_user.org_id) if current_user.org_id else None
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     ctx = await _load_ctx(req.job_id, org, db)
     engine = get_multidomain_cf(**_cf_engine_kwargs(ctx))
 
@@ -221,7 +228,13 @@ async def multidomain_marketing(
     """Pazarlama yatiriminin CFO + CMO + COO uzerindeki birlesik etkisi."""
     from app.services.multidomain_counterfactual import get_multidomain_cf
 
-    org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    # A body org id other than the caller's used to be honoured.
+    if req.org_id and not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
+    org = str(current_user.org_id) if current_user.org_id else None
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     ctx = await _load_ctx(req.job_id, org, db)
     engine = get_multidomain_cf(**_cf_engine_kwargs(ctx))
 
@@ -250,7 +263,13 @@ async def multidomain_tech(
     """Teknoloji yatiriminin CFO + CTO + COO uzerindeki birlesik etkisi."""
     from app.services.multidomain_counterfactual import get_multidomain_cf
 
-    org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    # A body org id other than the caller's used to be honoured.
+    if req.org_id and not current_user_org_matches(current_user, req.org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
+    org = str(current_user.org_id) if current_user.org_id else None
+    # A job id from the request body, loaded without asking whose it was.
+    if req.job_id:
+        await load_owned_job(db, req.job_id, current_user)
     ctx = await _load_ctx(req.job_id, org, db)
     engine = get_multidomain_cf(**_cf_engine_kwargs(ctx))
 

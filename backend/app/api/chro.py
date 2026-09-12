@@ -98,7 +98,7 @@ async def run_chro_analysis(
 
 
 @router.get("/chro/health-check")
-async def chro_health() -> dict[str, Any]:
+async def chro_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Health check for CHRO service."""
     return {
         "status": "healthy",

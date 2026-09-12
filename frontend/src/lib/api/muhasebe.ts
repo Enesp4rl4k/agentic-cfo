@@ -104,10 +104,8 @@ export interface LlmCosts {
   ok_calls: number;
   total_cost_usd: number;
   by_model: LlmCostBucket[];
-  by_org: LlmCostBucket[];
   by_task: LlmCostBucket[];
   by_day: LlmCostBucket[];
-  live_process_aggregate: Record<string, unknown>;
 }
 
 export async function getLlmCosts(days = 30): Promise<LlmCosts> {

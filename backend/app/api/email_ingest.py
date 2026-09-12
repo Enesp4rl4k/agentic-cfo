@@ -24,7 +24,7 @@ import base64
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -195,8 +195,7 @@ async def _process_parsed_email(
 async def ingest_email_raw(
     request:      Request,
     db:           AsyncSession = Depends(get_db),
-    x_email_api_key: str | None = Header(None, alias="X-Email-Api-Key"),
-    x_org_id:     str | None = Header(None, alias="X-Org-Id"),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Ingest a raw MIME email via webhook.
@@ -222,8 +221,15 @@ async def ingest_email_raw(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not read request body: {exc}")
 
-    # Org resolution — from header or API key
-    org_id = x_org_id
+    # The organisation used to come from an `X-Org-Id` header, and the
+    # `X-Email-Api-Key` beside it was declared and never checked: anyone could
+    # file documents and start jobs in any organisation by naming it. The
+    # caller now authenticates (a Bearer token, or the user's own X-API-Key,
+    # which forwarding services can send as a header) and the job goes to the
+    # organisation that user belongs to.
+    org_id = _get_org_id(current_user)
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Kullanıcı bir organizasyona bağlı değil")
 
     # Parse the email
     from app.services.email_parser import get_email_parser
@@ -279,7 +285,10 @@ async def ingest_email_base64(
     parser = get_email_parser()
     parsed = parser.parse(raw_bytes)
 
-    org_id = req.org_id or _get_org_id(current_user)
+    # `req.org_id` let an authenticated user file into another organisation.
+    org_id = _get_org_id(current_user)
+    if not org_id or (req.org_id and req.org_id != org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     result = await _process_parsed_email(parsed, org_id, db)
 
     return {"data": result, "error": None}

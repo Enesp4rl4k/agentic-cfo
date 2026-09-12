@@ -25,6 +25,7 @@ import {
 } from "@/hooks/useCFO";
 import { cn } from "@/lib/utils";
 import type { AnomalyItem } from "@/lib/api/cfo";
+import { fetchWithAuth } from "@/lib/api/client";
 import { EvidenceChainPanel, ConfidenceBadge } from "@/components/ui/evidence-chain-panel";
 
 // ── Severity config ───────────────────────────────────────────────────────────
@@ -200,7 +201,9 @@ function AnomalyCard({
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
     try {
-      const res = await fetch(`${API_URL}/api/v1/anomalies/explain/${anomaly.id}`, { signal: ctrl.signal });
+      // Was a bare fetch with no session: the route requires a user, so the
+      // explanation panel has been answering 401 and rendering nothing.
+      const res = await fetchWithAuth(`${API_URL}/api/v1/anomalies/explain/${anomaly.id}`, { signal: ctrl.signal });
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) return;

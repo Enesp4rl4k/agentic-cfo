@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.core.branding import get_brand
 from app.core.http_headers import content_disposition
@@ -120,6 +121,9 @@ async def generate_cfo_summary_pdf(
     """
     from app.services.pdf import PDFEngine, build_cfo_summary_context
 
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, user)
     dashboard = await _load_dashboard_for_job(body.job_id, db)
     if not dashboard:
         raise HTTPException(
@@ -165,6 +169,9 @@ async def generate_executive_brief_pdf(
     """
     from app.services.pdf import PDFEngine, build_cfo_summary_context
 
+    # A job id from the request body, loaded without asking whose it was.
+    if body.job_id:
+        await load_owned_job(db, body.job_id, user)
     dashboard = await _load_dashboard_for_job(body.job_id, db)
     if not dashboard:
         raise HTTPException(

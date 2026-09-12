@@ -6,9 +6,11 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
 from app.models.user import User
 
@@ -23,12 +25,16 @@ logger = logging.getLogger(__name__)
 @router.get("/reports/{report_id}/download")
 async def download_report(
     report_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
     """Download a generated Excel or PDF report file."""
     report = await db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found.")
+    # A report is its job's: took no user at all before, so any report id
+    # downloaded any organisation's workbook.
+    await load_owned_job(db, report.job_id, current_user)
     if not report.file_path or not os.path.exists(report.file_path):
         raise HTTPException(status_code=404, detail="Report file not available on disk.")
 
@@ -49,6 +55,7 @@ async def download_report(
 @router.get("/reports/{job_id}")
 async def list_reports(
     job_id: str,
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all generated reports for a job."""
@@ -77,6 +84,7 @@ async def download_executive_report(
     job_id: str,
     company_name: str = Query(default="Şirket", description="Rapor başlığındaki şirket adı"),
     period: str | None = Query(default=None, description="Dönem etiketi, örn. '2024-Q1'"),
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """

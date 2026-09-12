@@ -19,7 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
 
 router = APIRouter()
@@ -87,6 +89,7 @@ async def list_sectors() -> dict[str, Any]:
 async def get_full_benchmark(
     job_id: str,
     sector: str = Query(default="default", description="Sektör kodu"),
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -118,6 +121,7 @@ async def get_metric_benchmark(
     job_id: str,
     metric: str = Path(..., description="Metrik kodu"),
     sector: str = Query(default="default", description="Sektör kodu"),
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """

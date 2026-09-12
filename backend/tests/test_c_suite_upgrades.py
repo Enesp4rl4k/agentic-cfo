@@ -96,6 +96,7 @@ async def test_boardroom_memory_and_past_context(tmp_path: Path):
         context="Nakit akışı ve büyüme",
         agents=["CMO", "CFO"],
         debate_result=mock_debate,
+        org_id="org-A",
     )
 
     assert record.id.startswith("deb-")
@@ -104,9 +105,16 @@ async def test_boardroom_memory_and_past_context(tmp_path: Path):
     assert record.action_items[0].status == "pending"
 
     # Test context retrieval for new debate
-    past_ctx = memory_svc.get_past_context_for_topic("pazarlama bütçesi")
+    past_ctx = memory_svc.get_past_context_for_topic("pazarlama bütçesi", org_id="org-A")
     assert "Geçmiş Yönetim Kurulu Kararları" in past_ctx
     assert "Bütçe bu ay %15 artırılacak." in past_ctx
+
+    # Another company's debate is primed with none of it. The memory used to be
+    # one pool, sent to the LLM for every organisation.
+    other = memory_svc.get_past_context_for_topic("pazarlama bütçesi", org_id="org-B")
+    assert "Bütçe bu ay %15 artırılacak." not in other
+    assert memory_svc.list_pending_actions("org-B") == []
+    assert len(memory_svc.list_pending_actions("org-A")) == 2
 
 
 @pytest.mark.asyncio

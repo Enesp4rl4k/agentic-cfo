@@ -118,7 +118,7 @@ async def run_cmo_analysis(
 
 
 @router.get("/cmo/health-check")
-async def cmo_health() -> dict[str, Any]:
+async def cmo_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify CMO pipeline agents are importable and graph compiles."""
     from app.agents.cmo.orchestrator import _cmo_graph
     return {

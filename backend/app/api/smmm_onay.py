@@ -24,9 +24,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import can_access, load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.user import User
 
@@ -112,8 +114,12 @@ async def get_onay_queue(
     if durum != "all":
         query = query.where(SMMMOnayKaydi.durum == durum)
 
+    # Without an organisation the filter used to be skipped — every
+    # organisation's queue. Such a user sees only what they created.
     if org_id:
         query = query.where(SMMMOnayKaydi.org_id == str(org_id))
+    else:
+        query = query.where(SMMMOnayKaydi.created_by_user_id == str(current_user.id))
 
     total_q = select(func.count()).select_from(query.subquery())
     total_res = await db.execute(total_q)
@@ -137,7 +143,7 @@ async def get_onay_queue(
 @router.get("/smmm/onay/queue/{job_id}")
 async def get_onay_queue_for_job(
     job_id:       str,
-    current_user: User = Depends(get_current_user),
+    job:          AnalysisJob = Depends(owned_job),
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Belirli bir analiz işi için bekleyen onayları listele."""
@@ -172,6 +178,9 @@ async def onayla(
     kayit = await db.get(SMMMOnayKaydi, kayit_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
+    # Loaded by id and changed with no question of whose it was: any user
+    # could approve, correct or reject another organisation's entries.
+    await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
 
@@ -198,6 +207,9 @@ async def duzeltle(
     kayit = await db.get(SMMMOnayKaydi, kayit_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
+    # Loaded by id and changed with no question of whose it was: any user
+    # could approve, correct or reject another organisation's entries.
+    await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
 
@@ -229,6 +241,9 @@ async def reddet(
     kayit = await db.get(SMMMOnayKaydi, kayit_id)
     if not kayit:
         raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
+    # Loaded by id and changed with no question of whose it was: any user
+    # could approve, correct or reject another organisation's entries.
+    await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
 
@@ -266,6 +281,19 @@ async def toplu_onayla(
     )
     kayitlar = result.scalars().all()
 
+    # Only entries whose job this user owns; the rest are skipped exactly as
+    # an id that does not exist is, so the response says nothing about them.
+    job_ids = {k.job_id for k in kayitlar}
+    jobs = {
+        j.id: j
+        for j in (await db.execute(select(AnalysisJob).where(AnalysisJob.id.in_(job_ids)))).scalars()
+    } if job_ids else {}
+    kayitlar = [
+        k for k in kayitlar
+        if k.job_id in jobs
+        and can_access(current_user, org_id=jobs[k.job_id].org_id, user_id=jobs[k.job_id].user_id)
+    ]
+
     now = datetime.now(UTC)
     approved_ids = []
     for kayit in kayitlar:
@@ -301,18 +329,10 @@ async def get_onay_package(
 
     Paraşüt → canonical → CFO hattı için muhasebeci paket görünümü.
     """
-    from app.models.analysis_job import AnalysisJob
     from app.models.canonical_transaction import CanonicalTransaction
 
-    org_id = getattr(current_user, "org_id", None) or getattr(
-        current_user, "organization_id", None
-    )
-
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Analiz işi bulunamadı")
-    if org_id and str(job.org_id) != str(org_id):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yok")
+    # The old test skipped itself when the caller had no organisation.
+    job = await load_owned_job(db, job_id, current_user)
 
     bekleyen_q = select(func.count()).where(
         and_(
@@ -387,6 +407,8 @@ async def onay_stats(
         q = select(func.count()).where(SMMMOnayKaydi.durum == durum)
         if org_id:
             q = q.where(SMMMOnayKaydi.org_id == str(org_id))
+        else:
+            q = q.where(SMMMOnayKaydi.created_by_user_id == str(current_user.id))
         res = await db.execute(q)
         counts[durum] = res.scalar_one()
 
@@ -396,6 +418,8 @@ async def onay_stats(
     )
     if org_id:
         avg_conf_q = avg_conf_q.where(SMMMOnayKaydi.org_id == str(org_id))
+    else:
+        avg_conf_q = avg_conf_q.where(SMMMOnayKaydi.created_by_user_id == str(current_user.id))
     avg_conf_res = await db.execute(avg_conf_q)
     avg_confidence = avg_conf_res.scalar_one()
 

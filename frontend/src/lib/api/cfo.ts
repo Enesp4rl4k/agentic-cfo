@@ -46,6 +46,28 @@ export function getDownloadUrl(reportId: string): string {
   return `${base}/api/v1/reports/${reportId}/download`;
 }
 
+/**
+ * Download a report with the session attached.
+ *
+ * The download route now requires a user (it served any report to anyone),
+ * so a plain `<a href download>` no longer works: a link cannot carry the
+ * Authorization header. Fetch it, then hand the browser a blob.
+ */
+export async function downloadReport(reportId: string, fallbackName = "rapor"): Promise<void> {
+  const res = await fetchWithAuth(getDownloadUrl(reportId));
+  if (!res.ok) throw new Error(`Rapor indirilemedi (HTTP ${res.status})`);
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const utf8 = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+  const plain = /filename="?([^";]+)"?/.exec(disposition)?.[1];
+  const name = utf8 ? decodeURIComponent(utf8) : (plain ?? fallbackName);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export interface JobSummary {
   job_id: string;
   status: string;

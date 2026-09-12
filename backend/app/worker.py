@@ -881,6 +881,40 @@ async def enqueue_ceo_analysis(
     logger.info("Enqueued CEO analysis: job=%s", job_id)
 
 
+async def record_ceo_job_owner(job_id: str, *, org_id: Any, user_id: Any) -> None:
+    """Remember who started a CEO job, for as long as its status is kept.
+
+    CEO job ids live only in Redis and the status route took no user, so any
+    caller holding an id read the whole board deck. The owner is stored beside
+    the status with the same lifetime and checked on every poll.
+    """
+    import json
+
+    pool = await get_arq_pool()
+    await pool.set(
+        f"ceo:{job_id}:owner",
+        json.dumps({"org_id": str(org_id) if org_id else None, "user_id": str(user_id)}),
+        ex=86400,
+    )
+
+
+async def get_ceo_job_owner(job_id: str) -> dict[str, Any] | None:
+    """The recorded owner of a CEO job, or None if unknown or unreachable."""
+    import json
+
+    try:
+        pool = await get_arq_pool()
+        raw = await pool.get(f"ceo:{job_id}:owner")
+    except Exception as exc:
+        if not _is_transient_error(exc):
+            raise
+        return None
+    if raw is None:
+        return None
+    data = json.loads(raw)
+    return {"org_id": data.get("org_id"), "user_id": data.get("user_id")}
+
+
 async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
     """
     Poll CEO job status from Redis.

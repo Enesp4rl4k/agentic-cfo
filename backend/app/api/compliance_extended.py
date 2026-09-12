@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.core.branding import get_brand
 from app.core.timeutil import as_utc
@@ -495,12 +496,11 @@ async def mark_breach_notified(
     """Mark a breach as officially notified to KVKK/DPA."""
     # The raw UPDATE this replaces had no tenant predicate at all: any
     # authenticated user could mark any organisation's breach as notified.
-    org_id = await _get_org_id(user)
     try:
         row = await db.get(BreachNotification, breach_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
-        if row.org_id != org_id:
+        if not current_user_org_matches(user, row.org_id):
             raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
         row.status = "notified"
         row.notified_at = datetime.now(UTC)
@@ -577,6 +577,10 @@ async def compliance_dashboard(
     Tüm framework'ler için birleşik uyum skoru.
     GDPR + SOX + ISO 27001 + Türkiye mevzuatı özeti.
     """
+    # Every count below was filtered by the org in the URL, never compared
+    # with the caller's.
+    if not current_user_org_matches(user, org_id):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     now = datetime.now(UTC)
 
     # GDPR score: based on open breaches

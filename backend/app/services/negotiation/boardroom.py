@@ -55,7 +55,8 @@ async def _structured(schema, prompt: str, *, temperature: float):
 async def run_boardroom_debate(
     topic: str,
     context: str,
-    agents: list[str] | None = None
+    agents: list[str] | None = None,
+    org_id: str | None = None,
 ) -> BoardroomDebateResult:
     """
     Belirli bir konu (topic) üzerinde verilen ajanlar arasında LLM tabanlı
@@ -69,13 +70,13 @@ async def run_boardroom_debate(
     memory = get_boardroom_memory()
 
     # 0. Hafıza Katmanı: Geçmiş benzer kararları çek ve bağlama ekle
-    past_memory_context = memory.get_past_context_for_topic(topic)
+    past_memory_context = memory.get_past_context_for_topic(topic, org_id=org_id)
     enriched_context = f"{context}\n\n[KURUMSAL HAFIZA & GEÇMİŞ KARARLAR]:\n{past_memory_context}"
 
     # Fallback/Mock mode for local dev without a real API key
     if settings.openai_api_key.startswith("llm-placeholder"):
         result = _mock_boardroom_debate(topic, agents)
-        rec = memory.save_debate(topic, context, agents, result)
+        rec = memory.save_debate(topic, context, agents, result, org_id=org_id)
         result.debate_id = rec.id
         return result
 
@@ -106,7 +107,7 @@ async def run_boardroom_debate(
     )
 
     # 4. Hafızaya Kaydet
-    saved_record = memory.save_debate(topic, context, agents, debate_res)
+    saved_record = memory.save_debate(topic, context, agents, debate_res, org_id=org_id)
     debate_res.debate_id = saved_record.id
 
     return debate_res

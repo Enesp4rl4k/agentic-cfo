@@ -18,14 +18,23 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.api.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _require_org(user: User) -> str:
+    if not user.org_id:
+        raise HTTPException(status_code=400, detail="Brifing bir organizasyon için üretilir.")
+    return str(user.org_id)
+
+
 @router.get("/brief/morning")
-async def get_morning_brief() -> dict:
+async def get_morning_brief(current_user: User = Depends(get_current_user)) -> dict:
     """
     Get the latest morning CEO brief.
 
@@ -34,10 +43,12 @@ async def get_morning_brief() -> dict:
 
     Returns the brief text, critical alert count, and top action for the day.
     """
+    org_id = _require_org(current_user)
     try:
+        from app.scheduler import morning_brief_key
         from app.worker import get_arq_pool
         pool = await get_arq_pool()
-        raw = await pool.get("morning_brief:latest")
+        raw = await pool.get(morning_brief_key(org_id))
     except Exception as exc:
         logger.warning("Could not fetch morning brief from Redis: %s", exc)
         raw = None
@@ -65,7 +76,7 @@ async def get_morning_brief() -> dict:
 
 
 @router.post("/brief/morning/generate")
-async def trigger_morning_brief() -> dict:
+async def trigger_morning_brief(current_user: User = Depends(get_current_user)) -> dict:
     """
     Trigger an on-demand morning brief generation.
 
@@ -77,9 +88,12 @@ async def trigger_morning_brief() -> dict:
 
     Takes ~5-15s depending on LLM latency.
     """
+    org_id = _require_org(current_user)
     try:
         from app.scheduler import _generate_morning_brief
-        await _generate_morning_brief()
+        # This organisation's brief only. Unauthenticated, this used to run the
+        # LLM over every organisation's jobs for whoever called it.
+        await _generate_morning_brief(org_id)
     except Exception as exc:
         logger.exception("On-demand morning brief generation failed")
         raise HTTPException(
@@ -91,7 +105,8 @@ async def trigger_morning_brief() -> dict:
     try:
         from app.worker import get_arq_pool
         pool = await get_arq_pool()
-        raw = await pool.get("morning_brief:latest")
+        from app.scheduler import morning_brief_key
+        raw = await pool.get(morning_brief_key(org_id))
         brief = json.loads(raw) if raw else {}
     except Exception:
         brief = {}

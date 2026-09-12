@@ -194,18 +194,49 @@ async def test_validation_error_handler_sanitized_format(test_client):
     assert body.get("status_code") == 422
 
 
+async def _org_user(test_client, email: str, org_id: str | None = None) -> dict[str, str]:
+    """A logged-in user in an organisation, as a header dict."""
+    from sqlalchemy import select
+
+    from app.models.organization import Organization
+    from app.models.user import User
+
+    pw = "StrongPassword123!"
+    await test_client.post("/api/v1/auth/register", json={"email": email, "password": pw, "full_name": "T"})
+    async with test_client._test_sessionmaker() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        if org_id is None:
+            org = Organization(name=email, slug=email.split("@")[0])
+            db.add(org)
+            await db.flush()
+            org_id = org.id
+        elif await db.get(Organization, org_id) is None:
+            db.add(Organization(id=org_id, name=org_id, slug=org_id))
+            await db.flush()
+        user.org_id = org_id
+        await db.commit()
+    token = (await test_client.post("/api/v1/auth/login", json={"email": email, "password": pw})).json()["data"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.mark.asyncio
 async def test_llm_costs_endpoint_empty_ledger(test_client):
-    """GET /api/v1/system/llm-costs returns a zeroed rollup on a fresh DB."""
-    resp = await test_client.get("/api/v1/system/llm-costs?days=7")
+    """GET /api/v1/system/llm-costs returns a zeroed rollup on a fresh DB.
+
+    It requires a user now; it used to report every organisation's spend,
+    broken down by org, to anyone.
+    """
+    assert (await test_client.get("/api/v1/system/llm-costs?days=7")).status_code == 401
+    h = await _org_user(test_client, "costs-empty@example.com")
+    resp = await test_client.get("/api/v1/system/llm-costs?days=7", headers=h)
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["window_days"] == 7
     assert data["total_calls"] == 0
     assert data["total_cost_usd"] == 0.0
     assert data["by_model"] == []
-    assert data["by_org"] == []
-    assert "live_process_aggregate" in data
+    assert "by_org" not in data, "başka organizasyonların harcaması gösterilmemeli"
+    assert "live_process_aggregate" not in data
 
 
 @pytest.mark.asyncio
@@ -230,13 +261,12 @@ async def test_llm_costs_endpoint_aggregates_rows(test_client):
     finally:
         await agen.aclose()
 
-    data = (await test_client.get("/api/v1/system/llm-costs")).json()["data"]
-    assert data["total_calls"] == 3
+    # A member of org-A sees org-A's two calls and nothing of org-B's.
+    h = await _org_user(test_client, "costs-a@example.com", org_id="org-A")
+    data = (await test_client.get("/api/v1/system/llm-costs", headers=h)).json()["data"]
+    assert data["total_calls"] == 2
     assert data["ok_calls"] == 2
-    assert data["total_cost_usd"] == pytest.approx(0.08)
-    by_org = {r["key"]: r for r in data["by_org"]}
-    assert by_org["org-A"]["cost_usd"] == pytest.approx(0.06)
-    assert by_org["org-A"]["calls"] == 2
+    assert data["total_cost_usd"] == pytest.approx(0.06)
     models = {r["key"] for r in data["by_model"]}
     assert {"gpt-4o", "gpt-4o-mini"} <= models
 
@@ -741,25 +771,32 @@ async def test_system_ops_handles_naive_db_timestamps(test_client):
 
     from app.models.analysis_job import AnalysisJob
 
+    h = await _org_user(test_client, "ops@example.com", org_id="org-ops")
     async with test_client._test_sessionmaker() as db:
         old = datetime.now(UTC) - timedelta(hours=6)
         db.add(AnalysisJob(
             filename="pending.csv", file_path="/x.csv", file_type="csv",
-            status="pending", created_at=old, updated_at=old,
+            status="pending", created_at=old, updated_at=old, org_id="org-ops",
         ))
         db.add(AnalysisJob(
             filename="done.csv", file_path="/y.csv", file_type="csv",
             status="completed", created_at=old,
-            completed_at=old + timedelta(minutes=3), updated_at=old,
+            completed_at=old + timedelta(minutes=3), updated_at=old, org_id="org-ops",
+        ))
+        # Another organisation's stuck job must not appear in this one's report.
+        db.add(AnalysisJob(
+            filename="theirs.csv", file_path="/z.csv", file_type="csv",
+            status="pending", created_at=old, updated_at=old, org_id="org-other",
         ))
         await db.commit()
 
-    resp = await test_client.get("/api/v1/system/ops")
+    resp = await test_client.get("/api/v1/system/ops", headers=h)
     assert resp.status_code == 200, resp.text
     sla = resp.json()["data"]["sla"]
     # the 6h-old pending job must be reported as an SLA breach, not crash
     assert any(b["status"] == "pending" for b in sla["breaches"]), sla["breaches"]
     assert sla["job_completion_p95_ms"] is not None
+    assert resp.json()["data"]["jobs"]["total"] == 2, "başka organizasyonun işi sayılmamalı"
 
 
 @pytest.mark.asyncio

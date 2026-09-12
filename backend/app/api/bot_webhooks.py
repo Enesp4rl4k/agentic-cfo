@@ -52,9 +52,23 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
     """
     Receives inbound WhatsApp messages from Meta Cloud API.
     Dispatches to OmnichannelCFOBotGateway and sends reply via httpx.
+
+    Meta signs each post with the App Secret. This route verified nothing, so
+    anyone could post a message as any sender and have the bot answer it.
     """
-    payload = await request.json()
     settings = get_settings()
+    body_bytes = await request.body()
+    if not settings.whatsapp_app_secret:
+        # Closed, not open: an unconfigured secret is not permission to skip it.
+        raise HTTPException(status_code=503, detail="WhatsApp webhook yapılandırılmamış (WHATSAPP_APP_SECRET).")
+    expected = "sha256=" + hmac.new(
+        settings.whatsapp_app_secret.encode(), body_bytes, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, request.headers.get("X-Hub-Signature-256", "")):
+        raise HTTPException(status_code=403, detail="Invalid WhatsApp signature.")
+    import json as _json
+
+    payload = _json.loads(body_bytes or b"{}")
 
     try:
         # Navigate the Cloud API payload structure
@@ -134,12 +148,14 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
     settings = get_settings()
     body_bytes = await request.body()
 
-    # Signature verification
-    if settings.slack_signing_secret:
-        ts = request.headers.get("X-Slack-Request-Timestamp", "")
-        sig = request.headers.get("X-Slack-Signature", "")
-        if not _verify_slack_signature(body_bytes, ts, sig, settings.slack_signing_secret):
-            raise HTTPException(status_code=403, detail="Invalid Slack signature.")
+    # Signature verification — required. It used to be skipped whenever the
+    # secret was unset, which made an unconfigured deployment accept anything.
+    if not settings.slack_signing_secret:
+        raise HTTPException(status_code=503, detail="Slack webhook yapılandırılmamış (SLACK_SIGNING_SECRET).")
+    ts = request.headers.get("X-Slack-Request-Timestamp", "")
+    sig = request.headers.get("X-Slack-Signature", "")
+    if not _verify_slack_signature(body_bytes, ts, sig, settings.slack_signing_secret):
+        raise HTTPException(status_code=403, detail="Invalid Slack signature.")
 
     payload: dict[str, Any] = {}
     content_type = request.headers.get("content-type", "")

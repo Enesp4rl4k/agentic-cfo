@@ -118,7 +118,7 @@ async def run_coo_analysis(
 
 
 @router.get("/coo/health-check")
-async def coo_health() -> dict[str, Any]:
+async def coo_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify COO pipeline agents are importable and graph compiles."""
     from app.agents.coo.orchestrator import _coo_graph
     return {

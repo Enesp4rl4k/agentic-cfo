@@ -160,7 +160,51 @@ async def _weekly_summary() -> None:
         )
 
 
-async def _generate_morning_brief() -> None:
+def morning_brief_key(org_id: str) -> str:
+    """Redis key for one organisation's brief."""
+    return f"morning_brief:{org_id}"
+
+
+async def _generate_morning_brief(org_id: str | None = None) -> None:
+    """One brief per organisation — for `org_id`, or for every organisation
+    with a completed job in the last 24 hours when called by the scheduler.
+
+    It used to be one brief for everyone: the last ten completed jobs of all
+    organisations averaged into a single summary, sent to the LLM, and stored
+    under one key that an unauthenticated route returned. Each company now gets
+    a brief built only from its own jobs.
+    """
+    from sqlalchemy import select
+
+    from app.database import engine, get_session_factory
+    from app.models.analysis_job import AnalysisJob, JobStatus
+
+    if org_id is not None:
+        await _generate_morning_brief_for_org(org_id)
+        return
+
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    async with get_session_factory(engine())() as db:
+        org_ids = (
+            await db.execute(
+                select(AnalysisJob.org_id)
+                .where(
+                    AnalysisJob.status == JobStatus.COMPLETED,
+                    AnalysisJob.completed_at >= cutoff,
+                    AnalysisJob.org_id.is_not(None),
+                )
+                .distinct()
+            )
+        ).scalars().all()
+    for oid in org_ids:
+        try:
+            await _generate_morning_brief_for_org(str(oid))
+        except Exception:
+            # One organisation's failure must not cost the others their brief.
+            logger.exception("Scheduler: morning brief failed for org=%s", oid)
+
+
+async def _generate_morning_brief_for_org(org_id: str) -> None:
     """
     Sabah CEO brifingi — Her gün 07:00 UTC'de çalışır.
 
@@ -187,6 +231,7 @@ async def _generate_morning_brief() -> None:
             .where(
                 AnalysisJob.status == JobStatus.COMPLETED,
                 AnalysisJob.completed_at >= cutoff,
+                AnalysisJob.org_id == org_id,
             )
             .order_by(desc(AnalysisJob.completed_at))
             .limit(10)
@@ -271,7 +316,7 @@ async def _generate_morning_brief() -> None:
             ) or "Yüksek öncelikli uyarı yok."
 
             context = (
-                f"Analiz edilen şirket sayısı: {len(jobs)}\n"
+                f"Son 24 saatte tamamlanan analiz sayısı: {len(jobs)}\n"
                 f"Ortalama net kâr marjı: %{avg_net_margin*100:.1f}\n"
                 f"Toplam ciro: {total_revenue/100:,.0f} TL\n"
                 f"Ortalama nakit değişimi: {avg_cash_change/100:,.0f} TL\n"
@@ -319,7 +364,7 @@ async def _generate_morning_brief() -> None:
         try:
             from app.worker import get_arq_pool
             pool = await get_arq_pool()
-            await pool.set("morning_brief:latest", json.dumps(brief), ex=90000)
+            await pool.set(morning_brief_key(org_id), json.dumps(brief), ex=90000)
             logger.info("Scheduler: morning brief generated and stored in Redis")
         except Exception as exc:
             logger.warning("Could not store morning brief in Redis: %s", exc)

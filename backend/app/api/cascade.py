@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches, load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -180,6 +181,9 @@ async def simulate_cascade(
     # Veri yükle
     ctx: dict[str, Any] = {}
     if req.job_id:
+        # A job id from the request body, loaded without asking whose it was.
+        if req.job_id:
+            await load_owned_job(db, req.job_id, current_user)
         report_data = await _load_context_from_job(req.job_id, db)
         ctx = {
             "pnl":      report_data.get("pnl") or {},
@@ -187,6 +191,9 @@ async def simulate_cascade(
             "forecast": report_data.get("forecast") or {},
         }
     elif req.org_id:
+        # The organisation came from the request, never compared with the caller's.
+        if not current_user_org_matches(current_user, req.org_id):
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
         org_ctx = await _load_context_from_org(req.org_id, db)
         ctx = {
             "pnl":       org_ctx.get("pnl") or {},

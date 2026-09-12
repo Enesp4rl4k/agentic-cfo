@@ -16,10 +16,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.deps_regional import require_tr_pack
 from app.core.http_headers import content_disposition
 from app.database import get_db
-from app.models.analysis_job import AnalysisJob
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.user import User
 from app.services.smmm_defensibility import (
@@ -61,12 +61,10 @@ async def build_defensibility_packet(
     db: AsyncSession = Depends(get_db),
     period: str | None = Query(None),
 ) -> dict[str, Any]:
-    job = await db.get(AnalysisJob, job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Analiz iş kaydı bulunamadı.")
+    # `owner` and `admin` are roles inside one organisation; they used to open
+    # every other organisation's jobs here.
+    job = await load_owned_job(db, job_id, current_user)
     org_id = _org_id(current_user)
-    if job.org_id and org_id and str(job.org_id) != org_id and current_user.role not in ("admin", "owner"):
-        raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
     try:
         packet = await build_packet(
             db=db, job_id=job_id, org_id=org_id,
@@ -93,9 +91,11 @@ async def list_defensibility_packets(
 
 async def _load_owned(packet_id: str, user: User, db: AsyncSession) -> DefensibilityPacket:
     packet = await db.get(DefensibilityPacket, packet_id)
-    org_id = _org_id(user)
-    if packet is None or (packet.org_id and org_id and packet.org_id != org_id):
+    if packet is None:
         raise HTTPException(status_code=404, detail="Paket bulunamadı.")
+    # The old test passed whenever the packet or the caller had no
+    # organisation. A packet is its job's, and the job decides.
+    await load_owned_job(db, packet.job_id, user)
     return packet
 
 

@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
 from app.config import get_settings
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
@@ -84,6 +85,7 @@ async def upload_datasource(
     source_type: str = Path(..., description="Source type, e.g. cloud_billing"),
     file: UploadFile = File(description="CSV or Excel file"),
     label: str | None = None,
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -184,6 +186,7 @@ async def upload_datasource(
 @router.get("/datasource/{job_id}")
 async def list_datasources(
     job_id: str,
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all data sources attached to a job, grouped by domain."""
@@ -226,6 +229,7 @@ async def list_datasources(
 async def delete_datasource(
     job_id: str,
     source_id: str,
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Remove a data source file and its DB record."""

@@ -18,6 +18,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import can_access
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
@@ -54,13 +55,12 @@ async def multi_period_comparison(
     Compare 2-3 completed analysis jobs.
     Returns period metrics, change indicators, trend series and narrative.
     """
-    str(user.org_id) if user.org_id else str(user.id)
-
-    # Load jobs
+    # Load jobs — only the caller's. Every id in the body used to be loaded,
+    # so comparing your own period against another company's was one request.
     result = await db.execute(
         select(AnalysisJob).where(AnalysisJob.id.in_(body.job_ids))
     )
-    jobs = result.scalars().all()
+    jobs = [j for j in result.scalars().all() if can_access(user, org_id=j.org_id, user_id=j.user_id)]
 
     if len(jobs) < 2:
         raise HTTPException(

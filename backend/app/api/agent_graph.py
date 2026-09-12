@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import can_access
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
@@ -217,6 +218,8 @@ async def get_job_graph(
         select(AnalysisJob).where(AnalysisJob.id == job_id)
     )
     job = result.scalar_one_or_none()
+    if job is not None and not can_access(user, org_id=job.org_id, user_id=job.user_id):
+        job = None      # another organisation's job reads exactly like a missing one
 
     topology = _build_topology()
 

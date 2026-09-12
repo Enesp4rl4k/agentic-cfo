@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -45,8 +46,9 @@ def _resolve_org_id(org_id: str, current_user: User) -> str:
             )
         return current_user.org_id
 
-    # Users can only access their own org context
-    if current_user.org_id and current_user.org_id != org_id:
+    # Users can only access their own org context. The test used to be
+    # skipped for a user with no organisation, who could read any org's.
+    if not current_user.org_id or current_user.org_id != org_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bu organizasyonun context'ine erişim yetkiniz yok.",
@@ -102,6 +104,9 @@ async def update_context(
 
     # Update job tracking
     if body.job_id:
+        # A job id from the request body, loaded without asking whose it was.
+        if body.job_id:
+            await load_owned_job(db, body.job_id, current_user)
         ctx.set_active_job(body.agent, body.job_id)
 
     # Update company metadata if provided
@@ -201,7 +206,8 @@ async def get_context_cache_stats(
       - context_cached: bool + TTL
       - kernels_cached: list of {kernel, ttl_seconds}
     """
-    stats = await get_cache_stats(org_id)
+    # Took the org straight from the URL, unresolved.
+    stats = await get_cache_stats(_resolve_org_id(org_id, current_user))
     return {"data": stats, "error": None}
 
 
@@ -217,6 +223,8 @@ async def invalidate_context_cache(
     - DELETE /context/{org_id}/cache          → invalidate full context + all kernels
     - DELETE /context/{org_id}/cache?kernel=cto → invalidate only CTO kernel cache
     """
+    # Took the org straight from the URL: anyone could flush anyone's cache.
+    org_id = _resolve_org_id(org_id, current_user)
     if kernel:
         await invalidate_kernel_cache(org_id, kernel)
         return {"data": {"invalidated": f"kernel:{kernel}", "org_id": org_id}, "error": None}

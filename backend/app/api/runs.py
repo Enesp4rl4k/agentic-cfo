@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.agent_run import AgentRun
@@ -129,9 +130,9 @@ async def get_run(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    org_id = _org_id(current_user)
     row = await db.get(AgentRun, run_id)
-    if row is None or (row.org_id and row.org_id != org_id):
+    # A run with no organisation used to be visible to everyone.
+    if row is None or not current_user_org_matches(current_user, row.org_id):
         raise HTTPException(status_code=404, detail="Run bulunamadı.")
     return {"data": _run_dict(row), "error": None}
 
@@ -142,9 +143,8 @@ async def resume_agent_run(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    org_id = _org_id(current_user)
     row = await db.get(AgentRun, run_id)
-    if row is None or (row.org_id and row.org_id != org_id):
+    if row is None or not current_user_org_matches(current_user, row.org_id):
         raise HTTPException(status_code=404, detail="Run bulunamadı.")
     if row.status == "completed":
         raise HTTPException(status_code=409, detail="Run zaten tamamlanmış.")
