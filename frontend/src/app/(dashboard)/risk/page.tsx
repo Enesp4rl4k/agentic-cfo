@@ -9,6 +9,7 @@ import { KRIGauge, KRIList, RiskPostureBadge } from "@/components/risk/KRIGauge"
 import { useRiskCascadeFromJob, useRiskCascadeFromOrg } from "@/hooks/useRisk";
 import { categoryLabel, postureBg, postureColor } from "@/lib/api/risk";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { DomainPanel } from "@/components/domains/DomainPanel";
 import type { RiskCascadeReport, KRI } from "@/lib/api/risk";
 
 // ── Risk Matrix (ısı haritası) ────────────────────────────────────────────────
@@ -31,7 +32,8 @@ function buildMatrixItems(kris: KRI[]): RiskItem[] {
     .filter((k) => k.status !== "green")
     .slice(0, 8)
     .map((k) => {
-      const likelihood = k.status === "red" ? 4 : k.trend === "deteriorating" ? 3 : 2;
+      // Placement follows the measured status only; no trend is measured from one period.
+      const likelihood = k.status === "red" ? 4 : 2;
       const impact     = k.cascade_trigger ? 4 : k.status === "red" ? 3 : 2;
       return { name: k.name, likelihood, impact, status: k.status };
     });
@@ -245,7 +247,9 @@ export default function RiskPage() {
               <p className={cn("text-lg font-bold", postureColor(posture.posture as never))}>
                 {posture.posture_tr}
               </p>
-              <p className="text-xs font-mono text-muted-foreground">{posture.kri_score}/10</p>
+              <p className="text-xs font-mono text-muted-foreground">
+                {posture.kri_score === null ? "ölçülen KRI yok" : `${posture.kri_score}/10`}
+              </p>
             </Card>
             <Card className="p-4 border border-red-500/20">
               <p className="text-xs text-muted-foreground mb-1">Kırmızı KRI</p>
@@ -255,7 +259,7 @@ export default function RiskPage() {
             <Card className="p-4 border border-yellow-500/20">
               <p className="text-xs text-muted-foreground mb-1">Amber KRI</p>
               <p className="text-2xl font-bold text-yellow-400 tabular-nums">{posture.counts.amber}</p>
-              <p className="text-xs text-muted-foreground">{posture.upcoming_red.length} yakında kırmızı</p>
+              <p className="text-xs text-muted-foreground">{posture.counts.green} yeşil</p>
             </Card>
             <Card className="p-4 border border-orange-500/20">
               <p className="text-xs text-muted-foreground mb-1">Zincirleme Risk</p>
@@ -263,6 +267,22 @@ export default function RiskPage() {
               <p className="text-xs text-muted-foreground">{report.domains_at_risk.length} domain etkilendi</p>
             </Card>
           </div>
+
+          {posture.sources.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              KRI kaynakları: {posture.sources.join(" · ")}
+            </p>
+          )}
+
+          {posture.posture === "no_data" && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Ölçülmüş bir risk göstergesi yok. Finansal raporda nakit ömrü ya da kâr marjı
+                bulunamadı ve bir KRI dosyası yüklenmedi. Tahmini gösterge üretilmez.
+              </p>
+              <DomainPanel alan="risk" jobId={activeCFOJobId} />
+            </div>
+          )}
 
           {/* Summary */}
           <Card className="p-4">
@@ -299,7 +319,6 @@ export default function RiskPage() {
                   <KRIList kris={posture.amber_kris}  title="🟡 Amber KRI'lar" compact />
                 </div>
                 <div className="space-y-3">
-                  <KRIList kris={posture.upcoming_red} title="⚠ Yakında Kırmızıya Dönebilir" compact />
                   <KRIList kris={posture.cascade_ready} title="⚡ Zincirleme Tetikleyebilir" compact />
                 </div>
               </div>

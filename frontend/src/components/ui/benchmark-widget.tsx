@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { BenchmarkItem, BenchmarkReport } from "@/lib/api/kernels";
+import type { BenchmarkItem, BenchmarkReport } from "@/lib/api/benchmark";
 
 // ── Percentile bar ────────────────────────────────────────────────────────────
 

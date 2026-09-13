@@ -5,22 +5,18 @@ export const dynamic = "force-dynamic";
 import { useState, useMemo, useEffect } from "react";
 import {
   Zap, TrendingDown, Clock, AlertCircle, CheckCircle, Users,
-  ArrowUp, ArrowDown, Minus, Cpu, RefreshCw, ChevronDown, ChevronUp,
+  ArrowUp, ArrowDown, Minus,
 } from "lucide-react";
 import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import {
-  LineChart, Line, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell,
 } from "recharts";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, formatNumber, getSeverityColorClass } from "@/lib/dashboard-utils";
 import { useAgentJob } from "@/hooks/useAgentJob";
 import { AgentJobPanel } from "@/components/ui/agent-job-panel";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { useCOOKernelFromJob, useCOOKernelFromOrg } from "@/hooks/useKernels";
-import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
 
 const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -233,44 +229,27 @@ function TOCAnalysis({ processes }: TOCAnalysisProps) {
   );
 }
 
-// ── SLA Trend Chart ───────────────────────────────────────────────────────────
+// ── SLA overdue share ─────────────────────────────────────────────────────────
 
-interface SLATrendProps {
-  trend: Array<{ date: string; breach_pct: number }>;
-  breachRate: number;
-}
-
-function SLATrendChart({ trend, breachRate }: SLATrendProps) {
+function SLAOverdueCard({ overdue, total }: { overdue: number; total: number }) {
+  const rate = total > 0 ? overdue / total : 0;
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <TrendingDown className="h-4 w-4" />
-        SLA İhlali Trendi
+        Süresi Geçmiş Biletler
       </h3>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Güncel İhlal Oranı</span>
-        <span
-          className={`text-lg font-bold ${breachRate > 0.1 ? "text-red-400" : "text-green-400"}`}
-        >
-          {formatPercent(breachRate)}
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs text-muted-foreground">
+          {overdue} / {total} açık bilet bitiş tarihini geçti
+        </span>
+        <span className={`text-lg font-bold ${rate > 0.1 ? "text-red-400" : "text-green-400"}`}>
+          {formatPercent(rate)}
         </span>
       </div>
-      <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={trend}>
-          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-          <XAxis dataKey="date" stroke="currentColor" opacity={0.5} tick={{ fontSize: 12 }} />
-          <YAxis stroke="currentColor" opacity={0.5} tick={{ fontSize: 12 }} />
-          <Tooltip contentStyle={{ backgroundColor: "transparent", border: "none" }} />
-          <Line
-            type="monotone"
-            dataKey="breach_pct"
-            stroke="#ef4444"
-            strokeWidth={2}
-            name="İhlal %"
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Trend için birden fazla dönemin bilet listesi gerekir; tek yüklemeden trend çizilmez.
+      </p>
     </div>
   );
 }
@@ -343,122 +322,6 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
   );
 }
 
-// ── Kernel Banner ─────────────────────────────────────────────────────────────
-
-interface KernelBannerProps {
-  kernel: {
-    sla_compliance: number;
-    overall_ops_score: number;
-    resource_utilization: number;
-    bottleneck_risk: string;
-    scaling_readiness: string;
-    top_bottlenecks: string[];
-    narrative: string;
-    data_source: string;
-    confidence: number;
-  };
-  onDismiss: () => void;
-}
-
-function KernelBanner({ kernel, onDismiss }: KernelBannerProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  const scoreColor = kernel.overall_ops_score >= 7
-    ? "text-emerald-400" : kernel.overall_ops_score >= 5
-    ? "text-yellow-400" : "text-red-400";
-
-  const riskColor = kernel.bottleneck_risk === "low"
-    ? "text-emerald-400" : kernel.bottleneck_risk === "medium"
-    ? "text-yellow-400" : "text-red-400";
-
-  return (
-    <Card className="border-primary/30 bg-primary/5 p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg bg-primary/10 p-1.5">
-            <Cpu className="h-4 w-4 text-primary" />
-          </div>
-          <div className="space-y-1">
-            <p className="font-semibold text-sm">COO Kernel Analizi</p>
-            <ProvenanceBadge dataSource={kernel.data_source} confidence={kernel.confidence} />
-          </div>
-        </div>
-        <button
-          onClick={onDismiss}
-          className="text-muted-foreground hover:text-foreground text-xs"
-          aria-label="Kernel banner'ı kapat"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
-          <p className="text-xs text-muted-foreground">Ops Skoru</p>
-          <p className={cn("text-lg font-bold tabular-nums", scoreColor)}>
-            {kernel.overall_ops_score.toFixed(1)}/10
-          </p>
-        </div>
-        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
-          <p className="text-xs text-muted-foreground">SLA Uyum</p>
-          <p className={cn("text-lg font-bold tabular-nums", kernel.sla_compliance >= 0.95 ? "text-emerald-400" : "text-orange-400")}>
-            %{(kernel.sla_compliance * 100).toFixed(1)}
-          </p>
-        </div>
-        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
-          <p className="text-xs text-muted-foreground">Kaynak Kull.</p>
-          <p className="text-lg font-bold tabular-nums">
-            %{(kernel.resource_utilization * 100).toFixed(0)}
-          </p>
-        </div>
-        <div className="rounded-md bg-card/60 p-2.5 space-y-0.5">
-          <p className="text-xs text-muted-foreground">Darboğaz Riski</p>
-          <p className={cn("text-lg font-bold capitalize", riskColor)}>
-            {kernel.bottleneck_risk === "low" ? "Düşük" : kernel.bottleneck_risk === "medium" ? "Orta" : "Yüksek"}
-          </p>
-        </div>
-      </div>
-
-      {/* Top bottlenecks */}
-      {kernel.top_bottlenecks.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {kernel.top_bottlenecks.slice(0, 4).map((b, i) => (
-            <span key={i} className="rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-xs text-orange-400">
-              {b}
-            </span>
-          ))}
-          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium border",
-            kernel.scaling_readiness === "ready"
-              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-              : "bg-red-500/10 border-red-500/20 text-red-400"
-          )}>
-            Ölçeklenme: {kernel.scaling_readiness === "ready" ? "Hazır" : kernel.scaling_readiness === "limited" ? "Sınırlı" : "Hazır değil"}
-          </span>
-        </div>
-      )}
-
-      {/* Narrative (collapsible) */}
-      {kernel.narrative && (
-        <div>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            {expanded ? "Özeti Gizle" : "Detaylı Özet"}
-          </button>
-          {expanded && (
-            <p className="mt-2 text-xs text-muted-foreground leading-relaxed border-t border-border pt-2">
-              {kernel.narrative}
-            </p>
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function COODashboardPage() {
@@ -468,11 +331,8 @@ export default function COODashboardPage() {
   const [period, setPeriod] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
-  const [showKernel, setShowKernel] = useState(true);
 
   const { activeCFOJobId, orgId } = useCompanyContextStore();
-  const kernelFromJob = useCOOKernelFromJob();
-  const kernelFromOrg = useCOOKernelFromOrg();
 
   const {
     enqueue, reset,
@@ -504,18 +364,6 @@ export default function COODashboardPage() {
   }, [orgId]);
 
   const cooResult = (result as COOResult | null) ?? liveResult;
-
-  // Auto-load kernel from CFO job or org context
-  const kernelResult = kernelFromOrg.result ?? kernelFromJob.result;
-  const kernelLoading = kernelFromJob.loading || kernelFromOrg.loading;
-
-  function handleLoadKernel() {
-    if (orgId) {
-      kernelFromOrg.load({ org_id: orgId });
-    } else if (activeCFOJobId) {
-      kernelFromJob.load({ job_id: activeCFOJobId });
-    }
-  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -573,17 +421,10 @@ export default function COODashboardPage() {
     });
   }, [slaCsv]);
 
-  const mockTrend = [
-    { date: "1 Haz", breach_pct: 15 },
-    { date: "8 Haz", breach_pct: 12 },
-    { date: "15 Haz", breach_pct: 18 },
-    { date: "22 Haz", breach_pct: 14 },
-    { date: "29 Haz", breach_pct: 11 },
-  ];
-
-  const breachRate = parsedTickets.length > 0
-    ? parsedTickets.filter((t) => t.breach_probability > 0.5).length / parsedTickets.length
-    : 0;
+  const openTickets = parsedTickets.filter(
+    (t) => !/^(closed|resolved|kapal|çözül)/i.test(t.status) && !Number.isNaN(t.hours_remaining),
+  );
+  const overdueCount = openTickets.filter((t) => t.hours_remaining < 0).length;
 
   return (
     <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
@@ -598,34 +439,13 @@ export default function COODashboardPage() {
             </p>
           </div>
         </div>
-        {(activeCFOJobId || orgId) && !kernelResult && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleLoadKernel}
-            disabled={kernelLoading}
-          >
-            <RefreshCw className={cn("h-4 w-4 mr-1.5", kernelLoading && "animate-spin")} />
-            {kernelLoading ? "Kernel yükleniyor…" : "Kernel Analizi Yükle"}
-          </Button>
-        )}
       </div>
 
-      {/* Kernel banner — shows auto-computed ops metrics without CSV */}
-      {kernelResult?.output && (kernelResult.output as { data_source?: string }).data_source !== "real" && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
-          Bu görünüm bağlı bir operasyon veri kaynağı olmadan CFO finansallarından
-          sektör varsayımlarıyla türetilmiştir. Karar dayanağı değildir ve otomatik
-          olarak başka bir ajanı tetiklemez.
-        </div>
-      )}
-
-      {kernelResult?.output && showKernel && (
-        <KernelBanner
-          kernel={kernelResult.output as KernelBannerProps["kernel"]}
-          onDismiss={() => setShowKernel(false)}
-        />
-      )}
+      <DomainPanel
+        alan="coo"
+        jobId={activeCFOJobId}
+        onResult={(r) => setLiveResult(r as unknown as COOResult)}
+      />
 
       {/* Input form */}
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-4">
@@ -703,7 +523,7 @@ export default function COODashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {parsedTickets.length > 0 && <SLATrendChart trend={mockTrend} breachRate={breachRate} />}
+            {openTickets.length > 0 && <SLAOverdueCard overdue={overdueCount} total={openTickets.length} />}
             {parsedTickets.length > 0 && (
               <AtRiskTicketsTable tickets={parsedTickets} onSort={() => {}} />
             )}

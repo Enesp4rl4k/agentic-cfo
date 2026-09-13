@@ -12,15 +12,17 @@ interface KRIGaugeProps {
   className?: string;
 }
 
-function fillPercent(kri: KRI): number {
+function fillPercent(kri: KRI): number | null {
   const { current_value, threshold_red, threshold_amber, higher_is_worse } = kri;
-  const max = higher_is_worse ? threshold_red * 1.3 : threshold_amber * 1.5;
-  const min = higher_is_worse ? 0 : 0;
-  if (higher_is_worse) {
-    return Math.min(100, Math.max(0, (current_value / max) * 100));
-  } else {
-    return Math.min(100, Math.max(0, (current_value / max) * 100));
-  }
+  if (current_value === null) return null;
+  const ref = higher_is_worse ? threshold_red : threshold_amber;
+  if (ref === null || ref <= 0) return null;
+  const max = higher_is_worse ? ref * 1.3 : ref * 1.5;
+  return Math.min(100, Math.max(0, (current_value / max) * 100));
+}
+
+function valueText(kri: KRI): string {
+  return kri.current_value === null ? "—" : String(kri.current_value);
 }
 
 function barColor(status: KRIStatus): string {
@@ -45,17 +47,19 @@ export function KRIGauge({ kri, compact = false, className }: KRIGaugeProps) {
           <div className="flex items-center justify-between mb-0.5">
             <span className="text-xs font-medium truncate">{kri.name}</span>
             <span className={cn("text-xs font-mono font-semibold shrink-0 ml-2", statusColor(kri.status))}>
-              {kri.current_value} {kri.unit}
+              {valueText(kri)} {kri.unit}
             </span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className={cn("h-full rounded-full transition-all", barColor(kri.status))}
-              style={{ width: `${fill}%` }}
-            />
-          </div>
+          {fill !== null && (
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={cn("h-full rounded-full transition-all", barColor(kri.status))}
+                style={{ width: `${fill}%` }}
+              />
+            </div>
+          )}
         </div>
-        <span className={cn("text-sm shrink-0", tColor)}>{trend}</span>
+        {trend && <span className={cn("text-sm shrink-0", tColor)}>{trend}</span>}
       </div>
     );
   }
@@ -66,31 +70,37 @@ export function KRIGauge({ kri, compact = false, className }: KRIGaugeProps) {
         <div className="space-y-0.5">
           <p className="font-medium text-sm leading-tight">{kri.name}</p>
           <p className="text-xs text-muted-foreground">{kri.evidence}</p>
+          {kri.source && <p className="text-[11px] text-muted-foreground">Kaynak: {kri.source}</p>}
         </div>
         <div className="text-right shrink-0">
           <p className={cn("text-lg font-mono font-bold tabular-nums", statusColor(kri.status))}>
-            {kri.current_value}
+            {valueText(kri)}
             <span className="text-xs font-normal ml-0.5">{kri.unit}</span>
           </p>
-          <p className={cn("text-xs", tColor)}>
-            {trend} {kri.trend === "deteriorating" ? "kötüleşiyor"
-                   : kri.trend === "improving"     ? "iyileşiyor"
-                   : "stabil"}
-          </p>
+          {/* One period gives no trend — say nothing rather than "stabil". */}
+          {kri.trend && (
+            <p className={cn("text-xs", tColor)}>
+              {trend} {kri.trend === "deteriorating" ? "kötüleşiyor"
+                     : kri.trend === "improving"     ? "iyileşiyor"
+                     : "stabil"}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Progress bar */}
       <div className="space-y-1">
-        <div className="h-2 w-full rounded-full bg-black/20 overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-all duration-500", barColor(kri.status))}
-            style={{ width: `${fill}%` }}
-          />
-        </div>
+        {fill !== null && (
+          <div className="h-2 w-full rounded-full bg-black/20 overflow-hidden">
+            <div
+              className={cn("h-full rounded-full transition-all duration-500", barColor(kri.status))}
+              style={{ width: `${fill}%` }}
+            />
+          </div>
+        )}
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>Amber: {kri.threshold_amber} {kri.unit}</span>
-          <span>Red: {kri.threshold_red} {kri.unit}</span>
+          <span>Amber: {kri.threshold_amber ?? "—"} {kri.unit}</span>
+          <span>Kırmızı: {kri.threshold_red ?? "—"} {kri.unit}</span>
         </div>
       </div>
 
@@ -141,7 +151,7 @@ export function KRIList({ kris, title, compact = false, className }: KRIListProp
 interface RiskPostureBadgeProps {
   posture:    string;
   posture_tr: string;
-  kri_score:  number;
+  kri_score:  number | null;
   className?: string;
 }
 
@@ -151,17 +161,17 @@ export function RiskPostureBadge({
   const colors: Record<string, string> = {
     critical:   "border-red-500/40 bg-red-500/15 text-red-400",
     elevated:   "border-orange-500/40 bg-orange-500/15 text-orange-400",
-    moderate:   "border-yellow-500/40 bg-yellow-500/15 text-yellow-400",
-    acceptable: "border-emerald-500/40 bg-emerald-500/15 text-emerald-400",
+    stable:     "border-emerald-500/40 bg-emerald-500/15 text-emerald-400",
+    no_data:    "border-border bg-muted/30 text-muted-foreground",
   };
   return (
     <div className={cn(
       "inline-flex items-center gap-2 rounded-lg border px-3 py-2",
-      colors[posture] ?? colors.moderate,
+      colors[posture] ?? colors.no_data,
       className,
     )}>
       <span className="text-lg font-mono font-bold tabular-nums">
-        {kri_score}/10
+        {kri_score === null ? "—" : `${kri_score}/10`}
       </span>
       <span className="text-sm font-semibold">{posture_tr}</span>
     </div>

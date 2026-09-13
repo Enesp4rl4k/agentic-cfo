@@ -2,63 +2,15 @@
 
 import { useMutation } from "@tanstack/react-query";
 import {
-  analyzeRiskKernel,
   analyzeRiskCascade,
-  getRiskKernelFromJob,
-  getRiskKernelFromOrg,
   getRiskCascadeFromJob,
   getRiskCascadeFromOrg,
 } from "@/lib/api/risk";
-import type {
-  RiskKernelRequest,
-  RiskCascadeRequest,
-} from "@/lib/api/risk";
-
-// ── Risk Kernel hooks ─────────────────────────────────────────────────────────
-
-export function useRiskKernel() {
-  const mutation = useMutation({
-    mutationFn: (req: RiskKernelRequest) => analyzeRiskKernel(req),
-  });
-  return {
-    result:       mutation.data ?? null,
-    loading:      mutation.isPending,
-    error:        mutation.error ? String(mutation.error) : null,
-    analyze:      mutation.mutate,
-    analyzeAsync: mutation.mutateAsync,
-    reset:        mutation.reset,
-  };
-}
-
-export function useRiskKernelFromJob() {
-  const mutation = useMutation({
-    mutationFn: (jobId: string) => getRiskKernelFromJob(jobId),
-  });
-  return {
-    result:  mutation.data ?? null,
-    loading: mutation.isPending,
-    error:   mutation.error ? String(mutation.error) : null,
-    load:    mutation.mutate,
-    loadAsync: mutation.mutateAsync,
-    reset:   mutation.reset,
-  };
-}
-
-export function useRiskKernelFromOrg() {
-  const mutation = useMutation({
-    mutationFn: (orgId: string) => getRiskKernelFromOrg(orgId),
-  });
-  return {
-    result:  mutation.data ?? null,
-    loading: mutation.isPending,
-    error:   mutation.error ? String(mutation.error) : null,
-    load:    mutation.mutate,
-    loadAsync: mutation.mutateAsync,
-    reset:   mutation.reset,
-  };
-}
+import type { RiskCascadeRequest } from "@/lib/api/risk";
 
 // ── Risk Cascade hooks ────────────────────────────────────────────────────────
+// The risk-kernel hooks are gone with the kernel: KRIs now come only from the
+// CFO report and the organisation's uploaded KRI file (backend gercek_kri.py).
 
 export function useRiskCascade() {
   const mutation = useMutation({
@@ -103,8 +55,6 @@ export function useRiskCascadeFromOrg() {
     reset:   mutation.reset,
   };
 }
-
-// ── KRI display helpers (re-export for convenience) ───────────────────────────
 
 export {
   statusColor,

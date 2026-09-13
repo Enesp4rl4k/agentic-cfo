@@ -16,7 +16,7 @@ import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatPercent, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { BenchmarkReport } from "@/lib/api/kernels";
+import type { BenchmarkReport } from "@/lib/api/benchmark";
 import { BenchmarkComparisonChart } from "@/components/analytics/BenchmarkComparisonChart";
 
 // ── Type definitions ──────────────────────────────────────────────────────────

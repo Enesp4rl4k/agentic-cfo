@@ -42,6 +42,11 @@ def _num(v: Any) -> float | None:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
+# Trend and time-to-red are not measured from a single period, so every
+# indicator carries them as unknown rather than as "stable".
+_OLCULMEDI = {"trend": None, "trajectory_months": None}
+
+
 def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list[dict[str, Any]]:
     pnl = pnl or {}
     out: list[dict[str, Any]] = []
@@ -50,7 +55,8 @@ def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list
         st = _status(runway, 6.0, 3.0, higher_is_worse=False)
         out.append({
             "name": "Nakit Ömrü", "category": "financial", "current_value": round(runway, 1), "unit": "ay",
-            "threshold_amber": 6.0, "threshold_red": 3.0, "status": st, "source": "CFO tahmini (baz senaryo)",
+            "threshold_amber": 6.0, "threshold_red": 3.0, "higher_is_worse": False,
+            "status": st, "source": "CFO tahmini (baz senaryo)",
             "evidence": f"Baz senaryoda nakit ömrü {runway:.1f} ay",
             "cascade_trigger": "cash_crisis" if st != "green" else None,
             "cascade_params": {"runway_months": runway},
@@ -62,7 +68,8 @@ def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list
         st = _status(pct, 5.0, 0.0, higher_is_worse=False)
         out.append({
             "name": "Net Kâr Marjı", "category": "financial", "current_value": pct, "unit": "%",
-            "threshold_amber": 5.0, "threshold_red": 0.0, "status": st, "source": "CFO kâr-zarar",
+            "threshold_amber": 5.0, "threshold_red": 0.0, "higher_is_worse": False,
+            "status": st, "source": "CFO kâr-zarar",
             "evidence": f"Net marj %{pct}",
             "cascade_trigger": "revenue_drop" if pct < 0 else None,
             "cascade_params": {"drop_pct": abs(margin)} if margin < 0 else {},
@@ -73,7 +80,8 @@ def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list
         st = _status(ratio, 90.0, 110.0, higher_is_worse=True)
         out.append({
             "name": "Gider / Gelir", "category": "financial", "current_value": ratio, "unit": "%",
-            "threshold_amber": 90.0, "threshold_red": 110.0, "status": st, "source": "CFO kâr-zarar",
+            "threshold_amber": 90.0, "threshold_red": 110.0, "higher_is_worse": True,
+            "status": st, "source": "CFO kâr-zarar",
             "evidence": f"Faaliyet gideri gelirin %{ratio}'i",
             "cascade_trigger": "cash_crisis" if ratio > 100 else None,
             "cascade_params": {"runway_months": runway} if runway is not None else {},
@@ -93,6 +101,7 @@ def yuklenen_kri(risk_result: dict[str, Any] | None) -> list[dict[str, Any]]:
                 "name": k.get("name") or "KRI", "category": cat or "diğer",
                 "current_value": _num(k.get("value")), "unit": k.get("unit") or "",
                 "threshold_amber": _num(k.get("threshold_amber")), "threshold_red": _num(k.get("threshold_red")),
+                "higher_is_worse": not bool(k.get("lower_is_worse")),
                 "status": status, "source": "yüklenen KRI dosyası",
                 "evidence": f"{k.get('name')}: {k.get('value')} {k.get('unit') or ''} (sahibi: {k.get('owner') or '-'})",
                 "cascade_trigger": _KATEGORI_TETIK.get(cat),
@@ -112,9 +121,14 @@ def durus(kris: list[dict[str, Any]]) -> dict[str, Any]:
         score = round((len(red) * 3 + len(amber)) / (len(kris) * 3) * 10, 1)
         posture, tr = (("critical", "KRİTİK") if red else ("elevated", "YÜKSELMİŞ") if amber
                        else ("stable", "İSTİKRARLI"))
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    for k in kris:
+        by_category.setdefault(k["category"], []).append(k)
     return {
-        "counts": {"red": len(red), "amber": len(amber), "green": len(green)},
-        "red_kris": red, "amber_kris": amber,
+        "counts": {"red": len(red), "amber": len(amber), "green": len(green), "total": len(kris)},
+        "red_kris": red, "amber_kris": amber, "all_kris": kris, "by_category": by_category,
+        # Time-to-red needs a trend, which one period does not give.
+        "upcoming_red": [],
         "cascade_ready": [k for k in red + amber if k.get("cascade_trigger")],
         "kri_score": score, "posture": posture, "posture_tr": tr,
         "sources": sorted({k["source"] for k in kris}),
@@ -123,5 +137,5 @@ def durus(kris: list[dict[str, Any]]) -> dict[str, Any]:
 
 def gercek_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None,
                risk_result: dict[str, Any] | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    kris = cfo_kri(pnl, forecast) + yuklenen_kri(risk_result)
+    kris = [{**k, **_OLCULMEDI} for k in cfo_kri(pnl, forecast) + yuklenen_kri(risk_result)]
     return kris, durus(kris)

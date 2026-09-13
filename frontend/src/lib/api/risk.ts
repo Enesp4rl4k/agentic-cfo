@@ -4,27 +4,31 @@ import { apiClient } from "@/lib/api/client";
 
 export type KRIStatus = "green" | "amber" | "red";
 export type KRITrend  = "improving" | "stable" | "deteriorating";
-export type RiskPosture = "acceptable" | "moderate" | "elevated" | "critical";
+// "no_data" when nothing was measured — never shown as a calm posture.
+export type RiskPosture = "stable" | "elevated" | "critical" | "no_data";
 
 export interface KRI {
   name:              string;
   category:          string;
-  current_value:     number;
+  current_value:     number | null;
   unit:              string;
-  threshold_amber:   number;
-  threshold_red:     number;
+  threshold_amber:   number | null;
+  threshold_red:     number | null;
   higher_is_worse:   boolean;
   status:            KRIStatus;
-  trend:             KRITrend;
-  trend_delta:       number;
+  /** One period gives no trend; null means "not measured", not "stable". */
+  trend:             KRITrend | null;
   trajectory_months: number | null;
+  /** Where the value came from: the CFO report or the uploaded KRI file. */
+  source:            string;
   evidence:          string;
   cascade_trigger:   string | null;
   cascade_params:    Record<string, unknown>;
 }
 
 export interface RiskPostureData {
-  kri_score:    number;
+  /** Null when there are no measured KRIs. */
+  kri_score:    number | null;
   posture:      RiskPosture;
   posture_tr:   string;
   counts: {
@@ -39,13 +43,7 @@ export interface RiskPostureData {
   cascade_ready: KRI[];
   all_kris:      KRI[];
   by_category:   Record<string, KRI[]>;
-  narrative:     string;
-}
-
-export interface RiskKernelResult {
-  ok:        boolean;
-  posture:   RiskPostureData;
-  kri_count: number;
+  sources:       string[];
 }
 
 export interface KRICascadeLink {
@@ -74,46 +72,14 @@ export interface RiskCascadeReport {
   } | null;
 }
 
-// ── Risk Kernel ───────────────────────────────────────────────────────────────
-
-export interface RiskKernelRequest {
-  pnl?:       Record<string, unknown>;
-  cashflow?:  Record<string, unknown>;
-  forecast?:  Record<string, unknown>;
-  chro_data?: Record<string, unknown>;
-  cto_data?:  Record<string, unknown>;
-  cmo_data?:  Record<string, unknown>;
-  coo_data?:  Record<string, unknown>;
-}
-
-export async function analyzeRiskKernel(
-  req: RiskKernelRequest
-): Promise<RiskKernelResult> {
-  const res = await apiClient.post<RiskKernelResult>("/risk-kernel/analyze", req);
-  return res.data;
-}
-
-export async function getRiskKernelFromJob(
-  jobId: string
-): Promise<RiskKernelResult> {
-  const res = await apiClient.post<RiskKernelResult>("/risk-kernel/from-job", {
-    job_id: jobId,
-  });
-  return res.data;
-}
-
-export async function getRiskKernelFromOrg(
-  orgId: string
-): Promise<RiskKernelResult> {
-  const res = await apiClient.post<RiskKernelResult>("/risk-kernel/from-org", {
-    org_id: orgId,
-  });
-  return res.data;
-}
-
 // ── Risk Cascade ──────────────────────────────────────────────────────────────
 
-export interface RiskCascadeRequest extends RiskKernelRequest {
+export interface RiskCascadeRequest {
+  pnl?:         Record<string, unknown>;
+  cashflow?:    Record<string, unknown>;
+  forecast?:    Record<string, unknown>;
+  /** The risk orchestrator's result, whose uploaded KRIs are included. */
+  risk_result?: Record<string, unknown>;
   max_cascades?: number;
   only_red?:     boolean;
 }
@@ -172,7 +138,7 @@ export function postureBg(posture: RiskPosture): string {
   switch (posture) {
     case "critical":   return "bg-red-500/15 border-red-500/40";
     case "elevated":   return "bg-orange-500/15 border-orange-500/40";
-    case "moderate":   return "bg-yellow-500/15 border-yellow-500/40";
+    case "no_data":    return "bg-muted/30 border-border";
     default:           return "bg-emerald-500/15 border-emerald-500/40";
   }
 }
@@ -181,13 +147,14 @@ export function postureColor(posture: RiskPosture): string {
   switch (posture) {
     case "critical":   return "text-red-400";
     case "elevated":   return "text-orange-400";
-    case "moderate":   return "text-yellow-400";
+    case "no_data":    return "text-muted-foreground";
     default:           return "text-emerald-400";
   }
 }
 
-export function trendIcon(trend: KRITrend): string {
+export function trendIcon(trend: KRITrend | null): string {
   switch (trend) {
+    case null:            return "";
     case "deteriorating": return "↘";
     case "improving":     return "↗";
     default:              return "→";

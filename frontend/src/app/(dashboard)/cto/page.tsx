@@ -4,17 +4,14 @@ import { useAgentJob } from "@/hooks/useAgentJob";
 import { AgentJobPanel } from "@/components/ui/agent-job-panel";
 import { ProactiveActionCards } from "@/components/ui/proactive-actions";
 import { useState } from "react";
-import { RefreshCw, Cpu, Brain } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { healthColor, healthLabel, type CTOResult } from "@/components/cto/types";
-import { useCTOKernelFromJob, useCTOKernelFromOrg } from "@/hooks/useKernels";
-import { velocityColor } from "@/lib/api/kernels";
-import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { GitHubConnectorCard } from "@/components/cto/GitHubConnectorCard";
+import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
-import { cn } from "@/lib/utils";
 import {
   InfraSection,
   TechDebtSection,
@@ -87,107 +84,32 @@ export default function CTODashboardPage() {
   const { enqueue, status, progress, logs, error, result, isDone, isActive, reset } =
     useAgentJob("cto");
 
+  // One engine: the CTO orchestrator, on files attached to the job (panel) or
+  // pasted below. Nothing is shown that was not computed from real input.
+  const { activeCFOJobId } = useCompanyContextStore();
+  const [panelResult, setPanelResult] = useState<CTOResult | null>(null);
+  const [panelKey, setPanelKey] = useState(0);
+
   const ctoResult: CTOResult | null =
-    isDone && result ? (result as unknown as CTOResult) : null;
-
-  // Kernel: CFO verisinden otomatik CTO metrikleri
-  const { activeCFOJobId, orgId } = useCompanyContextStore();
-  const kernelFromJob = useCTOKernelFromJob();
-  const kernelFromOrg = useCTOKernelFromOrg();
-  const kernelData = kernelFromOrg.result?.output ?? kernelFromJob.result?.output ?? null;
-  const kernelLoading = kernelFromJob.loading || kernelFromOrg.loading;
-
-  const loadKernel = () => {
-    if (orgId) kernelFromOrg.load({ org_id: orgId });
-    else if (activeCFOJobId) kernelFromJob.load({ job_id: activeCFOJobId });
-  };
+    isDone && result ? (result as unknown as CTOResult) : panelResult;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight">CTO Dashboard</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Infrastructure costs · Technical debt · Incident analysis · Engineering velocity
-          </p>
-        </div>
-        {(activeCFOJobId || orgId) && !kernelData && (
-          <button
-            onClick={loadKernel}
-            disabled={kernelLoading}
-            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
-          >
-            <Brain className={cn("h-3.5 w-3.5", kernelLoading && "animate-pulse")} />
-            {kernelLoading ? "Analiz..." : "Otomatik Analiz"}
-          </button>
-        )}
+      <div>
+        <h2 className="text-xl font-bold tracking-tight">CTO Dashboard</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Altyapı maliyeti · Teknik borç · Olaylar · Geliştirme hızı
+        </p>
       </div>
 
-      <GitHubConnectorCard onSynced={loadKernel} />
+      <DomainPanel
+        key={panelKey}
+        alan="cto"
+        jobId={activeCFOJobId}
+        onResult={(r) => setPanelResult(r as unknown as CTOResult)}
+      />
 
-      {kernelData && kernelData.data_source !== "real" && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
-          Bu görünüm bağlı bir mühendislik veri kaynağı (GitHub, Jira, CI) olmadan
-          CFO finansallarından sektör varsayımlarıyla türetilmiştir. Karar dayanağı
-          değildir ve otomatik olarak başka bir ajanı tetiklemez.
-        </div>
-      )}
-
-      {/* Kernel banner — CFO verisinden otomatik hesaplanan metrikler */}
-      {kernelData && (
-        <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4 text-cyan-400" />
-              <span className="text-sm font-semibold text-cyan-400">Otomatik Analiz</span>
-              <ProvenanceBadge
-                dataSource={kernelData.data_source}
-                confidence={kernelData.confidence}
-              />
-            </div>
-            <button onClick={loadKernel} className="text-xs text-muted-foreground hover:text-foreground">
-              <RefreshCw className="h-3 w-3" />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">Sağlık Skoru</p>
-              <p className={cn("text-lg font-bold font-mono tabular-nums",
-                kernelData.overall_health_score >= 7 ? "text-emerald-400" :
-                kernelData.overall_health_score >= 5 ? "text-yellow-400" : "text-red-400"
-              )}>
-                {kernelData.overall_health_score.toFixed(1)}/10
-              </p>
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">Tech Debt</p>
-              <p className={cn("text-lg font-bold font-mono tabular-nums",
-                kernelData.tech_debt_score > 6 ? "text-red-400" :
-                kernelData.tech_debt_score > 4 ? "text-yellow-400" : "text-emerald-400"
-              )}>
-                {kernelData.tech_debt_score.toFixed(1)}/10
-              </p>
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">Velocity</p>
-              <p className={cn("text-sm font-semibold", velocityColor(kernelData.velocity_trend))}>
-                {kernelData.velocity_trend}
-              </p>
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">Altyapı İsraf</p>
-              <p className={cn("text-lg font-bold font-mono tabular-nums",
-                kernelData.infra_waste_pct > 0.25 ? "text-orange-400" : "text-muted-foreground"
-              )}>
-                %{(kernelData.infra_waste_pct * 100).toFixed(0)}
-              </p>
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground border-t border-border/50 pt-2">
-            {kernelData.narrative}
-          </p>
-        </div>
-      )}
+      <GitHubConnectorCard onSynced={() => setPanelKey((k) => k + 1)} />
 
       {(isActive || status === "failed") && (
         <AgentJobPanel
@@ -279,7 +201,12 @@ export default function CTODashboardPage() {
       )}
 
       {ctoResult && (
-        <Button variant="ghost" size="sm" onClick={reset} className="text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => { reset(); setPanelResult(null); }}
+          className="text-muted-foreground"
+        >
           ← Yeni analiz yap
         </Button>
       )}
