@@ -198,15 +198,14 @@ async def test_runner_errors_without_connection(db, stub_connector):
     assert "no connection" in (result.error or "")
 
 
-# ── the CTO provenance flip ────────────────────────────────────────────────
+# ── GitHub signals are real CTO data ────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_eng_signals_flip_cto_kernel_to_real(db):
-    from app.agents.cto.cto_kernel import run_cto_kernel
-    from app.services.eng_signals import (
-        cto_existing_data_from_signals,
-        summarize_eng_signals,
-    )
+async def test_eng_signals_summarise_what_was_synced(db):
+    """The synced rows are summarised as they are. They used to be passed to
+    the CTO kernel, which mixed them with estimated health and vulnerability
+    figures no signal supported."""
+    from app.services.eng_signals import summarize_eng_signals
 
     now = datetime.now(UTC)
     for i in range(12):
@@ -232,24 +231,9 @@ async def test_eng_signals_flip_cto_kernel_to_real(db):
     assert summary["pr_merged_count"] == 1
     assert summary["incident_count"] == 1
 
-    existing = await cto_existing_data_from_signals("org-1", db)
-    assert existing is not None and existing["_source"] == "github"
-
-    out = await run_cto_kernel(
-        pnl={"revenue": 12_000_000_00}, existing_cto_data=existing
-    )
-    assert out["output"]["data_source"] == "real"
-    assert out["provenance"]["synthetic"] is False
-    assert "github" in out["output"]["narrative"]
-
 
 @pytest.mark.asyncio
-async def test_no_signals_leaves_cto_kernel_synthetic(db):
-    from app.agents.cto.cto_kernel import run_cto_kernel
-    from app.services.eng_signals import cto_existing_data_from_signals
+async def test_no_signals_means_no_summary(db):
+    from app.services.eng_signals import summarize_eng_signals
 
-    existing = await cto_existing_data_from_signals("org-empty", db)
-    assert existing is None
-
-    out = await run_cto_kernel(pnl={"revenue": 12_000_000_00}, existing_cto_data=existing)
-    assert out["provenance"]["synthetic"] is True
+    assert await summarize_eng_signals("org-empty", db) is None

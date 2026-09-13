@@ -48,10 +48,10 @@ CEO_NODES = [
 ]
 
 KERNEL_NODES = [
-    {"id": "cto_kernel",  "label": "CTO Kernel",  "group": "kernel", "x": 1, "y": 0},
-    {"id": "cmo_kernel",  "label": "CMO Kernel",  "group": "kernel", "x": 1, "y": 1},
-    {"id": "chro_kernel", "label": "CHRO Kernel", "group": "kernel", "x": 1, "y": 2},
-    {"id": "coo_kernel",  "label": "COO Kernel",  "group": "kernel", "x": 1, "y": 3},
+    {"id": "cto_kernel",  "label": "CTO (gerçek veri)",  "group": "kernel", "x": 1, "y": 0},
+    {"id": "cmo_kernel",  "label": "CMO (gerçek veri)",  "group": "kernel", "x": 1, "y": 1},
+    {"id": "chro_kernel", "label": "CHRO (gerçek veri)", "group": "kernel", "x": 1, "y": 2},
+    {"id": "coo_kernel",  "label": "COO (gerçek veri)",  "group": "kernel", "x": 1, "y": 3},
     {"id": "audit",       "label": "Audit",       "group": "kernel", "x": 1, "y": 4},
     {"id": "compliance",  "label": "Compliance",  "group": "kernel", "x": 1, "y": 5},
 ]
@@ -66,7 +66,7 @@ PIPELINE_EDGES = [
     ("tax",        "budget",             None),
     # CFO → orchestrator
     ("budget",          "run_pipelines", "CFO"),
-    # Kernel → orchestrator
+    # Domain pipelines (real data) → orchestrator
     ("cto_kernel",      "run_pipelines", None),
     ("cmo_kernel",      "run_pipelines", None),
     ("chro_kernel",     "run_pipelines", None),

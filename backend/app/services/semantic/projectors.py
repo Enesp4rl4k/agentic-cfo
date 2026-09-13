@@ -283,34 +283,6 @@ def project_from_canonical_rows(
     return out
 
 
-def project_from_kernel(
-    kernel: dict[str, Any] | None,
-    *,
-    agent: str,
-) -> list[MetricPoint]:
-    """Optional overlay from kernel cache — map known keys only."""
-    if not kernel:
-        return []
-    conf = float(kernel.get("confidence") or 0.7)
-    ds = str(kernel.get("data_source") or "kernel")
-    out: list[MetricPoint] = []
-    if agent == "cto":
-        for mid, key, unit in (
-            ("tech.health_score", "overall_health_score", "score"),
-            ("tech.debt_score", "tech_debt_score", "score"),
-            ("tech.infra_waste_pct", "infra_waste_pct", "percent"),
-        ):
-            if key in kernel:
-                p = _point(mid, kernel[key], unit, confidence=conf, source_agent="cto", data_source=ds)  # type: ignore[arg-type]
-                if p:
-                    out.append(p)
-        if "velocity_trend" in kernel:
-            p = _point("tech.velocity_trend", kernel["velocity_trend"], "string", confidence=conf, source_agent="cto", data_source=ds)
-            if p:
-                out.append(p)
-    return out
-
-
 def merge_metrics(*groups: list[MetricPoint]) -> list[MetricPoint]:
     """Later groups override earlier on same metric_id (higher priority last)."""
     merged: dict[str, MetricPoint] = {}

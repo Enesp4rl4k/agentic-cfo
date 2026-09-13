@@ -8,7 +8,6 @@ Covers:
   - save_company_context: Redis write, DB upsert
   - invalidate_company_context: Redis delete, DB delete
   - Payload size guard: _trim_context_payload trims large agent results
-  - Kernel cache helpers: cache_kernel_result, get_cached_kernel_result
   - CompanyContextService singleton
 """
 from __future__ import annotations
@@ -23,8 +22,6 @@ from app.services.company_context import (
     CompanyContext,
     CompanyContextService,
     _trim_context_payload,
-    cache_kernel_result,
-    get_cached_kernel_result,
     get_company_context,
     get_company_context_service,
     invalidate_company_context,
@@ -318,50 +315,6 @@ class TestInvalidateCompanyContext:
         # No exception raised
 
 
-# ── Kernel cache ──────────────────────────────────────────────────────────────
-
-class TestKernelCache:
-    @pytest.mark.asyncio
-    async def test_cache_kernel_result_writes_to_redis(self):
-        result = {"health_score": 0.85, "velocity": "stable"}
-        mock_redis = AsyncMock()
-        mock_redis.setex = AsyncMock()
-
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
-            await cache_kernel_result("org-1", "cto", result)
-
-        mock_redis.setex.assert_called_once()
-        key = mock_redis.setex.call_args[0][0]
-        assert "kernel_result:org-1:cto" in key
-
-    @pytest.mark.asyncio
-    async def test_get_cached_kernel_result_returns_data(self):
-        cached = {"health_score": 0.85}
-        mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
-
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
-            result = await get_cached_kernel_result("org-1", "cto")
-
-        assert result == cached
-
-    @pytest.mark.asyncio
-    async def test_get_cached_kernel_result_miss_returns_none(self):
-        mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(return_value=None)
-
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
-            result = await get_cached_kernel_result("org-1", "cto")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_no_redis_returns_none(self):
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=None)):
-            result = await get_cached_kernel_result("org-1", "cto")
-        assert result is None
-
-
 # ── CompanyContextService ─────────────────────────────────────────────────────
 
 class TestCompanyContextService:
@@ -383,7 +336,7 @@ class TestCompanyContextService:
         with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
             await svc.update_agent("org-1", "cfo", {"revenue": 75_000})
 
-        # setex should have been called (save_company_context + cache_kernel_result)
+        # setex should have been called (save_company_context)
         assert mock_redis.setex.call_count >= 1
 
     def test_get_company_context_service_singleton(self):

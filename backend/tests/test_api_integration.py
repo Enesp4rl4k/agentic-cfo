@@ -388,7 +388,7 @@ async def test_tr_vertical_board_deck_requires_tr_pack(test_client):
 
 @pytest.mark.asyncio
 async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypatch):
-    """Faz 13: connect GitHub → sync → canonical rows → CTO kernel flips to `real`."""
+    """Faz 13: connect GitHub → sync → canonical rows → the real signal summary."""
     from datetime import UTC, datetime
 
     # Offline fake for the raw GitHub REST client.
@@ -454,7 +454,7 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     )
     assert conn.status_code == 201, conn.text
 
-    # sync → writes canonical rows and re-runs the CTO kernel
+    # sync → writes canonical rows and returns their summary
     sync = await test_client.post(
         "/api/v1/connectors/github/sync", headers=h, json={"run_kernel": True}
     )
@@ -462,8 +462,8 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     body = sync.json()["data"]
     assert body["sync"]["ok"] is True
     assert body["sync"]["records_written"] == 8
-    assert body["kernel"]["output"]["data_source"] == "real"
-    assert body["kernel"]["provenance"]["synthetic"] is False
+    assert body["signals"] is not None, "senkronlanan satırların özeti dönmeli"
+    assert "kernel" not in body
 
     # second sync is idempotent (still 8 rows)
     sync2 = await test_client.post(

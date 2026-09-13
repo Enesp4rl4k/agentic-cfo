@@ -377,72 +377,6 @@ async def invalidate_company_context(org_id: str, db: Any = None) -> None:
             logger.warning("DB context delete failed: %s", exc)
 
 
-# ── Kernel result cache ───────────────────────────────────────────────────────
-# DDIA principle: "hot path" kernel reads are cached separately from the
-# full CompanyContext, with a shorter TTL (5 min) since kernels are
-# computed from CFO data which changes less frequently than real-time state.
-
-KERNEL_CACHE_TTL = 300  # 5 minutes
-
-
-def _kernel_key(org_id: str, kernel: str) -> str:
-    return f"kernel_result:{org_id}:{kernel}"
-
-
-async def cache_kernel_result(org_id: str, kernel: str, result: dict) -> None:
-    """Cache a kernel computation result (CTO/CMO/CHRO/COO/Audit/Compliance)."""
-    redis = await _get_redis()
-    if not redis:
-        return
-    try:
-        await redis.setex(
-            _kernel_key(org_id, kernel),
-            KERNEL_CACHE_TTL,
-            json.dumps(result),
-        )
-        logger.debug("Cached kernel=%s for org=%s (TTL=%ds)", kernel, org_id, KERNEL_CACHE_TTL)
-    except Exception as exc:
-        logger.debug("Kernel cache write failed: %s", exc)
-
-
-async def get_cached_kernel_result(org_id: str, kernel: str) -> dict | None:
-    """
-    Read a cached kernel result.
-    Returns None if not cached or Redis unavailable.
-    """
-    redis = await _get_redis()
-    if not redis:
-        return None
-    try:
-        raw = await redis.get(_kernel_key(org_id, kernel))
-        if raw:
-            logger.debug("Cache HIT kernel=%s org=%s", kernel, org_id)
-            return json.loads(raw)
-    except Exception as exc:
-        logger.debug("Kernel cache read failed: %s", exc)
-    return None
-
-
-async def invalidate_kernel_cache(org_id: str, kernel: str | None = None) -> None:
-    """
-    Invalidate kernel cache for an org.
-    If kernel=None, invalidates all kernels for that org.
-    """
-    redis = await _get_redis()
-    if not redis:
-        return
-    try:
-        if kernel:
-            await redis.delete(_kernel_key(org_id, kernel))
-        else:
-            # Delete all kernel keys for this org using SCAN
-            pattern = f"kernel_result:{org_id}:*"
-            async for key in redis.scan_iter(pattern):
-                await redis.delete(key)
-    except Exception as exc:
-        logger.debug("Kernel cache invalidation failed: %s", exc)
-
-
 async def get_cache_stats(org_id: str) -> dict:
     """
     Return cache diagnostics for an org.
@@ -450,24 +384,16 @@ async def get_cache_stats(org_id: str) -> dict:
     """
     redis = await _get_redis()
     if not redis:
-        return {"redis_available": False, "context_cached": False, "kernels_cached": []}
+        return {"redis_available": False, "context_cached": False}
 
     try:
         context_ttl = await redis.ttl(_redis_key(org_id))
         context_cached = context_ttl > 0
 
-        kernels_cached = []
-        pattern = f"kernel_result:{org_id}:*"
-        async for key in redis.scan_iter(pattern):
-            ttl = await redis.ttl(key)
-            kernel_name = key.split(":")[-1]
-            kernels_cached.append({"kernel": kernel_name, "ttl_seconds": ttl})
-
         return {
             "redis_available": True,
             "context_cached": context_cached,
             "context_ttl_seconds": max(0, context_ttl),
-            "kernels_cached": kernels_cached,
         }
     except Exception as exc:
         logger.warning("Cache stats error: %s", exc)
@@ -493,12 +419,9 @@ class CompanyContextService:
         ctx = await get_company_context(org_id, db)
         ctx.update_agent_result(agent, result)
         await save_company_context(ctx, db)
-        # Also cache the kernel result separately
-        await cache_kernel_result(org_id, agent, result)
 
     async def invalidate(self, org_id: str) -> None:
         await invalidate_company_context(org_id)
-        await invalidate_kernel_cache(org_id)
 
     async def cache_stats(self, org_id: str) -> dict:
         return await get_cache_stats(org_id)

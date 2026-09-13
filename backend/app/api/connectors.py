@@ -151,20 +151,21 @@ async def sync_connector(
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error or "sync başarısız")
 
-    kernel: dict[str, Any] | None = None
+    # The synced signals themselves, summarised. This used to feed them to the
+    # CTO kernel, which mixed them with estimated health, vulnerability and
+    # velocity figures that no signal supported.
+    signals: dict[str, Any] | None = None
     connector = get_connector(name)
     if body.run_kernel and connector.kernel_role == "cto":
         try:
-            from app.agents.cto.cto_kernel import run_cto_kernel
-            from app.services.eng_signals import cto_existing_data_from_signals
+            from app.services.eng_signals import summarize_eng_signals
 
-            existing = await cto_existing_data_from_signals(org_id, db)
-            kernel = await run_cto_kernel(existing_cto_data=existing)
+            signals = await summarize_eng_signals(org_id, db)
         except Exception as exc:
-            logger.warning("post-sync CTO kernel failed for org=%s: %s", org_id, exc)
+            logger.warning("post-sync signal summary failed for org=%s: %s", org_id, exc)
 
     return {
-        "data": {"sync": result.to_dict(), "kernel": kernel},
+        "data": {"sync": result.to_dict(), "signals": signals},
         "error": None,
         "meta": {"connector": name, "kernel_role": connector.kernel_role},
     }

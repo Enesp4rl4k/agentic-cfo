@@ -23,7 +23,6 @@ from app.services.company_context import (
     get_cache_stats,
     get_company_context,
     invalidate_company_context,
-    invalidate_kernel_cache,
     save_company_context,
 )
 
@@ -204,35 +203,10 @@ async def get_context_cache_stats(
     Response includes:
       - redis_available: bool
       - context_cached: bool + TTL
-      - kernels_cached: list of {kernel, ttl_seconds}
     """
     # Took the org straight from the URL, unresolved.
     stats = await get_cache_stats(_resolve_org_id(org_id, current_user))
     return {"data": stats, "error": None}
-
-
-@router.delete("/context/{org_id}/cache")
-async def invalidate_context_cache(
-    org_id:  str,
-    kernel:  str | None = None,   # If provided, only invalidate this kernel
-    current_user: User = Depends(get_current_user),
-) -> dict[str, Any]:
-    """
-    Invalidate Redis cache for an org.
-
-    - DELETE /context/{org_id}/cache          → invalidate full context + all kernels
-    - DELETE /context/{org_id}/cache?kernel=cto → invalidate only CTO kernel cache
-    """
-    # Took the org straight from the URL: anyone could flush anyone's cache.
-    org_id = _resolve_org_id(org_id, current_user)
-    if kernel:
-        await invalidate_kernel_cache(org_id, kernel)
-        return {"data": {"invalidated": f"kernel:{kernel}", "org_id": org_id}, "error": None}
-
-    # Full invalidation: context + all kernels
-    await invalidate_kernel_cache(org_id)   # all kernels
-    # Note: full context invalidation is handled by DELETE /context/{org_id}
-    return {"data": {"invalidated": "all_kernels", "org_id": org_id}, "error": None}
 
 
 # ── F5: Per-agent lazy result endpoint ────────────────────────────────────────

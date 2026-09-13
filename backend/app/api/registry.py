@@ -61,11 +61,7 @@ _ROUTERS = [
     ("app.api.cascade",             "router", "cascade"),          # Cascade Risk Simulator
     ("app.api.multidomain_cf",      "router", "multidomain-cf"),  # Multi-Domain Counterfactual
     ("app.api.swot",                "router", "swot"),             # SWOT Analysis
-    ("app.api.risk_kernel",         "router", "risk-kernel"),      # Risk Kernel (otomatik KRI)
     ("app.api.risk_cascade",        "router", "risk-cascade"),     # Risk + Cascade Koprusu
-    ("app.api.cto_cmo_kernel",      "router", "cto-cmo-kernel"),  # CTO + CMO Kernel
-    ("app.api.chro_coo_kernel",          "router", "chro-coo-kernel"),         # CHRO + COO Kernel
-    ("app.api.audit_compliance_kernel",  "router", "audit-compliance-kernel"), # Audit + Compliance Kernel
     ("app.api.cross_domain",             "router", "cross-domain"),            # Cross-Domain Intelligence Hub
     ("app.api.erp_integrations",         "router", "erp"),                     # ERP Integrations (Parasut, Logo Tiger)
     ("app.api.intelligence",             "router", "intelligence"),             # Temporal + Negotiation API

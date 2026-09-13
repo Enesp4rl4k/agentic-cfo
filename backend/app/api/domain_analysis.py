@@ -55,9 +55,25 @@ async def run_domain(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return {"data": await da.analiz_et(db, job, domain), "error": None}
+        out = await da.analiz_et(db, job, domain)
     except da.AlanBilinmiyor as exc:
         raise HTTPException(status_code=404, detail=f"Bilinmeyen alan: {domain}") from exc
     except ValueError as exc:
         # An orchestrator refusing the file's shape is the user's file, not a server fault.
         raise HTTPException(status_code=422, detail=f"Dosya bu alan için okunamadı: {exc}") from exc
+
+    # A real result becomes the organisation's latest for the domain, so the
+    # cross-domain report and the CEO view read it. Estimates are never stored:
+    # there are none to store.
+    if out["durum"] == da.ANALIZ_EDILDI and job.org_id:
+        try:
+            from app.agents.orchestration.auto_chain import on_agent_complete
+            from app.services.context_persist import persist_agent_completion
+
+            await persist_agent_completion(
+                str(job.org_id), domain, out["sonuc"], db,
+                job_id=job.id, auto_chain_hook=on_agent_complete,
+            )
+        except Exception as exc:
+            logger.warning("Alan sonucu bağlama yazılamadı (%s): %s", domain, exc)
+    return {"data": out, "error": None}

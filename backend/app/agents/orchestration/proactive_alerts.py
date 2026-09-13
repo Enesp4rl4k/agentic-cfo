@@ -198,28 +198,27 @@ class ProactiveAlertOrchestrator:
     # ── KRI hesaplama ──────────────────────────────────────────────────────────
 
     async def _compute_current_kris(self, org_id: str) -> dict[str, Any] | None:
-        """CompanyContext'ten veri al, Risk Kernel calistir."""
+        """KRIs the organisation has actually measured: CFO report + uploaded KRI file.
+
+        This read `ctx.get("agent_results")` — CompanyContext is a dataclass with
+        no such method — so it raised, was swallowed, and no org ever got a KRI
+        alert. Had it worked, the alerts would have come from the risk kernel's
+        invented indicators.
+        """
         try:
+            from app.agents.risk.gercek_kri import gercek_kri
             from app.services.company_context import get_company_context
-            ctx = await get_company_context(org_id)
-            if not ctx:
-                return None
 
-            results = ctx.get("agent_results") or {}
-            cfo_r   = results.get("cfo") or {}
-
-            from app.agents.risk.risk_kernel import run_risk_kernel
-            return await run_risk_kernel(
-                pnl      = cfo_r.get("pnl"),
-                cashflow = cfo_r.get("cashflow"),
-                forecast = cfo_r.get("forecast"),
-                chro_data = results.get("chro"),
-                cto_data  = results.get("cto"),
-                cmo_data  = results.get("cmo"),
-                coo_data  = results.get("coo"),
+            ctx = await get_company_context(org_id, self.db)
+            cfo = getattr(ctx, "last_cfo_result", None) or {}
+            kris, posture = gercek_kri(
+                cfo.get("pnl"), cfo.get("forecast"), getattr(ctx, "last_risk_result", None)
             )
+            if not kris:
+                return None
+            return {"kris": kris, "posture": posture}
         except Exception as exc:
-            logger.debug("KRI hesaplama hatasi: org=%s err=%s", org_id, exc)
+            logger.warning("KRI hesaplama hatasi: org=%s err=%s", org_id, exc)
             return None
 
     # ── Alert olusturma ────────────────────────────────────────────────────────

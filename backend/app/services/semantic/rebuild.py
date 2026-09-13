@@ -22,7 +22,6 @@ from app.services.semantic.projectors import (
     project_from_cmo,
     project_from_coo,
     project_from_cto,
-    project_from_kernel,
     project_from_risk,
 )
 from app.services.semantic.store import (
@@ -151,17 +150,6 @@ async def rebuild_semantic_snapshot(
             project_from_coo(ctx.last_coo_result, job_id=ctx.active_coo_job_id),
             project_from_risk(ctx.last_risk_result),
         )
-
-        # Kernel overlays (optional)
-        try:
-            from app.services.company_context import get_cached_kernel_result
-
-            for agent in ("cto", "cmo", "chro", "coo"):
-                k = await get_cached_kernel_result(org_id, agent)
-                if k:
-                    metrics = merge_metrics(metrics, project_from_kernel(k, agent=agent))
-        except Exception:
-            pass
 
         rows, quality = await _load_canonical(
             org_id, db, period_start=p_start, period_end=p_end

@@ -95,23 +95,17 @@ class RiskCascadeBridge:
 
     def __init__(
         self,
-        pnl:       dict[str, Any] | None = None,
-        cashflow:  dict[str, Any] | None = None,
-        forecast:  dict[str, Any] | None = None,
-        chro_data: dict[str, Any] | None = None,
-        cto_data:  dict[str, Any] | None = None,
-        cmo_data:  dict[str, Any] | None = None,
-        coo_data:  dict[str, Any] | None = None,
-        max_cascades: int = 5,        # performans: max kac cascade calistirilsin
-        only_red: bool = False,       # sadece RED KRI'lar mi?
+        pnl:         dict[str, Any] | None = None,
+        cashflow:    dict[str, Any] | None = None,
+        forecast:    dict[str, Any] | None = None,
+        risk_result: dict[str, Any] | None = None,   # the risk orchestrator's own result
+        max_cascades: int = 5,
+        only_red: bool = False,
     ) -> None:
-        self.pnl       = pnl or {}
-        self.cashflow  = cashflow or {}
-        self.forecast  = forecast or {}
-        self.chro_data = chro_data or {}
-        self.cto_data  = cto_data or {}
-        self.cmo_data  = cmo_data or {}
-        self.coo_data  = coo_data or {}
+        self.pnl         = pnl or {}
+        self.cashflow    = cashflow or {}
+        self.forecast    = forecast or {}
+        self.risk_result = risk_result or {}
         self.max_cascades = max_cascades
         self.only_red     = only_red
 
@@ -167,34 +161,26 @@ class RiskCascadeBridge:
         3. Paralel cascade simulasyonlari calistir
         4. Birlestirip rapor uret
         """
-        from app.agents.risk.risk_kernel import get_risk_kernel
+        # KRIs from what was measured: the CFO report and the organisation's own
+        # KRI file. The risk kernel invented the rest (see app/agents/risk/gercek_kri.py).
+        from app.agents.risk.gercek_kri import gercek_kri
 
-        # Step 1: KRI uretimi
-        kernel  = get_risk_kernel(
-            pnl=self.pnl, cashflow=self.cashflow, forecast=self.forecast,
-            chro_data=self.chro_data, cto_data=self.cto_data,
-            cmo_data=self.cmo_data, coo_data=self.coo_data,
-        )
-        kris    = kernel.generate_all()
-        posture = kernel.compute_risk_posture(kris)
+        kris, posture = gercek_kri(self.pnl, self.forecast, self.risk_result)
 
-        # Step 2: Cascade tetikleyebilecek KRI'lari filtrele
         statuses = ("red",) if self.only_red else ("red", "amber")
         trigger_kris = [
-            k for k in kris
-            if k.status in statuses and k.cascade_trigger
-        ][:self.max_cascades]
+            k for k in kris if k["status"] in statuses and k.get("cascade_trigger")
+        ][: self.max_cascades]
 
-        # Step 3: Paralel cascade simulasyonlari
         tasks = [
             self._run_single_cascade(
-                kri_name=k.name,
-                kri_category=k.category,
-                kri_status=k.status,
-                kri_value=k.current_value,
-                kri_unit=k.unit,
-                trigger_type=k.cascade_trigger,  # type: ignore[arg-type]
-                trigger_params=k.cascade_params or {},
+                kri_name=k["name"],
+                kri_category=k["category"],
+                kri_status=k["status"],
+                kri_value=k["current_value"] if k["current_value"] is not None else 0.0,
+                kri_unit=k["unit"],
+                trigger_type=k["cascade_trigger"],
+                trigger_params=k.get("cascade_params") or {},
             )
             for k in trigger_kris
         ]
@@ -221,10 +207,15 @@ class RiskCascadeBridge:
         red_count   = posture["counts"]["red"]
         amber_count = posture["counts"]["amber"]
         cascade_count = len([l for l in cascade_links if l.cascade_result])
+        head = (
+            f"Risk analizi: {posture['posture_tr']} ({posture['kri_score']}/10; kaynak: "
+            f"{', '.join(posture['sources'])}). "
+            if posture["kri_score"] is not None
+            else "Ölçülmüş risk göstergesi yok — CFO raporu ya da KRI dosyası gerekir. "
+        )
         summary = (
-            f"Risk analizi tamamlandi: {posture['posture_tr']} pozisyon "
-            f"(KRI skoru {posture['kri_score']}/10). "
-            f"{red_count} kirmizi, {amber_count} amber KRI. "
+            head
+            + f"{red_count} kirmizi, {amber_count} amber KRI. "
             + (f"{cascade_count} KRI icin zincirleme etki simulasyonu yapildi. " if cascade_count else "")
             + (f"Etkilenen alanlar: {', '.join(sorted(domains_at_risk))}." if domains_at_risk else "")
         )
@@ -243,21 +234,17 @@ class RiskCascadeBridge:
 # ── Public factory ─────────────────────────────────────────────────────────────
 
 async def run_risk_cascade_analysis(
-    pnl:       dict[str, Any] | None = None,
-    cashflow:  dict[str, Any] | None = None,
-    forecast:  dict[str, Any] | None = None,
-    chro_data: dict[str, Any] | None = None,
-    cto_data:  dict[str, Any] | None = None,
-    cmo_data:  dict[str, Any] | None = None,
-    coo_data:  dict[str, Any] | None = None,
+    pnl:         dict[str, Any] | None = None,
+    cashflow:    dict[str, Any] | None = None,
+    forecast:    dict[str, Any] | None = None,
+    risk_result: dict[str, Any] | None = None,
     max_cascades: int = 5,
-    only_red:  bool = False,
+    only_red:    bool = False,
+    **_ignored: Any,
 ) -> dict[str, Any]:
     """API endpoint icin tek giris noktasi."""
     bridge = RiskCascadeBridge(
-        pnl=pnl, cashflow=cashflow, forecast=forecast,
-        chro_data=chro_data, cto_data=cto_data,
-        cmo_data=cmo_data, coo_data=coo_data,
+        pnl=pnl, cashflow=cashflow, forecast=forecast, risk_result=risk_result,
         max_cascades=max_cascades, only_red=only_red,
     )
     report = await bridge.run_full_analysis()
