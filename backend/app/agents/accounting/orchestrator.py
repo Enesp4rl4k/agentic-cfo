@@ -121,6 +121,7 @@ class MuhasebeAgent:
         company_name: str | None = None,
         donem: str | None = None,
         authority_rules: list[dict[str, Any]] | None = None,
+        guven_gecmisi: dict[str, tuple[int, int]] | None = None,
     ) -> MuhasebeSonucu:
         """
         Ana entry point: işlem listesinden tam muhasebe analizi.
@@ -179,7 +180,8 @@ class MuhasebeAgent:
 
         # ── 2. Yevmiye Kayıtları ──────────────────────────────────────────────
         kayitlar: list[YevmiyeKaydi] = self.engine.create_entries_batch(
-            transactions, thp_sonuclari, authority_rules=authority_rules
+            transactions, thp_sonuclari,
+            authority_rules=authority_rules, guven_gecmisi=guven_gecmisi,
         )
 
         # ── 3. Denge kontrolü ─────────────────────────────────────────────────
@@ -194,7 +196,7 @@ class MuhasebeAgent:
         onay_bekleyen = sum(1 for k in kayitlar if k.onay_gerekli)
         toplam_confidence = sum(t.confidence for t in thp_sonuclari)
         ort_confidence = toplam_confidence / len(thp_sonuclari) if thp_sonuclari else 0.0
-        dusuk_conf = sum(1 for t in thp_sonuclari if t.confidence < 0.6)
+        dusuk_conf = sum(1 for k in kayitlar if k.confidence < 0.8)
 
         # THP dağılımı
         thp_dagilim: dict[str, int] = {}
@@ -292,6 +294,7 @@ async def run_muhasebe_pipeline(
     regional_packs: list[str] | None = None,
     include_full_journal: bool = False,
     authority_rules: list[dict[str, Any]] | None = None,
+    guven_gecmisi: dict[str, tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
     """
     Convenience wrapper — auto_chain ve worker entegrasyonu için.
@@ -307,5 +310,6 @@ async def run_muhasebe_pipeline(
         company_name=company_name,
         donem=donem,
         authority_rules=authority_rules,
+        guven_gecmisi=guven_gecmisi,
     )
     return sonuc.to_full_dict() if include_full_journal else sonuc.to_dict()

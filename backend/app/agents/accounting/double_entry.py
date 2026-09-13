@@ -62,6 +62,9 @@ class YevmiyeKaydi:
     #                      amount, so the line is gross and the entry is held
     #   "yok"            — the account does not carry KDV (salary, SGK, tax…)
     kdv_durumu: str = "yok"
+    # Why this entry can or cannot be trusted: evidence level, what matched,
+    # and the measured accuracy behind the number (guven.Guven.to_dict()).
+    guven: dict[str, Any] = field(default_factory=dict)
     thp_hesap_kodu: str = ""
     confidence: float = 1.0
     onay_gerekli: bool = False      # SMMM onayı gerekiyor mu?
@@ -96,6 +99,7 @@ class YevmiyeKaydi:
             "kaynak_islem_id":   self.kaynak_islem_id,
             "tarih_kaynagi":     self.tarih_kaynagi,
             "kdv_durumu":        self.kdv_durumu,
+            "guven":             self.guven,
             "satirlar": [
                 {
                     "hesap_kodu": s.hesap_kodu,
@@ -236,6 +240,7 @@ class DoubleEntryEngine:
         thp_result: THPSonucu,
         *,
         authority_rules: list[dict[str, Any]] | None = None,
+        guven_gecmisi: dict[str, tuple[int, int]] | None = None,
     ) -> YevmiyeKaydi:
         """
         Tek bir işlem için yevmiye kaydı oluştur.
@@ -366,6 +371,16 @@ class DoubleEntryEngine:
         if stopaj and not _stopaj_ekle(satirlar, ana, stopaj, description):
             stopaj_note = f"kaynaktaki stopaj ({stopaj} kuruş) kayda işlenemedi — doğrulanmalı"
 
+        # ── Trust: measured, and the organisation's own record once it has one ─
+        guven_dict: dict[str, Any] = {}
+        confidence = thp_result.confidence
+        if thp_result.guven_seviyesi:
+            from app.services.accounting import guven as _guven
+
+            g = _guven.degerlendir(thp_result.guven_seviyesi, thp_result.kanit, guven_gecmisi)
+            confidence = g.skor
+            guven_dict = g.to_dict()
+
         # ── Yetki Matrisi: does this entry need human approval, and whose? ────
         from app.platform.authority_matrix import (
             DEFAULT_POLICY_RULES,
@@ -382,7 +397,7 @@ class DoubleEntryEngine:
                 counterparty=transaction.get("vendor"),
                 is_related_party=bool(transaction.get("is_related_party")),
                 is_fixed_asset=thp_result.hesap_kodu.startswith("2") and tx_type == "expense",
-                confidence=thp_result.confidence,
+                confidence=confidence,
                 classification_method=thp_result.yontem,
             ),
         )
@@ -414,7 +429,8 @@ class DoubleEntryEngine:
             satirlar=satirlar,
             kaynak_islem_id=tx_id,
             thp_hesap_kodu=thp_result.hesap_kodu,
-            confidence=thp_result.confidence,
+            confidence=confidence,
+            guven=guven_dict,
             onay_gerekli=needs_review,
             onay_neden=rationale,
         )
@@ -434,10 +450,11 @@ class DoubleEntryEngine:
         thp_results: list[THPSonucu],
         *,
         authority_rules: list[dict[str, Any]] | None = None,
+        guven_gecmisi: dict[str, tuple[int, int]] | None = None,
     ) -> list[YevmiyeKaydi]:
         """Toplu yevmiye kaydı oluştur."""
         return [
-            self.create_entry(tx, thp, authority_rules=authority_rules)
+            self.create_entry(tx, thp, authority_rules=authority_rules, guven_gecmisi=guven_gecmisi)
             for tx, thp in zip(transactions, thp_results, strict=False)
         ]
 

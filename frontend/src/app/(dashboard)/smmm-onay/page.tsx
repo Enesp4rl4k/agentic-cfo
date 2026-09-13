@@ -11,6 +11,7 @@ import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ interface OnayKaydi {
   otomatik_confidence:     number | null;
   otomatik_yontem:         string | null;
   onay_neden:              string | null;
+  /** Evidence level, what matched, measured accuracy. Null for older entries. */
+  guven?:                  Guven | null;
   duzeltilmis_hesap_kodu:  string | null;
   duzeltilmis_hesap_adi:   string | null;
   onaylayan_user_id:       string | null;
@@ -46,13 +49,6 @@ interface OnayStats {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function confidenceColor(c: number | null): string {
-  if (c === null) return "text-muted-foreground";
-  if (c >= 0.8)  return "text-emerald-400";
-  if (c >= 0.6)  return "text-yellow-400";
-  return "text-red-400";
-}
 
 function durumBadge(durum: string) {
   const cfg: Record<string, { label: string; color: string }> = {
@@ -268,12 +264,10 @@ function OnayCard({
                   )}
                 </span>
               )}
-              {kayit.otomatik_confidence !== null && (
-                <span className={cn("font-semibold", confidenceColor(kayit.otomatik_confidence))}>
-                  %{Math.round((kayit.otomatik_confidence ?? 0) * 100)} güven
-                </span>
-              )}
             </div>
+
+            {/* Was "%30 güven": a number with no stated meaning. */}
+            <GuvenRozeti guven={kayit.guven} />
 
             {/* Onay neden */}
             {kayit.onay_neden && (

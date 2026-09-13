@@ -91,6 +91,37 @@ async def _enqueue_smmm_review(
     return added
 
 
+async def _guven_gecmisi(db: AsyncSession, org_id: str | None) -> dict[str, tuple[int, int]]:
+    """How often this organisation's SMMM agreed with each evidence level.
+
+    Approved means the account was right, corrected means it was wrong. Read
+    from the decisions already recorded; nothing is stored twice.
+    """
+    from app.services.accounting.guven import gecmisten_olc
+
+    if not org_id:
+        return {}
+    rows = (
+        await db.execute(
+            select(SMMMOnayKaydi.orijinal_kayit, SMMMOnayKaydi.durum)
+            .where(
+                SMMMOnayKaydi.org_id == org_id,
+                SMMMOnayKaydi.durum.in_([OnayDurumu.ONAYLANDI, OnayDurumu.DUZELTILDI]),
+            )
+            .order_by(desc(SMMMOnayKaydi.updated_at))
+            .limit(5000)
+        )
+    ).all()
+    return gecmisten_olc([
+        (
+            ((kayit or {}).get("guven") or {}).get("seviye"),
+            str(durum),
+            (kayit or {}).get("karar_turu") == "toplu",
+        )
+        for kayit, durum in rows
+    ])
+
+
 async def _persist_muhasebe_journal(
     db: AsyncSession, job_id: str, full_result: dict[str, Any]
 ) -> None:
@@ -241,6 +272,7 @@ async def muhasebe_analiz(
         company_name=body.company_name,
         donem=body.donem,
         authority_rules=authority_rules,
+        guven_gecmisi=await _guven_gecmisi(db, str(job.org_id) if job.org_id else None),
     )
 
     # SMMM onay kuyruğu — Turkey pack only

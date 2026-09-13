@@ -47,6 +47,8 @@ def coa_to_thp(result: CoaClassification) -> THPSonucu:
             confidence=float(result.confidence),
             yontem=result.method,
             aciklama=f"adapter={result.adapter}",
+            guven_seviyesi=str((result.extras or {}).get("guven_seviyesi") or ""),
+            kanit=str((result.extras or {}).get("kanit") or ""),
         )
 
     tip, normal, ana = _tip_and_balance(result.account_code, result.account_label)
@@ -59,6 +61,8 @@ def coa_to_thp(result: CoaClassification) -> THPSonucu:
         confidence=float(result.confidence),
         yontem=result.method,
         aciklama=f"adapter={result.adapter}",
+        guven_seviyesi=str((result.extras or {}).get("guven_seviyesi") or ""),
+        kanit=str((result.extras or {}).get("kanit") or ""),
     )
 
 

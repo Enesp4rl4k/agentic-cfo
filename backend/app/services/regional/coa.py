@@ -160,6 +160,8 @@ class TrThpAdapter:
                 "ana_grup": getattr(result, "ana_grup", None),
                 "hesap_kodu": result.hesap_kodu,
                 "hesap_adi": result.hesap_adi,
+                "guven_seviyesi": getattr(result, "guven_seviyesi", ""),
+                "kanit": getattr(result, "kanit", ""),
             },
         )
 
@@ -195,6 +197,8 @@ class TrThpAdapter:
                 "ana_grup": getattr(result, "ana_grup", None),
                 "hesap_kodu": result.hesap_kodu,
                 "hesap_adi": result.hesap_adi,
+                "guven_seviyesi": getattr(result, "guven_seviyesi", ""),
+                "kanit": getattr(result, "kanit", ""),
             },
         )
 

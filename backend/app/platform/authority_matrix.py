@@ -68,10 +68,15 @@ DEFAULT_POLICY_RULES: list[dict[str, Any]] = [
     {
         "id": "low_confidence",
         "domain": "*",
-        "when": {"confidence_lt": 0.6},
+        # 0.80, as CLAUDE.md's confidence gate says. It was 0.6 while the
+        # number was keyword arithmetic that never exceeded 0.3 for a single
+        # word, so every entry was held regardless. Now the number is the 95%
+        # lower bound of a measured accuracy; below 0.80 an entry is held, and
+        # the entry says how much evidence stood behind it.
+        "when": {"confidence_lt": 0.8},
         "decision": "require_approvals",
         "approvals": [{"role": "smmm", "count": 1}],
-        "note": "Düşük güven skoru",
+        "note": "Güven otomatik onay için yetersiz (%80 altında)",
     },
     {
         "id": "unclassified",

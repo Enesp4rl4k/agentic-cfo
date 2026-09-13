@@ -77,6 +77,9 @@ def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
         "otomatik_confidence":   float(k.otomatik_confidence) if k.otomatik_confidence else None,
         "otomatik_yontem":       k.otomatik_yontem,
         "onay_neden":            k.onay_neden,
+        # Evidence level, what matched and the measured accuracy behind the
+        # confidence number. None for entries journalled before it existed.
+        "guven":                 (k.orijinal_kayit or {}).get("guven") or None,
         "orijinal_kayit":        k.orijinal_kayit,
         "duzeltilmis_hesap_kodu": k.duzeltilmis_hesap_kodu,
         "duzeltilmis_hesap_adi": k.duzeltilmis_hesap_adi,
@@ -302,6 +305,11 @@ async def toplu_onayla(
         kayit.onay_zamani       = now
         kayit.onay_notu         = req.onay_notu
         kayit.updated_at        = now
+        # Marked so it is not counted as evidence that the classifier is right
+        # (guven.gecmisten_olc). Approving a page at once is how a reviewer
+        # clears a queue, not a judgement on each account — and counted, it
+        # would let bulk approval talk the system into trusting itself.
+        kayit.orijinal_kayit = {**(kayit.orijinal_kayit or {}), "karar_turu": "toplu"}
         approved_ids.append(kayit.id)
 
     await db.commit()

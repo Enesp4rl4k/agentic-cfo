@@ -164,9 +164,15 @@ class THPSonucu:
     ana_grup: str
     normal_bakiye: str      # "borç" | "alacak"
     tip: str                # "gelir" | "gider" | "varlık" | "borç" | "özkaynak"
-    confidence: float       # 0.0 – 1.0
+    confidence: float       # 0.0 – 1.0 — measured, see app/services/accounting/guven.py
     yontem: str             # "kural" | "llm" | "varsayılan"
     aciklama: str           # neden bu hesap seçildi
+    # What the choice rests on. `guven_seviyesi` names the kind of evidence
+    # (guven.SEVIYELER); `kanit` is the evidence itself, e.g. "'kira' → 770".
+    # Empty for results that did not come from this classifier (another
+    # country's chart adapter): their level is unknown, not "unclassified".
+    guven_seviyesi: str = ""
+    kanit: str = ""
 
 
 # ── Kural motoru ──────────────────────────────────────────────────────────────
@@ -206,15 +212,40 @@ def _tip_uyumlu(kod: str, tip: str, transaction_type: str) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class KuralEslesmesi:
+    """The rule engine's pick, and the evidence it rests on."""
+
+    hesap_kodu: str
+    anahtar: str        # the keyword that won, as written in the chart
+    tam: bool           # matched as a whole word, not inside another word
+    kelime_sayisi: int  # words in the keyword
+
+    @property
+    def seviye(self) -> str:
+        from app.services.accounting import guven
+
+        if self.tam and self.kelime_sayisi >= 2:
+            return guven.GUCLU_KURAL
+        if self.tam:
+            return guven.KURAL
+        return guven.ZAYIF_KURAL
+
+    @property
+    def kanit(self) -> str:
+        nasil = "birebir" if self.tam else "kelime içinde"
+        return f"'{self.anahtar}' ({nasil}) → {self.hesap_kodu}"
+
+
 def _kural_motoru_siniflandir(
     description: str,
     vendor: str | None,
     transaction_type: str,
     amount_kurus: int,
-) -> tuple[str, float] | None:
+) -> KuralEslesmesi | None:
     """
     Kural tabanlı sınıflandırma.
-    Döndürür: (hesap_kodu, confidence) veya None
+    Döndürür: kazanan eşleşme ve dayandığı kanıt, ya da None
     """
     desc_norm = _normalize(description or "")
     vendor_norm = _normalize(vendor or "")
@@ -222,6 +253,7 @@ def _kural_motoru_siniflandir(
 
     best_kod: str | None = None
     best_score: float = 0.0
+    best_match: tuple[str, bool, int] | None = None
 
     for kod, hesap in THP_HESAPLARI.items():
         if kod in _KARSI_HESAPLAR:
@@ -236,6 +268,7 @@ def _kural_motoru_siniflandir(
             continue
 
         score = 0.0
+        match: tuple[str, bool, int] | None = None
         for anahtar in hesap.anahtar_kelimeler:
             anahtar_norm = _normalize(anahtar)
             if anahtar_norm in combined:
@@ -250,7 +283,9 @@ def _kural_motoru_siniflandir(
                 # listeleyen hesabı ödüllendiriyordu: 102 aynı metne karşı hem
                 # "banka" hem "bank" sayıp 657'nin spesifik "kredi faiz"ini
                 # geçiyordu.
-                score = max(score, puan)
+                if puan > score:
+                    score = puan
+                    match = (anahtar, tam, agirlik)
 
         # Eşitlikte kazananı sözlük sırası belirlemesin: "SGK primi ödemesi"
         # hem 360 hem 361 için aynı puanı alıyor, 360 sadece önce tanımlandığı
@@ -261,11 +296,14 @@ def _kural_motoru_siniflandir(
         )):
             best_score = score
             best_kod = kod
+            best_match = match
 
-    if best_kod and best_score >= 0.6:
-        # Normalize confidence: max ~5 keyword hits = 1.0
-        confidence = min(1.0, best_score / 3.0) * 0.9  # max 0.9 for rule-based
-        return best_kod, confidence
+    if best_kod and best_match and best_score >= 0.6:
+        # The number that used to be returned here — min(1, score/3) * 0.9 —
+        # was keyword arithmetic, not a probability. The evidence is returned
+        # instead, and guven.py turns it into a measured confidence.
+        anahtar, tam, agirlik = best_match
+        return KuralEslesmesi(best_kod, anahtar, tam, agirlik)
 
     return None
 
@@ -342,18 +380,7 @@ class THPClassifier:
         result = _kural_motoru_siniflandir(description, vendor, transaction_type, amount_kurus)
 
         if result:
-            kod, confidence = result
-            hesap = THP_HESAPLARI[kod]
-            return THPSonucu(
-                hesap_kodu=kod,
-                hesap_adi=hesap.adi,
-                ana_grup=hesap.ana_grup,
-                normal_bakiye=hesap.normal_bakiye,
-                tip=hesap.tip,
-                confidence=confidence,
-                yontem="kural",
-                aciklama=f"Kural motoru eşleşmesi: '{description[:50]}'",
-            )
+            return self._kuraldan(result, description)
 
         return self._varsayilan(transaction_type)
 
@@ -370,37 +397,52 @@ class THPClassifier:
         # 1. Kural motoru
         result = _kural_motoru_siniflandir(description, vendor, transaction_type, amount_kurus)
         if result:
-            kod, confidence = result
-            hesap = THP_HESAPLARI[kod]
-            return THPSonucu(
-                hesap_kodu=kod,
-                hesap_adi=hesap.adi,
-                ana_grup=hesap.ana_grup,
-                normal_bakiye=hesap.normal_bakiye,
-                tip=hesap.tip,
-                confidence=confidence,
-                yontem="kural",
-                aciklama=f"Kural motoru: '{description[:50]}'",
-            )
+            return self._kuraldan(result, description)
 
         # 2. LLM fallback
         llm_result = await _llm_siniflandir(description, vendor, transaction_type, amount_kurus)
         if llm_result:
-            kod, confidence = llm_result
+            from app.services.accounting import guven
+
+            kod, _self_reported = llm_result
             hesap = THP_HESAPLARI[kod]
+            # The model's answer came with a hard-coded 0.75. Its accuracy has
+            # never been measured, and a number nobody measured is not shown.
+            g = guven.degerlendir(guven.LLM, f"dil modeli önerisi → {kod}")
             return THPSonucu(
                 hesap_kodu=kod,
                 hesap_adi=hesap.adi,
                 ana_grup=hesap.ana_grup,
                 normal_bakiye=hesap.normal_bakiye,
                 tip=hesap.tip,
-                confidence=confidence,
+                confidence=g.skor,
                 yontem="llm",
                 aciklama=f"LLM sınıflandırması: '{description[:50]}'",
+                guven_seviyesi=guven.LLM,
+                kanit=g.kanit,
             )
 
         # 3. Varsayılan
         return self._varsayilan(transaction_type)
+
+    @staticmethod
+    def _kuraldan(eslesme: KuralEslesmesi, description: str) -> THPSonucu:
+        from app.services.accounting import guven
+
+        hesap = THP_HESAPLARI[eslesme.hesap_kodu]
+        g = guven.degerlendir(eslesme.seviye, eslesme.kanit)
+        return THPSonucu(
+            hesap_kodu=eslesme.hesap_kodu,
+            hesap_adi=hesap.adi,
+            ana_grup=hesap.ana_grup,
+            normal_bakiye=hesap.normal_bakiye,
+            tip=hesap.tip,
+            confidence=g.skor,
+            yontem="kural",
+            aciklama=f"Kural motoru eşleşmesi: '{description[:50]}'",
+            guven_seviyesi=eslesme.seviye,
+            kanit=eslesme.kanit,
+        )
 
     @staticmethod
     def _varsayilan(transaction_type: str) -> THPSonucu:
@@ -413,9 +455,11 @@ class THPClassifier:
                 ana_grup=hesap.ana_grup,
                 normal_bakiye=hesap.normal_bakiye,
                 tip=hesap.tip,
-                confidence=0.3,
+                confidence=0.0,   # a fallback is not evidence
                 yontem="varsayılan",
                 aciklama="Sınıflandırılamadı — Diğer Gelirler hesabına atandı",
+                guven_seviyesi="varsayilan",
+                kanit="eşleşme yok → 602 (gelir için varsayılan)",
             )
         else:
             hesap = THP_HESAPLARI["770"]
@@ -425,9 +469,11 @@ class THPClassifier:
                 ana_grup=hesap.ana_grup,
                 normal_bakiye=hesap.normal_bakiye,
                 tip=hesap.tip,
-                confidence=0.3,
+                confidence=0.0,   # a fallback is not evidence
                 yontem="varsayılan",
                 aciklama="Sınıflandırılamadı — Genel Yönetim Giderleri hesabına atandı",
+                guven_seviyesi="varsayilan",
+                kanit="eşleşme yok → 770 (gider için varsayılan)",
             )
 
     def classify_batch(
