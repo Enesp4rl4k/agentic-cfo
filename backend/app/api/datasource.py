@@ -67,6 +67,21 @@ _DOMAIN_TYPES: dict[str, set[str]] = {
         DataSourceType.PROCESS,
         DataSourceType.RESOURCE,
     },
+    DataSourceDomain.RISK: {
+        DataSourceType.RISK_REGISTER,
+        DataSourceType.LOSS_EVENTS,
+        DataSourceType.KRI,
+    },
+    DataSourceDomain.AUDIT: {
+        DataSourceType.FINDINGS,
+        DataSourceType.CONTROLS,
+        DataSourceType.COVERAGE,
+    },
+    DataSourceDomain.COMPLIANCE: {
+        DataSourceType.POLICIES,
+        DataSourceType.VIOLATIONS,
+        DataSourceType.REGULATIONS,
+    },
 }
 
 _ALLOWED_EXTENSIONS = {"csv", "xlsx", "xls", "txt"}

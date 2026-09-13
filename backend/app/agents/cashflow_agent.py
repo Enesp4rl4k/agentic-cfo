@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
 from app.services.telemetry import trace_agent
@@ -218,6 +219,7 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
     return alerts
 
 
+@narrative_guard
 async def _generate_cashflow_narrative(
     cashflow: dict[str, Any],
     alerts: list[dict],

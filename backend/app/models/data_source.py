@@ -32,6 +32,12 @@ class DataSourceDomain(StrEnum):
     CHRO = "chro"
     CMO  = "cmo"
     COO  = "coo"
+    # Stored as strings, so adding a domain needs no migration. These three had
+    # orchestrators and no way to receive a file: their pages were served by
+    # the kernels' estimates instead.
+    RISK       = "risk"
+    AUDIT      = "audit"
+    COMPLIANCE = "compliance"
 
 
 class DataSourceType(StrEnum):
@@ -58,6 +64,18 @@ class DataSourceType(StrEnum):
     SLA             = "sla"
     PROCESS         = "process"
     RESOURCE        = "resource"
+    # Risk
+    RISK_REGISTER   = "risk_register"
+    LOSS_EVENTS     = "loss_events"
+    KRI             = "kri"
+    # Audit
+    FINDINGS        = "findings"
+    CONTROLS        = "controls"
+    COVERAGE        = "coverage"
+    # Compliance
+    POLICIES        = "policies"
+    VIOLATIONS      = "violations"
+    REGULATIONS     = "regulations"
 
 
 # Maps each (domain, source_type) to the kwarg name expected by the pipeline
@@ -76,6 +94,15 @@ DOMAIN_SOURCE_KWARGS: dict[tuple[str, str], str] = {
     (DataSourceDomain.COO,  DataSourceType.SLA):             "sla_csv",
     (DataSourceDomain.COO,  DataSourceType.PROCESS):         "process_csv",
     (DataSourceDomain.COO,  DataSourceType.RESOURCE):        "resource_csv",
+    (DataSourceDomain.RISK, DataSourceType.RISK_REGISTER):   "register_csv",
+    (DataSourceDomain.RISK, DataSourceType.LOSS_EVENTS):     "loss_csv",
+    (DataSourceDomain.RISK, DataSourceType.KRI):             "kri_csv",
+    (DataSourceDomain.AUDIT, DataSourceType.FINDINGS):       "findings_csv",
+    (DataSourceDomain.AUDIT, DataSourceType.CONTROLS):       "controls_csv",
+    (DataSourceDomain.AUDIT, DataSourceType.COVERAGE):       "coverage_csv",
+    (DataSourceDomain.COMPLIANCE, DataSourceType.POLICIES):    "policy_csv",
+    (DataSourceDomain.COMPLIANCE, DataSourceType.VIOLATIONS):  "violations_csv",
+    (DataSourceDomain.COMPLIANCE, DataSourceType.REGULATIONS): "regulations_csv",
 }
 
 

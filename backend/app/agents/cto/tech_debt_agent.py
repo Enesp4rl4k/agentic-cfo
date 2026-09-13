@@ -24,6 +24,7 @@ from collections import defaultdict
 from typing import Any
 
 from app.agents.cto.state import CTORunConfig, CTOSkillResult, CTOState
+from app.agents.narrative_guard import narrative_guard
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ def _compute_debt_metrics(parsed: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@narrative_guard
 async def _generate_debt_narrative(metrics: dict[str, Any], settings) -> str:
     from app.platform.model_gateway import complete_text
 

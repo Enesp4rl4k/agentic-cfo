@@ -15,6 +15,7 @@ import logging
 import statistics
 from typing import Any
 
+from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
 from app.services.telemetry import trace_agent
@@ -374,6 +375,7 @@ def _build_forecast_alerts(scenarios: dict[str, Any]) -> list[dict[str, str]]:
     return alerts
 
 
+@narrative_guard
 async def _generate_forecast_narrative(
     scenarios: dict[str, Any],
     alerts: list[dict[str, str]],

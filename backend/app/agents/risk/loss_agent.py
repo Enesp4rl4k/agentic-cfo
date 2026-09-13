@@ -13,6 +13,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Any
 
+from app.agents.narrative_guard import narrative_guard
 from app.agents.risk.state import RiskState, RiskStepLog
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -224,6 +225,7 @@ def _build_loss_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
 # ── Narrative ──────────────────────────────────────────────────────────────────
 
+@narrative_guard
 async def _generate_loss_narrative(metrics: dict[str, Any], settings: Any) -> str:
     total     = metrics.get("total_events", 0)
     net_loss  = metrics.get("total_net_loss", 0)

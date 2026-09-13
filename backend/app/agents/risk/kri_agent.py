@@ -12,6 +12,7 @@ import csv
 from collections import Counter
 from typing import Any
 
+from app.agents.narrative_guard import narrative_guard
 from app.agents.risk.state import RiskState, RiskStepLog
 
 # ── Parsing ────────────────────────────────────────────────────────────────────
@@ -209,6 +210,7 @@ def _build_kri_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
 # ── Narrative ──────────────────────────────────────────────────────────────────
 
+@narrative_guard
 async def _generate_kri_narrative(metrics: dict[str, Any], settings: Any) -> str:
     total     = metrics.get("total_kris", 0)
     red       = len(metrics.get("breached_red", []))
