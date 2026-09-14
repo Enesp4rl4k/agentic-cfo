@@ -9,6 +9,7 @@ POST /advanced/temporal/auto-record -- CFO analizini otomatik temporal kayit
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -226,7 +227,7 @@ async def board_deck_pdf(
             include_swot=req.include_swot,
             include_kri=req.include_kri,
         )
-        pdf_bytes = BoardDeckPDFBuilder().build_pdf(deck)
+        pdf_bytes = await asyncio.to_thread(BoardDeckPDFBuilder().build_pdf, deck)
         filename = f"board-deck-{org_id[:8]}.pdf"
         return StreamingResponse(
             iter([pdf_bytes]),

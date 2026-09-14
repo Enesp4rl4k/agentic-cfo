@@ -160,7 +160,8 @@ class EvidenceBuilder:
         Shows exactly which transactions triggered the anomaly.
         """
         tx_ids = anomaly.get("transaction_ids") or []
-        related = [t for t in transactions if t.get("id") in set(tx_ids)]
+        wanted = set(tx_ids)
+        related = [t for t in transactions if t.get("id") in wanted]
 
         evidence_details = []
         for t in related[:5]:

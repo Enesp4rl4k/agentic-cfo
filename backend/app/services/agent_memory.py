@@ -218,7 +218,9 @@ class _PostgreSQLBackend:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                loop.create_task(self._async_save(record))
+                from app.core.background import spawn
+
+                spawn(self._async_save(record), name="agent-memory-save")
             else:
                 loop.run_until_complete(self._async_save(record))
         except Exception as exc:

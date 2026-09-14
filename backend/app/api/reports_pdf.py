@@ -255,7 +255,9 @@ async def generate_compliance_cert_pdf(
     )
 
     engine    = PDFEngine()
-    pdf_bytes = await engine._html_to_pdf.__func__(engine, cert_html)  # type: ignore[attr-defined]
+    # `_html_to_pdf` is synchronous: awaiting its bytes raised TypeError, so
+    # this route failed on every call that reached it.
+    pdf_bytes = await engine.render_html(cert_html)
 
     filename = f"compliance_cert_{body.certification_id[:8]}.pdf"
     return _pdf_response(pdf_bytes, filename)

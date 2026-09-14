@@ -241,10 +241,11 @@ class PDFEngine:
         Returns:
             PDF bytes
         """
-        html = self._render_html(template_name, context)
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._html_to_pdf, html
-        )
+        return await self.render_html(self._render_html(template_name, context))
+
+    async def render_html(self, html: str) -> bytes:
+        """Render ready HTML to PDF off the event loop."""
+        return await asyncio.to_thread(self._html_to_pdf, html)
 
     def _render_html(self, template_name: str, context: dict[str, Any]) -> str:
         """Render HTML from template + context using Jinja2."""

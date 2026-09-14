@@ -315,7 +315,7 @@ def _persist_call_log(
 ) -> None:
     """Best-effort write of one LLMCallLog row. Never raises into the caller."""
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return
 
@@ -345,7 +345,9 @@ def _persist_call_log(
         except Exception as exc:  # pragma: no cover - ledger must not break agents
             logger.debug("LLMCallLog persist skipped: %s", exc)
 
-    loop.create_task(_write())
+    from app.core.background import spawn
+
+    spawn(_write(), name="llm-call-log")
 
 
 # ── Public entry point ─────────────────────────────────────────────────────

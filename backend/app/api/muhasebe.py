@@ -11,6 +11,7 @@ Endpoint'ler:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime
@@ -685,7 +686,7 @@ async def _edefter_build(
         else EDefterXBRLGenerator.generate_ledger
     )
     try:
-        pkg = build(entries, period=period, owner=owner)
+        pkg = await asyncio.to_thread(build, entries, period=period, owner=owner)
     except EDefterError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not pkg.is_balanced:

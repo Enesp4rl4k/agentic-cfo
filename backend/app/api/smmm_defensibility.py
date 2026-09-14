@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -138,7 +139,7 @@ async def export_defensibility_packet(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     packet = await _load_owned(packet_id, current_user, db)
-    body, media_type = render_packet(packet)
+    body, media_type = await asyncio.to_thread(render_packet, packet)
     ext = "pdf" if media_type == "application/pdf" else "txt"
     return Response(
         content=body,

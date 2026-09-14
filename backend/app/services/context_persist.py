@@ -160,8 +160,12 @@ async def persist_agent_completion(
 
     if trigger_auto_chain and auto_chain_hook is not None and db is not None:
         try:
-            asyncio.create_task(
-                auto_chain_hook(agent_lower, org_id, payload, db),
+            from app.core.background import spawn, with_session
+
+            # The caller's `db` belongs to its request and is closed when the
+            # request returns; the chain runs on a session of its own.
+            spawn(
+                with_session(lambda own: auto_chain_hook(agent_lower, org_id, payload, own)),
                 name=f"auto-chain-{agent_lower}-{org_id[:8]}",
             )
         except Exception as exc:

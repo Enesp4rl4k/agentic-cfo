@@ -9,6 +9,7 @@ GET  /ceo/health-check             → verify CEO pipeline is importable
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -357,7 +358,8 @@ async def export_board_deck_pdf(
         raise HTTPException(status_code=500, detail=str(exc))
 
     try:
-        pdf_bytes = board_deck_to_pdf(
+        pdf_bytes = await asyncio.to_thread(
+            board_deck_to_pdf,
             board_deck=body.board_deck,
             okr_status=body.okr_status,
         )

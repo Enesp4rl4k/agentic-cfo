@@ -14,7 +14,6 @@ Frontend /status'u poll eder → COMPLETED/FAILED döner.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -286,10 +285,9 @@ async def enqueue_agent_job(
     job_id = job.id
 
     # Fire-and-forget — does not block the response
-    asyncio.create_task(
-        _run_agent_pipeline(job_id, agent_type, input_data),
-        name=f"agent-job-{job_id}",
-    )
+    from app.core.background import spawn
+
+    spawn(_run_agent_pipeline(job_id, agent_type, input_data), name=f"agent-job-{job_id}")
 
     logger.info("AgentJob %s (%s) enqueued for org=%s", job_id, agent_type, org_id)
 

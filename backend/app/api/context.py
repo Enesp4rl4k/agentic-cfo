@@ -126,10 +126,14 @@ async def update_context(
 
     # Trigger auto-chain (non-blocking — fire and forget)
     try:
-        import asyncio
-
         from app.agents.orchestration.auto_chain import on_agent_complete
-        asyncio.create_task(on_agent_complete(body.agent, resolved_id, body.result, db))
+        from app.core.background import spawn, with_session
+
+        # On its own session: this request's `db` is closed when it returns.
+        spawn(
+            with_session(lambda own: on_agent_complete(body.agent, resolved_id, body.result, own)),
+            name=f"auto-chain-{body.agent}-{resolved_id[:8]}",
+        )
     except Exception as exc:
         logger.warning("Auto-chain trigger failed (non-fatal): %s", exc)
 

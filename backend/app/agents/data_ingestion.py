@@ -15,6 +15,7 @@ Confidence signals:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -189,8 +190,20 @@ def _parse_amount(raw: str) -> int | None:
         return None
 
 
+def _is_negative(raw: str) -> bool:
+    """Whether an amount is written as money out: "-1.500", "1.500-", "(1.500)".
+
+    ``_parse_amount`` returns a magnitude, so the sign has to be read here —
+    without it a CSV with no type column booked every payment as revenue.
+    """
+    t = raw.strip()
+    return t.startswith("-") or t.endswith("-") or (t.startswith("(") and t.endswith(")"))
+
+
 def _parse_date(raw: str) -> datetime | None:
-    formats = ["%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"]
+    # Excel date cells arrive as "2024-01-03 00:00:00".
+    formats = ["%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y",
+               "%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S"]
     for fmt in formats:
         try:
             return datetime.strptime(raw.strip(), fmt).replace(tzinfo=UTC)
@@ -326,12 +339,19 @@ def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
     import csv
     import io
     try:
-        reader = csv.DictReader(io.StringIO(raw_text))
+        # Excel sheets are read as tab-separated and Turkish exports often use
+        # ";" — the header line says which one this file uses.
+        header = raw_text.lstrip("﻿").split("\n", 1)[0]
+        delimiter = max((",", ";", "\t"), key=header.count)
+        reader = csv.DictReader(io.StringIO(raw_text), delimiter=delimiter)
         if not reader.fieldnames:
             return None
-        field_lower = [f.strip().lower() for f in reader.fieldnames if f]
-        has_amount = any(f in ("amount", "tutar", "bakiye", "borç", "alacak", "amount_cents") for f in field_lower)
-        has_date = any(f in ("date", "tarih", "işlem tarihi", "transaction_date") for f in field_lower)
+        field_lower = [fold(f.strip()) for f in reader.fieldnames if f]
+        # Headers are folded (app.core.turkish): "İşlem Tarihi", "AÇIKLAMA" and
+        # "Borç" match "islem tarihi", "aciklama", "borc". A running balance
+        # ("bakiye") is not a transaction amount.
+        has_amount = any(f in ("amount", "tutar", "borc", "alacak", "amount_cents") for f in field_lower)
+        has_date = any(f in ("date", "tarih", "islem tarihi", "transaction_date") for f in field_lower)
         if not (has_amount and has_date):
             return None
 
@@ -339,13 +359,19 @@ def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
         for row in reader:
             if not row or not any(row.values()):
                 continue
-            r_lower = {k.strip().lower(): (v.strip() if v else "") for k, v in row.items() if k}
-            raw_amt = r_lower.get("amount") or r_lower.get("tutar") or r_lower.get("bakiye") or "0"
-            raw_dt = r_lower.get("date") or r_lower.get("tarih") or r_lower.get("işlem tarihi") or ""
-            raw_desc = r_lower.get("description") or r_lower.get("açıklama") or r_lower.get("detay") or ""
+            r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
+            raw_amt = r_lower.get("amount") or r_lower.get("tutar") or ""
+            # Bank statements split the amount: "Borç" is money leaving the
+            # account, "Alacak" money arriving.
+            borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
+            if not raw_amt and (borc or alacak):
+                raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
+            raw_amt = raw_amt or "0"
+            raw_dt = r_lower.get("date") or r_lower.get("tarih") or r_lower.get("islem tarihi") or ""
+            raw_desc = r_lower.get("description") or r_lower.get("aciklama") or r_lower.get("detay") or ""
             raw_type = r_lower.get("type") or r_lower.get("tip") or ""
             raw_cat = r_lower.get("category") or r_lower.get("kategori") or ""
-            raw_vendor = r_lower.get("vendor") or r_lower.get("tedarikçi") or raw_desc
+            raw_vendor = r_lower.get("vendor") or r_lower.get("tedarikci") or raw_desc
 
             amount_cents = _parse_amount(raw_amt)
             if amount_cents is None:
@@ -353,6 +379,8 @@ def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
                     amount_cents = round(float(raw_amt) * 100)
                 except Exception:
                     amount_cents = 0
+            if _is_negative(raw_amt):
+                amount_cents = -abs(amount_cents)
 
             tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
             # A category column is the uploader's word, not ours. "Gıda",
@@ -597,17 +625,14 @@ async def run_data_ingestion(
     if not os.path.exists(file_path):
         return SkillResult(ok=False, detail=f"File not found: {file_path}", halt=True)
 
+    # Reading and parsing are synchronous CPU and disk work over the whole
+    # file. They run in a thread: on the event loop a large statement stopped
+    # the API answering anyone else until it was read.
+    readers = {"pdf": _read_pdf, "xlsx": _read_excel, "xls": _read_excel, "csv": _read_csv, "xml": _read_xml}
     try:
-        if file_type == "pdf":
-            raw_text = _read_pdf(file_path)
-        elif file_type in ("xlsx", "xls"):
-            raw_text = _read_excel(file_path)
-        elif file_type == "csv":
-            raw_text = _read_csv(file_path)
-        elif file_type == "xml":
-            raw_text = _read_xml(file_path)
-        else:
+        if file_type not in readers:
             return SkillResult(ok=False, detail=f"Unsupported file type: {file_type}", halt=True)
+        raw_text = await asyncio.to_thread(readers[file_type], file_path)
 
         if not raw_text.strip():
             return SkillResult(
@@ -624,7 +649,7 @@ async def run_data_ingestion(
         # the attachment is the document. Reading only the text meant the data
         # GİB made the payer's copy of record was never looked at.
         if file_type == "pdf":
-            embedded = _pdf_embedded_xml(file_path)
+            embedded = await asyncio.to_thread(_pdf_embedded_xml, file_path)
             if embedded:
                 raw_text = embedded[0]
 
@@ -636,7 +661,7 @@ async def run_data_ingestion(
             or "CreditNote" in raw_text
             or "eArsivVeri" in raw_text
         ):
-            ubl_txs = _try_parse_ubl_xml(raw_text)
+            ubl_txs = await asyncio.to_thread(_try_parse_ubl_xml, raw_text)
             if ubl_txs:
                 # The rows carry their own confidence — an invoice whose
                 # direction could not be settled by VKN is not a certainty, and
@@ -659,13 +684,13 @@ async def run_data_ingestion(
                 )
 
         # ── Strategy 1: Bank-specific rule-based parser ────────────────────
-        detected_bank = ParserRegistry.detect(raw_text)
+        detected_bank = await asyncio.to_thread(ParserRegistry.detect, raw_text)
         if detected_bank is not None:
             logger.info(
                 "job=%s — using bank parser: %s",
                 state.get("job_id"), detected_bank.bank_display_name,
             )
-            statement: ParsedStatement = detected_bank().parse(raw_text, file_path)
+            statement: ParsedStatement = await asyncio.to_thread(detected_bank().parse, raw_text, file_path)
             transactions = _statement_to_transactions(statement)
 
             if transactions:
@@ -697,8 +722,8 @@ async def run_data_ingestion(
                     detail=detail,
                 )
         # ── Strategy 1.5: Generic CSV parser (deterministic, fast, no LLM) ─
-        if file_type == "csv" or "," in raw_text[:500] or ";" in raw_text[:500]:
-            csv_txs = _try_parse_csv(raw_text)
+        if file_type in ("csv", "xlsx", "xls") or any(d in raw_text[:500] for d in (",", ";", "\t")):
+            csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text)
             if csv_txs:
                 # Confidence must reflect data quality: rows with an unparseable
                 # date or a zero amount are only partially usable. A file where

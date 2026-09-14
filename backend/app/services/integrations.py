@@ -14,6 +14,7 @@ Her connector:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -277,14 +278,17 @@ class GoogleSheetsConnector:
         range_name:     str = "Sheet1!A1:Z1000",
     ) -> list[list[Any]]:
         """Read data from a Google Sheet range."""
-        creds = self._build_credentials()
-        from googleapiclient.discovery import build
-        service = build("sheets", "v4", credentials=creds)
-        result  = service.spreadsheets().values().get(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-        ).execute()
-        return result.get("values", [])
+        def _read() -> list[list[Any]]:
+            from googleapiclient.discovery import build
+            service = build("sheets", "v4", credentials=self._build_credentials())
+            result = service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+            ).execute()
+            return result.get("values", [])
+
+        # The Google client is synchronous HTTP; on the loop it held every request.
+        return await asyncio.to_thread(_read)
 
     async def write_sheet(
         self,
@@ -293,17 +297,17 @@ class GoogleSheetsConnector:
         values:         list[list[Any]],
     ) -> dict:
         """Write data to a Google Sheet range."""
-        creds   = self._build_credentials()
-        from googleapiclient.discovery import build
-        service = build("sheets", "v4", credentials=creds)
-        body    = {"values": values}
-        result  = service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-            valueInputOption="RAW",
-            body=body,
-        ).execute()
-        return result
+        def _write() -> dict:
+            from googleapiclient.discovery import build
+            service = build("sheets", "v4", credentials=self._build_credentials())
+            return service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption="RAW",
+                body={"values": values},
+            ).execute()
+
+        return await asyncio.to_thread(_write)
 
     async def export_cfo_results(
         self,
@@ -417,11 +421,16 @@ class WebhookDispatcher:
             msg["To"]      = to
             msg.attach(MIMEText(body, "html", "utf-8"))
 
-            context = ssl.create_default_context()
-            with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
-                server.starttls(context=context)
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, to, msg.as_string())
+            def _send() -> None:
+                context = ssl.create_default_context()
+                # A mail server that does not answer used to hold the event
+                # loop — and with it the whole API — with no timeout at all.
+                with smtplib.SMTP(smtp_host, int(smtp_port), timeout=30) as server:
+                    server.starttls(context=context)
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, to, msg.as_string())
+
+            await asyncio.to_thread(_send)
             return True
         except Exception as exc:
             logger.warning("Email send failed: %s", exc)

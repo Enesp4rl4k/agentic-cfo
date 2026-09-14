@@ -17,6 +17,7 @@ ama aynı zamanda auto_chain ile entegre çalışır:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -154,32 +155,13 @@ class MuhasebeAgent:
             )
 
         # ── 1. THP Sınıflandırma ──────────────────────────────────────────────
-        thp_sonuclari: list[THPSonucu] = []
-
-        for tx in transactions:
-            description = tx.get("description") or tx.get("vendor") or ""
-            amount = abs(int(tx.get("amount_kurus") or tx.get("amount_cents") or 0))
-            tx_type = tx.get("type", "expense")
-            vendor = tx.get("vendor")
-
-            if self.use_llm_fallback:
-                sonuc = await self.classifier.async_classify(
-                    description=description,
-                    amount_kurus=amount,
-                    transaction_type=tx_type,
-                    vendor=vendor,
-                )
-            else:
-                sonuc = self.classifier.classify(
-                    description=description,
-                    amount_kurus=amount,
-                    transaction_type=tx_type,
-                    vendor=vendor,
-                )
-            thp_sonuclari.append(sonuc)
+        thp_sonuclari = await self._siniflandir(transactions)
 
         # ── 2. Yevmiye Kayıtları ──────────────────────────────────────────────
-        kayitlar: list[YevmiyeKaydi] = self.engine.create_entries_batch(
+        # Pure CPU over every row: off the event loop, so a large statement
+        # does not stop the API answering everyone else while it is booked.
+        kayitlar: list[YevmiyeKaydi] = await asyncio.to_thread(
+            self.engine.create_entries_batch,
             transactions, thp_sonuclari,
             authority_rules=authority_rules, guven_gecmisi=guven_gecmisi,
         )
@@ -200,8 +182,8 @@ class MuhasebeAgent:
 
         # THP dağılımı
         thp_dagilim: dict[str, int] = {}
-        for sonuc in thp_sonuclari:
-            thp_dagilim[sonuc.hesap_kodu] = thp_dagilim.get(sonuc.hesap_kodu, 0) + 1
+        for thp in thp_sonuclari:
+            thp_dagilim[thp.hesap_kodu] = thp_dagilim.get(thp.hesap_kodu, 0) + 1
 
         # ── 6. Onay kuyruğu ───────────────────────────────────────────────────
         onay_kuyrugu = [
@@ -238,6 +220,52 @@ class MuhasebeAgent:
 
         return sonuc
 
+    async def _siniflandir(self, transactions: list[dict[str, Any]]) -> list[THPSonucu]:
+        """Classify every row: the rule engine for all, the model only where it found nothing.
+
+        The rows used to be classified one at a time on the event loop: the
+        rule engine for 6,000 rows held the API for seconds, and every row the
+        rules missed waited for the model call of the row before it. Now the
+        rule pass runs in a thread, and the rows it could not place go to the
+        model concurrently — at most ``_LLM_ESZAMANLI`` at once, and once per
+        distinct input, since the same input gets the same answer. Each row's
+        result is what the one-at-a-time loop would have given it.
+        """
+        girdiler = [
+            {
+                "description": tx.get("description") or tx.get("vendor") or "",
+                "amount_kurus": abs(int(tx.get("amount_kurus") or tx.get("amount_cents") or 0)),
+                "transaction_type": tx.get("type", "expense"),
+                "vendor": tx.get("vendor"),
+            }
+            for tx in transactions
+        ]
+        sonuclar: list[THPSonucu] = await asyncio.to_thread(
+            lambda: [self.classifier.classify(**g) for g in girdiler]
+        )
+        if not self.use_llm_fallback:
+            return sonuclar
+
+        eksik = [i for i, r in enumerate(sonuclar) if getattr(r, "yontem", None) != "kural"]
+        if not eksik:
+            return sonuclar
+        sinir = asyncio.Semaphore(_LLM_ESZAMANLI)
+
+        async def sor(g: dict[str, Any]) -> THPSonucu:
+            async with sinir:
+                return await self.classifier.async_classify(**g)
+
+        anahtar = lambda g: (g["description"], g["amount_kurus"], g["transaction_type"], g["vendor"])  # noqa: E731
+        tekil: dict[tuple[Any, ...], asyncio.Task[THPSonucu]] = {}
+        for i in eksik:
+            k = anahtar(girdiler[i])
+            if k not in tekil:
+                tekil[k] = asyncio.ensure_future(sor(girdiler[i]))
+        await asyncio.gather(*tekil.values())
+        for i in eksik:
+            sonuclar[i] = tekil[anahtar(girdiler[i])].result()
+        return sonuclar
+
     def run_sync(
         self,
         job_id: str,
@@ -258,6 +286,11 @@ class MuhasebeAgent:
         finally:
             self.use_llm_fallback = orig
             loop.close()
+
+
+# Model calls for rows the rules could not place, at once. Enough to turn
+# minutes into seconds; few enough to stay inside provider rate limits.
+_LLM_ESZAMANLI = 8
 
 
 # ── Modül düzeyinde singleton ─────────────────────────────────────────────────

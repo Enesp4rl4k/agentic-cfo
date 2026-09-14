@@ -17,6 +17,7 @@ Every other C-suite role stays at its current depth (see
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -229,7 +230,7 @@ async def run_tr_vertical(
             from app.services.board_deck_pdf import BoardDeckPDFBuilder
 
             deck = _board_deck_from(company, donem, cfo_state, res.accounting)
-            res.board_deck_pdf_bytes = BoardDeckPDFBuilder().build_pdf(deck)
+            res.board_deck_pdf_bytes = await asyncio.to_thread(BoardDeckPDFBuilder().build_pdf, deck)
 
             # Persist to disk so the API can hand it back on a later GET
             # (same pattern as report_agent.py writing the xlsx report).

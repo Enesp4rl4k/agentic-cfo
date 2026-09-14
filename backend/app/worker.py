@@ -167,15 +167,16 @@ async def run_ceo_analysis(
         if result_data := result:
             result_data.get("org_id") or result_data.get("job_id", "")[:8]
             # CEO synthesis result → update CompanyContext + trigger feedback rules
-            import asyncio
 
             from app.agents.orchestration.auto_chain import on_agent_complete as _oac
-            asyncio.create_task(_oac(
+            from app.core.background import spawn
+
+            spawn(_oac(
                 agent="ceo",
                 org_id=job_id,  # use job_id as org proxy if org_id not in result
                 result={"job_id": job_id, "ceo_result": result},
                 db=None,
-            ))
+            ), name=f"auto-chain-ceo-{job_id[:8]}")
 
         return {"ok": True, "job_id": job_id}
 
@@ -425,7 +426,6 @@ async def run_cfo_analysis(
 
             # ── FAZ-1A: Persist CompanyContext + semantic + auto-chain ─────────
             if job.status == JobStatus.COMPLETED and job.org_id:
-                import asyncio
 
                 from app.agents.orchestration.auto_chain import on_agent_complete
                 from app.services.company_context import get_company_context, save_company_context
@@ -455,13 +455,16 @@ async def run_cfo_analysis(
                 except Exception as exc:
                     logger.warning("ARQ worker: context/semantic persist failed (non-fatal): %s", exc)
 
-                asyncio.create_task(
+                from app.core.background import spawn
+
+                spawn(
                     on_agent_complete(
                         agent="cfo",
                         org_id=job.org_id,
                         result=chain_result,
                         db=None,
-                    )
+                    ),
+                    name=f"auto-chain-cfo-{job_id[:8]}",
                 )
                 logger.info("ARQ worker: auto_chain triggered for cfo → org=%s", job.org_id)
 
@@ -475,15 +478,16 @@ async def run_cfo_analysis(
                     except Exception as exc:
                         logger.debug("Cache invalidation failed (non-fatal): %s", exc)
 
-                asyncio.create_task(_invalidate_analytics_cache(str(job.org_id)))
+                spawn(_invalidate_analytics_cache(str(job.org_id)), name=f"cache-invalidate-{job_id[:8]}")
 
                 # ── S5-1/S5-2: Save to memory + run trend analysis ─────────────
-                asyncio.create_task(
+                spawn(
                     _save_to_memory_and_trend(
                         org_id=job.org_id,
                         job_id=job_id,
                         result=result,
-                    )
+                    ),
+                    name=f"memory-trend-{job_id[:8]}",
                 )
 
             return {"ok": True, "job_id": job_id, "status": str(job.status)}

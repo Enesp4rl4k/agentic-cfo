@@ -37,59 +37,42 @@ IQR_MULTIPLIER = 2.5           # IQR-based: value > Q3 + k*IQR = outlier
 
 # ── Pure calculation helpers ──────────────────────────────────────────────────
 
-def _z_score(value: float, values: list[float]) -> float | None:
-    """
-    Use scipy.stats.zscore for population z-scores when available,
-    fall back to manual calculation.
-    """
-    if len(values) < MIN_TRANSACTIONS_FOR_STATS:
-        return None
-    try:
-        import math
+def _category_scores(values: list[float]) -> tuple[list[float], list[float]] | None:
+    """Z-score and IQR score for every value of one category, in one pass.
 
-        import numpy as np
-        from scipy import stats as sp_stats
-        arr = np.array(values, dtype=float)
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            z_scores = sp_stats.zscore(arr, ddof=1)
-        idx = values.index(value)
-        result = float(z_scores[idx])
-        # scipy returns NaN when std ≈ 0 (identical values) — fall back to 0.0
-        if math.isnan(result):
-            return 0.0
-        return result
-    except Exception:
-        # Fallback to stdlib
-        try:
-            mean = statistics.mean(values)
-            std = statistics.stdev(values)
-            if std == 0:
-                return 0.0
-            return (value - mean) / std
-        except statistics.StatisticsError:
-            return None
+    Z is the sample z-score (ddof=1), 0.0 when every value is the same. The
+    IQR score is how many IQR units a value lies above Q3 (numpy's linear
+    percentiles), 0.0 when the IQR is zero.
+
+    These were computed per transaction over the whole category, which made a
+    category of n rows cost n² — 6,000 rows of a bank statement held the event
+    loop, and with it every other request to the API, for over a minute. The
+    statistics of a category do not change from one of its rows to the next.
+    """
+    n = len(values)
+    if n < MIN_TRANSACTIONS_FOR_STATS:
+        return None
+    import numpy as np
+
+    arr = np.asarray(values, dtype=float)
+    std = float(arr.std(ddof=1))
+    z = ((arr - arr.mean()) / std).tolist() if std > 0 else [0.0] * n
+    q1, q3 = (float(q) for q in np.percentile(arr, [25, 75]))
+    iqr = q3 - q1
+    iqr_scores = ((arr - q3) / iqr).tolist() if iqr != 0 else [0.0] * n
+    return z, iqr_scores
+
+
+def _z_score(value: float, values: list[float]) -> float | None:
+    """One value's z-score within ``values`` (see ``_category_scores``)."""
+    scores = _category_scores(values)
+    return None if scores is None else scores[0][values.index(value)]
 
 
 def _iqr_outlier_score(value: float, values: list[float]) -> float | None:
-    """
-    IQR-based outlier score. Returns how many IQR units value is above Q3.
-    Positive = above Q3 (potential high outlier), 0 = within normal range.
-    More robust than z-score for non-normal distributions (real expense data).
-    """
-    if len(values) < MIN_TRANSACTIONS_FOR_STATS:
-        return None
-    try:
-        import numpy as np
-        arr = np.array(values, dtype=float)
-        q1, q3 = float(np.percentile(arr, 25)), float(np.percentile(arr, 75))
-        iqr = q3 - q1
-        if iqr == 0:
-            return 0.0
-        return (value - q3) / iqr
-    except Exception:
-        return None
+    """One value's IQR score within ``values`` (see ``_category_scores``)."""
+    scores = _category_scores(values)
+    return None if scores is None else scores[1][values.index(value)]
 
 
 def _is_round_number(amount_cents: int) -> bool:
@@ -117,19 +100,16 @@ def detect_duplicates(
     """Same vendor + same amount within DUPLICATE_WINDOW_DAYS = probable duplicate."""
     anomalies: list[dict[str, Any]] = []
     expenses = [t for t in transactions if t.get("type") == "expense"]
-    seen: list[dict[str, Any]] = []
+    # Only an earlier payment of the same amount to the same vendor can match,
+    # so each payment is compared with those alone, in the order they were seen.
+    seen: dict[tuple[str, Any], list[dict[str, Any]]] = defaultdict(list)
 
     for tx in expenses:
         vendor = (tx.get("vendor") or "").lower().strip()
         amount = tx.get("amount_cents", 0)
         date = tx.get("transaction_date")
-
-        for prev in seen:
-            if (
-                prev.get("amount_cents") == amount
-                and (prev.get("vendor") or "").lower().strip() == vendor
-                and vendor  # don't flag unknown vendors
-            ):
+        if vendor:  # don't flag unknown vendors
+            for prev in seen[(vendor, amount)]:
                 days = _days_between(date, prev.get("transaction_date"))
                 if days is not None and days <= DUPLICATE_WINDOW_DAYS:
                     anomalies.append({
@@ -149,7 +129,7 @@ def detect_duplicates(
                         "confidence": 0.85,
                     })
                     break
-        seen.append(tx)
+        seen[(vendor, tx.get("amount_cents"))].append(tx)
 
     return anomalies
 
@@ -159,7 +139,7 @@ def detect_unusual_amounts(
 ) -> list[dict[str, Any]]:
     """
     Dual-method outlier detection per expense category:
-    1. Z-score (scipy, population-level)
+    1. Z-score (sample standard deviation)
     2. IQR-based (robust, non-normal distributions)
 
     An anomaly is flagged if BOTH methods agree, reducing false positives.
@@ -177,12 +157,14 @@ def detect_unusual_amounts(
         if len(amounts) < MIN_TRANSACTIONS_FOR_STATS:
             continue
 
+        scores = _category_scores([float(a) for a in amounts])
+        if scores is None:
+            continue
         cat_mean = statistics.mean(amounts)
+        cat_std = statistics.stdev(amounts)
 
-        for tx in txs:
+        for tx, z, iqr_score in zip(txs, *scores, strict=True):
             amount = tx["amount_cents"]
-            z = _z_score(float(amount), [float(a) for a in amounts])
-            iqr_score = _iqr_outlier_score(float(amount), [float(a) for a in amounts])
 
             # Require both methods to flag — reduces false positives
             z_flagged = z is not None and abs(z) > Z_SCORE_THRESHOLD
@@ -209,7 +191,7 @@ def detect_unusual_amounts(
                         "z_score": round(z or 0, 2),
                         "iqr_score": round(iqr_score or 0, 2),
                         "category_mean": round(cat_mean, 2),
-                        "category_std": round(statistics.stdev(amounts), 2) if len(amounts) > 1 else 0,
+                        "category_std": round(cat_std, 2),
                         "detection_methods": ["z_score", "iqr"],
                     },
                     "confidence": round(confidence, 3),

@@ -13,6 +13,7 @@ done_when: state['report_paths']['xlsx'] exists on disk AND state['dashboard_jso
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime
@@ -208,7 +209,7 @@ async def run_report(state: CFOState, config: AgentRunConfig) -> SkillResult:
         os.makedirs(output_dir, exist_ok=True)
 
         xlsx_path = os.path.join(output_dir, "financial_report.xlsx")
-        _write_excel(pnl, cashflow, forecast, xlsx_path)
+        await asyncio.to_thread(_write_excel, pnl, cashflow, forecast, xlsx_path)
 
         dashboard_json = _build_dashboard_json(state)
 

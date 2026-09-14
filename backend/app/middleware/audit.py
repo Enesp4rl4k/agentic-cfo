@@ -135,8 +135,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             "created_at":      datetime.now(UTC),
         }
 
-        import asyncio
-        asyncio.create_task(self._write_audit(audit_data))
+        from app.core.background import spawn
+
+        spawn(self._write_audit(audit_data), name="audit-log")
 
         return response
 

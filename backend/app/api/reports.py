@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -118,7 +119,8 @@ async def download_executive_report(
 
     try:
         from app.services.executive_report_pdf import generate_executive_report
-        pdf_bytes = generate_executive_report(
+        pdf_bytes = await asyncio.to_thread(
+            generate_executive_report,
             dashboard=report.data,
             company_name=company_name,
             period=period,
@@ -203,7 +205,8 @@ async def download_unified_pdf(
         )
 
     try:
-        pdf_bytes = generate_unified_pdf(
+        pdf_bytes = await asyncio.to_thread(
+            generate_unified_pdf,
             ctx_data=ctx.to_dict(),
             company_name=ctx.company_name,
             reporting_period=ctx.reporting_period,
