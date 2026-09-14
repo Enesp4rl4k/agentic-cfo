@@ -9,14 +9,12 @@ Tests cover:
 """
 from __future__ import annotations
 
-import pytest
 from app.agents.ceo.okr_agent import (
+    _infer_okrs,
+    _overall_status,
     _score_kr,
     _status_from_score,
-    _overall_status,
-    _infer_okrs,
 )
-
 
 # ── _score_kr ─────────────────────────────────────────────────────────────────
 
@@ -88,15 +86,15 @@ class TestOverallStatus:
         assert abs(score - 1.0) < 1e-9
 
     def test_mixed_on_track(self):
-        status, score = _overall_status(self._make_krs([80, 75]))
+        status, _score = _overall_status(self._make_krs([80, 75]))
         assert status == "on_track"
 
     def test_mixed_at_risk(self):
-        status, score = _overall_status(self._make_krs([50, 60]))
+        status, _score = _overall_status(self._make_krs([50, 60]))
         assert status == "at_risk"
 
     def test_off_track(self):
-        status, score = _overall_status(self._make_krs([20, 30]))
+        status, _score = _overall_status(self._make_krs([20, 30]))
         assert status == "off_track"
 
     def test_empty_returns_off_track(self):

@@ -20,8 +20,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
+from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -87,7 +91,11 @@ async def _get_pnl_for_job(job_id: str, db: AsyncSession) -> dict[str, Any]:
 
 
 @router.get("/analysis/{job_id}/sensitivity/variables")
-async def list_sensitivity_variables(job_id: str) -> dict[str, Any]:
+async def list_sensitivity_variables(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    job: AnalysisJob = Depends(owned_job),
+) -> dict[str, Any]:
     """List all available sensitivity variables and their default ranges."""
     from app.agents.sensitivity_agent import DEFAULT_RANGES, VARIABLE_LABELS
     return {
@@ -110,7 +118,9 @@ async def list_sensitivity_variables(job_id: str) -> dict[str, Any]:
 async def compute_sensitivity_matrix(
     job_id: str,
     body: SensitivityMatrixRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Compute a 2D sensitivity matrix.
@@ -124,9 +134,8 @@ async def compute_sensitivity_matrix(
     The matrix is ready for heatmap rendering on the frontend.
     """
     from app.agents.sensitivity_agent import (
-        compute_sensitivity_matrix,
         DEFAULT_RANGES,
-        VARIABLE_LABELS,
+        compute_sensitivity_matrix,
     )
 
     # Validate variables
@@ -167,7 +176,9 @@ async def compute_sensitivity_matrix(
 async def compute_single_sensitivity(
     job_id: str,
     body: SensitivityVariableRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     1D sensitivity analysis for a single variable.
@@ -179,8 +190,8 @@ async def compute_single_sensitivity(
     → List of outcomes for each headcount change from -30% to +30%
     """
     from app.agents.sensitivity_agent import (
-        compute_single_variable_sensitivity,
         DEFAULT_RANGES,
+        compute_single_variable_sensitivity,
     )
 
     if body.variable not in DEFAULT_RANGES:

@@ -334,7 +334,7 @@ def _compute_sla_metrics(tickets: list[dict[str, Any]]) -> dict[str, Any]:
 
     # Breach prediction for open tickets  (Python 3.11+ aware UTC)
     import datetime as _dt
-    now = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+    now = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
     at_risk = _predict_breach_risk(open_tix, category_breach_rates, tier_breach_rates, now)
     high_risk_count = sum(1 for t in at_risk if t["risk_level"] in ("kritik", "yüksek"))
 
@@ -498,15 +498,8 @@ def _build_sla_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_sla_narrative(metrics: dict[str, Any], settings) -> str:
     """Türkçe COO narrative — SLA ihlal tahmini bağlamıyla."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import SystemMessage, HumanMessage
+        from app.platform.model_gateway import complete_text
 
-        llm = ChatOpenAI(
-            model=getattr(settings, "openai_model", "gpt-4o-mini"),
-            temperature=0.2,
-            max_tokens=350,
-            api_key=settings.openai_api_key,
-        )
         breach     = metrics["sla_breach_rate"]
         resp_time  = metrics["avg_response_time_hours"]
         nps        = metrics["avg_nps_score"]
@@ -530,8 +523,9 @@ async def _generate_sla_narrative(metrics: dict[str, Any], settings) -> str:
             f"- Yüksek riskli açık bilet (tahmin): {high_risk}\n\n"
             "Mevcut servis kalitesini, ihlal risklerini ve 2 öncelikli aksiyon öner."
         )
-        resp = await llm.ainvoke([SystemMessage(content=system), HumanMessage(content=human)])
-        return resp.content.strip()
+        return (await complete_text(
+            task="metric_commentary", system_prompt=system, prompt=human, max_tokens=350,
+        )).strip()
     except Exception:
         breach = metrics.get("sla_breach_rate", 0.0)
         nps    = metrics.get("avg_nps_score", 0.0)

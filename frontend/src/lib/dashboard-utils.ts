@@ -14,22 +14,24 @@ export function valueToColor(
 }
 
 /**
- * Format a number as currency.
+ * Format a number as currency using org locale (default en-US / USD).
  * Accepts "TRY", "USD", or legacy "₺" symbol string.
  */
-export function formatCurrency(value: number, currency: string = "TRY"): string {
-  // Accept legacy "₺" calls — treat as TRY
+export function formatCurrency(
+  value: number,
+  currency: string = "USD",
+  locale: string = "en-US",
+): string {
   const resolved = currency === "₺" ? "TRY" : currency;
   try {
-    return new Intl.NumberFormat("tr-TR", {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency: resolved,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    // Fallback for unrecognized currency codes
-    return `${currency}${value.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    return `${currency}${value.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   }
 }
 
@@ -59,8 +61,8 @@ export function formatCompact(value: number, decimals = 1): string {
 /**
  * Format a number with locale-aware separators
  */
-export function formatNumber(value: number, decimals = 0): string {
-  return value.toLocaleString("tr-TR", {
+export function formatNumber(value: number, decimals = 0, locale: string = "en-US"): string {
+  return value.toLocaleString(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
@@ -134,14 +136,14 @@ export function healthScoreColor(score: number): string {
 }
 
 /**
- * Format a date string to Turkish locale (DD.MM.YYYY)
+ * Format a date string with locale (default en-US).
  */
-export function formatDateTR(dateString: string | null | undefined): string {
+export function formatDateTR(dateString: string | null | undefined, locale: string = "en-US"): string {
   if (!dateString) return "—";
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
-    return date.toLocaleDateString("tr-TR", {
+    return date.toLocaleDateString(locale, {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -150,6 +152,9 @@ export function formatDateTR(dateString: string | null | undefined): string {
     return dateString;
   }
 }
+
+/** Alias — prefer formatDate with explicit locale. */
+export const formatDate = formatDateTR;
 
 /**
  * Calculate number of days between two date strings

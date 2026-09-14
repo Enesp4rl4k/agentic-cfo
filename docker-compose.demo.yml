@@ -15,7 +15,7 @@ services:
     environment:
       POSTGRES_DB: aicfo_demo
       POSTGRES_USER: aicfo
-      POSTGRES_PASSWORD: demo_pass_2024
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-demo-local-only}
     ports:
       - "5432:5432"
     volumes:
@@ -45,13 +45,13 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env.demo
+      - .env.demo.example
     environment:
       USE_SQLITE: "false"
       POSTGRES_HOST: postgres
       POSTGRES_DB: aicfo_demo
       POSTGRES_USER: aicfo
-      POSTGRES_PASSWORD: demo_pass_2024
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-demo-local-only}
       REDIS_URL: redis://redis:6379/0
       STORAGE_LOCAL_PATH: /app/uploads
       BACKEND_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
@@ -76,13 +76,13 @@ services:
     restart: unless-stopped
     command: ["arq", "app.worker.WorkerSettings"]
     env_file:
-      - .env.demo
+      - .env.demo.example
     environment:
       USE_SQLITE: "false"
       POSTGRES_HOST: postgres
       POSTGRES_DB: aicfo_demo
       POSTGRES_USER: aicfo
-      POSTGRES_PASSWORD: demo_pass_2024
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-demo-local-only}
       REDIS_URL: redis://redis:6379/0
       STORAGE_LOCAL_PATH: /app/uploads
     volumes:

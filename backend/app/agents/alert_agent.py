@@ -18,9 +18,10 @@ done_when: state['triggered_alerts'] is a list (may be empty)
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +240,8 @@ def _check_tax(tax: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not tax:
         return alerts
 
-    from datetime import datetime, timezone
-    today = datetime.now(timezone.utc).date()
+    from datetime import datetime
+    today = datetime.now(UTC).date()
 
     for payment in tax.get("payment_calendar", []):
         try:

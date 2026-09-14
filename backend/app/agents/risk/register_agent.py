@@ -12,6 +12,7 @@ import csv
 from collections import Counter
 from typing import Any
 
+from app.agents.narrative_guard import narrative_guard
 from app.agents.risk.state import RiskState, RiskStepLog
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ def _parse_register_csv(csv_text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for i, row in enumerate(reader, start=1):
         try:
-            def _safe_int(col, default: int = 3) -> int:
+            def _safe_int(col, default: int = 3, row: dict = row) -> int:
                 if not col or not row.get(col):
                     return default
                 try:
@@ -226,6 +227,7 @@ def _build_register_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
 # ── Narrative ──────────────────────────────────────────────────────────────────
 
+@narrative_guard
 async def _generate_register_narrative(metrics: dict[str, Any], settings: Any) -> str:
     total    = metrics.get("total_risks", 0)
     score    = metrics.get("enterprise_risk_score", 0)

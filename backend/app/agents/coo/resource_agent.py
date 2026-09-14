@@ -192,7 +192,7 @@ def _build_resource_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     over     = metrics.get("overutilized_teams", [])
     under    = metrics.get("underutilized_teams", [])
     rev_fte  = metrics.get("revenue_per_fte_cents", 0)
-    hc       = metrics.get("total_headcount", 0)
+    metrics.get("total_headcount", 0)
 
     if util > 1.0:
         alerts.append({
@@ -257,15 +257,8 @@ def _build_resource_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_resource_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative -- falls back to rule-based summary."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage
+        from app.platform.model_gateway import complete_text
 
-        llm = ChatOpenAI(
-            model=settings.openai_model,
-            temperature=0.3,
-            max_tokens=300,
-            api_key=settings.openai_api_key,
-        )
         util  = metrics["avg_utilization_rate"]
         hc    = metrics["total_headcount"]
         over  = len(metrics.get("overutilized_teams", []))
@@ -275,8 +268,9 @@ async def _generate_resource_narrative(metrics: dict[str, Any], settings) -> str
             f"overutilized_teams={over}, underutilized_teams={under}. "
             "Write a 2-sentence COO-level insight on resource efficiency."
         )
-        resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        return resp.content.strip()
+        return (await complete_text(
+            task="metric_commentary", prompt=prompt, max_tokens=300,
+        )).strip()
     except Exception:
         util = metrics.get("avg_utilization_rate", 0.0)
         hc   = metrics.get("total_headcount", 0)

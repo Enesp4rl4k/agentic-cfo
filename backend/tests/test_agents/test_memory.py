@@ -3,7 +3,7 @@ Tests for AgentMemoryStore — memory engineering layer.
 Pure tests, no DB setup required (uses in-memory backend).
 """
 import time
-import pytest
+
 from app.services.agent_memory import (
     AgentMemoryStore,
     EpisodeRecord,
@@ -11,7 +11,6 @@ from app.services.agent_memory import (
     _tokenise,
     get_memory_store,
 )
-
 
 # ── EpisodeRecord ─────────────────────────────────────────────────────────────
 

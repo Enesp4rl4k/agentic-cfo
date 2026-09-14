@@ -395,15 +395,8 @@ def _build_process_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_process_narrative(metrics: dict[str, Any], settings) -> str:
     """Türkçe COO narrative — Theory of Constraints bağlamıyla."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import SystemMessage, HumanMessage
+        from app.platform.model_gateway import complete_text
 
-        llm = ChatOpenAI(
-            model=getattr(settings, "openai_model", "gpt-4o-mini"),
-            temperature=0.2,
-            max_tokens=350,
-            api_key=settings.openai_api_key,
-        )
         cycle = metrics["avg_cycle_time_days"]
         eff   = metrics["efficiency_score"]
         over  = len(metrics.get("overloaded_processes", []))
@@ -425,8 +418,9 @@ async def _generate_process_narrative(metrics: dict[str, Any], settings) -> str:
             f"- ToC önerisi: {bn_r}\n\n"
             "Mevcut durumu, temel riski ve 1 aksiyon önerisi içersin."
         )
-        resp = await llm.ainvoke([SystemMessage(content=system), HumanMessage(content=human)])
-        return resp.content.strip()
+        return (await complete_text(
+            task="metric_commentary", system_prompt=system, prompt=human, max_tokens=350,
+        )).strip()
     except Exception:
         cycle = metrics.get("avg_cycle_time_days", 0.0)
         eff   = metrics.get("efficiency_score", 0.0)

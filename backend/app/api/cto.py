@@ -13,9 +13,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.api.auth import get_current_user
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +41,7 @@ class CTOAnalyzeRequest(BaseModel):
 @router.post("/cto/analyze")
 async def run_cto_analysis(
     body: CTOAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Run CTO analysis pipeline and return results synchronously.
@@ -105,26 +106,9 @@ async def run_cto_analysis(
         raise HTTPException(status_code=500, detail=f"CTO analysis failed: {exc}")
 
 
-@router.get("/cto/summary/{job_id}")
-async def get_cto_summary(job_id: str) -> dict[str, Any]:
-    """
-    Get stored CTO summary for a given job_id.
-    Returns 404 if not found — use /cto/analyze to generate first.
-    """
-    # In a full implementation this would query a CTOJob DB table.
-    # For now we return a 404 — callers should use the sync endpoint or
-    # store results client-side.
-    raise HTTPException(
-        status_code=404,
-        detail=(
-            "CTO job results are not persisted yet. "
-            "Use POST /api/v1/cto/analyze to get results synchronously."
-        ),
-    )
-
 
 @router.get("/cto/health-check")
-async def cto_health() -> dict[str, Any]:
+async def cto_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify CTO pipeline agents are importable and graph compiles."""
     from app.agents.cto.orchestrator import cto_graph
     return {

@@ -13,10 +13,10 @@ Roles within an org:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Boolean, Text, ForeignKey
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Organization(Base):
@@ -42,10 +42,28 @@ class Organization(Base):
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # International locale contract (core OS — not Turkey-only)
+    country_code: Mapped[str] = mapped_column(String(2), default="US", nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    locale: Mapped[str] = mapped_column(String(16), default="en-US", nullable=False)
+    # e.g. ["tr"] enables Turkey regional pack (SMMM, GIB, Paraşüt, THP)
+    regional_packs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
     max_members: Mapped[int] = mapped_column(default=5, nullable=False)
     max_jobs_per_month: Mapped[int] = mapped_column(default=20, nullable=False)
+
+    # Stripe Billing (STRIPE sprint)
+    subscription_plan: Mapped[str] = mapped_column(String(30), default="free", nullable=False)
+    subscription_status: Mapped[str] = mapped_column(
+        String(30), default="inactive", nullable=False
+    )  # inactive | active | past_due | cancelled | trialing
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    subscription_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -57,7 +75,7 @@ class Organization(Base):
     )
 
     # Relationships
-    members: Mapped[list["User"]] = relationship(
+    members: Mapped[list[User]] = relationship(
         "User", back_populates="organization", foreign_keys="User.org_id"
     )
 
@@ -85,4 +103,4 @@ class OrgInvite(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    organization: Mapped["Organization"] = relationship("Organization")
+    organization: Mapped[Organization] = relationship("Organization")

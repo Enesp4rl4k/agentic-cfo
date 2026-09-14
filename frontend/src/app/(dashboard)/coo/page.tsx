@@ -1,18 +1,25 @@
-﻿"use client";
+"use client";
 
 export const dynamic = "force-dynamic";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Zap, TrendingDown, Clock, AlertCircle, CheckCircle, Users,
-  Filter, ArrowUp, ArrowDown, Minus,
+  ArrowUp, ArrowDown, Minus,
 } from "lucide-react";
+import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import {
-  LineChart, Line, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell,
 } from "recharts";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, formatNumber, getSeverityColorClass } from "@/lib/dashboard-utils";
+import { useAgentJob } from "@/hooks/useAgentJob";
+import { AgentJobPanel } from "@/components/ui/agent-job-panel";
+import { DomainPanel } from "@/components/domains/DomainPanel";
+import { useCompanyContextStore } from "@/store/companyContext";
+
+const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,23 +52,21 @@ interface COOResult {
   error: string | null;
 }
 
-// ── Placeholder Data ──────────────────────────────────────────────────────────
+// ── Sample Data ────────────────────────────────────────────────────────────────
 
-const SAMPLE_DATA = {
-  processes: `process_name,cycle_time,throughput,wip,constraint_type,impact_score
+const SAMPLE_PROCESSES = `process_name,cycle_time,throughput,wip,constraint_type,impact_score
 Order Processing,5,20,45,resource,92
 Payment Verification,3,30,25,policy,78
 Inventory Check,2,40,15,material,65
 Shipping Preparation,4,25,35,resource,88
-Quality Inspection,3,15,20,resource,72`,
+Quality Inspection,3,15,20,resource,72`;
 
-  sla: `ticket_id,title,assigned_to,created_date,due_date,priority,status
+const SAMPLE_SLA = `ticket_id,title,assigned_to,created_date,due_date,priority,status
 T001,Sistem Entegrasyonu,Ali,2024-06-20,2024-07-25,critical,in_progress
 T002,Veri Aktarımı,Fatma,2024-06-18,2024-07-20,high,in_progress
 T003,API Geliştirme,Mehmet,2024-06-22,2024-07-30,high,in_progress
 T004,Raporlama,Ayşe,2024-06-15,2024-07-18,medium,in_progress
-T005,Kullanıcı Arayüzü,Can,2024-06-25,2024-08-05,medium,in_progress`,
-};
+T005,Kullanıcı Arayüzü,Can,2024-06-25,2024-08-05,medium,in_progress`;
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -224,44 +229,27 @@ function TOCAnalysis({ processes }: TOCAnalysisProps) {
   );
 }
 
-// ── SLA Trend Chart ───────────────────────────────────────────────────────────
+// ── SLA overdue share ─────────────────────────────────────────────────────────
 
-interface SLATrendProps {
-  trend: Array<{ date: string; breach_pct: number }>;
-  breachRate: number;
-}
-
-function SLATrendChart({ trend, breachRate }: SLATrendProps) {
+function SLAOverdueCard({ overdue, total }: { overdue: number; total: number }) {
+  const rate = total > 0 ? overdue / total : 0;
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <TrendingDown className="h-4 w-4" />
-        SLA İhlali Trendi
+        Süresi Geçmiş Biletler
       </h3>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Güncel İhlal Oranı</span>
-        <span
-          className={`text-lg font-bold ${breachRate > 0.1 ? "text-red-400" : "text-green-400"}`}
-        >
-          {formatPercent(breachRate)}
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs text-muted-foreground">
+          {overdue} / {total} açık bilet bitiş tarihini geçti
+        </span>
+        <span className={`text-lg font-bold ${rate > 0.1 ? "text-red-400" : "text-green-400"}`}>
+          {formatPercent(rate)}
         </span>
       </div>
-      <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={trend}>
-          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-          <XAxis dataKey="date" stroke="currentColor" opacity={0.5} tick={{ fontSize: 12 }} />
-          <YAxis stroke="currentColor" opacity={0.5} tick={{ fontSize: 12 }} />
-          <Tooltip contentStyle={{ backgroundColor: "transparent", border: "none" }} />
-          <Line
-            type="monotone"
-            dataKey="breach_pct"
-            stroke="#ef4444"
-            strokeWidth={2}
-            name="İhlal %"
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Trend için birden fazla dönemin bilet listesi gerekir; tek yüklemeden trend çizilmez.
+      </p>
     </div>
   );
 }
@@ -341,33 +329,55 @@ export default function COODashboardPage() {
   const [slaCsv, setSlaCsv] = useState("");
   const [company, setCompany] = useState("");
   const [period, setPeriod] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<COOResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
 
-  async function handleSubmit(e: React.FormEvent) {
+  const { activeCFOJobId, orgId } = useCompanyContextStore();
+
+  const {
+    enqueue, reset,
+    status, progress, result, logs, error,
+    isActive, isEnqueueing,
+  } = useAgentJob("coo");
+
+  const [liveResult, setLiveResult] = useState<COOResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        if (cancelled || !ctx) return;
+        if (ctx.company_name) setCompany(String(ctx.company_name));
+        if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
+        const last = ctx.last_coo_result;
+        if (last && typeof last === "object") setLiveResult(last as COOResult);
+      } catch {
+        /* empty until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
+  const cooResult = (result as COOResult | null) ?? liveResult;
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!processCsv && !slaCsv) {
-      setError("En az bir veri kaynağı (süreçler veya SLA CSV) gereklidir.");
+      setSubmitError("En az bir veri kaynağı (süreçler veya SLA CSV) gereklidir.");
       return;
     }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiClient.post<COOResult>("/coo/analyze", {
-        company_name: company || null,
-        period: period || null,
-        process_csv: processCsv || null,
-        sla_csv: slaCsv || null,
-      });
-      if (res.data.error) throw new Error(res.data.error);
-      setResult(res.data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Bilinmeyen hata");
-    } finally {
-      setLoading(false);
-    }
+    setSubmitError(null);
+    enqueue({
+      company_name:     company || undefined,
+      reporting_period: period  || undefined,
+      process_csv:      processCsv || undefined,
+      sla_csv:          slaCsv     || undefined,
+    });
   }
 
   // Parse CSV data
@@ -411,34 +421,36 @@ export default function COODashboardPage() {
     });
   }, [slaCsv]);
 
-  const mockTrend = [
-    { date: "1 Haz", breach_pct: 15 },
-    { date: "8 Haz", breach_pct: 12 },
-    { date: "15 Haz", breach_pct: 18 },
-    { date: "22 Haz", breach_pct: 14 },
-    { date: "29 Haz", breach_pct: 11 },
-  ];
-
-  const breachRate = parsedTickets.length > 0
-    ? parsedTickets.filter((t) => t.breach_probability > 0.5).length / parsedTickets.length
-    : 0;
+  const openTickets = parsedTickets.filter(
+    (t) => !/^(closed|resolved|kapal|çözül)/i.test(t.status) && !Number.isNaN(t.hours_remaining),
+  );
+  const overdueCount = openTickets.filter((t) => t.hours_remaining < 0).length;
 
   return (
     <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Zap className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold">COO Operasyon Panosu</h1>
-          <p className="text-sm text-muted-foreground">
-            Süreç darboğazları, ToC analizi ve SLA izleme
-          </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Zap className="h-6 w-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold">COO Operasyon Panosu</h1>
+            <p className="text-sm text-muted-foreground">
+              Süreç darboğazları, ToC analizi ve SLA izleme
+            </p>
+          </div>
         </div>
       </div>
 
+      <DomainPanel
+        alan="coo"
+        jobId={activeCFOJobId}
+        onResult={(r) => setLiveResult(r as unknown as COOResult)}
+      />
+
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-4">
+        {/* Company / Period */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="coo-company" className="mb-1 block text-xs font-medium">
               Şirket Adı
@@ -467,82 +479,59 @@ export default function COODashboardPage() {
           </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div>
-            <label htmlFor="coo-processes" className="mb-1 block text-xs font-medium">
-              Süreçler CSV
-            </label>
-            <textarea
-              id="coo-processes"
-              value={processCsv}
-              onChange={(e) => setProcessCsv(e.target.value)}
-              placeholder="CSV verisi yapıştırın..."
-              rows={6}
-              className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-          <div>
-            <label htmlFor="coo-sla" className="mb-1 block text-xs font-medium">
-              SLA / Biletler CSV
-            </label>
-            <textarea
-              id="coo-sla"
-              value={slaCsv}
-              onChange={(e) => setSlaCsv(e.target.value)}
-              placeholder="CSV verisi yapıştırın..."
-              rows={6}
-              className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
+        {/* CSV inputs — file drop or paste */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <AgentCsvInput
+            label="Süreçler CSV"
+            value={processCsv}
+            onChange={setProcessCsv}
+            sampleData={IS_DEMO ? SAMPLE_PROCESSES : undefined}
+            description="process_name, cycle_time, throughput, wip, constraint_type, impact_score"
+            disabled={isActive || isEnqueueing}
+          />
+          <AgentCsvInput
+            label="SLA / Biletler CSV"
+            value={slaCsv}
+            onChange={setSlaCsv}
+            sampleData={IS_DEMO ? SAMPLE_SLA : undefined}
+            description="ticket_id, title, assigned_to, created_date, due_date, priority, status"
+            disabled={isActive || isEnqueueing}
+          />
         </div>
 
-        {error && (
-          <p role="alert" className="mb-3 rounded border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-400">
-            {error}
+        {submitError && (
+          <p role="alert" className="rounded border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-400">
+            {submitError}
           </p>
         )}
 
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Analiz yapılıyor…" : "COO Analizi Çalıştır"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setProcessCsv(SAMPLE_DATA.processes);
-              setSlaCsv(SAMPLE_DATA.sla);
-            }}
-            className="rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            Örnek Veri Yükle
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={isActive || isEnqueueing}
+          className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {isActive ? "Analiz yapılıyor…" : "COO Analizi Çalıştır"}
+        </button>
       </form>
 
       {/* Results */}
       {(parsedProcesses.length > 0 || parsedTickets.length > 0) && (
         <div className="space-y-6">
-          {/* Row 1: Bottleneck bubble + ToC */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {parsedProcesses.length > 0 && <BottleneckBubbleChart processes={parsedProcesses} />}
             {parsedProcesses.length > 0 && <TOCAnalysis processes={parsedProcesses} />}
           </div>
 
-          {/* Row 2: SLA Trend + At-Risk */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {parsedTickets.length > 0 && <SLATrendChart trend={mockTrend} breachRate={breachRate} />}
+            {openTickets.length > 0 && <SLAOverdueCard overdue={overdueCount} total={openTickets.length} />}
             {parsedTickets.length > 0 && (
               <AtRiskTicketsTable tickets={parsedTickets} onSort={() => {}} />
             )}
           </div>
 
-          {result?.error && (
+          {cooResult?.error && (
             <div role="alert" className="rounded border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-400">
-              Hata: {result.error}
+              Hata: {cooResult.error}
             </div>
           )}
         </div>

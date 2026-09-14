@@ -34,13 +34,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
     )
     op.create_index("ix_users_email",   "users", ["email"],   unique=True)

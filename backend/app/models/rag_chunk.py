@@ -1,21 +1,25 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
+try:
+    from pgvector.sqlalchemy import Vector
+except Exception:  # pragma: no cover - dependency/import edge
+    Vector = None
+
 if TYPE_CHECKING:
-    from app.models.organization import Organization
 
     # job_id FK is best-effort for now (CFO pipeline uses analysis_jobs.id)
-    from app.models.analysis_job import AnalysisJob
+    pass
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class RagChunk(Base):
@@ -45,6 +49,11 @@ class RagChunk(Base):
 
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(1536).with_variant(JSON(), "sqlite") if Vector is not None else JSON(),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

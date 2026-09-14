@@ -8,22 +8,22 @@ audit universe coverage analysis, and audit health score calculation.
 from __future__ import annotations
 
 import pytest
-from app.agents.audit.findings_agent import (
-    _parse_findings_csv,
-    _compute_findings_metrics,
-    _build_findings_alerts,
-)
+
 from app.agents.audit.controls_agent import (
-    _parse_controls_csv,
-    _compute_controls_metrics,
     _build_controls_alerts,
+    _compute_controls_metrics,
+    _parse_controls_csv,
 )
 from app.agents.audit.coverage_agent import (
-    _parse_coverage_csv,
-    _compute_coverage_metrics,
     _build_coverage_alerts,
+    _compute_coverage_metrics,
+    _parse_coverage_csv,
 )
-
+from app.agents.audit.findings_agent import (
+    _build_findings_alerts,
+    _compute_findings_metrics,
+    _parse_findings_csv,
+)
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

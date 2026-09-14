@@ -4,24 +4,23 @@ from __future__ import annotations
 
 import pytest
 
+from app.agents.ceo.synthesis_agent import _detect_cross_risks
 from app.agents.cmo.campaign_agent import (
-    _parse_campaign_csv,
-    _compute_campaign_metrics,
     _build_campaign_alerts,
-)
-from app.agents.cmo.funnel_agent import (
-    _parse_funnel_csv,
-    _compute_funnel_metrics,
-    _build_funnel_alerts,
-    _normalize_stage,
+    _compute_campaign_metrics,
+    _parse_campaign_csv,
 )
 from app.agents.cmo.cohort_agent import (
-    _parse_cohort_csv,
-    _compute_cohort_metrics,
     _build_cohort_alerts,
+    _compute_cohort_metrics,
+    _parse_cohort_csv,
 )
-from app.agents.ceo.synthesis_agent import _detect_cross_risks
-
+from app.agents.cmo.funnel_agent import (
+    _build_funnel_alerts,
+    _compute_funnel_metrics,
+    _normalize_stage,
+    _parse_funnel_csv,
+)
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

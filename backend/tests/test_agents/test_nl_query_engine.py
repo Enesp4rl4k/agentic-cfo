@@ -2,14 +2,12 @@
 Tests for nl_query_engine.py — pure rule-based functions (no LLM, no DB).
 Covers: classify_intent, extract_metric, get_nested, execute_nl_query
 """
-import pytest
 from app.agents.nl_query_engine import (
     classify_intent,
+    execute_nl_query,
     extract_metric,
     get_nested,
-    execute_nl_query,
 )
-
 
 # ── Sample dashboard data ─────────────────────────────────────────────────────
 
@@ -125,23 +123,23 @@ class TestExtractMetric:
         assert name is not None
 
     def test_nakit_extracts_cashflow(self):
-        path, name = extract_metric("Nakit durumum nedir?")
+        path, _name = extract_metric("Nakit durumum nedir?")
         assert path == "cashflow.net_change"
 
     def test_ebitda_extracted(self):
-        path, name = extract_metric("EBITDA nedir?")
+        path, _name = extract_metric("EBITDA nedir?")
         assert path == "pnl.ebitda"
 
     def test_maas_extracts_salary(self):
-        path, name = extract_metric("Maaş giderleri ne kadar?")
+        path, _name = extract_metric("Maaş giderleri ne kadar?")
         assert path == "pnl.opex.salary"
 
     def test_kira_extracts_rent(self):
-        path, name = extract_metric("Kira maliyetimiz ne?")
+        path, _name = extract_metric("Kira maliyetimiz ne?")
         assert path == "pnl.opex.rent"
 
     def test_english_revenue(self):
-        path, name = extract_metric("What is our revenue?")
+        path, _name = extract_metric("What is our revenue?")
         assert path == "pnl.revenue"
 
     def test_unknown_query_returns_none(self):
@@ -151,11 +149,11 @@ class TestExtractMetric:
 
     def test_longest_match_wins(self):
         """'brüt kâr' should win over just 'kâr'."""
-        path, name = extract_metric("Brüt kâr ne kadar?")
+        path, _name = extract_metric("Brüt kâr ne kadar?")
         assert path == "pnl.gross_profit"
 
     def test_case_insensitive_match(self):
-        path, name = extract_metric("NAKIT AKIŞ ne durumda?")
+        path, _name = extract_metric("NAKIT AKIŞ ne durumda?")
         # nakit akış (without ş) or nakit — should still match
         assert path is not None
 

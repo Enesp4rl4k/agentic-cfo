@@ -13,8 +13,8 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Any
 
+from app.agents.narrative_guard import narrative_guard
 from app.agents.risk.state import RiskState, RiskStepLog
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -157,7 +157,7 @@ def _compute_loss_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
         "total_recovery":          total_rec,
         "recovery_rate":           round(recovery_rate, 3),
         "avg_net_loss_per_event":  int(total_net / total) if total > 0 else 0,
-        "by_category":             {k: v for k, v in sorted(cat_loss.items(), key=lambda x: -x[1])},
+        "by_category":             dict(sorted(cat_loss.items(), key=lambda x: -x[1])),
         "by_root_cause":           dict(rc_counts.most_common(5)),
         "top_loss_events": [
             {
@@ -225,6 +225,7 @@ def _build_loss_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
 # ── Narrative ──────────────────────────────────────────────────────────────────
 
+@narrative_guard
 async def _generate_loss_narrative(metrics: dict[str, Any], settings: Any) -> str:
     total     = metrics.get("total_events", 0)
     net_loss  = metrics.get("total_net_loss", 0)

@@ -55,10 +55,25 @@
     /* Geometry */
     --radius:        0.375rem;   /* 6px — tight, product-appropriate */
 
-    /* ── Motion — Emil primary: restraint, frequency-gated ─────────────── */
-    --duration-fast:   150ms;
-    --duration-base:   200ms;
+    /* ── Motion — Impeccable primary: restraint, frequency-gated ───────── */
+    --duration-instant: 80ms;
+    --duration-fast:    150ms;
+    --duration-base:    220ms;
+    --duration-slow:    350ms;
+    --duration-reveal:  400ms;
+
     --ease-out-quart:  cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-in-quart:   cubic-bezier(0.76, 0, 0.24, 1);
+
+    /* ── Shimmer gradient ─────────────────────────────────────────────────── */
+    --shimmer-gradient: linear-gradient(
+      90deg,
+      oklch(0.20 0.022 262 / 0) 0%,
+      oklch(0.28 0.025 262 / 0.6) 50%,
+      oklch(0.20 0.022 262 / 0) 100%
+    );
   }
 }
 
@@ -82,31 +97,244 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+
+  /* Focus visible — consistent ring */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
 }
 
+/* ── Impeccable micro-interaction utilities ──────────────────────────────── */
 @layer utilities {
-  /* ── Motion utilities — Emil frequency gate applied ────────────────────
-     Frequent dashboard interactions: color/opacity only, no layout animate
-     Rare/occasional: allow transform transitions
-  ──────────────────────────────────────────────────────────────────────── */
+
+  /* ── 1. Frequency-gated transitions ─────────────────────────────────────
+     Frequent dashboard interactions: color/opacity ONLY (no layout shift)
+     Rare/meaningful: allow transform
+  ─────────────────────────────────────────────────────────────────────── */
 
   .transition-state {
-    transition: color var(--duration-fast) var(--ease-out-quart),
-                background-color var(--duration-fast) var(--ease-out-quart),
-                border-color var(--duration-fast) var(--ease-out-quart),
-                opacity var(--duration-fast) var(--ease-out-quart);
+    transition:
+      color         var(--duration-fast) var(--ease-out-quart),
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color  var(--duration-fast) var(--ease-out-quart),
+      opacity       var(--duration-fast) var(--ease-out-quart);
   }
 
   .transition-reveal {
-    transition: opacity var(--duration-base) var(--ease-out-quart),
-                transform var(--duration-base) var(--ease-out-quart);
+    transition:
+      opacity       var(--duration-base) var(--ease-out-quart),
+      transform     var(--duration-base) var(--ease-out-quart);
   }
 
-  /* Reduced motion: strip all transitions, keep instant state changes */
+  .transition-lift {
+    transition:
+      transform     var(--duration-base) var(--ease-out-expo),
+      box-shadow    var(--duration-base) var(--ease-out-expo),
+      border-color  var(--duration-fast) var(--ease-out-quart);
+  }
+
+  .transition-spring {
+    transition:
+      transform     var(--duration-base) var(--ease-spring),
+      opacity       var(--duration-fast) var(--ease-out-quart);
+  }
+
+  /* ── 2. Interactive element micro-states ─────────────────────────────── */
+
+  /* Card lift on hover — used for KPI cards, agent cards */
+  .hover-lift {
+    @apply transition-lift;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px oklch(0.05 0.04 262 / 0.5);
+    border-color: oklch(0.38 0.04 262);
+  }
+  .hover-lift:active {
+    transform: translateY(0px);
+    transition-duration: var(--duration-instant);
+  }
+
+  /* Button press feedback */
+  .press-feedback:active {
+    transform: scale(0.97);
+    transition: transform var(--duration-instant) var(--ease-in-quart);
+  }
+
+  /* Nav link hover — color shift only */
+  .nav-hover {
+    @apply transition-state;
+  }
+  .nav-hover:hover {
+    color: oklch(0.88 0.012 262);
+    background-color: oklch(0.22 0.024 262);
+  }
+
+  /* Icon hover — subtle scale */
+  .icon-hover {
+    transition: transform var(--duration-fast) var(--ease-spring);
+  }
+  .icon-hover:hover {
+    transform: scale(1.12);
+  }
+
+  /* ── 3. Shimmer skeleton ─────────────────────────────────────────────── */
+
+  .skeleton {
+    background: oklch(0.20 0.022 262);
+    background-image: var(--shimmer-gradient);
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+    border-radius: var(--radius);
+  }
+
+  /* ── 4. Stagger children reveal ─────────────────────────────────────── */
+
+  .stagger-children > * {
+    opacity: 0;
+    animation: slide-up 280ms var(--ease-out-expo) both;
+  }
+  .stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
+  .stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
+  .stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
+  .stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
+  .stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
+  .stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(7)  { animation-delay: 240ms; }
+  .stagger-children > *:nth-child(8)  { animation-delay: 280ms; }
+  .stagger-children > *:nth-child(9)  { animation-delay: 320ms; }
+  .stagger-children > *:nth-child(10) { animation-delay: 360ms; }
+
+  /* ── 5. Brand gradient surfaces ─────────────────────────────────────── */
+
+  .brand-gradient {
+    background: linear-gradient(
+      135deg,
+      var(--brand-gradient-from),
+      var(--brand-gradient-to)
+    );
+  }
+
+  .brand-gradient-text {
+    background: linear-gradient(
+      135deg,
+      oklch(0.75 0.20 262),
+      oklch(0.68 0.18 220)
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .animated-gradient {
+    background: linear-gradient(
+      270deg,
+      var(--brand-gradient-from),
+      var(--brand-gradient-to),
+      oklch(0.55 0.20 280)
+    );
+    background-size: 200% 200%;
+    animation: gradient-drift 6s ease infinite;
+  }
+
+  /* ── 6. Live pulse indicator ─────────────────────────────────────────── */
+
+  .pulse-dot {
+    position: relative;
+  }
+  .pulse-dot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.4;
+    animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* ── 7. Glass morphism card ──────────────────────────────────────────── */
+
+  .glass {
+    background: oklch(0.15 0.026 262 / 0.7);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    border: 1px solid oklch(0.30 0.020 262 / 0.5);
+  }
+
+  /* ── 8. Progress bar fill animation ─────────────────────────────────── */
+
+  .progress-bar {
+    height: 4px;
+    background: var(--muted);
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 9999px;
+    transform-origin: left;
+    animation: fill-width var(--duration-reveal) var(--ease-out-expo) both;
+  }
+
+  /* ── 9. Number tick animation ─────────────────────────────────────────── */
+
+  .number-tick {
+    display: inline-block;
+    animation: count-up 350ms var(--ease-out-expo) both;
+  }
+
+  /* ── 10. Page enter animation ────────────────────────────────────────── */
+
+  .page-enter {
+    animation: slide-up 300ms var(--ease-out-expo) both;
+  }
+
+  /* ── 11. Sidebar active indicator ────────────────────────────────────── */
+
+  .nav-active-indicator {
+    position: relative;
+  }
+  .nav-active-indicator::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%) scaleY(0);
+    width: 2px;
+    height: 60%;
+    background: var(--primary);
+    border-radius: 0 2px 2px 0;
+    transition: transform var(--duration-base) var(--ease-spring);
+  }
+  .nav-active-indicator.active::before {
+    transform: translateY(-50%) scaleY(1);
+  }
+
+  /* ── 12. Focus ring enhancement ─────────────────────────────────────── */
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background;
+  }
+
+  /* ── Reduced motion: strip all animations ────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .transition-state,
-    .transition-reveal {
-      transition: none;
+    .transition-reveal,
+    .transition-lift,
+    .transition-spring,
+    .hover-lift,
+    .press-feedback,
+    .icon-hover,
+    .stagger-children > *,
+    .progress-bar-fill,
+    .number-tick,
+    .page-enter,
+    .skeleton {
+      transition: none !important;
+      animation: none !important;
     }
 
     * {
@@ -130,8 +358,45 @@
 ::-webkit-scrollbar-thumb {
   background: oklch(0.32 0.018 255);
   border-radius: 9999px;
+  transition: background var(--duration-fast) var(--ease-out-quart);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: oklch(0.42 0.018 255);
+}
+
+/* ── Selection color ─────────────────────────────────────────────────────── */
+::selection {
+  background: oklch(0.62 0.26 262 / 0.3);
+  color: oklch(0.96 0.008 262);
+}
+
+/* ── Keyframes (referenced in utilities above) ───────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes slide-up {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fill-width {
+  0%   { width: 0%; }
+  100% { width: var(--fill-width, 100%); }
+}
+
+@keyframes count-up {
+  0%   { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ping-slow {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes gradient-drift {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
 }

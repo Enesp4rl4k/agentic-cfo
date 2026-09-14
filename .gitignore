@@ -2,6 +2,7 @@
 
 # Secrets
 .env
+.env.demo
 *.env.local
 
 # Python
@@ -32,8 +33,8 @@ backend/uploads/
 *.db-shm
 *.db-wal
 
-# Lock files (generated, not needed in repo)
-package-lock.json
+# package-lock.json is committed: CI runs `npm ci`, which needs it, and it is
+# what pins the frontend's dependency tree.
 
 # Docker
 *.log
@@ -41,3 +42,21 @@ package-lock.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Standalone Side Projects & Local Data
+data/
+enterprise-knowledge-integrator/
+
+# Standalone Sub-Projects
+post-agentic-ai/
+post_agentic_ai/
+langgraph_checkpoints.sqlite
+agent_memory.db
+knowledge_integrator/
+
+# stale local dev DB snapshots
+*.db.stale-backup-*
+
+# GİB resmî belge paketleri — scripts/fetch_gib_corpus.py ile indirilir,
+# vendor edilmez: standarttan sessizce sapmasın.
+backend/tests/fixtures/gib_corpus/

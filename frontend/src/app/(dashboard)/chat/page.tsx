@@ -5,18 +5,27 @@ import { useSearchParams } from "next/navigation";
 import {
   Send, Bot, User, Upload, RotateCcw, Copy, Check,
   ChevronRight, Sparkles, TrendingUp, AlertTriangle, DollarSign,
+  Zap, Wifi, WifiOff, FlaskConical,
 } from "lucide-react";
-import { sendChatMessage } from "@/lib/api/cfo";
-import type { ChatMessage } from "@/lib/api/cfo";
+import { sendAgentChatMessage } from "@/lib/api/chat";
+import type { ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
+import { ChatEvidenceChips } from "@/components/ui/chat-evidence-chips";
 import { cn } from "@/lib/utils";
+import { useWSChat } from "@/hooks/useWSChat";
+import { useSSEChat } from "@/hooks/useSSEChat";
+import { useCompanyContextStore } from "@/store/companyContext";
+import { apiClient } from "@/lib/api/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Message = ChatMessage & {
+type Message = {
   id: string;
+  role: "user" | "assistant";
+  content: string;
   pending?: boolean;
   error?: boolean;
   ts: number;
+  evidence?: ChatEvidenceMeta;
 };
 
 // ── Suggestion groups ─────────────────────────────────────────────────────────
@@ -255,6 +264,11 @@ function MessageBubble({
           )}
         </div>
 
+        {/* Evidence chips for grounded assistant replies */}
+        {!message.pending && !isUser && message.evidence && (
+          <ChatEvidenceChips meta={message.evidence} />
+        )}
+
         {/* Footer: timestamp + copy */}
         {!message.pending && (
           <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -375,18 +389,83 @@ function useAutoResize(value: string) {
   return ref;
 }
 
+// ── NL simulation intent detector ────────────────────────────────────────────
+
+function isSimulationQuestion(q: string): boolean {
+  const lower = q.toLowerCase();
+  const patterns = [
+    /eğer.*olursa/, /olsayd[ıi]/, /işe.*al/, /mühendis.*artır/, /çalışan.*artır/,
+    /maaş.*artır/, /reklam.*artır/, /kampanya.*yatır/, /fiyat.*artır/, /fiyat.*düşür/,
+    /kos?t.*azalt/, /gider.*azalt/, /\d+\s*(kişi|çalışan|mühendis|satış)/, /simüle/,
+    /ne olur.*eger/, /what if/, /senaryo/,
+  ];
+  return patterns.some((p) => p.test(lower));
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
+  const { orgId } = useCompanyContextStore();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // grounded = POST /chat/agent (dual RAG + semantic KPIs, default)
+  // stream = WebSocket token streaming (falls back to SSE on error)
+  const [chatMode, setChatMode] = useState<"grounded" | "stream">("grounded");
+  const [useWS, setUseWS] = useState(true);
+  const [simResult, setSimResult] = useState<Record<string, unknown> | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useAutoResize(input);
+
+  // WebSocket hook
+  const ws = useWSChat({
+    onDone: () => { inputRef.current?.focus(); },
+    onError: (_msg) => {
+      // WS failed — switch to SSE streaming fallback
+      setUseWS(false);
+    },
+  });
+
+  // SSE streaming fallback hook (used when WS unavailable)
+  const sseChat = useSSEChat({
+    onDone: () => { inputRef.current?.focus(); },
+    onError: (_msg) => { /* SSE also failed — already handled in hook */ },
+  });
+
+  // Sync SSE messages to local state when in stream + SSE mode
+  useEffect(() => {
+    if (chatMode !== "stream" || useWS) return;
+    if (sseChat.messages.length > 0) {
+      const mapped: Message[] = sseChat.messages.map((m, i) => ({
+        id: `sse-${i}`,
+        role: m.role,
+        content: m.content,
+        pending: m.streaming,
+        ts: Date.now(),
+      }));
+      setMessages(mapped);
+    }
+  }, [chatMode, useWS, sseChat.messages]);
+
+  // Sync WS messages to local state when in stream mode
+  useEffect(() => {
+    if (chatMode !== "stream" || !useWS) return;
+    if (ws.messages.length > 0) {
+      const mapped: Message[] = ws.messages.map((m, i) => ({
+        id: `ws-${i}`,
+        role: m.role,
+        content: m.content,
+        pending: m.streaming,
+        ts: Date.now(),
+        evidence: m.evidence,
+      }));
+      setMessages(mapped);
+    }
+  }, [chatMode, useWS, ws.messages]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -399,50 +478,108 @@ export default function ChatPage() {
   }, []);
 
   const send = useCallback(async (question: string) => {
-    if (!question.trim() || !jobId || loading) return;
+    const q = question.trim();
+    if (!q || (!jobId && !orgId)) return;
+    if (loading || ws.isStreaming) return;
 
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: question.trim(),
-      ts: Date.now(),
-    };
-    const pendingMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "",
-      pending: true,
-      ts: Date.now(),
-    };
-
-    setMessages((prev) => [...prev, userMsg, pendingMsg]);
     setInput("");
-    setLoading(true);
 
-    try {
-      const history: ChatMessage[] = messages.map(({ role, content }) => ({ role, content }));
-      const answer = await sendChatMessage(jobId, question.trim(), history);
-
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        { id: pendingMsg.id, role: "assistant", content: answer, ts: Date.now() },
-      ]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        {
-          id: pendingMsg.id,
-          role: "assistant",
-          content: `Bir hata oluştu: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
-          error: true,
-          ts: Date.now(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
-      inputRef.current?.focus();
+    // Detect simulation questions → route to NL simulation bridge
+    if (isSimulationQuestion(q) && (jobId || orgId)) {
+      const userMsg: Message = {
+        id: crypto.randomUUID(), role: "user", content: q, ts: Date.now(),
+      };
+      const pendingMsg: Message = {
+        id: crypto.randomUUID(), role: "assistant", content: "", pending: true, ts: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMsg, pendingMsg]);
+      setLoading(true);
+      try {
+        const res = await apiClient.post<{ answer: string; simulation_type: string }>(
+          "/advanced/nl-simulate",
+          { query: q, job_id: jobId, org_id: orgId }
+        );
+        const answer = res.data.answer ?? "Simülasyon tamamlandı.";
+        const simType = res.data.simulation_type ?? "simulation";
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            id: pendingMsg.id,
+            role: "assistant",
+            content: `🧪 **${simType === "headcount" ? "Headcount Simülasyonu" : simType === "cascade" ? "Cascade Risk" : "Senaryo Analizi"}**\n\n${answer}`,
+            ts: Date.now(),
+          },
+        ]);
+      } catch {
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          { id: pendingMsg.id, role: "assistant", content: "Simülasyon çalıştırılamadı.", error: true, ts: Date.now() },
+        ]);
+      } finally {
+        setLoading(false);
+        inputRef.current?.focus();
+      }
+      return;
     }
-  }, [jobId, loading, messages]);
+
+    // Grounded mode — dual RAG + semantic KPIs via POST /chat/agent
+    if (chatMode === "grounded") {
+      const userMsg: Message = {
+        id: crypto.randomUUID(), role: "user", content: q, ts: Date.now(),
+      };
+      const pendingMsg: Message = {
+        id: crypto.randomUUID(), role: "assistant", content: "", pending: true, ts: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMsg, pendingMsg]);
+      setLoading(true);
+      try {
+        const history = messages
+          .filter((m) => !m.pending && !m.error)
+          .map(({ role, content }) => ({ role, content }));
+        const { answer, evidence } = await sendAgentChatMessage(q, {
+          agentFilter: "cfo",
+          history,
+        });
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            id: pendingMsg.id,
+            role: "assistant",
+            content: answer,
+            evidence,
+            ts: Date.now(),
+          },
+        ]);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            id: pendingMsg.id,
+            role: "assistant",
+            content: `Bir hata oluştu: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
+            error: true,
+            ts: Date.now(),
+          },
+        ]);
+      } finally {
+        setLoading(false);
+        inputRef.current?.focus();
+      }
+      return;
+    }
+
+    // WebSocket streaming mode
+    if (useWS) {
+      ws.send({ question: q, jobId, orgId });
+      return;
+    }
+
+    // SSE streaming fallback (token-level streaming, no WebSocket)
+    if (sseChat) {
+      sseChat.send({ question: q, jobId, orgId });
+      return;
+    }
+  }, [jobId, orgId, loading, messages, chatMode, useWS, ws, sseChat]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -456,7 +593,11 @@ export default function ChatPage() {
     }
   };
 
-  if (!jobId) return <NoJobState />;
+  // Combined streaming state: WS or SSE (stream mode only)
+  const isStreaming = chatMode === "stream" && (useWS ? ws.isStreaming : sseChat.status === "streaming");
+  const isBusy = loading || isStreaming;
+
+  if (!jobId && !orgId) return <NoJobState />;
 
   const lastAssistantIdx = messages.map((m, i) => ({ m, i }))
     .filter(({ m }) => m.role === "assistant" && !m.pending)
@@ -472,25 +613,48 @@ export default function ChatPage() {
           </div>
           <div>
             <p className="text-sm font-semibold leading-none">CFO Asistanı</p>
-            <p className="mt-0.5 text-[10px] text-muted-foreground">
-              {loading ? "Yanıt üretiliyor…" : "Hazır"}
+            <p className="mt-0.5 text-[10px] text-muted-foreground flex items-center gap-1">
+              {isBusy ? (
+                <><span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />Yanıt üretiliyor…</>
+              ) : chatMode === "grounded" ? (
+                <><Sparkles className="h-2.5 w-2.5 text-primary" />Grounded (RAG + KPI)</>
+              ) : useWS ? (
+                <><Wifi className="h-2.5 w-2.5 text-emerald-400" />WS Streaming</>
+              ) : (
+                <><WifiOff className="h-2.5 w-2.5 text-muted-foreground" />SSE Streaming</>
+              )}
             </p>
           </div>
         </div>
-        {messages.length > 0 && (
+        <div className="flex items-center gap-2">
+          {/* Grounded / Stream toggle */}
           <button
-            onClick={() => setMessages([])}
+            onClick={() => setChatMode((m) => (m === "grounded" ? "stream" : "grounded"))}
+            title={chatMode === "grounded" ? "Stream moduna geç" : "Grounded moda geç"}
             className={cn(
-              "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground",
-              "hover:bg-muted hover:text-foreground transition-colors",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              "rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors",
+              chatMode === "grounded"
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
             )}
-            aria-label="Konuşmayı temizle"
           >
-            <RotateCcw className="h-3 w-3" aria-hidden="true" />
-            Temizle
+            {chatMode === "grounded" ? "Grounded" : "Stream"}
           </button>
-        )}
+          {messages.length > 0 && (
+            <button
+              onClick={() => { setMessages([]); ws.clear(); }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground",
+                "hover:bg-muted hover:text-foreground transition-colors",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              )}
+              aria-label="Konuşmayı temizle"
+            >
+              <RotateCcw className="h-3 w-3" aria-hidden="true" />
+              Temizle
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -511,6 +675,13 @@ export default function ChatPage() {
 
       {/* Input area */}
       <div className="border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+        {/* Simulation hint */}
+        {input && isSimulationQuestion(input) && (
+          <div className="mb-2 flex items-center gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-xs text-blue-400">
+            <FlaskConical className="h-3 w-3 shrink-0" />
+            Simülasyon sorusu algılandı — NL Simulation Engine kullanılacak
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div className={cn(
             "flex items-end gap-2 rounded-xl border border-border bg-card px-3 py-2",
@@ -521,9 +692,9 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Finansal verileriniz hakkında soru sorun…"
+              placeholder="Finansal soru veya 'eğer X olursa ne olur?' sorun…"
               rows={1}
-              disabled={loading}
+              disabled={isBusy}
               className={cn(
                 "flex-1 resize-none bg-transparent py-0.5 text-sm leading-relaxed",
                 "placeholder:text-muted-foreground/60",
@@ -535,7 +706,7 @@ export default function ChatPage() {
             />
             <button
               type="submit"
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || isBusy}
               className={cn(
                 "mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
                 "bg-primary text-primary-foreground",

@@ -9,19 +9,18 @@ Handles:
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
-import time
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from pydantic import ValidationError
 
 from app.services.data_sync.schemas import (
+    SyncBatch,
     SyncSourceType,
     SyncTransaction,
-    SyncBatch,
     TransactionType,
 )
 
@@ -55,10 +54,10 @@ class ParasutClient:
         self.client_secret = client_secret
         self.refresh_token = refresh_token
         self.company_id = company_id
-        
-        self._access_token: Optional[str] = None
-        self._token_expires_at: Optional[datetime] = None
-        self._rate_limit_reset: datetime = datetime.now(timezone.utc)
+
+        self._access_token: str | None = None
+        self._token_expires_at: datetime | None = None
+        self._rate_limit_reset: datetime = datetime.now(UTC)
 
     async def _refresh_access_token(self) -> str:
         """Refresh OAuth2 access token."""
@@ -75,11 +74,11 @@ class ParasutClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                
+
                 self._access_token = data["access_token"]
                 expires_in = data.get("expires_in", 3600)
-                self._token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                
+                self._token_expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+
                 logger.info("Paraşüt access token refreshed")
                 return self._access_token
             except httpx.RequestError as e:
@@ -91,18 +90,18 @@ class ParasutClient:
         if (
             self._access_token
             and self._token_expires_at
-            and datetime.now(timezone.utc) < self._token_expires_at - timedelta(minutes=5)
+            and datetime.now(UTC) < self._token_expires_at - timedelta(minutes=5)
         ):
             return self._access_token
-        
+
         return await self._refresh_access_token()
 
     async def _api_call(
         self,
         method: str,
         endpoint: str,
-        params: Optional[dict] = None,
-        json_data: Optional[dict] = None,
+        params: dict | None = None,
+        json_data: dict | None = None,
         retry_count: int = 3,
     ) -> dict:
         """
@@ -119,11 +118,11 @@ class ParasutClient:
             Response JSON
         """
         # Respect rate limit
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if now < self._rate_limit_reset:
             sleep_time = (self._rate_limit_reset - now).total_seconds()
             logger.warning(f"Rate limit: sleeping {sleep_time:.1f}s")
-            time.sleep(sleep_time)
+            await asyncio.sleep(sleep_time)
 
         token = await self._ensure_token()
         headers = {
@@ -132,7 +131,7 @@ class ParasutClient:
         }
 
         url = f"{PARASUT_API_BASE}/{endpoint}"
-        
+
         for attempt in range(retry_count):
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
@@ -148,7 +147,7 @@ class ParasutClient:
                     if "X-RateLimit-Reset" in resp.headers:
                         reset_epoch = int(resp.headers["X-RateLimit-Reset"])
                         self._rate_limit_reset = datetime.fromtimestamp(
-                            reset_epoch, tz=timezone.utc
+                            reset_epoch, tz=UTC
                         )
 
                     if resp.status_code == 429:
@@ -157,7 +156,7 @@ class ParasutClient:
                         logger.warning(
                             f"Rate limited (attempt {attempt + 1}), backing off {backoff}s"
                         )
-                        time.sleep(backoff)
+                        await asyncio.sleep(backoff)
                         continue
 
                     resp.raise_for_status()
@@ -169,7 +168,7 @@ class ParasutClient:
                     raise
                 backoff = 2 ** attempt
                 logger.warning(f"Request failed, retrying in {backoff}s: {e}")
-                time.sleep(backoff)
+                await asyncio.sleep(backoff)
 
         raise RuntimeError(f"API call failed after {retry_count} retries")
 
@@ -185,7 +184,7 @@ class ParasutClient:
         """
         batch = SyncBatch(
             source_type=SyncSourceType.PARASUT,
-            sync_timestamp=datetime.now(timezone.utc),
+            sync_timestamp=datetime.now(UTC),
         )
 
         try:
@@ -260,7 +259,7 @@ class ParasutClient:
         """
         batch = SyncBatch(
             source_type=SyncSourceType.PARASUT,
-            sync_timestamp=datetime.now(timezone.utc),
+            sync_timestamp=datetime.now(UTC),
         )
 
         try:

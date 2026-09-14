@@ -1,65 +1,92 @@
 "use client";
 
-import { useState } from "react";
-import { X, Zap, ExternalLink } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Zap, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { apiClient } from "@/lib/api/client";
 
-/**
- * DemoBanner — shown when NEXT_PUBLIC_DEMO_MODE=true
- * Thin, dismissible bar at the top of the dashboard layout.
- * Informs the user this is a demo with TechNova sample data.
- */
-export function DemoBanner() {
-  const [dismissed, setDismissed] = useState(false);
+interface DemoBannerProps {
+  onDemoStarted?: (jobId: string) => void;
+  className?: string;
+}
 
-  if (dismissed) return null;
+export function DemoBanner({ onDemoStarted, className }: DemoBannerProps) {
+  const [visible, setVisible] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const dismissed = localStorage.getItem("demo_banner_dismissed");
+    if (dismissed === "1") {
+      setVisible(false);
+    }
+  }, []);
+
+  if (!visible) return null;
+
+  async function handleDemoClick() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiClient.post<{ data: { job_id: string } }>("/demo/seed");
+      const jobId = res.data.data.job_id;
+      localStorage.setItem("demo_banner_dismissed", "1");
+      setVisible(false);
+      onDemoStarted?.(jobId);
+      // Redirect to dashboard with job
+      window.location.href = `/?job=${jobId}`;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Demo başlatılamadı");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleDismiss() {
+    localStorage.setItem("demo_banner_dismissed", "1");
+    setVisible(false);
+  }
 
   return (
     <div
-      role="banner"
-      aria-label="Demo mode notification"
       className={cn(
-        "relative flex items-center justify-between gap-3",
-        "bg-primary/10 border-b border-primary/20 px-4 py-2",
-        "text-xs text-primary"
+        "rounded-lg border border-blue-500/30 bg-blue-500/8 p-4 flex items-start justify-between gap-3",
+        className
       )}
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <Zap className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-        <span className="font-medium">Demo modu</span>
-        <span className="text-muted-foreground hidden sm:inline">—</span>
-        <span className="text-muted-foreground hidden sm:inline truncate">
-          TechNova Yazılım A.Ş. · 12 aylık gerçekçi finansal veri · 163 işlem
-        </span>
+      <div className="flex items-start gap-3 flex-1">
+        <Zap className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm text-foreground">Demo ile Deneyin</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Sample finansal verisi yükleyerek AI CFO platformunu hemen deneyin. İçişleri bir dakika.
+          </p>
+          {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
+        </div>
       </div>
-
-      <div className="flex items-center gap-3 shrink-0">
-        <a
-          href="https://github.com/your-org/agentic-cfo"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            "hidden sm:flex items-center gap-1 rounded px-2 py-0.5 text-[11px]",
-            "border border-primary/30 bg-primary/5",
-            "hover:bg-primary/15 transition-colors",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          )}
-          aria-label="View source on GitHub"
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          size="sm"
+          onClick={handleDemoClick}
+          disabled={loading}
+          className="whitespace-nowrap"
         >
-          Kaynak Kodu
-          <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" />
-        </a>
-
+          {loading ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              Başlatılıyor…
+            </>
+          ) : (
+            "Demo Başlat"
+          )}
+        </Button>
         <button
-          onClick={() => setDismissed(true)}
-          className={cn(
-            "rounded p-0.5 text-muted-foreground",
-            "hover:text-foreground transition-colors",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          )}
-          aria-label="Dismiss demo banner"
+          onClick={handleDismiss}
+          className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Kapat"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
     </div>

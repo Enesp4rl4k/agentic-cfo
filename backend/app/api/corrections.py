@@ -10,8 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
+from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.services.classifier import learn
 
 router = APIRouter()
@@ -32,6 +35,7 @@ class CategoryCorrectionRequest(BaseModel):
 async def correct_category(
     transaction_id: str,
     body: CategoryCorrectionRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -47,6 +51,7 @@ async def correct_category(
     tx = await db.get(Transaction, transaction_id)
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found.")
+    await load_owned_job(db, tx.job_id, current_user)
 
     old_category = tx.category
     tx.category = body.category
@@ -75,12 +80,14 @@ async def correct_category(
 @router.get("/transactions/{transaction_id}")
 async def get_transaction(
     transaction_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Get a single transaction by ID."""
     tx = await db.get(Transaction, transaction_id)
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found.")
+    await load_owned_job(db, tx.job_id, current_user)
     return {
         "data": {
             "id": tx.id,

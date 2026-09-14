@@ -1,28 +1,30 @@
 """
-RAG Service (v1)
+RAG Service
 
-Bu sürümde:
-  - Embedding + pgvector yok.
-  - chunk'lar DB'ye metin olarak yazılır.
-  - Retrieval: query vs chunk_text üzerinden Python TF-IDF benzerliği ile yapılır.
-
-Amaç: agentic sistemde “kanıt (evidence) grounding” ihtiyacını kapatmak.
-Sonraki iterasyonda embeddings/pgvector ile değiştirilebilir (interface kalır).
+Chunk storage + retrieval:
+  - Index: chunk text (+ optional OpenAI-compatible embeddings when configured)
+  - Retrieval: TF-IDF (all DBs) and pgvector cosine (PostgreSQL + embeddings)
+  - Hybrid merge lives in app.services.rag.retriever.HybridRagRetriever
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.rag_chunk import RagChunk
+from app.config import get_settings
 from app.database import session_factory
+from app.models.rag_chunk import RagChunk
 
 logger = logging.getLogger(__name__)
+_EVIDENCE_CACHE: dict[str, tuple[float, str]] = {}
+_EVIDENCE_CACHE_TTL_SECONDS = 45.0
 
 
 def _tokenise(text: str) -> list[str]:
@@ -38,7 +40,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
     if not docs:
         return []
 
-    all_texts = [query] + docs
+    all_texts = [query, *docs]
     all_tokens = [_tokenise(t) for t in all_texts]
 
     vocab = sorted({tok for toks in all_tokens for tok in toks})
@@ -74,7 +76,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
     doc_vecs = [_vec(toks) for toks in all_tokens[1:]]
 
     def _cosine(a: list[float], b: list[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         na = sum(x * x for x in a) ** 0.5
         nb = sum(x * x for x in b) ** 0.5
         if na == 0 or nb == 0:
@@ -112,6 +114,39 @@ def _chunk_text(
     return chunks
 
 
+def _vector_literal(values: list[float]) -> str:
+    return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
+
+
+def _has_embedding_support() -> bool:
+    settings = get_settings()
+    key = (settings.openai_api_key or "").strip()
+    return (
+        settings.rag_embedding_enabled
+        and bool(key)
+        and not key.startswith("llm-placeholder-")
+    )
+
+
+def _embed_texts(texts: list[str]) -> list[list[float]] | None:
+    if not texts or not _has_embedding_support():
+        return None
+    try:
+        from langchain_openai import OpenAIEmbeddings
+
+        settings = get_settings()
+        client = OpenAIEmbeddings(
+            model=settings.rag_embedding_model,
+            api_key=settings.openai_api_key,
+            base_url=settings.llm_base_url or None,
+            dimensions=settings.rag_embedding_dimensions,
+        )
+        return client.embed_documents(texts)
+    except Exception as exc:
+        logger.warning("RAG embedding generation failed, using TF-IDF only: %s", exc)
+        return None
+
+
 async def index_job_text(
     db: AsyncSession,
     *,
@@ -140,7 +175,9 @@ async def index_job_text(
         )
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
+    embeddings = _embed_texts(chunks)
+    settings = get_settings()
     for i, ch in enumerate(chunks):
         db.add(
             RagChunk(
@@ -149,6 +186,8 @@ async def index_job_text(
                 source_type=source_type,
                 chunk_index=i,
                 chunk_text=ch,
+                embedding_model=settings.rag_embedding_model if embeddings else None,
+                embedding=embeddings[i] if embeddings and i < len(embeddings) else None,
                 created_at=now,
             )
         )
@@ -183,6 +222,21 @@ async def retrieve_evidence(
     if not org_id or not query.strip():
         return ""
 
+    cache_key = "|".join(
+        [
+            org_id,
+            (job_id or ""),
+            ",".join(job_ids or []),
+            source_type or "",
+            str(top_k),
+            query.strip().lower(),
+        ]
+    )
+    now_ts = time.monotonic()
+    cached = _EVIDENCE_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) <= _EVIDENCE_CACHE_TTL_SECONDS:
+        return cached[1]
+
     async def _run(_db: AsyncSession) -> str:
         # Fetch recent candidate chunks (avoid huge candidate sets for TF-IDF)
         q = select(RagChunk.job_id, RagChunk.chunk_index, RagChunk.chunk_text).where(
@@ -190,16 +244,26 @@ async def retrieve_evidence(
         )
         if source_type:
             q = q.where(RagChunk.source_type == source_type)
+        strict_job_scope = bool(job_id or job_ids)
         if job_id:
             q = q.where(RagChunk.job_id == job_id)
         elif job_ids:
             q = q.where(RagChunk.job_id.in_(job_ids))
         q = q.order_by(RagChunk.created_at.desc()).limit(candidate_limit)
         rows = (await _db.execute(q)).all()
+        # Fallback: if strict job scope returns no evidence, retry org-wide to avoid empty grounding.
+        if not rows and strict_job_scope:
+            q_fallback = select(RagChunk.job_id, RagChunk.chunk_index, RagChunk.chunk_text).where(
+                RagChunk.org_id == org_id
+            )
+            if source_type:
+                q_fallback = q_fallback.where(RagChunk.source_type == source_type)
+            q_fallback = q_fallback.order_by(RagChunk.created_at.desc()).limit(candidate_limit)
+            rows = (await _db.execute(q_fallback)).all()
         if not rows:
             return ""
 
-        job_ids: list[str | None] = [r[0] for r in rows]
+        row_job_ids: list[str | None] = [r[0] for r in rows]
         chunk_indices: list[int] = [r[1] for r in rows]
         chunk_texts: list[str] = [r[2] or "" for r in rows]
 
@@ -208,7 +272,7 @@ async def retrieve_evidence(
             return ""
 
         ranked = sorted(
-            zip(scores, job_ids, chunk_indices, chunk_texts),
+            zip(scores, row_job_ids, chunk_indices, chunk_texts, strict=False),
             key=lambda x: -x[0],
         )
 
@@ -240,7 +304,13 @@ async def retrieve_evidence(
                 f"- job={jid} chunk={e.chunk_index} score={e.score:.2f}: {e.preview}"
             )
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        _EVIDENCE_CACHE[cache_key] = (time.monotonic(), result)
+        if len(_EVIDENCE_CACHE) > 512:
+            # keep cache bounded: drop oldest by timestamp
+            oldest_key = min(_EVIDENCE_CACHE.items(), key=lambda kv: kv[1][0])[0]
+            _EVIDENCE_CACHE.pop(oldest_key, None)
+        return result
 
     if db is not None:
         return await _run(db)

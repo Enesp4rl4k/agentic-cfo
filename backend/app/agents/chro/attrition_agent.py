@@ -6,12 +6,14 @@ Pure calculation — no LLM required.
 """
 
 import csv
-from io import StringIO
+import logging
+from collections import Counter
 from datetime import datetime
 from typing import Any
-from collections import Counter
 
 from app.agents.chro.state import CHROState, CHROStepLog
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_datetime(raw: str) -> datetime | None:
@@ -33,15 +35,15 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
     """Parse attrition/departure CSV — flexible column detection."""
     if not csv_text or not csv_text.strip():
         return []
-    
+
     lines = csv_text.strip().split("\n")
     if not lines:
         return []
-    
+
     reader = csv.DictReader(lines)
     if not reader.fieldnames:
         return []
-    
+
     def _col(*candidates: str) -> str | None:
         """Find first matching column name (case-insensitive)."""
         candidates_lower = [c.lower() for c in candidates]
@@ -49,7 +51,7 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
             if field.lower() in candidates_lower:
                 return field
         return None
-    
+
     name_col = _col("name", "employee", "employee_name")
     level_col = _col("level", "seniority", "grade")
     dept_col = _col("department", "dept", "team")
@@ -57,7 +59,7 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
     tenure_col = _col("tenure", "tenure_months", "months", "years_employed")
     reason_col = _col("reason", "departure_reason", "attrition_reason", "cause")
     replaced_col = _col("replaced", "replacement_hired", "backfilled")
-    
+
     rows = []
     for i, row in enumerate(reader, start=1):
         try:
@@ -65,12 +67,12 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
             level = (row.get(level_col) or "mid").strip().lower()
             dept = (row.get(dept_col) or "unknown").strip()
             reason = (row.get(reason_col) or "voluntary").strip().lower()
-            
+
             # Departure date
             departure_date = None
             if departure_col and row.get(departure_col):
                 departure_date = _parse_datetime(row.get(departure_col))
-            
+
             # Tenure
             tenure_months = 0
             if tenure_col and row.get(tenure_col):
@@ -79,13 +81,13 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
                     tenure_months = int(float(tenure_str))
                 except (ValueError, TypeError):
                     tenure_months = 0
-            
+
             # Replaced
             replaced = False
             if replaced_col and row.get(replaced_col):
                 replaced_str = str(row.get(replaced_col)).strip().lower()
                 replaced = replaced_str in ["yes", "true", "1", "replaced", "backfilled"]
-            
+
             rows.append({
                 "name": name,
                 "level": level,
@@ -97,50 +99,50 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
             })
         except Exception:
             pass
-    
+
     return rows
 
 
 def _compute_attrition_metrics(departures: list[dict[str, Any]]) -> dict[str, Any]:
     """Pure calculation — no LLM."""
-    
+
     total_departures = len(departures)
-    
+
     # By level
     by_level = Counter(d["level"] for d in departures)
-    
+
     # By department
     by_dept = Counter(d["department"] for d in departures)
-    
+
     # Churn reasons
     reasons = Counter(d["reason"] for d in departures)
     top_reasons = reasons.most_common(3)
-    
+
     # Tenure analysis
     tenures = [d["tenure_months"] for d in departures if d["tenure_months"] > 0]
     avg_tenure_months = int(sum(tenures) / len(tenures)) if tenures else 0
-    
+
     # Early departures (< 6 months)
     early_departures = [d for d in departures if d["tenure_months"] < 6]
     early_departure_rate = len(early_departures) / total_departures if total_departures > 0 else 0
-    
+
     # Replaced rate
     replaced_count = len([d for d in departures if d["replaced"]])
     replaced_rate = replaced_count / total_departures if total_departures > 0 else 0
-    
+
     # Recent departures (last 90 days — estimated)
     # Assuming data is recent; count last third as recent
     recent_threshold = max(1, total_departures // 3)
     recent_departures = departures[:recent_threshold]
-    
+
     # Involuntary departures
     involuntary = [d for d in departures if d["reason"] in ["termination", "fired", "involuntary", "layoff"]]
     involuntary_rate = len(involuntary) / total_departures if total_departures > 0 else 0
-    
+
     # Cost estimation (rough)
     # Assuming avg replacement cost = 6-9 months salary for mid-level
     replacement_cost_estimate = total_departures * 75_000 * 100  # $75k avg in cents
-    
+
     return {
         "total_departures": total_departures,
         "by_level": dict(by_level),
@@ -161,28 +163,28 @@ def _compute_attrition_metrics(departures: list[dict[str, Any]]) -> dict[str, An
 def _build_attrition_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     """Generate alerts based on attrition metrics."""
     alerts = []
-    
+
     # High early departure rate
     if metrics.get("early_departure_rate", 0) > 0.20:
         alerts.append({
             "level": "critical",
             "message": f"High early departures: {metrics['early_departure_rate']*100:.0f}% leave within 6 months — investigate onboarding"
         })
-    
+
     # Unbalanced replacement coverage
     if metrics.get("replaced_rate", 0) < 0.5 and metrics.get("total_departures", 0) > 5:
         alerts.append({
             "level": "warning",
             "message": f"Only {metrics['replaced_rate']*100:.0f}% of departures replaced — hiring gap detected"
         })
-    
+
     # High involuntary departures
     if metrics.get("involuntary_rate", 0) > 0.15:
         alerts.append({
             "level": "warning",
             "message": f"High involuntary departures: {metrics['involuntary_rate']*100:.0f}% — review management & culture"
         })
-    
+
     # High attrition cost
     cost = metrics.get("estimated_replacement_cost", 0)
     if cost > 1_000_000 * 100:  # > $1M
@@ -191,7 +193,7 @@ def _build_attrition_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
             "level": "warning",
             "message": f"Estimated replacement cost: ${cost_millions:.1f}M — consider retention programs"
         })
-    
+
     return alerts
 
 
@@ -216,26 +218,17 @@ async def _generate_attrition_narrative(
                 f", en riskli grup: '{top['department']}' / '{top['level']}'"
             )
 
-    total      = metrics.get("total_departures", 0)
-    tenure     = metrics.get("avg_tenure_months", 0)
-    early_rate = metrics.get("early_departure_rate", 0)
+    total       = metrics.get("total_departures", 0)
+    tenure      = metrics.get("avg_tenure_months", 0)
+    early_rate  = metrics.get("early_departure_rate", 0)
+    involuntary = metrics.get("involuntary_departures_count", 0)
 
     try:
-        from app.config import get_settings as _gs
-        settings = _gs()
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.platform.model_gateway import complete_text
 
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=600,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
-
-        response = await llm.ainvoke([
-            SystemMessage(content=(
+        return (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir CHRO'sun. İşten ayrılma verilerini ve survival analizini "
                 "inceleyerek Türkçe kısa, eyleme dönüştürülebilir bir özet yaz.\n"
                 "Yapı:\n"
@@ -243,14 +236,14 @@ async def _generate_attrition_narrative(
                 "2. En kritik grup/dönem\n"
                 "3. İK ekibinin hemen yapması gereken 2-3 somut eylem\n"
                 "Rakamları Türkçe birimlerle kullan."
-            )),
-            HumanMessage(content=(
+            ),
+            prompt=(
                 f"Toplam ayrılma: {total} | Ort. kıdem: {tenure:.0f} ay | "
                 f"Erken ayrılma: %{early_rate*100:.0f}"
                 + survival_context
-            )),
-        ])
-        return response.content.strip()
+            ),
+            max_tokens=600,
+        )).strip()
     except Exception:
         pass
 
@@ -263,12 +256,12 @@ async def _generate_attrition_narrative(
         narrative_lines.append(
             f"Erken ayrılma (<6 ay): ayrılmaların %{early_rate*100:.0f}'i."
         )
-    
+
     if involuntary > 0:
         narrative_lines.append(
             f"Involuntary departures: {involuntary} terminations/layoffs."
         )
-    
+
     return " ".join(narrative_lines)
 
 
@@ -277,13 +270,13 @@ async def run_attrition_agent(state: CHROState, config: dict) -> dict[str, Any]:
     Attrition Skill Agent.
     done_when: state['attrition']['total_departures'] is an integer
     """
-    
+
     result = {
         "attrition": None,
         "logs": state.get("logs") or [],
         "error": None,
     }
-    
+
     try:
         csv_text = state.get("attrition_csv") or ""
         rows = _parse_attrition_csv(csv_text)
@@ -320,7 +313,7 @@ async def run_attrition_agent(state: CHROState, config: dict) -> dict[str, Any]:
             "narrative":        narrative,
             "survival_analysis": survival_result,
         }
-        
+
         log = CHROStepLog(
             node="attrition_agent",
             status="completed",
@@ -328,14 +321,14 @@ async def run_attrition_agent(state: CHROState, config: dict) -> dict[str, Any]:
             metrics={"total_departures": metrics["total_departures"]},
         )
         result["logs"].append(log)
-        
+
     except Exception as e:
-        result["error"] = f"Attrition agent failed: {str(e)}"
+        result["error"] = f"Attrition agent failed: {e!s}"
         log = CHROStepLog(
             node="attrition_agent",
             status="failed",
             message=str(e),
         )
         result["logs"].append(log)
-    
+
     return result

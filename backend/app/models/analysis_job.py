@@ -1,20 +1,20 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.transaction import Transaction
     from app.models.report import Report
+    from app.models.transaction import Transaction
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class JobStatus(StrEnum):
@@ -32,7 +32,7 @@ class AnalysisJob(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)  # pdf | xlsx | csv
@@ -52,6 +52,18 @@ class AnalysisJob(Base):
     )
 
     # Agent run audit trail (list of StepLog dicts)
+    # Which of an accountant's client companies this job is for, when the
+    # uploader is an SMMM working on someone else's books. Null for a company
+    # analysing itself, which is the ordinary case.
+    #
+    # Without this, the SMMM portal and the compliance chain were two islands:
+    # an accountant could register forty clients and run the chain for none of
+    # them, and the portal's dashboard counted analyses from fields nothing
+    # ever wrote.
+    smmm_client_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+
     logs: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Confidence score from lowest-confidence skill in the run (0–1)
@@ -62,8 +74,14 @@ class AnalysisJob(Base):
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Connector / sync / ingestion metadata (used by scheduled sync + UI)
+    # NOTE: Keep it small; put large payloads elsewhere.
+    result_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False

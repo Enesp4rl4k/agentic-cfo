@@ -1,11 +1,14 @@
 """Open Banking connectors — Akbank, Garanti BBVA."""
-from app.services.open_banking.base import OpenBankingClient, BankOAuthConfig, OpenBankingError
 from app.services.open_banking.akbank import AkbankClient
+from app.services.open_banking.base import BankOAuthConfig, OpenBankingClient, OpenBankingError
 from app.services.open_banking.garanti import GarantiClient
 
 __all__ = [
-    "OpenBankingClient", "BankOAuthConfig", "OpenBankingError",
-    "AkbankClient", "GarantiClient",
+    "AkbankClient",
+    "BankOAuthConfig",
+    "GarantiClient",
+    "OpenBankingClient",
+    "OpenBankingError",
 ]
 
 

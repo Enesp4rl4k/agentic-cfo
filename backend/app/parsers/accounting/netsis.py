@@ -17,7 +17,6 @@ from __future__ import annotations
 import csv
 import io
 import re
-from datetime import datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 

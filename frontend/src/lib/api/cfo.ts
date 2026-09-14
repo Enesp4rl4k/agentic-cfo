@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api/client";
+import { apiClient, fetchWithAuth } from "@/lib/api/client";
 import type { AnalysisJob, DashboardData, ReportMeta, Transaction } from "@/types";
 
 export async function uploadFile(file: File): Promise<{ job_id: string }> {
@@ -42,8 +42,30 @@ export async function listReports(jobId: string): Promise<ReportMeta[]> {
 }
 
 export function getDownloadUrl(reportId: string): string {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const base = (apiClient.defaults.baseURL ?? "http://localhost:8000/api/v1").replace(/\/api\/v1$/, "");
   return `${base}/api/v1/reports/${reportId}/download`;
+}
+
+/**
+ * Download a report with the session attached.
+ *
+ * The download route now requires a user (it served any report to anyone),
+ * so a plain `<a href download>` no longer works: a link cannot carry the
+ * Authorization header. Fetch it, then hand the browser a blob.
+ */
+export async function downloadReport(reportId: string, fallbackName = "rapor"): Promise<void> {
+  const res = await fetchWithAuth(getDownloadUrl(reportId));
+  if (!res.ok) throw new Error(`Rapor indirilemedi (HTTP ${res.status})`);
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const utf8 = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+  const plain = /filename="?([^";]+)"?/.exec(disposition)?.[1];
+  const name = utf8 ? decodeURIComponent(utf8) : (plain ?? fallbackName);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export interface JobSummary {
@@ -227,12 +249,78 @@ export interface CEOExportPayload {
   period?: string | null;
 }
 
+// ── Command Center API ────────────────────────────────────────────────────────
+
+export interface AgentHealthItem {
+  agent: string;
+  health_score: number;
+  status: "excellent" | "good" | "warning" | "critical";
+  top_alert: string | null;
+  kpis: { label: string; value: string; trend?: "up" | "down" | "stable" }[];
+}
+
+export interface CrossRiskItem {
+  id: string;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low";
+  domains: string[];
+  impact: string;
+}
+
+export interface QuickWinItem {
+  action: string;
+  estimated_impact: string;
+  effort: "low" | "medium" | "high";
+  owner: string;
+}
+
+export interface CommandCenterData {
+  agents: AgentHealthItem[];
+  cross_risks: CrossRiskItem[];
+  quick_wins: QuickWinItem[];
+  generated_at: string;
+}
+
+/**
+ * POST /ceo/analyze — runs the full CEO pipeline and returns
+ * a CommandCenterData-shaped summary derived from the CEO result.
+ * Pass an empty body to trigger template-fallback mode (no LLM needed).
+ */
+export async function getCommandCenterData(
+  jobId?: string | null
+): Promise<CommandCenterData> {
+  const body: Record<string, unknown> = {};
+  if (jobId) body.job_id = jobId;
+
+  const res = await apiClient.post<{
+    data: {
+      board_deck?: Array<{ title: string; content: string }> | null;
+      agent_health?: AgentHealthItem[] | null;
+      cross_risks?: CrossRiskItem[] | null;
+      quick_wins?: QuickWinItem[] | null;
+      error: string | null;
+    };
+    error: null;
+  }>("/ceo/analyze", body);
+
+  const d = res.data.data;
+
+  // Backend may return structured agent_health, or we derive from board_deck
+  return {
+    agents: d.agent_health ?? [],
+    cross_risks: d.cross_risks ?? [],
+    quick_wins: d.quick_wins ?? [],
+    generated_at: new Date().toISOString(),
+  };
+}
+
 /**
  * POST /ceo/export-pdf — returns a PDF Blob for download.
  */
 export async function exportBoardDeckPDF(payload: CEOExportPayload): Promise<Blob> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  const res = await fetch(`${base}/api/v1/ceo/export-pdf`, {
+  const base = (apiClient.defaults.baseURL ?? "http://localhost:8000/api/v1").replace(/\/api\/v1$/, "");
+  // Use fetchWithAuth so the Authorization header is always included
+  const res = await fetchWithAuth(`${base}/api/v1/ceo/export-pdf`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

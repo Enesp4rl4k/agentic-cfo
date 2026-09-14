@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -311,7 +311,7 @@ class TCMBClient:
             return []
 
         if not end_date:
-            end_date = datetime.now(timezone.utc).strftime("%d-%m-%Y")
+            end_date = datetime.now(UTC).strftime("%d-%m-%Y")
 
         try:
             resp = await self._http.get(
@@ -541,7 +541,6 @@ class BenchmarkEngine:
         gap_pct = ((company_value - benchmark_median) / benchmark_median) * 100
         gap_abs = company_value - benchmark_median
 
-        interpretation = "sektörde" if gap_pct < 0 else "sektörün üstünde"
         if gap_pct < -20:
             severity = "critical"
             emoji = "🔴"

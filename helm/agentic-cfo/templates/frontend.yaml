@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-frontend
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "agentic-cfo.fullname" . }}-frontend
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentic-cfo.fullname" . }}-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.frontend.service.port }}
+          name: http
+        envFrom:
+        - configMapRef:
+            name: {{ include "agentic-cfo.fullname" . }}-config
+        - secretRef:
+            name: {{ include "agentic-cfo.fullname" . }}-secrets
+        env:
+        - name: BACKEND_INTERNAL_URL
+          value: "http://{{ include "agentic-cfo.fullname" . }}-backend:{{ .Values.backend.service.port }}"
+        resources:
+          {{- toYaml .Values.frontend.resources | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.frontend.service.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.frontend.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-frontend
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  ports:
+  - port: {{ .Values.frontend.service.port }}
+    targetPort: {{ .Values.frontend.service.port }}
+    name: http
+  selector:
+    app: {{ include "agentic-cfo.fullname" . }}-frontend

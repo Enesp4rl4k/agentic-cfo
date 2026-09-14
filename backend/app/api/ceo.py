@@ -9,6 +9,7 @@ GET  /ceo/health-check             → verify CEO pipeline is importable
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -19,7 +20,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
+from app.api.auth import get_current_user
+from app.core.http_headers import content_disposition
 from app.database import get_db
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,7 +61,10 @@ class CEOAnalyzeRequest(BaseModel):
 
 
 @router.post("/ceo/analyze")
-async def run_ceo_analysis(body: CEOAnalyzeRequest) -> dict[str, Any]:
+async def run_ceo_analysis(
+    body: CEOAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Run full CEO analysis pipeline synchronously.
 
@@ -64,6 +72,16 @@ async def run_ceo_analysis(body: CEOAnalyzeRequest) -> dict[str, Any]:
     Results are cross-correlated into strategic priorities and board deck.
     """
     from app.agents.ceo.orchestrator import run_ceo_pipeline
+
+    if body.cfo_file_path:
+        # A path on this server, taken from the request body and handed to the
+        # file parser — with no authentication, any file the process could read.
+        # A file reaches the CEO pipeline only through a job its caller owns.
+        raise HTTPException(
+            status_code=422,
+            detail="cfo_file_path kabul edilmiyor — yüklenen dosya için POST /ceo/analyze-from-job/{job_id} kullanın.",
+        )
+
 
     has_cfo_file = bool(body.cfo_file_path and body.cfo_file_type)
     has_cfo_json = bool(body.transactions)
@@ -184,14 +202,27 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
 
 
 @router.post("/ceo/analyze-async")
-async def run_ceo_analysis_async(body: CEOAnalyzeRequest) -> dict[str, Any]:
+async def run_ceo_analysis_async(
+    body: CEOAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Enqueue CEO analysis as a background ARQ job.
 
     Returns job_id immediately. Poll GET /ceo/status/{job_id} for results.
     Status values: "pending" → "completed" | "failed"
     """
-    from app.worker import enqueue_ceo_analysis
+    from app.worker import enqueue_ceo_analysis, record_ceo_job_owner
+
+    if body.cfo_file_path:
+        # A path on this server, taken from the request body and handed to the
+        # file parser — with no authentication, any file the process could read.
+        # A file reaches the CEO pipeline only through a job its caller owns.
+        raise HTTPException(
+            status_code=422,
+            detail="cfo_file_path kabul edilmiyor — yüklenen dosya için POST /ceo/analyze-from-job/{job_id} kullanın.",
+        )
+
 
     has_cfo_file = bool(body.cfo_file_path and body.cfo_file_type)
     has_cfo_json = bool(body.transactions)
@@ -216,6 +247,9 @@ async def run_ceo_analysis_async(body: CEOAnalyzeRequest) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
 
     try:
+        # Recorded before the job exists, so there is no moment in which its
+        # status can be polled by someone who did not start it.
+        await record_ceo_job_owner(job_id, org_id=current_user.org_id, user_id=current_user.id)
         await enqueue_ceo_analysis(
             job_id=job_id,
             cfo_file_path=body.cfo_file_path,
@@ -244,7 +278,10 @@ async def run_ceo_analysis_async(body: CEOAnalyzeRequest) -> dict[str, Any]:
 
 
 @router.get("/ceo/status/{job_id}")
-async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
+async def get_ceo_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Poll CEO async job status.
 
@@ -254,7 +291,15 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
       - status "failed"    → error is in the "error" field
       - status "not_found" → job_id unknown or expired (24h TTL)
     """
+    from app.api.access import can_access
+    from app.worker import get_ceo_job_owner
     from app.worker import get_ceo_job_status as _get_status
+
+    owner = await get_ceo_job_owner(job_id)
+    if owner is None or not can_access(current_user, **owner):
+        # A job with no recorded owner is refused, not shown: it predates the
+        # owner record, or the id is a guess.
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found or expired.")
 
     status_data = await _get_status(job_id)
     status = status_data.get("status", "not_found")
@@ -263,6 +308,15 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=404,
             detail=f"Job {job_id} not found or expired.",
+        )
+
+    if status == "unavailable":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "CEO iş durumu şu anda okunamıyor — kuyruk (Redis) erişilemez "
+                "durumda. Analiz sürüyor olabilir; birazdan tekrar deneyin."
+            ),
         )
 
     # For completed jobs, compute overall_health_score from nested result
@@ -288,7 +342,10 @@ class CEOExportRequest(BaseModel):
 
 
 @router.post("/ceo/export-pdf")
-async def export_board_deck_pdf(body: CEOExportRequest) -> Response:
+async def export_board_deck_pdf(
+    body: CEOExportRequest,
+    current_user: User = Depends(get_current_user),
+) -> Response:
     """
     Render board deck (+ optional OKR appendix) to a downloadable PDF.
 
@@ -301,7 +358,8 @@ async def export_board_deck_pdf(body: CEOExportRequest) -> Response:
         raise HTTPException(status_code=500, detail=str(exc))
 
     try:
-        pdf_bytes = board_deck_to_pdf(
+        pdf_bytes = await asyncio.to_thread(
+            board_deck_to_pdf,
             board_deck=body.board_deck,
             okr_status=body.okr_status,
         )
@@ -316,7 +374,7 @@ async def export_board_deck_pdf(body: CEOExportRequest) -> Response:
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": content_disposition(f"{filename}"),
             "Content-Length": str(len(pdf_bytes)),
         },
     )
@@ -331,6 +389,7 @@ class CEOAnalyzeFromJobRequest(BaseModel):
 async def run_ceo_from_job(
     job_id: str,
     body: CEOAnalyzeFromJobRequest | None = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -347,13 +406,10 @@ async def run_ceo_from_job(
     Supported domains: cfo (bank_statement), cto, chro, cmo, coo
     """
     from app.agents.ceo.orchestrator import run_ceo_pipeline
-    from app.models.analysis_job import AnalysisJob
     from app.models.data_source import DataSource, DataSourceDomain, DataSourceType
 
     # ── Validate parent job ───────────────────────────────────────────────────
-    job = await db.get(AnalysisJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    job = await load_owned_job(db, job_id, current_user)
 
     # ── Load all data sources for this job ────────────────────────────────────
     result = await db.execute(
@@ -368,7 +424,7 @@ async def run_ceo_from_job(
 
     for src in sources:
         try:
-            with open(src.file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(src.file_path, encoding="utf-8", errors="replace") as f:
                 content = f.read()
         except OSError as exc:
             logger.warning("Could not read DataSource file %s: %s", src.file_path, exc)
@@ -408,6 +464,15 @@ async def run_ceo_from_job(
             git_log_text=domain_kwargs.get("git_log_text"),
             incident_csv=domain_kwargs.get("incident_csv"),
             sprint_csv=domain_kwargs.get("sprint_csv"),
+            campaign_csv=domain_kwargs.get("campaign_csv"),
+            funnel_csv=domain_kwargs.get("funnel_csv"),
+            cohort_csv=domain_kwargs.get("cohort_csv"),
+            process_csv=domain_kwargs.get("process_csv"),
+            resource_csv=domain_kwargs.get("resource_csv"),
+            sla_csv=domain_kwargs.get("sla_csv"),
+            headcount_csv=domain_kwargs.get("headcount_csv"),
+            attrition_csv=domain_kwargs.get("attrition_csv"),
+            compensation_csv=domain_kwargs.get("compensation_csv"),
             company_name=params.company_name,
             period=params.period,
         )
@@ -446,8 +511,153 @@ async def run_ceo_from_job(
     }
 
 
+@router.post("/ceo/synthesize")
+async def synthesize_ceo_from_context(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    CEO Synthesis from CompanyContext.
+
+    Loads all available agent results from the authenticated user's org CompanyContext
+    and runs CEO synthesis (cross-domain correlation → strategic priorities → board deck).
+
+    This skips re-running CFO/CTO/CMO pipelines — it uses cached results.
+    Much faster than /ceo/analyze for re-synthesis after new agent data arrives.
+
+    Called by:
+    - auto_chain when multiple agents complete
+    - Frontend "Refresh CEO Analysis" button
+    """
+    if not current_user.org_id:
+        raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
+    org_id = current_user.org_id
+
+    from app.agents.ceo.orchestrator import (
+        DEFAULT_CEO_RUN_CONFIG,
+        node_board_deck,
+        node_condense_summaries,
+        node_strategic_priorities,
+        node_synthesis,
+    )
+    from app.services.company_context import get_company_context, save_company_context
+
+    # Load company context
+    ctx = await get_company_context(org_id, db)
+
+    if not ctx.last_cfo_result and not ctx.last_cto_result:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No agent results found for org '{org_id}'. "
+                "Run CFO and/or CTO analysis first."
+            ),
+        )
+
+    job_id = str(uuid.uuid4())
+
+    # Build initial CEOState from CompanyContext results
+    # This bypasses the pipeline fan-out step entirely
+    initial_state: dict[str, Any] = {
+        "job_id": job_id,
+        "company_name": ctx.company_name,
+        "logs": [],
+        "min_confidence": 1.0,
+        "awaiting_review": False,
+        # Inject all available agent results
+        "_cfo_result":        ctx.last_cfo_result  or {},
+        "_cto_result":        ctx.last_cto_result  or {},
+        "_cmo_result":        ctx.last_cmo_result  or {},
+        "_coo_result":        ctx.last_coo_result  or {},
+        "_chro_result":       ctx.last_chro_result or {},
+        "_risk_result":       ctx.last_risk_result or {},
+        "_audit_result":      ctx.last_audit_result or {},
+        "_compliance_result": ctx.last_compliance_result or {},
+    }
+
+    config = {"configurable": {"ceo_run_config": DEFAULT_CEO_RUN_CONFIG}}
+
+    try:
+        # Step 1: Condense summaries from all agent results
+        state = await node_condense_summaries(initial_state, config)  # type: ignore[arg-type]
+
+        # Step 2: Cross-domain synthesis (detect cross-risks)
+        state = await node_synthesis(state, config)  # type: ignore[arg-type]
+
+        # Step 3: Strategic priorities
+        state = await node_strategic_priorities(state, config)  # type: ignore[arg-type]
+
+        # Step 4: Board deck
+        state = await node_board_deck(state, config)  # type: ignore[arg-type]
+
+    except Exception as exc:
+        logger.exception("CEO context synthesis failed for org=%s", org_id)
+        raise HTTPException(status_code=500, detail=f"CEO synthesis failed: {exc}")
+
+    # Save CEO result back to CompanyContext
+    try:
+        ctx_fresh = await get_company_context(org_id, db)
+        ctx_fresh.update_agent_result("ceo", {
+            "financial_summary":    state.get("financial_summary"),
+            "tech_summary":         state.get("tech_summary"),
+            "marketing_summary":    state.get("marketing_summary"),
+            "ops_summary":          state.get("ops_summary"),
+            "hr_summary":           state.get("hr_summary"),
+            "cross_risks":          state.get("cross_risks") or [],
+            "strategic_priorities": state.get("strategic_priorities") or [],
+            "board_deck":           state.get("board_deck"),
+            "sources": "company_context",
+            "agents_used": [
+                a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
+                if getattr(ctx, f"last_{a}_result", None) is not None
+            ],
+        })
+        await save_company_context(ctx_fresh, db)
+        try:
+            from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+            await rebuild_semantic_snapshot(org_id, db, include_brief=True)
+        except Exception as rebuild_exc:
+            logger.warning("CEO synthesis semantic rebuild failed: %s", rebuild_exc)
+    except Exception as exc:
+        logger.warning("Failed to save CEO synthesis to context: %s", exc)
+
+    logs_serializable = [
+        {"step": lg.step, "ok": lg.ok, "detail": lg.detail, "confidence": lg.confidence}
+        for lg in (state.get("logs") or [])
+        if hasattr(lg, "step")
+    ]
+
+    agents_used = [
+        a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk"]
+        if getattr(ctx, f"last_{a}_result", None) is not None
+    ]
+
+    return {
+        "data": {
+            "job_id":               job_id,
+            "org_id":               org_id,
+            "agents_used":          agents_used,
+            "awaiting_review":      state.get("awaiting_review", False),
+            "min_confidence":       state.get("min_confidence"),
+            "overall_health_score": _compute_overall_health(dict(state)),
+            "financial_summary":    state.get("financial_summary"),
+            "tech_summary":         state.get("tech_summary"),
+            "marketing_summary":    state.get("marketing_summary"),
+            "ops_summary":          state.get("ops_summary"),
+            "hr_summary":           state.get("hr_summary"),
+            "cross_risks":          state.get("cross_risks") or [],
+            "strategic_priorities": state.get("strategic_priorities") or [],
+            "board_deck":           state.get("board_deck"),
+            "logs":                 logs_serializable,
+            "error":                state.get("error"),
+        },
+        "error": None,
+    }
+
+
 @router.get("/ceo/health-check")
-async def ceo_health() -> dict[str, Any]:
+async def ceo_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify CEO pipeline agents are importable and graph compiles."""
     from app.agents.ceo.orchestrator import ceo_graph
     return {

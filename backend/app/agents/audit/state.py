@@ -12,6 +12,7 @@ Orchestrator synthesises into AuditState for CEO integration.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
