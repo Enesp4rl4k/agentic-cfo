@@ -217,3 +217,70 @@ async def test_a_schedule_cannot_pull_another_organisations_parasut(client, para
         other = (await db.execute(select(Organization).where(Organization.name == "b@example.com"))).scalar_one()
         data, name = await ScheduledSyncRunner()._pull_parasut({"integration_id": integ}, None, db=db, org_id=other.id)
     assert (data, name) == (b"", "")
+
+
+# ── Automatic pulls ─────────────────────────────────────────────────────────
+
+async def _connected_row(client, h, parasut):
+    from app.models.erp_integration import ERPIntegration
+
+    await _connect(client, h, parasut)
+    async with client._maker() as db:
+        return (await db.execute(select(ERPIntegration))).scalar_one().id
+
+
+@pytest.mark.asyncio
+async def test_unchanged_invoices_are_not_analysed_again(client, parasut):
+    from app.models.analysis_job import AnalysisJob
+
+    h = await _login(client)
+    integ = await _connected_row(client, h, parasut)
+    first = (await client.post("/api/v1/erp/parasut/sync", data={"integration_id": integ}, headers=h)).json()["data"]
+    again = (await client.post("/api/v1/erp/parasut/sync", data={"integration_id": integ}, headers=h)).json()["data"]
+    assert first["durum"] == "analiz_baslatildi"
+    assert again["durum"] == "degisiklik_yok" and again["job_id"] == first["job_id"]
+    async with client._maker() as db:
+        assert len((await db.execute(select(AnalysisJob))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_person_chooses_how_often(client, parasut):
+    h = await _login(client)
+    await _connected_row(client, h, parasut)
+    r = await client.patch("/api/v1/erp/parasut/otomatik", json={"aralik": "haftalik"}, headers=h)
+    assert (r.json()["data"]["auto_sync_enabled"], r.json()["data"]["sync_interval_hours"]) == (True, 168)
+    r = await client.patch("/api/v1/erp/parasut/otomatik", json={"aralik": "kapali"}, headers=h)
+    assert r.json()["data"]["auto_sync_enabled"] is False
+    assert (await client.patch("/api/v1/erp/parasut/otomatik", json={"aralik": "saniyede"}, headers=h)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_the_timer_pulls_only_what_is_due_and_says_once_when_it_fails(client, parasut):
+    from datetime import UTC, datetime, timedelta
+
+    from app.agents.orchestration.erp_sync_runner import run_scheduled_erp_sync
+    from app.models.analysis_job import AnalysisJob
+    from app.models.erp_integration import ERPIntegration
+    from app.models.in_app_notification import InAppNotification
+
+    h = await _login(client)
+    integ = await _connected_row(client, h, parasut)
+
+    async with client._maker() as db:
+        out = await run_scheduled_erp_sync(db)                 # never pulled: due
+        assert out["results"][0]["durum"] == "analiz_baslatildi"
+        out = await run_scheduled_erp_sync(db)                 # pulled a moment ago: not due
+        assert out["results"] == []
+        job = (await db.execute(select(AnalysisJob))).scalar_one()
+        assert job.org_id and job.user_id is None              # filed under the organisation
+
+        row = await db.get(ERPIntegration, integ)
+        row.last_sync_at = datetime.now(UTC) - timedelta(days=2)
+        await db.commit()
+        parasut.fail_invoices = True
+        await run_scheduled_erp_sync(db)
+        row.last_sync_at = datetime.now(UTC) - timedelta(days=2)
+        await db.commit()
+        await run_scheduled_erp_sync(db)                       # still broken
+        notes = (await db.execute(select(InAppNotification))).scalars().all()
+    assert len(notes) == 1 and "Paraşüt" in notes[0].message

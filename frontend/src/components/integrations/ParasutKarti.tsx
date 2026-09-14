@@ -7,8 +7,8 @@ import { CheckCircle2, Loader2, RefreshCw, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  disconnectParasut, parasutBaglan, parasutDurum, parasutFirmaSec, syncParasut,
-  type ParasutDurum, type ParasutSyncSonucu,
+  disconnectParasut, parasutBaglan, parasutDurum, parasutFirmaSec, parasutOtomatik, syncParasut,
+  type OtomatikAralik, type ParasutDurum, type ParasutSyncSonucu,
 } from "@/lib/api/erp";
 
 const DONUS: Record<string, { tur: "ok" | "hata"; metin: string }> = {
@@ -131,6 +131,24 @@ export function ParasutKarti() {
               <Unplug className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Bağlantıyı kes
             </Button>
           </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label htmlFor="parasut-otomatik">Otomatik al:</label>
+            <select
+              id="parasut-otomatik"
+              value={!b.auto_sync_enabled ? "kapali" : b.sync_interval_hours >= 168 ? "haftalik" : "gunluk"}
+              disabled={mesgul !== null}
+              onChange={(e) => {
+                const aralik = e.target.value as OtomatikAralik;
+                void calistir("otomatik", async () => { await parasutOtomatik(aralik); yukle(); });
+              }}
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+            >
+              <option value="gunluk">Her gün</option>
+              <option value="haftalik">Her hafta</option>
+              <option value="kapali">Kapalı</option>
+            </select>
+            <span className="text-muted-foreground">Yalnızca yeni ya da değişen faturalar analiz edilir.</span>
+          </div>
           {b.last_sync_at && (
             <p className="text-xs text-muted-foreground">
               Son alım: {new Date(b.last_sync_at).toLocaleString("tr-TR")}
@@ -139,7 +157,7 @@ export function ParasutKarti() {
           )}
           {sonuc && (
             <p className="text-xs">
-              {sonuc.job_id
+              {sonuc.durum === "analiz_baslatildi"
                 ? <>{sonuc.sync_count} fatura alındı ve analiz başlatıldı. <Link href="/cfo" className="text-primary hover:underline">CFO sayfası</Link></>
                 : (sonuc.mesaj ?? "Yeni fatura yok.")}
             </p>

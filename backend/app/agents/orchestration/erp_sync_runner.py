@@ -37,8 +37,9 @@ async def run_scheduled_erp_sync(db: Any) -> dict[str, Any]:
     )
     integrations = (await db.execute(stmt)).scalars().all()
 
-    from app.services.erp.parasut_connector import ParasutConnector
-    from app.services.ingest.ekle import Sahip, islemleri_ekle
+    from app.models.in_app_notification import InAppNotification
+    from app.services.erp.parasut_connector import parasut_al
+    from app.services.ingest.ekle import Sahip
 
     results = []
     simdi = datetime.now(UTC)
@@ -52,21 +53,28 @@ async def run_scheduled_erp_sync(db: Any) -> dict[str, Any]:
                 son = son.replace(tzinfo=UTC)
             if son is not None and simdi - son < timedelta(hours=integration.sync_interval_hours or 24):
                 continue
-            islemler = await ParasutConnector(db).islemleri_cek(integration)
-            # An ordinary analysis the pages show — not a pipeline run under a
-            # made-up job id that nothing reads.
-            job_id = None
-            if islemler:
-                out = await islemleri_ekle(db, Sahip(integration.org_id, None), islemler, "parasut")
-                job_id = out["job_id"]
+            onceki_durum = integration.last_sync_status
+            try:
+                out = await parasut_al(db, integration, Sahip(integration.org_id, None))
+            except ValueError as exc:
+                # Nobody is watching a timer. Say it once where they will see
+                # it — not again every hour while it stays broken.
+                if onceki_durum != "error":
+                    db.add(InAppNotification(
+                        org_id=integration.org_id, level="warning", domain="cfo", source="parasut",
+                        message=f"Paraşüt faturaları otomatik alınamadı: {exc} Entegrasyonlar sayfasından "
+                                "bağlantıyı kontrol edin.",
+                    ))
+                    await db.commit()
+                raise
             results.append({
                 "org_id":   integration.org_id,
                 "provider": integration.provider,
                 "ok":       True,
-                "job_id":   job_id,
-                "sync_count": len(islemler),
+                "durum":    out["durum"],
+                "job_id":   out.get("job_id"),
+                "sync_count": out["sync_count"],
             })
-
         except Exception as exc:
             logger.error(
                 "Scheduled ERP sync hatasi: org=%s provider=%s err=%s",

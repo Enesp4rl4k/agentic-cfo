@@ -199,20 +199,41 @@ async def parasut_sync(
     current_user:   User = Depends(get_current_user),
     db:             AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Pull the invoices and start an analysis of them."""
-    from app.services.erp.parasut_connector import ParasutConnector
+    """Pull the invoices and start an analysis of them, if they changed."""
+    from app.services.erp.parasut_connector import parasut_al
 
     # Any integration id used to be accepted: one organisation could pull or
     # disconnect another's Paraşüt by naming its id.
     row = await _owned_integration(db, integration_id, _get_org_id(current_user))
     try:
-        islemler = await ParasutConnector(db).islemleri_cek(row)
+        out = await parasut_al(db, row, Sahip.kullanici(current_user))
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if not islemler:
-        return {"data": {"sync_count": 0, "job_id": None, "mesaj": "Son 90 günde fatura bulunamadı."}, "error": None}
-    out = await islemleri_ekle(db, Sahip.kullanici(current_user), islemler, "parasut")
-    return {"data": {"sync_count": len(islemler), "job_id": out["job_id"], "dosyalar": out["dosyalar"]}, "error": None}
+    return {"data": out, "error": None}
+
+
+class OtomatikAyar(BaseModel):
+    aralik: str = Field(..., pattern="^(gunluk|haftalik|kapali)$")
+
+
+@router.patch("/erp/parasut/otomatik")
+async def parasut_otomatik(
+    body:         OtomatikAyar,
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """How often invoices are pulled by themselves: daily, weekly, or not at all."""
+    org_id = _get_org_id(current_user)
+    row = (await db.execute(
+        select(ERPIntegration).where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut")
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Entegrasyon bulunamadi")
+    row.auto_sync_enabled = body.aralik != "kapali"
+    if body.aralik != "kapali":
+        row.sync_interval_hours = 24 if body.aralik == "gunluk" else 168
+    await db.commit()
+    return {"data": row.to_summary(), "error": None}
 
 
 @router.post("/erp/parasut/disconnect")

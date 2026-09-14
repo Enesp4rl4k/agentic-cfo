@@ -113,9 +113,18 @@ export async function parasutFirmaSec(companyId: string): Promise<ERPIntegration
 }
 
 export interface ParasutSyncSonucu {
+  /** analiz_baslatildi | degisiklik_yok (unchanged since the last analysis) | fatura_yok */
+  durum: "analiz_baslatildi" | "degisiklik_yok" | "fatura_yok";
   sync_count: number;
   job_id: string | null;
   mesaj?: string;
+}
+
+export type OtomatikAralik = "gunluk" | "haftalik" | "kapali";
+
+export async function parasutOtomatik(aralik: OtomatikAralik): Promise<ERPIntegration> {
+  const res = await apiClient.patch<Envelope<ERPIntegration>>("/erp/parasut/otomatik", { aralik });
+  return res.data.data;
 }
 
 export async function syncParasut(integrationId: string): Promise<ParasutSyncSonucu> {

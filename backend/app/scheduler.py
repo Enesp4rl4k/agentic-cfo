@@ -686,10 +686,11 @@ def get_scheduler() -> AsyncIOScheduler:
             max_instances=1,
         )
 
-        # ERP SYNC: Daily at 06:30 UTC — scheduled ERP sync for active integrations
+        # ERP SYNC: hourly check; each integration is pulled when its own
+        # interval (daily or weekly, chosen on the integrations page) is due.
         _scheduler.add_job(
             _daily_erp_sync,
-            CronTrigger(hour=6, minute=30),
+            CronTrigger(minute=30),
             id="daily_erp_sync",
             replace_existing=True,
             max_instances=1,

@@ -13,6 +13,7 @@ const { api, nav } = vi.hoisted(() => ({
     parasutFirmaSec: vi.fn(),
     syncParasut: vi.fn(),
     disconnectParasut: vi.fn(),
+    parasutOtomatik: vi.fn(),
   },
   nav: { query: "" },
 }));
@@ -73,11 +74,29 @@ describe("ParasutKarti", () => {
 
   it("pulls invoices on demand and says an analysis started", async () => {
     api.parasutDurum.mockResolvedValue({ acik: true, baglanti: baglanti(), firmalar: [] });
-    api.syncParasut.mockResolvedValue({ sync_count: 12, job_id: "job-9" });
+    api.syncParasut.mockResolvedValue({ durum: "analiz_baslatildi", sync_count: 12, job_id: "job-9" });
     render(<ParasutKarti />);
     fireEvent.click(await screen.findByRole("button", { name: /Faturaları şimdi al/ }));
     expect(await screen.findByText(/12 fatura alındı ve analiz başlatıldı/)).toBeInTheDocument();
     expect(api.syncParasut).toHaveBeenCalledWith("i1");
+  });
+
+  it("says when nothing changed instead of starting another analysis", async () => {
+    api.parasutDurum.mockResolvedValue({ acik: true, baglanti: baglanti(), firmalar: [] });
+    api.syncParasut.mockResolvedValue({ durum: "degisiklik_yok", sync_count: 12, job_id: "job-9",
+                                        mesaj: "Son alımdan bu yana yeni ya da değişen fatura yok; son analiz güncel." });
+    render(<ParasutKarti />);
+    fireEvent.click(await screen.findByRole("button", { name: /Faturaları şimdi al/ }));
+    expect(await screen.findByText(/değişen fatura yok/)).toBeInTheDocument();
+    expect(screen.queryByText(/analiz başlatıldı/)).not.toBeInTheDocument();
+  });
+
+  it("lets the person choose how often invoices are pulled", async () => {
+    api.parasutDurum.mockResolvedValue({ acik: true, baglanti: baglanti(), firmalar: [] });
+    api.parasutOtomatik.mockResolvedValue(baglanti({ sync_interval_hours: 168 }));
+    render(<ParasutKarti />);
+    fireEvent.change(await screen.findByLabelText("Otomatik al:"), { target: { value: "haftalik" } });
+    await waitFor(() => expect(api.parasutOtomatik).toHaveBeenCalledWith("haftalik"));
   });
 
   it("shows a failed pull as a failure", async () => {

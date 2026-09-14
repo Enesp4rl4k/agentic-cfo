@@ -371,3 +371,40 @@ class ParasutConnector:
         integration.status = "disconnected"
         integration.disconnected_at = datetime.now(UTC)
         await self.db.commit()
+
+
+# ── Pull and analyse (manual and scheduled) ─────────────────────────────────
+
+def islemler_ozeti(islemler: list[dict[str, Any]]) -> str:
+    """A fingerprint of a pull: the same invoices give the same value."""
+    kanonik = sorted((t["date"], t["type"], t["amount_cents"], t.get("source_id", "")) for t in islemler)
+    return hashlib.sha256(json.dumps(kanonik).encode()).hexdigest()
+
+
+async def parasut_al(db: Any, integration: Any, sahip: Any, http: httpx.AsyncClient | None = None) -> dict[str, Any]:
+    """Pull the invoices; open an analysis only when they changed since the last one.
+
+    The same 90 days pulled every day used to become a new analysis every day:
+    model cost for an unchanged picture, and an upload counted against the plan
+    each time — a free plan's month gone in three days of automation.
+    Raises ValueError when the pull fails.
+    """
+    from app.services.ingest.ekle import islemleri_ekle
+
+    islemler = await ParasutConnector(db, http).islemleri_cek(integration)
+    if not islemler:
+        return {"durum": "fatura_yok", "sync_count": 0, "job_id": None,
+                "mesaj": "Son 90 günde fatura bulunamadı."}
+    ozet = islemler_ozeti(islemler)
+    cfg = _config(integration)
+    if cfg.get("son_ozet") == ozet:
+        return {"durum": "degisiklik_yok", "sync_count": len(islemler), "job_id": cfg.get("son_is"),
+                "mesaj": "Son alımdan bu yana yeni ya da değişen fatura yok; son analiz güncel."}
+    out = await islemleri_ekle(db, sahip, islemler, "parasut")
+    if out.get("job_id"):
+        cfg = _config(integration)
+        cfg["son_ozet"], cfg["son_is"] = ozet, out["job_id"]
+        _config_yaz(integration, cfg)
+        await db.commit()
+    return {"durum": "analiz_baslatildi", "sync_count": len(islemler), "job_id": out.get("job_id"),
+            "dosyalar": out.get("dosyalar", [])}
