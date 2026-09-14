@@ -84,3 +84,38 @@ def test_migrations_run_on_postgres(ci) -> None:
     merged = {k: v for env in envs for k, v in env.items()}
     assert str(merged.get("USE_SQLITE")).lower() == "false"
     assert str(merged.get("DATABASE_URL_OVERRIDE", "")).startswith("postgresql+asyncpg://")
+
+
+# ── The workflow is one GitHub will run ─────────────────────────────────────
+# Every run of ci.yml failed in 0 seconds with no jobs, from at least
+# 2026-08-20: the workflow `env` context was read in a job name and in job- and
+# service-level env, where GitHub does not provide it, and GitHub rejects the
+# whole file. Nothing locally parsed the expressions, so it looked fine.
+
+def _exprs(value) -> list[str]:
+    import re
+
+    return re.findall(r"\$\{\{(.*?)\}\}", str(value))
+
+
+def test_contexts_are_used_only_where_github_provides_them(ci) -> None:
+    offenders = []
+    for name, job in ci["jobs"].items():
+        positions = [("name", job.get("name", ""), ("env.", "secrets.", "job.", "steps.", "runner.")),
+                     ("if", job.get("if", ""), ("env.", "secrets.", "job.", "steps.", "runner.", "matrix.")),
+                     ("env", job.get("env") or {}, ("env.", "job.", "steps.", "runner."))]
+        for svc, spec in (job.get("services") or {}).items():
+            positions.append((f"services.{svc}.env", spec.get("env") or {}, ("env.", "job.", "steps.", "runner.")))
+        for where, value, forbidden in positions:
+            for expr in _exprs(value):
+                if any(f in expr for f in forbidden):
+                    offenders.append(f"{name}.{where}: ${{{{{expr}}}}}")
+    assert not offenders, offenders
+
+
+def test_ci_needs_no_repository_secret_to_run(ci) -> None:
+    """Throwaway values are generated per run; a missing secret stopped every job at step one."""
+    import re
+
+    used = set(re.findall(r"secrets\.([A-Z_]+)", WORKFLOW.read_text(encoding="utf-8")))
+    assert used <= {"GITHUB_TOKEN"}, used

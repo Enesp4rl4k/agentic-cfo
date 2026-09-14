@@ -1,31 +1,29 @@
-# CI Repository Secrets
+# CI secrets: none needed
 
-GitHub Actions CI uses **repository secrets** so no credentials are stored in workflow YAML.
+CI runs without any repository secret. It used to require `CI_PG_PASS`,
+`CI_BACKEND_SECRET` and `CI_NEXTAUTH_SECRET`; none was ever added, so every job
+would have stopped at its first step.
 
-Add these under: **Settings → Secrets and variables → Actions → New repository secret**
+Those values were never credentials:
 
-| Secret | Purpose | Example (generate your own) |
-|--------|---------|----------------------------|
-| `CI_PG_PASS` | Ephemeral Postgres password for CI service container | random 32-char string |
-| `CI_BACKEND_SECRET` | Backend JWT/signing key for CI tests | random 32+ char string |
-| `CI_NEXTAUTH_SECRET` | NextAuth secret for frontend build in CI | random 32+ char string |
+- The Postgres password belongs to a service container that exists only on the
+  runner for the length of the job and is reachable only from it. It is a
+  literal in `ci.yml`.
+- The backend signing key and the NextAuth secret sign test tokens in a test
+  run. Each job generates fresh random ones (`openssl rand`) into `$GITHUB_ENV`
+  and masks them in the log.
 
-These are **throwaway CI-only values** — not production credentials. Use any random strings; they never leave GitHub Actions.
+`backend/tests/test_ci_database.py` fails if the workflow starts reading a
+repository secret other than `GITHUB_TOKEN`, or reads a context where GitHub
+does not provide it (the reason every run of the workflow failed in 0 seconds
+with no jobs).
 
-`CI_PG_PASS` and `CI_BACKEND_SECRET` are also used by the **Migrations on
-Postgres** job, which applies every Alembic migration to the service container,
-checks the result against the models (`alembic check`), rolls everything back,
-and applies the chain again. If either secret is missing that job fails at
-startup rather than skipping — the migration chain cannot run on SQLite, so
-this job is the only place it is exercised before production.
+The **Migrations on Postgres** job applies every Alembic migration to the
+service container, checks the result against the models (`alembic check`),
+rolls everything back, and applies the chain again — the only place the chain
+runs before production.
 
 Settings reads `DATABASE_URL_OVERRIDE` and `USE_SQLITE`; a bare `DATABASE_URL`
-is ignored. `backend/tests/test_ci_database.py` fails if a job sets it again.
+is ignored, and the same test file fails if a job sets it again.
 
-Generate locally (do not commit output):
-
-```bash
-openssl rand -base64 32
-```
-
-After adding secrets, re-run the failed workflow or push a new commit.
+Production secrets are a different matter and are never put in this workflow.

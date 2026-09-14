@@ -3,7 +3,6 @@ Entegrasyon API — Alan 4 (INT-2, INT-4, INT-5, INT-6)
 
 GET  /integrations/channels             → Aktif entegrasyon kanalları
 POST /integrations/open-banking/connect → Open Banking banka bağla
-POST /integrations/open-banking/sync    → Hesap hareketlerini çek
 POST /integrations/ecommerce/sync       → E-ticaret siparişlerini çek
 POST /integrations/sheets/export        → CFO sonuçlarını Sheets'e gönder
 POST /integrations/sheets/import        → Sheets'ten finansal veri çek
@@ -36,13 +35,6 @@ class OpenBankingConnectRequest(BaseModel):
     client_id:     str
     client_secret: str
     sandbox:       bool = True
-
-
-class OpenBankingSyncRequest(BaseModel):
-    bank:       str
-    account_id: str
-    from_date:  str = Field(..., description="YYYY-MM-DD")
-    to_date:    str = Field(..., description="YYYY-MM-DD")
 
 
 class EcommerceSyncRequest(BaseModel):
@@ -145,45 +137,12 @@ async def list_integration_channels(
 
 # ── Open Banking ──────────────────────────────────────────────────────────────
 
-@router.post("/integrations/open-banking/sync")
-async def sync_open_banking(
-    req:          OpenBankingSyncRequest,
-    current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """Open Banking'den hesap hareketlerini çek."""
-    from app.config import get_settings
-    settings   = get_settings()
-    client_id  = getattr(settings, f"openbanking_{req.bank}_client_id", "")
-    client_sec = getattr(settings, f"openbanking_{req.bank}_client_secret", "")
-
-    if not client_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"'{req.bank}' için Open Banking credentials yapılandırılmamış"
-        )
-
-    from app.services.integrations import TurkiyeOpenBankingClient
-    client = TurkiyeOpenBankingClient(
-        bank=req.bank, client_id=client_id, client_secret=client_sec, sandbox=True
-    )
-
-    try:
-        transactions = await client.get_transactions(
-            req.account_id, req.from_date, req.to_date
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Open Banking API hatası: {exc}")
-
-    return {
-        "data": {
-            "bank":           req.bank,
-            "account_id":     req.account_id,
-            "transaction_count": len(transactions),
-            "transactions":   transactions[:100],  # ilk 100
-        },
-        "error": None,
-    }
+# POST /integrations/open-banking/sync was removed. It fetched movements for any
+# `account_id` the caller named, using the platform's own bank credentials and
+# no consent token of the account holder — once those credentials were
+# configured, one organisation could read another's bank account. Nothing in
+# the frontend called it. /open-banking/connections/{id}/sync, which requires
+# the holder's OAuth token, is the path.
 
 
 # ── E-ticaret ─────────────────────────────────────────────────────────────────
