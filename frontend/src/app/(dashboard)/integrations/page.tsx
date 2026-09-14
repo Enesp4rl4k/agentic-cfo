@@ -1,18 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { Link2, RefreshCw, CheckCircle, AlertCircle, Clock, Trash2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EFaturaCard } from "@/components/integrations/EFaturaCard";
+import { ParasutKarti } from "@/components/integrations/ParasutKarti";
 import { Button } from "@/components/ui/button";
 import {
   useERPIntegrations,
   useERPSyncLogs,
   useDeleteERPIntegration,
-  useParasutSync,
   useLogoTigerSync,
+  useMikroSync,
   ERP_PROVIDER_LABELS,
   ERP_PROVIDER_DESCRIPTIONS,
   statusColor,
@@ -57,14 +58,7 @@ function formatRelative(isoString: string | null | undefined): string {
 
 function IntegrationCard({ integration }: { integration: ERPIntegration }) {
   const { remove, loading: removing } = useDeleteERPIntegration();
-  const parasutSync = useParasutSync();
   const [confirm, setConfirm] = useState(false);
-
-  const handleSync = () => {
-    if (integration.provider === "parasut") {
-      parasutSync.sync(integration.id);
-    }
-  };
 
   return (
     <div className={cn("rounded-xl border p-4 space-y-3", statusBg(integration.status))}>
@@ -116,17 +110,6 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
       )}
 
       <div className="flex items-center gap-2 pt-1">
-        {integration.provider === "parasut" && integration.status === "active" && (
-          <Button
-            size="sm" variant="outline"
-            onClick={handleSync}
-            disabled={parasutSync.loading}
-            className="flex-1"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5 mr-1", parasutSync.loading && "animate-spin")} />
-            Sync
-          </Button>
-        )}
         {!confirm ? (
           <Button
             size="sm" variant="ghost"
@@ -151,7 +134,7 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
 
 // ── Add integration card ──────────────────────────────────────────────────────
 
-type ERPProvider = "parasut" | "logo_tiger" | "mikro";
+type ERPProvider = "logo_tiger" | "mikro";
 
 function AddIntegrationCard({
   provider,
@@ -216,15 +199,18 @@ function SyncLogsPanel() {
 
 function CSVUploadSync({ provider }: { provider: "logo_tiger" | "mikro" }) {
   const logoSync  = useLogoTigerSync();
+  const mikroSync = useMikroSync();
   const [file, setFile] = useState<File | null>(null);
 
   const handleSync = () => {
     if (!file) return;
     if (provider === "logo_tiger") logoSync.sync(file);
+    else mikroSync.sync(file);
   };
 
-  const result = provider === "logo_tiger" ? logoSync.result : null;
-  const loading = provider === "logo_tiger" ? logoSync.loading : false;
+  // The Mikro panel used to have no sync behind its button at all.
+  const result = provider === "logo_tiger" ? logoSync.result : mikroSync.result;
+  const loading = provider === "logo_tiger" ? logoSync.loading : mikroSync.loading;
 
   return (
     <div className="space-y-3">
@@ -260,13 +246,14 @@ function CSVUploadSync({ provider }: { provider: "logo_tiger" | "mikro" }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type ActivePanel = "parasut" | "logo_tiger" | "mikro" | null;
+type ActivePanel = "logo_tiger" | "mikro" | null;
 
 export default function IntegrationsPage() {
   const { data, isLoading, refetch } = useERPIntegrations();
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
 
-  const integrations = data?.integrations ?? [];
+  // Paraşüt has its own card: one button, no developer keys.
+  const integrations = (data?.integrations ?? []).filter((i) => i.provider !== "parasut");
   const activeProviders = new Set(integrations.map((i) => i.provider));
 
   return (
@@ -322,12 +309,12 @@ export default function IntegrationsPage() {
           Entegrasyon Ekle
         </h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          {(["parasut", "logo_tiger", "mikro"] as const).map((p) => (
+          {(["logo_tiger", "mikro"] as const).map((p) => (
             !activeProviders.has(p) && (
               <AddIntegrationCard key={p} provider={p} onSelect={setActivePanel} />
             )
           ))}
-          {activeProviders.size === 3 && (
+          {activeProviders.has("logo_tiger") && activeProviders.has("mikro") && (
             <p className="text-sm text-muted-foreground col-span-3 text-center py-4">
               Tüm desteklenen entegrasyonlar bağlı.
             </p>
@@ -337,6 +324,10 @@ export default function IntegrationsPage() {
 
       {/* GİB e-Fatura — the one connector that brings a real company's real
           invoices in. It had endpoints and no surface. */}
+      <Suspense fallback={null}>
+        <ParasutKarti />
+      </Suspense>
+
       <EFaturaCard />
 
       {/* Aktif panel */}
@@ -360,25 +351,6 @@ export default function IntegrationsPage() {
         </Card>
       )}
 
-      {activePanel === "parasut" && (
-        <Card className="p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Paraşüt OAuth2 Bağlantısı</h3>
-            <button onClick={() => setActivePanel(null)} className="text-xs text-muted-foreground">✕</button>
-          </div>
-          <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-sm space-y-2">
-            <p className="font-medium text-blue-400">Nasıl bağlanılır?</p>
-            <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
-              <li>Paraşüt'te Ayarlar → Uygulama → Yeni Uygulama oluşturun</li>
-              <li>Client ID ve Client Secret kopyalayın</li>
-              <li>Callback URL: <code className="text-primary">{typeof window !== "undefined" ? window.location.origin : ""}/erp/parasut/callback</code></li>
-              <li>Aşağıdaki formu doldurun ve "Bağlan" butonuna tıklayın</li>
-            </ol>
-          </div>
-          <ParasutConnectForm onClose={() => setActivePanel(null)} />
-        </Card>
-      )}
-
       {/* Sync history */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -387,78 +359,6 @@ export default function IntegrationsPage() {
         <Card className="p-4">
           <SyncLogsPanel />
         </Card>
-      </div>
-    </div>
-  );
-}
-
-// ── Paraşüt connect form ──────────────────────────────────────────────────────
-
-function ParasutConnectForm({ onClose }: { onClose: () => void }) {
-  const [clientId, setClientId]     = useState("");
-  const [secret, setSecret]         = useState("");
-  const [companyId, setCompanyId]   = useState("");
-  const [result, setResult]         = useState<{ auth_url: string } | null>(null);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-
-  const handleConnect = async () => {
-    if (!clientId || !secret || !companyId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const { connectParasut } = await import("@/lib/api/erp");
-      const res = await connectParasut({
-        client_id:     clientId,
-        client_secret: secret,
-        company_id:    companyId,
-        redirect_uri:  `${window.location.origin}/erp/parasut/callback`,
-      });
-      setResult(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Bağlantı başarısız");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (result?.auth_url) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-emerald-400">✓ Paraşüt yetkilendirme URL'i oluşturuldu.</p>
-        <Button asChild className="w-full">
-          <a href={result.auth_url} target="_blank" rel="noreferrer">
-            Paraşüt'te Yetkilendir →
-          </a>
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {[
-        { label: "Client ID",     value: clientId,   set: setClientId,   ph: "parasut_client_id_..." },
-        { label: "Client Secret", value: secret,     set: setSecret,     ph: "••••••••••••" },
-        { label: "Firma ID",      value: companyId,  set: setCompanyId,  ph: "123456" },
-      ].map(({ label, value, set, ph }) => (
-        <div key={label} className="space-y-1">
-          <label className="text-xs text-muted-foreground">{label}</label>
-          <input
-            type={label === "Client Secret" ? "password" : "text"}
-            value={value}
-            onChange={(e) => set(e.target.value)}
-            placeholder={ph}
-            className="w-full rounded-md border border-border bg-card px-3 py-1.5 text-sm"
-          />
-        </div>
-      ))}
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      <div className="flex gap-2">
-        <Button onClick={handleConnect} disabled={loading || !clientId || !secret || !companyId} className="flex-1">
-          {loading ? "Bağlanıyor..." : "Bağlan"}
-        </Button>
-        <Button variant="outline" onClick={onClose}>İptal</Button>
       </div>
     </div>
   );

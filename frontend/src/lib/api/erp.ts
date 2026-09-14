@@ -3,7 +3,8 @@ import { apiClient } from "@/lib/api/client";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type ERPProvider = "parasut" | "logo_tiger" | "mikro" | "netsis";
-export type ERPStatus = "pending" | "active" | "error" | "disconnected" | "expired";
+// "firma_secimi": logged in to Paraşüt, the company still to be chosen.
+export type ERPStatus = "pending" | "active" | "error" | "disconnected" | "expired" | "firma_secimi";
 export type SyncStatus = "success" | "error" | "partial" | "running";
 
 export interface ERPIntegration {
@@ -77,33 +78,61 @@ export async function deleteERPIntegration(id: string): Promise<{ ok: boolean; d
 
 // ── Paraşüt ───────────────────────────────────────────────────────────────────
 
-export interface ParasutConnectRequest {
-  client_id:     string;
-  client_secret: string;
-  company_id:    string;
-  redirect_uri:  string;
+export interface ParasutFirma {
+  id: string;
+  ad: string;
 }
 
-export async function connectParasut(req: ParasutConnectRequest): Promise<{
-  auth_url: string;
-  state:    string;
-}> {
-  const res = await apiClient.post("/erp/parasut/connect", req);
-  return res.data as Awaited<ReturnType<typeof connectParasut>>;
+export interface ParasutDurum {
+  /** False when the platform has no Paraşüt application configured. */
+  acik: boolean;
+  baglanti: ERPIntegration | null;
+  /** Filled when the Paraşüt account has several companies to choose from. */
+  firmalar: ParasutFirma[];
 }
 
-export async function syncParasut(integrationId: string): Promise<ERPSyncResult> {
+interface Envelope<T> {
+  data: T;
+  error: string | null;
+}
+
+export async function parasutDurum(): Promise<ParasutDurum> {
+  const res = await apiClient.get<Envelope<ParasutDurum>>("/erp/parasut/durum");
+  return res.data.data;
+}
+
+/** The Paraşüt login address; the browser goes there and comes back connected. */
+export async function parasutBaglan(): Promise<string> {
+  const res = await apiClient.post<Envelope<{ auth_url: string }>>("/erp/parasut/baglan", {});
+  return res.data.data.auth_url;
+}
+
+export async function parasutFirmaSec(companyId: string): Promise<ERPIntegration> {
+  const res = await apiClient.post<Envelope<ERPIntegration>>("/erp/parasut/firma", { company_id: companyId });
+  return res.data.data;
+}
+
+export interface ParasutSyncSonucu {
+  sync_count: number;
+  job_id: string | null;
+  mesaj?: string;
+}
+
+export async function syncParasut(integrationId: string): Promise<ParasutSyncSonucu> {
   const formData = new FormData();
   formData.append("integration_id", integrationId);
-  const res = await apiClient.post<ERPSyncResult>("/erp/parasut/sync", formData, {
+  const res = await apiClient.post<Envelope<ParasutSyncSonucu>>("/erp/parasut/sync", formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120_000,
   });
-  return res.data;
+  return res.data.data;
 }
 
-export async function disconnectParasut(integrationId: string): Promise<{ ok: boolean }> {
-  const res = await apiClient.post(`/erp/parasut/disconnect?integration_id=${integrationId}`);
-  return res.data as Awaited<ReturnType<typeof disconnectParasut>>;
+export async function disconnectParasut(integrationId: string): Promise<{ disconnected: boolean }> {
+  const res = await apiClient.post<Envelope<{ disconnected: boolean }>>(
+    `/erp/parasut/disconnect?integration_id=${encodeURIComponent(integrationId)}`,
+  );
+  return res.data.data;
 }
 
 // ── Logo Tiger ────────────────────────────────────────────────────────────────

@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listERPIntegrations,
-  connectParasut,
   syncParasut,
   disconnectParasut,
   connectLogoTiger,
@@ -12,7 +11,7 @@ import {
   getERPSyncLogs,
   deleteERPIntegration,
 } from "@/lib/api/erp";
-import type { ParasutConnectRequest, ERPProvider } from "@/lib/api/erp";
+import type { ERPProvider } from "@/lib/api/erp";
 
 const INTEGRATIONS_KEY = ["erp", "integrations"] as const;
 const SYNC_LOGS_KEY    = ["erp", "sync-logs"]    as const;
@@ -39,17 +38,6 @@ export function useDeleteERPIntegration() {
 }
 
 // ── Paraşüt hooks ─────────────────────────────────────────────────────────────
-
-export function useParasutConnect() {
-  const m = useMutation({ mutationFn: (req: ParasutConnectRequest) => connectParasut(req) });
-  return {
-    result:  m.data ?? null,
-    loading: m.isPending,
-    error:   m.error ? String(m.error) : null,
-    connect: m.mutate,
-    reset:   m.reset,
-  };
-}
 
 export function useParasutSync() {
   const qc = useQueryClient();

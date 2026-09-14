@@ -31,11 +31,11 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
-from app.api.veri_baglama import Sahip, dosyalari_ekle
 from app.config import get_settings
 from app.database import get_db
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage, yeni_kod
 from app.models.user import User
+from app.services.ingest.ekle import Sahip, dosyalari_ekle
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

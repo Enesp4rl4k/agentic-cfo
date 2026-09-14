@@ -146,7 +146,7 @@ async def stream_to_disk(upload: UploadFile, ext: str, max_mb: int) -> UploadRes
 
 async def create_analysis_job(
     result: UploadResult,
-    user_id: str,
+    user_id: str | None,
     org_id: str | None,
     db: AsyncSession,
     smmm_client_id: str | None = None,

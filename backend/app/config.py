@@ -135,6 +135,12 @@ class Settings(BaseSettings):
     email_ingest_domain: str = ""
     email_inbound_secret: str = ""
 
+    # Paraşüt: the platform's one registered application. With it a person
+    # connects by logging in to Paraşüt; without it the button says Paraşüt
+    # is not available here. The callback is {backend_url}/api/v1/erp/parasut/callback.
+    parasut_client_id: str = ""
+    parasut_client_secret: str = ""
+
     # SMTP email notifications
     smtp_host:         str = "smtp.gmail.com"
     smtp_port:         int = 587

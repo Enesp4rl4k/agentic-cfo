@@ -571,7 +571,7 @@ class ScheduledSyncRunner:
         if source == SyncSourceType.ERP_LOGO_TIGER:
             return await self._pull_logo_tiger(cfg, settings)
         elif source == SyncSourceType.ERP_PARASUT:
-            return await self._pull_parasut(cfg, settings, db=db)
+            return await self._pull_parasut(cfg, settings, db=db, org_id=schedule.org_id)
         elif source == SyncSourceType.OPEN_BANKING:
             return await self._pull_open_banking(cfg, settings)
         elif source == SyncSourceType.GIB_EFATURA:
@@ -672,68 +672,47 @@ class ScheduledSyncRunner:
         cfg: dict,
         settings: Any,
         db: Any = None,
+        org_id: str | None = None,
     ) -> tuple[bytes, str]:
-        """
-        Pull via ParasutConnector.sync(integration_id).
+        """Pull the schedule's organisation's Paraşüt invoices.
 
-        source_config must include integration_id (ERPIntegration row).
-        Staging without credentials returns empty bytes (caller marks SKIPPED).
+        `integration_id` comes from the schedule's own config, which a user
+        writes. It used to be loaded by id alone, so a schedule could pull
+        another organisation's Paraşüt data into this one's analyses. And the
+        amounts were guessed: an integer over 1000 was taken for kuruş, anything
+        else for lira — the connector's `amount_cents` is always kuruş.
         """
         integration_id = cfg.get("integration_id")
-        if not integration_id or db is None:
-            logger.warning(
-                "Parasut pull skipped: missing integration_id or db "
-                "(sandbox checklist: connect ERP → set schedule.source_config)"
-            )
+        if not integration_id or db is None or not org_id:
+            logger.warning("Parasut pull skipped: missing integration_id, db or org")
+            return b"", ""
+        from sqlalchemy import select
+
+        from app.models.erp_integration import ERPIntegration
+        from app.services.erp.parasut_connector import ParasutConnector
+
+        integration = (await db.execute(
+            select(ERPIntegration).where(ERPIntegration.id == str(integration_id), ERPIntegration.org_id == org_id)
+        )).scalar_one_or_none()
+        if integration is None:
+            logger.warning("Parasut pull refused: integration %s is not org %s's", integration_id, org_id)
             return b"", ""
         try:
-            from app.services.erp.parasut_connector import ParasutConnector
-
-            connector = ParasutConnector(db)
-            result = await connector.sync(str(integration_id))
-            raw_txs = result.get("transactions") or []
-            transactions: list[dict[str, Any]] = []
-            for tx in raw_txs:
-                if not isinstance(tx, dict):
-                    continue
-                amount = tx.get("amount_cents") or tx.get("amount") or 0
-                tx_type = str(tx.get("tx_type") or tx.get("type") or "expense").lower()
-                try:
-                    amount_num = float(amount)
-                except (TypeError, ValueError):
-                    amount_num = 0.0
-                # SyncTransaction stores positive cents; sign via type.
-                if abs(amount_num) > 1000 and amount_num == int(amount_num):
-                    signed = int(amount_num) / 100.0
-                else:
-                    signed = float(amount_num)
-                if "expense" in tx_type or tx_type == "purchase":
-                    signed = -abs(signed)
-                else:
-                    signed = abs(signed)
-                date_val = tx.get("date") or tx.get("transaction_date") or ""
-                if hasattr(date_val, "isoformat"):
-                    date_val = date_val.isoformat()
-                transactions.append(
-                    {
-                        "date": str(date_val)[:10],
-                        "amount": signed,
-                        "description": tx.get("description") or "",
-                        "category": tx.get("category") or "",
-                        "reference": tx.get("reference")
-                        or tx.get("source_id")
-                        or tx.get("id")
-                        or "",
-                    }
-                )
-            csv_bytes = _transactions_to_csv(transactions)
-            return csv_bytes, f"parasut_sync_{_today_str()}.csv"
-        except ImportError:
-            logger.warning("ParasutConnector not available")
-            return b"", ""
-        except Exception as e:
+            raw_txs = await ParasutConnector(db).islemleri_cek(integration)
+        except ValueError as e:
             logger.warning("Parasut pull failed: %s", e)
             return b"", ""
+        transactions = [
+            {
+                "date": str(tx.get("date") or "")[:10],
+                "amount": (int(tx.get("amount_cents") or 0) / 100) * (1 if tx.get("type") == "income" else -1),
+                "description": tx.get("description") or "",
+                "type": "income" if tx.get("type") == "income" else "expense",
+                "reference": tx.get("source_id") or "",
+            }
+            for tx in raw_txs
+        ]
+        return _transactions_to_csv(transactions), f"parasut_sync_{_today_str()}.csv"
 
     async def _pull_open_banking(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:

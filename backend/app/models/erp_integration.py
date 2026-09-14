@@ -77,7 +77,12 @@ class ERPIntegration(Base):
     def is_token_expired(self) -> bool:
         if not self.token_expires_at:
             return False
-        return bool(datetime.now(UTC) >= self.token_expires_at)
+        expires = self.token_expires_at
+        # SQLite hands a timezone column back without its zone; comparing that
+        # with an aware "now" raised on every Paraşüt call in development.
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        return bool(datetime.now(UTC) >= expires)
 
     def is_active(self) -> bool:
         return bool(self.status == "active")
