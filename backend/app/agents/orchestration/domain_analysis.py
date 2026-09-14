@@ -117,17 +117,40 @@ class AlanBilinmiyor(LookupError):
     pass
 
 
-def _read_as_csv(path: str) -> str | None:
-    """File text for the orchestrators, which read CSV. Excel is converted.
+def _read_as_csv(path: str, source_type: str = "") -> str | None:
+    """File text for the orchestrators, in the columns and formats they read.
+
+    A recognised table is rewritten to the parser's own column names with plain
+    numbers and ISO dates (app/services/ingest): "Ad Soyad; Departman; Brüt
+    Maaş" with "45.000,00" used to reach a parser that looks for `name` and
+    `salary` and splits on commas, and every value fell back to a default. A
+    file whose header cannot be found is passed as it is, as before.
 
     The CEO wizard read every attachment as UTF-8 text, so an .xlsx arrived as
     replacement characters — the most common thing a non-technical user uploads.
     """
     try:
+        with open(path, "rb") as f:
+            veri = f.read()
+    except OSError as exc:
+        logger.warning("Alan dosyası okunamadı %s: %s", path, exc)
+        return None
+    if source_type:
+        from app.services.ingest.recognize import standart_csv, tabloyu_sec
+        from app.services.ingest.table import OkunamayanDosya
+
+        try:
+            tablo = tabloyu_sec(veri, path, source_type)
+        except OkunamayanDosya as exc:
+            logger.warning("Alan dosyası okunamadı %s: %s", path, exc)
+            return None
+        if tablo is not None:
+            return standart_csv(tablo, source_type)[0]
+    try:
         if path.lower().endswith((".xlsx", ".xls")):
             import openpyxl
 
-            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            wb = openpyxl.load_workbook(io.BytesIO(veri), read_only=True, data_only=True)
             ws = wb.worksheets[0]
             out = io.StringIO()
             w = csv.writer(out)
@@ -136,8 +159,7 @@ def _read_as_csv(path: str) -> str | None:
                     w.writerow(["" if v is None else v for v in row])
             wb.close()
             return out.getvalue()
-        with open(path, encoding="utf-8-sig", errors="replace") as f:
-            return f.read()
+        return veri.decode("utf-8-sig", errors="replace")
     except Exception as exc:
         logger.warning("Alan dosyası okunamadı %s: %s", path, exc)
         return None
@@ -274,7 +296,7 @@ async def analiz_et(db: AsyncSession, job: AnalysisJob, alan_kodu: str) -> dict[
     kwargs: dict[str, Any] = {}
     okunamayan = []
     for src in mevcut.values():
-        text = _read_as_csv(src.file_path)
+        text = _read_as_csv(src.file_path, str(src.source_type))
         kw = src.pipeline_kwarg()
         if text is None or not kw:
             okunamayan.append(src.filename)

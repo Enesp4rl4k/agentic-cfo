@@ -28,11 +28,17 @@ vi.mock("lucide-react", () =>
     {},
     {
       get: (_target, prop) => {
+        // A module whose `then` is a function is awaited as a promise, and a
+        // component never resolves: any page using an icon hung on import.
+        if (prop === "then") return undefined;
         // Return a no-op component for every named export
         const MockIcon = () => null;
         MockIcon.displayName = String(prop);
         return MockIcon;
       },
+      // Vitest asks the mock whether an export exists before reading it; an
+      // empty target said no to every icon, so no rendered page could use one.
+      has: (_target, prop) => prop !== "then",
     }
   )
 );

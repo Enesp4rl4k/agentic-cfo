@@ -45,6 +45,7 @@ const NAV_GROUPS = [
       { href: "/kurumsallasma",  label: "Kurumsallaşma",  icon: TrendingUp },
       { href: "/iliskili-taraf", label: "İlişkili Taraf",  icon: Users },
       { href: "/pnl",            label: "Dashboard",      icon: LayoutDashboard },
+      { href: "/baglan",         label: "Verilerimi Bağla", icon: Link2 },
       { href: "/upload",         label: "Upload",         icon: Upload },
     ],
   },
@@ -74,11 +75,11 @@ const NAV_GROUPS = [
     label: "C-Suite",
     items: [
       { href: "/cfo",        label: "CFO View",    icon: DollarSign },
-      { href: "/cto",        label: "CTO View",    icon: Cpu,       estimated: true },
+      { href: "/cto",        label: "CTO View",    icon: Cpu },
       { href: "/ceo",        label: "CEO View",    icon: Crown },
-      { href: "/cmo",        label: "CMO View",    icon: Megaphone, estimated: true },
-      { href: "/coo",        label: "COO View",    icon: Layers,    estimated: true },
-      { href: "/chro",       label: "CHRO View",   icon: Users,     estimated: true },
+      { href: "/cmo",        label: "CMO View",    icon: Megaphone },
+      { href: "/coo",        label: "COO View",    icon: Layers },
+      { href: "/chro",       label: "CHRO View",   icon: Users },
     ],
   },
   {
@@ -286,15 +287,12 @@ function SidebarContent({
             <div className="space-y-0.5 px-2">
               {group.items.map((navItem) => {
                 const { href, label, icon: Icon } = navItem;
-                const estimated =
-                  "estimated" in navItem ? Boolean(navItem.estimated) : false;
                 const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
                 return (
                   <Link
                     key={href}
                     href={navHref(href)}
                     onClick={onNavigate}
-                    title={estimated ? "Bağlı veri kaynağı yoksa CFO finansallarından tahmin edilir" : undefined}
                     className={cn(
                       "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm",
                       "transition-[color,background-color] duration-150 ease-out",
@@ -324,14 +322,6 @@ function SidebarContent({
                     />
 
                     <span className="flex-1 truncate">{label}</span>
-                    {estimated && (
-                      <span
-                        className="shrink-0 text-xs text-muted-foreground/50"
-                        aria-hidden="true"
-                      >
-                        ~
-                      </span>
-                    )}
 
                     {href === "/anomalies" && anomalyCritical > 0 && (
                       <span

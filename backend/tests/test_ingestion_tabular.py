@@ -77,3 +77,23 @@ async def test_an_xlsx_statement_is_read_by_rules_not_the_model(tmp_path, monkey
     result = await run_data_ingestion({"file_path": str(path), "file_type": "xlsx", "job_id": "j"}, AgentRunConfig())
     txs = result.patch["transactions"]
     assert [(t["type"], t["amount_cents"]) for t in txs] == [("expense", 2_850_000), ("income", 1_000_050)]
+
+
+@pytest.mark.asyncio
+async def test_a_bank_name_inside_a_row_does_not_hijack_the_table(tmp_path, monkeypatch):
+    """One "AKBANK EFT" line sent a whole Garanti CSV through Akbank's PDF-text
+    pattern, which lost the empty cells and swapped debit for credit."""
+    async def no_model(*_a, **_k):
+        raise AssertionError("a well-formed table went to the model")
+
+    monkeypatch.setattr("app.agents.data_ingestion._extract_transactions_with_llm", no_model)
+    path = tmp_path / "garanti.csv"
+    path.write_text(
+        "Tarih;Açıklama;Borç;Alacak;Bakiye\n"
+        "05.01.2024;AKBANK EFT - kira;28.500,00;;100.000,00\n"
+        "06.01.2024;Müşteri tahsilatı;;10.000,00;110.000,00\n",
+        encoding="utf-8",
+    )
+    result = await run_data_ingestion({"file_path": str(path), "file_type": "csv", "job_id": "j"}, AgentRunConfig())
+    assert [(t["type"], t["amount_cents"]) for t in result.patch["transactions"]] == [
+        ("expense", 2_850_000), ("income", 1_000_000)]

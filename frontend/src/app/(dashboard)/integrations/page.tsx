@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Link2, RefreshCw, CheckCircle, AlertCircle, Clock, Trash2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -275,9 +276,9 @@ export default function IntegrationsPage() {
         <div className="flex items-center gap-2">
           <Link2 className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Integrations</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Entegrasyonlar</h1>
             <p className="text-sm text-muted-foreground">
-              Core connectors (CSV / generic) vs Turkey pack (Paraşüt, Logo, e-Fatura)
+              Muhasebe programınızı, bankanızı ve e-Faturayı bağlayın
             </p>
           </div>
         </div>
@@ -286,21 +287,18 @@ export default function IntegrationsPage() {
         </Button>
       </div>
 
-      {/* Core vs Turkey pack */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card className="p-4 space-y-1">
-          <h2 className="text-sm font-semibold">Core connectors</h2>
+      {/* The way in for most people: export a list, drop it, done. */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Dosyayla bağlayın</h2>
           <p className="text-xs text-muted-foreground">
-            Upload CSV/XLSX/PDF on the Upload page. QuickBooks/Xero CSV maps are documented in INTERNATIONAL_PLATFORM.md (OAuth later).
+            Programınızdan aldığınız Excel, CSV ya da PDF dosyalarını bırakın; sistem ne olduklarını anlar.
           </p>
-        </Card>
-        <Card className="p-4 space-y-1">
-          <h2 className="text-sm font-semibold">Turkey pack</h2>
-          <p className="text-xs text-muted-foreground">
-            Paraşüt, Logo Tiger, Mikro, GİB e-Fatura — enable via org regional_packs includes &quot;tr&quot;.
-          </p>
-        </Card>
-      </div>
+        </div>
+        <Button asChild size="sm">
+          <Link href="/baglan">Verilerimi Bağla</Link>
+        </Button>
+      </Card>
 
       {/* Mevcut entegrasyonlar */}
       {isLoading ? (

@@ -606,6 +606,49 @@ def _try_parse_makbuz(raw_text: str) -> list[dict[str, Any]] | None:
         return None
 
 
+def _tablo_ekstresi(file_path: str) -> list[dict[str, Any]] | None:
+    """The statement table inside a spreadsheet, found under any title rows, as transactions."""
+    from app.services.ingest.recognize import standart_csv, tabloyu_sec
+    from app.services.ingest.schemas import BANKA_EKSTRESI
+    from app.services.ingest.table import OkunamayanDosya
+
+    try:
+        with open(file_path, "rb") as f:
+            veri = f.read()
+        tablo = tabloyu_sec(veri, file_path, BANKA_EKSTRESI)
+    except (OSError, OkunamayanDosya):
+        return None
+    if tablo is None or not tablo.satirlar:
+        return None
+    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0])
+
+
+def _csv_sonucu(csv_txs: list[dict[str, Any]], raw_text: str, job_id: Any) -> SkillResult:
+    # Confidence must reflect data quality: rows with an unparseable
+    # date or a zero amount are only partially usable. A file where
+    # most dates failed to parse should NOT sail through the gate.
+    well_formed = sum(
+        1 for tx in csv_txs
+        if tx.get("transaction_date") and tx.get("amount_cents", 0) > 0
+    )
+    ratio = well_formed / len(csv_txs)
+    overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
+    logger.info(
+        "job=%s — deterministic CSV parser: %d transactions, %d well-formed (conf=%.2f)",
+        job_id, len(csv_txs), well_formed, overall_confidence,
+    )
+    return SkillResult(
+        ok=True,
+        patch={"raw_text": raw_text, "transactions": csv_txs},
+        confidence=overall_confidence,
+        needs_review=overall_confidence < 0.80,
+        detail=(
+            f"Parsed {len(csv_txs)} transactions via CSV parser "
+            f"({well_formed} well-formed, confidence={overall_confidence:.2f})"
+        ),
+    )
+
+
 async def run_data_ingestion(
     state: CFOState, config: AgentRunConfig
 ) -> SkillResult:
@@ -683,6 +726,17 @@ async def run_data_ingestion(
                     ),
                 )
 
+        # ── Strategy 1.1: a spreadsheet read by its columns ──────────────────
+        # Before the bank parsers: they are patterns over PDF text, and matched
+        # a bank's name anywhere in the file. A statement exported as a table
+        # loses its empty cells when flattened to text, so "Borç" and "Alacak"
+        # traded places — and one "AKBANK EFT" line in another bank's CSV sent
+        # the whole file through Akbank's pattern. A table is read as a table.
+        if file_type in ("csv", "xlsx"):
+            table_txs = await asyncio.to_thread(_tablo_ekstresi, file_path)
+            if table_txs:
+                return _csv_sonucu(table_txs, raw_text, state.get("job_id"))
+
         # ── Strategy 1: Bank-specific rule-based parser ────────────────────
         detected_bank = await asyncio.to_thread(ParserRegistry.detect, raw_text)
         if detected_bank is not None:
@@ -725,29 +779,7 @@ async def run_data_ingestion(
         if file_type in ("csv", "xlsx", "xls") or any(d in raw_text[:500] for d in (",", ";", "\t")):
             csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text)
             if csv_txs:
-                # Confidence must reflect data quality: rows with an unparseable
-                # date or a zero amount are only partially usable. A file where
-                # most dates failed to parse should NOT sail through the gate.
-                well_formed = sum(
-                    1 for tx in csv_txs
-                    if tx.get("transaction_date") and tx.get("amount_cents", 0) > 0
-                )
-                ratio = well_formed / len(csv_txs)
-                overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
-                logger.info(
-                    "job=%s — deterministic CSV parser: %d transactions, %d well-formed (conf=%.2f)",
-                    state.get("job_id"), len(csv_txs), well_formed, overall_confidence,
-                )
-                return SkillResult(
-                    ok=True,
-                    patch={"raw_text": raw_text, "transactions": csv_txs},
-                    confidence=overall_confidence,
-                    needs_review=overall_confidence < 0.80,
-                    detail=(
-                        f"Parsed {len(csv_txs)} transactions via CSV parser "
-                        f"({well_formed} well-formed, confidence={overall_confidence:.2f})"
-                    ),
-                )
+                return _csv_sonucu(csv_txs, raw_text, state.get("job_id"))
 
         # ── Strategy 2: LLM fallback ───────────────────────────────────────
         logger.info("job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id"))

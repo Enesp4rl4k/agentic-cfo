@@ -34,6 +34,7 @@ _ROUTERS = [
     ("app.api.chat",                "router", "chat"),
     ("app.api.datasource",          "router", "datasource"),
     ("app.api.domain_analysis",     "router", "domain-analysis"),  # tek motor: gerçek veri ya da "veri yok"
+    ("app.api.veri_baglama",        "router", "veri-baglama"),     # dosyayı bırak, sistem tanısın
     ("app.api.cto",                 "router", "cto"),
     ("app.api.ceo",                 "router", "ceo"),
     ("app.api.cmo",                 "router", "cmo"),
