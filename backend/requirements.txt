@@ -1,27 +1,24 @@
 # Web framework
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
 
 # Payments
 stripe==10.5.0
 
 # LangGraph + LangChain
-# ⚠️  0.2.x MIGRATION — Supports both 0.1.19 and 0.2.x
-# API changes in 0.2.x:
-#   0.1.x: from langgraph.graph import StateGraph, END
-#   0.2.x: from langgraph.graph import StateGraph; from langgraph.constants import END
-#          .ainvoke(input, config=...) — config is now dict-based
-#          Checkpointer API rewritten for persistence
-# Upgrade path: langgraph==0.2.x (tested with 0.2.0+)
-# Optional: pin to 0.1.19 if compatibility issues arise
-langgraph==0.2.0
-langchain==0.2.6
-langchain-openai==0.1.14
-langchain-core==0.2.10
+# The versions the test suite passes on. This file used to pin langgraph 0.2.0
+# with langchain-core 0.2.10, which pip cannot install together (langgraph 0.2.0
+# needs langchain-core>=0.2.27) — no environment was ever built from it, and the
+# one the tests ran in had langgraph 0.1.19. CI installs from this file on
+# Python 3.12, the version the suite runs on.
+langgraph==0.1.19
+langchain==0.2.17
+langchain-openai==0.1.25
+langchain-core==0.2.43
 
 # Database
-sqlalchemy==2.0.31
-alembic==1.13.2
+sqlalchemy==2.0.52
+alembic==1.19.1
 asyncpg==0.29.0
 psycopg2-binary==2.9.9
 aiosqlite==0.20.0
@@ -29,27 +26,27 @@ pgvector==0.3.5
 
 # Redis / job queue
 redis==5.0.7
-arq==0.26.1
+arq==0.28.0
 
 # PDF / OCR
-pymupdf==1.24.7
+pymupdf==1.28.2
 pytesseract==0.3.13
-Pillow==10.4.0
+Pillow==12.3.0
 pdfplumber==0.11.3    # Table-aware PDF extraction (optional but recommended)
 
 # Excel
 openpyxl==3.1.5
 
 # PDF generation + templating
-weasyprint==62.3
+weasyprint==69.0
 Jinja2>=3.1.4    # HTML template rendering for PDF reports
 
 # Validation
-pydantic==2.8.2
-pydantic-settings==2.3.4
+pydantic==2.13.4
+pydantic-settings==2.15.0
 
 # HTTP client
-httpx==0.27.0
+httpx==0.28.1
 
 # Scheduling
 apscheduler==3.10.4
@@ -63,17 +60,17 @@ scikit-learn>=1.4.0
 statsmodels>=0.14.0
 
 # Email notifications
-aiosmtplib==3.0.1
+aiosmtplib==5.1.2
 
 # Utilities
-python-multipart==0.0.9
-python-jose[cryptography]==3.3.0
+python-multipart==0.0.32
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
-aiofiles==24.1.0
+aiofiles==25.1.0
 
 # Testing
-pytest==8.2.2
-pytest-asyncio==0.23.7
+pytest==9.1.1
+pytest-asyncio==1.4.0
 pytest-cov==5.0.0
 pytest-randomly==3.15.0    # randomised test order — surfaces cross-test state pollution
 playwright==1.47.0         # scripts/page_sweep.py — renders every page against a live app
@@ -87,7 +84,7 @@ pyyaml==6.0.3              # tests/test_ci_database.py — reads .github/workflo
 
 # Linting / type checking
 ruff==0.16.4    # pinned — ruff.toml selects the rule set; CI gate is blocking
-mypy==1.10.1
+mypy==2.3.1
 
 sentry-sdk>=1.40.0
 cryptography>=42.0.0

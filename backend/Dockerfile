@@ -1,5 +1,5 @@
 # ── Stage 1: build deps in a venv ─────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 # System libs needed to compile native extensions (psycopg2, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ── Stage 2: runtime image ─────────────────────────────────────────────────────
-FROM python:3.11-slim AS runner
+FROM python:3.12-slim AS runner
 
 # Runtime system deps only (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
