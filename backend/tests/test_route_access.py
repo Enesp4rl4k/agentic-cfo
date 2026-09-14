@@ -343,7 +343,7 @@ async def test_unauthenticated_callers_are_refused(client) -> None:
         ("GET", "/api/v1/reports/x/download"),
         ("GET", "/api/v1/system/ops"),
         ("GET", "/api/v1/system/llm-costs"),
-        ("POST", "/api/v1/email/ingest"),
+        ("POST", "/api/v1/email/inbound"),
         ("GET", "/api/v1/stream/00000000-0000-0000-0000-000000000000"),
     ):
         resp = await client.request(method, url)
@@ -375,10 +375,9 @@ async def test_ceo_analysis_refuses_a_server_file_path(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_email_ingest_ignores_an_org_header(client) -> None:
-    """The organisation came from `X-Org-Id`; a caller could name any."""
+async def test_mail_webhook_refuses_a_logged_in_user_without_the_secret(client) -> None:
+    """The mail inbox is the provider's door, not a user's: a session token is not its secret."""
     h, _org, _ = await _member(client, "mail@example.com")
     raw = b"From: a@b.c\r\nTo: x@y.z\r\nSubject: s\r\n\r\nno attachments"
-    resp = await client.post("/api/v1/email/ingest", headers={**h, "X-Org-Id": "someone-else"}, content=raw)
-    assert resp.status_code == 200
-    # No attachment, no job — the point is it authenticated and did not 401/500.
+    resp = await client.post("/api/v1/email/inbound", headers=h, content=raw)
+    assert resp.status_code == 401

@@ -128,6 +128,13 @@ class Settings(BaseSettings):
     # Without it the webhook refuses all posts rather than accepting unsigned ones.
     whatsapp_app_secret: str = ""
 
+    # E-postayla veri. The domain whose mail a provider (Mailgun, SendGrid)
+    # receives and posts to /email/inbound, and the secret it sends with each
+    # post. Without both, the inbox is off: addresses are not handed out and
+    # the webhook refuses every post rather than accepting unsigned mail.
+    email_ingest_domain: str = ""
+    email_inbound_secret: str = ""
+
     # SMTP email notifications
     smtp_host:         str = "smtp.gmail.com"
     smtp_port:         int = 587

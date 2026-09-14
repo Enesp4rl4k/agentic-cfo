@@ -21,6 +21,7 @@ from app.models.data_source import (
     DataSourceType,
 )
 from app.models.defensibility_packet import DefensibilityPacket
+from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
@@ -64,6 +65,8 @@ __all__ = [
     "DefensibilityPacket",
     "ERPIntegration",
     "ERPSyncLog",
+    "EmailIngestAddress",
+    "EmailIngestMessage",
     "InAppNotification",
     "InstitutionalizationSnapshot",
     "JobStatus",

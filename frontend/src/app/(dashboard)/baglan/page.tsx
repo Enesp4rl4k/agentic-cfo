@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { veriEkle, veriTurleri, type DosyaSonucu, type TurSecenegi } from "@/lib/api/veri";
+import { EpostaKutusu } from "@/components/veri/EpostaKutusu";
 
 const ALAN_ADI: Record<string, string> = {
   cfo: "Finans", cto: "Teknoloji", chro: "İnsan Kaynakları", cmo: "Pazarlama",
@@ -172,6 +173,7 @@ export default function BaglanPage() {
         </div>
 
         <aside className="space-y-3">
+          <EpostaKutusu />
           <Card className="p-4">
             <p className="flex items-center gap-1.5 text-sm font-semibold">
               <HelpCircle className="h-4 w-4" aria-hidden="true" /> Neleri bağlayabilirim?

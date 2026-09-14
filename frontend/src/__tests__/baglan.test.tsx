@@ -16,6 +16,14 @@ vi.mock("@/lib/api/veri", () => ({
     { tur: "policies", alan: "compliance", etiket: "Şirket politikaları" },
   ]),
   veriEkle: (...args: unknown[]) => veriEkle(...args),
+  epostaAdresi: vi.fn().mockResolvedValue({ acik: true, adres: "veri+abc123def456@veri.example.com",
+                                           nasil: ["Ekstre e-postalarını bu adrese iletin."] }),
+  epostaAdresiYenile: vi.fn(),
+  gelenEpostalar: vi.fn().mockResolvedValue([
+    { id: "m1", alindi: "2024-02-01T09:00:00Z", gonderen: "ekstre@banka.example", konu: "Ocak ekstresi",
+      dosyalar: [{ dosya: "ekstre.xlsx", durum: "eklendi", etiket: "Banka ekstresi", sayfa: "/cfo" },
+                 { dosya: "ekstre.xlsx", durum: "onceden_alindi" }] },
+  ]),
 }));
 
 const setActiveCFOJob = vi.fn();
@@ -97,6 +105,16 @@ describe("Verilerimi Bağla", () => {
     expect(veriEkle.mock.calls[1][0]).toEqual([file]);
     expect(veriEkle.mock.calls[1][1]).toEqual({ "k.csv": "policies" });
     expect(await screen.findByRole("link", { name: /Sayfaya git/ })).toHaveAttribute("href", "/compliance");
+  });
+
+  it("shows the mail address and what arrived through it", async () => {
+    render(<BaglanPage />);
+    expect(await screen.findByText("veri+abc123def456@veri.example.com")).toBeInTheDocument();
+    expect(await screen.findByText("Ocak ekstresi")).toBeInTheDocument();
+    expect(screen.getByText(/daha önce alınmış/)).toBeInTheDocument();
+    // Renewal asks first: mail to the old address stops being accepted.
+    fireEvent.click(screen.getByRole("button", { name: "Adresi yenile" }));
+    expect(screen.getByText(/Eski adrese gelen posta artık alınmaz/)).toBeInTheDocument();
   });
 
   it("says in words why a file was refused", async () => {

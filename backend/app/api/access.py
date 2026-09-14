@@ -102,6 +102,7 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/benchmark/sectors"): "static sector list, no tenant data",
     ("GET", "/api/v1/agent-graph/topology"): "static agent graph, no tenant data",
     ("GET", "/api/v1/open-banking/banks"): "static list of supported banks",
+    ("POST", "/api/v1/email/inbound"): "mail provider webhook; verifies the shared secret, refuses all when unset",
     # FastAPI's own schema and docs pages: the route list, no data. Candidates
     # for docs_url=None in production; that is a deployment decision.
     ("GET", "/openapi.json"): "API schema, no data",

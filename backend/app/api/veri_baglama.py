@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -87,8 +88,19 @@ def _dosya_yaz(dizin: str, ad: str, veri: bytes) -> str:
     return yol
 
 
+@dataclass(frozen=True)
+class Sahip:
+    """Who the files are added for: the uploader, or an organisation's mail address."""
+    org_id: str | None
+    user_id: str | None
+
+    @classmethod
+    def kullanici(cls, user: User) -> Sahip:
+        return cls(str(user.org_id) if user.org_id else None, str(user.id))
+
+
 async def _finansal_ekle(
-    veri: bytes, dosya_adi: str, tanima: Tanima, user: User, db: AsyncSession,
+    veri: bytes, dosya_adi: str, tanima: Tanima, sahip: Sahip, db: AsyncSession,
 ) -> dict[str, Any]:
     """A financial file becomes an analysis job, exactly as the upload page makes one."""
     uzanti = _uzanti(dosya_adi)
@@ -102,9 +114,9 @@ async def _finansal_ekle(
         validate_magic_bytes(uzanti, veri[:8])
     except FileValidationError as exc:
         return {"durum": REDDEDILDI, "mesaj": str(exc)}
-    if user.org_id:
+    if sahip.org_id:
         try:
-            await check_upload_limit(str(user.org_id), db)
+            await check_upload_limit(sahip.org_id, db)
         except UsageLimitExceeded as exc:
             return {"durum": REDDEDILDI, "mesaj": f"Paket limitiniz doldu: {exc}"}
 
@@ -114,10 +126,10 @@ async def _finansal_ekle(
         _dosya_yaz, os.path.join(settings.storage_local_path, "uploads", job_id), f"document.{uzanti}", veri)
     job = await create_analysis_job(
         result=UploadResult(job_id=job_id, file_path=yol, ext=uzanti, size_bytes=len(veri)),
-        user_id=str(user.id), org_id=user.org_id, db=db,
+        user_id=sahip.user_id or "", org_id=sahip.org_id, db=db,
     )
-    if user.org_id:
-        await record_usage_event(str(user.org_id), "upload", db=db)
+    if sahip.org_id:
+        await record_usage_event(sahip.org_id, "upload", db=db)
 
     dispatch = "not_requested"
     if settings.auto_enqueue_analysis_on_upload:
@@ -133,11 +145,11 @@ async def _finansal_ekle(
                      "Dosya kaydedildi; analiz başlatılamadı, Yükle sayfasından tekrar deneyin."}
 
 
-async def _son_is(db: AsyncSession, user: User) -> AnalysisJob | None:
-    if not user.org_id:
+async def _son_is(db: AsyncSession, sahip: Sahip) -> AnalysisJob | None:
+    if not sahip.org_id:
         return None
     return (await db.execute(
-        select(AnalysisJob).where(AnalysisJob.org_id == user.org_id)
+        select(AnalysisJob).where(AnalysisJob.org_id == sahip.org_id)
         .order_by(desc(AnalysisJob.created_at)).limit(1)
     )).scalar_one_or_none()
 
@@ -190,11 +202,22 @@ async def veri_ekle(
     # for the whole request, not after the first files are stored.
     istenen = await load_owned_job(db, job_id, current_user) if job_id else None
 
+    okunan = [(f.filename or "dosya", await f.read()) for f in files]
+    return {"data": await dosyalari_ekle(db, Sahip.kullanici(current_user), okunan, secim, istenen), "error": None}
+
+
+async def dosyalari_ekle(
+    db: AsyncSession,
+    sahip: Sahip,
+    gelen: list[tuple[str, bytes]],
+    secim: dict[str, str] | None = None,
+    istenen: AnalysisJob | None = None,
+) -> dict[str, Any]:
+    """Recognise each file and put it where it belongs. Shared by the page and the mail inbox."""
+    secim = secim or {}
     max_bytes = get_settings().max_upload_size_mb * 1024 * 1024
     okunan: list[tuple[str, bytes, Tanima, dict[str, Any]]] = []
-    for f in files:
-        ad = f.filename or "dosya"
-        veri = await f.read()
+    for ad, veri in gelen:
         sonuc: dict[str, Any] = {"dosya": ad}
         if _uzanti(ad) not in _UZANTILAR:
             sonuc.update(durum=REDDEDILDI, mesaj="Bu dosya türü desteklenmiyor. Excel, CSV ya da PDF yükleyin.")
@@ -225,12 +248,12 @@ async def veri_ekle(
         elif tanima.durum != KESIN or not tanima.tur or not tanima.alan:
             sonuc.update(durum=TANINMADI, mesaj=tanima.ozet)
         elif tanima.alan == "cfo":
-            sonuc.update(await _finansal_ekle(veri, ad, tanima, current_user, db))
+            sonuc.update(await _finansal_ekle(veri, ad, tanima, sahip, db))
             if sonuc["durum"] == EKLENDI and yeni_is is None:
                 yeni_is = sonuc["job_id"]
         else:
             if hedef is None:
-                hedef = (await db.get(AnalysisJob, yeni_is) if yeni_is else istenen) or await _son_is(db, current_user)
+                hedef = (await db.get(AnalysisJob, yeni_is) if yeni_is else istenen) or await _son_is(db, sahip)
             if hedef is None:
                 sonuc.update(durum=FINANSAL_DOSYA_GEREKLI, mesaj=(
                     "Bu dosyanın eklenebilmesi için önce bir banka ekstresi ya da muhasebe dosyası "
@@ -244,4 +267,4 @@ async def veri_ekle(
             sonuc["sayfa"] = f"/{tanima.alan}"
         dosyalar.append(sonuc)
 
-    return {"data": {"job_id": yeni_is or (hedef.id if hedef else None), "dosyalar": dosyalar}, "error": None}
+    return {"job_id": yeni_is or (hedef.id if hedef else None), "dosyalar": dosyalar}

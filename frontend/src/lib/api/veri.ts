@@ -73,3 +73,37 @@ export async function veriEkle(
   );
   return res.data.data;
 }
+
+// ── E-postayla veri — backend app/api/email_ingest.py ────────────────────────
+
+export interface EpostaAdresi {
+  /** False when the server has no mail inbox configured; then there is no address. */
+  acik: boolean;
+  adres: string | null;
+  olusturuldu?: string | null;
+  nasil?: string[];
+  mesaj?: string;
+}
+
+export interface GelenEposta {
+  id: string;
+  alindi: string | null;
+  gonderen: string;
+  konu: string;
+  dosyalar: Array<{ dosya: string | null; durum: string; mesaj?: string; etiket?: string | null; sayfa?: string }>;
+}
+
+export async function epostaAdresi(): Promise<EpostaAdresi> {
+  const res = await apiClient.get<Envelope<EpostaAdresi>>("/email/ingest-address");
+  return res.data.data;
+}
+
+export async function epostaAdresiYenile(): Promise<EpostaAdresi> {
+  const res = await apiClient.post<Envelope<EpostaAdresi>>("/email/ingest-address/yenile", {});
+  return res.data.data;
+}
+
+export async function gelenEpostalar(): Promise<GelenEposta[]> {
+  const res = await apiClient.get<Envelope<GelenEposta[]>>("/email/history");
+  return res.data.data;
+}
