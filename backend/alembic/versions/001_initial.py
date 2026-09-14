@@ -35,13 +35,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
     )
@@ -69,7 +69,7 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
     )
     op.create_index("ix_transactions_job_id", "transactions", ["job_id"])
@@ -92,7 +92,7 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
     )
     op.create_index("ix_reports_job_id", "reports", ["job_id"])
@@ -110,13 +110,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
     )
     op.create_index("ix_category_rules_vendor_match", "category_rules", ["vendor_match"])
@@ -146,7 +146,7 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
     )
     op.create_index("ix_anomalies_job_id", "anomalies", ["job_id"])

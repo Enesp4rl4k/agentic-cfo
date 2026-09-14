@@ -27,7 +27,7 @@ grep -q "uq_canonical_eng_org_source_record" backend/app/models/canonical_eng_si
 
 # ── API + kernel flip ────────────────────────────────────────────────────
 grep -q '"/connectors/{name}/sync"' backend/app/api/connectors.py && ok "POST /connectors/{name}/sync" || bad "sync route"
-grep -q "cto_existing_data_from_signals" backend/app/api/cto_cmo_kernel.py && ok "CTO kernel reads real eng signals" || bad "CTO kernel not wired to signals"
+grep -q "summarize_eng_signals" backend/app/agents/orchestration/domain_analysis.py && ok "CTO domain reads real eng signals" || bad "CTO domain not wired to signals"
 grep -q "app.api.connectors" backend/app/api/registry.py && ok "connectors router registered" || bad "connectors router"
 
 # ── Frontend: connector control on the CTO page ─────────────────────────

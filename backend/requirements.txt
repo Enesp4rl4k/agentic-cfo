@@ -88,3 +88,12 @@ mypy==2.3.1
 
 sentry-sdk>=1.40.0
 cryptography>=42.0.0
+
+# Imported by the app and missing from this file until the first CI install:
+# bcrypt (password hashing — a clean install could not log anyone in),
+# email-validator (pydantic EmailStr: auth and every router importing it was
+# skipped), reportlab (board deck / SMMM PDFs), tiktoken (context budgeting).
+bcrypt==5.0.0
+email-validator==2.3.0
+reportlab==5.0.1
+tiktoken==0.14.0
