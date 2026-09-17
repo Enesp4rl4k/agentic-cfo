@@ -69,11 +69,15 @@ def upgrade() -> None:
         )
         # Partial index: unacknowledged critical alerts (PostgreSQL only)
         if _is_postgresql():
-            op.execute(
-                "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_alert_history_unacked "
-                "ON alert_history(org_id, acknowledged) "
-                "WHERE acknowledged = FALSE"
-            )
+            # CONCURRENTLY cannot run inside a transaction, and Alembic wraps
+            # every migration in one: this raised ActiveSQLTransactionError and
+            # stopped the chain here on the first Postgres run of it.
+            with op.get_context().autocommit_block():
+                op.execute(
+                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_alert_history_unacked "
+                    "ON alert_history(org_id, acknowledged) "
+                    "WHERE acknowledged = FALSE"
+                )
 
 
 def downgrade() -> None:

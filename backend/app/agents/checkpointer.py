@@ -10,6 +10,7 @@ Thread id convention: AnalysisJob.id (passed as configurable.thread_id).
 """
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 from typing import TYPE_CHECKING, Any, cast
@@ -51,12 +52,29 @@ def _memory_saver() -> Any:
             async def aget_tuple(self, config: Any) -> Any:
                 return self._fix_tuple(await super().aget_tuple(self._normalize_config(config)))
 
+            @staticmethod
+            def _takes(method: Any, name: str) -> bool:
+                """Whether the saver underneath accepts this argument.
+
+                The saver's signature differs between langgraph releases — and
+                between langgraph's own `langgraph.checkpoint` and the separate
+                `langgraph-checkpoint` package that shadows it. Passing an
+                argument it does not take raised `MemorySaver.aput() takes 4
+                positional arguments but 5 were given` on every checkpointed
+                run, which is what a clean install of the pinned versions does.
+                """
+                try:
+                    return name in inspect.signature(method).parameters
+                except (TypeError, ValueError):
+                    return False
+
             def put_writes(self, config: Any, writes: Any, task_id: Any, task_path: Any = "", *args: Any, **kwargs: Any) -> Any:
                 self._normalize_config(config)
                 if isinstance(config, dict):
                     config.setdefault("configurable", {}).setdefault("checkpoint_id", "")
+                rest = (task_path, *args) if self._takes(MemorySaver.put_writes, "task_path") else args
                 try:
-                    return super().put_writes(config, writes, task_id, task_path, *args, **kwargs)
+                    return super().put_writes(config, writes, task_id, *rest, **kwargs)
                 except KeyError:
                     return None
 
@@ -64,20 +82,21 @@ def _memory_saver() -> Any:
                 self._normalize_config(config)
                 if isinstance(config, dict):
                     config.setdefault("configurable", {}).setdefault("checkpoint_id", "")
+                rest = (task_path, *args) if self._takes(MemorySaver.aput_writes, "task_path") else args
                 try:
-                    return await super().aput_writes(config, writes, task_id, task_path, *args, **kwargs)
+                    return await super().aput_writes(config, writes, task_id, *rest, **kwargs)
                 except KeyError:
                     return None
 
             def put(self, config: Any, checkpoint: Any, metadata: Any = None, new_versions: Any = None, *args: Any, **kwargs: Any) -> Any:
-                if new_versions is None:
-                    new_versions = {}
-                return super().put(self._normalize_config(config), checkpoint, cast("CheckpointMetadata", metadata or {}), new_versions, *args, **kwargs)
+                rest = ({} if new_versions is None else new_versions,) if self._takes(MemorySaver.put, "new_versions") else ()
+                return super().put(self._normalize_config(config), checkpoint,
+                                   cast("CheckpointMetadata", metadata or {}), *rest, *args, **kwargs)
 
             async def aput(self, config: Any, checkpoint: Any, metadata: Any = None, new_versions: Any = None, *args: Any, **kwargs: Any) -> Any:
-                if new_versions is None:
-                    new_versions = {}
-                return await super().aput(self._normalize_config(config), checkpoint, cast("CheckpointMetadata", metadata or {}), new_versions, *args, **kwargs)
+                rest = ({} if new_versions is None else new_versions,) if self._takes(MemorySaver.aput, "new_versions") else ()
+                return await super().aput(self._normalize_config(config), checkpoint,
+                                          cast("CheckpointMetadata", metadata or {}), *rest, *args, **kwargs)
 
         return _CompatMemorySaver()
     except Exception as exc:

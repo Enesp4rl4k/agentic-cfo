@@ -99,10 +99,12 @@ def upgrade() -> None:
     # ── Step 3: GIN index for fast key-path queries (idempotent) ─────────────
     indexes = {idx["name"] for idx in inspector.get_indexes("company_context_snapshots")}
     if "ix_company_context_jsonb_gin" not in indexes:
-        op.execute(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_company_context_jsonb_gin "
-            "ON company_context_snapshots USING GIN (context_json)"
-        )
+        # Outside the migration's transaction — CONCURRENTLY cannot run in one.
+        with op.get_context().autocommit_block():
+            op.execute(
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_company_context_jsonb_gin "
+                "ON company_context_snapshots USING GIN (context_json)"
+            )
 
 
 def downgrade() -> None:
