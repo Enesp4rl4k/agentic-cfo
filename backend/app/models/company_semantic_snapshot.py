@@ -14,17 +14,16 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _jsonb_or_text():
-    try:
-        from app.config import get_settings
+def _jsonb_or_text() -> Text:
+    """Text, on every database.
 
-        s = get_settings()
-        if not s.use_sqlite:
-            from sqlalchemy.dialects.postgresql import JSONB
-
-            return JSONB(astext_type=Text())
-    except Exception:
-        pass
+    This returned JSONB when the process started with USE_SQLITE=false, so
+    the column type depended on an environment variable at import time. The
+    migration created TEXT and the store writes strings it serialised itself
+    (`_dumps`) and parses them back (`_loads`), so JSONB on the model sent
+    jsonb parameters into a text column on Postgres. Found by the first
+    `alembic check` against Postgres.
+    """
     return Text()
 
 

@@ -1,0 +1,4 @@
+# Known differences between the migrated schema and the models, accepted as
+# legacy. Checked by scripts/schema_drift.py in CI (migrations-postgres).
+# Shrink only: fix one and delete its line. Tables or columns the models need
+# and the migrations lack can never be listed here — write a migration.

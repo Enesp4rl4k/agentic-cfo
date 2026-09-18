@@ -78,7 +78,7 @@ def test_migrations_run_on_postgres(ci) -> None:
     job = ci["jobs"]["migrations-postgres"]
     assert "postgres" in job["services"]
     script = "\n".join(step.get("run", "") for step in job["steps"])
-    for command in ("alembic upgrade head", "alembic check", "alembic downgrade base"):
+    for command in ("alembic upgrade head", "schema_drift.py", "alembic downgrade base"):
         assert command in script, command
     envs = [step.get("env") or {} for step in job["steps"]] + [job.get("env") or {}]
     merged = {k: v for env in envs for k, v in env.items()}

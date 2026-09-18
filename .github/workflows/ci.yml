@@ -168,7 +168,10 @@ jobs:
 
       - name: Models and migrations describe the same schema
         working-directory: backend
-        run: alembic check
+        # A ratchet over `alembic check`: new drift and anything the models
+        # need that the migrations lack fail; known legacy differences are
+        # listed in alembic/known_drift.txt and may only shrink.
+        run: python ../scripts/schema_drift.py
 
       - name: Every migration can be rolled back
         working-directory: backend
