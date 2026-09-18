@@ -252,10 +252,14 @@ jobs:
         # The server's output went to the step's own pipe, so the step never
         # finished: it ran until the job's 6-hour limit and was cancelled.
         # Detached, logged to a file, and a failure if it never answers.
+        # The database was empty — nothing applied the migrations before the
+        # API started against it — and curl had no timeout, so a server that
+        # accepted the connection and never answered held the step forever.
         run: |
+          alembic upgrade head
           nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../api.log 2>&1 &
           for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:8000/api/v1/system/health >/dev/null; then
+            if curl -sf --max-time 5 http://127.0.0.1:8000/api/v1/system/health >/dev/null; then
               echo "API up"
               exit 0
             fi
