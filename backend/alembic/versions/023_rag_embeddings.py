@@ -34,6 +34,17 @@ def upgrade() -> None:
 
     if "embedding" not in columns:
         if _is_postgresql():
+            # The server must ship pgvector: the stock postgres images do not,
+            # and the compose, k8s and CI images were all stock, so this line
+            # failed on the first Postgres run of the chain. Say so plainly.
+            available = op.get_bind().execute(
+                sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")
+            ).first()
+            if available is None:
+                raise RuntimeError(
+                    "Postgres server has no pgvector extension. Use an image that ships it "
+                    "(pgvector/pgvector:pg16, as docker-compose.yml does) or install pgvector."
+                )
             op.execute("CREATE EXTENSION IF NOT EXISTS vector")
             op.execute("ALTER TABLE rag_chunks ADD COLUMN embedding vector(1536)")
             op.execute(

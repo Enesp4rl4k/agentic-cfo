@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16  # pgvector: migration 023 and RagChunk.embedding need it
         ports:
         - containerPort: 5432
         env:
