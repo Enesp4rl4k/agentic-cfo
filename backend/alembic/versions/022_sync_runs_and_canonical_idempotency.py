@@ -20,6 +20,15 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
+    # This revision's id is 39 characters and alembic_version.version_num is
+    # VARCHAR(32): on Postgres the stamp written after this migration raised
+    # "value too long for type character varying(32)", so the chain could never
+    # pass 022 there (SQLite does not enforce the length). Widen it first; the
+    # stamp is written later in the same transaction.
+    if bind.dialect.name == "postgresql":
+        op.alter_column("alembic_version", "version_num",
+                        type_=sa.String(128), existing_type=sa.String(32), existing_nullable=False)
+
     if "sync_runs" not in inspector.get_table_names():
         op.create_table(
             "sync_runs",
