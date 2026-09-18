@@ -78,10 +78,15 @@ def session_factory():
     """Return the singleton async_sessionmaker. Thread-safe initialization."""
     global _session_factory
     if _session_factory is None:
+        # Built before taking the lock: engine() takes the same lock, which is
+        # not reentrant. Holding it here deadlocked the event loop on the first
+        # request whenever nothing had built the engine yet (Postgres, where
+        # the lifespan skips create_all).
+        eng = engine()
         with _lock:
             if _session_factory is None:
                 _session_factory = async_sessionmaker(
-                    engine(),
+                    eng,
                     expire_on_commit=False,
                     class_=AsyncSession,
                 )

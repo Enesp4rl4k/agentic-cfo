@@ -83,5 +83,9 @@ def downgrade() -> None:
     for name, table, _columns in reversed(_INDEXES):
         if table in tables and name in {ix["name"] for ix in inspector.get_indexes(table)}:
             op.drop_index(name, table_name=table)
-    # The foreign key is left pointing at sync_runs: restoring one to
-    # analysis_jobs would restore the fault this revision removes.
+    # The foreign key to sync_runs is dropped, not pointed back at
+    # analysis_jobs: that would restore the fault this revision removes. It
+    # has to go, or 022's downgrade cannot drop sync_runs.
+    if bind.dialect.name == "postgresql" and "canonical_transactions" in tables:
+        if any(fk.get("name") == _FK_NAME for fk in _canonical_fks(inspector)):
+            op.drop_constraint(_FK_NAME, "canonical_transactions", type_="foreignkey")
