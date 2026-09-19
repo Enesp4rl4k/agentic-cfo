@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-db-migration
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      name: {{ include "agentic-cfo.fullname" . }}-db-migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: db-migration
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        command: ["alembic", "upgrade", "head"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "agentic-cfo.fullname" . }}-config
+        - secretRef:
+            name: {{ include "agentic-cfo.fullname" . }}-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi

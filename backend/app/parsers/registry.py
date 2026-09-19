@@ -10,17 +10,16 @@ First match wins. Falls back to GenericParser (LLM-based) if nothing matches.
 from __future__ import annotations
 
 import logging
-from typing import Type
 
 from app.parsers.base import BankParser, ParsedStatement
 
 logger = logging.getLogger(__name__)
 
 # Populated by register()
-_REGISTRY: list[Type[BankParser]] = []
+_REGISTRY: list[type[BankParser]] = []
 
 
-def register(cls: Type[BankParser]) -> Type[BankParser]:
+def register(cls: type[BankParser]) -> type[BankParser]:
     """Decorator — register a parser class."""
     _REGISTRY.append(cls)
     return cls
@@ -32,16 +31,18 @@ def _ensure_parsers_registered() -> None:
         return  # already populated
 
     # ── Bank statement parsers ────────────────────────────────────────────────
-    from app.parsers.banks.akbank import AkbankParser
-    from app.parsers.banks.garanti import GarantiParser
-    from app.parsers.banks.isbank import IsBankParser
-    from app.parsers.banks.ziraat import ZiraatParser
-
     # ── Accounting software parsers ───────────────────────────────────────────
     from app.parsers.accounting.logo_tiger import LogoTigerParser
-    from app.parsers.accounting.netsis import NetsisParser
     from app.parsers.accounting.mikro import MikroParser
+    from app.parsers.accounting.netsis import NetsisParser
     from app.parsers.accounting.parasut import ParasutParser
+    from app.parsers.banks.akbank import AkbankParser
+    from app.parsers.banks.enpara import EnparaParser
+    from app.parsers.banks.garanti import GarantiParser
+    from app.parsers.banks.isbank import IsBankParser
+    from app.parsers.banks.qnb import QNBParser
+    from app.parsers.banks.yapkredi import YapiKrediParser
+    from app.parsers.banks.ziraat import ZiraatParser
 
     # ── Invoice parsers ───────────────────────────────────────────────────────
     from app.parsers.invoice import InvoiceBatchParser, TurkishInvoiceParser
@@ -58,8 +59,11 @@ def _ensure_parsers_registered() -> None:
         TurkishInvoiceParser,
         # Bank parsers
         AkbankParser,
+        EnparaParser,
         GarantiParser,
         IsBankParser,
+        QNBParser,
+        YapiKrediParser,
         ZiraatParser,
     )
 
@@ -70,7 +74,7 @@ def _ensure_parsers_registered() -> None:
 
 class ParserRegistry:
     @staticmethod
-    def detect(text: str) -> Type[BankParser] | None:
+    def detect(text: str) -> type[BankParser] | None:
         """Return the first parser class whose can_parse() returns True."""
         _ensure_parsers_registered()
         for parser_cls in _REGISTRY:

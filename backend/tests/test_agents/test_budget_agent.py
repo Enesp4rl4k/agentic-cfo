@@ -2,8 +2,8 @@
 Tests for budget_agent.py — pure computation functions only (no LLM).
 """
 import pytest
-from app.agents.budget_agent import _compute_budget_variance
 
+from app.agents.budget_agent import _compute_budget_variance
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from app.agents.audit.state import AuditState, AuditStepLog
-
 
 # ── Parsing ────────────────────────────────────────────────────────────────────
 
@@ -46,7 +45,7 @@ def _parse_controls_csv(csv_text: str) -> list[dict[str, Any]]:
 
     for i, row in enumerate(reader, start=1):
         try:
-            def _score(col: str | None, default: str = "effective") -> str:
+            def _score(col: str | None, default: str = "effective", row: dict = row) -> str:
                 if not col or not row.get(col):
                     return default
                 val = str(row[col]).strip().lower()

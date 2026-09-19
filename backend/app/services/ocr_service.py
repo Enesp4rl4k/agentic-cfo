@@ -155,9 +155,10 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
     Requires: pytesseract, Pillow, tesseract binary with tur+eng models.
     """
     try:
+        import io
+
         import pytesseract
         from PIL import Image
-        import io
 
         # Render page to pixmap (PNG)
         mat = page.get_pixmap(dpi=dpi)

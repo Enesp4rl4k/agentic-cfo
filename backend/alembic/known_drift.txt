@@ -1,0 +1,56 @@
+# Known differences between the migrated schema and the models, accepted as
+# legacy. Checked by scripts/schema_drift.py in CI (migrations-postgres).
+# Shrink only: fix one and delete its line. Tables or columns the models need
+# and the migrations lack can never be listed here — write a migration.
+add_fk anomalies(job_id) -> analysis_jobs
+add_fk canonical_eng_signals(sync_run_id) -> sync_runs
+add_fk rag_chunks(job_id) -> analysis_jobs
+add_fk rag_chunks(org_id) -> organizations
+add_fk reports(job_id) -> analysis_jobs
+add_fk transactions(job_id) -> analysis_jobs
+add_index org_invites.ix_org_invites_token (token) unique=True
+add_index organizations.ix_organizations_slug (slug) unique=True
+add_index pilot_invites.ix_pilot_invites_code (code) unique=True
+modify_type analysis_jobs.min_confidence: NUMERIC(precision=5, scale=4) -> Float()
+remove_column anomalies.confidence_lower
+remove_column anomalies.confidence_upper
+remove_column anomalies.detector_type
+remove_column anomalies.ml_score
+remove_column organizations.encryption_key_id
+remove_column organizations.ip_whitelist
+remove_column organizations.ip_whitelist_enabled
+remove_constraint org_invites.uq_org_invites_token
+remove_constraint organizations.uq_organizations_slug
+remove_constraint pilot_invites.uq_pilot_invites_code
+remove_fk anomalies(job_id) -> analysis_jobs
+remove_fk data_sources(job_id) -> analysis_jobs
+remove_fk reports(job_id) -> analysis_jobs
+remove_fk sync_schedules(org_id) -> organizations
+remove_fk transactions(job_id) -> analysis_jobs
+remove_index agent_conflicts.ix_agent_conflicts_org_status (org_id, status) unique=False
+remove_index agent_conflicts.ix_agent_conflicts_org_topic (org_id, topic) unique=False
+remove_index alert_history.ix_alert_history_org_severity (org_id, severity) unique=False
+remove_index alert_history.ix_alert_history_unacked (org_id, acknowledged) unique=False
+remove_index anomalies.ix_anomalies_severity (severity) unique=False
+remove_index billing_subscriptions.ix_billing_subscriptions_org_id (org_id) unique=True
+remove_index data_sources.ix_data_sources_domain (domain) unique=False
+remove_index erp_integrations.ix_erp_integrations_provider (provider) unique=False
+remove_index erp_integrations.ix_erp_integrations_status (status) unique=False
+remove_index org_invites.ix_org_invites_token (token) unique=False
+remove_index organizations.ix_organizations_slug (slug) unique=False
+remove_index pilot_invites.ix_pilot_invites_code (code) unique=False
+remove_index proactive_alerts.ix_proactive_alerts_org (org_id) unique=False
+remove_index proactive_alerts.ix_proactive_alerts_severity (severity) unique=False
+remove_index rag_chunks.ix_rag_chunks_embedding_ivfflat (embedding) unique=False
+remove_index rag_chunks.ix_rag_chunks_source_type_created_at (source_type, created_at) unique=False
+remove_index smmm_musteri_kayit.ix_smmm_musteri_muhasebeci (muhasebeci_id) unique=False
+remove_index sync_schedules.ix_sync_schedules_org_enabled (org_id, enabled) unique=False
+remove_index temporal_analysis_events.ix_tae_org_agent (org_id, agent) unique=False
+remove_index temporal_analysis_events.ix_tae_org_recorded_at (org_id, recorded_at) unique=False
+remove_index temporal_analysis_events.ix_tae_period (org_id, agent, period) unique=False
+remove_index usage_events.ix_usage_events_org_id (org_id) unique=False
+remove_index usage_events.ix_usage_events_org_resource_month (org_id, resource, recorded_at) unique=False
+remove_table billing_subscriptions
+remove_table proactive_alerts
+remove_table temporal_analysis_events
+remove_table usage_events

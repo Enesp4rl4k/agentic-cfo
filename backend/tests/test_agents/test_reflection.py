@@ -2,19 +2,16 @@
 Tests for ReflectionAgent — reflection engineering layer.
 Pure tests, no LLM required.
 """
-import pytest
 from app.services.reflection_agent import (
     ReflectionAgent,
     ReflectionResult,
-    DimensionScore,
-    get_reflection_agent,
-    _score_completeness,
-    _score_specificity,
     _score_actionability,
     _score_coherence,
+    _score_completeness,
     _score_length,
+    _score_specificity,
+    get_reflection_agent,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -89,7 +86,7 @@ class TestScoreSpecificity:
         assert dim_with.score > dim_without.score
 
     def test_no_numbers_low_score(self):
-        dim, hints = _score_specificity("Gelirler artmıştır ve maliyetler azalmıştır.", {})
+        dim, _hints = _score_specificity("Gelirler artmıştır ve maliyetler azalmıştır.", {})
         assert dim.score < 0.7
 
     def test_context_hit_improves_score(self):
@@ -125,14 +122,14 @@ class TestScoreCoherence:
         assert len(hints) > 0
 
     def test_consistent_data_and_text_no_penalty(self):
-        dim, hints = _score_coherence(
+        dim, _hints = _score_coherence(
             "Gelir büyüdü ve marjlar yükseldi.",
             {"net_income": 144_000_00, "net_margin": 0.30},
         )
         assert dim.score == 1.0
 
     def test_empty_context_no_penalty(self):
-        dim, hints = _score_coherence("Herhangi bir metin.", {})
+        dim, _hints = _score_coherence("Herhangi bir metin.", {})
         assert dim.score == 1.0
 
 

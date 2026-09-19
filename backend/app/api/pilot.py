@@ -16,19 +16,19 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.user import User
-from app.api.auth import get_current_user
-from app.config import get_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -68,22 +68,28 @@ def _require_admin(user: User) -> User:
 # ── Pilot status (public) ────────────────────────────────────────────────────
 
 @router.get("/pilot/status")
-async def pilot_status(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def pilot_status(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Return current pilot program status — public endpoint."""
     settings = get_settings()
     max_users = getattr(settings, "pilot_max_users", PILOT_MAX_USERS)
 
     # Count active users (non-admin)
     result = await db.execute(
-        select(func.count()).select_from(User).where(User.is_active == True)
+        select(func.count()).select_from(User).where(User.is_active)
     )
     total_users = result.scalar() or 0
 
     # Count unused invites
     inv_result = await db.execute(
         select(func.count()).select_from(PilotInvite).where(
-            PilotInvite.used == False,
-            (PilotInvite.expires_at == None) | (PilotInvite.expires_at > datetime.now(timezone.utc)),
+            # `not Column` and `Column is None` are evaluated by Python, not
+            # SQL: the first raises on SQLAlchemy's __bool__, the second is
+            # always False. Neither ever reached the database.
+            PilotInvite.used.is_(False),
+            or_(
+                PilotInvite.expires_at.is_(None),
+                PilotInvite.expires_at > datetime.now(UTC),
+            ),
         )
     )
     available_slots = inv_result.scalar() or 0
@@ -112,7 +118,7 @@ async def generate_invites(
     """Admin: generate one or more invite codes."""
     _require_admin(current_user)
 
-    expires = datetime.now(timezone.utc) + timedelta(days=body.expire_days)
+    expires = datetime.now(UTC) + timedelta(days=body.expire_days)
     codes = []
 
     for _ in range(body.count):
@@ -147,7 +153,7 @@ async def validate_invite(
         return {"data": {"valid": False, "reason": "Geçersiz davet kodu."}, "error": None}
     if invite.used:
         return {"data": {"valid": False, "reason": "Bu davet kodu zaten kullanılmış."}, "error": None}
-    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+    if invite.expires_at and invite.expires_at < datetime.now(UTC):
         return {"data": {"valid": False, "reason": "Davet kodunun süresi dolmuş."}, "error": None}
 
     return {
@@ -164,20 +170,22 @@ async def validate_invite(
 @router.post("/pilot/invite/use")
 async def use_invite(
     code: str,
-    user_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Mark an invite as used after successful registration."""
     result = await db.execute(
-        select(PilotInvite).where(PilotInvite.code == code, PilotInvite.used == False)
+        select(PilotInvite).where(
+            PilotInvite.code == code, PilotInvite.used.is_(False)
+        )
     )
     invite = result.scalar_one_or_none()
     if not invite:
         raise HTTPException(400, detail="Geçersiz veya kullanılmış davet kodu.")
 
     invite.used = True
-    invite.used_by_user_id = user_id
-    invite.used_at = datetime.now(timezone.utc)
+    invite.used_by_user_id = current_user.id   # was a query parameter: burn any invite for anyone
+    invite.used_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"used": True}, "error": None}
 
@@ -236,7 +244,9 @@ async def revoke_invite(
 async def submit_feedback(
     body: FeedbackRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(lambda: None),  # auth optional
+    # Was `Depends(lambda: None)`: "auth optional" that could never see a
+    # user, so every piece of feedback was anonymous and anyone could post it.
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Submit post-analysis feedback. Auth optional — anonymous feedback allowed."""
     fb = UserFeedback(

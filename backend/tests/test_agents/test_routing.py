@@ -2,18 +2,15 @@
 Tests for CapabilityRouter — routing engineering layer.
 Pure tests, no LLM, no DB.
 """
-import pytest
 from app.services.capability_router import (
+    AGENT_CAPABILITIES,
+    AgentCapability,
     CapabilityRouter,
     RoutingPlan,
-    RoutingDecision,
-    AgentCapability,
-    AGENT_CAPABILITIES,
-    get_capability_router,
     _has_data,
     _transaction_quality,
+    get_capability_router,
 )
-
 
 # ── _has_data helper ──────────────────────────────────────────────────────────
 
@@ -239,7 +236,7 @@ class TestCapabilityRouter:
 
     def test_can_run_forecast_false_no_pnl(self):
         router = CapabilityRouter()
-        ok, reason = router.can_run("forecast_agent", _make_txs_only_state())
+        ok, _reason = router.can_run("forecast_agent", _make_txs_only_state())
         assert not ok
 
     def test_custom_capability_registered(self):
@@ -262,6 +259,6 @@ class TestCapabilityRouter:
     def test_routing_decision_has_reason(self):
         router = CapabilityRouter()
         plan = router.route(_make_empty_state())
-        for agent, decision in plan.decisions.items():
+        for _agent, decision in plan.decisions.items():
             if not decision.should_run:
                 assert len(decision.reason) > 0

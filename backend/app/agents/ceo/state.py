@@ -139,6 +139,24 @@ class CEOState(TypedDict, total=False):
     halted: bool
     error: str | None
 
+    # ── Internal channels ─────────────────────────────────────────────────────
+    # LangGraph builds its channels from this TypedDict and silently drops any
+    # key not declared here. These were previously written with a
+    # `type: ignore[typeddict-unknown-key]`, so every sub-pipeline input and
+    # every sub-pipeline result was discarded between nodes and the board deck
+    # was always empty. They are private to the graph, not part of the API
+    # contract — `run_ceo_pipeline` strips them before returning.
+    _cfo_input: dict[str, Any]
+    _cto_input: dict[str, Any]
+    _cmo_input: dict[str, Any]
+    _coo_input: dict[str, Any]
+    _chro_input: dict[str, Any]
+    _cfo_result: dict[str, Any]
+    _cto_result: dict[str, Any]
+    _cmo_result: dict[str, Any]
+    _coo_result: dict[str, Any]
+    _chro_result: dict[str, Any]
+
 
 @dataclass
 class CEOSkillResult:
@@ -154,6 +172,10 @@ class CEORunConfig:
     dry_run: bool = False
     require_review: bool = False   # CEO is exec-level, auto-proceed by default
     auto_proceed_min_confidence: float = 0.75
+    # swot_agent reads this to skip LLM enrichment and use its deterministic
+    # fallback narrative. It was read but never declared — the AttributeError
+    # only surfaced once the SWOT node actually received data to work on.
+    use_llm: bool = True
 
 
 DEFAULT_CEO_RUN_CONFIG = CEORunConfig()

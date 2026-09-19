@@ -36,7 +36,7 @@ Model stored in PostgreSQL (sync_schedules table via Alembic migration).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -66,6 +66,10 @@ class SyncSourceType(StrEnum):
     ERP_NETSIS     = "erp_netsis"
     OPEN_BANKING   = "open_banking"
     GIB_EFATURA    = "gib_efatura"
+    BILLING_STRIPE = "billing_stripe"
+    CRM_EXPORT     = "crm_export"
+    HR_EXPORT      = "hr_export"
+    GITHUB_ACTIVITY = "github_activity"
     MANUAL_CSV     = "manual_csv"
 
 
@@ -77,9 +81,17 @@ class SyncScheduleConfig:
     In production this is backed by the sync_schedules DB table.
     """
     __slots__ = (
-        "schedule_id", "org_id", "source_type", "frequency",
-        "hour_utc", "enabled", "last_run_at", "last_status",
-        "source_config", "auto_analyze", "notify_on_completion",
+        "auto_analyze",
+        "enabled",
+        "frequency",
+        "hour_utc",
+        "last_run_at",
+        "last_status",
+        "notify_on_completion",
+        "org_id",
+        "schedule_id",
+        "source_config",
+        "source_type",
     )
 
     def __init__(
@@ -115,7 +127,7 @@ class SyncScheduleConfig:
         if self.frequency == SyncFrequency.MANUAL:
             return False
 
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
 
         # Hour check
         if now.hour != self.hour_utc:
@@ -139,9 +151,16 @@ class SyncScheduleConfig:
 class SyncResult:
     """Result of a single sync run."""
     __slots__ = (
-        "schedule_id", "org_id", "source_type",
-        "status", "job_id", "row_count", "health_score",
-        "error", "duration_ms", "ran_at",
+        "duration_ms",
+        "error",
+        "health_score",
+        "job_id",
+        "org_id",
+        "ran_at",
+        "row_count",
+        "schedule_id",
+        "source_type",
+        "status",
     )
 
     def __init__(
@@ -166,7 +185,7 @@ class SyncResult:
         self.health_score = health_score
         self.error = error
         self.duration_ms = duration_ms
-        self.ran_at = ran_at or datetime.now(timezone.utc)
+        self.ran_at = ran_at or datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -210,9 +229,13 @@ class ScheduledSyncRunner:
             "ScheduledSync: starting %s for org=%s source=%s",
             schedule.schedule_id, schedule.org_id, schedule.source_type
         )
+        sync_run_id: str | None = None
 
         try:
-            csv_bytes, filename = await self._pull_data(schedule, settings)
+            if schedule.source_type == SyncSourceType.GITHUB_ACTIVITY:
+                return await self._run_github_overlay(schedule, db, t0)
+
+            csv_bytes, filename = await self._pull_data(schedule, settings, db=db)
             if not csv_bytes:
                 return SyncResult(
                     schedule_id=schedule.schedule_id,
@@ -226,12 +249,29 @@ class ScheduledSyncRunner:
             # Validate data quality
             from app.services.csv_validator import CSVValidator
             validation = CSVValidator.validate(csv_bytes, filename=filename)
+            sync_run_id = await self._start_sync_run(
+                db=db,
+                org_id=schedule.org_id,
+                schedule_id=schedule.schedule_id,
+                provider=schedule.source_type,
+                row_count_raw=validation.row_count,
+            )
 
             if validation.health_score < self.MIN_HEALTH_SCORE:
                 logger.warning(
                     "ScheduledSync: health score %d < %d for %s — skipping analysis",
                     validation.health_score, self.MIN_HEALTH_SCORE, schedule.schedule_id
                 )
+                if sync_run_id:
+                    await self._finish_sync_run(
+                        db=db,
+                        sync_run_id=sync_run_id,
+                        status=SyncStatus.SKIPPED,
+                        row_count_canonical=0,
+                        quality_score=None,
+                        triggered_job_id=None,
+                        error_message=f"Veri kalitesi çok düşük (skor: {validation.health_score})",
+                    )
                 return SyncResult(
                     schedule_id=schedule.schedule_id,
                     org_id=schedule.org_id,
@@ -243,16 +283,159 @@ class ScheduledSyncRunner:
                     duration_ms=int(time.time() * 1000) - t0,
                 )
 
-            # Create analysis job
+            # Normalize into canonical contract and compute quality gate.
+            from app.models.canonical_transaction import CanonicalTransaction
+            from app.services.data_plane.normalization_service import (
+                normalize_csv_transactions,
+                to_insert_dict,
+            )
+            from app.services.data_plane.quality_gate_service import score_sync_quality
+
+            canonical_rows = normalize_csv_transactions(
+                csv_bytes=csv_bytes,
+                column_mapping=validation.column_mapping,
+            )
+            quality = score_sync_quality(
+                validator_health_score=validation.health_score,
+                canonical_row_count=len(canonical_rows),
+            )
+            if quality.should_block:
+                if sync_run_id:
+                    await self._finish_sync_run(
+                        db=db,
+                        sync_run_id=sync_run_id,
+                        status=SyncStatus.SKIPPED,
+                        row_count_canonical=len(canonical_rows),
+                        quality_score=quality.quality_score,
+                        triggered_job_id=None,
+                        error_message=(
+                            "Data-plane quality gate blocked sync "
+                            f"(score={quality.quality_score})"
+                        ),
+                    )
+                return SyncResult(
+                    schedule_id=schedule.schedule_id,
+                    org_id=schedule.org_id,
+                    source_type=schedule.source_type,
+                    status=SyncStatus.SKIPPED,
+                    row_count=validation.row_count,
+                    health_score=validation.health_score,
+                    error=(
+                        "Data-plane quality gate blocked sync "
+                        f"(score={quality.quality_score})"
+                    ),
+                    duration_ms=int(time.time() * 1000) - t0,
+                )
+
+            for row in canonical_rows:
+                row_data = to_insert_dict(
+                    org_id=schedule.org_id,
+                    source_type=schedule.source_type,
+                    sync_run_id=sync_run_id,
+                    row=row,
+                )
+                # Idempotent upsert across repeated sync pulls.
+                dialect = db.bind.dialect.name if db.bind else ""
+                if dialect == "postgresql":
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                    stmt = pg_insert(CanonicalTransaction).values(**row_data)
+                    await db.execute(
+                        stmt.on_conflict_do_update(
+                            constraint="uq_canonical_tx_org_source_record",
+                            set_={
+                                "sync_run_id": row_data["sync_run_id"],
+                                "transaction_date": row_data["transaction_date"],
+                                "amount_cents": row_data["amount_cents"],
+                                "currency": row_data["currency"],
+                                "direction": row_data["direction"],
+                                "category": row_data["category"],
+                                "counterparty": row_data["counterparty"],
+                                "description": row_data["description"],
+                                "confidence": row_data["confidence"],
+                            },
+                        )
+                    )
+                elif dialect == "sqlite":
+                    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+                    stmt = sqlite_insert(CanonicalTransaction).values(**row_data)
+                    await db.execute(
+                        stmt.on_conflict_do_update(
+                            index_elements=["org_id", "source_type", "source_record_id"],
+                            set_={
+                                "sync_run_id": row_data["sync_run_id"],
+                                "transaction_date": row_data["transaction_date"],
+                                "amount_cents": row_data["amount_cents"],
+                                "currency": row_data["currency"],
+                                "direction": row_data["direction"],
+                                "category": row_data["category"],
+                                "counterparty": row_data["counterparty"],
+                                "description": row_data["description"],
+                                "confidence": row_data["confidence"],
+                            },
+                        )
+                    )
+                else:
+                    db.add(CanonicalTransaction(**row_data))
+
+            await db.commit()
+
+            # Live path: partial semantic brief from canonical rows (before CFO completes)
+            try:
+                from app.services.data_plane.sync_complete import on_sync_canonical_persisted
+
+                await on_sync_canonical_persisted(
+                    org_id=schedule.org_id,
+                    db=db,
+                    source_type=schedule.source_type,
+                    row_count=len(canonical_rows),
+                    quality_score=quality.quality_score,
+                    sync_run_id=sync_run_id,
+                )
+            except Exception as sync_exc:
+                logger.debug("ScheduledSync: sync_complete hook failed: %s", sync_exc)
+
+            # Create analysis job (idempotent when fingerprint unchanged)
             job_id: str | None = None
             if schedule.auto_analyze:
-                job_id = await self._create_job(
-                    csv_bytes=csv_bytes,
-                    filename=filename,
-                    org_id=schedule.org_id,
-                    column_mapping=validation.column_mapping,
+                fingerprint = _canonical_fingerprint(canonical_rows)
+                reused = await self._find_reusable_job(
                     db=db,
-                    settings=settings,
+                    org_id=schedule.org_id,
+                    fingerprint=fingerprint,
+                )
+                if reused:
+                    job_id = reused
+                    logger.info(
+                        "ScheduledSync: reusing analysis job=%s (fingerprint match)",
+                        job_id,
+                    )
+                else:
+                    job_id = await self._create_job(
+                        csv_bytes=csv_bytes,
+                        filename=filename,
+                        org_id=schedule.org_id,
+                        column_mapping=validation.column_mapping,
+                        quality_meta={
+                            "quality_score": quality.quality_score,
+                            "quality_issues": quality.issues,
+                            "quality_should_review": quality.should_review,
+                            "sync_run_id": sync_run_id,
+                            "sync_fingerprint": fingerprint,
+                        },
+                        db=db,
+                        settings=settings,
+                    )
+
+            if sync_run_id:
+                await self._finish_sync_run(
+                    db=db,
+                    sync_run_id=sync_run_id,
+                    status=SyncStatus.SUCCESS,
+                    row_count_canonical=len(canonical_rows),
+                    quality_score=quality.quality_score,
+                    triggered_job_id=job_id,
                 )
 
             # Send notification
@@ -279,6 +462,16 @@ class ScheduledSyncRunner:
 
         except Exception as exc:
             logger.error("ScheduledSync: error in %s: %s", schedule.schedule_id, exc)
+            if sync_run_id:
+                await self._finish_sync_run(
+                    db=db,
+                    sync_run_id=sync_run_id,
+                    status=SyncStatus.FAILED,
+                    row_count_canonical=0,
+                    quality_score=None,
+                    triggered_job_id=None,
+                    error_message=str(exc),
+                )
             return SyncResult(
                 schedule_id=schedule.schedule_id,
                 org_id=schedule.org_id,
@@ -288,10 +481,88 @@ class ScheduledSyncRunner:
                 duration_ms=int(time.time() * 1000) - t0,
             )
 
+    async def _start_sync_run(
+        self,
+        *,
+        db: Any,
+        org_id: str,
+        schedule_id: str,
+        provider: str,
+        row_count_raw: int,
+    ) -> str:
+        from app.models.sync_run import SyncRun
+
+        sr = SyncRun(
+            org_id=org_id,
+            schedule_id=schedule_id,
+            provider=provider,
+            status=SyncStatus.RUNNING,
+            row_count_raw=row_count_raw,
+        )
+        db.add(sr)
+        await db.flush()
+        return str(sr.id)
+
+    async def _finish_sync_run(
+        self,
+        *,
+        db: Any,
+        sync_run_id: str,
+        status: str,
+        row_count_canonical: int,
+        quality_score: float | None,
+        triggered_job_id: str | None,
+        error_message: str | None = None,
+    ) -> None:
+        from app.models.sync_run import SyncRun
+
+        sr = await db.get(SyncRun, sync_run_id)
+        if not sr:
+            return
+        sr.status = status
+        sr.row_count_canonical = row_count_canonical
+        sr.quality_score = quality_score
+        sr.triggered_job_id = triggered_job_id
+        sr.error_message = error_message
+        sr.completed_at = datetime.now(UTC)
+        sr.updated_at = datetime.now(UTC)
+
+    async def _find_reusable_job(
+        self,
+        *,
+        db: Any,
+        org_id: str,
+        fingerprint: str,
+    ) -> str | None:
+        """Reuse a recent analysis job when sync fingerprint is unchanged."""
+        from sqlalchemy import select
+
+        from app.models.analysis_job import AnalysisJob
+
+        if not fingerprint:
+            return None
+        result = await db.execute(
+            select(AnalysisJob)
+            .where(AnalysisJob.org_id == org_id)
+            .where(
+                AnalysisJob.status.in_(
+                    ("pending", "analyzing", "completed", "awaiting_review")
+                )
+            )
+            .order_by(AnalysisJob.created_at.desc())
+            .limit(40)
+        )
+        for job in result.scalars().all():
+            meta = job.result_metadata if isinstance(job.result_metadata, dict) else {}
+            if meta.get("sync_fingerprint") == fingerprint:
+                return str(job.id)
+        return None
+
     async def _pull_data(
         self,
         schedule: SyncScheduleConfig,
         settings: Any,
+        db: Any = None,
     ) -> tuple[bytes, str]:
         """Pull data from the configured source."""
         source = schedule.source_type
@@ -300,13 +571,87 @@ class ScheduledSyncRunner:
         if source == SyncSourceType.ERP_LOGO_TIGER:
             return await self._pull_logo_tiger(cfg, settings)
         elif source == SyncSourceType.ERP_PARASUT:
-            return await self._pull_parasut(cfg, settings)
+            return await self._pull_parasut(cfg, settings, db=db, org_id=schedule.org_id)
         elif source == SyncSourceType.OPEN_BANKING:
             return await self._pull_open_banking(cfg, settings)
         elif source == SyncSourceType.GIB_EFATURA:
             return await self._pull_efatura(cfg, settings)
+        elif source == SyncSourceType.BILLING_STRIPE:
+            return await self._pull_billing_stripe(schedule.org_id, db=db)
+        elif source == SyncSourceType.CRM_EXPORT:
+            return await self._pull_crm_export(cfg)
+        elif source == SyncSourceType.HR_EXPORT:
+            return await self._pull_hr_export(cfg)
+        elif source == SyncSourceType.GITHUB_ACTIVITY:
+            return b"", ""
         else:
-            raise ValueError(f"Desteklenmeyen kaynak tipi: {source}")
+            raise ValueError(f"Unsupported source type: {source}")
+
+    async def _pull_billing_stripe(
+        self,
+        org_id: str,
+        db: Any = None,
+    ) -> tuple[bytes, str]:
+        if db is None:
+            return b"", ""
+        from app.services.connectors.billing_stripe import pull_stripe_revenue_csv
+
+        return await pull_stripe_revenue_csv(org_id, db)
+
+    async def _pull_crm_export(self, cfg: dict) -> tuple[bytes, str]:
+        from app.services.connectors.crm_export import pull_crm_export_csv
+
+        return await pull_crm_export_csv(cfg)
+
+    async def _pull_hr_export(self, cfg: dict) -> tuple[bytes, str]:
+        from app.services.connectors.hr_export import pull_hr_export_csv
+
+        return await pull_hr_export_csv(cfg)
+
+    async def _run_github_overlay(self, schedule: SyncScheduleConfig, db: Any, t0: int) -> SyncResult:
+        """GitHub is not a ledger source — write CTO velocity onto company context."""
+        from app.services.company_context import get_company_context, save_company_context
+        from app.services.connectors.github_activity import pull_github_cto_overlay
+        from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+        overlay = await pull_github_cto_overlay(schedule.source_config)
+        duration = int(__import__("time").time() * 1000) - t0
+        if not overlay:
+            return SyncResult(
+                schedule_id=schedule.schedule_id,
+                org_id=schedule.org_id,
+                source_type=schedule.source_type,
+                status=SyncStatus.SKIPPED,
+                error="GitHub overlay empty — check token/owner/repo",
+                duration_ms=duration,
+            )
+        try:
+            ctx = await get_company_context(schedule.org_id, db)
+            cto = dict(ctx.last_cto_result or {})
+            cto.update(overlay)
+            ctx.update_agent_result("cto", cto)
+            await save_company_context(ctx, db)
+            await rebuild_semantic_snapshot(schedule.org_id, db, include_brief=True)
+        except Exception as exc:
+            logger.warning("GitHub overlay persist failed: %s", exc)
+            return SyncResult(
+                schedule_id=schedule.schedule_id,
+                org_id=schedule.org_id,
+                source_type=schedule.source_type,
+                status=SyncStatus.FAILED,
+                error=str(exc),
+                duration_ms=duration,
+            )
+        activity = overlay.get("github_activity") or {}
+        return SyncResult(
+            schedule_id=schedule.schedule_id,
+            org_id=schedule.org_id,
+            source_type=schedule.source_type,
+            status=SyncStatus.SUCCESS,
+            row_count=int(activity.get("commit_count") or 0),
+            health_score=80,
+            duration_ms=duration,
+        )
 
     async def _pull_logo_tiger(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:
@@ -322,19 +667,52 @@ class ScheduledSyncRunner:
             logger.warning("LogoTigerConnector not available")
             return b"", ""
 
-    async def _pull_parasut(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
-        try:
-            from app.services.erp.parasut_connector import ParasutConnector
-            connector = ParasutConnector(settings=settings)
-            transactions = await connector.get_transactions(
-                from_date=cfg.get("from_date"),
-                to_date=cfg.get("to_date"),
-            )
-            csv_bytes = _transactions_to_csv(transactions)
-            return csv_bytes, f"parasut_sync_{_today_str()}.csv"
-        except ImportError:
-            logger.warning("ParasutConnector not available")
+    async def _pull_parasut(
+        self,
+        cfg: dict,
+        settings: Any,
+        db: Any = None,
+        org_id: str | None = None,
+    ) -> tuple[bytes, str]:
+        """Pull the schedule's organisation's Paraşüt invoices.
+
+        `integration_id` comes from the schedule's own config, which a user
+        writes. It used to be loaded by id alone, so a schedule could pull
+        another organisation's Paraşüt data into this one's analyses. And the
+        amounts were guessed: an integer over 1000 was taken for kuruş, anything
+        else for lira — the connector's `amount_cents` is always kuruş.
+        """
+        integration_id = cfg.get("integration_id")
+        if not integration_id or db is None or not org_id:
+            logger.warning("Parasut pull skipped: missing integration_id, db or org")
             return b"", ""
+        from sqlalchemy import select
+
+        from app.models.erp_integration import ERPIntegration
+        from app.services.erp.parasut_connector import ParasutConnector
+
+        integration = (await db.execute(
+            select(ERPIntegration).where(ERPIntegration.id == str(integration_id), ERPIntegration.org_id == org_id)
+        )).scalar_one_or_none()
+        if integration is None:
+            logger.warning("Parasut pull refused: integration %s is not org %s's", integration_id, org_id)
+            return b"", ""
+        try:
+            raw_txs = await ParasutConnector(db).islemleri_cek(integration)
+        except ValueError as e:
+            logger.warning("Parasut pull failed: %s", e)
+            return b"", ""
+        transactions = [
+            {
+                "date": str(tx.get("date") or "")[:10],
+                "amount": (int(tx.get("amount_cents") or 0) / 100) * (1 if tx.get("type") == "income" else -1),
+                "description": tx.get("description") or "",
+                "type": "income" if tx.get("type") == "income" else "expense",
+                "reference": tx.get("source_id") or "",
+            }
+            for tx in raw_txs
+        ]
+        return _transactions_to_csv(transactions), f"parasut_sync_{_today_str()}.csv"
 
     async def _pull_open_banking(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:
@@ -371,17 +749,22 @@ class ScheduledSyncRunner:
         filename: str,
         org_id: str,
         column_mapping: dict[str, str],
+        quality_meta: dict[str, Any] | None,
         db: Any,
         settings: Any,
     ) -> str | None:
         """Create an AnalysisJob from the pulled CSV data."""
         import io
+
         from fastapi import UploadFile
-        from app.services.upload_service import (
-            stream_to_disk, create_analysis_job, FileValidationError
-        )
-        from app.models.user import User
         from sqlalchemy import select
+
+        from app.models.user import User
+        from app.services.upload_service import (
+            FileValidationError,
+            create_analysis_job,
+            stream_to_disk,
+        )
 
         try:
             fake_file = UploadFile(filename=filename, file=io.BytesIO(csv_bytes))
@@ -433,16 +816,23 @@ class ScheduledSyncRunner:
                     )
 
             # Save column mapping to job metadata
-            if column_mapping and job:
+            if job:
                 from sqlalchemy import update as sql_update
+
                 from app.models.analysis_job import AnalysisJob
                 meta = job.result_metadata or {}
-                meta["column_mapping"] = column_mapping
+                if column_mapping:
+                    meta["column_mapping"] = column_mapping
                 meta["sync_auto"] = True
+                if quality_meta:
+                    meta.update(quality_meta)
                 await db.execute(
                     sql_update(AnalysisJob)
                     .where(AnalysisJob.id == job.id)
-                    .values(result_metadata=meta)
+                    .values(
+                        result_metadata=meta,
+                        awaiting_review=bool(quality_meta and quality_meta.get("quality_should_review")),
+                    )
                 )
                 await db.commit()
 
@@ -472,7 +862,7 @@ class ScheduledSyncRunner:
                 f"{row_count} işlem çekildi."
             )
             if job_id:
-                message += f" Analiz başlatıldı."
+                message += " Analiz başlatıldı."
             await svc.send_org_notification(
                 org_id=schedule.org_id,
                 title="Otomatik Sync Tamamlandı",
@@ -488,7 +878,33 @@ class ScheduledSyncRunner:
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 def _today_str() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d")
+    return datetime.now(UTC).strftime("%Y%m%d")
+
+
+def _canonical_fingerprint(rows: list[Any]) -> str:
+    """Stable hash of canonical rows so identical syncs reuse analysis jobs."""
+    import hashlib
+
+    parts: list[str] = []
+    for row in rows:
+        parts.append(
+            "|".join(
+                [
+                    str(getattr(row, "source_record_id", "") or ""),
+                    str(getattr(row, "amount_cents", "") or ""),
+                    str(getattr(row, "direction", "") or ""),
+                    (
+                        getattr(row, "transaction_date", None).isoformat()
+                        if getattr(row, "transaction_date", None) is not None
+                        and hasattr(getattr(row, "transaction_date", None), "isoformat")
+                        else str(getattr(row, "transaction_date", "") or "")
+                    ),
+                ]
+            )
+        )
+    parts.sort()
+    digest = hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
 
 
 def _transactions_to_csv(transactions: list[dict[str, Any]]) -> bytes:
@@ -499,7 +915,7 @@ def _transactions_to_csv(transactions: list[dict[str, Any]]) -> bytes:
     if not transactions:
         return b""
 
-    all_keys = list({k for tx in transactions for k in tx.keys()})
+    all_keys = list({k for tx in transactions for k in tx})
     # Ensure date and amount come first
     priority = ["date", "amount", "description", "category", "reference"]
     ordered_keys = [k for k in priority if k in all_keys] + \
@@ -540,7 +956,7 @@ async def run_due_syncs(db: Any, settings: Any) -> list[SyncResult]:
     # Load schedules from DB (placeholder — full impl uses ORM)
     schedules = await _load_active_schedules(db)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for schedule in schedules:
         if schedule.is_due(now):
             result = await runner.run(schedule, db, settings)
@@ -551,32 +967,42 @@ async def run_due_syncs(db: Any, settings: Any) -> list[SyncResult]:
 
 async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
     """
-    Load active sync schedules from the database.
+    Load active sync schedules from the database via ORM.
     Returns empty list if sync_schedules table doesn't exist yet.
     """
     try:
-        from sqlalchemy import text
-        result = await db.execute(
-            text("SELECT * FROM sync_schedules WHERE enabled = true")
-        )
-        rows = result.fetchall()
         import json
-        schedules = []
+
+        from sqlalchemy import select
+
+        from app.models.sync_schedule import SyncSchedule
+
+        result = await db.execute(
+            select(SyncSchedule).where(SyncSchedule.enabled.is_(True))
+        )
+        rows = result.scalars().all()
+        schedules: list[SyncScheduleConfig] = []
         for row in rows:
-            row_dict = dict(row._mapping)
-            schedules.append(SyncScheduleConfig(
-                schedule_id=str(row_dict.get("id", "")),
-                org_id=str(row_dict.get("org_id", "")),
-                source_type=row_dict.get("source_type", SyncSourceType.MANUAL_CSV),
-                frequency=row_dict.get("frequency", SyncFrequency.DAILY),
-                hour_utc=row_dict.get("hour_utc", 3),
-                enabled=bool(row_dict.get("enabled", True)),
-                last_run_at=row_dict.get("last_run_at"),
-                last_status=row_dict.get("last_status", SyncStatus.IDLE),
-                source_config=json.loads(row_dict.get("source_config") or "{}"),
-                auto_analyze=bool(row_dict.get("auto_analyze", True)),
-                notify_on_completion=bool(row_dict.get("notify_on_completion", True)),
-            ))
+            cfg_raw = row.source_config or "{}"
+            try:
+                source_config = json.loads(cfg_raw) if isinstance(cfg_raw, str) else (cfg_raw or {})
+            except Exception:
+                source_config = {}
+            schedules.append(
+                SyncScheduleConfig(
+                    schedule_id=str(row.id),
+                    org_id=str(row.org_id),
+                    source_type=row.source_type or SyncSourceType.MANUAL_CSV,
+                    frequency=row.frequency or SyncFrequency.DAILY,
+                    hour_utc=int(row.hour_utc if row.hour_utc is not None else 3),
+                    enabled=bool(row.enabled),
+                    last_run_at=row.last_run_at,
+                    last_status=row.last_status or SyncStatus.IDLE,
+                    source_config=source_config if isinstance(source_config, dict) else {},
+                    auto_analyze=bool(row.auto_analyze),
+                    notify_on_completion=bool(row.notify_on_completion),
+                )
+            )
         return schedules
     except Exception as e:
         logger.debug("sync_schedules table not available: %s", e)

@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aicfo-config
+  namespace: aicfo
+data:
+  LLM_MODEL: "deepseek-chat"
+  LLM_BASE_URL: "https://api.deepseek.com"
+  LLM_TEMPERATURE: "0"
+  LLM_MAX_TOKENS: "16384"
+  USE_SQLITE: "false"
+  BACKEND_PORT: "8000"
+  BACKEND_CORS_ORIGINS: "http://localhost:3000"
+  NEXT_PUBLIC_API_URL: "http://localhost:8000"
+  NEXTAUTH_URL: "http://localhost:3000"
+  PILOT_MODE: "true"
+  PILOT_REQUIRE_INVITE: "true"
+  PILOT_MAX_USERS: "5"
+  STORAGE_BACKEND: "local"
+  MAX_UPLOAD_SIZE_MB: "10"
+  AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD: "true"
+  RAG_BACKFILL_ENABLED: "true"
+  RAG_EMBEDDING_ENABLED: "true"
+  ARQ_ANALYSIS_QUEUE_NAME: "arq:queue:analysis"
+  ARQ_MAINTENANCE_QUEUE_NAME: "arq:queue:maintenance"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "aicfo"
+  POSTGRES_USER: "aicfo"
+  REDIS_URL: "redis://redis:6379/0"
+  FRONTEND_URL: "http://localhost:3000"

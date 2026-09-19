@@ -1,0 +1,52 @@
+# Version control
+.git
+.gitignore
+
+# Node modules (rebuilt in container)
+node_modules
+.npm
+
+# Next.js build output (rebuilt in container)
+.next
+out
+
+# Development files
+*.local
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Tests
+__tests__
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+vitest.config.ts
+coverage/
+
+# Docs
+*.md
+docs/
+
+# CI/CD
+.github/
+
+# Logs
+*.log
+logs/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Storybook
+.storybook/
+storybook-static/

@@ -14,8 +14,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.core.turkish import fold
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.models.category_rule import CategoryRule
 
 logger = logging.getLogger(__name__)
@@ -36,10 +39,17 @@ KEYWORD_RULES: dict[str, list[str]] = {
 
 
 def classify_by_keywords(description: str) -> str:
-    """Rule-based classification using built-in keyword heuristics."""
-    desc_lower = description.lower()
+    """Rule-based classification using built-in keyword heuristics.
+
+    Matched with Turkish diacritics folded on both sides. ERP exports and bank
+    statements write "maas odemesi" and "dogalgaz faturasi" far more often than
+    "maaş ödemesi" and "doğalgaz faturası", and a payroll line that misses
+    `salary` lands in other_expense — where every report that groups by
+    category is then quietly wrong about where the money went.
+    """
+    folded = fold(description)
     for category, keywords in KEYWORD_RULES.items():
-        if any(kw in desc_lower for kw in keywords):
+        if any(fold(kw) in folded for kw in keywords):
             return category
     return "other_expense"
 
@@ -47,7 +57,7 @@ def classify_by_keywords(description: str) -> str:
 async def classify(
     description: str,
     vendor: str | None,
-    db: "AsyncSession",
+    db: AsyncSession,
 ) -> str:
     """
     Classify a transaction description into a category.
@@ -55,6 +65,7 @@ async def classify(
     """
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
+
     from app.models.category_rule import CategoryRule
 
     # 1. Vendor match — most specific
@@ -96,13 +107,14 @@ async def learn(
     vendor: str | None,
     new_category: str,
     apply_always: bool,
-    db: "AsyncSession",
-) -> "CategoryRule":
+    db: AsyncSession,
+) -> CategoryRule:
     """
     Persist a user correction as a CategoryRule.
     Called when user changes a transaction's category in the UI.
     """
     from sqlalchemy import select
+
     from app.models.category_rule import CategoryRule
 
     # Upsert: if an identical rule already exists, update the category

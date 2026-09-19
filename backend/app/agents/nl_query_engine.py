@@ -233,21 +233,12 @@ async def generate_nl_insight(
     Use LLM to generate a Turkish explanation for the query result.
     Also suggests 2-3 follow-up questions.
     """
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.3,
-        max_tokens=600,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
+    from app.platform.model_gateway import complete_text
 
     # Build compact context
     pnl = dashboard.get("pnl") or {}
     cf  = dashboard.get("cashflow") or {}
-    fc  = dashboard.get("forecast") or {}
+    dashboard.get("forecast") or {}
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
@@ -262,28 +253,24 @@ async def generate_nl_insight(
         f"Sorgu sonucu: {str(query_result['value'])[:300]}"
     )
 
-    messages = [
-        SystemMessage(content=(
-            "Sen deneyimli bir CFO asistanısın. Kullanıcının finansal sorusuna "
-            "Türkçe, kısa ve net bir cevap ver. "
-            "Yanıt şu yapıda olsun:\n"
-            "1. Direkt yanıt (1-2 cümle, rakam içermeli)\n"
-            "2. Kısa yorum (1 cümle — iyi mi, kötü mü, neden?)\n"
-            "3. Öneri veya sonraki adım (1 cümle)\n"
-            "4. Takip soruları: 2 kısa soru öner (JSON array olarak, 'follow_ups' anahtarıyla)\n\n"
-            "Yanıtını şu JSON formatında ver:\n"
-            '{"answer": "...", "follow_ups": ["soru1", "soru2"]}'
-        )),
-        HumanMessage(content=(
-            f"Kullanıcı sorusu: {query}\n\n"
-            f"Finansal bağlam: {compact_context}"
-        )),
-    ]
+    _system = (
+        "Sen deneyimli bir CFO asistanısın. Kullanıcının finansal sorusuna "
+        "Türkçe, kısa ve net bir cevap ver. "
+        "Yanıt şu yapıda olsun:\n"
+        "1. Direkt yanıt (1-2 cümle, rakam içermeli)\n"
+        "2. Kısa yorum (1 cümle — iyi mi, kötü mü, neden?)\n"
+        "3. Öneri veya sonraki adım (1 cümle)\n"
+        "4. Takip soruları: 2 kısa soru öner (JSON array olarak, 'follow_ups' anahtarıyla)\n\n"
+        "Yanıtını şu JSON formatında ver:\n"
+        '{"answer": "...", "follow_ups": ["soru1", "soru2"]}'
+    )
+    _user = f"Kullanıcı sorusu: {query}\n\nFinansal bağlam: {compact_context}"
 
     try:
         import json
-        response = await llm.ainvoke(messages)
-        content = response.content.strip()
+        content = (await complete_text(
+            task="quick_analysis", system_prompt=_system, prompt=_user, max_tokens=600,
+        )).strip()
 
         # Try to parse JSON response
         json_match = re.search(r"\{.*\}", content, re.DOTALL)
@@ -321,3 +308,99 @@ async def generate_nl_insight(
             "value":      val,
             "context":    query_result["context"],
         }
+
+
+# ── Streaming Insight Generator ──────────────────────────────────────────────
+
+async def generate_nl_insight_stream(
+    query: str,
+    query_result: dict[str, Any],
+    dashboard: dict[str, Any],
+    settings: Any,
+):
+    """
+    Streaming variant of generate_nl_insight.
+    Yields text chunks as they arrive from the LLM.
+    At the end, yields a JSON sentinel with follow_ups extracted from the buffer.
+
+    Usage (FastAPI SSE):
+        async for chunk in generate_nl_insight_stream(...):
+            yield f"data: {chunk}\\n\\n"
+    """
+    import json as _json
+
+    from app.platform.model_gateway import stream as _gw_stream
+
+    pnl = dashboard.get("pnl") or {}
+    cf  = dashboard.get("cashflow") or {}
+
+    def fmt(v: Any) -> str:
+        if isinstance(v, (int, float)):
+            return f"{v / 100:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+        return str(v)
+
+    compact_context = (
+        f"Gelir: {fmt(pnl.get('revenue', 0))} | "
+        f"Net Kâr: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0)*100:.1f}%) | "
+        f"Net Nakit: {fmt(cf.get('net_change', 0))} | "
+        f"Intent: {query_result['intent']} | "
+        f"Sorgu sonucu: {str(query_result['value'])[:300]}"
+    )
+
+    _system = (
+        "Sen deneyimli bir CFO asistanısın. Kullanıcının finansal sorusuna "
+        "Türkçe, kısa ve net bir cevap ver.\n"
+        "Yanıtını şu formatla: önce 2-3 cümle cevap, sonra yeni satırda şu JSON:\n"
+        '{"follow_ups": ["soru1", "soru2"]}'
+    )
+    _user = f"Kullanıcı sorusu: {query}\n\nFinansal bağlam: {compact_context}"
+
+    buffer = ""
+    follow_ups_sent = False
+
+    try:
+        async for token in _gw_stream(
+            task="quick_analysis", system_prompt=_system, prompt=_user, max_tokens=600,
+        ):
+            if not token:
+                continue
+
+            buffer += token
+
+            # Check if we hit the follow_ups JSON sentinel
+            if '{"follow_ups"' in buffer and not follow_ups_sent:
+                # Split: send text before the JSON, then parse follow_ups separately
+                parts = buffer.split('{"follow_ups"', 1)
+                text_part = parts[0].strip()
+                if text_part:
+                    yield text_part
+                # Wait to accumulate the rest of the JSON
+                remainder = '{"follow_ups"' + parts[1]
+                # Accumulate until JSON is complete
+                json_end = remainder.find("}") + 1
+                if json_end > 0:
+                    try:
+                        parsed = _json.loads(remainder[:json_end])
+                        follow_ups = parsed.get("follow_ups", [])[:3]
+                    except Exception:
+                        follow_ups = []
+                    follow_ups_sent = True
+                    # Send sentinel with structured follow_ups
+                    yield f"\x00FOLLOW_UPS:{_json.dumps(follow_ups, ensure_ascii=False)}"
+                continue
+
+            # Normal text streaming - don't yield mid-sentinel
+            if '{"follow_ups"' not in buffer:
+                yield token
+
+    except Exception as exc:
+        logger.warning("Streaming NL insight failed: %s", exc)
+        val = query_result.get("value")
+        fallback = (
+            f"{query_result.get('metric_display', 'Değer')}: {val/100:,.0f} TL"
+            if isinstance(val, (int, float)) and val > 1000
+            else f"Sonuç: {val}" if val is not None
+            else "Bu soruyu yanıtlamak için yeterli veri bulunamadı."
+        )
+        yield fallback
+        yield '\x00FOLLOW_UPS:[]'

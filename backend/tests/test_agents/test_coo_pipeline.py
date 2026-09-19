@@ -2,28 +2,25 @@
 # Run: pytest backend/tests/test_agents/test_coo_pipeline.py -v
 from __future__ import annotations
 
-import pytest
-
+from app.agents.ceo.synthesis_agent import (
+    _condense_ops_summary,
+    _detect_cross_risks,
+)
 from app.agents.coo.process_agent import (
-    _parse_process_csv,
-    _compute_process_metrics,
     _build_process_alerts,
+    _compute_process_metrics,
+    _parse_process_csv,
 )
 from app.agents.coo.resource_agent import (
-    _parse_resource_csv,
-    _compute_resource_metrics,
     _build_resource_alerts,
+    _compute_resource_metrics,
+    _parse_resource_csv,
 )
 from app.agents.coo.sla_agent import (
-    _parse_sla_csv,
-    _compute_sla_metrics,
     _build_sla_alerts,
+    _compute_sla_metrics,
+    _parse_sla_csv,
 )
-from app.agents.ceo.synthesis_agent import (
-    _detect_cross_risks,
-    _condense_ops_summary,
-)
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

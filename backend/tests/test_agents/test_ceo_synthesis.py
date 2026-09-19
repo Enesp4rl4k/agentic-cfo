@@ -5,15 +5,13 @@ Tests for CEO pipeline pure functions:
 
 No LLM, no DB — deterministic rule-based logic only.
 """
-import pytest
-from app.agents.ceo.synthesis_agent import _detect_cross_risks
 from app.agents.ceo.strategic_priorities_agent import (
-    _score_priority,
-    _build_priorities_from_risks,
-    URGENCY_SCORE,
     SEVERITY_SCORE,
+    URGENCY_SCORE,
+    _build_priorities_from_risks,
+    _score_priority,
 )
-
+from app.agents.ceo.synthesis_agent import _detect_cross_risks
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

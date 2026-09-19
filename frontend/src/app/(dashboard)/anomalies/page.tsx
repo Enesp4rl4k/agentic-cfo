@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  Sparkles,
+  Loader2,
+  X,
 } from "lucide-react";
 import {
   useAnomalies,
@@ -22,6 +25,8 @@ import {
 } from "@/hooks/useCFO";
 import { cn } from "@/lib/utils";
 import type { AnomalyItem } from "@/lib/api/cfo";
+import { fetchWithAuth } from "@/lib/api/client";
+import { EvidenceChainPanel, ConfidenceBadge } from "@/components/ui/evidence-chain-panel";
 
 // ── Severity config ───────────────────────────────────────────────────────────
 
@@ -179,6 +184,50 @@ function AnomalyCard({
   const cfg = SEVERITY_CONFIG[sev];
   const Icon = cfg.icon;
 
+  // RCA (Root Cause Analysis) state
+  const [rcaOpen,    setRcaOpen]    = useState(false);
+  const [rcaText,    setRcaText]    = useState("");
+  const [rcaLoading, setRcaLoading] = useState(false);
+  const rcaAbort = useRef<AbortController | null>(null);
+
+  const handleExplain = useCallback(async () => {
+    if (rcaOpen) { setRcaOpen(false); rcaAbort.current?.abort(); return; }
+    setRcaOpen(true);
+    setRcaText("");
+    setRcaLoading(true);
+    rcaAbort.current?.abort();
+    const ctrl = new AbortController();
+    rcaAbort.current = ctrl;
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    try {
+      // Was a bare fetch with no session: the route requires a user, so the
+      // explanation panel has been answering 401 and rendering nothing.
+      const res = await fetchWithAuth(`${API_URL}/api/v1/anomalies/explain/${anomaly.id}`, { signal: ctrl.signal });
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) return;
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") { setRcaLoading(false); return; }
+          setRcaText((p) => p + payload);
+        }
+      }
+    } catch (e: any) {
+      if (e.name !== "AbortError") setRcaText("Analiz başlatılamadı.");
+    } finally {
+      setRcaLoading(false);
+    }
+  }, [anomaly.id, rcaOpen]);
+
   return (
     <div
       className={cn(
@@ -228,41 +277,52 @@ function AnomalyCard({
             {anomaly.description}
           </p>
 
-          {/* Confidence */}
+          {/* Confidence badge (inline) */}
           {anomaly.confidence != null && (
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-2">
               <ConfidenceBar value={anomaly.confidence} barClass={cfg.bar} />
+              <ConfidenceBadge confidence={anomaly.confidence} />
             </div>
           )}
 
-          {/* Evidence toggle */}
-          {anomaly.evidence && Object.keys(anomaly.evidence).length > 0 && (
-            <>
-              <button
-                onClick={() => setExpanded((v) => !v)}
-                className="mt-2 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                aria-expanded={expanded}
-              >
-                {expanded ? (
-                  <ChevronUp className="h-3 w-3" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="h-3 w-3" aria-hidden="true" />
-                )}
-                {expanded ? "Hide evidence" : "Show evidence"}
-              </button>
+          {/* Evidence chain panel — replaces raw dl */}
+          <div className="mt-3">
+            <EvidenceChainPanel anomaly={anomaly} />
+          </div>
 
-              {expanded && (
-                <dl className="mt-2 rounded-md bg-muted/30 p-2.5 font-mono text-xs">
-                  {Object.entries(anomaly.evidence).map(([k, v]) => (
-                    <div key={k} className="flex gap-2 py-0.5">
-                      <dt className="shrink-0 text-muted-foreground">{k}:</dt>
-                      <dd className="break-all">{String(v)}</dd>
-                    </div>
-                  ))}
-                </dl>
+          {/* RCA — Yapay Zeka Açıkla button */}
+          <div className="mt-3">
+            <button
+              onClick={handleExplain}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "border border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary",
+                rcaOpen ? "border-primary/40 bg-primary/5 text-primary" : "text-muted-foreground"
               )}
-            </>
-          )}
+            >
+              {rcaLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )}
+              {rcaOpen ? "Kapat" : "Yapay Zeka ile Açıkla"}
+            </button>
+
+            {/* Streaming RCA panel */}
+            {rcaOpen && (
+              <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    🔍 Kök Neden Analizi
+                  </span>
+                  {rcaLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                </div>
+                <p className="text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                  {rcaText || (rcaLoading ? <span className="text-muted-foreground animate-pulse">Analiz yapılıyor…</span> : null)}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Acknowledge button */}
@@ -406,30 +466,7 @@ export default function AnomaliesPage() {
   const { data, isLoading } = useAnomalies(jobId);
   const scan = useScanAnomalies(jobId);
 
-  if (!jobId || (!isLoading && !data)) return <EmptyState />;
-
-  if (isLoading) {
-    return (
-      <div className="space-y-3 p-5">
-        <div className="h-6 w-48 animate-pulse rounded bg-muted" />
-        <div className="grid grid-cols-5 gap-px overflow-hidden rounded-lg border border-border bg-border">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="bg-card px-4 py-4">
-              <div className="mx-auto h-3 w-12 animate-pulse rounded bg-muted" />
-              <div className="mx-auto mt-2 h-6 w-8 animate-pulse rounded bg-muted" />
-            </div>
-          ))}
-        </div>
-        <div className="space-y-2">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const allAnomalies = data!.anomalies;
+  const allAnomalies = useMemo(() => data?.anomalies ?? [], [data?.anomalies]);
 
   // Counts per severity (from all, ignoring ack filter)
   const bySeverity = useMemo(() => {
@@ -471,6 +508,29 @@ export default function AnomaliesPage() {
     });
     return groups;
   }, [filtered]);
+
+  if (!jobId || (!isLoading && !data)) return <EmptyState />;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3 p-5">
+        <div className="h-6 w-48 animate-pulse rounded bg-muted" />
+        <div className="grid grid-cols-5 gap-px overflow-hidden rounded-lg border border-border bg-border">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="bg-card px-4 py-4">
+              <div className="mx-auto h-3 w-12 animate-pulse rounded bg-muted" />
+              <div className="mx-auto mt-2 h-6 w-8 animate-pulse rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const acknowledgedCount = allAnomalies.filter((a) => a.acknowledged).length;
   const hasFilters = filterSeverity !== "all" || filterType !== "all";

@@ -3,13 +3,13 @@ Tests for sensitivity_agent.py — pure computation functions (no LLM, no DB).
 Covers: _apply_variable, compute_sensitivity_matrix
 """
 import pytest
+
 from app.agents.sensitivity_agent import (
-    _apply_variable,
-    compute_sensitivity_matrix,
     DEFAULT_RANGES,
     VARIABLE_LABELS,
+    _apply_variable,
+    compute_sensitivity_matrix,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ class TestComputeSensitivityMatrix:
     def test_matrix_margin_same_dimensions(self):
         result = self._run()
         assert len(result["matrix_margin"]) == len(result["matrix"])
-        for r_net, r_margin in zip(result["matrix"], result["matrix_margin"]):
+        for r_net, r_margin in zip(result["matrix"], result["matrix_margin"], strict=False):
             assert len(r_net) == len(r_margin)
 
     def test_base_net_income_matches_pnl(self):

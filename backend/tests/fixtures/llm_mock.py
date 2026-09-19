@@ -20,10 +20,9 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
+from unittest.mock import MagicMock, patch
 
 # ── Mock message type ─────────────────────────────────────────────────────────
 
@@ -112,7 +111,7 @@ def patch_llm(
 
 @contextmanager
 def patch_settings(
-    openai_api_key: str = "sk-test-mock-key-not-real",
+    openai_api_key: str = "llm-placeholder-mock",
     llm_model: str = "gpt-3.5-turbo",
 ):
     """Patch get_settings() to return a mock settings object."""

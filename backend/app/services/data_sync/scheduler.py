@@ -18,12 +18,10 @@ All jobs include:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Optional
 
+from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ class SyncScheduler:
 
     def __init__(self):
         """Initialize scheduler."""
-        self.scheduler: Optional[BackgroundScheduler] = None
+        self.scheduler: BackgroundScheduler | None = None
         self._jobs: dict[str, Job] = {}
 
     def start(self) -> None:
@@ -314,7 +312,7 @@ class SyncScheduler:
 
 
 # Global scheduler instance
-_scheduler: Optional[SyncScheduler] = None
+_scheduler: SyncScheduler | None = None
 
 
 def get_sync_scheduler() -> SyncScheduler:

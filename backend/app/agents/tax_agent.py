@@ -17,19 +17,57 @@ done_when: state['tax'] contains vat_payable, withholding_tax,
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, date
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
 
-# ── Turkish Tax Rates ─────────────────────────────────────────────────────────
+# ── S1-5 / S4-1: Türkiye Vergi Oranları ve Takvimi ───────────────────────────
 
-VAT_RATE = 0.20          # KDV oranı (standart %20)
-WITHHOLDING_RATE = 0.15  # Stopaj oranı (maaş ve hizmet)
-CORPORATE_TAX_RATE = 0.25  # Kurumlar vergisi oranı %25 (2024)
-SSI_RATE = 0.225         # SGK işveren payı %22.5
+# KDV oranları (2024 — Hazine ve Maliye Bakanlığı)
+KDV_ORANLARI = {
+    "standart":      0.20,   # %20 — genel (2024'te %18'den %20'ye çıktı)
+    "indirimli_1":   0.10,   # %10 — gıda, ilaç, temel tüketim
+    "indirimli_2":   0.01,   # %1 — konut, tarımsal
+}
+# Satış işlemleri için varsayılan KDV oranı
+VAT_RATE = KDV_ORANLARI["standart"]
+
+# Stopaj oranları (GVK Madde 94)
+STOPAJ_ORANLARI = {
+    "ucret":               0.15,   # Ücret → kademeli, %15 ortalama
+    "serbest_meslek":      0.20,   # Serbest meslek (avukat, danışman)
+    "kira":                0.20,   # Kira stopajı
+    "faiz":                0.15,   # Mevduat faizi
+    "temettü":             0.10,   # Temettü dağıtımı
+}
+WITHHOLDING_RATE = STOPAJ_ORANLARI["ucret"]
+
+# Kurumlar vergisi (KVK Madde 32)
+CORPORATE_TAX_RATE = 0.25  # %25 (2024)
+KURUMLAR_VERGISI_AVANSI_ORANI = 0.25  # Geçici vergi = kurumlar vergisi oranı
+
+# SGK
+SSI_RATE = 0.225         # SGK işveren payı %22.5 (uzun vadeli sigorta dahil)
+SSI_CALISMA_SAATI_RATE = 0.02  # İşsizlik sigortası %2
+
+# Geçici vergi dönemleri ve son tarihleri (GVK Mükerrer Madde 120)
+GECICI_VERGI_TAKVIMI = {
+    # dönem_sonu: beyanname_son_tarihi (son ödeme tarihi 3 gün sonra)
+    "03": "05-17",   # Q1 (Ocak-Mart) → 17 Mayıs
+    "06": "08-17",   # Q2 (Nisan-Haziran) → 17 Ağustos
+    "09": "11-17",   # Q3 (Temmuz-Eylül) → 17 Kasım
+    "12": "02-17",   # Q4 (Ekim-Aralık) → bir sonraki yıl 17 Şubat
+}
+
+# KDV beyanname takvimi: her ayın 28'i (ertesi ay)
+KDV_BEYANNAME_GUN = 28
+# Muhtasar: her ayın 26'sı (ertesi ay)
+MUHTASAR_GUN = 26
+# SGK son ödeme günü: ayın 28'i
+SGK_SON_GUN = 28
 
 # ── Pure calculations ─────────────────────────────────────────────────────────
 
@@ -99,98 +137,132 @@ def _build_payment_calendar(
     reference_month: str,
 ) -> list[dict[str, Any]]:
     """
-    Ödeme takvimi: Türk vergi sistemine göre son tarihler.
-    KDV: sonraki ay 28'ine kadar
-    Stopaj: sonraki ay 26'sına kadar (muhtasar beyanname)
-    Kurumlar vergisi: Nisan'da yıllık + 4 geçici vergi (mart, haziran, eylül, aralık)
+    S1-5 / S4-1: Türk vergi sistemine göre doğru son tarihler.
+
+    KDV:      ertesi ayın 28'i (KDVK Madde 41)
+    Stopaj:   ertesi ayın 26'sı (GVK Madde 98 — muhtasar beyanname)
+    SGK:      aynı ayın 28'i (5510 sayılı Kanun)
+    Geçici:   Q1→17 Mayıs, Q2→17 Ağustos, Q3→17 Kasım, Q4→ertesi yıl 17 Şubat
+    Yıllık KV: her yılın Nisan ayı (beyannameyi izleyen ay)
     """
     try:
         year, month = int(reference_month[:4]), int(reference_month[5:7])
     except (ValueError, IndexError):
         year, month = datetime.now().year, datetime.now().month
 
-    # Next month
+    # Bir sonraki ay
     if month == 12:
         next_year, next_month = year + 1, 1
     else:
         next_year, next_month = year, month + 1
 
-    calendar = []
+    calendar: list[dict[str, Any]] = []
 
+    # KDV beyannamesi
     if vat["net_vat_payable"] > 0:
         calendar.append({
             "type": "KDV (VAT)",
-            "due_date": f"{next_year:04d}-{next_month:02d}-28",
+            "due_date": f"{next_year:04d}-{next_month:02d}-{KDV_BEYANNAME_GUN:02d}",
             "amount": vat["net_vat_payable"],
-            "description": f"KDV beyannamesi — net ödenecek KDV",
+            "description": (
+                f"KDV beyannamesi (KDVK Madde 41) — "
+                f"Ödenecek KDV: ₺{vat['net_vat_payable']/100:,.0f}"
+            ),
+            "urgency": "high" if vat["net_vat_payable"] > 10_000_00 else "normal",
         })
 
+    # Muhtasar beyanname (stopaj)
     if withholding["income_tax_withholding"] > 0:
         calendar.append({
             "type": "Stopaj (Withholding Tax)",
-            "due_date": f"{next_year:04d}-{next_month:02d}-26",
+            "due_date": f"{next_year:04d}-{next_month:02d}-{MUHTASAR_GUN:02d}",
             "amount": withholding["income_tax_withholding"],
-            "description": "Muhtasar beyanname — gelir vergisi stopajı",
+            "description": (
+                f"Muhtasar beyanname (GVK Madde 98) — "
+                f"Stopaj: ₺{withholding['income_tax_withholding']/100:,.0f}"
+            ),
+            "urgency": "normal",
         })
 
+
+    # SGK işveren payı
     if withholding["ssi_employer"] > 0:
         calendar.append({
             "type": "SGK İşveren Payı",
-            "due_date": f"{next_year:04d}-{next_month:02d}-28",
+            "due_date": f"{year:04d}-{month:02d}-{SGK_SON_GUN:02d}",
             "amount": withholding["ssi_employer"],
-            "description": "SGK işveren payı",
+            "description": (
+                f"SGK işveren payı (5510 sayılı Kanun) — "
+                f"₺{withholding['ssi_employer']/100:,.0f}"
+            ),
+            "urgency": "normal",
         })
 
+    # Geçici vergi (çeyreklik) — doğru dönem son tarihleri
     if corp_tax["corporate_tax_estimate"] > 0:
-        # Quarterly prepayment
-        quarter_months = {3: 3, 6: 6, 9: 9, 12: 12}
-        if month in quarter_months:
+        month_str = f"{month:02d}"
+        if month_str in GECICI_VERGI_TAKVIMI:
+            beyanname_tarihi = GECICI_VERGI_TAKVIMI[month_str]
+            # Q4 geçici vergisi ertesi yılda
+            gv_year = year + 1 if month == 12 else year
+            gv_ay, gv_gun = beyanname_tarihi.split("-")
             calendar.append({
                 "type": "Geçici Vergi",
-                "due_date": f"{year:04d}-{month:02d}-17",
+                "due_date": f"{gv_year:04d}-{gv_ay}-{gv_gun}",
                 "amount": int(corp_tax["corporate_tax_estimate"] / 4),
-                "description": "Kurumlar vergisi geçici vergi (çeyreklik)",
+                "description": (
+                    f"Kurumlar vergisi geçici vergi (GVK Mükerrer Madde 120) — "
+                    f"₺{corp_tax['corporate_tax_estimate']/4/100:,.0f}"
+                ),
+                "urgency": "high",
             })
 
     calendar.sort(key=lambda x: x["due_date"])
     return calendar
 
 
+def _tax_narrative_template(tax: dict[str, Any]) -> str:
+    vat = tax["vat"]["net_vat_payable"] / 100
+    corp = tax["corporate"]["corporate_tax_estimate"] / 100
+    total = tax.get("total_tax_burden", 0) / 100
+    n_due = len(tax.get("payment_calendar", []))
+    return (
+        f"Toplam vergi yükü ~{total:,.0f} TL (KDV {vat:,.0f} TL, kurumlar vergisi "
+        f"tahmini {corp:,.0f} TL). {n_due} yaklaşan ödeme takvimde. Nakit planlamasında "
+        "bu tarihleri dikkate alın."
+    )
+
+
 async def _generate_tax_narrative(
     tax: dict[str, Any], settings
 ) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        from app.platform.model_gateway import complete_text
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.2,
-        max_tokens=512,
-        api_key=settings.openai_api_key,
-        base_url=settings.llm_base_url or None,
-    )
-
-    cal_text = "\n".join(
-        f"- {p['type']}: {p['amount']/100:,.0f} TL — due {p['due_date']}"
-        for p in tax.get("payment_calendar", [])
-    )
-
-    messages = [
-        SystemMessage(content=(
-            "You are a Turkish tax accountant. Summarize the tax position "
-            "in 2-4 sentences. Highlight upcoming deadlines and cash flow impact. "
-            "Be specific and actionable."
-        )),
-        HumanMessage(content=(
-            f"VAT payable: {tax['vat']['net_vat_payable']/100:,.0f} TL\n"
-            f"Withholding tax: {tax['withholding']['income_tax_withholding']/100:,.0f} TL\n"
-            f"SSI employer: {tax['withholding']['ssi_employer']/100:,.0f} TL\n"
-            f"Corporate tax estimate: {tax['corporate']['corporate_tax_estimate']/100:,.0f} TL\n\n"
-            f"Upcoming payments:\n{cal_text or 'None'}"
-        )),
-    ]
-    response = await llm.ainvoke(messages)
-    return response.content.strip()
+        cal_text = "\n".join(
+            f"- {p['type']}: {p['amount']/100:,.0f} TL — due {p['due_date']}"
+            for p in tax.get("payment_calendar", [])
+        )
+        text = await complete_text(
+            task="metric_commentary",
+            system_prompt=(
+                "You are a Turkish tax accountant. Summarize the tax position "
+                "in 2-4 sentences. Highlight upcoming deadlines and cash flow impact. "
+                "Be specific and actionable."
+            ),
+            prompt=(
+                f"VAT payable: {tax['vat']['net_vat_payable']/100:,.0f} TL\n"
+                f"Withholding tax: {tax['withholding']['income_tax_withholding']/100:,.0f} TL\n"
+                f"SSI employer: {tax['withholding']['ssi_employer']/100:,.0f} TL\n"
+                f"Corporate tax estimate: {tax['corporate']['corporate_tax_estimate']/100:,.0f} TL\n\n"
+                f"Upcoming payments:\n{cal_text or 'None'}"
+            ),
+            max_tokens=512,
+        )
+        return text.strip()
+    except Exception as exc:
+        logger.debug("LLM tax narrative fallback: %s", exc)
+        return _tax_narrative_template(tax)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -228,7 +300,7 @@ async def run_tax(
             for t in transactions
             if t.get("transaction_date")
         ]
-        reference_month = max(dates) if dates else datetime.now(timezone.utc).strftime("%Y-%m")
+        reference_month = max(dates) if dates else datetime.now(UTC).strftime("%Y-%m")
 
         calendar = _build_payment_calendar(vat, withholding, corp_tax, reference_month)
 

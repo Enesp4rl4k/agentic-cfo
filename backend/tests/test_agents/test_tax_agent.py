@@ -3,18 +3,16 @@ Tests for tax_agent.py — pure computation functions only (no LLM).
 Covers Turkish tax calculations: VAT (KDV), withholding (stopaj),
 corporate tax (kurumlar vergisi), and payment calendar.
 """
-import pytest
 from app.agents.tax_agent import (
-    _compute_vat,
-    _compute_withholding,
-    _compute_corporate_tax,
-    _build_payment_calendar,
-    VAT_RATE,
-    WITHHOLDING_RATE,
     CORPORATE_TAX_RATE,
     SSI_RATE,
+    VAT_RATE,
+    WITHHOLDING_RATE,
+    _build_payment_calendar,
+    _compute_corporate_tax,
+    _compute_vat,
+    _compute_withholding,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,8 @@
 """Ziraat Bankası statement parser."""
 from __future__ import annotations
+
 import re
+
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 

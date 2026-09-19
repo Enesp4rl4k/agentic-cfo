@@ -25,24 +25,26 @@ import asyncio
 import logging
 from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
+from app.agents.ceo.board_deck_agent import run_board_deck_agent
 from app.agents.ceo.state import (
+    CEO_ROUTE_HOLD,
+    DEFAULT_CEO_RUN_CONFIG,
+    CEORunConfig,
     CEOState,
     CEOStepLog,
-    CEOSkillResult,
-    CEORunConfig,
-    DEFAULT_CEO_RUN_CONFIG,
-    CEO_ROUTE_HOLD,
-    CEO_ROUTE_END,
-)
-from app.agents.ceo.synthesis_agent          import (
-    run_synthesis_agent,
-    _condense_financial_summary,
-    _condense_tech_summary,
 )
 from app.agents.ceo.strategic_priorities_agent import run_strategic_priorities_agent
-from app.agents.ceo.board_deck_agent           import run_board_deck_agent
+from app.agents.ceo.swot_agent import run_swot_agent
+from app.agents.ceo.synthesis_agent import (
+    _condense_financial_summary,
+    _condense_hr_summary,
+    _condense_marketing_summary,
+    _condense_ops_summary,
+    _condense_tech_summary,
+    run_synthesis_agent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +140,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
         try:
             from app.agents.cmo.orchestrator import run_cmo_pipeline
             result = await run_cmo_pipeline(
+                job_id=f"{job_id}-cmo",
                 campaign_csv=cmo_input.get("campaign_csv"),
                 funnel_csv=cmo_input.get("funnel_csv"),
                 cohort_csv=cmo_input.get("cohort_csv"),
@@ -154,9 +157,10 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
         try:
             from app.agents.coo.orchestrator import run_coo_pipeline
             result = await run_coo_pipeline(
-                headcount_csv=coo_input.get("headcount_csv"),
-                attrition_csv=coo_input.get("attrition_csv"),
-                compensation_csv=coo_input.get("compensation_csv"),
+                job_id=f"{job_id}-coo",
+                process_csv=coo_input.get("process_csv"),
+                resource_csv=coo_input.get("resource_csv"),
+                sla_csv=coo_input.get("sla_csv"),
             )
             coo_result = dict(result)
             logger.info("CEO: COO pipeline finished for job=%s", job_id)
@@ -170,9 +174,9 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
         try:
             from app.agents.chro.orchestrator import run_chro_pipeline
             result = await run_chro_pipeline(
-                headcount_csv=chro_input.get("headcount_csv"),
-                attrition_csv=chro_input.get("attrition_csv"),
-                compensation_csv=chro_input.get("compensation_csv"),
+                headcount_csv=chro_input.get("headcount_csv") or "",
+                attrition_csv=chro_input.get("attrition_csv") or "",
+                compensation_csv=chro_input.get("compensation_csv") or "",
             )
             chro_result = dict(result)
             logger.info("CEO: CHRO pipeline finished for job=%s", job_id)
@@ -264,6 +268,16 @@ async def node_board_deck(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
+async def node_swot(state: CEOState, config: dict) -> CEOState:
+    """SWOT analizi — tüm C-Suite özetlerinden otomatik SWOT matrisi üretir."""
+    result = await run_swot_agent(state, _run_config(config))
+    patch = _append_log(state, CEOStepLog(
+        step="swot", ok=result.ok, detail=result.detail, confidence=result.confidence
+    ))
+    patch.update(result.patch)
+    return {**state, **patch}  # type: ignore[return-value]
+
+
 async def node_okr(state: CEOState, config: dict) -> CEOState:
     from app.agents.ceo.okr_agent import run_okr_agent
     return await run_okr_agent(state, config)  # type: ignore[return-value]
@@ -286,7 +300,7 @@ def route_after_synthesis(state: CEOState) -> str:
         return CEO_ROUTE_HOLD
     if (state.get("min_confidence") or 1.0) < 0.75:
         return CEO_ROUTE_HOLD
-    return "strategic_priorities"
+    return "priorities_step"
 
 
 # ── Graph assembly ─────────────────────────────────────────────────────────────
@@ -294,32 +308,34 @@ def route_after_synthesis(state: CEOState) -> str:
 def build_ceo_graph() -> StateGraph:
     graph = StateGraph(CEOState)
 
-    graph.add_node("run_pipelines",        node_run_pipelines)
-    graph.add_node("condense_summaries",   node_condense_summaries)
-    graph.add_node("synthesis",            node_synthesis)
-    graph.add_node("strategic_priorities", node_strategic_priorities)
-    graph.add_node("board_deck",           node_board_deck)
-    graph.add_node("okr",                  node_okr)
-    graph.add_node("hold_for_review",      node_hold_for_review)
+    graph.add_node("pipelines_step",    node_run_pipelines)
+    graph.add_node("summaries_step",    node_condense_summaries)
+    graph.add_node("synthesis_step",    node_synthesis)
+    graph.add_node("priorities_step",   node_strategic_priorities)
+    graph.add_node("swot_step",         node_swot)
+    graph.add_node("deck_step",         node_board_deck)
+    graph.add_node("okr_step",          node_okr)
+    graph.add_node("hold_step",         node_hold_for_review)
 
-    graph.set_entry_point("run_pipelines")
+    graph.set_entry_point("pipelines_step")
 
-    graph.add_edge("run_pipelines",      "condense_summaries")
-    graph.add_edge("condense_summaries", "synthesis")
+    graph.add_edge("pipelines_step",    "summaries_step")
+    graph.add_edge("summaries_step",    "synthesis_step")
 
     graph.add_conditional_edges(
-        "synthesis",
+        "synthesis_step",
         route_after_synthesis,
         {
-            "strategic_priorities": "strategic_priorities",
-            CEO_ROUTE_HOLD:         "hold_for_review",
+            "priorities_step": "priorities_step",
+            CEO_ROUTE_HOLD:    "hold_step",
         },
     )
 
-    graph.add_edge("strategic_priorities", "board_deck")
-    graph.add_edge("board_deck",           "okr")
-    graph.add_edge("okr",                  END)
-    graph.add_edge("hold_for_review",      END)
+    graph.add_edge("priorities_step", "swot_step")
+    graph.add_edge("swot_step",       "deck_step")
+    graph.add_edge("deck_step",       "okr_step")
+    graph.add_edge("okr_step",        END)
+    graph.add_edge("hold_step",       END)
 
     return graph
 
@@ -345,9 +361,9 @@ async def _run_cfo_from_transactions(
     Returns a dict that mimics the shape of CFOState so synthesis_agent can
     call _condense_financial_summary() on it without changes.
     """
-    from app.agents.pnl_agent import run_pnl
     from app.agents.cashflow_agent import run_cashflow
     from app.agents.forecast_agent import run_forecast
+    from app.agents.pnl_agent import run_pnl
     from app.agents.state import DEFAULT_RUN_CONFIG
 
     # Normalize transaction types: frontend may send "revenue" but agents expect "income"
@@ -378,7 +394,6 @@ async def _run_cfo_from_transactions(
 
     # Run core agents sequentially — skip data_ingestion (already have transactions)
     try:
-        from app.agents.state import CFOState
         pnl_result = await run_pnl(synthetic_state, cfg)  # type: ignore[arg-type]
         if pnl_result.ok:
             synthetic_state.update(pnl_result.patch)
@@ -407,6 +422,18 @@ async def run_ceo_pipeline(
     git_log_text: str | None = None,
     incident_csv: str | None = None,
     sprint_csv: str | None = None,
+    # CMO inputs
+    campaign_csv: str | None = None,
+    funnel_csv: str | None = None,
+    cohort_csv: str | None = None,
+    # COO inputs
+    process_csv: str | None = None,
+    resource_csv: str | None = None,
+    sla_csv: str | None = None,
+    # CHRO inputs
+    headcount_csv: str | None = None,
+    attrition_csv: str | None = None,
+    compensation_csv: str | None = None,
     # Meta
     company_name: str | None = None,
     period: str | None = None,
@@ -444,12 +471,42 @@ async def run_ceo_pipeline(
             "sprint_csv":        sprint_csv,
         }
 
+    # The graph already knows how to run CMO/COO/CHRO, but nothing ever handed
+    # them input — every DataSource in those domains was read by the API and then
+    # dropped on the floor. Names match DOMAIN_SOURCE_KWARGS in models/data_source.
+    cmo_input: dict[str, Any] = {}
+    if any([campaign_csv, funnel_csv, cohort_csv]):
+        cmo_input = {
+            "campaign_csv": campaign_csv,
+            "funnel_csv":   funnel_csv,
+            "cohort_csv":   cohort_csv,
+        }
+
+    coo_input: dict[str, Any] = {}
+    if any([process_csv, resource_csv, sla_csv]):
+        coo_input = {
+            "process_csv":  process_csv,
+            "resource_csv": resource_csv,
+            "sla_csv":      sla_csv,
+        }
+
+    chro_input: dict[str, Any] = {}
+    if any([headcount_csv, attrition_csv, compensation_csv]):
+        chro_input = {
+            "headcount_csv":    headcount_csv,
+            "attrition_csv":    attrition_csv,
+            "compensation_csv": compensation_csv,
+        }
+
     initial_state: CEOState = {
         "job_id":      job_id,
         "company_name": company_name,
         "period":      period,
-        "_cfo_input":  cfo_input,  # type: ignore[typeddict-unknown-key]
-        "_cto_input":  cto_input,  # type: ignore[typeddict-unknown-key]
+        "_cfo_input":  cfo_input,
+        "_cto_input":  cto_input,
+        "_cmo_input":  cmo_input,
+        "_coo_input":  coo_input,
+        "_chro_input": chro_input,
         "logs":            [],
         "min_confidence":  1.0,
         "awaiting_review": False,

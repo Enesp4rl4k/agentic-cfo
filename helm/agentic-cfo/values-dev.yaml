@@ -1,0 +1,42 @@
+global:
+  environment: development
+
+backend:
+  replicaCount: 1
+  image:
+    repository: agentic-cfo-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  autoscaling:
+    enabled: false
+
+worker:
+  replicaCount: 1
+
+workerMaintenance:
+  replicaCount: 1
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: agentic-cfo-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: localhost
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+          port: 8000
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 3000
+  tls: []

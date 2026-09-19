@@ -102,7 +102,7 @@ def _summarise_transactions(
     for t in rows:
         amount_try = (t.get("amount_cents") or 0) / 100
         line = (
-            f"{t.get('transaction_date', '')[:10]},"
+            f"{(t.get('transaction_date') or '')[:10]},"
             f"{t.get('type', '')},"
             f"{t.get('category', '')},"
             f"{(t.get('vendor') or t.get('description') or '')[:30]},"

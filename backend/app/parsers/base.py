@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import ClassVar
 
 
@@ -25,6 +25,13 @@ class ParsedTransaction:
     balance_cents: int | None = None   # Running balance if available
     reference: str | None = None       # Bank reference / cheque number
     raw_row: str = ""                  # Original text row for audit
+    # How sure the parser is about THIS row. The invoice parser has always
+    # computed a confidence and had nowhere to put it, so a row whose direction
+    # was guessed off the page reached the ledger indistinguishable from one
+    # settled by VKN. 1.0 keeps every existing parser's behaviour unchanged.
+    confidence: float = 1.0
+    # Why it is not 1.0, in the reviewer's language.
+    confidence_note: str = ""
 
 
 @dataclass
@@ -76,15 +83,31 @@ class BankParser(ABC):
     # ── Shared utilities ───────────────────────────────────────────────────
 
     @staticmethod
+    def is_negative_amount(raw: str) -> bool:
+        """Does this cell carry a minus sign?
+
+        `parse_turkish_amount` returns a magnitude, so the sign has to be read
+        from the raw text. Three parsers each did that themselves, and each also
+        carried an `or amount_cents < 0` clause that could never fire.
+        U+2212 is the real minus sign, which is what a PDF often contains.
+        """
+        return raw.strip().lstrip("₺TL$€£ ").strip().startswith(("-", "−"))
+
+    @staticmethod
     def parse_turkish_amount(raw: str) -> int | None:
         """
-        Convert Turkish-formatted amount string to cents.
+        Convert a Turkish-formatted amount to integer kuruş.
+
+        Returns the **magnitude**: a leading minus is discarded, because
+        `ParsedTransaction.amount_cents` is always positive and the direction is
+        carried by `tx_type`. Read the sign with `is_negative_amount`.
 
         Handles:
-          "1.234,56"  → 123456   (Turkish: dot=thousands, comma=decimal)
-          "1.234"     → 350000   wait, "3.500" → 3500 TL → 350000 kuruş
-          "500,00"    → 50000
-          "1234.56"   → 123456   (US format fallback)
+          "1.234,56"    → 123456      Turkish: dot=thousands, comma=decimal
+          "500,00"      → 50000
+          "3.500"       → 350000      a bare dot with three digits is thousands
+          "1.234.567"   → 123456700   several thousands groups, no decimals
+          "1234.56"     → 123456      US format fallback
         """
         import re
         cleaned = raw.strip().replace(" ", "").replace("\xa0", "")
@@ -102,13 +125,16 @@ class BankParser(ABC):
             # only comma → decimal separator "500,00"
             cleaned = cleaned.replace(",", ".")
         elif "." in cleaned:
-            # only dot: could be thousands separator ("3.500") or decimal ("3.5")
-            # Rule: if exactly 3 digits after dot → thousands separator
+            # Only dots. Every group after the first is a thousands separator if
+            # it is exactly three digits — "3.500" is three thousand five
+            # hundred, "3.5" is three and a half.
+            #
+            # This used to require exactly two parts, so "1.234.567" fell
+            # through to float(), raised, and the row was dropped without a
+            # word: any amount over a million written without kuruş vanished.
             parts = cleaned.split(".")
-            if len(parts) == 2 and len(parts[1]) == 3:
-                # "3.500" → 3500 (thousands separator, no decimal)
-                cleaned = cleaned.replace(".", "")
-            # else: "3.5" → decimal, leave as-is
+            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+                cleaned = "".join(parts)
 
         try:
             return round(float(cleaned) * 100)
@@ -117,15 +143,55 @@ class BankParser(ABC):
 
     @staticmethod
     def parse_turkish_date(raw: str) -> datetime | None:
-        """Try common Turkish date formats."""
-        from datetime import timezone
-        formats = [
+        """
+        Try common Turkish date formats.
+
+        Handles:
+          "15.03.2024"  — standard Turkish
+          "15/03/2024"  — slash separator
+          "2024-03-15"  — ISO
+          "15.03.24"    — 2-digit year
+          "15 Mart 2024" — Turkish month name
+          "15-Mart-2024" — hyphen with month name
+        """
+
+        raw = raw.strip()
+
+        # Standard numeric formats
+        numeric_formats = [
             "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d",
             "%d.%m.%y", "%d-%m-%Y", "%d %m %Y",
+            "%d/%m/%y", "%Y/%m/%d",
         ]
-        for fmt in formats:
+        for fmt in numeric_formats:
             try:
-                return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+                return datetime.strptime(raw, fmt).replace(tzinfo=UTC)
             except ValueError:
                 continue
+
+        # Turkish month names → number mapping
+        _TR_MONTHS = {
+            "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
+            "mayıs": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
+            "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+            # Common abbreviations
+            "oca": 1, "şub": 2, "mar": 3, "nis": 4,
+            "may": 5, "haz": 6, "tem": 7, "ağu": 8,
+            "eyl": 9, "eki": 10, "kas": 11, "ara": 12,
+        }
+        import re as _re
+        # "15 Mart 2024" or "15-Mart-2024" or "15.Mart.2024"
+        m = _re.match(r"(\d{1,2})[\s.\-/]([A-Za-zğüşıöçĞÜŞİÖÇ]+)[\s.\-/](\d{2,4})", raw)
+        if m:
+            day, month_str, year_str = int(m.group(1)), m.group(2).lower(), m.group(3)
+            month_num = _TR_MONTHS.get(month_str)
+            if month_num:
+                year = int(year_str)
+                if year < 100:
+                    year += 2000
+                try:
+                    return datetime(year, month_num, day, tzinfo=UTC)
+                except ValueError:
+                    pass
+
         return None

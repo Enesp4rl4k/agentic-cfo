@@ -18,24 +18,22 @@ At least one data source required to produce a meaningful summary.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
+from app.agents.cto.incident_agent import run_incident_agent
+from app.agents.cto.infra_agent import run_infra_agent
 from app.agents.cto.state import (
+    CTO_ROUTE_HOLD,
+    CTO_ROUTE_SUMMARY,
+    DEFAULT_CTO_RUN_CONFIG,
+    CTORunConfig,
     CTOState,
     CTOStepLog,
-    CTOSkillResult,
-    CTORunConfig,
-    DEFAULT_CTO_RUN_CONFIG,
-    CTO_ROUTE_HOLD,
-    CTO_ROUTE_END,
-    CTO_ROUTE_SUMMARY,
 )
-from app.agents.cto.infra_agent      import run_infra_agent
-from app.agents.cto.tech_debt_agent  import run_tech_debt_agent
-from app.agents.cto.incident_agent   import run_incident_agent
-from app.agents.cto.velocity_agent   import run_velocity_agent
+from app.agents.cto.tech_debt_agent import run_tech_debt_agent
+from app.agents.cto.velocity_agent import run_velocity_agent
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +104,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
     CTO Summary node — synthesizes all available agent outputs into a
     holistic tech health score and top-risk list.
     """
-    from app.config import get_settings
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    settings = get_settings()
+    from app.platform.model_gateway import complete_text
     infra     = state.get("infra") or {}
     tech_debt = state.get("tech_debt") or {}
     incidents = state.get("incidents") or {}
@@ -186,36 +180,62 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
 
     # ── LLM narrative (Türkçe + actionable) ──────────────────────────────────
     try:
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=800,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
         risks_text = "\n".join(
             f"- [{r['severity'].upper()}] {r['domain']}: {r['message']}"
             for r in top_risks[:5]
         ) or "Kritik risk tespit edilmedi."
         scores_text = " | ".join(f"{k}: {v}/10" for k, v in scores.items())
 
-        response = await llm.ainvoke([
-            SystemMessage(content=(
+        # S2-1: Cross-domain context (CFO + CHRO) enrichment for CTO narrative
+        cross_context_lines: list[str] = []
+        cfo_sum = state.get("__cfo_summary") or {}
+        chro_sum = state.get("__chro_summary") or {}
+
+        if cfo_sum.get("runway_months") is not None:
+            runway = cfo_sum["runway_months"]
+            cross_context_lines.append(
+                f"Nakit Ömrü (CFO): {runway:.1f} ay"
+                + (" — KRİTİK: Teknik borç yatırımlarını ertelemek gerekebilir" if runway < 6 else "")
+            )
+        if cfo_sum.get("critical_anomalies"):
+            cross_context_lines.append(
+                f"CFO Kritik Anomali: {cfo_sum['critical_anomalies']} adet — altyapı kaynaklı olabilir"
+            )
+        if chro_sum.get("turnover_rate") is not None:
+            turnover = chro_sum["turnover_rate"]
+            if turnover > 0.15:
+                cross_context_lines.append(
+                    f"İşten Ayrılma Oranı (CHRO): %{turnover*100:.0f} — mühendis kadrosu riski"
+                )
+        if chro_sum.get("headcount_change") is not None:
+            cross_context_lines.append(
+                f"Kadro Değişimi (CHRO): {chro_sum['headcount_change']:+d} kişi"
+            )
+
+        cross_context_block = (
+            "\n\nÇapraz Domain Bağlamı (CFO/CHRO):\n" + "\n".join(f"- {l}" for l in cross_context_lines)
+            if cross_context_lines else ""
+        )
+
+        narrative = (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir CTO'sun. Aşağıdaki teknoloji sağlık verilerini analiz et ve "
                 "Türkçe olarak kısa bir yönetici özeti yaz. "
                 "Yanıt şu yapıda olsun:\n"
                 "1. Genel teknoloji sağlık durumunun 1-2 cümlelik değerlendirmesi (skor odaklı)\n"
                 "2. En kritik 1-2 risk (altyapı, teknik borç veya olay)\n"
-                "3. Yönetimin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
+                "3. CFO/CHRO bağlamını göz önüne alarak yapılması gereken 2-3 somut eylem\n"
                 "Teknik jargonu azalt, CEO'nun anlayacağı dilde yaz."
-            )),
-            HumanMessage(content=(
+            ),
+            prompt=(
                 f"Genel Teknoloji Sağlık Skoru: {overall_health}/10\n"
                 f"Bileşen Skorları: {scores_text}\n\n"
                 f"Önemli Riskler:\n{risks_text}"
-            )),
-        ])
-        narrative = response.content.strip()
+                f"{cross_context_block}"
+            ),
+            max_tokens=800,
+        )).strip()
     except Exception as exc:
         logger.warning("CTO summary narrative failed: %s", exc)
         narrative = f"Teknoloji sağlık skoru: {overall_health}/10. {len(scores)} alanda {len(top_risks)} risk tespit edildi."
@@ -268,32 +288,32 @@ def route_after_velocity(state: CTOState) -> str:
 def build_cto_graph() -> StateGraph:
     graph = StateGraph(CTOState)
 
-    graph.add_node("infra",           node_infra)
-    graph.add_node("tech_debt",       node_tech_debt)
-    graph.add_node("incidents",       node_incidents)
-    graph.add_node("velocity",        node_velocity)
-    graph.add_node("cto_summary",     node_cto_summary)
-    graph.add_node("hold_for_review", node_hold_for_review)
+    graph.add_node("infra_agent",     node_infra)
+    graph.add_node("debt_agent",      node_tech_debt)
+    graph.add_node("incidents_agent", node_incidents)
+    graph.add_node("velocity_agent",  node_velocity)
+    graph.add_node("summary_agent",   node_cto_summary)
+    graph.add_node("hold_agent",      node_hold_for_review)
 
-    graph.set_entry_point("infra")
+    graph.set_entry_point("infra_agent")
 
     # All data agents are non-fatal → linear pipeline
-    graph.add_edge("infra",      "tech_debt")
-    graph.add_edge("tech_debt",  "incidents")
-    graph.add_edge("incidents",  "velocity")
+    graph.add_edge("infra_agent",     "debt_agent")
+    graph.add_edge("debt_agent",      "incidents_agent")
+    graph.add_edge("incidents_agent", "velocity_agent")
 
     # After velocity → review gate OR summary
     graph.add_conditional_edges(
-        "velocity",
+        "velocity_agent",
         route_after_velocity,
         {
-            CTO_ROUTE_SUMMARY: "cto_summary",
-            CTO_ROUTE_HOLD:    "hold_for_review",
+            CTO_ROUTE_SUMMARY: "summary_agent",
+            CTO_ROUTE_HOLD:    "hold_agent",
         },
     )
 
-    graph.add_edge("cto_summary",     END)
-    graph.add_edge("hold_for_review", END)
+    graph.add_edge("summary_agent", END)
+    graph.add_edge("hold_agent",    END)
 
     return graph
 
@@ -312,15 +332,35 @@ async def run_cto_pipeline(
     sprint_csv: str | None = None,
     company_name: str | None = None,
     run_config: CTORunConfig | None = None,
+    # S2-1: Cross-domain context
+    org_id: str | None = None,
+    cfo_context: dict | None = None,    # CFO cashflow, runway
+    chro_context: dict | None = None,   # Headcount, attrition
 ) -> CTOState:
     """
     Run the full CTO analysis pipeline.
+
+    S2-1: org_id + cfo_context + chro_context allow cross-domain enrichment.
+    When CFO data is available (runway, cashflow), the CTO summary gains
+    financial context: "Runway 4 ay → teknik borç azaltma önceliklendirilmeli".
 
     At least one data source required; others are optional.
     All agents gracefully skip when their input is absent.
 
     Returns final CTOState — caller persists to DB.
     """
+    # S2-1: Load cross-domain context from CompanyContext if org_id available
+    enriched_cfo = cfo_context
+    enriched_chro = chro_context
+    if org_id and not enriched_cfo:
+        try:
+            from app.services.agent_context_bridge import enrich_state
+            bridge_result = await enrich_state("cto", {}, org_id=org_id)
+            enriched_cfo = bridge_result.get("__cfo_summary")
+            enriched_chro = bridge_result.get("__chro_summary")
+        except Exception as exc:
+            logger.debug("CTO context bridge failed (non-fatal): %s", exc)
+
     cfg = run_config or DEFAULT_CTO_RUN_CONFIG
     initial_state: CTOState = {
         "job_id": job_id,
@@ -334,6 +374,9 @@ async def run_cto_pipeline(
         "awaiting_review": False,
         "halted": False,
         "error": None,
+        # S2-1: Cross-domain context (injected into summary LLM prompt)
+        "__cfo_summary":  enriched_cfo,
+        "__chro_summary": enriched_chro,
     }
 
     result: CTOState = await cto_graph.ainvoke(
