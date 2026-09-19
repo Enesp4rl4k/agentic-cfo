@@ -91,7 +91,9 @@ function StepList({ logs }: { logs: AgentJobResult["logs"] }) {
       {logs.map((log, i) => {
         const key = log.step ?? log.node ?? `step-${i}`;
         const label = STEP_LABELS[key] ?? key;
-        const ok = log.ok ?? log.status === "ok" ?? log.status === "success";
+        // A boolean is never nullish, so a second `??` never ran: a step
+        // reporting status "success" stayed "running" forever.
+        const ok = log.ok ?? (log.status === "ok" || log.status === "success");
         const failed = log.status === "error" || log.status === "failed";
         const running = !ok && !failed;
 

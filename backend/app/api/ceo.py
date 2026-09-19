@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -424,8 +425,10 @@ async def run_ceo_from_job(
 
     for src in sources:
         try:
-            with open(src.file_path, encoding="utf-8", errors="replace") as f:
-                content = f.read()
+            # Read off the event loop: up to 10 MB per source, several sources.
+            content = await asyncio.to_thread(
+                Path(src.file_path).read_text, encoding="utf-8", errors="replace"
+            )
         except OSError as exc:
             logger.warning("Could not read DataSource file %s: %s", src.file_path, exc)
             continue

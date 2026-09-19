@@ -97,10 +97,7 @@ class ManagementConductor:
             has_data = any(s in available_signals for s in signals)
             forced = role in force_roles
 
-            if role in (AgentRole.CFO, AgentRole.RISK, AgentRole.CEO):
-                queue = "analysis"
-            else:
-                queue = "analysis"
+            queue = "analysis"  # every role shares the analysis queue today
 
             if forced or has_data:
                 depth: RoleDepthLevel = max_depth  # type: ignore[assignment]

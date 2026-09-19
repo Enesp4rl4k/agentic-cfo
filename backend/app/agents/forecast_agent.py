@@ -101,8 +101,10 @@ def _extrapolate(
     if not monthly_series:
         return []
 
-    # Backward compatibility: if only growth_rate passed, derive both rates from it
-    if growth_rate is not None and revenue_rate == 1.01 and cost_rate == 1.01:
+    # Backward compatibility: the deprecated growth_rate sets the revenue rate
+    # (comparing floats to the defaults to guess whether a caller set them
+    # could not tell an explicit 1.01 from the default)
+    if growth_rate is not None:
         revenue_rate = growth_rate
         cost_rate = 1.0  # neutral cost assumption for legacy callers
 

@@ -122,7 +122,10 @@ def _variance_alert_message(
     category: str, variance_pct: float, variance_cents: int, budgeted: int
 ) -> str | None:
     """Türkçe sapma uyarı mesajı üret."""
-    if variance_pct <= 5:
+    # Both directions, as _classify_variance_severity grades them: a category
+    # 20% under budget was graded "watch" but got no message, and the
+    # "altında kaldı" wording below could never be reached.
+    if abs(variance_pct) <= 5:
         return None
     cat_tr = {
         "salary": "Personel giderleri",
