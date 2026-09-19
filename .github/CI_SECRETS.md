@@ -6,9 +6,10 @@ would have stopped at its first step.
 
 Those values were never credentials:
 
-- The Postgres password belongs to a service container that exists only on the
-  runner for the length of the job and is reachable only from it. It is a
-  literal in `ci.yml`.
+- The Postgres service container exists only on the runner for the length of
+  the job and is reachable only from it, so it runs with no password
+  (`POSTGRES_HOST_AUTH_METHOD: trust`). A literal password, however harmless,
+  was reported as a leaked credential by GitGuardian and SonarCloud.
 - The backend signing key and the NextAuth secret sign test tokens in a test
   run. Each job generates fresh random ones (`openssl rand`) into `$GITHUB_ENV`
   and masks them in the log.

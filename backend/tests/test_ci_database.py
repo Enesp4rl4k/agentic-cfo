@@ -119,3 +119,14 @@ def test_ci_needs_no_repository_secret_to_run(ci) -> None:
 
     used = set(re.findall(r"secrets\.([A-Z_]+)", WORKFLOW.read_text(encoding="utf-8")))
     assert used <= {"GITHUB_TOKEN"}, used
+
+
+def test_the_workflow_holds_no_password_literal() -> None:
+    import re
+
+    # The CI database runs with trust auth. A literal password — even one for
+    # a throwaway container — was reported as a leaked credential by every
+    # scanner that read the file, and failed the PR's security gate.
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "POSTGRES_PASSWORD" not in text
+    assert not re.search(r"postgresql\+\w+://[^@\s/]+:[^@\s/]+@", text)

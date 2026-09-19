@@ -45,7 +45,10 @@ jobs:
         image: pgvector/pgvector:pg16   # the app stores embeddings in a pgvector column (migration 023)
         env:
           POSTGRES_USER:     aicfo
-          POSTGRES_PASSWORD: ci-ephemeral   # a container on this runner, gone when the job ends
+          # No password at all: a container on this runner, reachable only from
+          # it and gone when the job ends. A literal one was flagged as a leaked
+          # credential by every scanner that read the file.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB:       aicfo_test
         ports: ["5432:5432"]
         options: >-
@@ -130,7 +133,10 @@ jobs:
         image: pgvector/pgvector:pg16   # the app stores embeddings in a pgvector column (migration 023)
         env:
           POSTGRES_USER:     aicfo
-          POSTGRES_PASSWORD: ci-ephemeral   # a container on this runner, gone when the job ends
+          # No password at all: a container on this runner, reachable only from
+          # it and gone when the job ends. A literal one was flagged as a leaked
+          # credential by every scanner that read the file.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB:       aicfo_test
         ports: ["5432:5432"]
         options: >-
@@ -141,7 +147,7 @@ jobs:
 
     env:
       USE_SQLITE:            "false"
-      DATABASE_URL_OVERRIDE: postgresql+asyncpg://aicfo:ci-ephemeral@localhost:5432/aicfo_test
+      DATABASE_URL_OVERRIDE: postgresql+asyncpg://aicfo@localhost:5432/aicfo_test
       BACKEND_SECRET_KEY:    ci-migrations-only-not-a-secret
       OPENAI_API_KEY:        llm-placeholder-ci
 
@@ -195,7 +201,10 @@ jobs:
         image: pgvector/pgvector:pg16   # the app stores embeddings in a pgvector column (migration 023)
         env:
           POSTGRES_USER:     aicfo
-          POSTGRES_PASSWORD: ci-ephemeral   # a container on this runner, gone when the job ends
+          # No password at all: a container on this runner, reachable only from
+          # it and gone when the job ends. A literal one was flagged as a leaked
+          # credential by every scanner that read the file.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB:       aicfo_test
         ports: ["5432:5432"]
         options: >-
@@ -244,7 +253,7 @@ jobs:
           # DATABASE_URL_OVERRIDE is the name Settings reads; DATABASE_URL was
           # ignored, so with USE_SQLITE=false this connected to the postgres_*
           # defaults rather than the service container.
-          DATABASE_URL_OVERRIDE: postgresql+asyncpg://aicfo:ci-ephemeral@localhost:5432/aicfo_test
+          DATABASE_URL_OVERRIDE: postgresql+asyncpg://aicfo@localhost:5432/aicfo_test
           REDIS_URL:          redis://localhost:6379/0
           OPENAI_API_KEY:     llm-placeholder-ci
           USE_SQLITE:         "false"
@@ -302,7 +311,10 @@ jobs:
         image: pgvector/pgvector:pg16   # the app stores embeddings in a pgvector column (migration 023)
         env:
           POSTGRES_USER:     aicfo
-          POSTGRES_PASSWORD: ci-ephemeral   # a container on this runner, gone when the job ends
+          # No password at all: a container on this runner, reachable only from
+          # it and gone when the job ends. A literal one was flagged as a leaked
+          # credential by every scanner that read the file.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB:       aicfo_test
         ports: ["5432:5432"]
         options: >-
