@@ -101,18 +101,37 @@ async def approve_review(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Human approval — clear the awaiting_review flag to allow the pipeline to proceed."""
+    """Human approval of a result held by the confidence gate.
+
+    The analysis already ran and its results are saved; what the gate held back
+    is everything that acts on them — company context, the command center's
+    snapshot, the auto-chain. Approval marks the job completed, records who
+    approved it, and runs that held step from the saved results.
+
+    It used to set the job back to PENDING and nothing else: nothing re-ran
+    it, so an approved analysis sat "pending" forever and never reached the
+    command center.
+    """
+    from app.worker import continue_after_completion, saved_result
+
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     _check_job_access(job, current_user)
     if not job.awaiting_review:
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    now = datetime.now(UTC)
     job.awaiting_review = False
-    job.status = JobStatus.PENDING
-    job.updated_at = datetime.now(UTC)
+    job.status = JobStatus.COMPLETED
+    job.updated_at = now
+    meta = dict(job.result_metadata or {})
+    meta["review"] = {"approved_by": current_user.id, "approved_at": now.isoformat()}
+    job.result_metadata = meta
     await db.commit()
-    return {"data": {"job_id": job_id, "approved": True}, "error": None}
+
+    if job.org_id:
+        await continue_after_completion(job_id, str(job.org_id), await saved_result(job_id, db), db)
+    return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
 
 
 @router.get("/jobs")

@@ -35,6 +35,7 @@ _ROUTERS = [
     ("app.api.datasource",          "router", "datasource"),
     ("app.api.domain_analysis",     "router", "domain-analysis"),  # tek motor: gerçek veri ya da "veri yok"
     ("app.api.veri_baglama",        "router", "veri-baglama"),     # dosyayı bırak, sistem tanısın
+    ("app.api.baslangic",           "router", "baslangic"),        # ilk kullanım: veriden okunan adımlar
     ("app.api.cto",                 "router", "cto"),
     ("app.api.ceo",                 "router", "ceo"),
     ("app.api.cmo",                 "router", "cmo"),

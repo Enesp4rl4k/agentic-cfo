@@ -93,6 +93,10 @@ class CreateOrgRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     slug: str | None = None  # auto-generated if omitted
     description: str | None = None
+    # Turkish companies are who this is built for. Every organisation used to
+    # be created as US/USD with no regional pack, so a firm that had just
+    # signed up got 404 from e-Fatura and muhasebe and US tax rates.
+    country_code: str = Field(default="TR", min_length=2, max_length=2)
 
 
 class UpdateOrgRequest(BaseModel):
@@ -151,6 +155,13 @@ def _member_dict(u: User) -> dict[str, Any]:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+def _regional_defaults(country_code: str) -> dict[str, Any]:
+    cc = country_code.upper()
+    if cc == "TR":
+        return {"country_code": "TR", "base_currency": "TRY", "locale": "tr-TR", "regional_packs": ["tr"]}
+    return {"country_code": cc, "base_currency": "USD", "locale": "en-US", "regional_packs": []}
+
+
 @router.post("/org/create", status_code=status.HTTP_201_CREATED)
 async def create_org(
     body: CreateOrgRequest,
@@ -179,10 +190,7 @@ async def create_org(
         name=body.name,
         slug=slug,
         description=body.description,
-        country_code="US",
-        base_currency="USD",
-        locale="en-US",
-        regional_packs=[],
+        **_regional_defaults(body.country_code),
     )
     db.add(org)
     await db.flush()  # get org.id before commit

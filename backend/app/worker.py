@@ -425,70 +425,10 @@ async def run_cfo_analysis(
             )
 
             # ── FAZ-1A: Persist CompanyContext + semantic + auto-chain ─────────
+            # Held while the job awaits review; run on approval instead
+            # (app.api.analysis.approve_review).
             if job.status == JobStatus.COMPLETED and job.org_id:
-
-                from app.agents.orchestration.auto_chain import on_agent_complete
-                from app.services.company_context import get_company_context, save_company_context
-
-                chain_result: dict[str, Any] = {
-                    "job_id":     job_id,
-                    "dashboard":  result.get("dashboard_json") or {},
-                    "anomalies":  result.get("anomalies") or [],
-                    "forecast":   (result.get("dashboard_json") or {}).get("forecast"),
-                    "pnl":        (result.get("dashboard_json") or {}).get("pnl"),
-                    "cashflow":   (result.get("dashboard_json") or {}).get("cashflow"),
-                }
-
-                try:
-                    ctx_obj = await get_company_context(str(job.org_id), db)
-                    ctx_obj.update_agent_result("cfo", chain_result)
-                    ctx_obj.set_active_job("cfo", str(job_id))
-                    await save_company_context(ctx_obj, db)
-                    from app.services.semantic.rebuild import rebuild_semantic_snapshot
-
-                    await rebuild_semantic_snapshot(str(job.org_id), db, include_brief=True)
-                    logger.info(
-                        "ARQ worker: CompanyContext + semantic persisted for org=%s job=%s",
-                        job.org_id,
-                        job_id,
-                    )
-                except Exception as exc:
-                    logger.warning("ARQ worker: context/semantic persist failed (non-fatal): %s", exc)
-
-                from app.core.background import spawn
-
-                spawn(
-                    on_agent_complete(
-                        agent="cfo",
-                        org_id=job.org_id,
-                        result=chain_result,
-                        db=None,
-                    ),
-                    name=f"auto-chain-cfo-{job_id[:8]}",
-                )
-                logger.info("ARQ worker: auto_chain triggered for cfo → org=%s", job.org_id)
-
-                # ── M3: Invalidate analytics cache on CFO completion ───────────
-                async def _invalidate_analytics_cache(org_id: str) -> None:
-                    try:
-                        from app.services.cache_service import invalidate_org_analytics
-                        count = await invalidate_org_analytics(org_id)
-                        if count:
-                            logger.debug("Cache invalidated: org=%s keys=%d", org_id, count)
-                    except Exception as exc:
-                        logger.debug("Cache invalidation failed (non-fatal): %s", exc)
-
-                spawn(_invalidate_analytics_cache(str(job.org_id)), name=f"cache-invalidate-{job_id[:8]}")
-
-                # ── S5-1/S5-2: Save to memory + run trend analysis ─────────────
-                spawn(
-                    _save_to_memory_and_trend(
-                        org_id=job.org_id,
-                        job_id=job_id,
-                        result=result,
-                    ),
-                    name=f"memory-trend-{job_id[:8]}",
-                )
+                await continue_after_completion(job_id, str(job.org_id), result, db)
 
             return {"ok": True, "job_id": job_id, "status": str(job.status)}
 
@@ -537,6 +477,112 @@ async def get_arq_pool() -> ArqRedis:
         redis_settings.conn_retries = settings.arq_producer_conn_retries
         _pool = await create_pool(redis_settings)
     return _pool
+
+
+async def saved_result(job_id: str, db: Any) -> dict[str, Any]:
+    """The parts of a finished analysis continue_after_completion reads,
+    loaded from what the worker persisted (dashboard JSON report, anomalies)."""
+    from sqlalchemy import desc, select
+
+    from app.models.anomaly import Anomaly
+    from app.models.report import Report, ReportFormat
+
+    report = (await db.execute(
+        select(Report)
+        .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
+        .order_by(desc(Report.created_at))
+        .limit(1)
+    )).scalar_one_or_none()
+    anomalies = (await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))).scalars().all()
+    return {
+        "dashboard_json": (report.data if report is not None else None) or {},
+        "anomalies": [
+            {
+                "anomaly_type": a.anomaly_type,
+                "severity": a.severity,
+                "title": a.title,
+                "description": a.description,
+                "transaction_ids": a.transaction_ids,
+                "evidence": a.evidence,
+                "confidence": float(a.confidence) if a.confidence is not None else None,
+            }
+            for a in anomalies
+        ],
+    }
+
+
+async def continue_after_completion(
+    job_id: str, org_id: str, result: dict[str, Any], db: Any
+) -> None:
+    """What follows a completed CFO analysis: company context, semantic
+    snapshot, the auto-chain, cache invalidation, memory and trend.
+
+    Runs when the worker completes a job, and when a person approves one that
+    was held for review — only dashboard_json and anomalies are read, both of
+    which are persisted, so an approved job continues from what was saved.
+    """
+    from app.agents.orchestration.auto_chain import on_agent_complete
+    from app.services.company_context import get_company_context, save_company_context
+
+    chain_result: dict[str, Any] = {
+        "job_id":     job_id,
+        "dashboard":  result.get("dashboard_json") or {},
+        "anomalies":  result.get("anomalies") or [],
+        "forecast":   (result.get("dashboard_json") or {}).get("forecast"),
+        "pnl":        (result.get("dashboard_json") or {}).get("pnl"),
+        "cashflow":   (result.get("dashboard_json") or {}).get("cashflow"),
+    }
+
+    try:
+        ctx_obj = await get_company_context(org_id, db)
+        ctx_obj.update_agent_result("cfo", chain_result)
+        ctx_obj.set_active_job("cfo", str(job_id))
+        await save_company_context(ctx_obj, db)
+        from app.services.semantic.rebuild import rebuild_semantic_snapshot
+
+        await rebuild_semantic_snapshot(org_id, db, include_brief=True)
+        logger.info(
+            "ARQ worker: CompanyContext + semantic persisted for org=%s job=%s",
+            org_id,
+            job_id,
+        )
+    except Exception as exc:
+        logger.warning("ARQ worker: context/semantic persist failed (non-fatal): %s", exc)
+
+    from app.core.background import spawn
+
+    spawn(
+        on_agent_complete(
+            agent="cfo",
+            org_id=org_id,
+            result=chain_result,
+            db=None,
+        ),
+        name=f"auto-chain-cfo-{job_id[:8]}",
+    )
+    logger.info("ARQ worker: auto_chain triggered for cfo → org=%s", org_id)
+
+    # ── M3: Invalidate analytics cache on CFO completion ───────────
+    async def _invalidate_analytics_cache(org_id: str) -> None:
+        try:
+            from app.services.cache_service import invalidate_org_analytics
+            count = await invalidate_org_analytics(org_id)
+            if count:
+                logger.debug("Cache invalidated: org=%s keys=%d", org_id, count)
+        except Exception as exc:
+            logger.debug("Cache invalidation failed (non-fatal): %s", exc)
+
+    spawn(_invalidate_analytics_cache(org_id), name=f"cache-invalidate-{job_id[:8]}")
+
+    # ── S5-1/S5-2: Save to memory + run trend analysis ─────────────
+    spawn(
+        _save_to_memory_and_trend(
+            org_id=org_id,
+            job_id=job_id,
+            result=result,
+        ),
+        name=f"memory-trend-{job_id[:8]}",
+    )
 
 
 async def _save_to_memory_and_trend(
