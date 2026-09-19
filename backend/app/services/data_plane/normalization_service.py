@@ -79,7 +79,7 @@ def normalize_csv_transactions(
                     str(i),
                 ]
             )
-            source_record_id = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:24]
+            source_record_id = hashlib.sha1(fingerprint.encode("utf-8"), usedforsecurity=False).hexdigest()[:24]
         rows.append(
             CanonicalTxRow(
                 source_record_id=source_record_id,

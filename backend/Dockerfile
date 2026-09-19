@@ -43,11 +43,15 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy application source (respects .dockerignore)
-COPY --chown=appuser:appgroup . .
+# Only what the API and workers run: the code and the migrations. A recursive
+# copy of the build context took whatever lay beside it — a developer's SQLite
+# files hold real tenants' data and encrypted connector secrets.
+COPY --chown=appuser:appgroup app ./app
+COPY --chown=appuser:appgroup alembic ./alembic
+COPY --chown=appuser:appgroup alembic.ini ./
 
-# Ensure uploads directory exists and is owned by app user
-RUN mkdir -p /app/uploads && chown appuser:appgroup /app/uploads
+# Directories the app writes at runtime (uploads; boardroom memory under data/)
+RUN mkdir -p /app/uploads /app/data && chown appuser:appgroup /app/uploads /app/data
 
 USER appuser
 
