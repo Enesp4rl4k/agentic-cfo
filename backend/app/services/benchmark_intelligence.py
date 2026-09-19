@@ -297,7 +297,6 @@ class BenchmarkIntelligenceService:
         company_name: str = "Şirket",
     ) -> BenchmarkReport:
         items = []
-        (pnl.get("revenue", 0) or 0) / 100 / 12
 
         # Net marj
         if (nm := pnl.get("net_margin")) is not None:

@@ -193,7 +193,6 @@ def _build_cohort_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     churn     = metrics.get("churn_rate", 0.0)
     ret30     = metrics.get("avg_retention_30d", 0.0)
     trend     = metrics.get("retention_trend", "stable")
-    metrics.get("avg_ltv_cents", 0)
     avg_cac   = metrics.get("avg_cac_cents", 0)
 
     # LTV:CAC ratio benchmarks (SaaS: >3.0 good, <1.0 critical)

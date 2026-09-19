@@ -172,7 +172,6 @@ class EvidenceBuilder:
             )
 
         anomaly_type = anomaly.get("anomaly_type", "unknown")
-        anomaly.get("severity", "medium")
         confidence = anomaly.get("confidence", 0.7)
 
         evidence = Evidence(

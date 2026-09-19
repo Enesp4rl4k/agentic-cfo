@@ -260,7 +260,6 @@ def feature_importance_analysis(
 
     # Build feature → impact mapping
     # Impact = how much does a 10% reduction in this cost improve net income?
-    sum(v or 0 for v in opex.values()) + pnl.get("cogs", 0)
     features: list[dict[str, Any]] = []
 
     for cat, amount in opex.items():

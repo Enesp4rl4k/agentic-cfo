@@ -246,7 +246,6 @@ def _okr_status_badge(status: str) -> str:
 
 
 def _render_slide(slide: dict[str, Any], index: int) -> str:
-    slide.get("chart_type", "")
     num = slide.get("slide_number", index + 1)
     title = slide.get("title", f"Slide {num}")
     narrative = slide.get("narrative", "")
@@ -323,7 +322,6 @@ def _render_okr_section(okr_status: dict[str, Any]) -> str:
     """Render OKR tracking as an extra PDF slide."""
     objectives = okr_status.get("objectives") or []
     narrative = okr_status.get("narrative", "")
-    okr_status.get("period", "")
 
     parts = [
         '<div class="slide">',

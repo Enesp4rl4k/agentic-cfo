@@ -74,11 +74,10 @@ async def enqueue_trailing_semantic_rebuild(org_id: str, delay_sec: float | None
         prev.cancel()
 
     async def _run() -> None:
-        try:
-            if delay > 0:
-                await asyncio.sleep(delay)
-        except asyncio.CancelledError:
-            return
+        # Cancellation (a newer trailing rebuild replacing this one) propagates:
+        # swallowing it left the task looking completed rather than cancelled.
+        if delay > 0:
+            await asyncio.sleep(delay)
         try:
             from app.database import session_factory
             from app.services.semantic.rebuild import rebuild_semantic_snapshot
@@ -86,8 +85,6 @@ async def enqueue_trailing_semantic_rebuild(org_id: str, delay_sec: float | None
             async with session_factory()() as db:
                 await rebuild_semantic_snapshot(org_id, db, include_brief=True)
             _last_rebuild_at[org_id] = time.monotonic()
-        except asyncio.CancelledError:
-            return
         except Exception as exc:
             logger.warning("Trailing semantic rebuild failed org=%s: %s", org_id, exc)
 

@@ -172,7 +172,6 @@ def _extract_swot(
     # ── CMO / Pazarlama ───────────────────────────────────────────────────────
     if mkt:
         roas    = mkt.get("overall_roas", 0) or 0
-        (mkt.get("cac") or mkt.get("avg_cac_cents", 0) or 0) / 100
         churn   = mkt.get("avg_monthly_churn", 0) or 0
         ltv_cac = mkt.get("ltv_cac_ratio", 0) or 0
 

@@ -186,7 +186,6 @@ def _build_infra_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
             ),
         })
 
-    metrics.get("total_cost_cents", 0)
     top_drivers = metrics.get("top_cost_drivers", [])
     if top_drivers and top_drivers[0]["pct"] > 60:
         alerts.append({

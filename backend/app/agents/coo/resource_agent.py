@@ -192,7 +192,6 @@ def _build_resource_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     over     = metrics.get("overutilized_teams", [])
     under    = metrics.get("underutilized_teams", [])
     rev_fte  = metrics.get("revenue_per_fte_cents", 0)
-    metrics.get("total_headcount", 0)
 
     if util > 1.0:
         alerts.append({

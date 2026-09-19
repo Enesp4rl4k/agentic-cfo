@@ -131,25 +131,6 @@ def _compute_ccc(
     # DSO = avg days until payment collected (use 30 as baseline for invoice businesses)
     # DPO = avg days to pay suppliers
 
-    # Count transactions per month to estimate payment patterns
-    months_with_income = set()
-    months_with_expense = set()
-    for t in income_txs:
-        m = str(t.get("transaction_date", ""))[:7]
-        if m:
-            months_with_income.add(m)
-    for t in expense_txs:
-        m = str(t.get("transaction_date", ""))[:7]
-        if m:
-            months_with_expense.add(m)
-
-    n_income_months = max(1, len(months_with_income))
-    max(1, len(months_with_expense))
-
-    # Proxy DSO: transactions per month vs revenue size
-    avg_monthly_revenue = total_revenue_cents / n_income_months
-    avg_monthly_revenue / 30
-
     # High-value, few transactions → higher DSO (invoice-based)
     # Low-value, many transactions → lower DSO (retail/subscription)
     n_income_txs = max(1, len(income_txs))

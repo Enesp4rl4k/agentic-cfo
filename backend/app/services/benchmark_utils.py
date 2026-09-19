@@ -211,7 +211,6 @@ def cto_benchmark_tech_debt(
     mttr_hours = company_tech.get("mttr_hours", 4.0)
 
     # Normalize debt score as a percentage (inverted: lower is better)
-    debt_score / 10.0
 
     return {
         "debt_score": debt_score,
