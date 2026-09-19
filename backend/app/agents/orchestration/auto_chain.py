@@ -378,10 +378,13 @@ async def _run_risk_from_context(
             logger.debug("Auto-chain risk: no CFO data to build KRIs, skipping")
             return
 
+        # The call named arguments the pipeline does not take (job_id,
+        # risk_register_csv) and left out loss_csv, so every run raised a
+        # TypeError the handler below logged and dropped.
         result = await run_risk_pipeline(
-            job_id=job_id,
-            kri_csv=kri_csv,
-            risk_register_csv=risk_csv,
+            register_csv=risk_csv or "",
+            loss_csv="",
+            kri_csv=kri_csv or "",
             company_name=ctx.company_name,
         )
 
@@ -447,10 +450,14 @@ async def _run_audit_from_context(
             logger.debug("Auto-chain audit: no CFO data for findings, skipping")
             return
 
+        # Same fault as the risk call: job_id is not a parameter and the
+        # controls/coverage inputs are required.
         result = await run_audit_pipeline(
-            job_id=job_id,
             findings_csv=findings_csv,
+            controls_csv="",
+            coverage_csv="",
             company_name=ctx.company_name,
+            org_id=org_id,
         )
 
         ctx_fresh = await get_company_context(org_id, db)

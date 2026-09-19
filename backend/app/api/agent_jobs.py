@@ -221,23 +221,26 @@ async def _dispatch_pipeline(
 
     elif agent_type == "audit":
         from app.agents.audit.orchestrator import run_audit_pipeline
+        # The request's names are kept; the pipeline's are coverage_csv and
+        # audit_period (passing the request's raised TypeError on every job).
         state = await run_audit_pipeline(
-            findings_csv=data.get("findings_csv", ""),
-            controls_csv=data.get("controls_csv", ""),
-            audit_plan_csv=data.get("audit_plan_csv", ""),
+            findings_csv=data.get("findings_csv") or "",
+            controls_csv=data.get("controls_csv") or "",
+            coverage_csv=data.get("audit_plan_csv") or "",
             company_name=data.get("company_name"),
-            reporting_period=data.get("reporting_period"),
+            audit_period=data.get("reporting_period"),
         )
         return dict(state)
 
     elif agent_type == "compliance":
         from app.agents.compliance.orchestrator import run_compliance_pipeline
         state = await run_compliance_pipeline(
-            policies_csv=data.get("policies_csv", ""),
-            violations_csv=data.get("violations_csv", ""),
-            regulations_csv=data.get("regulations_csv", ""),
+            job_id=job_id,
+            policy_csv=data.get("policies_csv"),
+            violations_csv=data.get("violations_csv"),
+            regulations_csv=data.get("regulations_csv"),
             company_name=data.get("company_name"),
-            reporting_period=data.get("reporting_period"),
+            audit_period=data.get("reporting_period"),
         )
         return dict(state)
 

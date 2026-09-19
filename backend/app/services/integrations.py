@@ -423,6 +423,7 @@ class WebhookDispatcher:
 
             def _send() -> None:
                 context = ssl.create_default_context()
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
                 # A mail server that does not answer used to hold the event
                 # loop — and with it the whole API — with no timeout at all.
                 with smtplib.SMTP(smtp_host, int(smtp_port), timeout=30) as server:
