@@ -34,7 +34,7 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
     )
     op.create_index("ix_audit_logs_user_id",    "audit_logs", ["user_id"])

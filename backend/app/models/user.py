@@ -11,11 +11,11 @@ Supports:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class UserRole(StrEnum):
@@ -55,12 +55,17 @@ class User(Base):
         nullable=True,
         index=True,
     )
-    organization: Mapped["Organization | None"] = relationship(
+    organization: Mapped[Organization | None] = relationship(
         "Organization", back_populates="members", foreign_keys=[org_id]
     )
 
     # API key for programmatic access (optional)
     api_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+
+    # SSO / OAuth2 fields (SEC-1)
+    sso_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)   # "microsoft"|"google"|"github"
+    sso_id:       Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)  # provider user ID
+    last_login:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Metadata
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

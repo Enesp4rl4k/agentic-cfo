@@ -31,16 +31,10 @@ done_when: state['board_deck']['slides'] has >= 4 items with benchmarks.
 from __future__ import annotations
 
 import logging
-import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from app.agents.ceo.state import CEOState, CEORunConfig, CEOSkillResult
-from app.services.benchmark_utils import (
-    cfo_benchmark_margins,
-    cfo_benchmark_returns,
-    cto_benchmark_cloud_efficiency,
-)
+from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 
 logger = logging.getLogger(__name__)
 
@@ -138,15 +132,15 @@ def _add_benchmark_overlay(
     """Convert benchmark comparison to board-deck metric overlay."""
     if not benchmark_data or not metric_value:
         return None
-    
+
     try:
         comparison = benchmark_data
         if "company_value" not in comparison:
             return None
-        
+
         vs_median_pct = comparison.get("vs_median_pct", 0)
         position = comparison.get("percentile_position", "p25_p50")
-        
+
         # Map to emoji
         if vs_median_pct < -20:
             emoji = "🔴"
@@ -156,7 +150,7 @@ def _add_benchmark_overlay(
             emoji = "🟡"
         else:
             emoji = "🟢"
-        
+
         return {
             "metric_name": metric_name,
             "company_value": comparison.get("company_value", metric_value),
@@ -186,13 +180,25 @@ def _build_slides(
     """Build board-ready slide deck with quantified impact."""
     slides = []
 
-    health_score = tech.get("overall_health_score", 5.0)
-    runway = fin.get("cash_runway_months", 0.0)
-    revenue = fin.get("revenue_cents", 0)
-    net_income = fin.get("net_income_cents", 0)
-    net_margin = fin.get("net_margin", 0.0)
-    gross_margin = fin.get("gross_margin", 0.0)
-    forecast_12m = fin.get("forecast_base_12m_cents", 0)
+    # `.get(k, default)` yields None when the key is present but null — which
+    # is what the CFO condenser emits for an unknown runway. Each of these
+    # feeds a format spec or a numeric comparison, so coalesce explicitly.
+    health_score = tech.get("overall_health_score") or 5.0
+    runway = fin.get("cash_runway_months") or 0.0
+    revenue = fin.get("revenue_cents") or 0
+    net_income = fin.get("net_income_cents") or 0
+    net_margin = fin.get("net_margin") or 0.0
+    gross_margin = fin.get("gross_margin") or 0.0
+    forecast_12m = fin.get("forecast_base_12m_cents") or 0
+
+    # Runway months an infra saving would buy back. Burn is routinely absent or
+    # zero on a first analysis, which made this a ZeroDivisionError (and, before
+    # that, a None multiplication) that took the whole deck down. No burn means
+    # no claim to make — omit the line rather than invent one.
+    monthly_burn = fin.get("monthly_burn_cents") or 0
+    runway_gain_months = (
+        int((tech.get("infra_waste_cents") or 0) / monthly_burn) if monthly_burn > 0 else 0
+    )
 
     # ── Slide 1: Company Health Dashboard ────────────────────────────────────
     momentum_revenue = _trend_arrow(revenue, fin.get("prev_revenue_cents"))
@@ -294,7 +300,7 @@ def _build_slides(
     })
 
     # ── Slide 3: Technology Health & Risk Matrix ────────────────────────────
-    infra_waste = tech.get("infra_waste_cents", 0)
+    infra_waste = tech.get("infra_waste_cents") or 0
     infra_cost = tech.get("infra_cost_cents", 0)
     waste_opp = _quantify_impact(
         "Cloud Tasarrufu", infra_waste, infra_cost * 0.05, "₺", is_cost=True
@@ -425,13 +431,13 @@ def _build_slides(
             {
                 "label": "Cloud Tasarrufu Potansiyeli",
                 "value": _fmt_currency(infra_waste),
-                "sub": f"Pisti +{int((infra_waste / (fin.get('monthly_burn_cents', 1) * 12)) * 12)} ay getirir",
+                **({"sub": f"Pisti +{runway_gain_months} ay getirir"} if runway_gain_months else {}),
             },
         ],
         "narrative": (
             f"12 aylık temel tahmin: {_fmt_currency(forecast_12m)}. "
             f"{'Pisti kısıtı birinci dereceden risk.' if runway and runway <= 6 else 'Finansal trajektori stabil.'} "
-            f"{'Cloud optimizasyonu pistiye ' + str(int((infra_waste / (fin.get('monthly_burn_cents', 1) * 12)) * 12)) + ' ay ekleyebilir.' if infra_waste > 0 else ''}"
+            f"{f'Cloud optimizasyonu pistiye {runway_gain_months} ay ekleyebilir.' if runway_gain_months else ''}"
         ).strip(),
     })
 
@@ -457,7 +463,7 @@ def _build_one_page_summary(
         f"  • Gelir:           {_fmt_currency(fin.get('revenue_cents'))}",
         f"  • Net Gelir:       {_fmt_currency(fin.get('net_income_cents'))} ({_fmt_pct(fin.get('net_margin'))} marj)",
         f"  • Brüt Marj:       {_fmt_pct(fin.get('gross_margin'))}",
-        f"  • Nakit Pisti:     {fin.get('cash_runway_months', 0):.1f} ay",
+        f"  • Nakit Pisti:     {fin.get('cash_runway_months') or 0:.1f} ay",
         f"  • 12 Aylık Tahmin: {_fmt_currency(fin.get('forecast_base_12m_cents'))} (temel senaryo)",
         f"  • Aylık Kullanım:  {_fmt_currency(fin.get('monthly_burn_cents'))}",
         "",
@@ -490,7 +496,7 @@ def _build_one_page_summary(
         f"TOPLAM TAHMİNİ ETKİ (İlk 5 Öncelik): {_fmt_currency(total_roi)}",
         "",
         "─" * 80,
-        f"Hazırlanma: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+        f"Hazırlanma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
         "Denetim Komitesi & Yönetim Kurulu için hazırlanmıştır.",
     ]
 
@@ -509,9 +515,8 @@ async def run_board_deck_agent(
     tech        = state.get("tech_summary") or {}
     cross_risks = state.get("cross_risks") or []
     priorities  = state.get("strategic_priorities") or []
-    period      = state.get("period") or datetime.now(timezone.utc).strftime("%Y-%m")
+    period      = state.get("period") or datetime.now(UTC).strftime("%Y-%m")
     company     = state.get("company_name") or "Şirket"
-    settings    = (config or {}).get("settings")
 
     try:
         slides = _build_slides(fin, tech, cross_risks, priorities, period, company)
@@ -520,7 +525,7 @@ async def run_board_deck_agent(
         board_deck = {
             "title": f"{company} — Yönetim Kurulu Güncellemesi {period}",
             "period": period,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "slides": slides,
             "one_page_summary": one_pager,
             "slide_count": len(slides),

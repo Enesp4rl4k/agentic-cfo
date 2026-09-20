@@ -13,13 +13,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
+from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -53,7 +57,9 @@ async def _get_dashboard(job_id: str, db: AsyncSession) -> dict[str, Any]:
 async def run_causal_analysis(
     job_id: str,
     body: CausalAnalysisRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Nedensellik analizi: Granger causality + lagged correlation + feature importance.
@@ -119,7 +125,9 @@ async def run_causal_analysis(
 @router.get("/analysis/{job_id}/causal/feature-importance")
 async def get_feature_importance(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Hangi gider kalemi net kâra en yüksek etkiyi yapıyor?

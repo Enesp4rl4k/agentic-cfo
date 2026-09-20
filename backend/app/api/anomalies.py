@@ -1,22 +1,33 @@
 """
-Anomalies API — GET /anomalies/{job_id}, POST /anomalies/scan/{job_id}
+Anomalies API — GET /anomalies/{job_id}, POST /anomalies/scan/{job_id},
+                GET /anomalies/explain/{anomaly_id}
 
 Kullanıcı muhasebe verisini yükleyip analiz ettikten sonra
 bu endpoint'ler anomali sonuçlarını döner ve manuel tarama başlatır.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job
+from app.api.auth import get_current_user
 from app.database import get_db
-from app.models.anomaly import Anomaly
 from app.models.analysis_job import AnalysisJob, JobStatus
+from app.models.anomaly import Anomaly
 from app.models.transaction import Transaction
+from app.models.user import User
 
 router = APIRouter()
+
+
+def _check_job_access(job: AnalysisJob, user: User) -> None:
+    if user.org_id and job.org_id and job.org_id != user.org_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
 
 # ── Response helpers ──────────────────────────────────────────────────────────
@@ -44,12 +55,14 @@ def _anomaly_dict(a: Anomaly) -> dict:
 async def list_anomalies(
     job_id: str,
     severity: str | None = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all anomalies for a completed analysis job."""
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
 
     stmt = select(Anomaly).where(Anomaly.job_id == job_id)
     if severity:
@@ -83,6 +96,7 @@ async def list_anomalies(
 @router.post("/anomalies/scan/{job_id}")
 async def scan_anomalies(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -92,6 +106,7 @@ async def scan_anomalies(
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
     if job.status != JobStatus.COMPLETED:
         raise HTTPException(
             status_code=409,
@@ -123,8 +138,9 @@ async def scan_anomalies(
     ]
 
     # Load existing dashboard for cashflow data
-    from app.models.report import Report, ReportFormat
     from sqlalchemy import select as sa_select
+
+    from app.models.report import Report, ReportFormat
     report_result = await db.execute(
         sa_select(Report).where(
             Report.job_id == job_id,
@@ -138,16 +154,14 @@ async def scan_anomalies(
 
     # Run anomaly detection
     from app.agents.anomaly_agent import (
+        _generate_anomaly_narrative,
         detect_duplicates,
+        detect_expense_spikes,
+        detect_negative_cashflow_streak,
+        detect_round_numbers,
         detect_unusual_amounts,
         detect_vendor_concentration,
-        detect_expense_spikes,
-        detect_round_numbers,
-        detect_negative_cashflow_streak,
-        _generate_anomaly_narrative,
     )
-    from app.config import get_settings
-    settings = get_settings()
 
     all_anomalies = []
     all_anomalies.extend(detect_duplicates(tx_dicts))
@@ -183,7 +197,7 @@ async def scan_anomalies(
 
     await db.commit()
 
-    narrative = await _generate_anomaly_narrative(all_anomalies, settings)
+    narrative = await _generate_anomaly_narrative(all_anomalies, None)
 
     return {
         "data": {
@@ -206,15 +220,113 @@ class AcknowledgeRequest(BaseModel):
 async def acknowledge_anomaly(
     anomaly_id: str,
     body: AcknowledgeRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Mark an anomaly as acknowledged (dismissed by the CFO)."""
     anomaly = await db.get(Anomaly, anomaly_id)
     if not anomaly:
         raise HTTPException(status_code=404, detail="Anomaly not found.")
+    # Dismissing an alert is a write; it took no user, so anyone could
+    # silence any organisation's anomalies.
+    await load_owned_job(db, anomaly.job_id, current_user)
 
     anomaly.acknowledged = body.acknowledged
-    anomaly.acknowledged_at = datetime.now(timezone.utc) if body.acknowledged else None
+    anomaly.acknowledged_at = datetime.now(UTC) if body.acknowledged else None
     await db.commit()
 
     return {"data": _anomaly_dict(anomaly), "error": None}
+
+
+# ── GET /anomalies/explain/{anomaly_id} — Streaming RCA ──────────────────────
+
+@router.get("/anomalies/explain/{anomaly_id}", response_model=None)
+async def explain_anomaly(
+    anomaly_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """
+    Streaming Root Cause Analysis (RCA) for a single anomaly.
+
+    Returns SSE stream of text tokens explaining:
+    1. Root cause (why this is anomalous)
+    2. Contributing transactions
+    3. Recommended corrective action
+
+    Frontend should listen on EventSource and accumulate tokens.
+    Final event: data: [DONE]
+    """
+    anomaly = await db.get(Anomaly, anomaly_id)
+    if anomaly is not None:
+        try:
+            await load_owned_job(db, anomaly.job_id, current_user)
+        except HTTPException:
+            anomaly = None      # someone else's: answered exactly like a missing one
+    if not anomaly:
+        async def _not_found():
+            yield "data: Anomali bulunamadı.\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_not_found(), media_type="text/event-stream")
+
+    # Load related transactions for context
+    tx_ids = anomaly.transaction_ids or []
+    related_txs: list[dict[str, Any]] = []
+    if tx_ids:
+        tx_result = await db.execute(
+            select(Transaction).where(Transaction.id.in_(tx_ids[:10]))
+        )
+        for tx in tx_result.scalars().all():
+            related_txs.append({
+                "id": str(tx.id),
+                "amount": tx.amount_kurus / 100 if tx.amount_kurus else 0,
+                "vendor": tx.vendor or "",
+                "category": tx.category or "",
+                "description": tx.description or "",
+                "date": tx.transaction_date.isoformat() if tx.transaction_date else "",
+            })
+
+    evidence = anomaly.evidence or {}
+    evidence_text = ", ".join(f"{k}: {v}" for k, v in evidence.items() if k not in ("detectors",))
+    tx_text = "\n".join(
+        f"  - {t['date']} | {t['vendor']} | {t['category']} | {t['amount']:,.2f} TL | {t['description']}"
+        for t in related_txs
+    ) or "  (ilgili işlem bulunamadı)"
+
+
+    async def _generate():
+        try:
+            from app.platform.model_gateway import stream as _gw_stream
+
+            prompt = (
+                f"Anomali Başlığı: {anomaly.title}\n"
+                f"Açıklama: {anomaly.description}\n"
+                f"Tür: {anomaly.anomaly_type} | Önem: {anomaly.severity}\n"
+                f"Kanıt: {evidence_text}\n"
+                f"İlgili İşlemler:\n{tx_text}\n\n"
+                "Türkçe olarak şu 3 başlıkla açıkla:\n"
+                "1. 🔍 KÖK NEDEN: Bu neden anomali?\n"
+                "2. 📊 ETKİ ANALİZİ: Finansal etkisi nedir?\n"
+                "3. ✅ ÖNERİLEN ADIM: CFO ne yapmalı?\n"
+                "Her bölüm 2-3 cümle olsun, somut rakam kullan."
+            )
+
+            async for token in _gw_stream(
+                task="quick_analysis",
+                system_prompt="Sen bir kıdemli CFO danışmanısın. Verilen anomali için kısa, net ve eyleme geçirilebilir bir kök neden analizi yap.",
+                prompt=prompt,
+                max_tokens=500,
+            ):
+                if token:
+                    yield f"data: {token}\n\n"
+
+        except Exception as exc:
+            yield f"data: Analiz başlatılamadı: {exc}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

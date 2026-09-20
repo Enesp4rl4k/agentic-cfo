@@ -7,23 +7,21 @@
 #   - CondenseSummaries: CFO/CTO output extraction helpers
 #   - API helper: overall_health_score calculation
 
-import pytest
 
-from app.agents.ceo.synthesis_agent import (
-    _detect_cross_risks,
-    _condense_financial_summary,
-    _condense_tech_summary,
+from app.agents.ceo.board_deck_agent import (
+    _build_one_page_summary,
+    _build_slides,
 )
 from app.agents.ceo.strategic_priorities_agent import (
     _build_priorities_from_risks,
     _score_priority,
 )
-from app.agents.ceo.board_deck_agent import (
-    _build_slides,
-    _build_one_page_summary,
+from app.agents.ceo.synthesis_agent import (
+    _condense_financial_summary,
+    _condense_tech_summary,
+    _detect_cross_risks,
 )
 from app.api.ceo import _compute_overall_health
-
 
 # ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -357,3 +355,117 @@ def test_overall_health_range():
         score = _compute_overall_health({"financial_summary": fin, "tech_summary": tech})
         assert score is not None
         assert 0.0 <= score <= 100.0, f"Score out of range: {score}"
+
+
+# ── BoardDeck node contract ───────────────────────────────────────────────────
+# The tests above only exercise the private slide builders. `run_board_deck_agent`
+# — the node LangGraph actually calls — was never invoked, so a leftover
+# `(config or {}).get("settings")` crashed the whole CEO deck path in production
+# while the suite stayed green. Call the real entry point with the real config
+# type.
+
+import pytest
+
+from app.agents.ceo.board_deck_agent import run_board_deck_agent
+from app.agents.ceo.state import DEFAULT_CEO_RUN_CONFIG
+
+
+@pytest.mark.asyncio
+async def test_run_board_deck_agent_accepts_ceo_run_config() -> None:
+    state = {
+        "financial_summary": HEALTHY_FIN,
+        "tech_summary": {},
+        "cross_risks": [],
+        "strategic_priorities": [],
+        "period": "2024-Q1",
+        "company_name": "Test A.Ş.",
+    }
+
+    result = await run_board_deck_agent(state, DEFAULT_CEO_RUN_CONFIG)
+
+    assert result.ok, getattr(result, "detail", result)
+    deck = (result.patch or {}).get("board_deck") or {}
+    assert len(deck.get("slides") or []) >= 4
+    assert deck.get("one_page_summary")
+
+
+# ── Full graph, real data ─────────────────────────────────────────────────────
+# The suite exercised nodes in isolation, so it never noticed that LangGraph was
+# dropping every `_*` channel run_ceo_pipeline wrote: no sub-pipeline ever ran
+# and the deck was always blank. These call the graph end to end and assert on
+# numbers that can only come from the input.
+
+@pytest.mark.asyncio
+async def test_ceo_pipeline_passes_cfo_transactions_through_the_graph() -> None:
+    from app.agents.ceo.orchestrator import run_ceo_pipeline
+
+    # Schema per _run_cfo_from_transactions' docstring: amounts in cents.
+    txns = [
+        {"date": "2024-01-05", "description": "Satış A", "amount_cents": 15_000_000, "type": "revenue"},
+        {"date": "2024-01-12", "description": "Kira",    "amount_cents": -2_500_000, "type": "expense"},
+        {"date": "2024-02-03", "description": "Satış B", "amount_cents": 21_000_000, "type": "revenue"},
+    ]
+
+    result = await run_ceo_pipeline(
+        job_id="test-ceo-graph",
+        cfo_transactions=txns,
+        company_name="Test A.Ş.",
+        period="2024-Q1",
+    )
+
+    steps = {lg.step: lg for lg in (result.get("logs") or [])}
+    assert "skipped" not in (steps["run_pipelines"].detail or "").split("CFO: ")[1][:8], (
+        f"CFO sub-pipeline did not run: {steps['run_pipelines'].detail}"
+    )
+
+    fin = result.get("financial_summary") or {}
+    assert fin.get("revenue_cents"), "financial_summary never reached the graph state"
+
+    deck = result.get("board_deck") or {}
+    assert len(deck.get("slides") or []) >= 4, steps["board_deck"].detail
+
+
+@pytest.mark.asyncio
+async def test_board_deck_survives_missing_runway_and_burn() -> None:
+    """A first analysis routinely has no runway and no burn. Both used to reach a
+    format spec / a division and take the whole deck down."""
+    from app.agents.ceo.board_deck_agent import run_board_deck_agent
+    from app.agents.ceo.state import DEFAULT_CEO_RUN_CONFIG
+
+    state = {
+        "financial_summary": {
+            "revenue_cents": 3_908_075,
+            "net_income_cents": 3_908_075,
+            "cash_runway_months": None,
+            "monthly_burn_cents": None,
+            "gross_margin": None,
+            "forecast_base_12m_cents": None,
+        },
+        "tech_summary": {"infra_waste_cents": 500_000},
+        "cross_risks": [],
+        "strategic_priorities": [],
+        "period": "2026-08",
+        "company_name": "Test A.Ş.",
+    }
+
+    result = await run_board_deck_agent(state, DEFAULT_CEO_RUN_CONFIG)
+
+    assert result.ok, result.detail
+    assert len(result.patch["board_deck"].get("slides") or []) >= 4
+
+
+def test_ceo_state_declares_every_channel_the_graph_writes() -> None:
+    """LangGraph drops undeclared keys silently. Any `_x` the orchestrator reads
+    or writes must be a declared channel, or its value vanishes between nodes."""
+    import re
+    from pathlib import Path
+
+    from app.agents.ceo.state import CEOState
+
+    src = Path(__import__("app.agents.ceo.orchestrator", fromlist=["x"]).__file__).read_text(
+        encoding="utf-8"
+    )
+    used = set(re.findall(r'(?:state\.get|patch\[|^\s+)["\'](_[a-z_]+)["\']', src, re.M))
+    declared = set(CEOState.__annotations__)
+    assert used, "channel scan found nothing — the regex went stale"
+    assert used <= declared, f"undeclared CEOState channels: {sorted(used - declared)}"

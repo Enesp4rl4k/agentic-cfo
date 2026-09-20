@@ -3,8 +3,11 @@
 export interface KPI {
   label: string;
   value: number;
-  format: "currency" | "percent" | "months" | "number";
+  format: "currency" | "percent" | "months" | "number" | "count";
   trend: number | null;
+  // Optional anomaly-specific fields
+  critical?: number;
+  high?: number;
 }
 
 export interface MonthlyEntry {
@@ -83,6 +86,28 @@ export interface Transaction {
   vendor: string | null;
   transaction_date: string | null;
   confidence: number | null;
+  /** The source had no readable date; `transaction_date` is a placeholder. */
+  date_is_estimated?: boolean;
+  /**
+   * Tax as the source document stated it (e-Fatura, e-Müstahsil, e-SMM), in
+   * kuruş. Null means the source said nothing — a bank line — which is not
+   * the same as zero (stated exempt).
+   */
+  kdv_cents?: number | null;
+  stopaj_cents?: number | null;
+  /** What the parser noted: direction, stopaj, why no entry was produced. */
+  raw_text?: string | null;
+}
+
+export interface AnomalyItem {
+  id?: string;
+  anomaly_type: string;
+  severity: "low" | "medium" | "high" | "critical";
+  title: string;
+  description: string;
+  transaction_ids: string[] | null;
+  confidence: number | null;
+  acknowledged?: boolean;
 }
 
 export interface DashboardData {
@@ -94,6 +119,15 @@ export interface DashboardData {
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
+  // Anomaly data — present when anomaly agent ran
+  anomalies?: AnomalyItem[];
+  anomaly_narrative?: string;
+  // Budget agent output — present when budget_input was provided
+  budget?: Record<string, unknown> | null;
+  // Tax agent output — present when tax agent ran
+  tax?: Record<string, unknown> | null;
+  // Multi-period comparison — present when 2+ months of data
+  multi_period?: Record<string, unknown> | null;
 }
 
 export type JobStatus =
@@ -127,6 +161,7 @@ export interface ReportMeta {
   id: string;
   job_id: string;
   report_type: string;
+  title?: string | null;
   report_format: string;
   has_file: boolean;
   created_at: string;

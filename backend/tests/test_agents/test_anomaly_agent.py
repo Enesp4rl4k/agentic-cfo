@@ -4,16 +4,16 @@ Covers: _z_score, _iqr_outlier_score, _is_round_number, _days_between
 and the detection functions that use them.
 """
 import pytest
+
 from app.agents.anomaly_agent import (
-    _z_score,
-    _iqr_outlier_score,
-    _is_round_number,
-    _days_between,
+    DUPLICATE_WINDOW_DAYS,
     MIN_TRANSACTIONS_FOR_STATS,
     Z_SCORE_THRESHOLD,
-    DUPLICATE_WINDOW_DAYS,
+    _days_between,
+    _iqr_outlier_score,
+    _is_round_number,
+    _z_score,
 )
-
 
 # ── _z_score ──────────────────────────────────────────────────────────────────
 

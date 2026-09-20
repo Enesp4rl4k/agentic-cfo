@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+# =============================================================================
+# proof.sh — Consolidation proof gate
+#
+# Runs structural checks + verify.sh + optional staging/load baselines.
+#
+# Usage:
+#   ./scripts/proof.sh              # full proof (verify + structural)
+#   ./scripts/proof.sh --fast       # skip mypy in verify
+#   BACKEND_URL=http://localhost:8000 ./scripts/proof.sh   # + staging smoke
+#   RUN_LOAD_BASELINE=1 BACKEND_URL=... ./scripts/proof.sh # + load baseline
+#
+# Exit 0 = consolidation proof passed
+# =============================================================================
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
+OK()   { echo -e "${GREEN}✓${NC} $*"; }
+FAIL() { echo -e "${RED}✗ FAILED:${NC} $*"; }
+INFO() { echo -e "${CYAN}→${NC} $*"; }
+WARN() { echo -e "${YELLOW}⚠${NC} $*"; }
+
+FAILURES=0
+CHECKS=0
+
+check() {
+  local name="$1"; shift
+  INFO "Running: $name"
+  CHECKS=$((CHECKS + 1))
+  if "$@"; then
+    OK "$name"
+  else
+    FAIL "$name"
+    FAILURES=$((FAILURES + 1))
+  fi
+  echo ""
+}
+
+echo -e "\n${CYAN}════════════════════════════════════════${NC}"
+echo -e "${CYAN}  CONSOLIDATION PROOF GATE${NC}"
+echo -e "${CYAN}════════════════════════════════════════${NC}\n"
+
+# ── Structural consolidation (no runtime deps) ───────────────────────────────
+check "dual worker in docker-compose" \
+  grep -q "worker-maintenance" docker-compose.yml
+
+check "MaintenanceWorkerSettings wired" \
+  grep -q "MaintenanceWorkerSettings" docker-compose.yml
+
+check "maintenance queue env documented" \
+  grep -q "ARQ_MAINTENANCE_QUEUE_NAME" .env.example
+
+check "system ops API present" \
+  test -f backend/app/api/system.py
+
+check "canonical migration present" \
+  test -f backend/alembic/versions/021_canonical_transactions.py
+
+check "sync_runs migration present" \
+  test -f backend/alembic/versions/022_sync_runs_and_canonical_idempotency.py
+
+check "maintenance worker tasks registered" \
+  grep -q "run_rag_backfill_maintenance" backend/app/worker.py
+
+check "scheduler enqueues maintenance (not inline backfill)" \
+  grep -q "enqueue_maintenance_job" backend/app/scheduler.py && \
+  grep -q "run_rag_backfill_maintenance" backend/app/scheduler.py
+
+check "golden path components" \
+  bash scripts/golden-path-check.sh
+
+check "rag staging proof" \
+  bash scripts/rag-staging-proof.sh
+
+check "golden path e2e script present" \
+  test -f scripts/golden-path-e2e.sh
+
+check "flow e2e script present" \
+  test -f scripts/flow_e2e.py
+
+check "page sweep script present" \
+  test -f scripts/page_sweep.py
+
+check "route sweep script present" \
+  test -f scripts/route_sweep.py
+
+check "tr governance e2e script present" \
+  test -f scripts/tr-governance-e2e.sh
+
+check "authority policy fixture" \
+  test -f scripts/fixtures/authority_policy_default.json
+
+check "golden path fixture csv" \
+  test -f scripts/fixtures/golden_path_sample.csv
+
+check "board deck smoke" \
+  bash scripts/board-deck-smoke.sh
+
+check "TR SMMM checklist" \
+  bash scripts/tr-smmm-checklist.sh
+
+# The e-Fatura parser and the e-Defter writer are checked against GİB's own
+# published documents, not against fixtures written to match our regexes.
+check "GİB corpus fetch script" \
+  test -f scripts/fetch_gib_corpus.py && \
+  grep -q "edefter.gov.tr" scripts/fetch_gib_corpus.py
+
+check "migrations run on Postgres in CI (SQLite cannot run the chain)" \
+  grep -q "alembic upgrade head" .github/workflows/ci.yml && \
+  grep -q "alembic check" .github/workflows/ci.yml
+
+check "GİB corpus wired into CI" \
+  grep -q "fetch_gib_corpus.py" .github/workflows/ci.yml
+
+check "e-Defter is XBRL GL, validated against edefter.xsd" \
+  test -f backend/app/services/edefter_xbrl.py && \
+  grep -q "edefter:defter" backend/app/services/edefter_xbrl.py && \
+  grep -q "edefter.xsd" backend/tests/test_edefter_xbrl.py
+
+check "e-Defter never claims to be filable" \
+  grep -q "filable: bool = False" backend/app/services/edefter_xbrl.py
+
+# The berat is derived from the finished defter and checked against GİB's own
+# signed pair; nothing signs or sends without a mali mühür behind an interface.
+check "berat derived from the defter, checked against GİB's pair" \
+  test -f backend/app/services/edefter_berat.py && \
+  grep -q "1234567808-201804-YB-000000.xml" backend/tests/test_edefter_berat.py && \
+  grep -q "class Signer(Protocol)" backend/app/services/edefter_berat.py
+
+# e-Müstahsil (UBL-TR CreditNote) and e-SMM (e-Arşiv data) are read, not
+# skipped as "not an invoice"; the e-SMM fixture must pass GİB's own schema,
+# and a PDF is read from its attachment, which is where GİB puts the data.
+check "e-Müstahsil / e-SMM read, checked against GİB's e-Arşiv schema" \
+  test -f backend/app/parsers/invoice/makbuz.py && \
+  grep -q "eArsivVeri.xsd" backend/tests/test_makbuz.py && \
+  grep -q "earsiv_paket" scripts/fetch_gib_corpus.py && \
+  grep -q "_pdf_embedded_xml" backend/app/agents/data_ingestion.py
+
+check "no unsigned package, no unsigned SOAP call" \
+  grep -q "defter imzasız" backend/app/services/edefter_package.py && \
+  grep -q "GibWsNotConfigured" backend/app/services/gib_edefter_ws.py && \
+  grep -q '"test": "https://edeftertest' backend/app/services/gib_edefter_ws.py
+
+# The MCP server is a client of the API, and it cannot approve.
+check "MCP server: API client only, no approval tool" \
+  test -f backend/app/mcp/server.py && \
+  grep -q "X-API-Key" backend/app/mcp/server.py && \
+  grep -q "test_there_is_no_way_to_approve_from_here" backend/tests/test_mcp_server.py && \
+  grep -q "test_the_mcp_package_imports_nothing_from_the_app" backend/tests/test_mcp_server.py
+
+check "invoice direction comes from the VKN" \
+  grep -q "own_vkn" backend/app/parsers/invoice/ubl_tr.py && \
+  grep -q "own_vkn" backend/app/agents/data_ingestion.py
+
+check "header values survive latin-1" \
+  test -f backend/app/core/http_headers.py && \
+  grep -qF "filename*=UTF-8" backend/app/core/http_headers.py
+
+check "one bank statement shape, one parser" \
+  test -f backend/app/parsers/banks/_shapes.py && \
+  grep -q "SingleSignedColumnParser" backend/app/parsers/banks/yapkredi.py
+
+check "LangGraph checkpointer module" \
+  test -f backend/app/agents/checkpointer.py && \
+  grep -q "get_checkpointer" backend/app/agents/orchestrator.py
+
+check "international platform doc" \
+  test -f INTERNATIONAL_PLATFORM.md
+
+check "org locale migration" \
+  test -f backend/alembic/versions/024_org_international_locale.py
+
+check "i18n dictionaries" \
+  test -f frontend/src/lib/i18n/messages/en.ts && \
+  test -f frontend/src/lib/i18n/messages/tr.ts
+
+check "regional CoA adapters" \
+  test -f backend/app/services/regional/coa.py && \
+  grep -q "GenericCoaAdapter" backend/app/services/regional/coa.py
+
+check "TR pack gate" \
+  grep -q "require_tr_pack" backend/app/api/deps_regional.py && \
+  grep -q "require_tr_pack" backend/app/api/smmm_onay.py
+
+check "TR vertical (L3 autopilot) smoke" \
+  bash scripts/tr-vertical-smoke.sh
+
+check "Connector Platform (Faz 13) smoke" \
+  bash scripts/connectors-smoke.sh
+
+check "Durable Runs (Faz 14) smoke" \
+  bash scripts/durable-runs-smoke.sh
+
+check "SMMM Defensibility Packet (#4) smoke" \
+  bash scripts/smmm-defensibility-smoke.sh
+
+check "Yetki Matrisi (Delegation of Authority) smoke" \
+  bash scripts/authority-matrix-smoke.sh
+
+check "Kurumsallaşma Endeksi smoke" \
+  bash scripts/institutionalization-smoke.sh
+
+check "provenance honesty pass wired" \
+  test -f backend/app/platform/provenance.py && \
+  grep -q "attach_provenance" backend/app/agents/cto/cto_kernel.py && \
+  grep -q "_result_is_synthetic" backend/app/agents/orchestration/auto_chain.py && \
+  test -f frontend/src/components/ui/provenance-badge.tsx
+
+check "EN golden path fixture" \
+  test -f scripts/fixtures/golden_path_sample_en_usd.csv
+
+check "sync schedules ORM" \
+  test -f backend/app/models/sync_schedule.py && \
+  ! grep -q 'text("SELECT \* FROM sync_schedules' backend/app/services/scheduled_sync.py
+
+# ── Core verify gate ─────────────────────────────────────────────────────────
+INFO "Running: verify.sh (unit + lint + typecheck)"
+CHECKS=$((CHECKS + 1))
+if ./verify.sh "$@"; then
+  OK "verify.sh"
+else
+  FAIL "verify.sh"
+  FAILURES=$((FAILURES + 1))
+fi
+echo ""
+
+# ── Golden-case eval gate (deterministic corpus, no live LLM) ────────────────
+INFO "Running: golden-case eval gate (pytest -m eval)"
+CHECKS=$((CHECKS + 1))
+if ( cd backend && python -m pytest -q --no-header -m eval ); then
+  OK "golden-case eval gate"
+else
+  FAIL "golden-case eval gate"
+  FAILURES=$((FAILURES + 1))
+fi
+echo ""
+
+# ── Connector Platform contract gate (Faz 13) ───────────────────────────────
+INFO "Running: connector platform gate (pytest -m connectors)"
+CHECKS=$((CHECKS + 1))
+if ( cd backend && python -m pytest -q --no-header -m connectors ); then
+  OK "connector platform gate"
+else
+  FAIL "connector platform gate"
+  FAILURES=$((FAILURES + 1))
+fi
+echo ""
+
+# ── Optional staging smoke (live stack) ──────────────────────────────────────
+if [[ -n "${BACKEND_URL:-}" ]]; then
+  chmod +x scripts/staging-smoke.sh
+  check "staging smoke ($BACKEND_URL)" \
+    env BACKEND_URL="$BACKEND_URL" ./scripts/staging-smoke.sh
+
+  # The governance chain: journal, approval, sealed packet, authority policy,
+  # institutionalisation index. Needs no broker — the API falls back to an
+  # inline run when Redis is absent, so this works against plain `uvicorn`.
+  chmod +x scripts/tr-governance-e2e.sh
+  check "tr governance e2e ($BACKEND_URL)" \
+    env BACKEND_URL="$BACKEND_URL" ./scripts/tr-governance-e2e.sh
+
+  # Liveness probe over every registered route. Only 500s fail it: a 401/404/
+  # 422 means the route is alive and rejecting input properly. This is the
+  # check that finds handlers nobody has ever called.
+  check "route sweep ($BACKEND_URL)" \
+    env BACKEND_URL="$BACKEND_URL" python scripts/route_sweep.py
+
+  # The same probe for the frontend: render every page as a logged-in user and
+  # fail on an error boundary, an uncaught exception, a blank render, or a page
+  # that calls one endpoint dozens of times. Needs a running Next server, so it
+  # is gated separately from BACKEND_URL.
+  if [[ -n "${FRONTEND_URL:-}" ]]; then
+    check "page sweep ($FRONTEND_URL)" \
+      env FRONTEND_URL="$FRONTEND_URL" BACKEND_URL="$BACKEND_URL" \
+      python scripts/page_sweep.py
+
+    # And the chain a user actually walks: file picker, autopilot button,
+    # approve control. Page sweep proves every page renders; this proves the
+    # steps do their job when clicked.
+    check "flow e2e ($FRONTEND_URL)" \
+      env FRONTEND_URL="$FRONTEND_URL" BACKEND_URL="$BACKEND_URL" \
+      python scripts/flow_e2e.py
+  else
+    WARN "FRONTEND_URL not set — skipping page sweep and flow e2e"
+    echo ""
+  fi
+else
+  WARN "BACKEND_URL not set — skipping staging smoke, governance e2e and route sweep (set to enable live proof)"
+  echo ""
+fi
+
+# ── Optional load baseline ───────────────────────────────────────────────────
+if [[ "${RUN_LOAD_BASELINE:-0}" == "1" ]]; then
+  if [[ -z "${BACKEND_URL:-}" ]]; then
+    FAIL "RUN_LOAD_BASELINE=1 requires BACKEND_URL"
+    FAILURES=$((FAILURES + 1))
+  else
+    chmod +x scripts/load-baseline.sh
+    check "load baseline ($BACKEND_URL)" \
+      env BACKEND_URL="$BACKEND_URL" ./scripts/load-baseline.sh
+  fi
+else
+  WARN "RUN_LOAD_BASELINE not set — skipping load baseline"
+  echo ""
+fi
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+echo -e "${CYAN}════════════════════════════════════════${NC}"
+if [[ $FAILURES -eq 0 ]]; then
+  echo -e "${GREEN}  ✓ CONSOLIDATION PROOF PASSED ($CHECKS checks)${NC}"
+  echo -e "${CYAN}════════════════════════════════════════${NC}\n"
+  exit 0
+else
+  echo -e "${RED}  ✗ CONSOLIDATION PROOF FAILED ($FAILURES of $CHECKS)${NC}"
+  echo -e "${CYAN}════════════════════════════════════════${NC}\n"
+  exit 1
+fi

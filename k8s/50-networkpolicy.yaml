@@ -1,0 +1,65 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: aicfo
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# Ingress Controller -> Frontend & Backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-apps
+  namespace: aicfo
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [frontend, backend]}
+  ingress:
+  - from:
+    - namespaceSelector: {}
+  policyTypes:
+  - Ingress
+---
+# Frontend -> Backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: aicfo
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8000
+  policyTypes:
+  - Ingress
+---
+# Backend & Workers -> Postgres & Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apps-to-db-and-redis
+  namespace: aicfo
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [postgres, redis]}
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+          - {key: app, operator: In, values: [backend, worker, worker-maintenance]}
+  policyTypes:
+  - Ingress

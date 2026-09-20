@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-maintenance
+  namespace: aicfo
+  labels:
+    app: worker-maintenance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-maintenance
+  template:
+    metadata:
+      labels:
+        app: worker-maintenance
+    spec:
+      containers:
+      - name: worker-maintenance
+        image: agentic-cfo-backend:latest
+        imagePullPolicy: IfNotPresent
+        command: ["arq", "app.worker.MaintenanceWorkerSettings"]
+        envFrom:
+        - configMapRef:
+            name: aicfo-config
+        - secretRef:
+            name: aicfo-secrets
+        volumeMounts:
+        - name: uploads-data
+          mountPath: /app/uploads
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1.5Gi
+      volumes:
+      - name: uploads-data
+        persistentVolumeClaim:
+          claimName: uploads-pvc

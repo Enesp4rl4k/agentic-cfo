@@ -16,39 +16,103 @@ Auth header format:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.services.auth import (
-    hash_password,
-    verify_password,
     create_access_token,
     create_refresh_token,
     decode_token,
     generate_api_key,
+    hash_api_key,
+    hash_password,
+    verify_password,
 )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
 
+# ── PERF-2: Short-lived in-process user cache ─────────────────────────────────
+# Avoids a DB round-trip on every authenticated request for the same user.
+# TTL is intentionally short (matches access token window) so revocations
+# and role changes propagate within 60 seconds.
+#
+# ⚠️  MULTI-PROCESS WARNING: This cache is per-process (not shared across
+# gunicorn/uvicorn workers). In a multi-worker deployment:
+#   - Role changes / revocations may not propagate to all workers for up to TTL seconds
+#   - Each worker maintains its own independent copy
+#   - For production multi-worker deployments, replace with Redis:
+#       await redis.setex(f"user:{user_id}", 60, user.model_dump_json())
+#   - Single-process deployments (default Docker setup) are unaffected.
+#
+# Note: lru_cache on an async function caches the coroutine object, not the
+# result. We use a plain dict + timestamp instead.
+
+import time as _time
+
+# PERF-2: one PK lookup per request adds up, so the resolved user is cached for
+# a minute. The catch is what gets cached.
+#
+# This used to hold the ORM instance straight out of the request's session.
+# After that request finished, the session closed and the cached object outlived
+# it: reads of already-loaded columns still worked, but a lazy relationship
+# raised DetachedInstanceError and a mutation raised "not persistent within this
+# Session". `POST /org/create` did exactly that, so creating a workspace failed
+# for every request after the first — and no test caught it, because each test
+# starts with a cold cache and takes the `db.get` branch, which returns a live
+# instance where everything works.
+#
+# The fix is to make both paths behave identically instead of only one of them
+# being broken: the instance is expunged before it is cached, so *every* caller
+# gets a detached user. Reads are fine, lazy loads and writes fail immediately
+# and on the first request. Endpoints that need to change the user re-load it
+# through their own session — see `create_org`.
+_USER_CACHE: dict[str, tuple[User, float]] = {}
+_USER_CACHE_TTL = 60  # seconds
+
+
+def _cache_get(user_id: str) -> User | None:
+    entry = _USER_CACHE.get(user_id)
+    if entry is None:
+        return None
+    user, ts = entry
+    if _time.monotonic() - ts > _USER_CACHE_TTL:
+        del _USER_CACHE[user_id]
+        return None
+    return user
+
+
+def _cache_set(user_id: str, user: User) -> None:
+    _USER_CACHE[user_id] = (user, _time.monotonic())
+
+
+def _cache_invalidate(user_id: str) -> None:
+    _USER_CACHE.pop(user_id, None)
+
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
+    # No `role` field. It used to be here with an ANALYST default, which meant
+    # anyone could POST `{"role": "owner"}` and self-register as an owner —
+    # privilege escalation through an ordinary public endpoint. Role is assigned
+    # by the server: everyone starts as an analyst, and creating a workspace
+    # promotes the creator to owner (see POST /org/create).
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     password: str = Field(min_length=8, description="Min 8 characters")
     full_name: str | None = None
-    role: UserRole = UserRole.ANALYST
 
 
 class LoginRequest(BaseModel):
@@ -101,15 +165,30 @@ async def get_current_user(
         except JWTError:
             raise credentials_exception
 
+        # PERF-2: Check cache before hitting the DB
+        cached = _cache_get(user_id)
+        if cached is not None:
+            return cached
+
         user = await db.get(User, user_id)
         if not user or not user.is_active:
             raise credentials_exception
+
+        # Detach before caching *and* before returning, so the cached path and
+        # the fresh path hand back the same kind of object. Every column is
+        # already loaded by the get() above, so reads keep working.
+        db.expunge(user)
+        _cache_set(user_id, user)
         return user
 
     # ── Try API key ───────────────────────────────────────────────────────────
     if x_api_key:
+        hashed_key = hash_api_key(x_api_key)
         result = await db.execute(
-            select(User).where(User.api_key == x_api_key, User.is_active == True)
+            select(User).where(
+                (User.api_key == hashed_key) | (User.api_key == x_api_key),
+                User.is_active,
+            )
         )
         user = result.scalar_one_or_none()
         if not user:
@@ -119,20 +198,27 @@ async def get_current_user(
     raise credentials_exception
 
 
-async def require_role(*roles: str):
+def require_role(*roles: str):
     """
     Role-based access control dependency factory.
 
+    Returns a FastAPI dependency (synchronous callable returning a coroutine),
+    so FastAPI can inject it correctly via Depends().
+
     Usage:
         @router.get("/admin-only")
-        async def admin_endpoint(user = Depends(require_role("admin"))):
+        async def admin_endpoint(user: User = Depends(require_role("admin", "owner"))):
             ...
+
+    Note: `async def require_role` was a bug — it returned a coroutine instead
+    of a dependency callable. Fixed to a plain `def` factory.
     """
     async def _check(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Bu işlem için '{'/'.join(roles)}' rolü gerekli.",
+                detail=f"Bu işlem için '{'/'.join(roles)}' rolü gerekli. "
+                       f"Mevcut rol: '{user.role}'.",
             )
         return user
     return _check
@@ -158,7 +244,7 @@ async def register(
         email=str(body.email),
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
-        role=body.role,
+        role=UserRole.ANALYST,
     )
     db.add(user)
     await db.commit()
@@ -202,7 +288,7 @@ async def login(
     refresh_token = create_refresh_token(user.id)
 
     # Update last login
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
 
     logger.info("User logged in: %s", user.email)
@@ -287,10 +373,21 @@ async def create_api_key(
     The key is returned once — store it securely. It cannot be retrieved again.
     To get a new key, call this endpoint again (old key is revoked).
     """
+    # `current_user` is detached (see the cache note above), so the row has to be
+    # re-loaded through this request's session before it can be written to.
+    # Assigning to the detached instance committed nothing: the key came back to
+    # the caller while the database still held the old one, so every request
+    # made with the new key answered 401.
+    user_row = await db.get(User, str(current_user.id))
+    if user_row is None:  # pragma: no cover - the token resolved a moment ago
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
+
     new_key = generate_api_key()
-    current_user.api_key = new_key
+    user_row.api_key = hash_api_key(new_key)
     await db.commit()
 
+    # Invalidate cache so next request reloads the updated user from DB
+    _cache_invalidate(str(current_user.id))
     logger.info("API key rotated for user: %s", current_user.email)
 
     return {
@@ -309,6 +406,10 @@ async def revoke_api_key(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Revoke the current API key."""
-    current_user.api_key = None
+    user_row = await db.get(User, str(current_user.id))
+    if user_row is None:  # pragma: no cover - the token resolved a moment ago
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
+    user_row.api_key = None
     await db.commit()
+    _cache_invalidate(str(current_user.id))
     return {"data": {"revoked": True}, "error": None}

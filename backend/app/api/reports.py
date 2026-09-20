@@ -1,14 +1,22 @@
+import asyncio
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import load_owned_job, owned_job
+from app.api.auth import get_current_user
+from app.core.http_headers import content_disposition
 from app.database import get_db
+from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # NOTE: Download route MUST be registered before the list route.
@@ -18,20 +26,24 @@ router = APIRouter()
 @router.get("/reports/{report_id}/download")
 async def download_report(
     report_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
     """Download a generated Excel or PDF report file."""
     report = await db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found.")
+    # A report is its job's: took no user at all before, so any report id
+    # downloaded any organisation's workbook.
+    await load_owned_job(db, report.job_id, current_user)
     if not report.file_path or not os.path.exists(report.file_path):
         raise HTTPException(status_code=404, detail="Report file not available on disk.")
 
-    media_types = {
-        ReportFormat.EXCEL: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ReportFormat.PDF: "application/pdf",
+    media_types: dict[str, str] = {
+        ReportFormat.EXCEL.value: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ReportFormat.PDF.value: "application/pdf",
     }
-    media_type = media_types.get(report.report_format, "application/octet-stream")
+    media_type = media_types.get(str(report.report_format), "application/octet-stream")
     filename = f"financial_report_{report.job_id}.{report.report_format}"
 
     return FileResponse(
@@ -44,6 +56,7 @@ async def download_report(
 @router.get("/reports/{job_id}")
 async def list_reports(
     job_id: str,
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all generated reports for a job."""
@@ -72,6 +85,7 @@ async def download_executive_report(
     job_id: str,
     company_name: str = Query(default="Şirket", description="Rapor başlığındaki şirket adı"),
     period: str | None = Query(default=None, description="Dönem etiketi, örn. '2024-Q1'"),
+    job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """
@@ -105,7 +119,8 @@ async def download_executive_report(
 
     try:
         from app.services.executive_report_pdf import generate_executive_report
-        pdf_bytes = generate_executive_report(
+        pdf_bytes = await asyncio.to_thread(
+            generate_executive_report,
             dashboard=report.data,
             company_name=company_name,
             period=period,
@@ -120,7 +135,98 @@ async def download_executive_report(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": content_disposition(f"{filename}"),
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
+
+
+# ── Unified Executive Report ──────────────────────────────────────────────────
+
+@router.get("/reports/unified/summary")
+async def get_unified_report_summary(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Get a structured unified executive report (JSON) from CompanyContext.
+
+    Combines all available C-Suite agent results:
+    CFO + CTO + CMO + COO + CHRO + Risk + CEO synthesis.
+
+    Returns a structured report with per-agent sections and executive summary.
+    """
+    from app.services.company_context import get_company_context
+    from app.services.unified_report import build_unified_report
+
+    org_id = str(user.org_id) if user.org_id else "default"
+    ctx = await get_company_context(org_id, db)
+
+    if not any([
+        ctx.last_cfo_result, ctx.last_cto_result, ctx.last_cmo_result,
+        ctx.last_coo_result, ctx.last_chro_result, ctx.last_risk_result,
+        ctx.last_ceo_result,
+    ]):
+        raise HTTPException(
+            status_code=404,
+            detail="Henüz tamamlanmış analiz yok. Önce bir veya daha fazla agent analizi çalıştırın.",
+        )
+
+    report = build_unified_report(
+        ctx_data=ctx.to_dict(),
+        company_name=ctx.company_name,
+        reporting_period=ctx.reporting_period,
+    )
+
+    return {"data": report, "error": None}
+
+
+@router.get("/reports/unified/pdf")
+async def download_unified_pdf(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download a unified executive board PDF from CompanyContext.
+
+    Generates a multi-section A4 PDF covering all analyzed domains.
+    Requires at least one completed agent analysis.
+    """
+    from app.services.company_context import get_company_context
+    from app.services.unified_report import generate_unified_pdf
+
+    org_id = str(user.org_id) if user.org_id else "default"
+    ctx = await get_company_context(org_id, db)
+
+    if not ctx.last_cfo_result and not ctx.last_ceo_result:
+        raise HTTPException(
+            status_code=404,
+            detail="En az bir CFO veya CEO analizi tamamlanmış olmalı.",
+        )
+
+    try:
+        pdf_bytes = await asyncio.to_thread(
+            generate_unified_pdf,
+            ctx_data=ctx.to_dict(),
+            company_name=ctx.company_name,
+            reporting_period=ctx.reporting_period,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Unified PDF generation failed for org=%s", org_id)
+        raise HTTPException(status_code=500, detail=f"PDF üretimi başarısız: {exc}")
+
+    company = (ctx.company_name or "sirket").lower().replace(" ", "-")[:25]
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y%m%d")
+    filename = f"{company}-yonetim-raporu-{date_str}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": content_disposition(f"{filename}"),
             "Content-Length": str(len(pdf_bytes)),
         },
     )

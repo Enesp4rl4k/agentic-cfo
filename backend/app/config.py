@@ -19,8 +19,20 @@ _INSECURE_SECRETS: frozenset[str] = frozenset({
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # ── Product identity ──────────────────────────────────────────────────────
+    # Resolved through app/core/branding.py; never typed into a template. The
+    # domain defaults to empty on purpose: with no domain configured, contact
+    # addresses come back empty and callers say "unconfigured" rather than
+    # printing an address the project does not own.
+    brand_name: str = "C-Suite"
+    brand_domain: str = ""
+    brand_app_url: str = "http://localhost:3000"
+    brand_contact_email: str = ""
+    brand_privacy_email: str = ""
+    brand_dpo_email: str = ""
+
     # OpenAI — optional for dev/test without LLM
-    openai_api_key: str = "sk-dev-placeholder"
+    openai_api_key: str = "llm-placeholder-dev"
 
     # PostgreSQL — optional, falls back to SQLite when not set
     postgres_host: str = "localhost"
@@ -34,6 +46,14 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+    # ARQ queue partitioning (analysis vs maintenance) + backpressure knobs
+    arq_analysis_queue_name: str = "arq:queue:analysis"
+    # Enqueue-side connect attempts. Low on purpose: a blocked HTTP request is
+    # worse than an early fallback. The worker process keeps ARQ's own defaults.
+    arq_producer_conn_retries: int = 1
+    arq_maintenance_queue_name: str = "arq:queue:maintenance"
+    arq_analysis_max_jobs: int = 10
+    arq_maintenance_max_jobs: int = 3
 
     # App
     backend_secret_key: str = "dev-secret-change-in-production"
@@ -98,6 +118,29 @@ class Settings(BaseSettings):
     twilio_auth_token:    str = ""
     twilio_whatsapp_from: str = ""        # e.g. "whatsapp:+14155238886"
 
+    # WhatsApp webhook verification token (self-chosen, set same in Meta console)
+    whatsapp_verify_token: str = "agentic-cfo-verify"
+
+    # Slack Bot (for Events API and chat.postMessage)
+    slack_bot_token:     str = ""  # xoxb-...
+    slack_signing_secret: str = "" # From Slack App Basic Information page
+    # Meta App Secret — signs every WhatsApp webhook (X-Hub-Signature-256).
+    # Without it the webhook refuses all posts rather than accepting unsigned ones.
+    whatsapp_app_secret: str = ""
+
+    # E-postayla veri. The domain whose mail a provider (Mailgun, SendGrid)
+    # receives and posts to /email/inbound, and the secret it sends with each
+    # post. Without both, the inbox is off: addresses are not handed out and
+    # the webhook refuses every post rather than accepting unsigned mail.
+    email_ingest_domain: str = ""
+    email_inbound_secret: str = ""
+
+    # Paraşüt: the platform's one registered application. With it a person
+    # connects by logging in to Paraşüt; without it the button says Paraşüt
+    # is not available here. The callback is {backend_url}/api/v1/erp/parasut/callback.
+    parasut_client_id: str = ""
+    parasut_client_secret: str = ""
+
     # SMTP email notifications
     smtp_host:         str = "smtp.gmail.com"
     smtp_port:         int = 587
@@ -115,6 +158,9 @@ class Settings(BaseSettings):
     gib_username: str  = ""      # e-Fatura portal kullanıcı adı
     gib_password: str  = ""      # e-Fatura portal şifresi
     gib_sandbox:  bool = True    # True = test ortamı
+    # GİB e-Defter web servisi ortamı. "prod" yalnızca biri bilerek yazarsa;
+    # imzalayıcı olmadan hiçbir ortamda gönderim yapılmaz.
+    gib_edefter_env: str = "test"
 
     # Open Banking — Turkish banks (sandbox credentials from developer portals)
     # Akbank: https://developer.akbank.com
@@ -143,12 +189,28 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 10
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.
     auto_enqueue_analysis_on_upload: bool = True
+    # No Redis? Run the enqueued analysis inline in the API process instead of
+    # dropping it. Keeps the upload -> analysis path working on a laptop with no
+    # broker. Never a substitute for the worker in production: the job dies with
+    # the request process and there is no retry.
+    allow_inline_job_fallback: bool = True
+    # Confidence gate: min lowest-skill confidence to auto-proceed without a
+    # human. Below this the run holds for review. Env-tunable per deployment.
+    agent_auto_proceed_min_confidence: float = 0.80
     # RAG maintenance: tamamlanmış job'lar için eksik chunk index backfill.
     rag_backfill_enabled: bool = True
     rag_backfill_lookback_days: int = 14
+    rag_embedding_enabled: bool = True
+    rag_embedding_model: str = "text-embedding-3-small"
+    rag_embedding_dimensions: int = 1536
 
     # Dev mode: use SQLite instead of PostgreSQL
     use_sqlite: bool = True
+    # Seconds a writer waits for the SQLite lock before giving up. The driver
+    # default is 0: any concurrent write fails instantly rather than queueing.
+    # This buys patience for honest contention — it is not a substitute for
+    # closing transactions, which is what actually wedged this app.
+    sqlite_busy_timeout_sec: float = 15.0
 
     # Demo mode: enables /demo/seed endpoint and pre-loaded sample data
     demo_mode:         bool = False
@@ -181,6 +243,16 @@ class Settings(BaseSettings):
 
     @property
     def database_url_sync(self) -> str:
+        # The async URL honoured the override and this did not, so a caller
+        # asking for the sync DSN (agent_memory's pgvector path) got the
+        # postgres_* defaults — or a SQLite path — while the app itself was
+        # talking to the overridden database.
+        if self.database_url_override:
+            return (
+                self.database_url_override
+                .replace("+asyncpg", "")
+                .replace("+aiosqlite", "")
+            )
         if self.use_sqlite:
             return "sqlite:///./aicfo_dev.db"
         return (

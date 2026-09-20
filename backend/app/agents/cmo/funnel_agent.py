@@ -271,15 +271,8 @@ def _build_funnel_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_funnel_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative -- falls back to rule-based summary."""
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage
+        from app.platform.model_gateway import complete_text
 
-        llm = ChatOpenAI(
-            model=settings.openai_model,
-            temperature=0.3,
-            max_tokens=300,
-            api_key=settings.openai_api_key,
-        )
         overall = metrics["overall_conversion_rate"]
         bottleneck = metrics["bottleneck_stage"]
         cycle = metrics["avg_cycle_days"]
@@ -288,8 +281,9 @@ async def _generate_funnel_narrative(metrics: dict[str, Any], settings) -> str:
             f"bottleneck={bottleneck}, avg_cycle={cycle:.0f} days. "
             "Write a 2-sentence CMO-level insight on funnel health."
         )
-        resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        return resp.content.strip()
+        return (await complete_text(
+            task="metric_commentary", prompt=prompt, max_tokens=300,
+        )).strip()
     except Exception:
         overall    = metrics.get("overall_conversion_rate", 0.0)
         bottleneck = metrics.get("bottleneck_stage", "unknown")

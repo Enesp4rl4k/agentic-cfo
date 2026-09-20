@@ -14,16 +14,19 @@ POST /api/v1/alerts/acknowledge/{job_id}/{alert_hash}
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import owned_job
+from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.report import Report, ReportFormat
+from app.models.user import User
 from app.services.alert_router import AlertRouter, RawAlert
 
 router = APIRouter()
@@ -43,7 +46,7 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
     """
     raw: list[RawAlert] = []
     job_id = job.id
-    ts = job.completed_at or job.updated_at or datetime.now(timezone.utc)
+    ts = job.completed_at or job.updated_at or datetime.now(UTC)
 
     # ── CFO pipeline alerts ────────────────────────────────────────────────
     cashflow = dashboard_data.get("cashflow") or {}
@@ -73,15 +76,20 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
     if mc.get("runway_risk_pct", 0) > 30:
         raw.append(RawAlert(
             level="critical" if mc["runway_risk_pct"] > 60 else "warning",
+            # The share of simulations that go negative, said as that. It read
+            # "%X olasılıkla ... yaşanabilir", which states a probability the
+            # simulation does not produce on its own.
             message=(
-                f"Monte Carlo: {mc['runway_risk_pct']:.0f}% olasılıkla "
-                f"6 ay içinde nakit sıkıntısı yaşanabilir."
+                f"Simülasyonların %{mc['runway_risk_pct']:.0f}'inde ilk 6 ayda "
+                f"kümülatif nakit negatife düşüyor."
             ),
             domain="cfo",
             source="monte_carlo",
             job_id=job_id,
             timestamp=ts,
-            evidence={"runway_risk_pct": mc["runway_risk_pct"]},
+            evidence={"runway_risk_pct": mc["runway_risk_pct"],
+                      "n_simulations": mc.get("n_simulations"),
+                      "growth_basis": mc.get("growth_basis")},
         ))
 
     # ── Job-level triggered alerts ─────────────────────────────────────────
@@ -111,7 +119,7 @@ def _build_digest_response(
     return {
         "job_id":   job_id,
         "period":   period,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "summary": (
             f"{len(digest['critical'])} kritik, "
             f"{len(digest['high'])} yüksek, "
@@ -124,7 +132,9 @@ def _build_digest_response(
 @router.get("/alerts/digest/{job_id}")
 async def get_alert_digest(
     job_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Smart alert digest for a specific analysis job.
@@ -166,6 +176,7 @@ async def get_alert_digest(
 
 @router.get("/alerts/digest/latest")
 async def get_latest_digest(
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     hours: int = 24,
 ) -> dict[str, Any]:
@@ -174,9 +185,9 @@ async def get_latest_digest(
 
     Useful for a daily morning briefing: "What happened overnight?"
     """
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = datetime.now(UTC) - timedelta(hours=hours)
 
-    result = await db.execute(
+    q = (
         select(AnalysisJob)
         .where(
             AnalysisJob.status == JobStatus.COMPLETED,
@@ -185,13 +196,18 @@ async def get_latest_digest(
         .order_by(desc(AnalysisJob.completed_at))
         .limit(20)
     )
+    # Scope to org
+    if current_user.org_id:
+        q = q.where(AnalysisJob.org_id == current_user.org_id)
+
+    result = await db.execute(q)
     jobs = result.scalars().all()
 
     if not jobs:
         return {
             "data": {
                 "period": f"Son {hours} saat",
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": datetime.now(UTC).isoformat(),
                 "summary": "Bu dönemde tamamlanan analiz yok.",
                 "critical": [],
                 "high": [],
@@ -203,17 +219,22 @@ async def get_latest_digest(
             "error": None,
         }
 
-    # Collect all alerts from all jobs
+    # Batch-fetch all reports in a single query (resolving N+1 anti-pattern)
+    job_ids = [j.id for j in jobs]
+    report_result = await db.execute(
+        select(Report)
+        .where(Report.job_id.in_(job_ids), Report.report_format == ReportFormat.JSON)
+        .order_by(desc(Report.created_at))
+    )
+    all_reports = report_result.scalars().all()
+    reports_by_job: dict[str, Any] = {}
+    for rep in all_reports:
+        if rep.job_id not in reports_by_job:
+            reports_by_job[rep.job_id] = rep.data or {}
+
     all_raw: list[RawAlert] = []
     for job in jobs:
-        report_result = await db.execute(
-            select(Report)
-            .where(Report.job_id == job.id, Report.report_format == ReportFormat.JSON)
-            .order_by(desc(Report.created_at))
-            .limit(1)
-        )
-        rep = report_result.scalar_one_or_none()
-        dashboard_data = rep.data if rep else {}
+        dashboard_data = reports_by_job.get(job.id, {})
         all_raw.extend(_extract_raw_alerts(job, dashboard_data))
 
     # Route with dedup — alerts from same domain/message in different jobs are deduped
@@ -224,7 +245,7 @@ async def get_latest_digest(
         "data": {
             "period": f"Son {hours} saat",
             "job_count": len(jobs),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "summary": (
                 f"{len(jobs)} analiz tamamlandı — "
                 f"{len(digest['critical'])} kritik, "
@@ -237,11 +258,97 @@ async def get_latest_digest(
     }
 
 
+@router.get("/alerts/top/{job_id}")
+async def get_top_alerts(
+    job_id: str,
+    limit: int = 3,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
+) -> dict[str, Any]:
+    """
+    Return the top N most actionable alerts for a job — prioritized for the
+    "What should I do now?" ActionBar widget on the dashboard.
+
+    Scoring:
+      - critical > high > warning > info (40/30/20/10 base points)
+      - Source bonus: anomaly +15, cashflow +10, forecast +5
+      - Monte Carlo runway risk bonus: up to +20
+    """
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+
+    result = await db.execute(
+        select(Report)
+        .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
+        .order_by(desc(Report.created_at))
+        .limit(1)
+    )
+    report = result.scalar_one_or_none()
+    dashboard_data = report.data if report else {}
+
+    raw_alerts = _extract_raw_alerts(job, dashboard_data)
+    if not raw_alerts:
+        return {"data": {"top_alerts": [], "total_raw": 0}, "error": None}
+
+    # Score each raw alert
+    _LEVEL_SCORE = {"critical": 40, "error": 35, "warning": 20, "info": 10}
+    _SOURCE_BONUS = {"anomaly": 15, "cashflow": 10, "forecast": 8, "monte_carlo": 20}
+
+    scored: list[dict[str, Any]] = []
+    for alert in raw_alerts:
+        score = _LEVEL_SCORE.get(alert.level, 10)
+        score += _SOURCE_BONUS.get(alert.source, 0)
+        scored.append({
+            "level": alert.level,
+            "message": alert.message,
+            "source": alert.source,
+            "domain": alert.domain,
+            "score": score,
+            "action": _suggest_action(alert),
+        })
+
+    # Sort by score descending, take top N
+    scored.sort(key=lambda x: -x["score"])
+    top = scored[:limit]
+
+    return {
+        "data": {
+            "top_alerts": top,
+            "total_raw": len(raw_alerts),
+            "has_critical": any(a["level"] == "critical" for a in top),
+        },
+        "error": None,
+    }
+
+
+def _suggest_action(alert: RawAlert) -> str:
+    """Generate a short actionable suggestion for an alert."""
+    source = alert.source
+    level = alert.level
+    if source == "cashflow" and level == "critical":
+        return "Nakit çıkışlarını inceleyin ve giderleri önceliklendirin."
+    if source == "cashflow":
+        return "Nakit akışı sayfasını inceleyin."
+    if source == "forecast":
+        return "Tahmin senaryolarını gözden geçirin."
+    if source == "anomaly":
+        return "Anomaliler sayfasında işlemi doğrulayın."
+    if source == "monte_carlo":
+        return "Nakit ömrü riskini değerlendirin, bütçeyi gözden geçirin."
+    if level == "critical":
+        return "Acil müdahale gerekiyor — ilgili sayfayı inceleyin."
+    return "Detaylar için analiz sayfasını inceleyin."
+
+
 @router.post("/alerts/acknowledge/{job_id}/{alert_fingerprint}")
 async def acknowledge_alert(
     job_id: str,
     alert_fingerprint: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
     Mark an alert as acknowledged.
@@ -251,8 +358,9 @@ async def acknowledge_alert(
     If Redis is unavailable, returns 200 with a warning.
     """
     try:
-        from app.worker import get_arq_pool
         import json
+
+        from app.worker import get_arq_pool
 
         pool = await get_arq_pool()
         ack_key = f"ack:{job_id}:{alert_fingerprint}"
@@ -261,7 +369,7 @@ async def acknowledge_alert(
             json.dumps({
                 "job_id": job_id,
                 "fingerprint": alert_fingerprint,
-                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                "acknowledged_at": datetime.now(UTC).isoformat(),
             }),
             ex=86400,  # 24h
         )

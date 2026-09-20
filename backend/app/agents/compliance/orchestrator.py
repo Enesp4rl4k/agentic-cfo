@@ -17,18 +17,17 @@ Compliance health score: 0–100 (100 = fully compliant, no violations).
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
+from app.agents.compliance.policies_agent import run_policies_agent
+from app.agents.compliance.regulations_agent import run_regulations_agent
 from app.agents.compliance.state import (
     ComplianceState,
     ComplianceStepLog,
 )
-from app.agents.compliance.policies_agent    import run_policies_agent
-from app.agents.compliance.violations_agent  import run_violations_agent
-from app.agents.compliance.regulations_agent import run_regulations_agent
+from app.agents.compliance.violations_agent import run_violations_agent
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,6 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
     # Violations score (based on open/overdue violations)
     if violations:
         total_v   = violations.get("total_violations", 0)
-        open_v    = violations.get("open_violations", 0)
         overdue_v = violations.get("overdue_violations", 0)
         critical  = violations.get("critical_open", 0)
         rem_rate  = violations.get("remediation_rate", 100.0)
@@ -325,24 +323,16 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
 
     # LLM enrichment
     try:
-        from app.config import get_settings
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
-        settings = get_settings()
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=0.2,
-            max_tokens=700,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-        )
+        from app.platform.model_gateway import complete_text
+
         turkey_context = ""
         if turkey_reg_mapping and turkey_reg_mapping.get("unchecked_critical"):
             reqs = [r["regulation"] for r in turkey_reg_mapping["unchecked_critical"][:3]]
             turkey_context = f"\nKontrol edilmemiş kritik yasal gereksinimler: {', '.join(reqs)}"
 
-        llm_response = await llm.ainvoke([
-            SystemMessage(content=(
+        narrative = (await complete_text(
+            task="short_narrative",
+            system_prompt=(
                 "Sen deneyimli bir Compliance Yöneticisisin. Uyum verilerini analiz et ve "
                 "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
                 "Yanıt yapısı:\n"
@@ -350,10 +340,10 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
                 "2. En kritik 1-2 uyum riski (KVKK, SGK, Vergi vb.)\n"
                 "3. Ekibin hemen yapması gereken 2-3 somut eylem\n"
                 "Türkiye mevzuatına özgü riskler varsa özellikle vurgula."
-            )),
-            HumanMessage(content=narrative + turkey_context),
-        ])
-        narrative = llm_response.content.strip()
+            ),
+            prompt=narrative + turkey_context,
+            max_tokens=700,
+        )).strip()
     except Exception as llm_exc:
         logger.debug("Compliance narrative LLM failed: %s", llm_exc)
 
@@ -391,18 +381,18 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
 def build_compliance_graph() -> StateGraph:
     graph = StateGraph(ComplianceState)
 
-    graph.add_node("policies",            node_policies)
-    graph.add_node("violations",          node_violations)
-    graph.add_node("regulations",         node_regulations)
-    graph.add_node("compliance_summary",  node_compliance_summary)
+    graph.add_node("node_policies",            node_policies)
+    graph.add_node("node_violations",          node_violations)
+    graph.add_node("node_regulations",         node_regulations)
+    graph.add_node("node_compliance_summary",  node_compliance_summary)
 
-    graph.set_entry_point("policies")
+    graph.set_entry_point("node_policies")
 
     # Linear pipeline — all non-fatal
-    graph.add_edge("policies",   "violations")
-    graph.add_edge("violations", "regulations")
-    graph.add_edge("regulations", "compliance_summary")
-    graph.add_edge("compliance_summary", END)
+    graph.add_edge("node_policies",   "node_violations")
+    graph.add_edge("node_violations", "node_regulations")
+    graph.add_edge("node_regulations", "node_compliance_summary")
+    graph.add_edge("node_compliance_summary", END)
 
     return graph
 
@@ -420,9 +410,11 @@ async def run_compliance_pipeline(
     regulations_csv: str | None = None,
     company_name: str | None = None,
     audit_period: str | None = None,
+    org_id: str | None = None,   # S2-5: cross-domain context
 ) -> ComplianceState:
     """
     Run the full Compliance analysis pipeline.
+    S2-5: org_id enables CFO (muhasebe anomalileri) context enrichment.
 
     At least one data source required; others are optional.
     All agents gracefully skip when their input is absent.
@@ -435,7 +427,7 @@ async def run_compliance_pipeline(
             "policy_csv, violations_csv, or regulations_csv."
         )
 
-    initial_state: ComplianceState = {
+    base: ComplianceState = {
         "policy_csv":      policy_csv or "",
         "violations_csv":  violations_csv or "",
         "regulations_csv": regulations_csv or "",
@@ -448,6 +440,15 @@ async def run_compliance_pipeline(
         "logs":            [],
         "error":           None,
     }
+
+    initial_state = base
+    if org_id:
+        try:
+            from app.services.cross_context_enricher import enrich_initial_state
+            base = await enrich_initial_state("compliance", base, org_id=org_id)  # type: ignore[assignment]
+            initial_state = base  # type: ignore[assignment]
+        except Exception:
+            pass
 
     result: ComplianceState = await compliance_graph.ainvoke(
         initial_state,

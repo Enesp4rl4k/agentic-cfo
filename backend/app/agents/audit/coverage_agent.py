@@ -15,7 +15,6 @@ from typing import Any
 
 from app.agents.audit.state import AuditState, AuditStepLog
 
-
 _RISK_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 _FREQ_MONTHS = {
     "annual": 12, "semi-annual": 6, "quarterly": 3,
@@ -77,7 +76,11 @@ def _parse_coverage_csv(csv_text: str) -> list[dict[str, Any]]:
             months_overdue = 0
             audited = last_dt is not None
 
-            if audited:
+            # Narrowed on `last_dt` rather than on `audited`: the boolean says
+            # the same thing to a reader and nothing to a type checker, which
+            # is how three operand errors sat here on arithmetic that is
+            # actually fine.
+            if last_dt is not None:
                 expected_next = last_dt + timedelta(days=freq_months * 30.5)
                 if today > expected_next:
                     overdue = True

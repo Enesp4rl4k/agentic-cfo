@@ -20,7 +20,8 @@ import {
   Layers,
 } from "lucide-react";
 import { useReports } from "@/hooks/useCFO";
-import { getDownloadUrl } from "@/lib/api/cfo";
+import { downloadReport } from "@/lib/api/cfo";
+import { fetchWithAuth } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import type { ReportMeta } from "@/types";
 
@@ -112,7 +113,7 @@ function JsonPreviewModal({
     if (content || loading) return;
     setLoading(true);
     try {
-      const res = await fetch(getDownloadUrl(report.id));
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/reports/${report.id}/download`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setContent(JSON.stringify(json, null, 2));
@@ -195,8 +196,8 @@ function JsonPreviewModal({
             Close
           </button>
           <a
-            href={getDownloadUrl(report.id)}
-            download
+            href="#"
+            onClick={(e) => { e.preventDefault(); void downloadReport(report.id, report.report_type); }}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground",
               "transition-opacity hover:opacity-90",
@@ -227,13 +228,19 @@ function ReportCard({ report }: { report: ReportMeta }) {
   };
   const TypeIcon = typeCfg.icon;
 
-  async function handleDownload() {
+  async function handleDownload(e?: { preventDefault: () => void }) {
+    e?.preventDefault();
     setDownloading(true);
-    // Simulate a brief delay to show progress state
-    await new Promise((r) => setTimeout(r, 600));
-    setDownloading(false);
-    setDownloaded(true);
-    setTimeout(() => setDownloaded(false), 3000);
+    // A real download now, not a timer: the link could not carry the session.
+    try {
+      await downloadReport(report.id, report.report_type);
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 3000);
+    } catch {
+      setDownloaded(false);
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
@@ -288,8 +295,7 @@ function ReportCard({ report }: { report: ReportMeta }) {
           {/* Download */}
           {report.has_file ? (
             <a
-              href={getDownloadUrl(report.id)}
-              download
+              href="#"
               onClick={handleDownload}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",

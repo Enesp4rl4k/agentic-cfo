@@ -55,9 +55,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -73,6 +72,7 @@ async def _get_redis() -> Any | None:
         return _redis_client
     try:
         import redis.asyncio as aioredis  # type: ignore[import]
+
         from app.config import get_settings
 
         settings = get_settings()
@@ -104,7 +104,7 @@ class ConversationTurn:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ConversationTurn":
+    def from_dict(cls, d: dict[str, Any]) -> ConversationTurn:
         return cls(
             role=d["role"],
             content=d["content"],
@@ -144,7 +144,7 @@ class ConversationMemoryService:
 
     def make_session_id(self, user_id: str) -> str:
         """Generate a daily session ID (one session per calendar day)."""
-        today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
         return f"{user_id}:{today}"
 
     def _redis_key(self, user_id: str, session_id: str) -> str:

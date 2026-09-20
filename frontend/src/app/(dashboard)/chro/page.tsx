@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Users, TrendingUp, TrendingDown, AlertTriangle,
   BarChart2, DollarSign, UserMinus, UserCheck,
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
+import { AgentCsvInput } from "@/components/ui/agent-csv-input";
+import { useCompanyContextStore } from "@/store/companyContext";
+import { DomainPanel } from "@/components/domains/DomainPanel";
+
+const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -365,6 +370,7 @@ function CHROSummarySection({ data }: { data: CHROSummary }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CHRODashboardPage() {
+  const { orgId, activeCFOJobId } = useCompanyContextStore();
   const [headcountCsv,  setHeadcountCsv]  = useState("");
   const [attritionCsv,  setAttritionCsv]  = useState("");
   const [compensationCsv, setCompensationCsv] = useState("");
@@ -373,6 +379,27 @@ export default function CHRODashboardPage() {
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState<CHROResult | null>(null);
   const [error,    setError]    = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        if (cancelled || !ctx) return;
+        if (ctx.company_name) setCompany(String(ctx.company_name));
+        if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
+        const last = ctx.last_chro_result;
+        if (last && typeof last === "object") setResult(last as CHROResult);
+      } catch {
+        /* empty until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -421,7 +448,16 @@ export default function CHRODashboardPage() {
         </div>
       </div>
 
-      {/* Input form */}
+      {/* The one entry point: real data, or what is missing and how to get it.
+          The CSV boxes below are the fallback for someone who already has the
+          text in hand; nothing here estimates HR figures from finance. */}
+      <DomainPanel
+        alan="chro"
+        jobId={activeCFOJobId}
+        onResult={(r) => setResult(r as unknown as CHROResult)}
+      />
+
+      {/* CSV yapıştırarak çalıştır */}
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -449,19 +485,30 @@ export default function CHRODashboardPage() {
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {inputs.map(({ label, value, set, ph, id }) => (
-            <div key={id}>
-              <label htmlFor={id} className="mb-1 block text-xs font-medium">{label}</label>
-              <textarea
-                id={id}
-                value={value}
-                onChange={(e) => set(e.target.value)}
-                placeholder={ph}
-                rows={6}
-                className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          ))}
+          <AgentCsvInput
+            label="Headcount CSV"
+            value={headcountCsv}
+            onChange={setHeadcountCsv}
+            sampleData={IS_DEMO ? PH.headcount : undefined}
+            description="employee_id, department, level, role, fte, start_date, status"
+            disabled={loading}
+          />
+          <AgentCsvInput
+            label="Attrition CSV"
+            value={attritionCsv}
+            onChange={setAttritionCsv}
+            sampleData={IS_DEMO ? PH.attrition : undefined}
+            description="employee_id, department, tenure_years, departure_type, reason"
+            disabled={loading}
+          />
+          <AgentCsvInput
+            label="Compensation CSV"
+            value={compensationCsv}
+            onChange={setCompensationCsv}
+            sampleData={IS_DEMO ? PH.compensation : undefined}
+            description="employee_id, level, base_salary, equity_annual, market_rate"
+            disabled={loading}
+          />
         </div>
 
         {error && (
@@ -480,12 +527,8 @@ export default function CHRODashboardPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setHeadcountCsv(PH.headcount);
-              setAttritionCsv(PH.attrition);
-              setCompensationCsv(PH.compensation);
-            }}
-            className="rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => { /* sample data loaded via AgentCsvInput */ }}
+            className="hidden rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
           >
             Load Example Data
           </button>

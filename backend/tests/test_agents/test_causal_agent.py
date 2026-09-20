@@ -4,14 +4,14 @@ Covers: _extract_metric_series, granger_causality_test,
         _correlation_causality_proxy, and correlation helpers.
 """
 import pytest
+
 from app.agents.causal_agent import (
+    MIN_POINTS_CORRELATION,
+    MIN_POINTS_GRANGER,
+    _correlation_causality_proxy,
     _extract_metric_series,
     granger_causality_test,
-    _correlation_causality_proxy,
-    MIN_POINTS_GRANGER,
-    MIN_POINTS_CORRELATION,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ class TestExtractMetricSeries:
             {"in": 100_000, "out": 80_000, "net": 20_000},  # no month key
             {"month": "2024-01", "in": 200_000, "out": 160_000, "net": 40_000},
         ]
-        months, values = _extract_metric_series(data, "in")
+        months, _values = _extract_metric_series(data, "in")
         assert len(months) == 1
         assert months[0] == "2024-01"
 

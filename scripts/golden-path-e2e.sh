@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+# =============================================================================
+# golden-path-e2e.sh — Upload → analysis poll → CEO deck → ops health
+#
+# Usage:
+#   BACKEND_URL=http://localhost:8000 AUTH_TOKEN=<jwt> ./scripts/golden-path-e2e.sh
+#
+# Optional:
+#   GOLDEN_EMAIL / GOLDEN_PASSWORD  — login if AUTH_TOKEN unset
+#   POLL_TIMEOUT_SEC=300            — max wait for analysis (default 300)
+# =============================================================================
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+# Detect a working python. On Windows `python3` is often the Microsoft Store
+# stub that errors out, so try `python` first and verify it actually runs.
+_PY_BIN=""
+for _c in python "$_PY_BIN" py; do
+  if command -v "$_c" >/dev/null 2>&1 && "$_c" -c "import sys" >/dev/null 2>&1; then
+    _PY_BIN="$_c"; break
+  fi
+done
+if [[ -z "$_PY_BIN" ]]; then
+  echo "No working python interpreter found (tried python, python3, py)." >&2
+  exit 1
+fi
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
+OK()   { echo -e "${GREEN}✓${NC} $*"; }
+FAIL() { echo -e "${RED}✗${NC} $*"; }
+INFO() { echo -e "${CYAN}→${NC} $*"; }
+WARN() { echo -e "${YELLOW}⚠${NC} $*"; }
+
+BACKEND_URL="${BACKEND_URL:-}"
+API="${BACKEND_URL%/}/api/v1"
+POLL_TIMEOUT_SEC="${POLL_TIMEOUT_SEC:-300}"
+CSV_FILE="${CSV_FILE:-$ROOT/scripts/fixtures/golden_path_sample_en_usd.csv}"
+P95_TARGET_SEC="${P95_TARGET_SEC:-120}"
+FAILURES=0
+
+if [[ -z "$BACKEND_URL" ]]; then
+  FAIL "BACKEND_URL is required"
+  exit 1
+fi
+
+if [[ ! -f "$CSV_FILE" ]]; then
+  # Fallback to legacy TR fixture if EN missing
+  CSV_FILE="$ROOT/scripts/fixtures/golden_path_sample.csv"
+fi
+
+if [[ ! -f "$CSV_FILE" ]]; then
+  FAIL "Sample CSV missing"
+  exit 1
+fi
+
+INFO "Using fixture: $CSV_FILE"
+
+# curl is a native binary: on Git Bash / MSYS it cannot open a POSIX-style
+# "/c/Users/..." path for -F @upload. Hand it a Windows path when available.
+CSV_FILE_FOR_CURL="$CSV_FILE"
+if command -v cygpath >/dev/null 2>&1; then
+  CSV_FILE_FOR_CURL="$(cygpath -w "$CSV_FILE")"
+fi
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+if [[ -z "${AUTH_TOKEN:-}" ]]; then
+  if [[ -n "${GOLDEN_EMAIL:-}" && -n "${GOLDEN_PASSWORD:-}" ]]; then
+    INFO "Logging in as $GOLDEN_EMAIL"
+    LOGIN_BODY=$(curl -sf --max-time 20 -X POST "$API/auth/login" \
+      -H "Content-Type: application/json" \
+      -d "{\"email\":\"$GOLDEN_EMAIL\",\"password\":\"$GOLDEN_PASSWORD\"}" || true)
+    AUTH_TOKEN=$(echo "$LOGIN_BODY" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token') or d.get('data',{}).get('access_token',''))" 2>/dev/null || true)
+  fi
+fi
+
+if [[ -z "${AUTH_TOKEN:-}" ]]; then
+  FAIL "AUTH_TOKEN (or GOLDEN_EMAIL+GOLDEN_PASSWORD) required"
+  exit 1
+fi
+
+AUTH_HDR=( -H "Authorization: Bearer $AUTH_TOKEN" )
+START_TS=$(date +%s)
+
+# ── Health ────────────────────────────────────────────────────────────────────
+INFO "GET /system/health"
+if curl -sf --max-time 10 "${AUTH_HDR[@]}" "$API/system/health" | grep -q schema_version; then
+  OK "system/health"
+else
+  # health may be unauthenticated
+  if curl -sf --max-time 10 "$API/system/health" | grep -q schema_version; then
+    OK "system/health (public)"
+  else
+    FAIL "system/health"
+    FAILURES=$((FAILURES+1))
+  fi
+fi
+
+# ── Upload ────────────────────────────────────────────────────────────────────
+INFO "POST /upload"
+UPLOAD_RESP=$(curl -sf --max-time 60 -X POST "$API/upload" \
+  "${AUTH_HDR[@]}" \
+  -F "file=@${CSV_FILE_FOR_CURL};type=text/csv" || true)
+
+JOB_ID=$(echo "$UPLOAD_RESP" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('job_id') or d.get('job_id',''))" 2>/dev/null || true)
+
+if [[ -z "$JOB_ID" ]]; then
+  FAIL "upload did not return job_id — response: ${UPLOAD_RESP:0:200}"
+  exit 1
+fi
+OK "uploaded job_id=$JOB_ID"
+
+# ── Poll analysis ─────────────────────────────────────────────────────────────
+INFO "Polling GET /analysis/$JOB_ID (timeout=${POLL_TIMEOUT_SEC}s)"
+STATUS=""
+DEADLINE=$((START_TS + POLL_TIMEOUT_SEC))
+while true; do
+  NOW=$(date +%s)
+  if [[ $NOW -gt $DEADLINE ]]; then
+    FAIL "analysis poll timed out (last status=$STATUS)"
+    FAILURES=$((FAILURES+1))
+    break
+  fi
+  RESP=$(curl -sf --max-time 15 "${AUTH_HDR[@]}" "$API/analysis/$JOB_ID" || true)
+  STATUS=$(echo "$RESP" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or d).get('status',''))" 2>/dev/null || true)
+  if [[ "$STATUS" == "completed" || "$STATUS" == "awaiting_review" ]]; then
+    OK "analysis status=$STATUS"
+    break
+  fi
+  if [[ "$STATUS" == "failed" ]]; then
+    FAIL "analysis failed"
+    FAILURES=$((FAILURES+1))
+    break
+  fi
+  sleep 5
+done
+
+# ── Semantic brief (post-analysis) ───────────────────────────────────────────
+INFO "GET /semantic/me/brief"
+BRIEF_RESP=$(curl -sf --max-time 20 "${AUTH_HDR[@]}" "$API/semantic/me/brief" || true)
+BRIEF_OK=$(echo "$BRIEF_RESP" | "$_PY_BIN" -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print('0'); raise SystemExit
+brief = (d.get('data') or {}).get('brief')
+if brief and brief.get('headline'):
+    print('1')
+else:
+    print('0')
+" 2>/dev/null || true)
+
+if [[ "$BRIEF_OK" == "1" ]]; then
+  OK "semantic decision brief present"
+else
+  INFO "POST /semantic/me/rebuild (brief missing after analysis)"
+  REBUILD=$(curl -sf --max-time 60 -X POST "${AUTH_HDR[@]}" "$API/semantic/me/rebuild" || true)
+  BRIEF2=$(curl -sf --max-time 20 "${AUTH_HDR[@]}" "$API/semantic/me/brief" || true)
+  BRIEF2_OK=$(echo "$BRIEF2" | "$_PY_BIN" -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print('0'); raise SystemExit
+brief = (d.get('data') or {}).get('brief')
+print('1' if brief and brief.get('health_score') is not None else '0')
+" 2>/dev/null || true)
+  if [[ "$BRIEF2_OK" == "1" ]]; then
+    OK "semantic brief after rebuild"
+  else
+    WARN "semantic brief not available (non-fatal if context empty)"
+  fi
+fi
+
+# ── CEO from job (board deck path) ────────────────────────────────────────────
+INFO "POST /ceo/analyze-from-job/$JOB_ID"
+# NOT `curl -sf`: -f discards the body on an HTTP error, so a 500 arrived here
+# as an empty string and was reported as "may need worker" — an infra excuse
+# for an application bug. Keep the body and the status; say which one it was.
+# Status appended to stdout rather than written with -o: this script also runs
+# under Git Bash, where native curl cannot open a POSIX temp path.
+CEO_RAW=$(curl -s --max-time 180 -w '\n%{http_code}' \
+  -X POST "$API/ceo/analyze-from-job/$JOB_ID" \
+  "${AUTH_HDR[@]}" \
+  -H "Content-Type: application/json" \
+  -d '{}' || true)
+CEO_HTTP=$(printf '%s' "$CEO_RAW" | tail -n1)
+CEO_RESP=$(printf '%s' "$CEO_RAW" | sed '$d')
+[[ -z "$CEO_HTTP" ]] && CEO_HTTP="000"
+if [[ "$CEO_HTTP" != "200" ]]; then
+  FAIL "CEO analyze-from-job returned HTTP $CEO_HTTP"
+  echo "    $(echo "$CEO_RESP" | head -c 400)"
+fi
+
+# `python - <<PY` would make the heredoc stdin, so json.load(sys.stdin) always
+# read empty and this check silently reported "no deck" on every run. Pass the
+# program with -c and keep the pipe as the real stdin.
+HAS_DECK=$(echo "$CEO_RESP" | "$_PY_BIN" -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("0"); raise SystemExit
+data = d.get("data") or d
+deck = data.get("board_deck") or (data.get("result") or {}).get("board_deck")
+if deck:
+    print("1")
+else:
+    jid = data.get("job_id") or ""
+    print("async:" + jid if jid else "0")
+')
+
+if [[ "$HAS_DECK" == "1" ]]; then
+  OK "board deck present in CEO response"
+  # Presence is not correctness: for months the deck came back with 6 slides and
+  # every figure blank, because the graph dropped the CFO result. Assert on a
+  # number that can only come from the uploaded file.
+  DECK_REAL=$(echo "$CEO_RESP" | "$_PY_BIN" -c '
+import sys, json
+d = json.load(sys.stdin); data = d.get("data") or d
+deck = data.get("board_deck") or {}
+fin = data.get("financial_summary") or {}
+print("1" if len(deck.get("slides") or []) >= 4 and (fin.get("revenue_cents") or 0) > 0 else "0")
+')
+  if [[ "$DECK_REAL" == "1" ]]; then
+    OK "board deck carries real financials"
+  else
+    FAIL "board deck is empty — slides or revenue missing (sub-pipeline did not reach the deck)"
+    FAILURES=$((FAILURES+1))
+  fi
+elif [[ "$HAS_DECK" == async:* ]]; then
+  CEO_JOB_ID="${HAS_DECK#async:}"
+  INFO "Polling CEO async job $CEO_JOB_ID"
+  CEO_DEADLINE=$(( $(date +%s) + POLL_TIMEOUT_SEC ))
+  while true; do
+    NOW=$(date +%s)
+    if [[ $NOW -gt $CEO_DEADLINE ]]; then
+      FAIL "CEO poll timed out"
+      FAILURES=$((FAILURES+1))
+      break
+    fi
+    CSTAT=$(curl -sf --max-time 15 "${AUTH_HDR[@]}" "$API/ceo/status/$CEO_JOB_ID" || true)
+    CSTATUS=$(echo "$CSTAT" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); print(d.get('status') or (d.get('data') or {}).get('status',''))" 2>/dev/null || true)
+    if [[ "$CSTATUS" == "completed" ]]; then
+      DECK_OK=$(echo "$CSTAT" | "$_PY_BIN" -c "import sys,json; d=json.load(sys.stdin); r=(d.get('result') or (d.get('data') or {}).get('result') or {}); print('1' if r.get('board_deck') else '0')" 2>/dev/null || true)
+      if [[ "$DECK_OK" == "1" ]]; then
+        OK "CEO board deck completed"
+      else
+        FAIL "CEO completed without board_deck"
+        FAILURES=$((FAILURES+1))
+      fi
+      break
+    fi
+    if [[ "$CSTATUS" == "failed" ]]; then
+      FAIL "CEO job failed"
+      FAILURES=$((FAILURES+1))
+      break
+    fi
+    sleep 5
+  done
+else
+  FAIL "CEO analyze-from-job returned no board deck (HTTP $CEO_HTTP)"
+  FAILURES=$((FAILURES+1))
+fi
+
+# ── Ops ───────────────────────────────────────────────────────────────────────
+INFO "GET /system/ops"
+if curl -sf --max-time 10 "$API/system/ops" | grep -q schema_version; then
+  OK "system/ops"
+else
+  FAIL "system/ops"
+  FAILURES=$((FAILURES+1))
+fi
+
+ELAPSED=$(( $(date +%s) - START_TS ))
+INFO "Golden path elapsed: ${ELAPSED}s (SLA target P95 < ${P95_TARGET_SEC}s for deck path)"
+
+if [[ "$ELAPSED" -gt "$P95_TARGET_SEC" ]]; then
+  WARN "Elapsed ${ELAPSED}s exceeds SLA target ${P95_TARGET_SEC}s (non-fatal for CI; track P95 in staging)"
+fi
+
+echo ""
+if [[ $FAILURES -eq 0 ]]; then
+  echo -e "${GREEN}  ✓ GOLDEN PATH E2E PASSED (${ELAPSED}s)${NC}\n"
+  exit 0
+else
+  echo -e "${RED}  ✗ GOLDEN PATH E2E FAILED ($FAILURES)${NC}\n"
+  exit 1
+fi

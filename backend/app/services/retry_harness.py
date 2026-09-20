@@ -29,8 +29,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +107,8 @@ def validate_narrative_quality(output: Any) -> tuple[bool, str]:
         return False, f"Too short: {len(text)} chars (min 50)."
     refusals = ["üzgünüm", "yapamam", "i cannot", "i'm unable", "as an ai"]
     if any(r in text.lower() for r in refusals):
-        return False, f"Detected refusal pattern in output."
-    if text.startswith("{") or text.startswith("["):
+        return False, "Detected refusal pattern in output."
+    if text.startswith(("{", "[")):
         return False, "Output looks like JSON, not narrative."
     return True, ""
 
@@ -200,7 +201,8 @@ class RetryHarness:
             Extra keyword arguments passed to fn on every call.
         """
         if validator is None:
-            validator = lambda _: (True, "")
+            def validator(_):
+                return (True, "")
         if correction_builder is None:
             correction_builder = default_correction_builder
         if fn_kwargs is None:

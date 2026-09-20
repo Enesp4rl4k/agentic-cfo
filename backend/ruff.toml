@@ -1,0 +1,50 @@
+# Ruff configuration — pins the rule set so lint is deterministic across ruff
+# versions (CI installs unpinned ruff). Selection is high-signal-only; the
+# deliberate house patterns below are ignored with a stated reason rather than
+# rewritten across ~1000 sites.
+
+target-version = "py311"
+line-length = 100
+extend-exclude = ["alembic/versions", "app/**/__pycache__"]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "C4",       # flake8-comprehensions
+    "SIM",      # flake8-simplify
+    "PIE",      # flake8-pie
+    "RUF",      # ruff-specific
+    "ASYNC",    # flake8-async (real concurrency bugs)
+]
+ignore = [
+    "E501",     # line length — long f-strings / URLs, not worth reflowing now
+    # House pattern: broad try/except as a non-fatal degradation boundary.
+    # Used deliberately and pervasively (agents must never crash a pipeline on
+    # a best-effort side effect). Revisit per-module, not as a bulk rewrite.
+    "BLE001",   # blind-except
+    "B008",     # function-call-in-default-argument — this IS the FastAPI Depends() idiom
+    "B904",     # raise-without-from-inside-except — noisy on degradation paths
+    "RUF012",   # mutable-class-default — parser column lists etc.; low value
+    "RUF001", "RUF002", "RUF003",  # ambiguous unicode — Turkish text everywhere
+    "SIM105",   # suppressible-exception — contextlib.suppress not always clearer
+    "SIM108",   # ternary — not always more readable
+    "SIM102",   # collapsible-if — nested ifs are often clearer with comments
+    "SIM116",   # if-else chain vs dict — the chain reads fine here
+    "E402",     # import-not-at-top — lazy imports break cycles deliberately here
+    "RUF006",   # dangling-task — fire-and-forget best-effort tasks are intentional
+    "E701",     # multiple-statements-on-one-line — guard clauses / stub bodies
+    "E741",     # ambiguous name (l/I/O) — pervasive; a rename sweep is its own PR
+    # Blocking file I/O in async endpoints: real but low-impact (small local
+    # files on upload / report-download paths). Proper fix needs anyio.Path or a
+    # threadpool — tracked separately, not worth a risky bulk change now.
+    "ASYNC230", "ASYNC240",
+    "ASYNC109", # async fn takes a `timeout` param — asyncio.timeout() migration, cosmetic
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["B011", "SIM117", "F841", "ASYNC"]
+"app/platform/model_gateway.py" = ["ASYNC"]  # retry loop deliberately broad

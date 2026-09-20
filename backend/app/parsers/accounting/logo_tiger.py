@@ -25,8 +25,6 @@ from __future__ import annotations
 import csv
 import io
 import re
-from datetime import datetime, timezone
-from typing import Any
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
@@ -113,11 +111,20 @@ class LogoTigerParser(BankParser):
         if not rows:
             return []
 
-        # Find header row (contains date/debit/credit markers)
+        # Find header row: must be a real multi-column row that carries BOTH a
+        # date marker and a debit/credit marker. Report preamble lines such as
+        # "Rapor Tarihi: 31.12.2024" contain "tarih" too, so a single-marker
+        # match is not enough — it would shadow the actual column header.
+        _DATE_MARKERS = ("tarih", "date")
+        _MONEY_MARKERS = ("borç", "bor ", "alacak", "debit", "credit", "tutar")
         header_row_idx = 0
         for i, row in enumerate(rows[:10]):
+            if len(row) < 3:
+                continue
             row_joined = " ".join(row).lower()
-            if any(c in row_joined for c in ["tarih", "borç", "alacak", "date", "debit"]):
+            has_date = any(m in row_joined for m in _DATE_MARKERS)
+            has_money = any(m in row_joined for m in _MONEY_MARKERS)
+            if has_date and has_money:
                 header_row_idx = i
                 break
 

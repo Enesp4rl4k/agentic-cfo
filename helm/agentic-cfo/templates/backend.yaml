@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-backend
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  {{- if not .Values.backend.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "agentic-cfo.fullname" . }}-backend
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentic-cfo.fullname" . }}-backend
+    spec:
+      containers:
+      - name: backend
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.backend.service.port }}
+          name: http
+        envFrom:
+        - configMapRef:
+            name: {{ include "agentic-cfo.fullname" . }}-config
+        - secretRef:
+            name: {{ include "agentic-cfo.fullname" . }}-secrets
+        volumeMounts:
+        - name: uploads
+          mountPath: /app/uploads
+        resources:
+          {{- toYaml .Values.backend.resources | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.backend.service.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.backend.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 20
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: {{ include "agentic-cfo.fullname" . }}-uploads
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-uploads
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.uploads.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.uploads.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-backend
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.backend.service.type }}
+  ports:
+  - port: {{ .Values.backend.service.port }}
+    targetPort: {{ .Values.backend.service.port }}
+    name: http
+  selector:
+    app: {{ include "agentic-cfo.fullname" . }}-backend

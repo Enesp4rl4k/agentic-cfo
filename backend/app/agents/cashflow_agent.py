@@ -9,13 +9,13 @@ done_when: state['cashflow'] contains operating, investing, financing, net_chang
 """
 from __future__ import annotations
 
-from app.services.telemetry import trace_agent
-
 import logging
 from typing import Any
 
-from app.agents.state import CFOState, AgentRunConfig, SkillResult
+from app.agents.narrative_guard import narrative_guard
+from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,13 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         for k, v in sorted(monthly.items())
     ]
 
+    # S1-2: Cash Conversion Cycle (CCC) — proxy calculation from transaction data
+    # CCC = DSO + DIO - DPO
+    # DSO (Days Sales Outstanding): how long to collect receivables
+    # DIO (Days Inventory Outstanding): how long inventory sits (0 for service cos)
+    # DPO (Days Payable Outstanding): how long to pay suppliers
+    ccc = _compute_ccc(transactions, operating_in, operating_out)
+
     return {
         "operating": operating,
         "operating_in": operating_in,
@@ -86,6 +93,90 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "financing": financing,
         "net_change": net_change,
         "monthly_series": monthly_series,
+        # CCC metrics
+        "dso_days": ccc["dso_days"],
+        "dpo_days": ccc["dpo_days"],
+        "ccc_days": ccc["ccc_days"],
+        "ccc_interpretation": ccc["interpretation"],
+        # The gün sayıları are a band read off transaction sizes, not measured
+        # from invoice dates; anything that reports them must say so.
+        "ccc_olcum": ccc.get("olcum"),
+        "ccc_dayanak": ccc.get("dayanak"),
+    }
+
+
+def _compute_ccc(
+    transactions: list[dict[str, Any]],
+    total_revenue_cents: int,
+    total_expenses_cents: int,
+) -> dict[str, Any]:
+    """
+    Nakit döngüsü — ölçüm değil, tahmin.
+
+    A bank statement says when money moved, not when an invoice was issued or
+    fell due, so the lag between the two cannot be measured from it. What
+    follows is a band picked from the average transaction size: an average
+    income over 10 000 TRY is read as invoiced B2B business (45 days), 1 000 to
+    10 000 as mixed (20), below that as retail or subscription (7); the payment
+    side is 30 days above a 5 000 TRY average and 15 below. The docstring here
+    used to state "(AR / Revenue) × 365", a formula this function never ran and
+    has no accounts-receivable balance for.
+
+    The result carries `olcum: "tahmin"` and its basis, and the interpretation
+    says so in words. `POST /analytics/working-capital` computes the real
+    figures when someone supplies the balances.
+    """
+
+    if not transactions or total_revenue_cents == 0:
+        return {"dso_days": None, "dpo_days": None, "ccc_days": None,
+                "olcum": "veri_yok", "dayanak": None, "interpretation": "Yetersiz veri"}
+
+    # Estimate DSO: average lag between income transactions and month start
+    # As a proxy: if revenue arrives in clumps vs. uniformly → high DSO
+    income_txs = [t for t in transactions if t.get("type") == "income"]
+    expense_txs = [t for t in transactions if t.get("type") == "expense"
+                   and t.get("category") in ("cogs", "other_expense")]
+
+    # Simple proxy: annualized revenue / 365 gives daily revenue
+    # DSO = avg days until payment collected (use 30 as baseline for invoice businesses)
+    # DPO = avg days to pay suppliers
+
+    # High-value, few transactions → higher DSO (invoice-based)
+    # Low-value, many transactions → lower DSO (retail/subscription)
+    n_income_txs = max(1, len(income_txs))
+    avg_invoice_size = total_revenue_cents / n_income_txs
+    # Heuristic: avg invoice > 10K TRY → B2B, longer DSO
+    if avg_invoice_size > 10_000_00:  # 10,000 TRY in kuruş
+        dso_days = 45  # B2B typical
+    elif avg_invoice_size > 1_000_00:  # 1,000 TRY
+        dso_days = 20  # mixed
+    else:
+        dso_days = 7   # retail/subscription
+
+    # DPO proxy: how spread out are expense payments
+    n_expense_txs = max(1, len(expense_txs))
+    avg_expense_size = total_expenses_cents / n_expense_txs if total_expenses_cents > 0 else 0
+    if avg_expense_size > 5_000_00:  # 5,000 TRY — larger supplier invoices
+        dpo_days = 30
+    else:
+        dpo_days = 15
+
+    ccc_days = dso_days - dpo_days  # DIO = 0 for service companies
+
+    interpretation = (
+        "Tahmini CCC negatif — tahsilat ödemeden önce geliyor" if ccc_days < 0 else
+        f"Tahmini CCC {ccc_days} gün — tahsilat gecikiyor, nakit sıkışıklığı riski" if ccc_days > 45 else
+        f"Tahmini CCC {ccc_days} gün"
+    ) + " (ekstredeki işlem büyüklüklerinden tahmin; gerçek gün sayısı için alacak/borç bakiyesi gerekir)"
+
+    return {
+        "dso_days": dso_days,
+        "dpo_days": dpo_days,
+        "ccc_days": ccc_days,
+        "olcum": "tahmin",
+        "dayanak": (f"Ortalama tahsilat {avg_invoice_size / 100:,.0f} TL, ortalama ödeme "
+                    f"{avg_expense_size / 100:,.0f} TL; gün sayıları bu büyüklüklere göre seçilen bantlar."),
+        "interpretation": interpretation,
     }
 
 
@@ -122,6 +213,7 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
     return alerts
 
 
+@narrative_guard
 async def _generate_cashflow_narrative(
     cashflow: dict[str, Any],
     alerts: list[dict],
@@ -169,6 +261,13 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
         has_critical = any(a["level"] == "critical" for a in alerts)
         confidence = 0.90 if not has_critical else 0.85
+
+        # S3-3: Attach cashflow evidence
+        try:
+            from app.services.evidence_builder import get_evidence_builder
+            cashflow = get_evidence_builder().attach_cashflow_evidence(cashflow, transactions)
+        except Exception as ev_exc:
+            logger.debug("Evidence builder (non-fatal): %s", ev_exc)
 
         return SkillResult(
             ok=True,

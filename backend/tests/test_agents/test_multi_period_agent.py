@@ -4,15 +4,15 @@ Covers: _aggregate_by_month, _pct_change, _compute_mom, _compute_yoy,
         _compute_trend, _compute_kpi_trends
 """
 import pytest
+
 from app.agents.multi_period_agent import (
     _aggregate_by_month,
-    _pct_change,
-    _compute_mom,
-    _compute_yoy,
-    _compute_trend,
     _compute_kpi_trends,
+    _compute_mom,
+    _compute_trend,
+    _compute_yoy,
+    _pct_change,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

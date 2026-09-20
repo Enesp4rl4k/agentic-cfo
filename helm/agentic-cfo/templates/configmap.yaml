@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentic-cfo.fullname" . }}-config
+  labels:
+    {{- include "agentic-cfo.labels" . | nindent 4 }}
+data:
+  LLM_MODEL: {{ .Values.config.llmModel | quote }}
+  LLM_BASE_URL: {{ .Values.config.llmBaseUrl | quote }}
+  LLM_TEMPERATURE: {{ .Values.config.llmTemperature | quote }}
+  LLM_MAX_TOKENS: {{ .Values.config.llmMaxTokens | quote }}
+  USE_SQLITE: "false"
+  BACKEND_PORT: "8000"
+  BACKEND_CORS_ORIGINS: "http://localhost:3000,https://{{ (index .Values.ingress.hosts 0).host }}"
+  NEXT_PUBLIC_API_URL: "https://{{ (index .Values.ingress.hosts 0).host }}/api"
+  NEXTAUTH_URL: "https://{{ (index .Values.ingress.hosts 0).host }}"
+  PILOT_MODE: {{ .Values.config.pilotMode | quote }}
+  PILOT_REQUIRE_INVITE: {{ .Values.config.pilotRequireInvite | quote }}
+  PILOT_MAX_USERS: {{ .Values.config.pilotMaxUsers | quote }}
+  STORAGE_BACKEND: {{ .Values.config.storageBackend | quote }}
+  MAX_UPLOAD_SIZE_MB: {{ .Values.config.maxUploadSizeMb | quote }}
+  AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD: {{ .Values.config.autoEnqueueAnalysis | quote }}
+  RAG_BACKFILL_ENABLED: {{ .Values.config.ragBackfillEnabled | quote }}
+  RAG_EMBEDDING_ENABLED: {{ .Values.config.ragEmbeddingEnabled | quote }}
+  POSTGRES_HOST: {{ include "agentic-cfo.fullname" . }}-postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+  POSTGRES_USER: {{ .Values.postgres.username | quote }}
+  REDIS_URL: "redis://{{ include "agentic-cfo.fullname" . }}-redis:6379/0"

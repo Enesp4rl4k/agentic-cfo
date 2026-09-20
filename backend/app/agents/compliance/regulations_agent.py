@@ -15,8 +15,8 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from collections import Counter
+from datetime import datetime
 from typing import Any
 
 from app.agents.compliance.state import ComplianceState, ComplianceStepLog
@@ -186,7 +186,7 @@ def _compute_regulations_metrics(reqs: list[dict[str, Any]]) -> dict[str, Any]:
     coverage_pct = round(effective_compliant / total * 100, 1) if total else 0.0
 
     # By framework
-    frameworks_seen = sorted(set(r["regulation"] for r in reqs))
+    frameworks_seen = sorted({r["regulation"] for r in reqs})
     by_framework: dict[str, dict[str, int]] = {}
     for fw in frameworks_seen:
         fw_reqs = [r for r in reqs if r["regulation"] == fw]
