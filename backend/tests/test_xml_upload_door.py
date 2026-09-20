@@ -18,9 +18,25 @@ import pytest
 from app.core.xml_safety import UnsafeXMLError, guvenli_mi, parse_xml
 from app.services.ingest.ekle import _UZANTILAR
 from app.services.ingest.recognize import FINANSAL_BELGE, KESIN, tani
-from app.services.upload_service import FileValidationError, validate_extension, validate_xml_payload
+from app.services.upload_service import (
+    FileValidationError,
+    validate_extension,
+    validate_xml_payload,
+)
 
 GIB = Path(__file__).parent / "fixtures" / "gib_corpus" / "ubl_tr" / "UBLTR_1.2.1_Paketi" / "xml"
+
+# The corpus is GİB's published package, 15 MB, kept out of the repository
+# (.gitignore) like the other tests that read it. The door's own rules are
+# checked below without it, so CI still proves them.
+korpus_var = pytest.mark.skipif(not GIB.exists(), reason="GİB korpusu yerelde yok")
+
+# A minimal UBL-TR document: enough for the door, which decides on the
+# extension and the absence of a DTD, not on the invoice's contents.
+_UBL_MINIMAL = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+  <ID>GIB2026000000001</ID>
+</Invoice>"""
 
 _BOMB = b"""<?xml version="1.0"?>
 <!DOCTYPE lolz [
@@ -35,10 +51,15 @@ def _gib_files() -> list[Path]:
     return sorted(p for p in GIB.glob("*.xml"))
 
 
-def test_the_corpus_is_present():
-    assert _gib_files(), "GİB UBL-TR örnek paketi tests/fixtures altında bulunamadı"
+def test_an_xml_invoice_passes_the_door():
+    validate_extension("xml")          # no longer raises
+    validate_xml_payload(_UBL_MINIMAL)  # no DTD, no entity
+    assert "xml" in _UZANTILAR
+    tanima = tani(_UBL_MINIMAL, "fatura.xml")
+    assert (tanima.durum, tanima.tur, tanima.alan) == (KESIN, FINANSAL_BELGE, "cfo")
 
 
+@korpus_var
 @pytest.mark.parametrize("name", ["IDIS_Fatura.xml", "HASTANE.xml", "ISTISNA-1.xml"])
 def test_gibs_own_invoices_pass_the_door(name: str):
     raw = (GIB / name).read_bytes()
@@ -49,6 +70,7 @@ def test_gibs_own_invoices_pass_the_door(name: str):
     assert (tanima.durum, tanima.tur, tanima.alan) == (KESIN, FINANSAL_BELGE, "cfo")
 
 
+@korpus_var
 def test_every_published_sample_is_accepted_by_the_safety_check():
     for f in _gib_files():
         guvenli_mi(f.read_bytes())     # raises if any would be refused
