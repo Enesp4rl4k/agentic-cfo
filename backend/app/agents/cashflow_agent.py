@@ -98,6 +98,10 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "dpo_days": ccc["dpo_days"],
         "ccc_days": ccc["ccc_days"],
         "ccc_interpretation": ccc["interpretation"],
+        # The gün sayıları are a band read off transaction sizes, not measured
+        # from invoice dates; anything that reports them must say so.
+        "ccc_olcum": ccc.get("olcum"),
+        "ccc_dayanak": ccc.get("dayanak"),
     }
 
 
@@ -107,19 +111,25 @@ def _compute_ccc(
     total_expenses_cents: int,
 ) -> dict[str, Any]:
     """
-    S1-2: Cash Conversion Cycle estimation.
+    Nakit döngüsü — ölçüm değil, tahmin.
 
-    Uses transaction data to estimate:
-      DSO = (Accounts Receivable proxy / Revenue) × 365
-      DPO = (Accounts Payable proxy / COGS) × 365
-      CCC = DSO - DPO  (no inventory for most service/tech companies)
+    A bank statement says when money moved, not when an invoice was issued or
+    fell due, so the lag between the two cannot be measured from it. What
+    follows is a band picked from the average transaction size: an average
+    income over 10 000 TRY is read as invoiced B2B business (45 days), 1 000 to
+    10 000 as mixed (20), below that as retail or subscription (7); the payment
+    side is 30 days above a 5 000 TRY average and 15 below. The docstring here
+    used to state "(AR / Revenue) × 365", a formula this function never ran and
+    has no accounts-receivable balance for.
 
-    For companies without explicit AR/AP tracking, we use
-    income timing vs. expense timing as a proxy.
+    The result carries `olcum: "tahmin"` and its basis, and the interpretation
+    says so in words. `POST /analytics/working-capital` computes the real
+    figures when someone supplies the balances.
     """
 
     if not transactions or total_revenue_cents == 0:
-        return {"dso_days": None, "dpo_days": None, "ccc_days": None, "interpretation": "Yetersiz veri"}
+        return {"dso_days": None, "dpo_days": None, "ccc_days": None,
+                "olcum": "veri_yok", "dayanak": None, "interpretation": "Yetersiz veri"}
 
     # Estimate DSO: average lag between income transactions and month start
     # As a proxy: if revenue arrives in clumps vs. uniformly → high DSO
@@ -154,15 +164,18 @@ def _compute_ccc(
     ccc_days = dso_days - dpo_days  # DIO = 0 for service companies
 
     interpretation = (
-        "Negatif CCC — tahsilat ödemeden önce geliyor (sağlıklı)" if ccc_days < 0 else
-        f"CCC {ccc_days} gün — tahsilat gecikiyor, nakit sıkışıklığı riski" if ccc_days > 45 else
-        f"CCC {ccc_days} gün — normal aralıkta"
-    )
+        "Tahmini CCC negatif — tahsilat ödemeden önce geliyor" if ccc_days < 0 else
+        f"Tahmini CCC {ccc_days} gün — tahsilat gecikiyor, nakit sıkışıklığı riski" if ccc_days > 45 else
+        f"Tahmini CCC {ccc_days} gün"
+    ) + " (ekstredeki işlem büyüklüklerinden tahmin; gerçek gün sayısı için alacak/borç bakiyesi gerekir)"
 
     return {
         "dso_days": dso_days,
         "dpo_days": dpo_days,
         "ccc_days": ccc_days,
+        "olcum": "tahmin",
+        "dayanak": (f"Ortalama tahsilat {avg_invoice_size / 100:,.0f} TL, ortalama ödeme "
+                    f"{avg_expense_size / 100:,.0f} TL; gün sayıları bu büyüklüklere göre seçilen bantlar."),
         "interpretation": interpretation,
     }
 

@@ -207,10 +207,13 @@ class TestTrimContextPayload:
 class TestGetCompanyContext:
     @pytest.mark.asyncio
     async def test_returns_empty_context_when_no_redis_no_db(self):
+        # An org id nothing has written: with no session passed, the lookup now
+        # falls through to the database snapshot, so "empty" has to mean an
+        # organisation that has no snapshot rather than a skipped read.
         with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=None)):
-            ctx = await get_company_context("org-1", db=None)
+            ctx = await get_company_context("org-hic-yazilmadi-1", db=None)
         assert isinstance(ctx, CompanyContext)
-        assert ctx.org_id == "org-1"
+        assert ctx.org_id == "org-hic-yazilmadi-1"
         assert ctx.last_cfo_result is None
 
     @pytest.mark.asyncio
@@ -233,9 +236,9 @@ class TestGetCompanyContext:
         mock_redis.get = AsyncMock(return_value=None)
 
         with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
-            ctx = await get_company_context("org-1", db=None)
+            ctx = await get_company_context("org-hic-yazilmadi-2", db=None)
 
-        assert ctx.org_id == "org-1"
+        assert ctx.org_id == "org-hic-yazilmadi-2"
         assert ctx.last_cfo_result is None
 
 

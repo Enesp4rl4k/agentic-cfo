@@ -70,21 +70,25 @@ export interface WorkingCapitalRequest {
   accounts_payable_try:     number;
   annual_cogs_try:          number;
   inventory_try?:           number;
-  sector?:                  string;
+  job_id?:                  string;
+}
+
+export interface WorkingCapitalMetrik {
+  ad:       string;
+  /** null when an input the formula needs is missing — never a filled-in guess. */
+  gun:      number | null;
+  formul:   string;
+  aciklama: string;
 }
 
 export interface WorkingCapitalResult {
-  metrics: {
-    dso_days: number;
-    dpo_days: number;
-    dio_days: number;
-    ccc_days: number;
-  };
-  benchmarks:  { dso: number; dpo: number; dio: number; ccc: number };
-  sector:      string;
-  gaps:        { dso_gap: number; dpo_gap: number };
-  opportunity: { cash_release_try: number; description: string };
-  recommendations: string[];
+  metrikler: { dso: WorkingCapitalMetrik; dpo: WorkingCapitalMetrik; dio: WorkingCapitalMetrik; ccc: WorkingCapitalMetrik };
+  yorum: string;
+  eksik_girdiler: string[];
+  olcum: "hesaplandi";
+  /** No DSO/DPO sector data exists in this project, so none is shown. */
+  sektor_karsilastirmasi: null;
+  sektor_karsilastirmasi_notu: string;
 }
 
 export async function analyzeWorkingCapital(

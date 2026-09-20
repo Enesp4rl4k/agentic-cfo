@@ -130,3 +130,12 @@ def test_the_workflow_holds_no_password_literal() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "POSTGRES_PASSWORD" not in text
     assert not re.search(r"postgresql\+\w+://[^@\s/]+:[^@\s/]+@", text)
+
+
+def test_tests_never_reach_the_developers_database() -> None:
+    # Code that takes an optional session opens its own when none is passed,
+    # and that one follows DATABASE_URL_OVERRIDE. Unpinned, a test run wrote a
+    # snapshot row into the developer's aicfo_dev.db (conftest pins it now).
+    url = Settings().database_url
+    assert "aicfo_dev" not in url
+    assert url.startswith("sqlite")

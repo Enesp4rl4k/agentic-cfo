@@ -15,14 +15,29 @@ Two independent hazards this file neutralises:
    loads before any test module) so those guards always skip, and we restore the
    real modules after every test as a backstop.
 
-2. Process-wide service singletons.  ~20 modules cache a singleton in a module
+2. The database a test reaches without asking.  Code that takes an optional
+   session (``app.services.company_context``) opens one of its own when none is
+   passed, and that session follows ``DATABASE_URL_OVERRIDE`` — which, unset,
+   is the developer's own ``aicfo_dev.db``.  A test run wrote a snapshot row
+   into it before this was pinned to a throwaway file below.
+
+3. Process-wide service singletons.  ~20 modules cache a singleton in a module
    global.  A fixture resets the ones that carry cross-test state.
 """
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 
 import pytest
+
+# ── 0. Never the developer's database ────────────────────────────────────────
+# Set before anything imports app.config, whose Settings is cached on first use.
+if not os.environ.get("DATABASE_URL_OVERRIDE"):
+    _TEST_DB = os.path.join(tempfile.gettempdir(), "aicfo_pytest.db")
+    os.environ["DATABASE_URL_OVERRIDE"] = f"sqlite+aiosqlite:///{_TEST_DB}"
+    os.environ.setdefault("USE_SQLITE", "true")
 
 # ── 1. Pin the real langchain / langgraph modules ────────────────────────────
 _REAL_MODULE_NAMES = (

@@ -132,7 +132,13 @@ class EvidenceBuilder:
         financing_txs = [t for t in transactions if t.get("category") == "loan"]
 
         ccc = cashflow.get("ccc_days")
-        ccc_trail = f"CCC: DSO({cashflow.get('dso_days', '?')}) - DPO({cashflow.get('dpo_days', '?')}) = {ccc} gün" if ccc is not None else ""
+        # The days are a band read off transaction sizes, not measured from
+        # invoice dates — the evidence line says which it is.
+        _olcum = "tahmin" if cashflow.get("ccc_olcum") == "tahmin" else "hesap"
+        ccc_trail = (
+            f"CCC ({_olcum}): DSO({cashflow.get('dso_days', '?')}) - DPO({cashflow.get('dpo_days', '?')}) = {ccc} gün"
+            if ccc is not None else ""
+        )
 
         evidence = Evidence(
             method="deterministic",
@@ -145,7 +151,11 @@ class EvidenceBuilder:
                 f"Finansman işlemleri: {len(financing_txs)} adet",
                 f"Net CF: ₺{cashflow.get('net_change', 0)/100:,.0f}",
             ] + ([ccc_trail] if ccc_trail else []),
-            assumptions=["Yatırım işlemleri (demirbaş) ayrıca tanımlanmamıştır"],
+            assumptions=["Yatırım işlemleri (demirbaş) ayrıca tanımlanmamıştır"] + (
+                ["DSO/DPO gün sayıları ekstredeki işlem büyüklüklerinden tahmindir; "
+                 "fatura tarihlerinden ölçülmemiştir"]
+                if cashflow.get("ccc_olcum") == "tahmin" else []
+            ),
         )
 
         return {**cashflow, "_evidence": evidence.to_dict()}

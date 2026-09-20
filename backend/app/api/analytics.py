@@ -360,14 +360,35 @@ async def monte_carlo(
     return {"data": result, "error": None}
 
 class WorkingCapitalRequest(BaseModel):
-    job_id: str
+    """The figures the page asks for. They used to be ignored: the endpoint
+    answered every company with the same four constants."""
+    accounts_receivable_try: float = Field(ge=0)
+    annual_revenue_try: float = Field(ge=0)
+    accounts_payable_try: float = Field(ge=0)
+    annual_cogs_try: float = Field(ge=0)
+    inventory_try: float = Field(default=0, ge=0)
+    job_id: str | None = None
+
 
 @router.post("/analytics/working-capital")
 async def working_capital(
     body: WorkingCapitalRequest,
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    return {"data": {"current_ratio": 1.5, "quick_ratio": 1.2, "cash_conversion_cycle_days": 45, "working_capital_gap": 150000}, "error": None}
+    """DSO/DPO/DIO/CCC from the figures given, each with its formula."""
+    from app.services.working_capital import CalismaSermayesiGirdisi, hesapla
+
+    if body.job_id:
+        await load_owned_job(db, body.job_id, user)
+    sonuc = hesapla(CalismaSermayesiGirdisi(
+        alacaklar=body.accounts_receivable_try,
+        yillik_ciro=body.annual_revenue_try,
+        borclar=body.accounts_payable_try,
+        yillik_smm=body.annual_cogs_try,
+        stok=body.inventory_try,
+    ))
+    return {"data": sonuc.to_dict(), "error": None}
 
 class BreakEvenRequest(BaseModel):
     job_id: str
