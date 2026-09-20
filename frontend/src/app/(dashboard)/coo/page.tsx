@@ -40,7 +40,9 @@ interface SLATicket {
   created_date: string;
   due_date: string;
   hours_remaining: number;
-  breach_probability: number; // 0-1
+  /** A 0–1 ordering score from the backend's rule, never a probability. */
+  risk_score?: number;
+  risk_level?: "kritik" | "yüksek" | "orta" | "düşük";
   priority: "critical" | "high" | "medium" | "low";
   status: string;
 }
@@ -264,9 +266,12 @@ interface AtRiskTableProps {
 function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
   const atRiskTickets = useMemo(
     () =>
+      // Ordered by what is measured — how little SLA time is left. The old
+      // sort used a "breach probability" this page invented in the browser
+      // (1 - hoursRemaining / 168) and printed as a percentage.
       tickets
-        .filter((t) => t.breach_probability > 0.3)
-        .sort((a, b) => b.breach_probability - a.breach_probability),
+        .filter((t) => t.hours_remaining < 48)
+        .sort((a, b) => a.hours_remaining - b.hours_remaining),
     [tickets]
   );
 
@@ -284,7 +289,7 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
               <th className="text-left py-2 px-2 font-semibold">Başlık</th>
               <th className="text-left py-2 px-2 font-semibold">Atanan</th>
               <th className="text-center py-2 px-2 font-semibold">Kalan Saat</th>
-              <th className="text-center py-2 px-2 font-semibold">İhlal İht.</th>
+              <th className="text-center py-2 px-2 font-semibold">Aciliyet</th>
               <th className="text-center py-2 px-2 font-semibold">Öncelik</th>
             </tr>
           </thead>
@@ -300,12 +305,16 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
                 <td className="py-2 px-2 text-center">
                   <span
                     className={`px-2 py-0.5 rounded font-medium ${
-                      ticket.breach_probability > 0.7
+                      ticket.hours_remaining <= 0
                         ? "bg-red-500/20 text-red-400"
-                        : "bg-yellow-500/20 text-yellow-400"
+                        : ticket.hours_remaining < 24
+                        ? "bg-yellow-500/20 text-yellow-400"
+                        : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {formatPercent(ticket.breach_probability)}
+                    {ticket.hours_remaining <= 0
+                      ? "Süre doldu"
+                      : ticket.risk_level ?? (ticket.hours_remaining < 24 ? "yakın" : "izlemede")}
                   </span>
                 </td>
                 <td className="py-2 px-2 text-center">
@@ -413,8 +422,9 @@ export default function COODashboardPage() {
         assigned_to: values[2]?.trim() || "",
         created_date: values[3]?.trim() || "",
         due_date: values[4]?.trim() || "",
+        // Only what the file says: hours left against the due date. This line
+        // used to manufacture a "breach probability" from it.
         hours_remaining: hoursRemaining,
-        breach_probability: Math.max(0, Math.min(1, 1 - hoursRemaining / 168)), // 1 week baseline
         priority: (values[5]?.trim().toLowerCase() as any) || "medium",
         status: values[6]?.trim() || "",
       };

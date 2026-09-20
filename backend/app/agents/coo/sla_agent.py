@@ -80,21 +80,22 @@ def _sigmoid(z: float) -> float:
     return exp_z / (1.0 + exp_z)
 
 
-def _logistic_breach_risk(
+def _breach_risk_score(
     tier: str,
     age_hours: float,
     category_breach_rate: float,
     tier_breach_rate: float,
 ) -> float:
-    """
-    Heuristic logistic model for SLA breach probability.
-    Features:
-      - tier_weight: P1=2.0, P2=1.5, P3=1.0, P4=0.5 (higher tier = stricter SLA)
-      - age_ratio: hours elapsed / SLA resolution threshold (0-1+ ; >1 = already past deadline)
-      - category_breach_rate: historical breach rate for this ticket category
-      - tier_breach_rate: historical breach rate for this tier
+    """A 0–1 ordering score for open tickets. Not a probability.
 
-    Coefficients learned heuristically from SLA dynamics.
+    The weights below were written by hand, not fitted to any outcome — the
+    docstring here used to call this a logistic model with coefficients
+    "learned heuristically", and the result was published as
+    `breach_probability` and shown to the user as a percentage to four
+    decimals. It ranks tickets by how much of the SLA window is gone, the
+    tier's strictness, and this company's own past breach rates for that
+    category and tier. Useful for deciding what to look at first; it is not
+    the likelihood that a ticket will breach.
     """
     tier_weights = {"p1": 2.0, "p2": 1.5, "p3": 1.0, "p4": 0.5}
     tier_w = tier_weights.get(tier, 1.0)
@@ -110,7 +111,7 @@ def _logistic_breach_risk(
         + 2.0 * category_breach_rate  # historical category breach rate
         + 1.5 * tier_breach_rate   # historical tier breach rate
     )
-    return round(_sigmoid(z), 4)
+    return _sigmoid(z)
 
 
 def _predict_breach_risk(
@@ -130,7 +131,7 @@ def _predict_breach_risk(
         tier = t.get("tier", "p3")
         cat_br = category_breach_rates.get(cat, 0.1)
         tier_br = tier_breach_rates.get(tier, 0.1)
-        prob = _logistic_breach_risk(tier, age_hrs, cat_br, tier_br)
+        skor = _breach_risk_score(tier, age_hrs, cat_br, tier_br)
 
         sla_hrs = _SLA_THRESHOLDS.get(tier, _SLA_THRESHOLDS["p3"])["resolution"]
         remaining_hrs = max(0.0, sla_hrs - age_hrs)
@@ -143,17 +144,21 @@ def _predict_breach_risk(
             "age_hours":        round(age_hrs, 1),
             "sla_threshold_hrs": sla_hrs,
             "remaining_hrs":    round(remaining_hrs, 1),
-            "breach_probability": prob,
+            # A ranking score, with the band it falls in. `breach_probability`
+            # was the old name; nothing measured a probability.
+            "risk_score": round(skor, 2),
+            "risk_olcum": "kural",
+            "risk_dayanak": "SLA süresinin ne kadarının geçtiği + bu kategori ve önceliğin geçmiş ihlal oranı",
             "risk_level": (
-                "kritik" if prob >= 0.70
-                else "yüksek" if prob >= 0.50
-                else "orta" if prob >= 0.30
+                "kritik" if skor >= 0.70
+                else "yüksek" if skor >= 0.50
+                else "orta" if skor >= 0.30
                 else "düşük"
             ),
         })
 
     # Sort by breach probability descending
-    at_risk.sort(key=lambda x: x["breach_probability"], reverse=True)
+    at_risk.sort(key=lambda x: x["risk_score"], reverse=True)
     return at_risk
 
 

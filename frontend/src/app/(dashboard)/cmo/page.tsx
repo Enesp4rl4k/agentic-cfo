@@ -10,6 +10,7 @@ import { AgentJobPanel } from "@/components/ui/agent-job-panel";
 import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import { apiClient } from "@/lib/api/client";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { DomainPanel } from "@/components/domains/DomainPanel";
 
 const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -518,7 +519,7 @@ Product Launch,email,800,4200,210`;
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CMODashboardPage() {
-  const { orgId } = useCompanyContextStore();
+  const { orgId, activeCFOJobId } = useCompanyContextStore();
   const [liveResult, setLiveResult] = useState<CMOResult | null>(null);
   const {
     enqueue, reset,
@@ -560,6 +561,15 @@ export default function CMODashboardPage() {
         </p>
       </div>
 
+      {/* The one entry point: real data, or what is missing and how to get it.
+          The CSV boxes below are the fallback for someone who already has the
+          text in hand; nothing here estimates marketing figures from finance. */}
+      <DomainPanel
+        alan="cmo"
+        jobId={activeCFOJobId}
+        onResult={(r) => setLiveResult(r as unknown as CMOResult)}
+      />
+
       {(isActive || status === "failed") && (
         <AgentJobPanel
           status={status}
@@ -571,10 +581,12 @@ export default function CMODashboardPage() {
         />
       )}
 
-      <div className="rounded-lg border border-border bg-card p-5">
-        <h2 className="font-semibold text-foreground mb-4">Input Data</h2>
-        <CMOInputForm onEnqueue={enqueue} disabled={isActive || isEnqueueing} />
-      </div>
+      {!cmoResult && (
+        <div className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-semibold text-foreground mb-4">CSV yapıştırarak çalıştır</h2>
+          <CMOInputForm onEnqueue={enqueue} disabled={isActive || isEnqueueing} />
+        </div>
+      )}
 
       {cmoResult && (
         <div className="space-y-6">

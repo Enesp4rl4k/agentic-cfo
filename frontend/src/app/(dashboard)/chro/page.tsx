@@ -8,6 +8,7 @@ import {
 import { apiClient } from "@/lib/api/client";
 import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { DomainPanel } from "@/components/domains/DomainPanel";
 
 const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -369,7 +370,7 @@ function CHROSummarySection({ data }: { data: CHROSummary }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CHRODashboardPage() {
-  const { orgId } = useCompanyContextStore();
+  const { orgId, activeCFOJobId } = useCompanyContextStore();
   const [headcountCsv,  setHeadcountCsv]  = useState("");
   const [attritionCsv,  setAttritionCsv]  = useState("");
   const [compensationCsv, setCompensationCsv] = useState("");
@@ -447,7 +448,16 @@ export default function CHRODashboardPage() {
         </div>
       </div>
 
-      {/* Input form */}
+      {/* The one entry point: real data, or what is missing and how to get it.
+          The CSV boxes below are the fallback for someone who already has the
+          text in hand; nothing here estimates HR figures from finance. */}
+      <DomainPanel
+        alan="chro"
+        jobId={activeCFOJobId}
+        onResult={(r) => setResult(r as unknown as CHROResult)}
+      />
+
+      {/* CSV yapıştırarak çalıştır */}
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
