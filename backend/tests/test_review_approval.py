@@ -8,6 +8,7 @@ from the saved results.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest_asyncio
@@ -15,6 +16,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+import app.database as database
 import app.worker as worker
 from app.database import Base, get_db
 from app.main import app
@@ -84,6 +86,9 @@ async def test_approval_completes_the_job_and_continues_from_saved_results(clien
         calls.append((job_id, org_id, result))
 
     monkeypatch.setattr(worker, "continue_after_completion", fake_continue)
+    # The continuation runs in the background on its own session; in the test
+    # that session must be the test database's.
+    monkeypatch.setattr(database, "session_factory", lambda: client._maker)
     headers, org_id, user_id = await _user(client, "onay@example.com")
     job_id = await _held_job(client, org_id)
 
@@ -97,6 +102,10 @@ async def test_approval_completes_the_job_and_continues_from_saved_results(clien
         assert job.status == "completed" and job.awaiting_review is False
         assert job.result_metadata["review"]["approved_by"] == user_id
 
+    for _ in range(50):  # let the background task run
+        if calls:
+            break
+        await asyncio.sleep(0.02)
     assert len(calls) == 1
     got_job, got_org, result = calls[0]
     assert (got_job, got_org) == (job_id, org_id)
@@ -112,6 +121,7 @@ async def test_another_org_cannot_approve(client, monkeypatch):
         raise AssertionError("must not continue")
 
     monkeypatch.setattr(worker, "continue_after_completion", fake_continue)
+    monkeypatch.setattr(database, "session_factory", lambda: client._maker)
     _, org_a, _ = await _user(client, "a@example.com")
     headers_b, _, _ = await _user(client, "b@example.com")
     job_id = await _held_job(client, org_a)

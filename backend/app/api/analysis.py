@@ -130,7 +130,19 @@ async def approve_review(
     await db.commit()
 
     if job.org_id:
-        await continue_after_completion(job_id, str(job.org_id), await saved_result(job_id, db), db)
+        # In the background: this reruns the semantic snapshot and the chain,
+        # which took ~20s in a live run — too long to hold a button press.
+        # Its own session, because this request's closes with the response.
+        from app.core.background import spawn
+        from app.database import session_factory
+
+        org_id = str(job.org_id)
+
+        async def _continue() -> None:
+            async with session_factory()() as bg:
+                await continue_after_completion(job_id, org_id, await saved_result(job_id, bg), bg)
+
+        spawn(_continue(), name=f"review-approved-{job_id[:8]}")
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
 
 

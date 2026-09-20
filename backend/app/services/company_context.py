@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -172,6 +173,24 @@ class CompanyContext:
 
 # ── Storage helpers ───────────────────────────────────────────────────────────
 
+@asynccontextmanager
+async def _session(db: Any):
+    """The caller's session, or one of our own.
+
+    Background callers (the auto-chain, the worker's post-completion step) pass
+    db=None. Redis then carried the whole context: with Redis down the DB
+    snapshot below was skipped entirely and every read returned an empty
+    context, so the chain ran as if the company had no history — silently.
+    """
+    if db is not None:
+        yield db
+        return
+    from app.database import session_factory
+
+    async with session_factory()() as own:
+        yield own
+
+
 async def get_company_context(
     org_id: str,
     db: Any = None,  # AsyncSession | None
@@ -191,12 +210,12 @@ async def get_company_context(
             logger.warning("Redis read failed: %s", exc)
 
     # 2. Try DB snapshot
-    if db is not None:
+    async with _session(db) as sess:
         try:
             from sqlalchemy import select
 
             from app.models.company_context import CompanyContextSnapshot
-            result = await db.execute(
+            result = await sess.execute(
                 select(CompanyContextSnapshot).where(
                     CompanyContextSnapshot.org_id == org_id
                 )
@@ -325,12 +344,12 @@ async def save_company_context(
             logger.warning("Redis write failed: %s", exc)
 
     # 2. Write to DB (upsert)
-    if db is not None:
+    async with _session(db) as sess:
         try:
             from sqlalchemy import select
 
             from app.models.company_context import CompanyContextSnapshot
-            result = await db.execute(
+            result = await sess.execute(
                 select(CompanyContextSnapshot).where(
                     CompanyContextSnapshot.org_id == ctx.org_id
                 )
@@ -344,8 +363,8 @@ async def save_company_context(
                     org_id=ctx.org_id,
                     context_json=payload,
                 )
-                db.add(snapshot)
-            await db.commit()
+                sess.add(snapshot)
+            await sess.commit()
         except Exception as exc:
             logger.warning("DB context write failed: %s", exc)
 
@@ -359,20 +378,20 @@ async def invalidate_company_context(org_id: str, db: Any = None) -> None:
         except Exception:
             pass
 
-    if db is not None:
+    async with _session(db) as sess:
         try:
             from sqlalchemy import select
 
             from app.models.company_context import CompanyContextSnapshot
-            result = await db.execute(
+            result = await sess.execute(
                 select(CompanyContextSnapshot).where(
                     CompanyContextSnapshot.org_id == org_id
                 )
             )
             snapshot = result.scalar_one_or_none()
             if snapshot:
-                await db.delete(snapshot)
-                await db.commit()
+                await sess.delete(snapshot)
+                await sess.commit()
         except Exception as exc:
             logger.warning("DB context delete failed: %s", exc)
 
