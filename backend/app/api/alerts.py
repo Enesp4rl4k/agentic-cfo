@@ -76,15 +76,20 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
     if mc.get("runway_risk_pct", 0) > 30:
         raw.append(RawAlert(
             level="critical" if mc["runway_risk_pct"] > 60 else "warning",
+            # The share of simulations that go negative, said as that. It read
+            # "%X olasılıkla ... yaşanabilir", which states a probability the
+            # simulation does not produce on its own.
             message=(
-                f"Monte Carlo: {mc['runway_risk_pct']:.0f}% olasılıkla "
-                f"6 ay içinde nakit sıkıntısı yaşanabilir."
+                f"Simülasyonların %{mc['runway_risk_pct']:.0f}'inde ilk 6 ayda "
+                f"kümülatif nakit negatife düşüyor."
             ),
             domain="cfo",
             source="monte_carlo",
             job_id=job_id,
             timestamp=ts,
-            evidence={"runway_risk_pct": mc["runway_risk_pct"]},
+            evidence={"runway_risk_pct": mc["runway_risk_pct"],
+                      "n_simulations": mc.get("n_simulations"),
+                      "growth_basis": mc.get("growth_basis")},
         ))
 
     # ── Job-level triggered alerts ─────────────────────────────────────────

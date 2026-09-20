@@ -263,8 +263,12 @@ def _monte_carlo_simulation(
             log_returns = np.diff(np.log(ins + 1))
             mu    = float(np.mean(log_returns))     # mean monthly log-growth
             sigma = float(np.std(log_returns, ddof=1))  # volatility
+            growth_basis = "gecmis_aylar"
         else:
-            mu, sigma = 0.01, 0.05  # conservative defaults
+            # Not this company's numbers: a stand-in when there is too little
+            # history. Reported, so nothing presents the result as measured.
+            mu, sigma = 0.01, 0.05
+            growth_basis = "varsayilan"
 
         # Clip sigma to prevent extreme scenarios
         sigma = min(sigma, 0.25)
@@ -333,6 +337,7 @@ def _monte_carlo_simulation(
             "months_ahead": months_ahead,
             "growth_mu": round(mu, 4),
             "growth_sigma": round(sigma, 4),
+            "growth_basis": growth_basis,
             "p10_12m_net": p10_12m,
             "p50_12m_net": p50_12m,
             "p90_12m_net": p90_12m,
@@ -442,11 +447,19 @@ def _build_scenario_explanation(
         )
 
     if monte_carlo:
+        # What the number is: the share of simulations that go negative — not a
+        # forecast's "reliability", which the last sentence used to derive from
+        # that same share (a risky outcome is not an unreliable model).
         rp = monte_carlo.get("runway_risk_pct", 0)
+        n = monte_carlo.get("n_simulations", 0)
+        temel = (
+            "aylık büyüme ortalaması ve oynaklığı geçmiş aylarınızdan hesaplandı"
+            if monte_carlo.get("growth_basis") == "gecmis_aylar"
+            else "geçmiş ay sayısı yetersiz olduğu için varsayılan büyüme ve oynaklık kullanıldı"
+        )
         explanations["monte_carlo_summary"] = (
-            f"1000 Monte Carlo simülasyonu: "
-            f"%{rp:.0f} olasılıkla nakit sıkıntısı riski var. "
-            f"Tahminlerin güvenilirliği {'yüksek' if rp < 20 else 'orta' if rp < 50 else 'düşük'}."
+            f"{n} simülasyonun %{rp:.0f}'inde ilk 6 ayda kümülatif nakit negatife düşüyor "
+            f"({temel})."
         )
 
     return explanations
