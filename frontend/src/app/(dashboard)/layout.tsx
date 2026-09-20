@@ -28,7 +28,7 @@ import {
   ArrowRightLeft, Waves, ShieldAlert, MessageSquare, Receipt,
   PieChart, BarChart2, Cpu, Crown, Megaphone, Layers, ShieldCheck,
   Users, Shield, FileSearch, FileCheck, Activity, Download,
-  LogOut, Building2, ChevronDown, Zap, Link2, CreditCard,
+  LogOut, Building2, ChevronDown, Zap, Link2, CreditCard, Rocket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
@@ -41,6 +41,7 @@ const NAV_GROUPS = [
   {
     label: "General",
     items: [
+      { href: "/baslangic",     label: "Başlangıç",      icon: Rocket },
       { href: "/command-center", label: "Command Center", icon: Activity },
       { href: "/kurumsallasma",  label: "Kurumsallaşma",  icon: TrendingUp },
       { href: "/iliskili-taraf", label: "İlişkili Taraf",  icon: Users },

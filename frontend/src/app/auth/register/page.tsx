@@ -88,7 +88,9 @@ export default function RegisterPage() {
         });
       }
 
-      router.push("/");
+      // "/" is the marketing landing page (see lib/routes.ts). Someone who has
+      // just signed up goes to the setup steps instead.
+      router.push("/baslangic");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bir hata oluştu.");
