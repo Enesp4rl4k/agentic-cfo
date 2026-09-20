@@ -373,8 +373,18 @@ class CHRONegotiationResponder(AgentNegotiator):
         Nakit durumuna gore dinamik olarak uyarlanir.
         """
         open_roles     = chro_data.get("open_critical_roles", 0) or 0
-        turnover_rate  = chro_data.get("annual_turnover_rate", 0.15) or 0.15
-        avg_salary     = chro_data.get("avg_monthly_salary_try", 30_000) or 30_000
+        turnover_rate  = chro_data.get("annual_turnover_rate")
+        avg_salary     = chro_data.get("avg_monthly_salary_try")
+        # Without HR figures this used to answer with 30 000 TRY a month and a
+        # 15% turnover rate — numbers belonging to no company — and the cost it
+        # printed looked like this firm's own.
+        if not avg_salary:
+            return {
+                "durum": "veri_yok",
+                "eksik": "ortalama aylık maaş (CHRO verisi)",
+                "nasil": "Bordro programınızdan personel ve maaş listesini yükleyin (/baglan).",
+                "recommendation": "İşe alım planı için İK verisi bağlanmalı; varsayımla rakam üretilmiyor.",
+            }
 
         # Nakit durumuna gore plan
         if runway_months < 3:
@@ -404,7 +414,9 @@ class CHRONegotiationResponder(AgentNegotiator):
             "deferrable_months":     deferrable_months,
             "monthly_hire_cost_try": round(monthly_hire_cost),
             "open_critical_roles":   open_roles,
-            "attrition_risk":        "high" if turnover_rate > 0.20 else "medium",
+            "attrition_risk":        (None if turnover_rate is None
+                                      else "high" if turnover_rate > 0.20 else "medium"),
+            "durum":                 "hesaplandi",
             "recommendation":        recommendation,
         }
 
@@ -425,9 +437,19 @@ class CTONegotiationResponder(AgentNegotiator):
         Tech butce kesintisi sorusuna cevap.
         Neleri kesebiliriz, velocity'ye etkisi ne?
         """
-        monthly_tech   = cto_data.get("monthly_tech_budget_try", 50_000) or 50_000
-        infra_waste    = cto_data.get("infra_waste_pct", 0.15) or 0.15
-        tech_health    = cto_data.get("overall_health_score", 7.0) or 7.0
+        monthly_tech   = cto_data.get("monthly_tech_budget_try")
+        infra_waste    = cto_data.get("infra_waste_pct")
+        tech_health    = cto_data.get("overall_health_score")
+        # The defaults here were 50 000 TRY a month and 15% infrastructure
+        # waste: a company that had connected no technology data was told how
+        # much it could safely cut, in liras, from figures that were invented.
+        if not monthly_tech or infra_waste is None:
+            return {
+                "durum": "veri_yok",
+                "eksik": "aylık teknoloji harcaması ve altyapı israf oranı (CTO verisi)",
+                "nasil": "Bulut faturanızı yükleyin ya da GitHub'ı bağlayın (/baglan, /cto).",
+                "recommendation": "Bütçe kesintisi için teknoloji verisi bağlanmalı; varsayımla rakam üretilmiyor.",
+            }
 
         # Onceden kesilebilecekler
         cloud_savings      = monthly_tech * infra_waste   # altyapi israfi
@@ -443,7 +465,11 @@ class CTONegotiationResponder(AgentNegotiator):
             "velocity_impact_pct":     round(velocity_loss * 100, 1),
             "cloud_savings_try":       round(cloud_savings),
             "tooling_savings_try":     round(tooling_savings),
-            "tech_health_risk":        "high" if tech_health < 6 else "low",
+            "tech_health_risk":        (None if tech_health is None
+                                        else "high" if tech_health < 6 else "low"),
+            "durum":                   "hesaplandi",
+            # The 0.8 factor below is a rule of thumb, not a measured relation.
+            "velocity_olcum":          "kural",
             "recommendation": (
                 f"Cloud optimizasyonu ile aylik ₺{cloud_savings:,.0f} tasarruf guvenli. "
                 f"Bunun otesinde velocity %{velocity_loss*100:.0f} duser."

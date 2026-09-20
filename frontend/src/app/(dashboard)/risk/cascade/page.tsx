@@ -285,10 +285,19 @@ export default function CascadeSimulatorPage() {
         <div>
           <h1 className="text-xl font-bold">Cascade Risk Simulator</h1>
           <p className="text-sm text-muted-foreground">
-            "Ne olursa ne olur?" — Bir tetikleyici olay tüm departmanları nasıl etkiler?
+            &quot;Ne olursa ne olur?&quot; — Bir tetikleyici olay tüm departmanları nasıl etkiler?
           </p>
         </div>
       </div>
+
+      {/* The multipliers behind these chains are rules of thumb written into
+          the simulator, not relations measured in this company's data. Said
+          here, because the output otherwise reads like a finding. */}
+      <p className="rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+        Bu ekran bir senaryo aracıdır: zincirleme etkiler, sektörde kabul gören genel kurallarla
+        hesaplanır. Sizin geçmiş verinizden ölçülmüş oranlar değildir; sonuçlar bir tahmin değil,
+        &quot;böyle bir olay olursa nereye bakmalıyım&quot; listesidir.
+      </p>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left — Config panel */}
