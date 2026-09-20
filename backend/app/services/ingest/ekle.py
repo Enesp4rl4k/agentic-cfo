@@ -40,13 +40,14 @@ from app.services.upload_service import (
     UploadResult,
     create_analysis_job,
     validate_magic_bytes,
+    validate_xml_payload,
 )
 from app.services.usage_meter import UsageLimitExceeded, check_upload_limit, record_usage_event
 
 logger = logging.getLogger(__name__)
 
 _MAX_DOSYA = 10
-_UZANTILAR = {"csv", "xlsx", "xls", "pdf", "txt"}
+_UZANTILAR = {"csv", "xlsx", "xls", "pdf", "txt", "xml"}
 
 EKLENDI = "eklendi"
 SECIM_GEREKLI = "secim_gerekli"
@@ -109,7 +110,8 @@ async def _finansal_ekle(
     yol = await asyncio.to_thread(
         _dosya_yaz, os.path.join(settings.storage_local_path, "uploads", job_id), f"document.{uzanti}", veri)
     job = await create_analysis_job(
-        result=UploadResult(job_id=job_id, file_path=yol, ext=uzanti, size_bytes=len(veri)),
+        result=UploadResult(job_id=job_id, file_path=yol, ext=uzanti, size_bytes=len(veri),
+                            original_name=dosya_adi),
         user_id=sahip.user_id, org_id=sahip.org_id, db=db,
     )
     if sahip.org_id:
@@ -179,9 +181,16 @@ async def dosyalari_ekle(
     for ad, veri in gelen:
         sonuc: dict[str, Any] = {"dosya": ad}
         if _uzanti(ad) not in _UZANTILAR:
-            sonuc.update(durum=REDDEDILDI, mesaj="Bu dosya türü desteklenmiyor. Excel, CSV ya da PDF yükleyin.")
+            sonuc.update(durum=REDDEDILDI,
+                         mesaj="Bu dosya türü desteklenmiyor. Excel, CSV, PDF ya da e-Fatura XML yükleyin.")
         elif len(veri) > max_bytes:
             sonuc.update(durum=REDDEDILDI, mesaj=f"Dosya {get_settings().max_upload_size_mb} MB'tan büyük.")
+        elif _uzanti(ad) == "xml":
+            # Checked at the door, before anything parses it.
+            try:
+                validate_xml_payload(veri)
+            except FileValidationError as exc:
+                sonuc.update(durum=REDDEDILDI, mesaj=str(exc))
         tanima = await asyncio.to_thread(tani, veri, ad) if "durum" not in sonuc else Tanima(TANINMADI)
         secilen = secim.get(ad)
         if "durum" not in sonuc and secilen:

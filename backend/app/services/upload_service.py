@@ -31,6 +31,9 @@ ALLOWED_EXTENSIONS: dict[str, bytes] = {
     "xlsx": b"PK\x03\x04",
     "xls":  b"\xd0\xcf\x11\xe0",
     "pdf":  b"%PDF",
+    # e-Fatura / e-Arşiv, the document a Turkish company actually holds. No
+    # fixed signature, so the check is in validate_xml_payload below.
+    "xml":  b"",
 }
 
 _CHUNK_SIZE = 64 * 1024  # 64 KB read chunks
@@ -73,6 +76,20 @@ def validate_magic_bytes(ext: str, header: bytes) -> None:
         )
 
 
+def validate_xml_payload(data: bytes) -> None:
+    """An uploaded .xml must be XML, and must declare no DTD or entity.
+
+    ElementTree expands internal entities, so a few hundred bytes can expand to
+    gigabytes while parsing ("billion laughs"); a size limit does not catch it.
+    """
+    from app.core.xml_safety import UnsafeXMLError, guvenli_mi
+
+    try:
+        guvenli_mi(data)
+    except UnsafeXMLError as exc:
+        raise FileValidationError(str(exc)) from exc
+
+
 # ── Persistence (PERF-1: streaming write) ─────────────────────────────────────
 
 @dataclass
@@ -81,6 +98,10 @@ class UploadResult:
     file_path: str
     ext: str
     size_bytes: int
+    # The name the person gave the file. Every job used to be called
+    # "document.xlsx", so a job list, the setup page and an accountant's
+    # client screen all showed the same word for every upload.
+    original_name: str | None = None
 
 
 async def stream_to_disk(upload: UploadFile, ext: str, max_mb: int) -> UploadResult:
@@ -126,6 +147,12 @@ async def stream_to_disk(upload: UploadFile, ext: str, max_mb: int) -> UploadRes
 
                 await out.write(chunk)
 
+        # An entity declaration can sit anywhere in the document, so the whole
+        # file is checked once it is on disk — before anything parses it.
+        if ext == "xml":
+            async with aiofiles.open(file_path, "rb") as f:
+                validate_xml_payload(await f.read())
+
     except FileValidationError:
         # Clean up partial file and directory on failure
         if os.path.exists(file_path):
@@ -141,7 +168,16 @@ async def stream_to_disk(upload: UploadFile, ext: str, max_mb: int) -> UploadRes
         file_path=file_path,
         ext=ext,
         size_bytes=total_bytes,
+        original_name=upload.filename,
     )
+
+
+def _safe_name(name: str | None) -> str | None:
+    """The file's own name, without any path, short enough for the column."""
+    if not name:
+        return None
+    base = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return base[:500] or None
 
 
 async def create_analysis_job(
@@ -161,7 +197,7 @@ async def create_analysis_job(
     job = AnalysisJob(
         id=result.job_id,
         status=JobStatus.PENDING,
-        filename=f"document.{result.ext}",
+        filename=_safe_name(result.original_name) or f"document.{result.ext}",
         file_path=result.file_path,
         file_type=result.ext,
         user_id=user_id,
