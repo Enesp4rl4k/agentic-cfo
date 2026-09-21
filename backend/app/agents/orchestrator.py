@@ -437,6 +437,7 @@ async def run_cfo_pipeline(
     budget_input: dict | None = None,
     org_id: str | None = None,
     period: str | None = None,
+    ek_belgeler: list[dict[str, str]] | None = None,
 ) -> CFOState:
     """
     Run the full CFO analysis pipeline.
@@ -468,6 +469,7 @@ async def run_cfo_pipeline(
         "job_id": job_id,
         "file_path": file_path,
         "file_type": file_type,
+        "ek_belgeler": ek_belgeler or [],
         "logs": [],
         "min_confidence": 1.0,
         "awaiting_review": False,

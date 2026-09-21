@@ -192,6 +192,27 @@ async def run_ceo_analysis(
         raise
 
 
+async def _ek_belgeler(job_id: str, db: Any) -> list[dict[str, str]]:
+    """The analysis's other financial documents, in the order they arrived."""
+    from sqlalchemy import select
+
+    from app.models.data_source import DataSource, DataSourceDomain, DataSourceType
+
+    rows = (await db.execute(
+        select(DataSource)
+        .where(DataSource.job_id == job_id,
+               DataSource.domain == DataSourceDomain.CFO,
+               DataSource.source_type == DataSourceType.FINANCIAL_DOCUMENT)
+        .order_by(DataSource.created_at)
+    )).scalars().all()
+    return [
+        {"path": r.file_path,
+         "type": (r.filename or "").rsplit(".", 1)[-1].lower(),
+         "ad": r.filename or ""}
+        for r in rows if r.file_path
+    ]
+
+
 async def run_cfo_analysis(
     ctx: dict,
     job_id: str,
@@ -250,12 +271,17 @@ async def run_cfo_analysis(
                 auto_proceed_min_confidence=_gs().agent_auto_proceed_min_confidence,
             )
 
+            # More documents of the same analysis (several invoices dropped
+            # together). Each used to start an analysis of its own.
+            ek_belgeler = await _ek_belgeler(job_id, db)
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
                 file_type=job.file_type,
                 run_config=run_config,
                 budget_input=budget_input,
+                ek_belgeler=ek_belgeler,
             )
 
             # Publish each completed step to SSE clients

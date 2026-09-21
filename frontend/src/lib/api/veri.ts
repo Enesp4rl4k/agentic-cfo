@@ -9,7 +9,9 @@ export type EklemeDurumu =
   | "secim_gerekli"
   | "taninmadi"
   | "reddedildi"
-  | "finansal_dosya_gerekli";
+  | "finansal_dosya_gerekli"
+  /** The same file appeared twice in one submission; it was added once. */
+  | "mukerrer";
 
 export interface TurSecenegi {
   tur: string;
