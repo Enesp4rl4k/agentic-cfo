@@ -19,11 +19,18 @@ from app.services import review_continuation as rc
 from tests.api_helpers import bellek_istemcisi, kullanici, ornek_rapor
 
 
+async def _broker_yok(job_id: str) -> None:
+    raise ConnectionError("broker yok")
+
+
 @pytest_asyncio.fixture
 async def client(monkeypatch):
     async with bellek_istemcisi() as c:
         # The continuation opens its own session: point it at this database.
         monkeypatch.setattr(database, "session_factory", lambda: c._maker)
+        # Decided here, not by whatever Redis the machine happens to have: CI
+        # has one that refuses slowly, which made this test time out.
+        monkeypatch.setattr(rc, "_kuyruga_koy", _broker_yok)
         yield c
 
 
@@ -137,3 +144,41 @@ async def test_a_fresh_approval_is_left_to_its_own_run(client, calisanlar):
         ))
         await db.commit()
         assert await rc.yarim_kalanlari_bul(db) == []
+
+
+async def test_with_a_broker_the_continuation_is_queued_not_run_here(client, calisanlar, monkeypatch):
+    kuyruk: list[str] = []
+
+    async def kuyruga(job_id: str) -> None:
+        kuyruk.append(job_id)
+
+    monkeypatch.setattr(rc, "_kuyruga_koy", kuyruga)
+    assert await rc.devami_baslat("job-9") == "queued"
+    await asyncio.sleep(0.05)
+    assert kuyruk == ["job-9"] and calisanlar == []
+
+
+async def test_without_a_broker_it_runs_here(client, calisanlar):
+    assert await rc.devami_baslat("olmayan-is") == "inline"
+
+
+async def test_a_broker_slow_to_refuse_does_not_hold_the_approval(monkeypatch):
+    """CI's Redis refused slowly; the approval must not wait on it."""
+    import time
+
+    import app.core.redis_client as redis_client
+
+    async def var() -> object:
+        return object()
+
+    async def yavas_havuz():
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(redis_client, "get_redis", var)
+    monkeypatch.setattr(worker, "get_arq_pool", yavas_havuz)
+    monkeypatch.setattr(rc, "KUYRUK_ZAMAN_ASIMI", 0.1)
+    monkeypatch.setattr("app.core.background.spawn", lambda coro, name: coro.close())
+
+    t0 = time.monotonic()
+    assert await rc.devami_baslat("job-yavas") == "inline"
+    assert time.monotonic() - t0 < 2

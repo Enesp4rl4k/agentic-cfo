@@ -62,20 +62,41 @@ async def devam_et(job_id: str) -> dict[str, Any]:
     return {"ok": True}
 
 
-async def devami_baslat(job_id: str) -> str:
-    """Dispatch the continuation: the maintenance queue, else in-process."""
-    try:
-        from app.config import get_settings
-        from app.worker import get_arq_pool
+# How long an approval may wait on the broker before running the continuation
+# itself. The approval is a button press; a broker that is slow to refuse
+# (connect timeouts) must not hold it.
+KUYRUK_ZAMAN_ASIMI = 3.0
 
-        pool = await get_arq_pool()
-        await pool.enqueue_job(
+
+async def _kuyruga_koy(job_id: str) -> None:
+    """Queue the continuation on the maintenance queue, or raise."""
+    import asyncio
+
+    from app.config import get_settings
+    from app.core.redis_client import get_redis
+    from app.worker import get_arq_pool
+
+    # The shared client is None when Redis is disabled or was just found
+    # unreachable (its cooldown): no point waiting on a connect that will fail.
+    if await get_redis() is None:
+        raise ConnectionError("broker yok ya da erişilemiyor")
+    pool = await asyncio.wait_for(get_arq_pool(), KUYRUK_ZAMAN_ASIMI)
+    await asyncio.wait_for(
+        pool.enqueue_job(
             "run_review_continuation", job_id,
             _queue_name=get_settings().arq_maintenance_queue_name,
             # One run per job however many times it is dispatched (approval,
             # then the reaper) while the first is still queued or running.
             _job_id=f"review-continue:{job_id}",
-        )
+        ),
+        KUYRUK_ZAMAN_ASIMI,
+    )
+
+
+async def devami_baslat(job_id: str) -> str:
+    """Dispatch the continuation: the maintenance queue, else in-process."""
+    try:
+        await _kuyruga_koy(job_id)
         return "queued"
     except Exception as exc:
         logger.info("Review continuation inline (no broker) job=%s: %s", job_id, exc)
