@@ -70,8 +70,9 @@ def secilebilir_turler() -> list[dict[str, str]]:
 def _dosya_yaz(dizin: str, ad: str, veri: bytes) -> str:
     os.makedirs(dizin, exist_ok=True)
     yol = os.path.join(dizin, ad)
-    with open(yol, "wb") as f:
-        f.write(veri)
+    from app.core.atomic_io import atomic_write_bytes
+
+    atomic_write_bytes(yol, veri)
     return yol
 
 

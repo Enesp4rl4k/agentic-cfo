@@ -19,7 +19,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # volatile-lru, not allkeys-lru: ARQ queue/result keys carry no TTL, and
+    # allkeys-lru evicts them under memory pressure — silently deleting jobs.
+    # volatile-lru evicts only TTL'd keys (cache entries), which is all the
+    # eviction pressure this broker should ever apply to itself.
+    command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru
     ports:
       - "6379:6379"
     volumes:

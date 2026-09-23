@@ -240,7 +240,9 @@ async def run_tr_vertical(
 
             out = Path(get_settings().storage_local_path) / "board_decks" / f"{job_id}.pdf"
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(res.board_deck_pdf_bytes)
+            from app.core.atomic_io import atomic_write_bytes
+
+            atomic_write_bytes(out, res.board_deck_pdf_bytes)
             res.board_deck_pdf_path = str(out)
         except Exception as exc:
             logger.exception("TR vertical: board deck stage failed for job=%s", job_id)

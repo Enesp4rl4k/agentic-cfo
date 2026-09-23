@@ -114,7 +114,20 @@ async def stream_job_events(
             },
         )
 
-    # Job still running — subscribe to live events
+    # Job still running — subscribe to live events.
+    # Capacity gate: the docstring always promised 50 concurrent streams but
+    # nothing counted them. Beyond the cap this process answers 429 so the
+    # client's EventSource retry/backoff takes over instead of one worker
+    # accumulating unbounded queues. (Terminal jobs replay above and never
+    # touch a queue, so they are not counted against the cap.)
+    from app.config import get_settings
+
+    if sse_manager.connection_count >= get_settings().sse_max_connections:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many live event streams on this worker. Retry shortly.",
+        )
+
     return StreamingResponse(
         sse_manager.subscribe(job_id),
         media_type="text/event-stream",

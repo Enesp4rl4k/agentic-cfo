@@ -132,7 +132,9 @@ async def seed_demo(
     job_id    = str(uuid.uuid4())
     filename  = "logo_tiger_2024_demo.csv"
     file_path = upload_dir / f"{job_id}_{filename}"
-    file_path.write_bytes(demo_content)
+    from app.core.atomic_io import atomic_write_bytes
+
+    atomic_write_bytes(file_path, demo_content)
 
     # ── Create analysis job ───────────────────────────────────────────────────
     job = AnalysisJob(

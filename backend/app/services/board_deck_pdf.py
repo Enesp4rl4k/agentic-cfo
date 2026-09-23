@@ -69,8 +69,9 @@ class BoardDeckPDFExporter(IReportExporter):
             alerts=alerts,
             **kwargs,
         )
-        with open(output_path, "wb") as f:
-            f.write(pdf_bytes)
+        from app.core.atomic_io import atomic_write_bytes
+
+        atomic_write_bytes(output_path, pdf_bytes)
         return output_path
 
     @classmethod

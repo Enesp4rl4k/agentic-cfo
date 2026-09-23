@@ -204,6 +204,42 @@ class Settings(BaseSettings):
     rag_embedding_model: str = "text-embedding-3-small"
     rag_embedding_dimensions: int = 1536
 
+    # ── Reliability (DDIA) ────────────────────────────────────────────────────
+    # A claimed analysis job holds a lease for this long. The worker's own
+    # bound is job_timeout (600s); the lease exceeds it so a live worker is
+    # never reaped, while a dead one is (Ch.7 — a lease, not a heartbeat).
+    job_lease_seconds: int = 900
+    # A job that was enqueued (lease stamped) but never claimed within this
+    # window failed to reach a worker: the reaper marks it failed so the user
+    # can re-run instead of waiting forever. Jobs nobody enqueued (manual
+    # trigger pending) have no lease and are never touched.
+    stale_pending_minutes: int = 60
+    # agent_runs stuck in `running` longer than this are ledger-marked failed.
+    stale_agent_run_minutes: int = 30
+    # Run the stuck-job reaper on the scheduler (every 10 minutes).
+    reaper_enabled: bool = True
+    # APScheduler: one process should run each cron; all are additionally
+    # wrapped in a Redis NX lock, so this only matters without a broker.
+    scheduler_enabled: bool = True
+    # SSE live subscriptions per worker process. Docstring promised 50 for a
+    # long time while nothing enforced it; the endpoint now returns 429.
+    sse_max_connections: int = 50
+
+    # Postgres connection pool, per process. Capacity math for operators:
+    #   (uvicorn workers + ARQ workers) × (pool_size + max_overflow)
+    #   must stay below Postgres max_connections (default 100).
+    # With the shipped defaults (2+2 processes × 30) that is 120 — raise
+    # max_connections or lower these before raising process counts.
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
+
+    # LangGraph checkpoint store. sqlite keeps resume data in a file shared
+    # across processes (dev / single-node); postgres is the prod path and
+    # needs the optional `langgraph-checkpoint-postgres` package — without it
+    # startup falls back to in-memory loudly (correctness still holds: nodes
+    # are idempotent recomputes; the checkpoint only saves recompute time).
+    checkpoint_sqlite_path: str = "./langgraph_checkpoints.sqlite"
+
     # Dev mode: use SQLite instead of PostgreSQL
     use_sqlite: bool = True
     # Seconds a writer waits for the SQLite lock before giving up. The driver

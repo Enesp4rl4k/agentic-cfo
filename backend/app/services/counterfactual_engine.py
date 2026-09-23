@@ -386,3 +386,54 @@ def get_counterfactual_engine(
     forecast: dict[str, Any] | None = None,
 ) -> CounterfactualEngine:
     return CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
+
+
+def compute_preset_results(
+    pnl: dict[str, Any],
+    cashflow: dict[str, Any],
+    forecast: dict[str, Any],
+) -> list[tuple[str, CounterfactualResult]]:
+    """The three "ne olurdu?" presets the product puts in front of a manager.
+
+    Shared by the simulate endpoints and the decision packet — one
+    definition of *which* options we offer, so a packet row and its
+    deep-dive simulation can never disagree. A preset the data cannot
+    answer (missing category, degenerate inputs) is skipped, not fatal:
+    an option list shorter by one beats a 500 on the review screen.
+    """
+    engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
+
+    # Average salary estimate — from the salary opex line and a headcount
+    # derived from total opex (kaba ama deterministik tahmin).
+    monthly_salary_total = (pnl.get("opex", {}).get("salary", 0) or 0) / 100 / 12
+    headcount_est = max(1, round(engine.monthly_opex * 0.4 / 30000))
+    avg_salary = monthly_salary_total / headcount_est if headcount_est > 0 else 50000
+
+    # Largest opex category — the cost-cut preset targets reality, not a
+    # hardcoded "rent".
+    opex = pnl.get("opex") or {}
+    top_cat = max(opex, key=lambda k: opex[k]) if opex else "rent"
+
+    presets: list[tuple[str, Any]] = [
+        (
+            "2 Kişi İşe Alma",
+            lambda: engine.simulate_headcount_change(
+                delta=2, avg_monthly_salary_try=max(avg_salary, 20000)
+            ),
+        ),
+        (
+            f"{top_cat.title()} %20 Kesinti",
+            lambda: engine.simulate_cost_reduction(
+                target_category=top_cat, reduction_pct=0.20
+            ),
+        ),
+        ("%10 Fiyat Artışı", lambda: engine.simulate_price_increase(increase_pct=0.10)),
+    ]
+
+    results: list[tuple[str, CounterfactualResult]] = []
+    for label, run in presets:
+        try:
+            results.append((label, run()))
+        except Exception:
+            continue
+    return results

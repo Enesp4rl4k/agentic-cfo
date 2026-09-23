@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -34,6 +34,7 @@ class AnalyzeRequest(BaseModel):
 @router.post("/analyze/{job_id}")
 async def start_analysis(
     job_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     body: AnalyzeRequest | None = None,
@@ -49,6 +50,12 @@ async def start_analysis(
         "period": "2024-01"
       }
     }
+
+    Duplicate protection is two-layered (DDIA Ch.11):
+      - `Idempotency-Key` (optional) dedupes the *dispatch* within an hour —
+        a retried HTTP request that got a network error does not enqueue twice.
+      - The worker's atomic claim dedupes the *work*: even without the header
+        (double-click, two tabs), exactly one delivery runs the pipeline.
     """
     from app.worker import enqueue_analysis
 
@@ -62,10 +69,44 @@ async def start_analysis(
             detail=f"Job is already in status '{job.status}'. Cannot re-run.",
         )
 
+    idem_key = request.headers.get("Idempotency-Key")
+    if idem_key:
+        deduplicated = await _idempotency_seized(str(current_user.id), idem_key)
+        if deduplicated:
+            return {
+                "data": {"job_id": job_id, "status": "queued", "deduplicated": True},
+                "error": None,
+            }
+
     budget_input = body.budget_input if body else None
     await enqueue_analysis(job_id, budget_input)
 
     return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
+
+
+async def _idempotency_seized(user_id: str, key: str) -> bool:
+    """True when this Idempotency-Key was already used (within the TTL).
+
+    Redis NX is the fast path; with no broker the answer is False — the
+    worker's claim still guarantees the work runs once, only the *dispatch*
+    may repeat.
+    """
+    from app.core.redis_client import get_redis, mark_unavailable
+
+    r = await get_redis()
+    if r is None:
+        return False
+    try:
+        acquired = await r.set(
+            f"idem:analysis:{user_id}:{key[:128]}",
+            "1",
+            ex=3600,
+            nx=True,
+        )
+    except Exception as exc:
+        mark_unavailable(exc)
+        return False
+    return not bool(acquired)
 
 
 @router.get("/analysis/{job_id}")
@@ -121,13 +162,27 @@ async def approve_review(
     if not job.awaiting_review:
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
     now = datetime.now(UTC)
-    job.awaiting_review = False
-    job.status = JobStatus.COMPLETED
-    job.updated_at = now
     meta = dict(job.result_metadata or {})
     meta["review"] = {"approved_by": current_user.id, "approved_at": now.isoformat()}
-    job.result_metadata = meta
+    # Atomic on the flag, not on the read: two simultaneous approvers both saw
+    # `awaiting_review=True`, but only one UPDATE flips it — the second gets
+    # rowcount 0 and a 409 instead of two "approved" responses and the held
+    # continuation running twice.
+    stmt = (
+        update(AnalysisJob)
+        .where(AnalysisJob.id == job_id, AnalysisJob.awaiting_review.is_(True))
+        .values(
+            awaiting_review=False,
+            status=JobStatus.COMPLETED,
+            updated_at=now,
+            result_metadata=meta,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    result = await db.execute(stmt)
     await db.commit()
+    if result.rowcount != 1:
+        raise HTTPException(status_code=409, detail="Job is not awaiting review.")
 
     if job.org_id:
         # In the background: this reruns the semantic snapshot and the chain,
@@ -144,6 +199,40 @@ async def approve_review(
 
         spawn(_continue(), name=f"review-approved-{job_id[:8]}")
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
+
+
+@router.get("/analysis/{job_id}/decision-packet")
+async def get_decision_packet(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """The review moment in one response: situation, options with their
+    computed consequences, real data freshness, and this org's precedent.
+
+    Deterministic and read-only — no LLM in the path, so it cannot
+    hallucinate a number the manager is about to act on, and it is safe
+    to call repeatedly while they keep thinking. A job still mid-run →
+    409: there is nothing to decide yet.
+    """
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
+
+    from app.services.decision_packet import RUNNING_STATUSES, build_decision_packet
+
+    if str(job.status) in RUNNING_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Analiz henüz tamamlanmadı — karar paketi sonuçlar "
+                "hazır olduğunda oluşur."
+            ),
+        )
+
+    packet = await build_decision_packet(db, job)
+    return {"data": packet, "error": None}
 
 
 @router.get("/jobs")

@@ -20,7 +20,7 @@ spec:
       containers:
       - name: redis
         image: {{ .Values.redis.image }}
-        command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "yes"]
+        command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-lru", "--appendonly", "yes"]
         ports:
         - containerPort: 6379
         volumeMounts:

@@ -17,7 +17,8 @@ spec:
       containers:
       - name: redis
         image: redis:7-alpine
-        command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "yes"]
+        # volatile-lru: TTL-less ARQ queue keys must never be evicted (see docker-compose.yml).
+        command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru", "--appendonly", "yes"]
         ports:
         - containerPort: 6379
         volumeMounts:

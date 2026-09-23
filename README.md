@@ -4,7 +4,7 @@
 > Runs finance, accounting and reporting with a real approval structure and a
 > full decision trail — so the company can outgrow its founder.
 
-[![Tests](https://img.shields.io/badge/tests-2589%20passing-brightgreen)](backend/)
+[![Tests](https://img.shields.io/badge/tests-3364%20passing-brightgreen)](backend/)
 [![Stack](https://img.shields.io/badge/stack-Next.js%2014%20%2B%20FastAPI%20%2B%20LangGraph-blue)](.)
 [![License](https://img.shields.io/badge/license-MIT-gray)](LICENSE)
 
@@ -226,7 +226,7 @@ See `.env.example` for all options.
 
 ```bash
 cd backend
-pytest tests/ -q          # run all 2589 tests
+pytest tests/ -q          # run all 3364 tests
 pytest tests/ -m eval     # golden-case evaluation gate only
 pytest tests/ -x          # stop on first failure
 ```

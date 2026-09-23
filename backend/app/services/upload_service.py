@@ -126,9 +126,20 @@ async def stream_to_disk(upload: UploadFile, ext: str, max_mb: int) -> UploadRes
 
     total_bytes = 0
     first_chunk = True
+    # Stream into a side file: the final path only appears via os.replace, so
+    # a crash (or a size-limit abort) can never leave a truncated upload at a
+    # path the parser trusts as complete (DDIA Ch.5 — no partial writes).
+    tmp_path = file_path + ".part"
+
+    def _discard_tmp() -> None:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
 
     try:
-        async with aiofiles.open(file_path, "wb") as out:
+        async with aiofiles.open(tmp_path, "wb") as out:
             while True:
                 chunk = await upload.read(_CHUNK_SIZE)
                 if not chunk:
@@ -148,19 +159,24 @@ async def stream_to_disk(upload: UploadFile, ext: str, max_mb: int) -> UploadRes
                 await out.write(chunk)
 
         # An entity declaration can sit anywhere in the document, so the whole
-        # file is checked once it is on disk — before anything parses it.
+        # file is checked once it is on disk — before anything parses it and
+        # before the atomic publish below makes it reachable at file_path.
         if ext == "xml":
-            async with aiofiles.open(file_path, "rb") as f:
+            async with aiofiles.open(tmp_path, "rb") as f:
                 validate_xml_payload(await f.read())
+
+        os.replace(tmp_path, file_path)
 
     except FileValidationError:
         # Clean up partial file and directory on failure
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        _discard_tmp()
         try:
             os.rmdir(upload_dir)
         except OSError:
             pass
+        raise
+    except BaseException:
+        _discard_tmp()
         raise
 
     return UploadResult(

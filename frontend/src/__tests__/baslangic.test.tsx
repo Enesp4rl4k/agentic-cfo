@@ -7,12 +7,14 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const { api, cfo } = vi.hoisted(() => ({
+const { api, cfo, packet } = vi.hoisted(() => ({
   api: { baslangicDurumu: vi.fn(), firmaOlustur: vi.fn() },
   cfo: { approveJob: vi.fn() },
+  packet: { getDecisionPacket: vi.fn() },
 }));
 vi.mock("@/lib/api/baslangic", () => api);
 vi.mock("@/lib/api/cfo", () => cfo);
+vi.mock("@/lib/api/decisionPacket", () => packet);
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) =>
     React.createElement("a", { href }, children),
@@ -33,6 +35,10 @@ describe("Başlangıç", () => {
   beforeEach(() => {
     Object.values(api).forEach((f) => f.mockReset());
     cfo.approveJob.mockReset();
+    // The packet is optional furniture: reject so the panel renders nothing
+    // and the assertions below stay about the approval flow itself.
+    packet.getDecisionPacket.mockReset();
+    packet.getDecisionPacket.mockRejectedValue(new Error("no packet"));
   });
 
   it("counts the steps the organisation has actually finished", async () => {

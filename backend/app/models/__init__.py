@@ -20,6 +20,7 @@ from app.models.data_source import (
     DataSourceDomain,
     DataSourceType,
 )
+from app.models.decision_log import DecisionLog
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
@@ -62,6 +63,7 @@ __all__ = [
     "DataSource",
     "DataSourceDomain",
     "DataSourceType",
+    "DecisionLog",
     "DefensibilityPacket",
     "ERPIntegration",
     "ERPSyncLog",

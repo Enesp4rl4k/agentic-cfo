@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -29,10 +29,29 @@ class JobStatus(StrEnum):
 class AnalysisJob(Base):
     __tablename__ = "analysis_jobs"
 
+    # The reaper's scan predicate: "non-terminal and past its lease". Kept as a
+    # composite because it runs every few minutes against a growing table.
+    __table_args__ = (
+        Index("ix_analysis_jobs_status_lease", "status", "lease_expires_at"),
+    )
+
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False, index=True)
+
+    # ── Lease (DDIA Ch.7 — claim, don't check-then-act) ──────────────────────
+    # `status` transitions are atomic UPDATE ... WHERE status=... claims; the
+    # lease says who holds the claim and until when. A worker that dies keeps
+    # its claim only until `lease_expires_at`, after which the reaper fails the
+    # job so it can be re-run instead of sitting `analyzing` forever.
+    # `locked_by` = "enqueue" means the job was handed to the broker but no
+    # worker has claimed it yet (set by services.job_state.mark_enqueue_lease).
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)  # pdf | xlsx | csv

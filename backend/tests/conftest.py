@@ -39,6 +39,11 @@ if not os.environ.get("DATABASE_URL_OVERRIDE"):
     os.environ["DATABASE_URL_OVERRIDE"] = f"sqlite+aiosqlite:///{_TEST_DB}"
     os.environ.setdefault("USE_SQLITE", "true")
 
+# Hermetic checkpoints: get_checkpointer() now derives sqlite from USE_SQLITE,
+# which would have every test writing ./langgraph_checkpoints.sqlite. Pin the
+# in-memory backend here; the durability tests switch to sqlite explicitly.
+os.environ.setdefault("LANGGRAPH_CHECKPOINT", "memory")
+
 # ── 1. Pin the real langchain / langgraph modules ────────────────────────────
 _REAL_MODULE_NAMES = (
     "langgraph",
@@ -75,6 +80,7 @@ def _restore_real_langchain_modules():
 def _reset_singletons() -> None:
     resets: list[tuple[str, str]] = [
         ("app.agents.checkpointer", "_CHECKPOINTER"),
+        ("app.core.redis_client", "_client"),
         ("app.services.llm_router", "_router_instance"),
         ("app.services.cache_service", "_cache_service_instance"),
         ("app.services.agent_bus", "_bus_instance"),
