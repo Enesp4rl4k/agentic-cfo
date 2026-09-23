@@ -113,19 +113,23 @@ async def _seed_job(
                     job_id=job.id,
                     report_type=ReportType.FULL,
                     report_format=ReportFormat.JSON,
+                    # The stored report is LIRA (production shape —
+                    # report_agent._fmt divides the pipeline's cents);
+                    # load_pnl_cashflow_forecast converts money to kuruş,
+                    # so `expected` assertions below still read kuruş.
                     data={
                         "pnl": {
-                            "revenue": 12_000_000_00,
-                            "total_opex": 8_000_000_00,
+                            "revenue": 12_000_000,
+                            "total_opex": 8_000_000,
                             "net_margin": 0.2,
-                            "opex": {"salary": 4_000_000_00, "rent": 1_000_000_00},
+                            "opex": {"salary": 4_000_000, "rent": 1_000_000},
                         },
-                        "cashflow": {"net_change": 500_000_00},
+                        "cashflow": {"net_change": 500_000},
                         "forecast": {
                             "scenarios": {
                                 "base": {
                                     "runway_months": runway,
-                                    "twelve_month_net": 3_000_000_00,
+                                    "twelve_month_net": 3_000_000,
                                 }
                             }
                         },

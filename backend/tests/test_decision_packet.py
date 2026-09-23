@@ -111,19 +111,23 @@ async def _seed_job(
                     job_id=job.id,
                     report_type=ReportType.FULL,
                     report_format=ReportFormat.JSON,
+                    # The stored report is LIRA (production shape —
+                    # report_agent._fmt divides the pipeline's cents);
+                    # load_pnl_cashflow_forecast converts money to kuruş,
+                    # so the assertions below still read kuruş.
                     data={
                         "pnl": {
-                            "revenue": 12_000_000_00,
-                            "total_opex": 8_000_000_00,
+                            "revenue": 12_000_000,
+                            "total_opex": 8_000_000,
                             "net_margin": 0.2,
-                            "opex": {"salary": 4_000_000_00, "rent": 1_000_000_00},
+                            "opex": {"salary": 4_000_000, "rent": 1_000_000},
                         },
-                        "cashflow": {"net_change": 500_000_00},
+                        "cashflow": {"net_change": 500_000},
                         "forecast": {
                             "scenarios": {
                                 "base": {
                                     "runway_months": 9.5,
-                                    "twelve_month_net": 3_000_000_00,
+                                    "twelve_month_net": 3_000_000,
                                 }
                             }
                         },
@@ -295,3 +299,31 @@ async def test_packet_and_scenarios_endpoint_agree(client):
     # Aynı paylaşılan preset kurucusu → aynı etiketler ve aynı sonuçlar.
     assert packet_presets == endpoint_presets
     assert len(packet_presets) >= 1
+
+
+# ── Birim sınırı: saklanan rapor lira, bu yol kuruş ─────────────────────────
+
+async def test_loader_normalizes_report_lira_to_kurus(client):
+    """The stored report is lira (`report_agent._fmt` divides the pipeline's
+    cents); every consumer of this loader — the panel's fmtTL, the engine's
+    own /100, the ledger snapshot — reads kuruş. Ratios and month counts
+    must not move."""
+    from app.services.decision_packet import load_pnl_cashflow_forecast
+
+    _headers, org_id, _ = await _user(client, "birim@example.com")
+    job_id = await _seed_job(client, org_id)
+
+    async with client._maker() as db:  # type: ignore[attr-defined]
+        pnl, cashflow, forecast = await load_pnl_cashflow_forecast(db, job_id)
+
+    # Para: lira tohumu ×100 = kuruş (aynı değerler, doğru birim)
+    assert pnl["revenue"] == 1_200_000_000           # 12_000_000_00
+    assert pnl["total_opex"] == 800_000_000          # 8_000_000_00
+    assert pnl["opex"]["salary"] == 400_000_000      # 4_000_000_00
+    assert cashflow["net_change"] == 50_000_000      # 500_000_00
+    base = forecast["scenarios"]["base"]
+    assert base["twelve_month_net"] == 300_000_000   # 3_000_000_00
+
+    # Para değil: oran ve ay sayıları dokunulmaz
+    assert pnl["net_margin"] == 0.2
+    assert base["runway_months"] == 9.5

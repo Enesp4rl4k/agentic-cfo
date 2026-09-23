@@ -33,6 +33,7 @@ export interface PacketOption {
   engine: "forecast" | "counterfactual";
   scenarios: {
     name: string;
+    /** Lira (engine `_try` convention) — unlike `base_net_impact`, not rendered. */
     net_impact_try: number;
     cashflow_impact_monthly: number;
     breakeven_months: number | null;

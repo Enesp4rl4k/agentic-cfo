@@ -48,15 +48,70 @@ logger = logging.getLogger(__name__)
 RUNNING_STATUSES = frozenset({"pending", "ingesting", "analyzing"})
 
 
+# ── Unit boundary: the stored report is lira, this path is kuruş ─────────────
+# `report_agent._build_dashboard_json` divides every scalar money figure by
+# 100 (`_fmt`: pipeline cents → lira; pinned by
+# tests/test_agents/test_report_agent.py::test_cashflow_net_change_converted),
+# while everything downstream — the panel's `fmtTL`, the counterfactual
+# engine's own `/100`, the decision ledger's `expected` snapshot — is written
+# against kuruş. The conversion happens exactly once, here. Series arrays
+# (`monthly_series`, scenario `months`) are raw pipeline cents already and
+# pass through untouched, as do ratios (margins) and month counts.
+
+_PNL_MONEY_KEYS = ("revenue", "cogs", "gross_profit", "ebitda", "net_income", "total_opex")
+_CF_MONEY_KEYS = ("operating", "investing", "financing", "net_change")
+
+
+def _x100(value: Any) -> Any:
+    """Lira figure → kuruş; anything that isn't a number passes through."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    return round(value * 100)
+
+
+def _pnl_to_kurus(pnl: dict[str, Any]) -> dict[str, Any]:
+    out = dict(pnl)
+    for key in _PNL_MONEY_KEYS:
+        if key in out:
+            out[key] = _x100(out[key])
+    opex = out.get("opex")
+    if isinstance(opex, dict):
+        out["opex"] = {k: _x100(v) for k, v in opex.items()}
+    return out
+
+
+def _cashflow_to_kurus(cashflow: dict[str, Any]) -> dict[str, Any]:
+    out = dict(cashflow)
+    for key in _CF_MONEY_KEYS:
+        if key in out:
+            out[key] = _x100(out[key])
+    return out
+
+
+def _forecast_to_kurus(forecast: dict[str, Any]) -> dict[str, Any]:
+    out = dict(forecast)
+    scenarios = out.get("scenarios")
+    if isinstance(scenarios, dict):
+        converted: dict[str, Any] = {}
+        for name, scenario in scenarios.items():
+            if isinstance(scenario, dict) and "twelve_month_net" in scenario:
+                scenario = {**scenario, "twelve_month_net": _x100(scenario["twelve_month_net"])}
+            converted[name] = scenario
+        out["scenarios"] = converted
+    return out
+
+
 # ── Report access (shared with api/counterfactual) ───────────────────────────
 
 async def load_pnl_cashflow_forecast(
     db: AsyncSession, job_id: str
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Latest JSON report for a job → (pnl, cashflow, forecast).
+    """Latest JSON report for a job → (pnl, cashflow, forecast) in **kuruş**.
 
     Moved out of `api/counterfactual` so the packet and the simulate
     endpoints read the *same* report — one definition of "the numbers".
+    The stored report is lira; money fields are normalised to kuruş at
+    this boundary (see the unit note above).
     """
     from app.models.report import Report, ReportFormat
 
@@ -70,7 +125,11 @@ async def load_pnl_cashflow_forecast(
     if not rep or not rep.data:
         return {}, {}, {}
     d = rep.data
-    return d.get("pnl") or {}, d.get("cashflow") or {}, d.get("forecast") or {}
+    return (
+        _pnl_to_kurus(d.get("pnl") or {}),
+        _cashflow_to_kurus(d.get("cashflow") or {}),
+        _forecast_to_kurus(d.get("forecast") or {}),
+    )
 
 
 

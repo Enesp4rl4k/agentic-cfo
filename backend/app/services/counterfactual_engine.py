@@ -55,7 +55,7 @@ class CounterfactualResult:
     action:            str                          # Alınan aksiyon
     description:       str                          # Detaylı açıklama
     scenarios:         list[SimulationScenario]     # 3 senaryo
-    base_net_impact:   float                        # Baz senaryo 12ay net etki
+    base_net_impact:   float                        # Baz senaryo 12ay net etki (TRY)
     breakeven_months:  float | None                 # Baz senaryo break-even
     cashflow_risk:     str                          # "low" | "medium" | "high" | "critical"
     recommendation:    str                          # Türkçe tavsiye
@@ -75,7 +75,11 @@ class CounterfactualResult:
                 }
                 for s in self.scenarios
             ],
-            "base_net_impact":   round(self.base_net_impact),
+            # Engine domain is lira; the wire contract for this key is
+            # kuruş (decisionPacket.ts documents kuruş, the panel's fmtTL
+            # divides, the ledger stores it beside kuruş figures).
+            # `net_impact_try` keeps lira — its `_try` name says so.
+            "base_net_impact":   round(self.base_net_impact * 100),
             "breakeven_months":  round(self.breakeven_months, 1) if self.breakeven_months else None,
             "cashflow_risk":     self.cashflow_risk,
             "recommendation":    self.recommendation,
