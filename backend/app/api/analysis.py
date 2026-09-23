@@ -153,8 +153,6 @@ async def approve_review(
     it, so an approved analysis sat "pending" forever and never reached the
     command center.
     """
-    from app.worker import continue_after_completion, saved_result
-
     job = await db.get(AnalysisJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -163,7 +161,11 @@ async def approve_review(
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
     now = datetime.now(UTC)
     meta = dict(job.result_metadata or {})
-    meta["review"] = {"approved_by": current_user.id, "approved_at": now.isoformat()}
+    # `devam` is the durable record that the held continuation is owed; it is
+    # set in the same UPDATE that completes the job and cleared to "tamam" by
+    # the continuation (app.services.review_continuation).
+    meta["review"] = {"approved_by": current_user.id, "approved_at": now.isoformat(),
+                      "devam": "bekliyor"}
     # Atomic on the flag, not on the read: two simultaneous approvers both saw
     # `awaiting_review=True`, but only one UPDATE flips it — the second gets
     # rowcount 0 and a 409 instead of two "approved" responses and the held
@@ -185,19 +187,12 @@ async def approve_review(
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
 
     if job.org_id:
-        # In the background: this reruns the semantic snapshot and the chain,
-        # which took ~20s in a live run — too long to hold a button press.
-        # Its own session, because this request's closes with the response.
-        from app.core.background import spawn
-        from app.database import session_factory
+        # Off the request (it reruns the semantic snapshot and the chain, ~20s
+        # in a live run) and durable: queued under a per-job id, recovered by
+        # the reaper if it never reports done.
+        from app.services.review_continuation import devami_baslat
 
-        org_id = str(job.org_id)
-
-        async def _continue() -> None:
-            async with session_factory()() as bg:
-                await continue_after_completion(job_id, org_id, await saved_result(job_id, bg), bg)
-
-        spawn(_continue(), name=f"review-approved-{job_id[:8]}")
+        await devami_baslat(job_id)
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
 
 
