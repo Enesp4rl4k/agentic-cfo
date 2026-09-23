@@ -83,8 +83,12 @@ class BoardroomMemoryService:
             for rec in self._records.values():
                 d = asdict(rec)
                 data.append(d)
-            with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            # Atomic replace: the JSON is read by other requests while this
+            # process rewrites it — a torn file would fail every reader until
+            # the next successful save.
+            from app.core.atomic_io import atomic_write_json
+
+            atomic_write_json(self.storage_path, data)
         except Exception as e:
             logger.error(f"Failed to save boardroom memory: {e}")
 
@@ -184,6 +188,32 @@ class BoardroomMemoryService:
                 if action.status == "pending" and org_id and action.org_id == org_id:
                     pending.append(action)
         return pending
+
+    def list_recent_decisions(
+        self, org_id: str | None, max_records: int = 3
+    ) -> list[dict[str, Any]]:
+        """Structured precedent for the decision packet — newest first.
+
+        The text variant (`get_past_context_for_topic`) exists to prime an
+        LLM; this one feeds a screen, so it returns records the UI can
+        render: date, topic, the decision that was actually made, its
+        status and confidence. No org → no records (same tenant rule).
+        """
+        if not org_id:
+            return []
+        own = [r for r in self._records.values() if r.org_id == org_id]
+        own.sort(key=lambda r: r.created_at, reverse=True)
+        return [
+            {
+                "id": r.id,
+                "topic": r.topic,
+                "final_decision": r.final_decision,
+                "resolution_status": r.resolution_status,
+                "confidence_score": r.confidence_score,
+                "created_at": r.created_at,
+            }
+            for r in own[:max_records]
+        ]
 
     def get_action_by_id(self, action_id: str) -> ActionItemRecord | None:
         for rec in self._records.values():

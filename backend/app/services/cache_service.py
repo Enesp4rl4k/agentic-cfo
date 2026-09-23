@@ -12,10 +12,15 @@ tcmb:{date}                           → 6 hours
 Features
 --------
 - get/set with TTL
+- One process-wide Redis pool (app.core.redis_client): no TCP handshake
+  per cache op — a cache that costs a connection to read is the thing
+  it exists to avoid
 - invalidate_pattern: Redis SCAN + DEL (safe for large keyspaces)
 - make_key: namespace:part1:part2 helper
 - llm_cached decorator: auto-cache LLM calls by prompt hash
 - Analytics response cache middleware helper
+- Dual tier: Redis first, in-memory dict as fallback (and as rescue when
+  `volatile-lru` evicts a TTL'd key under memory pressure)
 
 Cache invalidation triggers
 ---------------------------
@@ -44,6 +49,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from app.core.redis_client import get_redis as _shared_get_redis
+from app.core.redis_client import mark_unavailable
+
 logger = logging.getLogger(__name__)
 
 # ── TTL constants ──────────────────────────────────────────────────────────────
@@ -61,28 +69,16 @@ _cache_service_instance: CacheService | None = None
 
 
 async def _get_redis() -> Any | None:
-    """Get Redis connection from app's pool (non-blocking, fast timeout)."""
-    import os
-    if os.environ.get("USE_SQLITE") == "true" or os.environ.get("DISABLE_REDIS") == "true":
-        return None
-    try:
-        import redis.asyncio as aioredis
+    """The shared process-wide client, or None when disabled / in cooldown.
 
-        from app.config import get_settings
-
-        settings = get_settings()
-        if not settings.redis_url:
-            return None
-        r = aioredis.from_url(
-            settings.redis_url,
-            decode_responses=True,
-            socket_connect_timeout=0.2,
-            socket_timeout=0.2,
-        )
-        return r
-    except Exception as exc:
-        logger.debug("CacheService: Redis unavailable: %s", exc)
-        return None
+    This used to build a fresh `from_url` client per call and close it
+    after — every cache read paid a TCP handshake, and `aclose()` on the
+    *shared* client (leftover from that design) would have torn down the
+    pool the rate limiter and SSE bus are using. The shared gate
+    (USE_SQLITE / DISABLE_REDIS) is the same one tests rely on: brokerless
+    runs fall back to the memory tier below.
+    """
+    return await _shared_get_redis()
 
 
 # ── Key builder ────────────────────────────────────────────────────────────────
@@ -137,12 +133,16 @@ class CacheService:
             r = await _get_redis()
             if r is not None:
                 raw = await r.get(key)
-                await r.aclose()
                 if raw:
                     return json.loads(raw)
-                return None
+                # Broker miss — including a `volatile-lru` eviction — does
+                # not end the lookup: the memory tier answers. Invalidation
+                # clears memory first, so this can rescue a live entry but
+                # never resurrect a deleted one.
+                return self._get_memory(key)
         except Exception as exc:
             logger.debug("CacheService.get (Redis) failed: %s", exc)
+            mark_unavailable(exc)
 
         # In-memory fallback
         return self._get_memory(key)
@@ -155,9 +155,9 @@ class CacheService:
             r = await _get_redis()
             if r is not None:
                 await r.setex(key, ttl, json.dumps(value, default=str))
-                await r.aclose()
         except Exception as exc:
             logger.debug("CacheService.set (Redis) failed: %s", exc)
+            mark_unavailable(exc)
 
     async def delete(self, key: str) -> None:
         """Delete a specific key."""
@@ -166,9 +166,9 @@ class CacheService:
             r = await _get_redis()
             if r is not None:
                 await r.delete(key)
-                await r.aclose()
         except Exception as exc:
             logger.debug("CacheService.delete failed: %s", exc)
+            mark_unavailable(exc)
 
     async def invalidate_pattern(self, pattern: str) -> int:
         """
@@ -192,9 +192,9 @@ class CacheService:
                 async for key in r.scan_iter(match=pattern, count=100):
                     await r.delete(key)
                     deleted += 1
-                await r.aclose()
         except Exception as exc:
             logger.debug("CacheService.invalidate_pattern failed: %s", exc)
+            mark_unavailable(exc)
 
         if deleted > 0:
             logger.debug("CacheService: invalidated %d keys matching '%s'", deleted, pattern)
@@ -218,7 +218,6 @@ class CacheService:
                         break
 
                 info = await r.info("memory")
-                await r.aclose()
 
                 return {
                     "available": True,
@@ -239,13 +238,15 @@ class CacheService:
         }
 
     async def aclose(self) -> None:
-        """Close any open connections."""
-        try:
-            r = await _get_redis()
-            if r is not None:
-                await r.aclose()
-        except Exception:
-            pass
+        """Close the shared pool (application shutdown).
+
+        Deliberately delegates to `app.core.redis_client`: per-op closes
+        were removed above, so this is now the only close — and it must
+        close the *shared* client, not a private one nobody else uses.
+        """
+        from app.core.redis_client import aclose_redis
+
+        await aclose_redis()
 
 
 # ── Singleton factory ─────────────────────────────────────────────────────────

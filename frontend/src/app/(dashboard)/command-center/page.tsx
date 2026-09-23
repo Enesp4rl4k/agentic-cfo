@@ -20,6 +20,7 @@ import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary, type LiveDataStatus } from "@/lib/api/semantic";
 import { ConflictCard } from "@/components/command-center/ConflictCard";
 import { AgentRunLedger } from "@/components/ops/AgentRunLedger";
+import { DecisionLogPanel } from "@/components/ui/decision-log-panel";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
 import { brand } from "@/lib/branding";
@@ -910,6 +911,9 @@ export default function CommandCenterPage() {
           shipped as a completed phase and had no caller, so a run that stopped
           halfway left a record nobody could see. */}
       <AgentRunLedger />
+
+      {/* Karar Defteri — decided → expected → measured, newest first. */}
+      <DecisionLogPanel />
 
       {/* Cross-Agent Intelligence — rule-based, instant, no LLM cost */}
       {fullCtx && (

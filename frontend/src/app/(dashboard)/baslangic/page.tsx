@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { approveJob } from "@/lib/api/cfo";
 import { baslangicDurumu, firmaOlustur, type BaslangicDurumu } from "@/lib/api/baslangic";
+import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";
 import { cn } from "@/lib/utils";
 
 type AdimDurumu = "tamam" | "sirada" | "bekliyor";
@@ -322,6 +323,9 @@ function AnalizAdimi({
             {hata && <p className="text-xs text-destructive">{hata}</p>}
           </AlertDescription>
         </Alert>
+
+        {/* Imzalamadan önce: seçenekler, sonuçları, veri tazeliği, emsal. */}
+        <DecisionPacketPanel jobId={analiz.id} className="mt-3" />
 
         <Dialog open={onayAcik} onOpenChange={setOnayAcik}>
           <DialogContent>

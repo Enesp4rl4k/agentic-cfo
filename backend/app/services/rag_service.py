@@ -166,7 +166,17 @@ async def index_job_text(
     if not chunks:
         return 0
 
-    # Idempotency: delete previous index for this job
+    # The slow, fallible network call runs BEFORE the transaction opens
+    # (DDIA Ch.7 — keep the write transaction short): embedding used to
+    # happen after the delete, so the write lock sat held for the whole
+    # embedding round-trip. On SQLite that lock is process-wide — every
+    # other writer waited behind an API call. Embed first; delete + insert
+    # then commit together in milliseconds.
+    settings = get_settings()
+    embeddings = _embed_texts(chunks)
+
+    # Idempotency: delete previous index for this job — same transaction as
+    # the inserts below, so old-gone and new-in are published together.
     await db.execute(
         delete(RagChunk).where(
             RagChunk.org_id == org_id,
@@ -176,8 +186,6 @@ async def index_job_text(
     )
 
     now = datetime.now(UTC)
-    embeddings = _embed_texts(chunks)
-    settings = get_settings()
     for i, ch in enumerate(chunks):
         db.add(
             RagChunk(

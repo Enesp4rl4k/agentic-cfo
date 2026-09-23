@@ -7,7 +7,6 @@ Extracts report rendering from agent orchestration:
 """
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
@@ -162,8 +161,11 @@ class DashboardExporter(IReportExporter):
         """Render JSON dashboard to file."""
         data = self.build_dashboard_dict(pnl, cashflow, forecast, **kwargs)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        # All-or-nothing: a crash mid-dump must not publish a truncated
+        # dashboard for the reader to parse.
+        from app.core.atomic_io import atomic_write_json
+
+        atomic_write_json(output_path, data, indent=2)
         return output_path
 
     @staticmethod

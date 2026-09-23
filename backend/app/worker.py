@@ -192,6 +192,27 @@ async def run_ceo_analysis(
         raise
 
 
+async def _ek_belgeler(job_id: str, db: Any) -> list[dict[str, str]]:
+    """The analysis's other financial documents, in the order they arrived."""
+    from sqlalchemy import select
+
+    from app.models.data_source import DataSource, DataSourceDomain, DataSourceType
+
+    rows = (await db.execute(
+        select(DataSource)
+        .where(DataSource.job_id == job_id,
+               DataSource.domain == DataSourceDomain.CFO,
+               DataSource.source_type == DataSourceType.FINANCIAL_DOCUMENT)
+        .order_by(DataSource.created_at)
+    )).scalars().all()
+    return [
+        {"path": r.file_path,
+         "type": (r.filename or "").rsplit(".", 1)[-1].lower(),
+         "ad": r.filename or ""}
+        for r in rows if r.file_path
+    ]
+
+
 async def run_cfo_analysis(
     ctx: dict,
     job_id: str,
@@ -211,23 +232,50 @@ async def run_cfo_analysis(
     from app.models.anomaly import Anomaly
     from app.models.report import Report, ReportFormat, ReportType
     from app.models.transaction import Transaction
+    from app.services.job_state import (
+        claim_for_analysis,
+        fail_job,
+        finish_job,
+        purge_job_outputs,
+    )
     from app.streaming.sse import publish_job_done, publish_job_error, publish_step_event
+
+    # The id reaches here from an HTTP request. It is written into log lines
+    # below, so a value carrying CR/LF could forge log entries; strip them.
+    job_id = str(job_id).replace("\r", "").replace("\n", "")
 
     logger.info("ARQ worker: starting CFO analysis for job=%s", job_id)
 
     async with get_session_factory(engine())() as db:
-        job = await db.get(AnalysisJob, job_id)
-        if not job:
-            logger.error("ARQ worker: job=%s not found in DB", job_id)
-            return {"ok": False, "error": "job not found"}
+        # Atomic claim — exactly one delivery of this job runs, however many
+        # were enqueued (double-click, retry, inline + queued racing). A
+        # duplicate delivery gets None and exits without writing a row.
+        job = await claim_for_analysis(db, job_id)
+        if job is None:
+            current = await db.get(AnalysisJob, job_id)
+            if current is None:
+                logger.error("ARQ worker: job=%s not found in DB", job_id)
+                return {"ok": False, "error": "job not found"}
+            logger.warning(
+                "ARQ worker: job=%s not claimable (status=%s) — duplicate delivery "
+                "or terminal state; skipping without side effects",
+                job_id,
+                current.status,
+            )
+            return {
+                "ok": False,
+                "job_id": job_id,
+                "status": str(current.status),
+                "skipped": True,
+                "reason": "not claimable",
+            }
 
-        job.status = JobStatus.ANALYZING
         started_at = datetime.now(UTC)
         if hasattr(job, "result_metadata"):
             meta = job.result_metadata or {}
             meta["analysis_started_at"] = started_at.isoformat()
             job.result_metadata = meta
-        job.updated_at = datetime.now(UTC)
+        job.updated_at = started_at
         await db.commit()
 
         try:
@@ -250,12 +298,21 @@ async def run_cfo_analysis(
                 auto_proceed_min_confidence=_gs().agent_auto_proceed_min_confidence,
             )
 
+            # More documents of the same analysis (several invoices dropped
+            # together). Each used to start an analysis of its own.
+            ek_belgeler = await _ek_belgeler(job_id, db)
+            # Close the read transaction before the long pipeline call: a
+            # transaction left open across minutes of work is the exact pattern
+            # that once wedged every other writer ("database is locked").
+            await db.rollback()
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
                 file_type=job.file_type,
                 run_config=run_config,
                 budget_input=budget_input,
+                ek_belgeler=ek_belgeler,
             )
 
             # Publish each completed step to SSE clients
@@ -267,6 +324,11 @@ async def run_cfo_analysis(
                     detail=log.detail,
                     confidence=log.confidence,
                 )
+
+            # A re-run recomputes: whatever a previous (failed) attempt left
+            # behind goes first, so the tables hold one run's output — never a
+            # union of two.
+            await purge_job_outputs(db, job_id)
 
             # Persist transactions
             for tx_data in result.get("transactions") or []:
@@ -295,34 +357,6 @@ async def run_cfo_analysis(
                     confidence=tx_data.get("confidence"),
                 )
                 db.add(tx)
-
-            # RAG (v1) indexing: store CFO raw_text evidence chunks.
-            # Non-fatal: indexleme başarısız olsa bile job raporu yine yayınlanır.
-            try:
-                if job.org_id:
-                    from app.services.rag_service import index_job_text
-
-                    # Prefer the pipeline-level `raw_text` if present; it is the
-                    # canonical ingestion form used across evidence endpoints.
-                    doc_text = (result.get("raw_text") or "").strip()
-                    if not doc_text:
-                        tx_raw_texts = [
-                            (txd.get("raw_text") or "")
-                            for txd in (result.get("transactions") or [])
-                        ]
-                        doc_text = "\n".join(tx_raw_texts).strip()
-                    # Keep storage bounded (chunk_text itself will be truncated by service).
-                    doc_text = doc_text[:80_000]
-
-                    await index_job_text(
-                        db,
-                        org_id=str(job.org_id),
-                        job_id=str(job_id),
-                        source_type="cfo_transactions_raw",
-                        raw_text=doc_text,
-                    )
-            except Exception as exc:
-                logger.debug("RAG indexing failed (non-fatal): %s", exc)
 
             # Persist dashboard JSON report
             if result.get("dashboard_json"):
@@ -360,93 +394,180 @@ async def run_cfo_analysis(
                 {"step": lg.step, "ok": lg.ok, "detail": lg.detail, "confidence": lg.confidence}
                 for lg in (result.get("logs") or [])
             ]
-            job.status = (
+            terminal = (
                 JobStatus.AWAITING_REVIEW if result.get("awaiting_review") else JobStatus.COMPLETED
             )
-            job.logs = logs_serializable
-            job.min_confidence = result.get("min_confidence")
-            job.awaiting_review = bool(result.get("awaiting_review"))
             completed_at = datetime.now(UTC)
-            job.completed_at = completed_at
-            job.updated_at = datetime.now(UTC)
-            if hasattr(job, "result_metadata"):
-                meta = job.result_metadata or {}
+            meta = dict(job.result_metadata or {})
+            try:
+                if meta.get("analysis_started_at"):
+                    t0 = datetime.fromisoformat(meta["analysis_started_at"])
+                    meta["job_completion_ms"] = int((completed_at - t0).total_seconds() * 1000)
+            except Exception:
+                pass
+            # Persist conductor plan before auto-chain so ops/debug can inspect it.
+            if job.org_id:
                 try:
-                    if meta.get("analysis_started_at"):
-                        t0 = datetime.fromisoformat(meta["analysis_started_at"])
-                        meta["job_completion_ms"] = int((completed_at - t0).total_seconds() * 1000)
-                except Exception:
-                    pass
-                # Persist conductor plan before auto-chain so ops/debug can inspect it.
-                if job.org_id:
-                    try:
-                        from app.agents.orchestration.auto_chain import build_conductor_plan_dict
+                    from app.agents.orchestration.auto_chain import build_conductor_plan_dict
 
-                        plan_dict = await build_conductor_plan_dict(
-                            org_id=str(job.org_id),
-                            agent="cfo",
-                            db=db,
-                        )
-                        if plan_dict:
-                            meta["conductor_plan"] = plan_dict
-                    except Exception as exc:
-                        logger.debug("conductor_plan metadata skipped: %s", exc)
-                # RAG index observability for staging proof
+                    plan_dict = await build_conductor_plan_dict(
+                        org_id=str(job.org_id),
+                        agent="cfo",
+                        db=db,
+                    )
+                    if plan_dict:
+                        meta["conductor_plan"] = plan_dict
+                except Exception as exc:
+                    logger.debug("conductor_plan metadata skipped: %s", exc)
+
+            # One transaction for the outputs and the terminal status. The
+            # guarded UPDATE's rowcount decides whether we still hold the
+            # claim: if the reaper already failed this job, nothing — results
+            # included — is written over its terminal state.
+            won = await finish_job(
+                db,
+                job_id,
+                status=terminal,
+                values={
+                    "logs": logs_serializable,
+                    "min_confidence": result.get("min_confidence"),
+                    "awaiting_review": bool(result.get("awaiting_review")),
+                    "completed_at": completed_at,
+                    "result_metadata": meta,
+                },
+            )
+            if not won:
+                await db.rollback()
+                logger.error(
+                    "ARQ worker: job=%s no longer held the claim at finish (reaped?) — "
+                    "results discarded rather than written over the terminal state",
+                    job_id,
+                )
+                await publish_job_error(
+                    job_id,
+                    "The job's state changed while it was running; these results were "
+                    "discarded. Re-run the analysis.",
+                )
+                return {"ok": False, "job_id": job_id, "finish_lost": True}
+            await db.commit()
+
+            # Notify SSE subscribers that the job is done — before the slow
+            # follow-ups below: a watcher's completion must not wait on RAG.
+            await publish_job_done(job_id, status=str(terminal))
+
+            logger.info(
+                "ARQ worker: job=%s completed — status=%s awaiting_review=%s",
+                job_id, terminal, bool(result.get("awaiting_review")),
+            )
+
+            # RAG indexing in its own transaction, after the analysis commit.
+            # Embedding generation is a network call and used to sit inside the
+            # outputs' write transaction — the open-across-I/O pattern this
+            # file keeps having to repair.
+            rag_indexed = 0
+            if job.org_id:
+                try:
+                    from app.services.rag_service import index_job_text
+
+                    # Prefer the pipeline-level `raw_text` if present; it is
+                    # the canonical ingestion form used across evidence endpoints.
+                    doc_text = (result.get("raw_text") or "").strip()
+                    if not doc_text:
+                        tx_raw_texts = [
+                            (txd.get("raw_text") or "")
+                            for txd in (result.get("transactions") or [])
+                        ]
+                        doc_text = "\n".join(tx_raw_texts).strip()
+                    doc_text = doc_text[:80_000]  # chunking truncates further
+                    if doc_text:
+                        async with get_session_factory(engine())() as rag_db:
+                            rag_indexed = await index_job_text(
+                                rag_db,
+                                org_id=str(job.org_id),
+                                job_id=str(job_id),
+                                source_type="cfo_transactions_raw",
+                                raw_text=doc_text,
+                            )
+                            await rag_db.commit()
+                except Exception as exc:
+                    logger.debug("RAG indexing failed (non-fatal): %s", exc)
+
+            # Embedding-count observability rides a small follow-up write.
+            # Fresh read first: approval may have added its own metadata key
+            # since this run committed, and a blind overwrite would drop it.
+            if job.org_id and rag_indexed:
                 try:
                     from sqlalchemy import func, select
 
                     from app.models.rag_chunk import RagChunk
 
-                    emb_count = int(
-                        (
-                            await db.execute(
-                                select(func.count())
-                                .select_from(RagChunk)
-                                .where(
-                                    RagChunk.job_id == job_id,
-                                    RagChunk.embedding.isnot(None),
+                    fresh = await db.get(AnalysisJob, job_id)
+                    if fresh is not None:
+                        await db.refresh(fresh)
+                        merged = dict(fresh.result_metadata or {})
+                        emb_count = int(
+                            (
+                                await db.execute(
+                                    select(func.count())
+                                    .select_from(RagChunk)
+                                    .where(
+                                        RagChunk.job_id == job_id,
+                                        RagChunk.embedding.isnot(None),
+                                    )
                                 )
-                            )
-                        ).scalar()
-                        or 0
-                    )
-                    meta["rag_embeddings_indexed"] = emb_count
+                            ).scalar()
+                            or 0
+                        )
+                        merged["rag_embeddings_indexed"] = emb_count
+                        fresh.result_metadata = merged
+                        await db.commit()
                 except Exception as exc:
                     logger.debug("rag embedding count skipped: %s", exc)
-                job.result_metadata = meta
-            await db.commit()
-
-            # Notify SSE subscribers that the job is done
-            await publish_job_done(job_id, status=str(job.status))
-
-            logger.info(
-                "ARQ worker: job=%s completed — status=%s awaiting_review=%s",
-                job_id, job.status, job.awaiting_review,
-            )
 
             # ── FAZ-1A: Persist CompanyContext + semantic + auto-chain ─────────
             # Held while the job awaits review; run on approval instead
             # (app.api.analysis.approve_review).
-            if job.status == JobStatus.COMPLETED and job.org_id:
+            if terminal == JobStatus.COMPLETED and job.org_id:
                 await continue_after_completion(job_id, str(job.org_id), result, db)
 
-            return {"ok": True, "job_id": job_id, "status": str(job.status)}
+            return {"ok": True, "job_id": job_id, "status": str(terminal)}
 
         except Exception as exc:
             logger.exception("ARQ worker: job=%s failed", job_id)
             transient = _is_transient_error(exc)
-            job.status = JobStatus.FAILED
-            job.error_message = str(exc)
-            meta = (job.result_metadata or {}) if hasattr(job, "result_metadata") else {}
+            # Discard first, then record the failure. Committing on this
+            # session used to persist every half-written row alongside the
+            # FAILED status — a failed run could leave partial transactions
+            # behind for the report to pick up.
+            await db.rollback()
+            fresh: Any = None
+            try:
+                fresh = await db.get(AnalysisJob, job_id)
+                if fresh is not None:
+                    await db.refresh(fresh)
+            except Exception:
+                fresh = None
+            meta: dict[str, Any] = dict(
+                (fresh.result_metadata if fresh is not None else None) or {}
+            )
             meta["worker_failure"] = {
                 "retryable": transient,
                 "error_type": type(exc).__name__,
                 "message": str(exc),
                 "at": datetime.now(UTC).isoformat(),
             }
-            if hasattr(job, "result_metadata"):
-                job.result_metadata = meta
-            job.updated_at = datetime.now(UTC)
+            # Guarded too: a reaper that already failed this job keeps its
+            # terminal state and its error message.
+            await fail_job(
+                db,
+                job_id,
+                error=str(exc),
+                values=(
+                    {"result_metadata": meta, "awaiting_review": False}
+                    if fresh is not None
+                    else None
+                ),
+            )
             await db.commit()
             # Notify SSE subscribers of failure (best-effort, non-fatal)
             try:
@@ -455,7 +576,12 @@ async def run_cfo_analysis(
                 pass
             if transient:
                 raise TransientWorkerError(str(exc))
-            return {"ok": False, "job_id": job_id, "status": str(job.status), "retryable": False}
+            return {
+                "ok": False,
+                "job_id": job_id,
+                "status": str(JobStatus.FAILED),
+                "retryable": False,
+            }
 
 
 # ── Pool helper (used by FastAPI to enqueue) ───────────────────────────────────
@@ -884,7 +1010,23 @@ async def enqueue_analysis(
         task.add_done_callback(_log_inline_failure)
         return "inline"
     logger.info("Enqueued CFO analysis: job=%s", job_id)
+    # Hand the reaper a clock: if no worker ever claims this job, the enqueue
+    # lease expires and the job fails visibly instead of sitting `pending`
+    # forever. Best-effort — the claim in the worker is the real guard.
+    await _stamp_enqueue_lease(job_id)
     return "queued"
+
+
+async def _stamp_enqueue_lease(job_id: str) -> None:
+    """Best-effort: never let lease bookkeeping fail a working dispatch."""
+    try:
+        from app.database import engine, get_session_factory
+        from app.services.job_state import mark_enqueue_lease
+
+        async with get_session_factory(engine())() as db:
+            await mark_enqueue_lease(db, job_id)
+    except Exception as exc:
+        logger.debug("Enqueue lease not stamped for job=%s: %s", job_id, exc)
 
 
 async def enqueue_ceo_analysis(

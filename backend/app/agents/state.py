@@ -35,6 +35,9 @@ class CFOState(TypedDict, total=False):
     job_id: str
     file_path: str
     file_type: str          # pdf | xlsx | csv
+    # More documents of the same analysis: [{"path": ..., "type": ..., "ad": ...}].
+    # Several invoices dropped together are one analysis, not one each.
+    ek_belgeler: list[dict[str, str]]
 
     # ── Data Ingestion ────────────────────────────────────────────────────────
     raw_text: str

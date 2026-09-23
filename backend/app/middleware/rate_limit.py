@@ -114,9 +114,15 @@ def _get_client_key(request: Request) -> str:
 
 def _check_rate_limit(key: str, max_requests: int, window: int) -> tuple[bool, int, int]:
     """
-    Sliding window check.
+    Sliding window check — in-process fallback.
 
     Returns (allowed, remaining, retry_after_seconds).
+
+    Contract shared with `_check_rate_limit_redis`: `remaining` counts the
+    current request against itself, and a denied request appends nothing.
+    The two never mix for one key (the Redis path is tried first for the
+    whole request), so monotonic (process-local) and wall (broker) clocks
+    cannot interleave in one window.
     """
     now = time.monotonic()
     window_start = now - window
@@ -136,6 +142,65 @@ def _check_rate_limit(key: str, max_requests: int, window: int) -> tuple[bool, i
 
     bucket.append(now)
     return True, remaining, 0
+
+
+# ── Shared (multi-process) sliding window ─────────────────────────────────────
+
+# One atomic script: prune the window, decide, record. A check-then-write
+# over the network would let N workers all read "under the limit" before any
+# of them writes — the same check-then-act race the DB claim closes, at the
+# request layer. Denied requests are NOT recorded (matches the local path).
+_REDIS_WINDOW_LUA = """
+local key = KEYS[1]
+local window = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local member = ARGV[4]
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
+local count = redis.call('ZCARD', key)
+if count >= limit then
+  local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+  local retry = window
+  if oldest[2] then
+    retry = math.ceil(window - (now - tonumber(oldest[2])))
+  end
+  if retry < 1 then retry = 1 end
+  return {0, 0, retry}
+end
+redis.call('ZADD', key, now, member)
+redis.call('EXPIRE', key, window + 1)
+return {1, limit - count - 1, 0}
+"""
+
+
+async def _check_rate_limit_redis(
+    key: str, max_requests: int, window: int
+) -> tuple[bool, int, int] | None:
+    """Broker-backed sliding window. Returns None when to fall back locally
+    (no broker / disabled / outage) — never raises."""
+    import uuid as _uuid
+
+    from app.core.redis_client import get_redis, mark_unavailable
+
+    client = await get_redis()
+    if client is None:
+        return None
+    member = f"{time.time_ns()}:{_uuid.uuid4().hex}"  # unique even same-µs hits
+    try:
+        raw = await client.eval(
+            _REDIS_WINDOW_LUA, 1, f"rl:{key}", window, max_requests,
+            time.time(), member,
+        )
+    except Exception as exc:
+        mark_unavailable(exc)
+        return None
+    try:
+        allowed = int(raw[0]) == 1
+        remaining = int(raw[1])
+        retry_after = int(raw[2])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return allowed, remaining, retry_after
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -163,7 +228,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         client_key = f"{path[:20]}:{_get_client_key(request)}"
 
-        allowed, remaining, retry_after = _check_rate_limit(client_key, max_requests, window)
+        # Shared window first (one limit across all worker processes); the
+        # in-process deque is the fallback when there is no broker — old
+        # behaviour, single-process correct.
+        verdict = await _check_rate_limit_redis(client_key, max_requests, window)
+        if verdict is None:
+            allowed, remaining, retry_after = _check_rate_limit(
+                client_key, max_requests, window
+            )
+        else:
+            allowed, remaining, retry_after = verdict
 
         # Compute reset timestamp
         reset_at = int(time.time()) + window

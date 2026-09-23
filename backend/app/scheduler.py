@@ -9,7 +9,10 @@ FastAPI lifespan'ında başlatılır, uygulama kapanışında durdurulur.
 """
 from __future__ import annotations
 
+import functools
 import logging
+import socket
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -19,6 +22,66 @@ logger = logging.getLogger(__name__)
 
 # Module-level scheduler singleton
 _scheduler: AsyncIOScheduler | None = None
+
+
+def _exclusive(
+    fn: Callable[..., Awaitable[None]],
+    name: str,
+    ttl: int = 1800,
+) -> Callable[..., Awaitable[None]]:
+    """Run `fn` in at most one process (DDIA Ch.8/Ch.11 — coordinated
+    processes need a broker, not a hope).
+
+    APScheduler starts in *every* uvicorn worker, so without this each cron
+    tick ran N times: the daily anomaly scan inserted duplicates, the ERP
+    sync hit vendor APIs N-fold. A Redis NX lock elects one runner; the
+    others skip. Without a broker (dev/tests) the job runs locally — the
+    old single-process behaviour.
+
+    The lock is deliberately NOT released on completion: TTL is the
+    release. Two workers' cron ticks can fire seconds apart (startup
+    jitter), and a short job finishing before its twin fires would let the
+    twin re-run the same tick. Holding the key for `ttl` (< the schedule
+    interval) covers the whole tick; a crashed runner only blocks the next
+    one for the TTL, never the run after that.
+    """
+    from app.core.redis_client import get_redis, mark_unavailable
+
+    @functools.wraps(fn)
+    async def _run() -> None:
+        client = await get_redis()
+        if client is not None:
+            try:
+                acquired = bool(
+                    await client.set(
+                        f"scheduler:lock:{name}",
+                        socket.gethostname(),
+                        ex=ttl,
+                        nx=True,
+                    )
+                )
+            except Exception as exc:
+                mark_unavailable(exc)
+                acquired = True  # broker down → run locally, as it always did
+            if not acquired:
+                logger.debug(
+                    "Scheduler job %s skipped — held by another process", name
+                )
+                return
+        await fn()
+
+    return _run
+
+
+async def _run_stuck_job_reaper() -> None:
+    """Every 10 minutes: fail jobs whose lease expired and ledger runs left
+    `running` by a crash (services/job_reaper.py)."""
+    try:
+        from app.services.job_reaper import reap_and_notify
+
+        await reap_and_notify()
+    except Exception as exc:
+        logger.error("Stuck-job reaper run error: %s", exc)
 
 
 async def _scan_recent_jobs() -> None:
@@ -627,14 +690,19 @@ async def _daily_active_org_analysis() -> None:
 
 
 def get_scheduler() -> AsyncIOScheduler:
-    """Return the singleton scheduler (create if needed)."""
+    """Return the singleton scheduler (create if needed).
+
+    Every job is wrapped in `_exclusive`: several uvicorn workers each start
+    their own APScheduler, and one cron tick must run once — not once per
+    process.
+    """
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
 
         # Daily at 06:00 UTC — scan recent jobs for anomalies
         _scheduler.add_job(
-            _scan_recent_jobs,
+            _exclusive(_scan_recent_jobs, "daily_anomaly_scan"),
             CronTrigger(hour=6, minute=0),
             id="daily_anomaly_scan",
             replace_existing=True,
@@ -643,7 +711,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # Weekly on Monday 07:00 UTC — summary log
         _scheduler.add_job(
-            _weekly_summary,
+            _exclusive(_weekly_summary, "weekly_summary"),
             CronTrigger(day_of_week="mon", hour=7, minute=0),
             id="weekly_summary",
             replace_existing=True,
@@ -652,7 +720,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # Daily at 07:00 UTC — morning CEO brief (stored in Redis)
         _scheduler.add_job(
-            _generate_morning_brief,
+            _exclusive(_generate_morning_brief, "morning_brief"),
             CronTrigger(hour=7, minute=0),
             id="morning_brief",
             replace_existing=True,
@@ -661,7 +729,9 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # Nightly at 02:00 UTC — full intelligence run + notifications
         _scheduler.add_job(
-            _nightly_intelligence_run,
+            _exclusive(
+                _nightly_intelligence_run, "nightly_intelligence_run", ttl=3600
+            ),
             CronTrigger(hour=2, minute=0),
             id="nightly_intelligence_run",
             replace_existing=True,
@@ -670,7 +740,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # FAZ-2: Daily at 08:00 UTC — re-analyze active orgs automatically
         _scheduler.add_job(
-            _daily_active_org_analysis,
+            _exclusive(_daily_active_org_analysis, "daily_active_org_analysis"),
             CronTrigger(hour=8, minute=0),
             id="daily_active_org_analysis",
             replace_existing=True,
@@ -679,7 +749,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # PROACTIVE: Every hour — KRI scan + alert dispatch
         _scheduler.add_job(
-            _hourly_proactive_kri_scan,
+            _exclusive(_hourly_proactive_kri_scan, "hourly_proactive_kri_scan"),
             CronTrigger(minute=15),   # Her saatin 15. dakikasında
             id="hourly_proactive_kri_scan",
             replace_existing=True,
@@ -689,7 +759,7 @@ def get_scheduler() -> AsyncIOScheduler:
         # ERP SYNC: hourly check; each integration is pulled when its own
         # interval (daily or weekly, chosen on the integrations page) is due.
         _scheduler.add_job(
-            _daily_erp_sync,
+            _exclusive(_daily_erp_sync, "daily_erp_sync"),
             CronTrigger(minute=30),
             id="daily_erp_sync",
             replace_existing=True,
@@ -698,7 +768,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # DQ-5: Hourly — check and run due SyncSchedules (ERP/OB/eFatura)
         _scheduler.add_job(
-            _run_scheduled_syncs,
+            _exclusive(_run_scheduled_syncs, "scheduled_data_syncs"),
             CronTrigger(minute=45),   # Her saatin 45. dakikasında
             id="scheduled_data_syncs",
             replace_existing=True,
@@ -706,7 +776,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # RAG maintenance: her 2 saatte bir eksik chunk indexlerini tamamla.
         _scheduler.add_job(
-            _rag_backfill_maintenance,
+            _exclusive(_rag_backfill_maintenance, "rag_backfill_maintenance"),
             CronTrigger(minute=5, hour="*/2"),
             id="rag_backfill_maintenance",
             replace_existing=True,
@@ -715,12 +785,28 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
         _scheduler.add_job(
-            _nightly_usage_prune,
+            _exclusive(_nightly_usage_prune, "nightly_usage_prune"),
             CronTrigger(hour=3, minute=0),
             id="nightly_usage_prune",
             replace_existing=True,
             max_instances=1,
         )
+
+        # DDIA Ch.1/Ch.7: a claim without an expiry is not a claim. Every 10
+        # minutes, fail analysis jobs whose lease expired (the worker died
+        # mid-run) and agent_runs left `running` by a crash — without this,
+        # a killed worker leaves a job `analyzing` forever.
+        from app.config import get_settings
+
+        if get_settings().reaper_enabled:
+            # TTL (9 min) < interval (10 min): the lock is free by the next tick.
+            _scheduler.add_job(
+                _exclusive(_run_stuck_job_reaper, "stuck_job_reaper", ttl=540),
+                CronTrigger(minute="*/10"),
+                id="stuck_job_reaper",
+                replace_existing=True,
+                max_instances=1,
+            )
 
     return _scheduler
 
@@ -813,6 +899,11 @@ async def _rag_backfill_maintenance() -> None:
 
 
 def start_scheduler() -> None:
+    from app.config import get_settings
+
+    if not get_settings().scheduler_enabled:
+        logger.info("CFO Scheduler disabled (scheduler_enabled=false)")
+        return
     scheduler = get_scheduler()
     if not scheduler.running:
         scheduler.start()

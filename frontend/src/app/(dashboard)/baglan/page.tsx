@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowRight, CheckCircle2, ChevronDown, FileSpreadsheet, HelpCircle, Loader2, UploadCloud, XCircle,
+  AlertCircle, ArrowRight, CheckCircle2, ChevronDown, Copy, FileSpreadsheet, HelpCircle, Loader2, UploadCloud, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -216,6 +216,7 @@ function DosyaKarti({
     durum === "eklendi" ? <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
     : durum === "secim_gerekli" ? <HelpCircle className="h-5 w-5 text-amber-400" aria-hidden="true" />
     : durum === "reddedildi" ? <XCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+    : durum === "mukerrer" ? <Copy className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
     : <AlertCircle className="h-5 w-5 text-amber-400" aria-hidden="true" />;
   const aday = tanima.adaylar[0];
   // Choices: the candidates when recognition was torn, every kind when it found none.

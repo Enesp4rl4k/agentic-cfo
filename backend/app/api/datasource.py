@@ -163,8 +163,9 @@ async def upload_datasource(
     safe_name = f"{source_type}_{source_id[:8]}.{ext}"
     file_path = os.path.join(upload_dir, safe_name)
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    from app.core.atomic_io import atomic_write_bytes
+
+    atomic_write_bytes(file_path, content)
 
     # ── Create DB record ──────────────────────────────────────────────────────
     source = DataSource(

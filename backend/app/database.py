@@ -56,8 +56,11 @@ def _build_engine():
         kwargs = {
             "echo": False,
             "pool_pre_ping": True,
-            "pool_size": 20,
-            "max_overflow": 10,
+            # Capacity math lives in config: workers × pool must stay under
+            # Postgres max_connections — a silent default of 30 per process
+            # crossed it with four processes.
+            "pool_size": settings.db_pool_size,
+            "max_overflow": settings.db_max_overflow,
             "pool_recycle": 1800,
         }
     return create_async_engine(settings.database_url, **kwargs)

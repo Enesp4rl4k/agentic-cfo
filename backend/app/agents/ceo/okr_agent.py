@@ -33,6 +33,8 @@ OKR schema produced:
             "progress_pct": 53,
             "momentum": 0.02,              # Change from prior period
             "confidence": 0.85,
+            "data_freshness_days": 3,     # measured org age — null = unknown
+            "data_freshness_source": "org",  # org | unknown
           }
         ],
         "overall_status": "at_risk",
@@ -161,6 +163,7 @@ def _infer_okrs(
     cross_risks: list[dict[str, Any]] | None,
     period: str | None,
     okr_definitions: list[dict[str, Any]] | None = None,
+    freshness: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Derive standard OKRs from CFO + CTO outputs.
@@ -210,7 +213,7 @@ def _infer_okrs(
                     "actual":           net_margin,
                     "unit":             "oran",
                     "higher_is_better": True,
-                    "data_freshness_days": 7,
+
                 },
                 {
                     "kr":               "Nakit pisti ≥ 12 ay",
@@ -218,7 +221,7 @@ def _infer_okrs(
                     "actual":           cash_runway_months,
                     "unit":             "ay",
                     "higher_is_better": True,
-                    "data_freshness_days": 5,
+
                 },
             ],
         },
@@ -235,7 +238,7 @@ def _infer_okrs(
                                         else None,
                     "unit":             "oran",
                     "higher_is_better": True,
-                    "data_freshness_days": 14,
+
                 },
             ],
         },
@@ -250,7 +253,7 @@ def _infer_okrs(
                     "actual":           mttr_hours,
                     "unit":             "saat",
                     "higher_is_better": False,
-                    "data_freshness_days": 7,
+
                     "prev_actual":      prev_mttr_hours,
                 },
                 {
@@ -259,7 +262,7 @@ def _infer_okrs(
                     "actual":           float(critical_risk_count),
                     "unit":             "sayı",
                     "higher_is_better": False,
-                    "data_freshness_days": 1,
+
                 },
             ],
         },
@@ -276,7 +279,7 @@ def _infer_okrs(
                                         else None,
                     "unit":             "oran",
                     "higher_is_better": False,
-                    "data_freshness_days": 3,
+
                 },
                 {
                     "kr":               "Teknik borç skoru ≤ 4 (0–10 scale)",
@@ -284,7 +287,7 @@ def _infer_okrs(
                     "actual":           debt_score,
                     "unit":             "skor",
                     "higher_is_better": False,
-                    "data_freshness_days": 30,
+
                 },
             ],
         },
@@ -299,7 +302,7 @@ def _infer_okrs(
                     "actual":           avg_velocity,
                     "unit":             "puan/sprint",
                     "higher_is_better": True,
-                    "data_freshness_days": 7,
+
                 },
             ],
         },
@@ -315,6 +318,20 @@ def _infer_okrs(
                         if default_kr["kr"] == override_kr.get("kr"):
                             if "target" in override_kr:
                                 default_kr["target"] = override_kr["target"]
+
+    # One measured org age for every KR — the old per-KR hard-coded days
+    # (7/14/30…) pretended to be measurements; they were fiction. Unknown
+    # must not read as "very confident": neutral 0.5, source "unknown".
+    f_days = freshness.get("days") if freshness else None
+    f_quality = freshness.get("quality", "unknown") if freshness else "unknown"
+    if f_days is not None:
+        confidence = _confidence_from_data_freshness(
+            days_since_update=f_days, data_quality=f_quality
+        )
+        f_source = "org"
+    else:
+        confidence = 0.5
+        f_source = "unknown"
 
     # ── Build scored objectives with momentum ─────────────────────────────────
     objectives: list[dict[str, Any]] = []
@@ -333,12 +350,6 @@ def _infer_okrs(
                 kr_def.get("prev_actual"),
             )
 
-            # Confidence based on data freshness
-            confidence = _confidence_from_data_freshness(
-                days_since_update=kr_def.get("data_freshness_days", 30),
-                data_quality="high" if kr_def.get("data_freshness_days", 100) <= 14 else "low",
-            )
-
             krs_out.append({
                 "kr":           kr_def["kr"],
                 "target":       kr_def["target"],
@@ -348,7 +359,9 @@ def _infer_okrs(
                 "progress_pct": round(score * 100),
                 "momentum":     round(momentum_val, 3),
                 "momentum_label": momentum_label,
-                "confidence":   confidence,
+                "confidence":            confidence,
+                "data_freshness_days":   f_days,
+                "data_freshness_source": f_source,
             })
 
         overall_status, avg_score = _overall_status(krs_out)
@@ -465,6 +478,32 @@ async def _generate_okr_narrative(
 # Main Agent Entry Point
 # ─────────────────────────────────────────────────────────────────────────────
 
+async def _resolve_org_freshness(job_id: str | None) -> dict[str, Any] | None:
+    """Real org data age for confidence — `None` (unknown) on any failure.
+
+    A freshness value the agent cannot measure must not become a guess:
+    unknown flows through as unknown and scores neutral.
+    """
+    if not job_id:
+        return None
+    try:
+        from app.database import session_factory
+        from app.models.analysis_job import AnalysisJob
+        from app.services.freshness import org_age_summary
+
+        async with session_factory()() as db:
+            job = await db.get(AnalysisJob, job_id)
+            if job is None or not job.org_id:
+                return None
+            return await org_age_summary(db, job.org_id)
+    except Exception:
+        logger.warning(
+            "OKR freshness unavailable — proceeding with unknown",
+            exc_info=True,
+        )
+        return None
+
+
 async def run_okr_agent(
     state: dict[str, Any],
     config: dict,
@@ -494,6 +533,7 @@ async def run_okr_agent(
             cross_risks=state.get("cross_risks") or [],
             period=state.get("period"),
             okr_definitions=state.get("okr_definitions"),
+            freshness=await _resolve_org_freshness(state.get("job_id")),
         )
 
         # Compute company-level weighted OKR score

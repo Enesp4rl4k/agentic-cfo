@@ -43,6 +43,10 @@ class DataSourceDomain(StrEnum):
 class DataSourceType(StrEnum):
     # CFO
     BANK_STATEMENT  = "bank_statement"
+    # An e-Fatura, e-Arşiv, receipt or statement dropped alongside another one:
+    # extra documents of the same analysis. Dropping three invoices used to
+    # start three separate analyses, each with its own review to clear.
+    FINANCIAL_DOCUMENT = "financial_document"
 
     # CTO
     CLOUD_BILLING   = "cloud_billing"

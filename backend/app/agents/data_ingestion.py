@@ -656,14 +656,70 @@ async def run_data_ingestion(
     Data Ingestion Skill.
     done_when: state['transactions'] is a non-empty list.
 
+    One analysis can hold several documents: a month of e-Fatura XMLs dropped
+    together is one analysis, not one per file. Each is read by
+    `_belgeyi_al` below and the transactions are put together; the confidence
+    is the lowest of them and a review needed for one is a review for the run.
+    """
+    sonuc = await _belgeyi_al(
+        state.get("file_path", ""), state.get("file_type", ""), state, config,
+    )
+    ekler = list(state.get("ek_belgeler") or [])
+    if not ekler:
+        return sonuc
+
+    islemler: list[dict[str, Any]] = list((sonuc.patch or {}).get("transactions") or [])
+    metinler: list[str] = [str((sonuc.patch or {}).get("raw_text") or "")]
+    detaylar: list[str] = [f"1) {sonuc.detail}"]
+    guven = sonuc.confidence if sonuc.ok else 1.0
+    inceleme = bool(sonuc.needs_review)
+
+    for i, ek in enumerate(ekler, start=2):
+        alt = await _belgeyi_al(ek.get("path", ""), ek.get("type", ""), state, config)
+        ad = ek.get("ad") or ek.get("path", "")
+        detaylar.append(f"{i}) {ad}: {alt.detail}")
+        if alt.ok:
+            islemler.extend((alt.patch or {}).get("transactions") or [])
+            metinler.append(str((alt.patch or {}).get("raw_text") or ""))
+            guven = min(guven, alt.confidence)
+            inceleme = inceleme or bool(alt.needs_review)
+        else:
+            # A document that could not be read does not discard the others,
+            # but the run is held so a person sees which one failed.
+            inceleme = True
+            guven = min(guven, 0.5)
+
+    if not islemler:
+        return SkillResult(ok=False, needs_review=True, confidence=0.0,
+                           detail=f"{len(ekler) + 1} belgenin hiçbirinden işlem çıkarılamadı. "
+                                  + " | ".join(detaylar))
+    return SkillResult(
+        ok=True,
+        patch={"raw_text": _BELGE_ARASI.join(t for t in metinler if t)[:_EN_FAZLA_METIN],
+               "transactions": islemler},
+        confidence=guven,
+        needs_review=inceleme,
+        detail=f"{len(ekler) + 1} belge, {len(islemler)} işlem. " + " | ".join(detaylar),
+    )
+
+
+# Several documents' text is kept for the audit trail and RAG indexing, capped
+# so a batch of invoices cannot grow the state without bound.
+_EN_FAZLA_METIN = 400_000
+_BELGE_ARASI = "\n\n"
+
+
+async def _belgeyi_al(
+    file_path: str, file_type: str, state: CFOState, config: AgentRunConfig
+) -> SkillResult:
+    """One document: read it, then parse by the strategies below.
+
     Strategy:
-      1. Read raw text from file (PDF / Excel / CSV)
+      1. Read raw text from file (PDF / Excel / CSV / XML)
       2. Try ParserRegistry (bank-specific rule-based parsers) — fast, free
       3. If no bank match → fall back to LLM extraction
     """
     settings = get_settings()
-    file_path = state.get("file_path", "")
-    file_type = state.get("file_type", "")
 
     if not os.path.exists(file_path):
         return SkillResult(ok=False, detail=f"File not found: {file_path}", halt=True)

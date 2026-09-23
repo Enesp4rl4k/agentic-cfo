@@ -21,6 +21,7 @@ from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
+from app.services.forecast_backtest import build_backtest
 
 router = APIRouter(tags=["analytics"])
 logger = logging.getLogger(__name__)
@@ -417,3 +418,17 @@ async def cohort_analysis(
     user: User = Depends(get_current_user)
 ) -> dict[str, Any]:
     return {"data": {"cohorts": []}, "error": None}
+
+
+@router.get("/analytics/forecast-backtest")
+async def forecast_backtest(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Tahminler tuttu mu — kapanmış tahmin pencerelerinin gerçekleşenle
+    karşılaştırması (MAE/sMAPE/bant kapsama/bias); <3 çiftte dürüst cevap."""
+    if not current_user.org_id:
+        raise HTTPException(status_code=400, detail="Hesap kuruluşa bağlı değil")
+
+    backtest = await build_backtest(db, org_id=current_user.org_id)
+    return {"data": backtest, "error": None}

@@ -187,7 +187,11 @@ class UBLTRInvoiceParser:
         else:
             xml_bytes = xml_content
 
-        root = ET.fromstring(xml_bytes)
+        # One gate for user-supplied XML: a DTD or entity declaration is
+        # refused before parsing (see app.core.xml_safety).
+        from app.core.xml_safety import parse_xml as _parse_xml
+
+        root = _parse_xml(xml_bytes)
         if root.tag != INVOICE_ROOT:
             raise NotAnInvoiceError(root.tag)
 

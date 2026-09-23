@@ -1,31 +1,42 @@
 """
 Server-Sent Events (SSE) infrastructure for real-time agent progress.
 
-Architecture:
-  - In-process pub/sub via asyncio.Queue (no extra Redis channel needed)
-  - SSEManager holds one Queue per job_id
-  - ARQ worker calls `publish_step_event()` after each LangGraph node completes
-  - FastAPI endpoint GET /api/v1/stream/{job_id} streams events to the browser
+Architecture (DDIA Ch.3/Ch.11 — processes do not share memory):
+  - Events are published to a Redis pub/sub channel `sse:job:{job_id}` — the
+    ARQ worker publishes, the API process delivers to browsers. Before this
+    bridge the queues were process-local `asyncio.Queue`s and a publish in
+    the worker reached nobody: the live-progress feature only ever worked
+    for inline (same-process) runs.
+  - Each subscriber still owns a local queue; a single listener task feeds
+    it from the bus. Same-process publishers also deliver directly (no
+    broker round-trip), and every event carries an `eid` so the bus echo of
+    an already-delivered event is dropped — delivery is exactly-once per
+    subscriber regardless of path.
+  - With no broker (dev / tests / outage) behaviour is the old one: local
+    direct delivery, fire-and-forget.
 
 Event format (JSON per SSE data line):
   {"event": "step", "job_id": "...", "step": "pnl", "ok": true,
-   "detail": "...", "confidence": 0.95, "ts": "2024-01-01T12:00:00Z"}
+   "detail": "...", "confidence": 0.95, "eid": "...", "ts": "..."}
   {"event": "done", "job_id": "...", "status": "completed"}
   {"event": "error", "job_id": "...", "message": "..."}
 
-Limitations:
-  - Queues are in-process — if you run multiple uvicorn workers (not recommended
-    for dev), events published in worker process X won't reach clients on worker Y.
-  - For multi-process production, replace Queue with Redis pub/sub.
-  - Max 50 concurrent SSE connections by default (configurable).
+Limits (enforced, not promised):
+  - Max `settings.sse_max_connections` (default 50) live subscriptions per
+    worker process; the endpoint answers 429 beyond it (api/stream.py).
+  - `_MAX_QUEUE_SIZE` events buffered per subscriber, drop-oldest beyond.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import uuid
+from collections import deque
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +46,18 @@ _MAX_QUEUE_SIZE = 100
 _KEEPALIVE_INTERVAL = 15  # seconds
 # Max seconds a client can stay connected (prevents zombie connections)
 _MAX_CONNECTION_SECONDS = 600  # 10 minutes
+# Dedup memory per subscriber: bus echo of an already-delivered event.
+_MAX_SEEN = 512
+# Redis channel prefix — the listener pattern-subscribes `{prefix}*`
+_CHANNEL_PREFIX = "sse:job:"
+
+
+@dataclass
+class _Subscriber:
+    """One connected client: its queue plus the event ids it already got."""
+
+    queue: asyncio.Queue[dict | None]
+    seen: deque[str] = field(default_factory=lambda: deque(maxlen=_MAX_SEEN))
 
 
 class SSEManager:
@@ -51,33 +74,74 @@ class SSEManager:
     """
 
     def __init__(self) -> None:
-        # job_id → list of subscriber queues (one per connected client)
-        self._queues: dict[str, list[asyncio.Queue[dict | None]]] = {}
+        # job_id → subscribers (one per connected client)
+        self._queues: dict[str, list[_Subscriber]] = {}
+        self._listener_task: asyncio.Task[Any] | None = None
 
-    def _get_or_create_job(self, job_id: str) -> list[asyncio.Queue[dict | None]]:
+    def _get_or_create_job(self, job_id: str) -> list[_Subscriber]:
         if job_id not in self._queues:
             self._queues[job_id] = []
         return self._queues[job_id]
 
-    async def publish(self, job_id: str, event: dict) -> None:
+    @property
+    def connection_count(self) -> int:
+        """Live subscriptions in this process — the endpoint's capacity gate."""
+        return sum(len(subs) for subs in self._queues.values())
+
+    # ── Delivery ──────────────────────────────────────────────────────────────
+
+    def _deliver_local(self, job_id: str, event: dict) -> None:
+        """Hand the event to this process's subscribers, exactly once each.
+
+        Called by the direct publish path and by the bus listener; the `eid`
+        recorded on delivery makes the second call a no-op.
         """
-        Publish an event to all clients subscribed to job_id.
-        If no clients are connected, the event is silently dropped
-        (fire-and-forget — pipeline should not block on SSE delivery).
-        """
-        queues = self._queues.get(job_id, [])
-        if not queues:
+        subs = self._queues.get(job_id, [])
+        if not subs:
             return
-        for q in queues:
+        eid = event.get("eid")
+        for sub in subs:
+            if isinstance(eid, str):
+                if eid in sub.seen:
+                    continue
+                sub.seen.append(eid)
             try:
-                q.put_nowait(event)
+                sub.queue.put_nowait(event)
             except asyncio.QueueFull:
                 # Drop oldest event to make room
                 try:
-                    q.get_nowait()
-                    q.put_nowait(event)
+                    sub.queue.get_nowait()
+                    sub.queue.put_nowait(event)
                 except (asyncio.QueueEmpty, asyncio.QueueFull):
                     pass
+
+    async def publish(self, job_id: str, event: dict) -> None:
+        """
+        Publish an event to all clients subscribed to job_id.
+
+        Local subscribers get it immediately; the bus carries it to every
+        other process. Fire-and-forget — the pipeline never blocks on SSE
+        delivery: a broker outage degrades to local-only, not to an error.
+        """
+        if not isinstance(event, dict):
+            return
+        stamped = dict(event)
+        stamped.setdefault("eid", uuid.uuid4().hex[:16])
+
+        self._deliver_local(job_id, stamped)
+
+        from app.core.redis_client import get_redis, mark_unavailable
+
+        client = await get_redis()
+        if client is None:
+            return
+        try:
+            await client.publish(
+                f"{_CHANNEL_PREFIX}{job_id}",
+                json.dumps(stamped, default=str),
+            )
+        except Exception as exc:
+            mark_unavailable(exc)
 
     async def publish_done(self, job_id: str, status: str) -> None:
         """Signal pipeline completion. Clients will close the connection."""
@@ -87,13 +151,88 @@ class SSEManager:
             "status": status,
             "ts": datetime.now(UTC).isoformat(),
         })
-        # Sentinel None → tells subscribe() generator to stop
-        queues = self._queues.get(job_id, [])
-        for q in queues:
+        # Sentinel None → tells subscribe() generator to stop (cross-process
+        # subscribers close on the `done` event itself).
+        for sub in self._queues.get(job_id, []):
             try:
-                q.put_nowait(None)
+                sub.queue.put_nowait(None)
             except asyncio.QueueFull:
                 pass
+        # The progress trail is publisher-side bookkeeping; a job that ended
+        # must not leave its entry growing in this dict forever.
+        _completed_steps.pop(job_id, None)
+
+    # ── Bus listener (cross-process) ─────────────────────────────────────────
+
+    async def _ensure_listener(self) -> None:
+        """Start the single bus listener task (lazily, idempotently)."""
+        if self._listener_task is not None and not self._listener_task.done():
+            return
+        from app.core.redis_client import get_redis
+
+        if await get_redis() is None:
+            return
+        try:
+            self._listener_task = asyncio.create_task(
+                self._listener_loop(), name="sse-redis-bus"
+            )
+        except RuntimeError:
+            # No running loop (sync context) — next subscribe retries.
+            pass
+
+    async def _listener_loop(self) -> None:
+        """Pattern-subscribe the bus and route messages to local queues.
+
+        Reconnects with capped backoff: a broker restart must not kill the
+        endpoint's existing streams.
+        """
+        from app.core.redis_client import get_redis, mark_unavailable
+
+        delay = 1.0
+        while True:
+            pubsub: Any = None
+            try:
+                client = await get_redis()
+                if client is None:
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 30.0)
+                    continue
+                pubsub = client.pubsub()
+                await pubsub.psubscribe(f"{_CHANNEL_PREFIX}*")
+                delay = 1.0
+                async for message in pubsub.listen():
+                    if message.get("type") != "pmessage":
+                        continue
+                    channel = str(message.get("channel", ""))
+                    if not channel.startswith(_CHANNEL_PREFIX):
+                        continue
+                    job_id = channel[len(_CHANNEL_PREFIX):]
+                    data = message.get("data")
+                    if not isinstance(data, str):
+                        continue
+                    try:
+                        event = json.loads(data)
+                    except ValueError:
+                        continue
+                    if isinstance(event, dict):
+                        self._deliver_local(job_id, event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                mark_unavailable(exc)
+                logger.warning(
+                    "SSE bus listener lost — reconnecting in %.0fs: %s", delay, exc
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 30.0)
+            finally:
+                if pubsub is not None:
+                    try:
+                        await pubsub.aclose()
+                    except Exception:
+                        pass
+
+    # ── Subscribe side ───────────────────────────────────────────────────────
 
     async def subscribe(
         self, job_id: str
@@ -105,9 +244,10 @@ class SSEManager:
           data: {"event": "step", ...}\n\n
           : keepalive\n\n
         """
-        q: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=_MAX_QUEUE_SIZE)
+        sub = _Subscriber(queue=asyncio.Queue(maxsize=_MAX_QUEUE_SIZE))
         queues = self._get_or_create_job(job_id)
-        queues.append(q)
+        queues.append(sub)
+        await self._ensure_listener()
         logger.debug("SSE client subscribed to job=%s (total=%d)", job_id, len(queues))
 
         try:
@@ -121,19 +261,22 @@ class SSEManager:
 
                 try:
                     event = await asyncio.wait_for(
-                        q.get(),
+                        sub.queue.get(),
                         timeout=min(_KEEPALIVE_INTERVAL, remaining),
                     )
                 except TimeoutError:
                     # Send SSE keepalive comment to prevent proxy timeouts
                     yield ": keepalive\n\n"
+                    # A stream that outlived a broker outage still deserves
+                    # its bus: retry the listener on every keepalive.
+                    await self._ensure_listener()
                     continue
 
                 if event is None:
                     # Sentinel — pipeline finished
                     break
 
-                yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {json.dumps(event, default=str)}\n\n"
 
                 # If this was a done/error event, close connection
                 if event.get("event") in ("done", "error"):
@@ -142,7 +285,7 @@ class SSEManager:
         finally:
             # Clean up subscriber queue
             try:
-                queues.remove(q)
+                queues.remove(sub)
             except ValueError:
                 pass
             if not queues:

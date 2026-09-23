@@ -337,7 +337,9 @@ def parse_makbuz(xml_content: str | bytes, *, own_vkn: str = "") -> ParsedMakbuz
     """Read an e-Müstahsil or e-SMM. Raises NotAMakbuzError for anything else."""
     raw = xml_content.encode("utf-8") if isinstance(xml_content, str) else xml_content
     try:
-        root = ET.fromstring(raw)
+        from app.core.xml_safety import parse_xml as _parse_xml
+
+        root = _parse_xml(raw)
     except ET.ParseError as exc:
         raise NotAMakbuzError(f"XML okunamadı: {exc}") from exc
     if root.tag == CREDIT_NOTE_ROOT:

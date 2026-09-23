@@ -89,6 +89,8 @@ _ROUTERS = [
     ("app.api.system",                  "router", "system"),                       # Global management/ops health
     ("app.api.actions",                 "router", "actions"),                      # Human-in-the-Loop Action Execution
     ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
+    ("app.api.data_freshness",          "router", "data-freshness"),                # Org-level "as of" — shared with packet + OKR
+    ("app.api.decisions",               "router", "decisions"),                     # Karar Defteri: record → expected → outcome
 ]
 
 _API_PREFIX = "/api/v1"

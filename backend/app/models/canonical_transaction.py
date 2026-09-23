@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -29,6 +29,10 @@ class CanonicalTransaction(Base):
             "source_record_id",
             name="uq_canonical_tx_org_source_record",
         ),
+        # The semantic rebuild reads by exactly this pair; single-column
+        # indexes left it scanning (migration 039 creates it too, so old
+        # databases and fresh create_all ones agree).
+        Index("ix_canonical_transactions_org_date", "org_id", "transaction_date"),
     )
 
     id: Mapped[str] = mapped_column(
