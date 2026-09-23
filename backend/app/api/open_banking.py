@@ -37,7 +37,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -229,34 +229,44 @@ async def oauth_callback(
     }
 
 
+class OpenBankingSyncBody(BaseModel):
+    """What the sync needs. The bank's access token travels in the body: as a
+    query parameter it was written into every access and proxy log on the way."""
+    bank_id: str = Field(..., description="Bank ID (akbank, garanti)")
+    account_id: str = Field(..., description="Account ID from bank")
+    access_token: str = Field(..., description="Access token from the OAuth flow")
+    days_back: int = Field(default=90, ge=1, le=730, description="How many days of history to fetch")
+
+
 @router.post("/open-banking/connections/{connection_id}/sync")
 async def sync_transactions(
     connection_id: str,
-    bank_id:       str = Query(..., description="Bank ID (akbank, garanti)"),
-    account_id:    str = Query(..., description="Account ID from bank"),
-    access_token:  str = Query(..., description="Access token from OAuth flow"),
-    days_back:     int = Query(default=90, description="How many days of history to fetch"),
+    body: OpenBankingSyncBody,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
-    Sync transactions from a connected bank account.
+    Sync transactions from a connected bank account into an ordinary analysis.
 
-    Creates a new AnalysisJob with the fetched transactions
-    and triggers the CFO analysis pipeline.
+    The fetched rows used to be written to a Redis key nothing ever read, on a
+    job with no file: the analysis failed with "file not found" while this
+    answered "queued". They now become a statement the ingestion reads, through
+    the same path Paraşüt's sync uses.
     """
-    start_date = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    from app.services.ingest.ekle import EKLENDI, Sahip, islemleri_ekle
+
+    start_date = (datetime.now(UTC) - timedelta(days=body.days_back)).strftime("%Y-%m-%d")
     end_date   = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    client_id, client_secret, sandbox = _get_bank_settings(bank_id)
+    client_id, client_secret, sandbox = _get_bank_settings(body.bank_id)
 
     from app.services.open_banking import get_bank_client
-    client = get_bank_client(bank_id, client_id, client_secret, sandbox)
+    client = get_bank_client(body.bank_id, client_id, client_secret, sandbox)
 
     try:
         transactions = await client.get_transactions(
-            access_token=access_token,
-            account_id=account_id,
+            access_token=body.access_token,
+            account_id=body.account_id,
             start_date=start_date,
             end_date=end_date,
         )
@@ -264,47 +274,29 @@ async def sync_transactions(
         raise HTTPException(
             status_code=502,
             detail=f"İşlem senkronizasyonu başarısız: {exc}",
-        )
+        ) from exc
 
-    # Create analysis job with the fetched transactions
-    from app.models.analysis_job import AnalysisJob, JobStatus
-    job = AnalysisJob(
-        id=str(uuid.uuid4()),
-        status=JobStatus.PENDING,
-        filename=f"{bank_id}_open_banking_{end_date}.json",
-        file_path="",  # No file — transactions injected directly
-        file_type="json",
-        # A job with neither is visible to nobody, and was created by nobody.
-        org_id=current_user.org_id,
-        user_id=current_user.id,
-    )
-    db.add(job)
-    await db.commit()
+    if not transactions:
+        return {"data": {"job_id": None, "bank_id": body.bank_id, "transaction_count": 0,
+                         "period": f"{start_date} – {end_date}", "status": "veri_yok"},
+                "error": None}
 
-    # Trigger pipeline with direct transactions (bypass file parsing)
-    try:
-        import json
-
-        # Store transactions in Redis for worker to pick up
-        from app.worker import enqueue_analysis, get_arq_pool
-        pool = await get_arq_pool()
-        await pool.set(
-            f"ob_transactions:{job.id}",
-            json.dumps(transactions),
-            ex=3600,
-        )
-        await enqueue_analysis(job.id)
-    except Exception as exc:
-        logger.warning("Could not enqueue Open Banking analysis: %s", exc)
+    sonuc = await islemleri_ekle(db, Sahip.kullanici(current_user), transactions,
+                                 kaynak=f"{body.bank_id}_open_banking")
+    dosya = (sonuc.get("dosyalar") or [{}])[0]
+    if dosya.get("durum") != EKLENDI:
+        raise HTTPException(status_code=422, detail=dosya.get("mesaj") or "İşlemler eklenemedi.")
 
     return {
         "data": {
-            "job_id":           job.id,
-            "bank_id":          bank_id,
+            "job_id":            sonuc.get("job_id"),
+            "bank_id":           body.bank_id,
             "transaction_count": len(transactions),
-            "period":           f"{start_date} – {end_date}",
-            "status":           "queued",
-            "poll_url":         f"/api/v1/analysis/{job.id}",
+            "period":            f"{start_date} – {end_date}",
+            # What actually happened to the analysis, not a hopeful "queued".
+            "status":            dosya.get("dispatch", "not_requested"),
+            "message":           dosya.get("mesaj"),
+            "poll_url":          f"/api/v1/analysis/{sonuc.get('job_id')}",
         },
         "error": None,
     }
