@@ -22,6 +22,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 BEKLIYOR = "bekliyor"
+CALISIYOR = "calisiyor"
 TAMAM = "tamam"
 # Long enough for a queued run to start and finish on a busy worker, short
 # enough that a lost one is recovered by the next reaper pass (every 10 min).
@@ -32,32 +33,76 @@ def devam_durumu(meta: dict[str, Any] | None) -> str | None:
     return ((meta or {}).get("review") or {}).get("devam")
 
 
-async def devam_et(job_id: str) -> dict[str, Any]:
-    """Run the held continuation for an approved job, once. Idempotent."""
+async def _devam_yaz(db: Any, job: Any, **alanlar: Any) -> bool:
+    """Write review fields only if nobody wrote the row since it was read.
+
+    Compare-and-set on `updated_at`: portable across SQLite and Postgres, and no
+    migration for a JSON-held state. Returns whether this caller's write won.
+    """
     from sqlalchemy import update
 
+    from app.models.analysis_job import AnalysisJob
+
+    meta = dict(job.result_metadata or {})
+    review = dict(meta.get("review") or {})
+    review.update(alanlar)
+    meta["review"] = review
+    sonuc = await db.execute(
+        update(AnalysisJob)
+        .where(AnalysisJob.id == job.id, AnalysisJob.updated_at == job.updated_at)
+        .values(result_metadata=meta, updated_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return bool(sonuc.rowcount == 1)
+
+
+def _eski_mi(zaman: str | None, now: datetime) -> bool:
+    try:
+        t = datetime.fromisoformat(str(zaman))
+    except ValueError:
+        return True
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=UTC)
+    return now - t >= YENIDEN_DENEME_SURESI
+
+
+async def devam_et(job_id: str) -> dict[str, Any]:
+    """Run the held continuation for an approved job, once.
+
+    Two dispatches can overlap (the in-process fallback and the reaper, or two
+    reapers): each first claims the row with a compare-and-set to "calisiyor",
+    and only the one whose write wins runs. A claim older than the grace period
+    is a crashed run and may be taken over. A failure puts the row back to
+    "bekliyor" for the reaper.
+    """
     from app.database import session_factory
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.worker import continue_after_completion, saved_result
 
+    now = datetime.now(UTC)
     async with session_factory()() as db:
         job = await db.get(AnalysisJob, job_id)
         if job is None or job.status != JobStatus.COMPLETED or not job.org_id:
             return {"ok": False, "neden": "iş yok ya da tamamlanmamış"}
-        if devam_durumu(job.result_metadata) == TAMAM:
+        review = (job.result_metadata or {}).get("review") or {}
+        durum = review.get("devam")
+        if durum == TAMAM:
             return {"ok": True, "neden": "zaten tamam"}
+        if durum == CALISIYOR and not _eski_mi(review.get("devam_basladi"), now):
+            return {"ok": True, "neden": "başka bir çalıştırma sürüyor"}
+        if not await _devam_yaz(db, job, devam=CALISIYOR, devam_basladi=now.isoformat()):
+            return {"ok": True, "neden": "başka bir çalıştırma sahiplendi"}
 
-        await continue_after_completion(job_id, str(job.org_id), await saved_result(job_id, db), db)
-
-        meta = dict(job.result_metadata or {})
-        review = dict(meta.get("review") or {})
-        review.update(devam=TAMAM, devam_at=datetime.now(UTC).isoformat())
-        meta["review"] = review
-        await db.execute(
-            update(AnalysisJob).where(AnalysisJob.id == job_id).values(result_metadata=meta)
-            .execution_options(synchronize_session=False)
-        )
-        await db.commit()
+        await db.refresh(job)
+        try:
+            await continue_after_completion(job_id, str(job.org_id), await saved_result(job_id, db), db)
+        except Exception:
+            await db.refresh(job)
+            await _devam_yaz(db, job, devam=BEKLIYOR)
+            raise
+        await db.refresh(job)
+        await _devam_yaz(db, job, devam=TAMAM, devam_at=datetime.now(UTC).isoformat())
     logger.info("Review continuation done job=%s", job_id)
     return {"ok": True}
 
@@ -125,14 +170,10 @@ async def yarim_kalanlari_bul(db: Any, now: datetime | None = None) -> list[str]
     yarim: list[str] = []
     for job_id, meta in rows:
         review = (meta or {}).get("review") or {}
-        if review.get("devam") != BEKLIYOR:
-            continue
-        try:
-            onay = datetime.fromisoformat(str(review.get("approved_at")))
-        except ValueError:
-            onay = now - YENIDEN_DENEME_SURESI
-        if onay.tzinfo is None:
-            onay = onay.replace(tzinfo=UTC)
-        if now - onay >= YENIDEN_DENEME_SURESI:
+        durum = review.get("devam")
+        # Owed and never started, or started by a run that died mid-way.
+        if (durum == BEKLIYOR and _eski_mi(review.get("approved_at"), now)) or (
+            durum == CALISIYOR and _eski_mi(review.get("devam_basladi"), now)
+        ):
             yarim.append(str(job_id))
     return yarim

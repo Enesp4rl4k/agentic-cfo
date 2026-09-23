@@ -16,7 +16,7 @@ import pytest_asyncio
 import app.database as database
 import app.worker as worker
 from app.services import review_continuation as rc
-from tests.api_helpers import bellek_istemcisi, kullanici, ornek_rapor
+from tests.api_helpers import arka_plan_bitsin, bellek_istemcisi, kullanici, ornek_rapor
 
 
 async def _broker_yok(job_id: str) -> None:
@@ -32,6 +32,7 @@ async def client(monkeypatch):
         # has one that refuses slowly, which made this test time out.
         monkeypatch.setattr(rc, "_kuyruga_koy", _broker_yok)
         yield c
+        await arka_plan_bitsin()
 
 
 @pytest_asyncio.fixture
@@ -182,3 +183,59 @@ async def test_a_broker_slow_to_refuse_does_not_hold_the_approval(monkeypatch):
     t0 = time.monotonic()
     assert await rc.devami_baslat("job-yavas") == "inline"
     assert time.monotonic() - t0 < 2
+
+
+async def test_two_overlapping_runs_do_the_work_once(client, monkeypatch):
+    """The in-process fallback and a reaper redispatch can overlap: the claim
+    lets exactly one of them run the continuation."""
+    from sqlalchemy import update
+
+    from app.models.analysis_job import AnalysisJob, JobStatus
+
+    calls: list[str] = []
+
+    async def yavas(job_id: str, org_id: str, result: dict[str, Any], db: Any) -> None:
+        calls.append(job_id)
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(worker, "continue_after_completion", yavas)
+    _, org_id, _ = await kullanici(client, "cakisma@example.com")
+    job_id = await _held_job(client, org_id)
+    async with client._maker() as db:
+        await db.execute(update(AnalysisJob).where(AnalysisJob.id == job_id).values(
+            status=JobStatus.COMPLETED, awaiting_review=False,
+            result_metadata={"review": {"approved_at": datetime.now(UTC).isoformat(),
+                                        "devam": rc.BEKLIYOR}},
+        ))
+        await db.commit()
+
+    sonuclar = await asyncio.gather(rc.devam_et(job_id), rc.devam_et(job_id))
+    assert calls == [job_id]
+    assert sum(1 for s in sonuclar if "neden" not in s) == 1
+    assert rc.devam_durumu(await _meta(client, job_id)) == rc.TAMAM
+
+
+async def test_a_failed_run_goes_back_to_owed(client, monkeypatch):
+    from sqlalchemy import update
+
+    from app.models.analysis_job import AnalysisJob, JobStatus
+
+    async def patlayan(*a: Any, **k: Any) -> None:
+        raise RuntimeError("semantik yeniden kurulum düştü")
+
+    monkeypatch.setattr(worker, "continue_after_completion", patlayan)
+    _, org_id, _ = await kullanici(client, "hata@example.com")
+    job_id = await _held_job(client, org_id)
+    async with client._maker() as db:
+        await db.execute(update(AnalysisJob).where(AnalysisJob.id == job_id).values(
+            status=JobStatus.COMPLETED, awaiting_review=False,
+            result_metadata={"review": {"approved_at": datetime.now(UTC).isoformat(),
+                                        "devam": rc.BEKLIYOR}},
+        ))
+        await db.commit()
+
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        await rc.devam_et(job_id)
+    assert rc.devam_durumu(await _meta(client, job_id)) == rc.BEKLIYOR

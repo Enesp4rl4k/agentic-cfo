@@ -95,3 +95,18 @@ def ornek_rapor(*, runway: float = 9.5) -> dict[str, Any]:
             }
         },
     }
+
+
+async def arka_plan_bitsin(zaman_asimi: float = 5.0) -> None:
+    """Wait for tasks started with app.core.background.spawn.
+
+    A continuation spawned by one test otherwise outlives it and lands in the
+    next test's stand-ins — which is how an approval test turned flaky.
+    """
+    import asyncio
+
+    from app.core.background import _RUNNING
+
+    bekleyen = [t for t in list(_RUNNING) if not t.done()]
+    if bekleyen:
+        await asyncio.wait(bekleyen, timeout=zaman_asimi)

@@ -37,6 +37,10 @@ async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         c._maker = maker  # type: ignore[attr-defined]
         yield c
+        # The approval spawns its continuation; let it end inside this test.
+        from tests.api_helpers import arka_plan_bitsin
+
+        await arka_plan_bitsin()
     app.dependency_overrides.clear()
     await engine.dispose()
 
