@@ -232,20 +232,39 @@ async def suggest_counterparties(
     """
     org_id = _org_id(current_user)
 
+    # Every analysis of the organisation is read, and the same statement or
+    # overlapping months are routinely uploaded more than once (January–March,
+    # then February–April). Counted per analysis row, each re-upload doubled a
+    # counterparty's frequency and total — the very signal this list ranks by.
+    # A payment is one payment however many analyses carry it: same date,
+    # amount, direction and counterparty. (Two genuinely identical payments on
+    # one day collapse too; for a list of names to review that errs the right
+    # way.)
+    tekil = (
+        select(
+            Transaction.vendor.label("vendor"),
+            Transaction.transaction_date,
+            Transaction.amount_kurus.label("amount_kurus"),
+            Transaction.type,
+        )
+        .join(AnalysisJob, Transaction.job_id == AnalysisJob.id)
+        .where(
+            AnalysisJob.org_id == org_id,
+            Transaction.vendor.is_not(None),
+            Transaction.vendor != "",
+        )
+        .distinct()
+        .subquery()
+    )
+
     rows = (
         await db.execute(
             select(
-                Transaction.vendor,
+                tekil.c.vendor,
                 func.count().label("tx_count"),
-                func.sum(func.abs(Transaction.amount_kurus)).label("total_kurus"),
+                func.sum(func.abs(tekil.c.amount_kurus)).label("total_kurus"),
             )
-            .join(AnalysisJob, Transaction.job_id == AnalysisJob.id)
-            .where(
-                AnalysisJob.org_id == org_id,
-                Transaction.vendor.is_not(None),
-                Transaction.vendor != "",
-            )
-            .group_by(Transaction.vendor)
+            .group_by(tekil.c.vendor)
             .order_by(func.count().desc())
         )
     ).all()
