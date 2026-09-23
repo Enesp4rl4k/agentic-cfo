@@ -16,64 +16,17 @@ No LLM and no API key is needed anywhere in this file.
 from __future__ import annotations
 
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 
-from app.database import Base, get_db
-from app.main import app
+from tests.api_helpers import bellek_istemcisi, kullanici
 
 
 @pytest_asyncio.fixture
 async def client():
-    """In-memory FastAPI client + clean schema (mirrors test_decisions)."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def _override():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _override
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        c._maker = maker  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as c:
         yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
 
 
-async def _user(client, email: str, *, attach_org: bool = True) -> tuple:
-    """Register → optionally attach an org → login (mirrors test_decisions)."""
-    from sqlalchemy import select
-
-    from app.models.organization import Organization
-    from app.models.user import User
-
-    await client.post(
-        "/api/v1/auth/register",
-        json={"email": email, "password": "StrongPassword123!", "full_name": "T"},
-    )
-    async with client._maker() as db:  # type: ignore[attr-defined]
-        user = (await db.execute(select(User).where(User.email == email))).scalar_one()
-        org_id = None
-        if attach_org:
-            org = Organization(name=email, slug=email.split("@")[0])
-            db.add(org)
-            await db.flush()
-            user.org_id = org.id
-            org_id = org.id
-        await db.commit()
-        user_id = user.id
-    token = (
-        await client.post(
-            "/api/v1/auth/login",
-            json={"email": email, "password": "StrongPassword123!"},
-        )
-    ).json()["data"]["access_token"]
-    return {"Authorization": f"Bearer {token}"}, org_id, user_id
+_user = kullanici
 
 
 async def _seed_claim(
@@ -243,7 +196,7 @@ async def test_unclosed_window_is_not_a_pair(client):
 # ── 3. Kuruluş sınırları ve erişim ───────────────────────────────────────────
 
 async def test_other_orgs_claims_do_not_leak(client):
-    headers, org_id, _ = await _user(client, "dar@example.com")
+    headers, _org_id, _ = await _user(client, "dar@example.com")
     _, other_org, _ = await _user(client, "baska@example.com")
     await _seed_claim(client, other_org, days_ago=1095, base=1_000_000, pess=800_000, opt=1_200_000)
     await _seed_claim(client, other_org, days_ago=730, base=2_000_000, pess=1_800_000, opt=2_500_000)

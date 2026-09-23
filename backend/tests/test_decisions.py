@@ -17,61 +17,17 @@ No LLM and no API key is needed anywhere in this file.
 from __future__ import annotations
 
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 
-from app.database import Base, get_db
-from app.main import app
+from tests.api_helpers import bellek_istemcisi, kullanici, ornek_rapor
 
 
 @pytest_asyncio.fixture
 async def client():
-    """In-memory FastAPI client + clean schema (mirrors test_decision_packet)."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def _override():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _override
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        c._maker = maker  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as c:
         yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
 
 
-async def _user(client, email: str) -> tuple[dict[str, str], str, str]:
-    """Register → attach a fresh org (mirrors test_decision_packet)."""
-    from sqlalchemy import select
-
-    from app.models.organization import Organization
-    from app.models.user import User
-
-    await client.post(
-        "/api/v1/auth/register",
-        json={"email": email, "password": "StrongPassword123!", "full_name": "T"},
-    )
-    async with client._maker() as db:  # type: ignore[attr-defined]
-        user = (await db.execute(select(User).where(User.email == email))).scalar_one()
-        org = Organization(name=email, slug=email.split("@")[0])
-        db.add(org)
-        await db.flush()
-        user.org_id = org.id
-        await db.commit()
-        org_id, user_id = org.id, user.id
-    token = (
-        await client.post(
-            "/api/v1/auth/login",
-            json={"email": email, "password": "StrongPassword123!"},
-        )
-    ).json()["data"]["access_token"]
-    return {"Authorization": f"Bearer {token}"}, org_id, user_id
+_user = kullanici
 
 
 async def _seed_job(
@@ -113,27 +69,7 @@ async def _seed_job(
                     job_id=job.id,
                     report_type=ReportType.FULL,
                     report_format=ReportFormat.JSON,
-                    # The stored report is LIRA (production shape —
-                    # report_agent._fmt divides the pipeline's cents);
-                    # load_pnl_cashflow_forecast converts money to kuruş,
-                    # so `expected` assertions below still read kuruş.
-                    data={
-                        "pnl": {
-                            "revenue": 12_000_000,
-                            "total_opex": 8_000_000,
-                            "net_margin": 0.2,
-                            "opex": {"salary": 4_000_000, "rent": 1_000_000},
-                        },
-                        "cashflow": {"net_change": 500_000},
-                        "forecast": {
-                            "scenarios": {
-                                "base": {
-                                    "runway_months": runway,
-                                    "twelve_month_net": 3_000_000,
-                                }
-                            }
-                        },
-                    },
+                    data=ornek_rapor(runway=runway),
                 )
             )
         for days_ago, tx_type, amount in txn_days:

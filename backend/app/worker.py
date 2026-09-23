@@ -240,6 +240,10 @@ async def run_cfo_analysis(
     )
     from app.streaming.sse import publish_job_done, publish_job_error, publish_step_event
 
+    # The id reaches here from an HTTP request. It is written into log lines
+    # below, so a value carrying CR/LF could forge log entries; strip them.
+    job_id = str(job_id).replace("\r", "").replace("\n", "")
+
     logger.info("ARQ worker: starting CFO analysis for job=%s", job_id)
 
     async with get_session_factory(engine())() as db:
