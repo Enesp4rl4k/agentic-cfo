@@ -12,7 +12,8 @@ Laws, not tips. Every rule has a number, a "never", or a command that checks it.
 6. Never touch `backend/app/agents/` orchestration logic without running `pytest tests/test_agents/ -q` after.
 7. Never modify DB models without creating an Alembic migration.
 8. Never call the OpenAI API directly from frontend — route through backend only.
-9. Never accept file uploads without validating: extension in {pdf, xlsx, xls, csv, txt, xml},
+9. Never accept file uploads without validating: extension in {pdf, xlsx, csv, txt, xml}
+   (`.xls` is refused with advice to re-save as `.xlsx` — nothing here can read it),
    size ≤ 10 MB. `.xml` is e-Fatura/e-Arşiv — the document a Turkish company actually holds —
    and must additionally pass `app.core.xml_safety` (no DTD, no ENTITY) before anything parses
    it; ElementTree expands internal entities, which a size limit does not catch.

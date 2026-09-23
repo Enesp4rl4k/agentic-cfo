@@ -123,3 +123,9 @@ async def test_the_job_keeps_the_name_the_person_gave_the_file(tmp_path):
         )
         assert adsiz.filename == "document.csv"
     await engine.dispose()
+
+
+def test_the_upload_page_refuses_xls_with_the_same_advice_as_baglan():
+    """.xls passed the upload page's allowlist and then failed inside openpyxl."""
+    with pytest.raises(FileValidationError, match="xlsx"):
+        validate_extension("xls")
