@@ -130,7 +130,9 @@ def _git_log_mu(veri: bytes) -> bool:
     return bas.lstrip().startswith("commit ") and "\nAuthor:" in bas
 
 
-EDEFTER_NS = "http://www.edefter.gov.tr"
+# An XML namespace identifier, never fetched: it must equal the string GİB's
+# documents declare, scheme included.
+EDEFTER_NS = "http://www.edefter.gov.tr"  # NOSONAR — namespace URI, not a network call
 _EDEFTER_ADLARI = {"defter": "e-Defter (yevmiye / kebir)", "berat": "e-Defter beratı",
                    "defterraporu": "e-Defter raporu"}
 
