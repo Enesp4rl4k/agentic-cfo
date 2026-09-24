@@ -304,7 +304,13 @@ async def run_cfo_analysis(
             # Close the read transaction before the long pipeline call: a
             # transaction left open across minutes of work is the exact pattern
             # that once wedged every other writer ("database is locked").
-            await db.rollback()
+            # Not with rollback(): a rollback expires every loaded attribute,
+            # and the next `job.file_path` then tried to lazy-load outside the
+            # async context — MissingGreenlet, so every analysis on this path
+            # failed. Load the job inside the async context, then commit the
+            # read (expire_on_commit=False keeps the values).
+            await db.refresh(job)
+            await db.commit()
 
             result = await run_cfo_pipeline(
                 job_id=job_id,
