@@ -123,3 +123,55 @@ async def test_the_job_keeps_the_name_the_person_gave_the_file(tmp_path):
         )
         assert adsiz.filename == "document.csv"
     await engine.dispose()
+
+
+def test_the_upload_page_refuses_xls_with_the_same_advice_as_baglan():
+    """.xls passed the upload page's allowlist and then failed inside openpyxl."""
+    with pytest.raises(FileValidationError, match="xlsx"):
+        validate_extension("xls")
+
+
+_EDEFTER_MINIMAL = b"""<?xml version="1.0" encoding="UTF-8"?>
+<edefter:defter xmlns:edefter="http://www.edefter.gov.tr"><x/></edefter:defter>"""
+
+
+def test_an_edefter_is_named_at_the_door_not_accepted_and_left_empty():
+    """A journal went in as a "financial document" and the analysis ended with
+    no transactions and no word why — nothing reads e-Defter yet."""
+    from app.services.ingest.recognize import edefter_turu
+
+    assert edefter_turu(_EDEFTER_MINIMAL) == "e-Defter (yevmiye / kebir)"
+    assert edefter_turu(_UBL_MINIMAL) is None
+    assert edefter_turu(b"tarih,tutar\n") is None
+
+
+async def test_the_door_refuses_an_edefter_with_advice(tmp_path, monkeypatch):
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import app.services.ingest.ekle as ekle
+    from app.config import get_settings
+    from app.database import Base
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path), raising=False)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+        out = await ekle.dosyalari_ekle(db, ekle.Sahip(org_id="o", user_id="u"),
+                                        [("1234567808-201804-Y-000000.xml", _EDEFTER_MINIMAL)])
+    await engine.dispose()
+    d = out["dosyalar"][0]
+    assert d["durum"] == ekle.REDDEDILDI
+    assert "e-Defter" in d["mesaj"] and "banka ekstresini" in d["mesaj"]
+    assert out["job_id"] is None
+
+
+@korpus_var
+def test_every_gib_edefter_sample_is_recognised():
+    from app.services.ingest.recognize import edefter_turu
+
+    klasor = GIB.parent.parent.parent / "e_defter" / "e-Defter Paketi" / "xml"
+    dosyalar = sorted(klasor.glob("*.xml"))
+    assert dosyalar
+    for f in dosyalar:
+        assert edefter_turu(f.read_bytes()) is not None, f.name

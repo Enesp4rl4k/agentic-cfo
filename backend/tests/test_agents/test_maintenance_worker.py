@@ -19,6 +19,9 @@ def test_worker_settings_partitioned() -> None:
         "run_rag_backfill_maintenance",
         "run_usage_prune_maintenance",
         "run_semantic_rebuild",
+        # What an approval releases; on the maintenance queue so a burst of
+        # approvals never delays anyone's analysis.
+        "run_review_continuation",
     }
 
     assert WorkerSettings.queue_name != MaintenanceWorkerSettings.queue_name

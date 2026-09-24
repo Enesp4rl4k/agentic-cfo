@@ -29,6 +29,10 @@ class CategoryRule(Base):
 
     # Matching criteria — at least one must be set
     # Exact vendor match (case-insensitive)
+    # The organisation the rule was learned in. Rules without one (written
+    # before migration 041) belong to nobody and are read by nobody.
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
     vendor_match: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
     # Keyword in description (case-insensitive substring match)
     keyword_match: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)

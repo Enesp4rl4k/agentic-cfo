@@ -220,6 +220,10 @@ _EXECUTIVE_BRIEF_TEMPLATE = """
 
 # ── PDF Engine ────────────────────────────────────────────────────────────────
 
+class PDFRenderError(RuntimeError):
+    """The report could not be rendered. Never answered with a stand-in PDF."""
+
+
 class PDFEngine:
     """
     HTML → PDF engine using WeasyPrint.
@@ -264,59 +268,35 @@ class PDFEngine:
             from jinja2 import Template
             tmpl = Template(template_str)
             return tmpl.render(**context)
-        except ImportError:
-            # Jinja2 not available — use str.format fallback
-            logger.warning("Jinja2 not installed — using basic template")
-            return template_str.replace("{{ company_name or \"Şirket\" }}", str(context.get("company_name", "Şirket")))
+        except ImportError as exc:
+            raise PDFRenderError("PDF şablon motoru (Jinja2) kurulu değil.") from exc
         except Exception as exc:
-            logger.warning("Template render failed: %s", exc)
-            return f"<html><body><h1>{context.get('company_name', 'CFO Report')}</h1></body></html>"
+            # This returned a page holding only the company name, served as the
+            # report with a 200: someone downloading their board report got a
+            # title and nothing else, and nothing said why.
+            logger.error("Template render failed: %s", exc)
+            raise PDFRenderError(f"Rapor şablonu doldurulamadı: {exc}") from exc
 
     def _html_to_pdf(self, html: str) -> bytes:
-        """Convert HTML to PDF bytes using WeasyPrint (sync, run in executor)."""
+        """Convert HTML to PDF bytes using WeasyPrint (sync, run in executor).
+
+        A failure raises. It used to return a stand-in: a page reading
+        "WeasyPrint yüklü değil" (even when it was installed and had failed on
+        this report), or a blank page — delivered with a 200 as the report.
+        """
         try:
             from weasyprint import HTML
-            pdf = HTML(string=html).write_pdf()
-            return pdf  # type: ignore[return-value]
-        except ImportError:
-            logger.warning("WeasyPrint not installed — generating minimal PDF")
-            return self._minimal_pdf(html)
+        except (ImportError, OSError) as exc:
+            # OSError: the package is there but its system libraries (Pango,
+            # GObject) are not — importing it fails before any rendering.
+            raise PDFRenderError(
+                "PDF motoru (WeasyPrint) bu sunucuda çalışmıyor: paket ya da sistem kütüphaneleri eksik."
+            ) from exc
+        try:
+            return HTML(string=html).write_pdf()  # type: ignore[no-any-return]
         except Exception as exc:
             logger.error("WeasyPrint render failed: %s", exc)
-            return self._minimal_pdf(html)
-
-    def _minimal_pdf(self, html: str) -> bytes:
-        """
-        Ultra-minimal PDF as fallback when WeasyPrint unavailable.
-        Uses ReportLab if available, otherwise returns a raw PDF stub.
-        """
-        try:
-            import io
-
-            from reportlab.lib.pagesizes import A4
-            from reportlab.pdfgen import canvas
-
-            buf = io.BytesIO()
-            c   = canvas.Canvas(buf, pagesize=A4)
-            c.setFont("Helvetica", 12)
-            c.drawString(50, 800, "CFO Raporu")
-            c.drawString(50, 780, "(WeasyPrint yüklü değil — tam rapor için pip install weasyprint)")
-            c.save()
-            return buf.getvalue()
-        except ImportError:
-            pass
-
-        # Raw minimal PDF bytes as last resort
-        return (
-            b"%PDF-1.4\n"
-            b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-            b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]"
-            b"/Parent 2 0 R>>endobj\n"
-            b"xref\n0 4\n0000000000 65535 f\n"
-            b"trailer<</Size 4/Root 1 0 R>>\n"
-            b"startxref 9\n%%EOF\n"
-        )
+            raise PDFRenderError(f"PDF oluşturulamadı: {exc}") from exc
 
 
 # ── Context builders from CFO result ─────────────────────────────────────────

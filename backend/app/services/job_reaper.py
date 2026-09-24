@@ -123,6 +123,15 @@ async def reap_and_notify() -> dict[str, Any]:
 
     async with get_session_factory(engine())() as db:
         counts = await reap_stuck_jobs(db)
+        # Approvals whose continuation never reported done (a restart between
+        # the approval and its end) are dispatched again; the per-job queue id
+        # and the continuation's own check make a repeat harmless.
+        from app.services.review_continuation import devami_baslat, yarim_kalanlari_bul
+
+        yarim = await yarim_kalanlari_bul(db)
+    for job_id in yarim:
+        await devami_baslat(job_id)
+    counts["review_continuations_redispatched"] = len(yarim)
 
     if counts.get("expired_leases") or counts.get("stale_pending"):
         try:
