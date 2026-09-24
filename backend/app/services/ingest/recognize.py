@@ -130,6 +130,29 @@ def _git_log_mu(veri: bytes) -> bool:
     return bas.lstrip().startswith("commit ") and "\nAuthor:" in bas
 
 
+EDEFTER_NS = "http://www.edefter.gov.tr"
+_EDEFTER_ADLARI = {"defter": "e-Defter (yevmiye / kebir)", "berat": "e-Defter beratı",
+                   "defterraporu": "e-Defter raporu"}
+
+
+def edefter_turu(veri: bytes) -> str | None:
+    """The e-Defter document kind, decided by the root element — or None.
+
+    A company's own journal and ledger arrive as XML the door accepted as a
+    "financial document"; nothing reads them yet, so the analysis ended with
+    no transactions and no word why. They are named at the door instead.
+    """
+    from app.core.xml_safety import UnsafeXMLError, parse_xml
+
+    try:
+        kok = parse_xml(veri)
+    except (UnsafeXMLError, Exception):
+        return None
+    if not kok.tag.startswith("{" + EDEFTER_NS + "}"):
+        return None
+    return _EDEFTER_ADLARI.get(kok.tag.split("}", 1)[1], "e-Defter belgesi")
+
+
 def tani(veri: bytes, dosya_adi: str) -> Tanima:
     """Recognise a file from its bytes and name."""
     uzanti = dosya_adi.rsplit(".", 1)[-1].lower() if "." in dosya_adi else ""
