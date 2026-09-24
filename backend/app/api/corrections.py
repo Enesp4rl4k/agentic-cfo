@@ -51,7 +51,7 @@ async def correct_category(
     tx = await db.get(Transaction, transaction_id)
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found.")
-    await load_owned_job(db, tx.job_id, current_user)
+    job = await load_owned_job(db, tx.job_id, current_user)
 
     old_category = tx.category
     tx.category = body.category
@@ -64,6 +64,8 @@ async def correct_category(
         new_category=body.category,
         apply_always=body.apply_always,
         db=db,
+        # The rule belongs to the company whose transaction was corrected.
+        org_id=str(job.org_id) if job.org_id else None,
     )
 
     return {

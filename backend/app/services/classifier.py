@@ -58,6 +58,7 @@ async def classify(
     description: str,
     vendor: str | None,
     db: AsyncSession,
+    org_id: str | None = None,
 ) -> str:
     """
     Classify a transaction description into a category.
@@ -68,11 +69,17 @@ async def classify(
 
     from app.models.category_rule import CategoryRule
 
+    # Rules are an organisation's own corrections; without one, only the
+    # built-in heuristics apply.
+    if org_id is None:
+        return classify_by_keywords(description)
+
     # 1. Vendor match — most specific
     if vendor:
         result = await db.execute(
             select(CategoryRule)
-            .where(CategoryRule.vendor_match.ilike(f"%{vendor.strip()}%"))
+            .where(CategoryRule.org_id == org_id,
+                   CategoryRule.vendor_match.ilike(f"%{vendor.strip()}%"))
             .order_by(CategoryRule.hit_count.desc())
             .limit(1)
         )
@@ -86,7 +93,7 @@ async def classify(
     # 2. Keyword match against description
     result = await db.execute(
         select(CategoryRule)
-        .where(CategoryRule.keyword_match.isnot(None))
+        .where(CategoryRule.org_id == org_id, CategoryRule.keyword_match.isnot(None))
         .order_by(CategoryRule.hit_count.desc())
     )
     keyword_rules = result.scalars().all()
@@ -108,6 +115,7 @@ async def learn(
     new_category: str,
     apply_always: bool,
     db: AsyncSession,
+    org_id: str | None = None,
 ) -> CategoryRule:
     """
     Persist a user correction as a CategoryRule.
@@ -120,8 +128,11 @@ async def learn(
     # Upsert: if an identical rule already exists, update the category
     if vendor and apply_always:
         existing = await db.execute(
+            # Only this organisation's rule: matching on the vendor name alone
+            # let one company's correction rewrite another company's rule.
             select(CategoryRule).where(
-                CategoryRule.vendor_match.ilike(vendor.strip())
+                CategoryRule.org_id == org_id,
+                CategoryRule.vendor_match.ilike(vendor.strip()),
             ).limit(1)
         )
         rule = existing.scalars().first()
@@ -133,6 +144,7 @@ async def learn(
 
     # Create new rule
     rule = CategoryRule(
+        org_id=org_id,
         vendor_match=vendor.strip() if vendor else None,
         keyword_match=_extract_keyword(description) if not vendor else None,
         category=new_category,
