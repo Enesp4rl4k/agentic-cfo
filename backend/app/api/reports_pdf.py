@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -96,6 +96,20 @@ async def _get_company_name(user: User, db: AsyncSession) -> str:
     return ""
 
 
+async def _render(coro: Any) -> bytes:
+    """Await a render; a failure is a 503 that says why.
+
+    The engine used to hand back a stand-in PDF (a title, or a blank page) with
+    a 200, so a failed report looked like a delivered one.
+    """
+    from app.services.pdf import PDFRenderError
+
+    try:
+        return cast(bytes, await coro)
+    except PDFRenderError as exc:
+        raise HTTPException(status_code=503, detail=f"Rapor PDF'i oluşturulamadı. {exc}") from exc
+
+
 # ── POST /reports/pdf/cfo-summary ────────────────────────────────────────────
 
 @router.post("/reports/pdf/cfo-summary")
@@ -117,7 +131,7 @@ async def generate_cfo_summary_pdf(
     7. Recommendations — top 5 action items
 
     Returns PDF as binary stream.
-    Falls back to minimal PDF if WeasyPrint unavailable.
+    A render failure is a 503 that says why, never a stand-in PDF.
     """
     from app.services.pdf import PDFEngine, build_cfo_summary_context
 
@@ -140,7 +154,7 @@ async def generate_cfo_summary_pdf(
     )
 
     engine    = PDFEngine()
-    pdf_bytes = await engine.render("cfo_summary", context)
+    pdf_bytes = await _render(engine.render("cfo_summary", context))
 
     date_str = datetime.now(UTC).strftime("%Y%m%d")
     filename = f"cfo_summary_{date_str}.pdf"
@@ -187,7 +201,7 @@ async def generate_executive_brief_pdf(
     )
 
     engine    = PDFEngine()
-    pdf_bytes = await engine.render("executive_brief", context)
+    pdf_bytes = await _render(engine.render("executive_brief", context))
 
     date_str = datetime.now(UTC).strftime("%Y%m%d")
     filename = f"executive_brief_{date_str}.pdf"
@@ -257,7 +271,7 @@ async def generate_compliance_cert_pdf(
     engine    = PDFEngine()
     # `_html_to_pdf` is synchronous: awaiting its bytes raised TypeError, so
     # this route failed on every call that reached it.
-    pdf_bytes = await engine.render_html(cert_html)
+    pdf_bytes = await _render(engine.render_html(cert_html))
 
     filename = f"compliance_cert_{body.certification_id[:8]}.pdf"
     return _pdf_response(pdf_bytes, filename)

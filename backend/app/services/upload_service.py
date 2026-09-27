@@ -50,6 +50,14 @@ def get_extension(filename: str) -> str:
 
 def validate_extension(ext: str) -> None:
     """Raise FileValidationError if extension is not in the allowlist."""
+    if ext == "xls":
+        # Accepted here, then read with openpyxl, which cannot open the
+        # 97-2003 format: the analysis failed later with a library error. The
+        # /baglan door already says this; the upload page now says it too.
+        raise FileValidationError(
+            "Bu eski Excel biçimi (.xls) okunamıyor. Dosyayı Excel'de açıp "
+            "'Farklı Kaydet → Excel Çalışma Kitabı (.xlsx)' ile kaydedip tekrar yükleyin."
+        )
     if ext not in ALLOWED_EXTENSIONS:
         allowed = sorted(ALLOWED_EXTENSIONS)
         raise FileValidationError(

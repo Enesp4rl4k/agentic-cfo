@@ -37,6 +37,10 @@ async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         c._maker = maker  # type: ignore[attr-defined]
         yield c
+        # The approval spawns its continuation; let it end inside this test.
+        from tests.api_helpers import arka_plan_bitsin
+
+        await arka_plan_bitsin()
     app.dependency_overrides.clear()
     await engine.dispose()
 
@@ -89,6 +93,14 @@ async def test_approval_completes_the_job_and_continues_from_saved_results(clien
     # The continuation runs in the background on its own session; in the test
     # that session must be the test database's.
     monkeypatch.setattr(database, "session_factory", lambda: client._maker)
+    # No broker, decided by the test: CI's Redis refused slowly and the wait
+    # below ran out before the in-process fallback started.
+    from app.services import review_continuation as rc
+
+    async def broker_yok(job_id: str) -> None:
+        raise ConnectionError("broker yok")
+
+    monkeypatch.setattr(rc, "_kuyruga_koy", broker_yok)
     headers, org_id, user_id = await _user(client, "onay@example.com")
     job_id = await _held_job(client, org_id)
 

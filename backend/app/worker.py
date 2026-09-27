@@ -304,7 +304,13 @@ async def run_cfo_analysis(
             # Close the read transaction before the long pipeline call: a
             # transaction left open across minutes of work is the exact pattern
             # that once wedged every other writer ("database is locked").
-            await db.rollback()
+            # Not with rollback(): a rollback expires every loaded attribute,
+            # and the next `job.file_path` then tried to lazy-load outside the
+            # async context — MissingGreenlet, so every analysis on this path
+            # failed. Load the job inside the async context, then commit the
+            # read (expire_on_commit=False keeps the values).
+            await db.refresh(job)
+            await db.commit()
 
             result = await run_cfo_pipeline(
                 job_id=job_id,
@@ -916,6 +922,13 @@ async def run_semantic_rebuild(ctx: dict, org_id: str) -> dict[str, Any]:
     }
 
 
+async def run_review_continuation(ctx: dict, job_id: str) -> dict[str, Any]:
+    """ARQ maintenance task: what an approval releases (see services.review_continuation)."""
+    from app.services.review_continuation import devam_et
+
+    return await devam_et(str(job_id))
+
+
 async def enqueue_semantic_rebuild_job(org_id: str, *, defer_by: float = 0.0) -> bool:
     """Enqueue a per-org trailing semantic rebuild on the maintenance queue."""
     pool = await get_arq_pool()
@@ -1157,7 +1170,8 @@ class MaintenanceWorkerSettings:
     This isolates user-facing analysis throughput under high traffic.
     """
 
-    functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance, run_semantic_rebuild]
+    functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance, run_semantic_rebuild,
+                 run_review_continuation]
     queue_name = get_settings().arq_maintenance_queue_name
     max_jobs = get_settings().arq_maintenance_max_jobs
     job_timeout = 1200

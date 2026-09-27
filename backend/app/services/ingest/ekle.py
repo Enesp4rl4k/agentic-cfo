@@ -31,6 +31,7 @@ from app.services.ingest.recognize import (
     GIT_LOG,
     KESIN,
     Tanima,
+    edefter_turu,
     standart_csv,
     tabloyu_sec,
     tani,
@@ -220,6 +221,12 @@ async def dosyalari_ekle(
                 validate_xml_payload(veri)
             except FileValidationError as exc:
                 sonuc.update(durum=REDDEDILDI, mesaj=str(exc))
+            else:
+                tur = edefter_turu(veri)
+                if tur is not None:
+                    sonuc.update(durum=REDDEDILDI, mesaj=(
+                        f"Bu bir {tur} dosyası. e-Defter'den analiz henüz yapılamıyor; "
+                        "aynı döneme ait banka ekstresini ya da e-Fatura XML'lerini yükleyin."))
         tanima = await asyncio.to_thread(tani, veri, ad) if "durum" not in sonuc else Tanima(TANINMADI)
         secilen = secim.get(ad)
         if "durum" not in sonuc and secilen:
