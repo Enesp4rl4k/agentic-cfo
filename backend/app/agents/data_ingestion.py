@@ -649,6 +649,39 @@ def _csv_sonucu(csv_txs: list[dict[str, Any]], raw_text: str, job_id: Any) -> Sk
     )
 
 
+def _yevmiye_sonucu(raw_text: str) -> SkillResult:
+    """An e-Defter journal read on the accrual basis (owner's choice, 2026-09-27).
+
+    Only the income statement is taken: 6xx and, under 7/A, the 7x0 cost
+    accounts; transfer and closing entries are skipped so nothing counts twice.
+    An income-statement account the map does not know holds the run for a
+    person instead of being guessed.
+    """
+    from app.parsers.edefter.yevmiye import NotAJournal, yevmiye_oku
+
+    try:
+        sonuc = yevmiye_oku(raw_text.encode("utf-8"))
+    except NotAJournal as exc:
+        return SkillResult(
+            ok=False, needs_review=True, confidence=0.0,
+            detail=f"e-Defter belgesi yevmiye değil ({exc.tur}); gelir tablosu için yevmiye defteri gerekir.",
+        )
+    ozet = (f"e-Defter yevmiye: {sonuc.kayit_sayisi} kayıt, {len(sonuc.islemler)} gelir tablosu "
+            f"satırı (tahakkuk esası); {sonuc.atlanan_kayit} yansıtma/kapanış kaydı atlandı.")
+    if not sonuc.islemler:
+        return SkillResult(ok=False, needs_review=True, confidence=0.0,
+                           detail=ozet + " Gelir ya da gider hesabına kayıt yok.")
+    tanimsiz = sonuc.tanimsiz_hesaplar
+    return SkillResult(
+        ok=True,
+        patch={"raw_text": raw_text[:_EN_FAZLA_METIN], "transactions": sonuc.islemler},
+        confidence=0.95 if not tanimsiz else 0.6,
+        needs_review=bool(tanimsiz),
+        detail=ozet + (f" Tanınmayan gelir tablosu hesapları: {', '.join(tanimsiz)} — "
+                       "bu kayıtlar okunmadı, lütfen kontrol edin." if tanimsiz else ""),
+    )
+
+
 async def run_data_ingestion(
     state: CFOState, config: AgentRunConfig
 ) -> SkillResult:
@@ -751,6 +784,12 @@ async def _belgeyi_al(
             embedded = await asyncio.to_thread(_pdf_embedded_xml, file_path)
             if embedded:
                 raw_text = embedded[0]
+
+        # ── Strategy 1.2: e-Defter yevmiye — accrual income statement ─────
+        # A substring only decides whether to look; the root element decides
+        # what the document is (app.parsers.edefter.yevmiye).
+        if file_type == "xml" and "edefter.gov.tr" in raw_text[:4000]:
+            return _yevmiye_sonucu(raw_text)
 
         # ── Strategy 1.25: GİB UBL-TR 1.2 / 2.1 e-Fatura / e-Arşiv XML Parser ──
         if (

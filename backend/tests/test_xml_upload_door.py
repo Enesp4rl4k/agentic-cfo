@@ -162,8 +162,25 @@ async def test_the_door_refuses_an_edefter_with_advice(tmp_path, monkeypatch):
     await engine.dispose()
     d = out["dosyalar"][0]
     assert d["durum"] == ekle.REDDEDILDI
-    assert "e-Defter" in d["mesaj"] and "banka ekstresini" in d["mesaj"]
+    assert "yevmiye defterini" in d["mesaj"]
     assert out["job_id"] is None
+
+
+def test_a_journal_is_accepted_and_the_others_say_what_to_upload():
+    from app.services.ingest.recognize import edefter_ret_nedeni
+
+    def defter(tur: str, kok: str = "defter") -> bytes:
+        return (f'<edefter:{kok} xmlns:edefter="http://www.edefter.gov.tr" '
+                'xmlns:gl-cor="http://www.xbrl.org/int/gl/cor/2006-10-25">'
+                f"<gl-cor:documentInfo><gl-cor:entriesType>{tur}</gl-cor:entriesType>"
+                f"</gl-cor:documentInfo></edefter:{kok}>").encode()
+
+    assert edefter_ret_nedeni(defter("journal")) is None
+    assert "kebir" in edefter_ret_nedeni(defter("ledger"))
+    assert "iki kez" in edefter_ret_nedeni(defter("ledger"))
+    assert "envanter" in edefter_ret_nedeni(defter("assets"))
+    assert "berat" in edefter_ret_nedeni(defter("", kok="berat"))
+    assert edefter_ret_nedeni(_UBL_MINIMAL) is None
 
 
 @korpus_var
