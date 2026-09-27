@@ -137,12 +137,10 @@ _EDEFTER_ADLARI = {"defter": "e-Defter (yevmiye / kebir)", "berat": "e-Defter be
                    "defterraporu": "e-Defter raporu"}
 
 
-def edefter_turu(veri: bytes) -> str | None:
-    """The e-Defter document kind, decided by the root element — or None.
+def edefter_bilgisi(veri: bytes) -> tuple[str, str] | None:
+    """(root element, entriesType) of an e-Defter document — or None.
 
-    A company's own journal and ledger arrive as XML the door accepted as a
-    "financial document"; nothing reads them yet, so the analysis ended with
-    no transactions and no word why. They are named at the door instead.
+    Decided by the root element's namespace, never by a word in the text.
     """
     from app.core.xml_safety import UnsafeXMLError, parse_xml
 
@@ -152,12 +150,49 @@ def edefter_turu(veri: bytes) -> str | None:
         return None
     if not kok.tag.startswith("{" + EDEFTER_NS + "}"):
         return None
-    return _EDEFTER_ADLARI.get(kok.tag.split("}", 1)[1], "e-Defter belgesi")
+    tur = (kok.findtext(".//{http://www.xbrl.org/int/gl/cor/2006-10-25}documentInfo/"  # NOSONAR
+                        "{http://www.xbrl.org/int/gl/cor/2006-10-25}entriesType") or "").strip()  # NOSONAR
+    return kok.tag.split("}", 1)[1], tur
+
+
+def edefter_turu(veri: bytes) -> str | None:
+    """A readable name for an e-Defter document, or None when it is not one."""
+    bilgi = edefter_bilgisi(veri)
+    if bilgi is None:
+        return None
+    kok, tur = bilgi
+    if kok == "defter":
+        return {"journal": "e-Defter yevmiye defteri", "ledger": "e-Defter büyük defteri (kebir)",
+                "assets": "e-Defter envanter defteri"}.get(tur, "e-Defter (yevmiye / kebir)")
+    return _EDEFTER_ADLARI.get(kok, "e-Defter belgesi")
+
+
+def edefter_ret_nedeni(veri: bytes) -> str | None:
+    """Why an e-Defter document cannot be read — or None when it can (a journal)
+    or is not an e-Defter at all."""
+    bilgi = edefter_bilgisi(veri)
+    if bilgi is None:
+        return None
+    kok, tur = bilgi
+    if kok == "defter" and tur == "journal":
+        return None
+    yukle = "Aynı döneme ait yevmiye defterini (dosya adında -Y- olan) yükleyin."
+    if kok == "defter" and tur == "ledger":
+        return ("Bu büyük defter (kebir): yevmiyedeki kayıtları hesap sırasıyla taşır, ikisini "
+                "birden okumak her kaydı iki kez sayardı. " + yukle)
+    if kok == "defter" and tur == "assets":
+        return "Bu envanter defteri: dönem sonu bakiyelerini taşır, gelir tablosu üretmez. " + yukle
+    if kok == "berat":
+        return "Bu bir e-Defter beratı: defterin kendisini değil onayını taşır. " + yukle
+    return f"Bu bir {edefter_turu(veri)}; gelir tablosu için okunmaz. " + yukle
 
 
 def tani(veri: bytes, dosya_adi: str) -> Tanima:
     """Recognise a file from its bytes and name."""
     uzanti = dosya_adi.rsplit(".", 1)[-1].lower() if "." in dosya_adi else ""
+    if uzanti == "xml" and edefter_turu(veri) == "e-Defter yevmiye defteri":
+        return Tanima(KESIN, tur=FINANSAL_BELGE, alan="cfo", etiket="e-Defter yevmiye defteri",
+                      ozet="Yevmiye defteri: gelir tablosu tahakkuk esasıyla okunacak.")
     if uzanti in ("pdf", "xml"):
         return Tanima(KESIN, tur=FINANSAL_BELGE, alan="cfo", etiket="Finansal belge (ekstre / fatura)",
                       ozet="Finansal belge: banka ekstresi, e-Fatura ya da makbuz olarak okunacak.")

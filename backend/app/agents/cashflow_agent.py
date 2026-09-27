@@ -254,6 +254,17 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         settings = get_settings()
         cashflow = _classify_cashflow(transactions)
         alerts = _detect_alerts(cashflow)
+        # Rows read from an e-Defter journal are accrual income-statement lines:
+        # a sale counts when invoiced, paid or not. Classified as cash they make
+        # a "cash flow" that is really profit, so the result says which it is.
+        if any(t.get("basis") == "tahakkuk" for t in transactions):
+            cashflow["esas"] = "tahakkuk"
+            alerts.insert(0, {
+                "level": "warning",
+                "message": ("Bu tablo e-Defter yevmiyesinin gelir/gider kayıtlarından (tahakkuk "
+                            "esası) türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
+                            "içerir, gerçek nakit hareketi değildir. Nakit için banka ekstresini yükleyin."),
+            })
         narrative = await _generate_cashflow_narrative(cashflow, alerts, settings, state=state)
 
         cashflow["alerts"] = alerts
