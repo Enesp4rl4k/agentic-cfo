@@ -64,20 +64,23 @@ def project_from_cfo(
 
     critical = sum(1 for a in anomalies if isinstance(a, dict) and a.get("severity") == "critical")
 
-    # Revenue may be cents or float major units — prefer *_cents / amount fields
+    # Report.data contract: scalars are lira (report_agent._fmt boundary) while the
+    # semantic catalog unit is "cents" — convert deterministically at this boundary.
+    # Explicit *_cents fields (legacy shape) are already cents and pass through.
     revenue = pnl.get("revenue_cents")
     if revenue is None:
-        revenue = pnl.get("revenue")
-        # If looks like major units (small float), leave as-is; catalog unit is cents
-        # Callers storing major units as "revenue" are common — treat < 1e6 as major→cents
-        if isinstance(revenue, (int, float)) and abs(revenue) < 1_000_000 and revenue != int(revenue):
-            revenue = round(float(revenue) * 100)
-        elif isinstance(revenue, (int, float)) and abs(revenue) < 10_000_000:
-            # Ambiguous; keep numeric as provided if integer-like large, else cents convert
-            pass
+        rev = pnl.get("revenue")
+        revenue = round(float(rev) * 100) if isinstance(rev, (int, float)) else rev
 
-    ebitda = pnl.get("ebitda_cents", pnl.get("ebitda"))
-    op_cf = cashflow.get("operating_cents", cashflow.get("operating"))
+    ebitda = pnl.get("ebitda_cents")
+    if ebitda is None:
+        eb = pnl.get("ebitda")
+        ebitda = round(float(eb) * 100) if isinstance(eb, (int, float)) else eb
+
+    op_cf = cashflow.get("operating_cents")
+    if op_cf is None:
+        oc = cashflow.get("operating")
+        op_cf = round(float(oc) * 100) if isinstance(oc, (int, float)) else oc
 
     refs = [
         EvidenceRef(source_type="cfo_result", job_id=job_id, preview="last_cfo_result")

@@ -120,25 +120,25 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
   steps.push({
     name: "Revenue",
     base: 0,
-    value: pnl.revenue / 100,
+    value: pnl.revenue,
     color: "oklch(0.72 0.19 142)",
   });
-  running = pnl.revenue / 100;
+  running = pnl.revenue;
 
   // COGS (negative)
   if (pnl.cogs > 0) {
     steps.push({
       name: "COGS",
-      base: (pnl.revenue - pnl.cogs) / 100,
-      value: pnl.cogs / 100,
+      base: pnl.revenue - pnl.cogs,
+      value: pnl.cogs,
       color: "oklch(0.58 0.22 25 / 0.7)",
     });
-    running = (pnl.revenue - pnl.cogs) / 100;
+    running = pnl.revenue - pnl.cogs;
   }
 
   // OpEx items
   opexEntries.forEach(([key, val]) => {
-    const v = (val ?? 0) / 100;
+    const v = val ?? 0;
     running -= v;
     steps.push({
       name: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -152,7 +152,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
   steps.push({
     name: "Net Income",
     base: 0,
-    value: pnl.net_income / 100,
+    value: pnl.net_income,
     color: pnl.net_income >= 0 ? "oklch(0.72 0.19 142)" : "oklch(0.58 0.22 25)",
   });
 
@@ -219,7 +219,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
 
   const data = entries.map(([key, val]) => ({
     name: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-    value: (val ?? 0) / 100,
+    value: val ?? 0,
     pct: total > 0 ? ((val ?? 0) / total) * 100 : 0,
     color: OPEX_COLORS[key] ?? "oklch(0.50 0.01 255)",
   }));
@@ -239,7 +239,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
         <div>
           <h2 className="text-sm font-medium">Operating Expenses Breakdown</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Total: {formatCurrency(total / 100)} · {entries.length} categories
+            Total: {formatCurrency(total)} · {entries.length} categories
           </p>
         </div>
       </button>

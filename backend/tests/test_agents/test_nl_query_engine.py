@@ -250,3 +250,55 @@ class TestExecuteNLQuery:
         result = execute_nl_query("Random soru", DASHBOARD, [])
         assert isinstance(result, dict)
         assert result.get("intent") == "metric_lookup"
+
+
+# ── generate_nl_insight money formatting (LLM mocked) ─────────────────────────
+
+class TestInsightMoneyFormat:
+    """Report.data scalars are LIRA — the insight formatter must not divide."""
+
+    def test_context_formats_lira_scalars_undivided(self, monkeypatch):
+        import asyncio
+
+        from app.platform import model_gateway
+
+        seen: list[str] = []
+
+        async def fake_complete_text(**kwargs):
+            seen.append(kwargs.get("prompt", ""))
+            return '{"answer": "ok", "follow_ups": []}'
+
+        monkeypatch.setattr(model_gateway, "complete_text", fake_complete_text)
+
+        from app.agents.nl_query_engine import generate_nl_insight
+
+        out = asyncio.run(generate_nl_insight(
+            "Gelir ne kadar?",
+            {"intent": "metric_lookup", "value": 2_000_000, "context": {}},
+            DASHBOARD, [], None,
+        ))
+        assert out["answer"] == "ok"
+        prompt = seen[0]
+        assert "Gelir: 2,000,000 TL" in prompt    # lira — not 20,000
+        assert "Net Kâr: 400,000 TL" in prompt
+        assert "Net Nakit: 200,000 TL" in prompt
+
+    def test_fallback_answers_value_without_dividing(self, monkeypatch):
+        import asyncio
+
+        from app.platform import model_gateway
+
+        async def boom(**_kwargs):
+            raise RuntimeError("no llm")
+
+        monkeypatch.setattr(model_gateway, "complete_text", boom)
+
+        from app.agents.nl_query_engine import generate_nl_insight
+
+        out = asyncio.run(generate_nl_insight(
+            "Gelir ne kadar?",
+            {"intent": "metric_lookup", "value": 250_000,
+             "metric_display": "Gelir", "context": {}},
+            DASHBOARD, [], None,
+        ))
+        assert out["answer"] == "Gelir: 250,000 TL"

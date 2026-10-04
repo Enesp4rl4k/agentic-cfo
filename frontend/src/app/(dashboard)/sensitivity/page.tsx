@@ -180,7 +180,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
                       title={
                         showMargin
                           ? `Marj: %${val.toFixed(1)}`
-                          : `Net gelir: ${formatCurrency(val / 100)}`
+                          : `Net gelir: ${formatCurrency(val)}`
                       }
                     >
                       {showMargin
@@ -205,7 +205,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
         <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-700/60" /> En düşük</div>
         {result.base_net_income !== 0 && (
           <span className="ml-auto">
-            Baz net gelir: <strong className="text-foreground">{formatCurrency(result.base_net_income / 100)}</strong>
+            Baz net gelir: <strong className="text-foreground">{formatCurrency(result.base_net_income)}</strong>
           </span>
         )}
       </div>
@@ -219,7 +219,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
           </div>
           <p className="text-xs text-muted-foreground">{result.best_case.label}</p>
           <p className="text-sm font-bold text-emerald-400 mt-0.5">
-            {formatCurrency(result.best_case.net_income / 100)}
+            {formatCurrency(result.best_case.net_income)}
           </p>
         </div>
         <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2.5">
@@ -229,7 +229,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
           </div>
           <p className="text-xs text-muted-foreground">{result.worst_case.label}</p>
           <p className="text-sm font-bold text-red-400 mt-0.5">
-            {formatCurrency(result.worst_case.net_income / 100)}
+            {formatCurrency(result.worst_case.net_income)}
           </p>
         </div>
       </div>
@@ -242,7 +242,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
 function SingleVariableChart({ result }: { result: SingleResult }) {
   const chartData = result.outcomes.map((o) => ({
     change: `${o.change_pct > 0 ? "+" : ""}${o.change_pct}%`,
-    net_income: Math.round(o.net_income / 100),
+    net_income: Math.round(o.net_income),
     margin: o.net_margin_pct,
     isBase: o.change_pct === 0,
   }));

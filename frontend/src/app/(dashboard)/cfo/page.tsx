@@ -150,7 +150,7 @@ function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
 function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
   const data = Object.entries(opex)
     .filter(([, v]) => v != null && v > 0)
-    .map(([k, v]) => ({ name: k.replace(/_/g, " "), value: (v ?? 0) / 100 }))
+    .map(([k, v]) => ({ name: k.replace(/_/g, " "), value: v ?? 0 }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 

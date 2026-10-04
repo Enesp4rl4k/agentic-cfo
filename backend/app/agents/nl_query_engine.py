@@ -242,7 +242,7 @@ async def generate_nl_insight(
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
-            return f"{v / 100:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+            return f"{v:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
         return str(v)
 
     compact_context = (
@@ -295,7 +295,7 @@ async def generate_nl_insight(
         # Fallback: return raw value as text
         val = query_result.get("value")
         if isinstance(val, (int, float)) and val > 1000:
-            answer = f"{query_result.get('metric_display', 'Değer')}: {val/100:,.0f} TL"
+            answer = f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
         elif val is not None:
             answer = f"Sonuç: {val}"
         else:
@@ -336,7 +336,7 @@ async def generate_nl_insight_stream(
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
-            return f"{v / 100:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+            return f"{v:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
         return str(v)
 
     compact_context = (
@@ -397,7 +397,7 @@ async def generate_nl_insight_stream(
         logger.warning("Streaming NL insight failed: %s", exc)
         val = query_result.get("value")
         fallback = (
-            f"{query_result.get('metric_display', 'Değer')}: {val/100:,.0f} TL"
+            f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
             if isinstance(val, (int, float)) and val > 1000
             else f"Sonuç: {val}" if val is not None
             else "Bu soruyu yanıtlamak için yeterli veri bulunamadı."

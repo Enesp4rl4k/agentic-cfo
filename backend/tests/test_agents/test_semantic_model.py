@@ -51,6 +51,20 @@ def test_project_from_cfo_shapes() -> None:
     assert mmap2["finance.runway_months"].value == 4
 
 
+def test_project_from_cfo_converts_lira_scalars_to_cents() -> None:
+    """Report.data scalars are lira; catalog unit is cents → ×100 at the boundary."""
+    flat = {
+        "pnl": {"revenue": 1_000_000, "ebitda": 250_000},
+        "cashflow": {"operating": 300_000},
+    }
+    pts = project_from_cfo(flat, currency="USD")
+    mmap = {p.metric_id: p for p in pts}
+    assert mmap["finance.revenue"].unit == "cents"
+    assert mmap["finance.revenue"].value == 100_000_000       # 1_000_000 lira
+    assert mmap["finance.ebitda"].value == 25_000_000         # 250_000 lira
+    assert mmap["finance.operating_cashflow"].value == 30_000_000  # 300_000 lira
+
+
 def test_merge_metrics_later_wins() -> None:
     a = [MetricPoint("finance.revenue", 1, "cents", source_agent="cfo")]
     b = [MetricPoint("finance.revenue", 2, "cents", source_agent="canonical", data_source="canonical")]

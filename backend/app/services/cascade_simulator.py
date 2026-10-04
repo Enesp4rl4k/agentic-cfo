@@ -230,26 +230,31 @@ class CascadeSimulator:
         self.cmo_data  = cmo_data or {}
         self.coo_data  = coo_data or {}
 
-        # Allow direct kwargs for testing and direct scenario calling
+        # Allow direct kwargs for testing and direct scenario calling.
+        # Money kwargs are KURUŞ (test fixtures pass "_00"-suffixed cents);
+        # conversion is unconditional — no value-magnitude guessing.
         if "revenue_monthly" in kwargs:
-            rev = kwargs["revenue_monthly"]
-            self.monthly_revenue = rev / 100 if rev > 100000 else float(rev)
+            self.monthly_revenue = float(kwargs["revenue_monthly"]) / 100
         elif "monthly_revenue" in kwargs:
-            rev = kwargs["monthly_revenue"]
-            self.monthly_revenue = rev / 100 if rev > 100000 else float(rev)
+            self.monthly_revenue = float(kwargs["monthly_revenue"]) / 100
         else:
-            self.monthly_revenue = (self.pnl.get("revenue", 0) or 0) / 100 / 12
+            # Report.data scalars are LIRA (report_agent._fmt boundary); an
+            # explicit revenue_cents from the semantic bridge is already cents.
+            rev_cents = self.pnl.get("revenue_cents")
+            if rev_cents is not None:
+                self.monthly_revenue = float(rev_cents) / 100 / 12
+            else:
+                self.monthly_revenue = (self.pnl.get("revenue", 0) or 0) / 12
 
         if "monthly_opex" in kwargs:
-            self.monthly_opex = float(kwargs["monthly_opex"])
+            self.monthly_opex = float(kwargs["monthly_opex"]) / 100
         else:
-            self.monthly_opex = (self.pnl.get("total_opex", 0) or 0) / 100 / 12
+            self.monthly_opex = (self.pnl.get("total_opex", 0) or 0) / 12
 
         self.net_margin = kwargs.get("gross_margin") or kwargs.get("net_margin") or self.pnl.get("net_margin", 0) or 0
 
         if "monthly_burn" in kwargs:
-            burn = kwargs["monthly_burn"]
-            self.monthly_burn = burn / 100 if burn > 100000 else float(burn)
+            self.monthly_burn = float(kwargs["monthly_burn"]) / 100
         else:
             self.monthly_burn = max(0, self.monthly_opex - self.monthly_revenue)
 
@@ -257,10 +262,9 @@ class CascadeSimulator:
         self.runway_months = kwargs.get("runway_months") or base_sc.get("runway_months") or 12.0
 
         if "cash_balance" in kwargs:
-            cb = kwargs["cash_balance"]
-            self.cash_balance = cb / 100 if cb > 100000 else float(cb)
+            self.cash_balance = float(kwargs["cash_balance"]) / 100
         else:
-            net_change = (self.cashflow.get("net_change", 0) or 0) / 100
+            net_change = self.cashflow.get("net_change", 0) or 0  # LIRA (Report.data)
             self.cash_balance = abs(net_change) * self.runway_months if net_change < 0 else net_change
 
         self.headcount = kwargs.get("headcount") or self.chro_data.get("total_headcount", 0) or 50

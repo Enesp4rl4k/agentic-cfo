@@ -129,8 +129,8 @@ export function DomainPanel({
               <li key={k.kategori} className="text-xs">
                 <span className="text-foreground">{k.etiket}: </span>
                 <span className="font-mono font-semibold tabular-nums">
-                  {k.tutar_kurus !== undefined
-                    ? formatCurrency(k.tutar_kurus / 100)
+                  {k.tutar_lira !== undefined
+                    ? formatCurrency(k.tutar_lira)
                     : `${k.deger} ${k.birim ?? ""}`}
                 </span>
                 {k.gelire_orani != null && (

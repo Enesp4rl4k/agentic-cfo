@@ -381,8 +381,8 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
             context = (
                 f"Son 24 saatte tamamlanan analiz sayısı: {len(jobs)}\n"
                 f"Ortalama net kâr marjı: %{avg_net_margin*100:.1f}\n"
-                f"Toplam ciro: {total_revenue/100:,.0f} TL\n"
-                f"Ortalama nakit değişimi: {avg_cash_change/100:,.0f} TL\n"
+                f"Toplam ciro: {total_revenue:,.0f} TL\n"
+                f"Ortalama nakit değişimi: {avg_cash_change:,.0f} TL\n"
                 f"Nakit ömrü (baz senaryo): {runway or 'bilinmiyor'} ay\n\n"
                 f"Kritik uyarılar:\n{critical_msgs}\n\n"
                 f"Yüksek öncelikli uyarılar:\n{high_msgs}"
