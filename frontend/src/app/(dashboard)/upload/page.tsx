@@ -13,6 +13,7 @@ import {
   type ValidationResult, type ColumnInfo,
 } from "@/lib/api/data_quality";
 import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
+import { QuickDemoBanner } from "@/components/demo/QuickDemoBanner";
 import { POST_UPLOAD_ROUTE } from "@/lib/routes";
 import { apiClient } from "@/lib/api/client";
 
@@ -460,6 +461,9 @@ export default function UploadPage() {
           </Link>
         </div>
       )}
+
+      {/* Quick Demo One-Click Onboarding */}
+      <QuickDemoBanner />
 
       {/* Mode tabs */}
       <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" aria-label="Yükleme modu">

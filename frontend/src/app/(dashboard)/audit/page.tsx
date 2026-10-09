@@ -106,14 +106,15 @@ interface HeatmapProps {
   controls: Control[];
 }
 
+const CONTROL_TYPES = ["Design", "Operating"] as const;
+
 function ControlHeatmap({ controls }: HeatmapProps) {
   const categories = Array.from(new Set(controls.map((c) => c.category)));
-  const controlTypes = ["Design", "Operating"];
 
   const cells = useMemo(() => {
     const data: Array<{ x: number; y: number; category: string; type: string; value: number }> = [];
     categories.forEach((cat, i) => {
-      controlTypes.forEach((type, j) => {
+      CONTROL_TYPES.forEach((type, j) => {
         const catControls = controls.filter((c) => c.category === cat);
         const avg =
           type === "Design"
@@ -140,15 +141,15 @@ function ControlHeatmap({ controls }: HeatmapProps) {
         Kontrol Etkinliği Heatmap (IIA Maturity)
       </h3>
       <div className="overflow-x-auto">
-        <div className="min-w-[300px] grid gap-1 p-2" style={{ gridTemplateColumns: `60px repeat(${controlTypes.length}, 1fr)` }}>
+        <div className="min-w-[300px] grid gap-1 p-2" style={{ gridTemplateColumns: `60px repeat(${CONTROL_TYPES.length}, 1fr)` }}>
           <div className="text-xs font-medium text-muted-foreground" />
-          {controlTypes.map((type) => (
+          {CONTROL_TYPES.map((type) => (
             <div key={type} className="text-xs font-medium text-center">{type}</div>
           ))}
           {categories.map((cat) => (
             <>
               <div key={`label-${cat}`} className="text-xs font-medium text-muted-foreground truncate">{cat.slice(0, 8)}</div>
-              {controlTypes.map((type) => {
+              {CONTROL_TYPES.map((type) => {
                 const cell = cells.find((c) => c.category === cat && c.type === type);
                 const color = valueToColor(cell?.value ?? 0);
                 return (

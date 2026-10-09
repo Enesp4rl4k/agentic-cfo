@@ -81,8 +81,8 @@ const COUNTRY_OPTIONS = [
 function RoleBadge({ role }: { role: string }) {
   const cfg: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
     owner:   { label: "Owner",   cls: "bg-amber-950/30 text-amber-400 ring-amber-500/20",  icon: Crown  },
-    admin:   { label: "Admin",   cls: "bg-blue-950/30 text-blue-400 ring-blue-500/20",     icon: Shield },
-    cfo:     { label: "CFO",     cls: "bg-violet-950/30 text-violet-400 ring-violet-500/20", icon: Shield },
+    admin:   { label: "Admin",   cls: "bg-mapblue-950/30 text-mapblue-400 ring-mapblue-500/20",     icon: Shield },
+    cfo:     { label: "CFO",     cls: "bg-brass-950/30 text-brass-400 ring-brass-500/20", icon: Shield },
     analyst: { label: "Analyst", cls: "bg-muted text-muted-foreground ring-border",         icon: Users  },
     viewer:  { label: "Viewer",  cls: "bg-muted text-muted-foreground ring-border",         icon: Eye    },
   };

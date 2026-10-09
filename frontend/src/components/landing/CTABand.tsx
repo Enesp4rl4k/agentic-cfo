@@ -7,24 +7,24 @@ const STEPS = [
     step: "01",
     title: "CSV Yükle",
     desc: "Logo Tiger, Paraşüt veya herhangi bir muhasebe programından dışa aktardığınız CSV.",
-    color: "text-violet-400",
-    bg: "bg-violet-400/10",
+    color: "text-brass-400",
+    bg: "bg-brass-400/10",
   },
   {
     icon: BarChart3,
     step: "02",
     title: "AI Analiz Eder",
     desc: "12 AI ajan paralel çalışır: CFO, CEO, CTO, CMO, COO, CHRO ve daha fazlası.",
-    color: "text-blue-400",
-    bg: "bg-blue-400/10",
+    color: "text-mapblue-400",
+    bg: "bg-mapblue-400/10",
   },
   {
     icon: FileText,
     step: "03",
     title: "Rapor Al",
     desc: "Kurumsal kalitede PDF raporlar, board deck ve yönetici özetleri otomatik hazır.",
-    color: "text-emerald-400",
-    bg: "bg-emerald-400/10",
+    color: "text-sage-400",
+    bg: "bg-sage-400/10",
   },
 ];
 
@@ -37,7 +37,7 @@ export function CTABand() {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 70% 50% at 50% 50%, oklch(0.62 0.26 262 / 0.10) 0%, transparent 70%)",
+            "radial-gradient(ellipse 70% 50% at 50% 50%, oklch(0.74 0.13 82 / 0.10) 0%, transparent 70%)",
         }}
       />
 
@@ -47,7 +47,7 @@ export function CTABand() {
         className="absolute inset-x-0 top-0 h-px"
         style={{
           background:
-            "linear-gradient(90deg, transparent 0%, oklch(0.62 0.26 262 / 0.6) 50%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0%, oklch(0.74 0.13 82 / 0.6) 50%, transparent 100%)",
         }}
       />
 
@@ -70,7 +70,7 @@ export function CTABand() {
                       className="absolute left-[calc(50%+3rem)] top-5 hidden h-px w-full sm:block"
                       style={{
                         background:
-                          "linear-gradient(90deg, oklch(0.35 0.02 262), transparent)",
+                          "linear-gradient(90deg, oklch(0.40 0.03 74), transparent)",
                         width: "calc(100% - 3rem)",
                       }}
                     />
@@ -93,8 +93,8 @@ export function CTABand() {
           className="overflow-hidden rounded-2xl border border-primary/20 text-center"
           style={{
             background:
-              "linear-gradient(135deg, oklch(0.15 0.030 262), oklch(0.13 0.025 255))",
-            boxShadow: "0 0 60px oklch(0.62 0.26 262 / 0.12)",
+              "linear-gradient(135deg, oklch(0.17 0.017 70), oklch(0.15 0.015 66))",
+            boxShadow: "0 0 60px oklch(0.74 0.13 82 / 0.12)",
           }}
         >
           {/* Top glow strip */}
@@ -103,7 +103,7 @@ export function CTABand() {
             className="h-px w-full"
             style={{
               background:
-                "linear-gradient(90deg, transparent, oklch(0.62 0.26 262 / 0.5), transparent)",
+                "linear-gradient(90deg, transparent, oklch(0.74 0.13 82 / 0.5), transparent)",
             }}
           />
 
@@ -145,7 +145,7 @@ export function CTABand() {
         className="absolute inset-x-0 bottom-0 h-px"
         style={{
           background:
-            "linear-gradient(90deg, transparent 0%, oklch(0.62 0.26 262 / 0.2) 50%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0%, oklch(0.74 0.13 82 / 0.2) 50%, transparent 100%)",
         }}
       />
     </section>

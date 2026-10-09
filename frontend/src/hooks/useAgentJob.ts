@@ -107,6 +107,10 @@ export function useAgentJobStatus(jobId: string | null) {
       if (status === "completed" || status === "failed") return false;
       return 2000;
     },
+    // Keep polling while the tab is hidden — jobs finish in seconds and the
+    // panel would otherwise freeze on a stale progress percentage (occluded
+    // window / background tab), with no update until the next user gesture.
+    refetchIntervalInBackground: true,
     staleTime: 0,
   });
 }

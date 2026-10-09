@@ -21,6 +21,7 @@ import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe,
 import { ConflictCard } from "@/components/command-center/ConflictCard";
 import { AgentRunLedger } from "@/components/ops/AgentRunLedger";
 import { DecisionLogPanel } from "@/components/ui/decision-log-panel";
+import { MacroStressTestCard } from "@/components/macro/MacroStressTestCard";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
 import { brand } from "@/lib/branding";
@@ -32,17 +33,17 @@ type AgentHealth = AgentHealthItem & {
   color: string;
 };
 
-// Map agent names → icons + colors (fallback for any new agent names)
+// Map agent names → icons (monochrome institutional terminal)
 const AGENT_META: Record<string, { icon: ElementType; color: string }> = {
-  CFO:             { icon: DollarSign,  color: "text-emerald-500" },
-  CEO:             { icon: Crown,       color: "text-yellow-500" },
-  CTO:             { icon: Cpu,         color: "text-blue-500" },
-  CMO:             { icon: Megaphone,   color: "text-purple-500" },
-  COO:             { icon: Layers,      color: "text-orange-500" },
-  CHRO:            { icon: Users,       color: "text-pink-500" },
-  Compliance:      { icon: ShieldCheck, color: "text-cyan-500" },
-  Risk:            { icon: Shield,      color: "text-red-500" },
-  "Internal Audit":{ icon: FileSearch,  color: "text-indigo-500" },
+  CFO:             { icon: DollarSign,  color: "text-foreground" },
+  CEO:             { icon: Crown,       color: "text-foreground" },
+  CTO:             { icon: Cpu,         color: "text-foreground" },
+  CMO:             { icon: Megaphone,   color: "text-foreground" },
+  COO:             { icon: Layers,      color: "text-foreground" },
+  CHRO:            { icon: Users,       color: "text-foreground" },
+  Compliance:      { icon: ShieldCheck, color: "text-foreground" },
+  Risk:            { icon: Shield,      color: "text-foreground" },
+  "Internal Audit":{ icon: FileSearch,  color: "text-foreground" },
 };
 
 const DEFAULT_META = { icon: Activity, color: "text-muted-foreground" };
@@ -379,15 +380,15 @@ interface PipelineNode {
 }
 
 const PIPELINE_NODES: PipelineNode[] = [
-  { key: "cfo",        label: "CFO",          icon: DollarSign,  color: "text-emerald-400", triggers: ["risk", "audit"] },
-  { key: "risk",       label: "Risk",         icon: Shield,      color: "text-red-400",     triggers: ["compliance"] },
-  { key: "audit",      label: "Audit",        icon: FileSearch,  color: "text-indigo-400" },
-  { key: "compliance", label: "Compliance",   icon: ShieldCheck, color: "text-cyan-400" },
-  { key: "cto",        label: "CTO",          icon: Cpu,         color: "text-blue-400" },
-  { key: "cmo",        label: "CMO",          icon: Megaphone,   color: "text-purple-400" },
-  { key: "coo",        label: "COO",          icon: Layers,      color: "text-orange-400" },
-  { key: "chro",       label: "CHRO",         icon: Users,       color: "text-pink-400" },
-  { key: "ceo",        label: "CEO Synthesis",icon: Crown,       color: "text-yellow-400" },
+  { key: "cfo",        label: "CFO",          icon: DollarSign,  color: "text-foreground", triggers: ["risk", "audit"] },
+  { key: "risk",       label: "Risk",         icon: Shield,      color: "text-foreground", triggers: ["compliance"] },
+  { key: "audit",      label: "Audit",        icon: FileSearch,  color: "text-foreground" },
+  { key: "compliance", label: "Compliance",   icon: ShieldCheck, color: "text-foreground" },
+  { key: "cto",        label: "CTO",          icon: Cpu,         color: "text-foreground" },
+  { key: "cmo",        label: "CMO",          icon: Megaphone,   color: "text-foreground" },
+  { key: "coo",        label: "COO",          icon: Layers,      color: "text-foreground" },
+  { key: "chro",       label: "CHRO",         icon: Users,       color: "text-foreground" },
+  { key: "ceo",        label: "CEO Synthesis",icon: Crown,       color: "text-foreground" },
 ];
 
 // Auto-chain groups: first row = CFO chain, second row = manual agents, third = synthesis
@@ -914,6 +915,9 @@ export default function CommandCenterPage() {
 
       {/* Karar Defteri — decided → expected → measured, newest first. */}
       <DecisionLogPanel />
+
+      {/* TCMB Live Macro Stress Testing & FX/Rate Shock Simulator */}
+      <MacroStressTestCard />
 
       {/* Cross-Agent Intelligence — rule-based, instant, no LLM cost */}
       {fullCtx && (

@@ -203,7 +203,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
     patch["_cmo_result"] = cmo_result
     patch["_coo_result"] = coo_result
     patch["_chro_result"] = chro_result
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_condense_summaries(state: CEOState, config: dict) -> CEOState:
@@ -236,7 +236,7 @@ async def node_condense_summaries(state: CEOState, config: dict) -> CEOState:
     patch["marketing_summary"] = mkt
     patch["ops_summary"] = ops
     patch["hr_summary"] = hr
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_synthesis(state: CEOState, config: dict) -> CEOState:
@@ -247,7 +247,7 @@ async def node_synthesis(state: CEOState, config: dict) -> CEOState:
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_strategic_priorities(state: CEOState, config: dict) -> CEOState:
@@ -256,7 +256,7 @@ async def node_strategic_priorities(state: CEOState, config: dict) -> CEOState:
         step="strategic_priorities", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_board_deck(state: CEOState, config: dict) -> CEOState:
@@ -265,7 +265,7 @@ async def node_board_deck(state: CEOState, config: dict) -> CEOState:
         step="board_deck", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_swot(state: CEOState, config: dict) -> CEOState:
@@ -275,12 +275,12 @@ async def node_swot(state: CEOState, config: dict) -> CEOState:
         step="swot", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_okr(state: CEOState, config: dict) -> CEOState:
     from app.agents.ceo.okr_agent import run_okr_agent
-    return await run_okr_agent(state, config)  # type: ignore[return-value]
+    return await run_okr_agent(state, config)  # type: ignore[arg-type, return-value]
 
 
 async def node_hold_for_review(state: CEOState, config: dict) -> CEOState:
@@ -290,7 +290,7 @@ async def node_hold_for_review(state: CEOState, config: dict) -> CEOState:
         detail=f"Held — confidence={state.get('min_confidence', 0):.2f}",
     ))
     patch["awaiting_review"] = True
-    return {**state, **patch}  # type: ignore[return-value]
+    return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 # ── Routing ────────────────────────────────────────────────────────────────────
@@ -308,14 +308,14 @@ def route_after_synthesis(state: CEOState) -> str:
 def build_ceo_graph() -> StateGraph:
     graph = StateGraph(CEOState)
 
-    graph.add_node("pipelines_step",    node_run_pipelines)
-    graph.add_node("summaries_step",    node_condense_summaries)
-    graph.add_node("synthesis_step",    node_synthesis)
-    graph.add_node("priorities_step",   node_strategic_priorities)
-    graph.add_node("swot_step",         node_swot)
-    graph.add_node("deck_step",         node_board_deck)
-    graph.add_node("okr_step",          node_okr)
-    graph.add_node("hold_step",         node_hold_for_review)
+    graph.add_node("pipelines_step",    node_run_pipelines)   # type: ignore[arg-type]
+    graph.add_node("summaries_step",    node_condense_summaries)  # type: ignore[arg-type]
+    graph.add_node("synthesis_step",    node_synthesis)       # type: ignore[arg-type]
+    graph.add_node("priorities_step",   node_strategic_priorities)  # type: ignore[arg-type]
+    graph.add_node("swot_step",         node_swot)            # type: ignore[arg-type]
+    graph.add_node("deck_step",         node_board_deck)      # type: ignore[arg-type]
+    graph.add_node("okr_step",          node_okr)             # type: ignore[arg-type]
+    graph.add_node("hold_step",         node_hold_for_review)  # type: ignore[arg-type]
 
     graph.set_entry_point("pipelines_step")
 
@@ -514,7 +514,7 @@ async def run_ceo_pipeline(
         "error":           None,
     }
 
-    result: CEOState = await ceo_graph.ainvoke(
+    result: CEOState = await ceo_graph.ainvoke(  # type: ignore[assignment]
         initial_state,
         config={"configurable": {"ceo_run_config": cfg}},
     )

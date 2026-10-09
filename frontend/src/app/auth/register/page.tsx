@@ -62,7 +62,9 @@ export default function RegisterPage() {
       const regRes = await fetch(`${API_BASE}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, full_name: fullName, role: "analyst" }),
+        // The API assigns the initial analyst role server-side; clients must
+        // not submit privilege fields during public registration.
+        body: JSON.stringify({ email, password, full_name: fullName }),
       });
       if (!regRes.ok) {
         const data = await regRes.json();
@@ -108,7 +110,7 @@ export default function RegisterPage() {
         className="relative hidden w-[42%] flex-col justify-between overflow-hidden p-10 lg:flex"
         style={{
           background:
-            "linear-gradient(145deg, oklch(0.13 0.035 262) 0%, oklch(0.10 0.028 255) 100%)",
+            "linear-gradient(145deg, oklch(0.15 0.016 70) 0%, oklch(0.12 0.014 66) 100%)",
         }}
       >
         {/* Glow */}
@@ -117,7 +119,7 @@ export default function RegisterPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(ellipse 80% 60% at 70% 80%, oklch(0.55 0.22 220 / 0.12) 0%, transparent 70%)",
+              "radial-gradient(ellipse 80% 60% at 70% 80%, oklch(0.64 0.11 55 / 0.12) 0%, transparent 70%)",
           }}
         />
 
@@ -126,7 +128,7 @@ export default function RegisterPage() {
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-foreground">
             <span
               className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-black text-white"
-              style={{ background: "linear-gradient(135deg, oklch(0.62 0.26 262), oklch(0.55 0.22 220))" }}
+              style={{ background: "linear-gradient(135deg, oklch(0.74 0.13 82), oklch(0.64 0.11 55))" }}
               aria-hidden="true"
             >
               C
@@ -143,7 +145,7 @@ export default function RegisterPage() {
               <br />
               <span
                 style={{
-                  background: "linear-gradient(135deg, oklch(0.75 0.22 262), oklch(0.65 0.20 220))",
+                  background: "linear-gradient(135deg, oklch(0.81 0.12 84), oklch(0.68 0.12 58))",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   backgroundClip: "text",
@@ -204,7 +206,7 @@ export default function RegisterPage() {
             <Link href="/">
               <span
                 className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black text-white"
-                style={{ background: "linear-gradient(135deg, oklch(0.62 0.26 262), oklch(0.55 0.22 220))" }}
+                style={{ background: "linear-gradient(135deg, oklch(0.74 0.13 82), oklch(0.64 0.11 55))" }}
                 aria-hidden="true"
               >
                 C

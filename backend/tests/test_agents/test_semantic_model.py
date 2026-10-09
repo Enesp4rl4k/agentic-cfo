@@ -111,6 +111,34 @@ def test_decision_brief_confidence_gate() -> None:
     assert brief2.awaiting_review is False or all(f.severity != "critical" for f in brief2.findings)
 
 
+def test_decision_brief_localizes_turkish() -> None:
+    """Brief copy follows the org locale carried on the snapshot (tr-TR → Turkish)."""
+
+    def snap(locale: str) -> CompanySemanticSnapshot:
+        return CompanySemanticSnapshot(
+            org_id="org-1",
+            period=Period(key="2026-08"),
+            currency="TRY" if locale.startswith("tr") else "USD",
+            locale=locale,
+            metrics=[
+                MetricPoint("finance.runway_months", 4.0, "months", confidence=0.9),
+                MetricPoint("finance.net_margin", 0.1, "ratio", confidence=0.85),
+            ],
+        )
+
+    tr_brief = build_from_snapshot(snap("tr-TR"))
+    assert tr_brief.headline.startswith("Şirket sağlığı")
+    assert any("Nakit koşu süresi" in f.statement for f in tr_brief.findings)
+    assert tr_brief.options[0].title == "Nakit koşusunu koru"
+    assert tr_brief.recommendation is not None
+    assert tr_brief.recommendation.title == "Nakit koşusunu koru"
+
+    en_brief = build_from_snapshot(snap("en-US"))
+    assert en_brief.headline.startswith("Company health")
+    assert any("Cash runway" in f.statement for f in en_brief.findings)
+    assert en_brief.options[0].title == "Protect runway"
+
+
 def test_project_from_cmo() -> None:
     pts = project_from_cmo(
         {"campaigns": {"overall_roas": 1.2, "blended_cac_cents": 15000, "total_conversions": 40}}

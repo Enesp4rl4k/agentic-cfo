@@ -158,7 +158,7 @@ function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
             type="monotone"
             dataKey="runway"
             name="Nakit Pisti (ay)"
-            stroke="oklch(0.60 0.19 255)"
+            stroke="oklch(0.79 0.115 83)"
             strokeWidth={2}
             dot={false}
           />

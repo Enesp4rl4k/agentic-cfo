@@ -104,9 +104,9 @@ function TypingTagline() {
   }, [displayed, isDeleting, lineIndex]);
 
   return (
-    <span className="brand-gradient-text">
+    <span className="font-semibold text-primary">
       {displayed}
-      <span className="animate-pulse">|</span>
+      <span className="ml-0.5 animate-pulse motion-reduce:animate-none" aria-hidden="true">|</span>
     </span>
   );
 }
@@ -123,8 +123,8 @@ function MiniBarChart() {
           className="flex-1 rounded-t-sm"
           style={{
             height: `${h}%`,
-            background: `oklch(${0.55 + i * 0.012} 0.22 ${255 + i * 0.5})`,
-            opacity: 0.7 + (i / CHART_DATA.length) * 0.3,
+            background: "var(--chart-primary)",
+            opacity: 0.42 + (i / CHART_DATA.length) * 0.48,
             animation: `slide-up 400ms var(--ease-out-expo) both`,
             animationDelay: `${i * 40}ms`,
           }}
@@ -136,9 +136,9 @@ function MiniBarChart() {
 
 // ── Agent status pills ────────────────────────────────────────────────────────
 const AGENTS = [
-  { name: "CFO", status: "✓", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
-  { name: "CEO", status: "✓", color: "bg-violet-500/20 text-violet-400 border-violet-500/30" },
-  { name: "CTO", status: "⟳", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  { name: "CFO", status: "✓", color: "bg-brass-500/20 text-brass-400 border-brass-500/30" },
+  { name: "CEO", status: "✓", color: "bg-parchment-500/20 text-parchment-400 border-parchment-500/30" },
+  { name: "CTO", status: "⟳", color: "bg-mapblue-500/20 text-mapblue-400 border-mapblue-500/30" },
   { name: "CMO", status: "○", color: "bg-white/5 text-white/30 border-white/10" },
 ];
 
@@ -157,7 +157,7 @@ export function HeroSection() {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 80% 60% at 50% 0%, oklch(0.62 0.26 262 / 0.20) 0%, transparent 70%)",
+            "radial-gradient(ellipse 80% 60% at 50% 0%, oklch(0.74 0.13 82 / 0.20) 0%, transparent 70%)",
         }}
       />
       {/* Secondary glow — offset bottom-right */}
@@ -166,7 +166,7 @@ export function HeroSection() {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 50% 40% at 80% 90%, oklch(0.55 0.22 220 / 0.12) 0%, transparent 70%)",
+            "radial-gradient(ellipse 50% 40% at 80% 90%, oklch(0.64 0.11 55 / 0.12) 0%, transparent 70%)",
         }}
       />
       {/* Subtle grid pattern */}
@@ -175,7 +175,7 @@ export function HeroSection() {
         className="pointer-events-none absolute inset-0 opacity-[0.03]"
         style={{
           backgroundImage:
-            "linear-gradient(oklch(0.8 0.1 262) 1px, transparent 1px), linear-gradient(90deg, oklch(0.8 0.1 262) 1px, transparent 1px)",
+            "linear-gradient(oklch(0.72 0.06 82) 1px, transparent 1px), linear-gradient(90deg, oklch(0.72 0.06 82) 1px, transparent 1px)",
           backgroundSize: "60px 60px",
         }}
       />
@@ -204,7 +204,7 @@ export function HeroSection() {
               <span
                 className="block mt-1"
                 style={{
-                  background: "linear-gradient(135deg, oklch(0.78 0.22 262), oklch(0.65 0.20 220))",
+                  background: "linear-gradient(135deg, oklch(0.81 0.12 84), oklch(0.68 0.12 58))",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   backgroundClip: "text",
@@ -280,7 +280,7 @@ export function HeroSection() {
               aria-hidden="true"
               className="absolute -inset-10 rounded-3xl blur-3xl"
               style={{
-                background: "radial-gradient(ellipse at center, oklch(0.62 0.26 262 / 0.15) 0%, transparent 70%)",
+                background: "radial-gradient(ellipse at center, oklch(0.74 0.13 82 / 0.15) 0%, transparent 70%)",
               }}
             />
 
@@ -288,8 +288,8 @@ export function HeroSection() {
             <div
               className="relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
               style={{
-                background: "oklch(0.13 0.028 262)",
-                boxShadow: "0 0 60px oklch(0.62 0.26 262 / 0.20), 0 40px 80px rgba(0,0,0,0.5)",
+                background: "oklch(0.15 0.016 70)",
+                boxShadow: "0 0 60px oklch(0.74 0.13 82 / 0.20), 0 40px 80px rgba(0,0,0,0.5)",
               }}
             >
               {/* Chrome bar */}
@@ -311,8 +311,8 @@ export function HeroSection() {
                 <div className="grid grid-cols-2 gap-2">
                   <KpiCard label="Gelir"       value="₺4.8M"  change="+18% geçen aya göre" color="text-emerald-400" delay="100ms" />
                   <KpiCard label="Net Kâr"     value="₺892K"  change="+24% geçen aya göre" color="text-emerald-400" delay="150ms" />
-                  <KpiCard label="Nakit Akışı" value="₺1.2M"  change="+11% geçen aya göre" color="text-blue-400"    delay="200ms" />
-                  <KpiCard label="Risk Skoru"  value="87/100" change="Son 7 günde +3 puan"  color="text-violet-400"  delay="250ms" />
+                  <KpiCard label="Nakit Akışı" value="₺1.2M"  change="+11% geçen aya göre" color="text-mapblue-400" delay="200ms" />
+                  <KpiCard label="Risk Skoru"  value="87/100" change="Son 7 günde +3 puan"  color="text-clay-400"  delay="250ms" />
                 </div>
 
                 {/* Chart card */}
@@ -325,7 +325,7 @@ export function HeroSection() {
                         Optimist
                       </span>
                       <span className="flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400" aria-hidden="true" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-mapblue-400" aria-hidden="true" />
                         Baz
                       </span>
                       <span className="flex items-center gap-1">
@@ -378,7 +378,7 @@ export function HeroSection() {
               style={{ animation: "slide-up 600ms 300ms var(--ease-out-expo) both" }}
               aria-hidden="true"
             >
-              <p className="text-[10px] font-medium text-violet-300">CEO Board Deck</p>
+              <p className="text-[10px] font-medium text-parchment-300">CEO Board Deck</p>
               <p className="text-[10px] text-white/40">Hazır — PDF indir</p>
             </div>
           </div>

@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
-import { BarChart3, Download, ShieldAlert, TrendingUp, Users, Cpu } from "lucide-react";
+import { Download, ShieldAlert, TrendingUp, Users, Cpu, ChevronDown } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ActionCenter } from "@/components/ActionCenter";
 import { DomainDataSources } from "@/components/ceo/DomainDataSources";
+import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
 
 import { BoardDeckViewer }     from "@/components/ceo/BoardDeckViewer";
 import { OKRWeightedScorecard } from "@/components/ceo/OKRScorecard";
@@ -22,6 +23,7 @@ import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary } from "@/lib/api/semantic";
 import { type CEOResult, type BoardSlide, type OKRObjective } from "@/components/ceo/types";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Sample data ────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,7 @@ function PDFExportButtons({
   orgId?: string | null;
 }) {
   const [exporting, setExporting] = useState<"deck" | "one-pager" | null>(null);
+  const { t } = useI18n();
 
   async function handleExport(type: "deck" | "one-pager") {
     setExporting(type);
@@ -90,20 +93,20 @@ function PDFExportButtons({
         size="sm"
         disabled={exporting !== null}
         onClick={() => handleExport("deck")}
-        aria-label="Board deck PDF indir"
+        aria-label={t.roleDashboards.ceo.body.downloadBoardDeckPdf}
       >
         <Download className="h-4 w-4" aria-hidden="true" />
-        {exporting === "deck" ? "İndiriliyor…" : "Board Deck PDF"}
+        {exporting === "deck" ? t.roleDashboards.ceo.body.downloading : "Board Deck PDF"}
       </Button>
       <Button
         variant="outline"
         size="sm"
         disabled={exporting !== null}
         onClick={() => handleExport("one-pager")}
-        aria-label="One-pager PDF indir"
+        aria-label={t.roleDashboards.ceo.body.downloadOnePagerPdf}
       >
         <Download className="h-4 w-4" aria-hidden="true" />
-        {exporting === "one-pager" ? "İndiriliyor…" : "One-Pager PDF"}
+        {exporting === "one-pager" ? t.roleDashboards.ceo.body.downloading : "One-Pager PDF"}
       </Button>
     </div>
   );
@@ -119,13 +122,14 @@ interface CrossRisk {
 }
 
 function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
+  const { t } = useI18n();
   if (!risks.length) return null;
 
   const domainIcon = (d: string) => {
     switch (d) {
       case "finance": return <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />;
-      case "tech":    return <Cpu className="h-3.5 w-3.5 text-cyan-400" />;
-      case "hr":      return <Users className="h-3.5 w-3.5 text-purple-400" />;
+      case "tech":    return <Cpu className="h-3.5 w-3.5 text-mapblue-400" />;
+      case "hr":      return <Users className="h-3.5 w-3.5 text-sage-400" />;
       default:        return <ShieldAlert className="h-3.5 w-3.5 text-orange-400" />;
     }
   };
@@ -146,9 +150,9 @@ function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
     <Card className="p-4 space-y-3">
       <div className="flex items-center gap-2">
         <ShieldAlert className="h-4 w-4 text-orange-400" />
-        <h3 className="font-semibold text-sm">Cross-Domain Risk Timeline</h3>
+        <h3 className="font-semibold text-sm">{t.roleDashboards.ceo.sections.crossDomainRiskTimeline}</h3>
         <span className="rounded-full bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 text-[10px] text-orange-400 font-medium">
-          {risks.length} risk
+          {risks.length} {t.roleDashboards.ceo.body.risk}
         </span>
       </div>
 
@@ -187,6 +191,7 @@ function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
 
 export default function CEODashboardPage() {
   const { activeCFOJobId, orgId } = useCompanyContextStore();
+  const { t } = useI18n();
   const [company, setCompany] = useState("");
   const [period,  setPeriod]  = useState("");
   const [loading, setLoading] = useState(false);
@@ -271,7 +276,7 @@ export default function CEODashboardPage() {
       const b = await getDecisionBrief(selectedPeriod);
       if (b.brief) setBrief(b.brief);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Synthesis failed");
+      setError(err instanceof Error ? err.message : t.roleDashboards.ceo.body.synthesisFailed);
     } finally {
       setSynthesizing(false);
     }
@@ -302,7 +307,7 @@ export default function CEODashboardPage() {
         setLiveLoaded(true);
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : t.roleDashboards.ceo.body.unknownError);
     } finally {
       setLoading(false);
     }
@@ -312,18 +317,13 @@ export default function CEODashboardPage() {
   const showEmpty = !display;
 
   return (
-    <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <BarChart3 className="h-6 w-6 text-primary" aria-hidden="true" />
-        <div>
-          <h1 className="text-2xl font-bold">CEO Command Board</h1>
-          <p className="text-sm text-muted-foreground">
-            Board deck, OKR scorecard, and 12-month outlook from live company context
-            {liveLoaded ? " · live" : ""}
-          </p>
-        </div>
-      </div>
+      <RoleDashboardHeader
+        title={t.roleDashboards.ceo.title}
+        description={t.roleDashboards.ceo.description}
+        context={liveLoaded ? <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />{t.roleDashboards.ceo.body.currentCompanyContext}</span> : undefined}
+      />
 
       <ActionCenter />
 
@@ -333,10 +333,15 @@ export default function CEODashboardPage() {
       <DomainDataSources />
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
+      <details open={!display} className="group rounded-xl border border-border/80 bg-card">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+          <span className="text-sm font-semibold">{display ? t.roleDashboards.ceo.body.newAnalysis : t.roleDashboards.ceo.body.analysisInputs}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+      <form onSubmit={handleSubmit} className="border-t border-border/80 p-4 sm:p-5">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="ceo-company">Company</Label>
+            <Label htmlFor="ceo-company">{t.roleDashboards.ceo.body.companyName}</Label>
             <Input
               id="ceo-company"
               value={company}
@@ -345,7 +350,7 @@ export default function CEODashboardPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ceo-period">Period</Label>
+            <Label htmlFor="ceo-period">{t.roleDashboards.ceo.body.period}</Label>
             <Input
               id="ceo-period"
               value={period}
@@ -362,7 +367,7 @@ export default function CEODashboardPage() {
         )}
 
         <Button type="submit" disabled={loading}>
-          {loading ? "Running…" : activeCFOJobId ? "Synthesize from CFO job" : "Run CEO analysis"}
+          {loading ? t.roleDashboards.ceo.body.preparingAnalysis : activeCFOJobId ? t.roleDashboards.ceo.body.summarizeFromCfo : t.roleDashboards.ceo.body.runAnalysis}
         </Button>
         <Button
           type="button"
@@ -370,9 +375,10 @@ export default function CEODashboardPage() {
           disabled={synthesizing || !orgId}
           onClick={() => void handleSynthesizeFromContext()}
         >
-          {synthesizing ? "Synthesizing…" : "Refresh CEO synthesis"}
+          {synthesizing ? t.roleDashboards.ceo.body.refreshingSummary : t.roleDashboards.ceo.body.refreshExecutiveSummary}
         </Button>
       </form>
+      </details>
 
       {showEmpty ? (
         <div className="space-y-4">
@@ -387,8 +393,7 @@ export default function CEODashboardPage() {
             approving={approvingBrief}
           />
           <Card className="p-6 text-sm text-muted-foreground">
-            No live CEO results yet. Upload data and complete a CFO run, or synthesize from an active CFO job.
-            Sample CSV paste has been removed from the default path.
+            {t.roleDashboards.ceo.body.emptyState}
           </Card>
         </div>
       ) : (
@@ -428,6 +433,6 @@ export default function CEODashboardPage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

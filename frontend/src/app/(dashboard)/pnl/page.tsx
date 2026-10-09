@@ -23,19 +23,19 @@ import type { PnLData } from "@/types";
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.17 0.022 255)",
-    border: "1px solid oklch(0.27 0.018 255)",
+    background: "oklch(0.21 0.018 70)",
+    border: "1px solid oklch(0.32 0.019 68)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.92 0.008 255)",
+    color: "oklch(0.94 0.012 85)",
     padding: "8px 12px",
   },
-  cursor: { fill: "oklch(0.22 0.018 255 / 0.4)" },
+  cursor: { fill: "oklch(0.27 0.017 70 / 0.4)" },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.52 0.012 255)" },
-  axisLine: { stroke: "oklch(0.27 0.018 255)" },
+  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
+  axisLine: { stroke: "oklch(0.32 0.019 68)" },
   tickLine: false as const,
 };
 
@@ -144,7 +144,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
       name: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
       base: running,
       value: v,
-      color: "oklch(0.55 0.18 255 / 0.6)",
+      color: "oklch(0.62 0.10 240 / 0.7)",
     });
   });
 
@@ -167,7 +167,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
       </p>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={steps} margin={{ top: 4, right: 4, left: -4, bottom: 40 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
           <XAxis
             dataKey="name"
             {...axisStyle}
@@ -199,12 +199,12 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
 // ── OpEx drill-down ───────────────────────────────────────────────────────────
 
 const OPEX_COLORS: Record<string, string> = {
-  salary:        "oklch(0.60 0.19 255)",
+  salary:        "oklch(0.79 0.115 83)",
   rent:          "oklch(0.65 0.18 295)",
   utilities:     "oklch(0.65 0.17 200)",
   marketing:     "oklch(0.65 0.20 330)",
   technology:    "oklch(0.60 0.18 260)",
-  other_expense: "oklch(0.50 0.01 255)",
+  other_expense: "oklch(0.60 0.015 75)",
 };
 
 function OpExDrillDown({ pnl }: { pnl: PnLData }) {
@@ -221,7 +221,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
     name: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     value: val ?? 0,
     pct: total > 0 ? ((val ?? 0) / total) * 100 : 0,
-    color: OPEX_COLORS[key] ?? "oklch(0.50 0.01 255)",
+    color: OPEX_COLORS[key] ?? "oklch(0.60 0.015 75)",
   }));
 
   return (
@@ -265,7 +265,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
                 dataKey="name"
                 {...axisStyle}
                 width={80}
-                tick={{ fontSize: 10, fill: "oklch(0.52 0.012 255)" }}
+                tick={{ fontSize: 10, fill: "oklch(0.72 0.017 78)" }}
               />
               <Tooltip
                 {...tooltipStyle}

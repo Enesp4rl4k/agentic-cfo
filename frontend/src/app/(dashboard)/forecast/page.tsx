@@ -25,25 +25,25 @@ import type { Alert, ForecastScenario } from "@/types";
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.17 0.022 255)",
-    border: "1px solid oklch(0.27 0.018 255)",
+    background: "oklch(0.21 0.018 70)",
+    border: "1px solid oklch(0.32 0.019 68)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.92 0.008 255)",
+    color: "oklch(0.94 0.012 85)",
     padding: "8px 12px",
   },
-  cursor: { stroke: "oklch(0.32 0.018 255)", strokeWidth: 1 },
+  cursor: { stroke: "oklch(0.38 0.02 70)", strokeWidth: 1 },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.52 0.012 255)" },
-  axisLine: { stroke: "oklch(0.27 0.018 255)" },
+  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
+  axisLine: { stroke: "oklch(0.32 0.019 68)" },
   tickLine: false as const,
 };
 
 const SCENARIO_COLORS = {
   optimistic:  { line: "oklch(0.72 0.19 142)",  fill: "oklch(0.72 0.19 142 / 0.12)" },
-  base:        { line: "oklch(0.60 0.19 255)",  fill: "oklch(0.60 0.19 255 / 0.18)" },
+  base:        { line: "oklch(0.79 0.115 83)",  fill: "oklch(0.79 0.115 83 / 0.18)" },
   pessimistic: { line: "oklch(0.58 0.22 25)",   fill: "oklch(0.58 0.22 25 / 0.12)" },
 };
 
@@ -149,18 +149,18 @@ function MonteCarloFanChart({
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
         <defs>
           <linearGradient id="fanGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor="oklch(0.60 0.19 255)" stopOpacity={0.18} />
-            <stop offset="95%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0.04} />
+            <stop offset="5%"  stopColor="oklch(0.79 0.115 83)" stopOpacity={0.18} />
+            <stop offset="95%" stopColor="oklch(0.79 0.115 83)" stopOpacity={0.04} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
         <XAxis dataKey="month" {...axisStyle} />
         <YAxis {...axisStyle} tickFormatter={fmtK} />
         <Tooltip
           {...tooltipStyle}
           formatter={(v: number, name: string) => [formatCurrency(v), name]}
         />
-        <ReferenceLine y={0} stroke="oklch(0.35 0.018 255)" strokeDasharray="3 3" />
+        <ReferenceLine y={0} stroke="oklch(0.40 0.02 70)" strokeDasharray="3 3" />
 
         {/* Confidence band */}
         <Area
@@ -204,7 +204,7 @@ function MonteCarloFanChart({
           dot={false}
         />
 
-        <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }} />
+        <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.72 0.017 78)" }} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -341,7 +341,7 @@ function MonthlyBreakdownChart({
       </p>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
           <XAxis dataKey="month" {...axisStyle} />
           <YAxis {...axisStyle} tickFormatter={fmtK} />
           <Tooltip
@@ -358,7 +358,7 @@ function MonthlyBreakdownChart({
             strokeWidth={2}
             dot={false}
           />
-          <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }} />
+          <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.72 0.017 78)" }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

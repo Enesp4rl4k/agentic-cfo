@@ -47,13 +47,13 @@ const REPORT_TYPE_CONFIG: Record<
     label: "Cash Flow Statement",
     description: "Operating, investing, and financing activities",
     icon: BarChart2,
-    color: "text-blue-400",
+    color: "text-mapblue-400",
   },
   forecast: {
     label: "12-Month Forecast",
     description: "Scenario analysis with Monte Carlo simulation",
     icon: TrendingUp,
-    color: "text-violet-400",
+    color: "text-brass-400",
   },
 };
 

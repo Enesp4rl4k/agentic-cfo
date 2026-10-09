@@ -475,7 +475,7 @@ export default function ChatPage() {
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [inputRef]);
 
   const send = useCallback(async (question: string) => {
     const q = question.trim();
@@ -579,7 +579,7 @@ export default function ChatPage() {
       sseChat.send({ question: q, jobId, orgId });
       return;
     }
-  }, [jobId, orgId, loading, messages, chatMode, useWS, ws, sseChat]);
+  }, [jobId, orgId, loading, messages, chatMode, useWS, ws, sseChat, inputRef]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();

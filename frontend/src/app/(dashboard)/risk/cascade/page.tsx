@@ -82,16 +82,16 @@ const TRIGGER_TYPES = [
     key: "cyber_incident",
     label: "Siber Saldırı",
     icon: Shield,
-    color: "text-purple-400",
-    bg: "bg-purple-950/20 border-purple-800/40",
+    color: "text-clay-400",
+    bg: "bg-clay-950/20 border-clay-700/40",
     desc: "Veri ihlali veya ransomware saldırısı yaşanırsa?",
   },
   {
     key: "custom",
     label: "Özel Senaryo",
     icon: Zap,
-    color: "text-blue-400",
-    bg: "bg-blue-950/20 border-blue-800/40",
+    color: "text-mapblue-400",
+    bg: "bg-mapblue-950/20 border-mapblue-700/40",
     desc: "Kendi senaryonuzu tanımlayın",
   },
 ];
@@ -105,9 +105,9 @@ const SEVERITY_LEVELS = [
 
 const DOMAIN_ICONS: Record<string, { icon: typeof DollarSign; color: string }> = {
   "CFO / Finance":     { icon: DollarSign, color: "text-emerald-400" },
-  "CHRO / People":     { icon: Users,      color: "text-pink-400" },
-  "CTO / Technology":  { icon: Cpu,        color: "text-blue-400" },
-  "CMO / Marketing":   { icon: Megaphone,  color: "text-purple-400" },
+  "CHRO / People":     { icon: Users,      color: "text-sage-400" },
+  "CTO / Technology":  { icon: Cpu,        color: "text-mapblue-400" },
+  "CMO / Marketing":   { icon: Megaphone,  color: "text-clay-400" },
   "COO / Operations":  { icon: Layers,     color: "text-orange-400" },
   "Risk / Compliance": { icon: Shield,     color: "text-red-400" },
 };

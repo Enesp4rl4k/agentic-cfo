@@ -66,20 +66,19 @@ export interface CTOResult {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function fmtCents(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
 export function healthColor(score: number): string {
-  if (score <= 3) return "text-emerald-400";
-  if (score <= 6) return "text-yellow-400";
-  if (score <= 8) return "text-orange-400";
+  if (score <= 3) return "text-success";
+  if (score <= 6) return "text-warning";
+  if (score <= 8) return "text-warning";
   return "text-destructive";
 }
 
-export function healthLabel(score: number): string {
-  if (score <= 3) return "Healthy";
-  if (score <= 6) return "Moderate";
-  if (score <= 8) return "At Risk";
-  return "Critical";
+export function healthLabel(
+  score: number,
+  labels: { good: string; watch: string; risky: string; critical: string },
+): string {
+  if (score <= 3) return labels.good;
+  if (score <= 6) return labels.watch;
+  if (score <= 8) return labels.risky;
+  return labels.critical;
 }

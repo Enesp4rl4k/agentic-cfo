@@ -510,7 +510,7 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
     pnl      = cfo_state.get("pnl") or {}
     cashflow = cfo_state.get("cashflow") or {}
     forecast = cfo_state.get("forecast") or {}
-    alerts   = []
+    alerts: list[dict[str, Any]] = []
 
     # Collect all CFO alerts
     for src in [cashflow.get("alerts", []), forecast.get("alerts", [])]:
@@ -722,7 +722,7 @@ async def run_synthesis_agent(
         cross_risks = _detect_cross_risks(
             fin, tech,
             mkt or None, ops or None, compliance or None,
-            risk or None, audit_sum or None,
+            risk or None, audit_sum or None,  # type: ignore[arg-type]
         )
         # Add HR (CHRO) context to risks for HR-related rules
         for risk in cross_risks:

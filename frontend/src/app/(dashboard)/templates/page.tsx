@@ -287,14 +287,14 @@ Physical Security,operations,2023-08-15,annual,low,2024-08-15`,
 // ── Agent grouping ────────────────────────────────────────────────────────────
 
 const AGENT_COLORS: Record<string, string> = {
-  CFO:             "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-  CTO:             "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CMO:             "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  COO:             "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  CHRO:            "bg-pink-500/10 text-pink-500 border-pink-500/20",
-  Compliance:      "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
+  CFO:             "bg-brass-500/10 text-brass-500 border-brass-500/20",
+  CTO:             "bg-mapblue-500/10 text-mapblue-500 border-mapblue-500/20",
+  CMO:             "bg-clay-500/10 text-clay-500 border-clay-500/20",
+  COO:             "bg-copper-500/10 text-copper-500 border-copper-500/20",
+  CHRO:            "bg-sage-500/10 text-sage-500 border-sage-500/20",
+  Compliance:      "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
   Risk:            "bg-red-500/10 text-red-500 border-red-500/20",
-  "Internal Audit":"bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  "Internal Audit":"bg-parchment-500/10 text-parchment-500 border-parchment-500/20",
 };
 
 function agentKey(agent: string): string {

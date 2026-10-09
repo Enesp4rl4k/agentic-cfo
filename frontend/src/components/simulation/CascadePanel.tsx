@@ -22,7 +22,7 @@ const TRIGGERS: TriggerConfig[] = [
   { type: "cash_crisis",         label: "Nakit Krizi",      icon: <AlertTriangle className="h-4 w-4" />, color: "text-red-400"    },
   { type: "revenue_drop",        label: "Gelir Düşüşü",     icon: <ChevronDown   className="h-4 w-4" />, color: "text-orange-400" },
   { type: "key_person_loss",     label: "Kilit Kişi Kaybı", icon: <Shield        className="h-4 w-4" />, color: "text-yellow-400" },
-  { type: "market_shock",        label: "Piyasa Şoku",      icon: <Zap           className="h-4 w-4" />, color: "text-purple-400" },
+  { type: "market_shock",        label: "Piyasa Şoku",      icon: <Zap           className="h-4 w-4" />, color: "text-clay-400" },
 ];
 
 interface CascadePanelProps {

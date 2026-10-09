@@ -534,7 +534,7 @@ async def run_cfo_analysis(
             # Held while the job awaits review; run on approval instead
             # (app.api.analysis.approve_review).
             if terminal == JobStatus.COMPLETED and job.org_id:
-                await continue_after_completion(job_id, str(job.org_id), result, db)
+                await continue_after_completion(job_id, str(job.org_id), result, db)  # type: ignore[arg-type]
 
             return {"ok": True, "job_id": job_id, "status": str(terminal)}
 
@@ -546,17 +546,17 @@ async def run_cfo_analysis(
             # FAILED status — a failed run could leave partial transactions
             # behind for the report to pick up.
             await db.rollback()
-            fresh: Any = None
+            fresh_err: Any = None
             try:
-                fresh = await db.get(AnalysisJob, job_id)
-                if fresh is not None:
-                    await db.refresh(fresh)
+                fresh_err = await db.get(AnalysisJob, job_id)
+                if fresh_err is not None:
+                    await db.refresh(fresh_err)
             except Exception:
-                fresh = None
-            meta: dict[str, Any] = dict(
-                (fresh.result_metadata if fresh is not None else None) or {}
+                fresh_err = None
+            meta_err: dict[str, Any] = dict(
+                (fresh_err.result_metadata if fresh_err is not None else None) or {}
             )
-            meta["worker_failure"] = {
+            meta_err["worker_failure"] = {
                 "retryable": transient,
                 "error_type": type(exc).__name__,
                 "message": str(exc),
@@ -569,8 +569,8 @@ async def run_cfo_analysis(
                 job_id,
                 error=str(exc),
                 values=(
-                    {"result_metadata": meta, "awaiting_review": False}
-                    if fresh is not None
+                    {"result_metadata": meta_err, "awaiting_review": False}
+                    if fresh_err is not None
                     else None
                 ),
             )
@@ -753,7 +753,7 @@ async def _save_to_memory_and_trend(
             narrative=pnl.get("narrative", ""),
             job_id=job_id,
         )
-        await store.save(episode)
+        store.save(episode)
 
         # Run trend analysis
         detector = TrendDetector(memory_store=store)

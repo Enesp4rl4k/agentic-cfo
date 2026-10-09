@@ -12,6 +12,7 @@ import { SystemStatusWidget } from "@/components/ui/system-status";
 import { NotificationBell } from "@/components/ui/notification-bell";
 import { ThemeIconToggle } from "@/components/ui/theme-toggle";
 import { CommandPaletteTrigger } from "@/components/ui/command-palette";
+import { DocumentLang } from "@/components/ui/document-lang";
 
 // PERF: Lazy load heavy overlay components
 const AgentChatPanel = dynamic(
@@ -263,29 +264,28 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Sidebar header */}
-      <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black text-white"
-          style={{ background: "linear-gradient(135deg, oklch(0.62 0.26 262), oklch(0.55 0.22 220))" }}
-          aria-hidden="true"
-        >
-          A
-        </div>
-        <span className="font-bold tracking-tight truncate">{t.product.name}</span>
+      <div className="flex h-16 shrink-0 items-center border-b border-border px-4">
+        <Link href="/" className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${t.product.name} — ana sayfa`}>
+          <Logo size="md" />
+        </Link>
       </div>
 
       {/* Nav groups */}
       <nav
         className="flex-1 overflow-y-auto py-3"
-        aria-label="Main navigation"
+        aria-label="Ana gezinme"
         style={{ scrollbarWidth: "none" }}
       >
-        {groups.map((group) => (
-          <div key={group.label} className="mb-1">
-            <p className="mb-1 mt-2 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              {group.label}
-            </p>
-            <div className="space-y-0.5 px-2">
+        {groups.map((group, index) => {
+          const hasCurrentPage = group.items.some(({ href }) => activeBase === href || (href !== "/" && pathname.startsWith(href)));
+
+          return (
+          <details key={group.label} className="group/nav mb-1" open={hasCurrentPage || index === 0}>
+            <summary className="mx-2 flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <span>{group.label}</span>
+              <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="space-y-0.5 px-2 pb-1">
               {group.items.map((navItem) => {
                 const { href, label, icon: Icon } = navItem;
                 const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
@@ -336,8 +336,9 @@ function SidebarContent({
                 );
               })}
             </div>
-          </div>
-        ))}
+          </details>
+          );
+        })}
 
         {/* Recent analyses */}
         {jobs && jobs.length > 0 && (
@@ -383,8 +384,8 @@ function SidebarContent({
         >
           <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary">Upgrade to Pro</p>
-            <p className="text-[10px] text-muted-foreground">Full C-Suite agents</p>
+            <p className="text-xs font-semibold text-primary">Planı yükselt</p>
+            <p className="text-[10px] text-muted-foreground">Tüm yönetim görünümleri</p>
           </div>
         </Link>
       </div>
@@ -424,10 +425,11 @@ export default function DashboardLayout({
 
   return (
     <div className="flex min-h-screen bg-background">
+      <DocumentLang />
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden w-56 shrink-0 border-r border-border bg-card lg:flex lg:flex-col"
+        className="hidden w-64 shrink-0 border-r border-border bg-card lg:flex lg:flex-col"
         aria-label="Sidebar navigation"
       >
         <SidebarContent pathname={pathname} jobId={jobId} />
@@ -445,7 +447,7 @@ export default function DashboardLayout({
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card",
+          "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-card",
           "transition-transform duration-200 ease-out lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}

@@ -60,12 +60,14 @@ function nodeColorClasses(color: string, status?: string): string {
   if (status && statusOverride[status]) return statusOverride[status];
 
   const colorMap: Record<string, string> = {
-    blue:   "border-blue-400 bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200",
-    violet: "border-violet-400 bg-violet-50 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
+    // Atlas accent scales (no 50/100 steps): light badges tint from 500/10,
+    // dark badges use the 950 surface with 300 text — per tailwind.config.
+    blue:   "border-mapblue-400 bg-mapblue-500/10 text-mapblue-700 dark:bg-mapblue-950 dark:text-mapblue-300",
+    violet: "border-brass-400 bg-brass-500/10 text-brass-700 dark:bg-brass-950 dark:text-brass-300",
     amber:  "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
     emerald:"border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
-    sky:    "border-sky-400 bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
-    rose:   "border-rose-400 bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200",
+    sky:    "border-sage-400 bg-sage-500/10 text-sage-700 dark:bg-sage-950 dark:text-sage-300",
+    rose:   "border-clay-400 bg-clay-500/10 text-clay-700 dark:bg-clay-950 dark:text-clay-300",
     gray:   "border-border bg-muted text-muted-foreground",
   };
 
@@ -175,11 +177,11 @@ const LEGEND_ITEMS = [
 ];
 
 const GROUP_LEGEND = [
-  { color: "bg-blue-400",   label: "CFO Pipeline" },
-  { color: "bg-violet-400", label: "C-Suite Kernels" },
-  { color: "bg-amber-400",  label: "Orchestrator" },
-  { color: "bg-emerald-400",label: "CEO Sentezi" },
-  { color: "bg-sky-400",    label: "Çıktılar" },
+  { color: "bg-mapblue-400", label: "CFO Pipeline" },
+  { color: "bg-brass-400",   label: "C-Suite Kernels" },
+  { color: "bg-amber-400",   label: "Orchestrator" },
+  { color: "bg-emerald-400", label: "CEO Sentezi" },
+  { color: "bg-sage-400",    label: "Çıktılar" },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────

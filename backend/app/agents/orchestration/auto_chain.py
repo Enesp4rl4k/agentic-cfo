@@ -668,15 +668,17 @@ async def _send_feedback_notification(
             f"{label}. {to_label} verilerinizi güncellemek için ilgili sayfayı kontrol edin."
         )
 
-        svc = NotificationService(db)
-        await svc.create(
-            org_id=org_id,
+        svc = NotificationService()
+        from app.services.alert_router import AlertAction, AlertDecision, RawAlert
+        _alert = RawAlert(
             level="warning",
             domain=from_agent,
             message=message,
             source="auto_chain.feedback_loop",
-            priority_score=65,
+            job_id="",
         )
+        _decision = AlertDecision(alert=_alert, action=AlertAction.ROUTE, priority_score=65)
+        await svc.deliver([_decision], org_id=org_id, db=db)
         logger.info(
             "Feedback notification sent: %s → %s for org=%s",
             from_agent, to_agent, org_id,

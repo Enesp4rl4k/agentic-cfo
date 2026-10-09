@@ -16,7 +16,8 @@ import {
 } from "recharts";
 import { useDashboard, useTopAlerts, useReports } from "@/hooks/useCFO";
 import { useActiveCFOJob } from "@/hooks/useCompanyContext";
-import { formatCurrency, formatPercent, cn } from "@/lib/utils";
+import { formatPercent, cn } from "@/lib/utils";
+import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { downloadReport } from "@/lib/api/cfo";
 import type { DashboardData } from "@/types";
 
@@ -24,19 +25,19 @@ import type { DashboardData } from "@/types";
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.17 0.022 255)",
-    border: "1px solid oklch(0.27 0.018 255)",
-    borderRadius: "6px",
+    background: "var(--card)",
+    border: "1px solid var(--border)",
+    borderRadius: "8px",
     fontSize: "12px",
-    color: "oklch(0.92 0.008 255)",
+    color: "var(--foreground)",
     padding: "8px 12px",
   },
-  cursor: { stroke: "oklch(0.32 0.018 255)", strokeWidth: 1 },
+  cursor: { stroke: "var(--border)", strokeWidth: 1 },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.52 0.012 255)" },
-  axisLine: { stroke: "oklch(0.27 0.018 255)" },
+  tick: { fontSize: 11, fill: "var(--muted-foreground)" },
+  axisLine: { stroke: "var(--border)" },
   tickLine: false as const,
 };
 
@@ -51,16 +52,16 @@ interface KPICardProps {
 }
 
 function KPICard({ label, value, sub, positive, neutral }: KPICardProps) {
-  const valueColor = neutral
+  const valueColor = neutral || positive === undefined
     ? "text-foreground"
     : positive
-    ? "text-emerald-400"
+    ? "text-success"
     : "text-destructive";
 
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 text-xl font-semibold tabular tracking-tight", valueColor)}>
+    <div className="rounded-lg border border-border/80 bg-card px-4 py-4 transition-colors hover:border-primary/30">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className={cn("mt-2 text-xl font-semibold tabular tracking-tight sm:text-2xl", valueColor)}>
         {value}
       </p>
       {sub && <p className="mt-0.5 text-xs text-muted-foreground tabular">{sub}</p>}
@@ -81,11 +82,9 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-        <Icon className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-      </div>
+      <Icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
       <div>
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
         {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
     </div>
@@ -95,6 +94,7 @@ function SectionHeader({
 // ── P&L Summary ───────────────────────────────────────────────────────────────
 
 function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
+  const fmt = useCurrencyFormat();
   const netPositive = pnl.net_income >= 0;
   const ebitdaPositive = pnl.ebitda >= 0;
 
@@ -104,38 +104,38 @@ function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KPICard
           label="Gelir (Revenue)"
-          value={formatCurrency(pnl.revenue)}
+          value={fmt(pnl.revenue)}
           neutral
         />
         <KPICard
           label="Brüt Kâr"
-          value={formatCurrency(pnl.gross_profit)}
+          value={fmt(pnl.gross_profit)}
           sub={formatPercent(pnl.gross_margin) + " marj"}
           positive={pnl.gross_profit >= 0}
         />
         <KPICard
           label="EBITDA"
-          value={formatCurrency(pnl.ebitda)}
+          value={fmt(pnl.ebitda)}
           sub={formatPercent(pnl.ebitda_margin) + " marj"}
           positive={ebitdaPositive}
         />
         <KPICard
           label="Net Kâr"
-          value={formatCurrency(pnl.net_income)}
+          value={fmt(pnl.net_income)}
           sub={formatPercent(pnl.net_margin) + " marj"}
           positive={netPositive}
         />
         <KPICard
           label="Toplam COGS"
-          value={formatCurrency(pnl.cogs)}
+          value={fmt(pnl.cogs)}
           neutral
         />
       </div>
 
       {/* CFO narrative */}
       {pnl.narrative && (
-        <div className="mt-3 rounded-lg border border-border bg-card px-4 py-3">
-          <p className="mb-1 text-xs font-medium text-primary">CFO Yorumu</p>
+        <div className="mt-3 rounded-lg border border-primary/20 bg-primary/[0.045] px-4 py-3">
+          <p className="mb-1 text-xs font-semibold text-primary">CFO Yorumu</p>
           <p className="text-sm leading-relaxed text-muted-foreground max-w-prose">
             {pnl.narrative}
           </p>
@@ -148,6 +148,8 @@ function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
 // ── OpEx breakdown chart ──────────────────────────────────────────────────────
 
 function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
   const data = Object.entries(opex)
     .filter(([, v]) => v != null && v > 0)
     .map(([k, v]) => ({ name: k.replace(/_/g, " "), value: v ?? 0 }))
@@ -165,15 +167,15 @@ function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" horizontal={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
         <XAxis
           type="number"
           {...axisStyle}
-          tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
+          tickFormatter={(v: number) => `${symbol}${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
         />
         <YAxis dataKey="name" type="category" {...axisStyle} width={90} tick={{ ...axisStyle.tick, textAnchor: "end" }} />
-        <Tooltip {...tooltipStyle} formatter={(v: number) => [formatCurrency(v), "Tutar"]} />
-        <Bar dataKey="value" fill="oklch(0.60 0.19 255)" radius={[0, 3, 3, 0]} maxBarSize={16} />
+        <Tooltip {...tooltipStyle} formatter={(v: number) => [fmt(v), "Tutar"]} />
+        <Bar dataKey="value" fill="var(--chart-primary)" radius={[0, 3, 3, 0]} maxBarSize={16} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -182,6 +184,8 @@ function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
 // ── Cash flow section ─────────────────────────────────────────────────────────
 
 function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
   const netPositive = cashflow.net_change >= 0;
   const series = cashflow.monthly_series.map((m) => ({
     month: m.month.slice(5),
@@ -197,48 +201,60 @@ function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KPICard
           label="Net Değişim"
-          value={formatCurrency(cashflow.net_change)}
+          value={fmt(cashflow.net_change)}
           positive={netPositive}
         />
         <KPICard
           label="Operasyonel"
-          value={formatCurrency(cashflow.operating)}
+          value={fmt(cashflow.operating)}
           positive={cashflow.operating >= 0}
         />
         <KPICard
           label="Yatırım"
-          value={formatCurrency(cashflow.investing)}
+          value={fmt(cashflow.investing)}
           positive={cashflow.investing >= 0}
         />
         <KPICard
           label="Finansman"
-          value={formatCurrency(cashflow.financing)}
+          value={fmt(cashflow.financing)}
           positive={cashflow.financing >= 0}
         />
       </div>
 
       {series.length > 1 && (
-        <div className="mt-3 rounded-lg border border-border bg-card p-4">
-          <p className="mb-3 text-sm font-medium">Aylık Nakit Akışı</p>
+        <div className="mt-4 rounded-xl border border-border/80 bg-card p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium">Aylık nakit hareketi</p>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground" aria-label="Grafik açıklaması">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[color:var(--chart-primary)]" aria-hidden="true" />
+                Giriş
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[color:var(--chart-secondary)]" aria-hidden="true" />
+                Çıkış
+              </span>
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={series} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <defs>
                 <linearGradient id="cfo-gIn" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--chart-primary)" stopOpacity={0.22} />
+                  <stop offset="100%" stopColor="var(--chart-primary)" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="cfo-gOut" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="oklch(0.58 0.22 25)" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="oklch(0.58 0.22 25)" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--chart-secondary)" stopOpacity={0.18} />
+                  <stop offset="100%" stopColor="var(--chart-secondary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="month" {...axisStyle} />
-              <YAxis {...axisStyle} tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
-              <Tooltip {...tooltipStyle} formatter={(v: number, name: string) => [formatCurrency(v), name]} />
-              <ReferenceLine y={0} stroke="oklch(0.35 0.018 255)" strokeWidth={1} />
-              <Area type="monotone" dataKey="in" name="Giriş" stroke="oklch(0.60 0.19 255)" strokeWidth={1.5} fill="url(#cfo-gIn)" dot={false} />
-              <Area type="monotone" dataKey="out" name="Çıkış" stroke="oklch(0.58 0.22 25)" strokeWidth={1.5} fill="url(#cfo-gOut)" dot={false} />
+              <YAxis {...axisStyle} tickFormatter={(v: number) => `${symbol}${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+              <Tooltip {...tooltipStyle} formatter={(v: number, name: string) => [fmt(v), name]} />
+              <ReferenceLine y={0} stroke="var(--muted-foreground)" strokeWidth={1} />
+              <Area type="monotone" dataKey="in" name="Giriş" stroke="var(--chart-primary)" strokeWidth={2} fill="url(#cfo-gIn)" dot={false} />
+              <Area type="monotone" dataKey="out" name="Çıkış" stroke="var(--chart-secondary)" strokeWidth={2} fill="url(#cfo-gOut)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -271,6 +287,7 @@ function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) 
 // ── Forecast section ──────────────────────────────────────────────────────────
 
 function ForecastSection({ forecast }: { forecast: DashboardData["forecast"] }) {
+  const fmt = useCurrencyFormat();
   const scenarios = Object.values(forecast.scenarios);
   if (!scenarios.length) return null;
 
@@ -315,9 +332,9 @@ function ForecastSection({ forecast }: { forecast: DashboardData["forecast"] }) 
                     </td>
                     <td className={cn(
                       "px-4 py-3 text-right tabular font-medium text-sm",
-                      netPositive ? "text-emerald-400" : "text-destructive"
+                      netPositive ? "text-success" : "text-destructive"
                     )}>
-                      {(s.twelve_month_net >= 0 ? "+" : "")}{formatCurrency(s.twelve_month_net)}
+                      {(s.twelve_month_net >= 0 ? "+" : "")}{fmt(s.twelve_month_net)}
                     </td>
                     <td className="px-4 py-3 text-right tabular text-sm text-muted-foreground">
                       {s.runway_months != null ? `${s.runway_months} ay` : "Stabil"}
@@ -455,7 +472,7 @@ function AlertsSection({ jobId }: { jobId: string | null }) {
 
 function CFOSkeleton() {
   return (
-    <div className="space-y-6 p-5" aria-busy="true" aria-label="CFO verisi yükleniyor">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8" aria-busy="true" aria-label="CFO verisi yükleniyor">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {[...Array(5)].map((_, i) => (
           <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
@@ -513,31 +530,35 @@ export default function CFOPage() {
   if (!dashboard) return <CFOEmptyState />;
 
   return (
-    <div className="space-y-8 p-5">
+    <div className="mx-auto w-full max-w-[1600px] space-y-8 p-4 sm:p-6 xl:p-8">
 
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight">CFO Görünümü</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {dashboard.transaction_count} işlem analiz edildi ·{" "}
-            {new Date(dashboard.generated_at).toLocaleString("tr-TR")}
+      <div className="flex flex-col justify-between gap-5 border-b border-border/80 pb-6 sm:flex-row sm:items-end">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">CFO Görünümü</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Finansal performans, nakit pozisyonu ve öncelikli konular.
+          </p>
+          <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="tabular-nums">{dashboard.transaction_count} işlem</span>
+            <span aria-hidden="true" className="text-border">/</span>
+            <span>Son analiz {new Date(dashboard.generated_at).toLocaleString("tr-TR")}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Link
             href={`/pnl?job=${jobId}`}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card/60 px-3.5 text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-card hover:text-foreground"
           >
             <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
             P&L Detay
           </Link>
           <Link
             href={`/cashflow?job=${jobId}`}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card/60 px-3.5 text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-card hover:text-foreground"
           >
             <Waves className="h-3.5 w-3.5" aria-hidden="true" />
-            Cash Flow Detay
+            Nakit akışı
           </Link>
         </div>
       </div>

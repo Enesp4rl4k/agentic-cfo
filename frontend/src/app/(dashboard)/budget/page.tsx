@@ -42,18 +42,18 @@ interface BudgetData {
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.17 0.022 255)",
-    border: "1px solid oklch(0.27 0.018 255)",
+    background: "oklch(0.21 0.018 70)",
+    border: "1px solid oklch(0.32 0.019 68)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.92 0.008 255)",
+    color: "oklch(0.94 0.012 85)",
     padding: "8px 12px",
   },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.52 0.012 255)" },
-  axisLine: { stroke: "oklch(0.27 0.018 255)" },
+  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
+  axisLine: { stroke: "oklch(0.32 0.019 68)" },
   tickLine: false as const,
 };
 
@@ -119,7 +119,7 @@ function VarianceChart({ items }: { items: BudgetItem[] }) {
       </p>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" horizontal={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" horizontal={false} />
           <XAxis
             type="number"
             {...axisStyle}
@@ -130,7 +130,7 @@ function VarianceChart({ items }: { items: BudgetItem[] }) {
             {...tooltipStyle}
             formatter={(v: number) => [`${v > 0 ? "+" : ""}${v.toFixed(1)}%`, "Sapma"]}
           />
-          <ReferenceLine x={0} stroke="oklch(0.42 0.018 255)" strokeWidth={1} />
+          <ReferenceLine x={0} stroke="oklch(0.47 0.025 74)" strokeWidth={1} />
           <Bar dataKey="variance_pct" radius={[0, 3, 3, 0]} maxBarSize={18}>
             {data.map((entry, i) => (
               <Cell
@@ -140,7 +140,7 @@ function VarianceChart({ items }: { items: BudgetItem[] }) {
                     ? "oklch(0.58 0.22 25)"
                     : entry.status === "under"
                     ? "oklch(0.58 0.18 145)"
-                    : "oklch(0.52 0.012 255)"
+                    : "oklch(0.72 0.017 78)"
                 }
               />
             ))}

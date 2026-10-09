@@ -5,6 +5,8 @@ import { SessionProvider, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { ToastProvider } from "@/components/ui/toast";
 import { ThemeProvider } from "@/components/ui/theme-toggle";
+import { BootLocaleContext } from "@/lib/i18n/boot-locale";
+import type { AppLocale } from "@/lib/i18n";
 import { CompanyContextProvider, useCompanyContextStore } from "@/store/companyContext";
 
 /**
@@ -28,7 +30,14 @@ function OrgIdSync() {
   return null;
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  initialLocale = null,
+}: {
+  children: React.ReactNode;
+  /** Locale the server rendered this document with (cookie → Accept-Language). */
+  initialLocale?: AppLocale | null;
+}) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -42,16 +51,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <SessionProvider>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <CompanyContextProvider>
-            {/* Sync session orgId → store (no UI, effect only) */}
-            <OrgIdSync />
-            <ToastProvider>{children}</ToastProvider>
-          </CompanyContextProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </SessionProvider>
+    <BootLocaleContext.Provider value={initialLocale}>
+      <SessionProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <CompanyContextProvider>
+              {/* Sync session orgId → store (no UI, effect only) */}
+              <OrgIdSync />
+              <ToastProvider>{children}</ToastProvider>
+            </CompanyContextProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    </BootLocaleContext.Provider>
   );
 }

@@ -372,7 +372,7 @@ export default function ComparisonPage() {
                         yAxisId="left"
                         dataKey="revenue"
                         name="Ciro (Milyon TRY)"
-                        fill="oklch(0.60 0.19 255)"
+                        fill="oklch(0.79 0.115 83)"
                         radius={[4, 4, 0, 0]}
                       />
                       <Line

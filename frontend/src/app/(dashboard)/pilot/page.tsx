@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import {
   Users, Star, TrendingUp, MessageSquare, Copy, Check,
@@ -122,12 +122,15 @@ export default function PilotAdminPage() {
   const [genEmail, setGenEmail] = useState("");
   const [generating, setGenerating] = useState(false);
 
-  const h = () => ({
-    "Content-Type": "application/json",
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-  });
+  const h = useCallback(
+    () => ({
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    }),
+    [accessToken]
+  );
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -149,9 +152,9 @@ export default function PilotAdminPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [h]);
 
-  useEffect(() => { if (accessToken) loadAll(); }, [accessToken]);
+  useEffect(() => { if (accessToken) loadAll(); }, [accessToken, loadAll]);
 
   async function generateInvite() {
     setGenerating(true);
