@@ -438,12 +438,6 @@ export default function CHRODashboardPage() {
     }
   }
 
-  const inputs = [
-    { label: "Headcount CSV",    value: headcountCsv,    set: setHeadcountCsv,    ph: PH.headcount,    id: "chro-headcount" },
-    { label: "Attrition CSV",    value: attritionCsv,    set: setAttritionCsv,    ph: PH.attrition,    id: "chro-attrition" },
-    { label: "Compensation CSV", value: compensationCsv, set: setCompensationCsv, ph: PH.compensation, id: "chro-comp" },
-  ];
-
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
       {/* Header */}

@@ -40,6 +40,10 @@ describe("getMessages", () => {
     expect(en.roleDashboards.cto.sections.infrastructureCost).toBe("Infrastructure Cost");
     expect(tr.roleDashboards.cmo.sections.campaignPerformance).toBe("Kampanya Performansı");
     expect(tr.roleDashboards.chro.sections.hrHealthSummary).toBe("İK Sağlık Özeti");
+    expect(tr.roleDashboards.cfo.sections.pnlSummary).toBe("P&L Özeti");
+    expect(en.roleDashboards.cfo.sections.pnlSummary).toBe("P&L summary");
+    expect(tr.roleDashboards.cfo.title).toBe("CFO Görünümü");
+    expect(en.roleDashboards.cfo.title).toBe("CFO overview");
     expect(tr.roleDashboards.coo.sections.bottlenecks).toBe(
       "Süreç Darboğazları (Verimlilik vs Döngü Zamanı)",
     );

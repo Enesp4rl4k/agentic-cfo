@@ -400,11 +400,11 @@ export default function COODashboardPage() {
         throughput: parseFloat(values[2]) || 0,
         wip: parseFloat(values[3]) || 0,
         constraint_type: (values[4]?.trim() as any) || "resource",
-        toc_recommendation: "Kısıtlamayı tespit edin ve kapasite artırın",
+        toc_recommendation: t.roleDashboards.coo.body.tocDefault,
         impact_score: parseFloat(values[5]) || 50,
       };
     });
-  }, [processCsv]);
+  }, [processCsv, t]);
 
   const parsedTickets = useMemo(() => {
     if (!slaCsv) return [];

@@ -287,6 +287,73 @@ export type MessageTree = {
         runAnalysis: string;
         noResults: string;
         errorPrefix: string;
+        tocDefault: string;
+      };
+    };
+    cfo: {
+      title: string;
+      description: string;
+      sections: {
+        pnlSummary: string;
+        cashFlow: string;
+        forecast: string;
+        opex: string;
+        reports: string;
+        alerts: string;
+        related: string;
+      };
+      body: {
+        pnlSubtitle: string;
+        revenue: string;
+        grossProfit: string;
+        ebitda: string;
+        netProfit: string;
+        totalCogs: string;
+        margin: string;
+        cfoComment: string;
+        noExpenseData: string;
+        amount: string;
+        cashFlowSubtitle: string;
+        netChange: string;
+        operating: string;
+        investing: string;
+        financing: string;
+        monthlyCashMovement: string;
+        chartLegendAria: string;
+        inflow: string;
+        outflow: string;
+        forecastSubtitle: string;
+        colScenario: string;
+        colNet12: string;
+        colRunway: string;
+        colAssumption: string;
+        months: string;
+        stable: string;
+        reportsEmpty: string;
+        reportsSubtitle: string;
+        download: string;
+        downloadAria: string;
+        showAll: string;
+        alertsSubtitle: string;
+        loadingAria: string;
+        emptyHeading: string;
+        emptyBody: string;
+        uploadData: string;
+        lastAnalysis: string;
+        transactionCount: string;
+        pnlDetail: string;
+        cashFlowLink: string;
+        opexSubtitle: string;
+        related: {
+          forecast: string;
+          budget: string;
+          anomalies: string;
+          tax: string;
+          whatIf: string;
+          comparison: string;
+          ceo: string;
+          risk: string;
+        };
       };
     };
   };
@@ -611,6 +678,74 @@ export const en: MessageTree = {
         runAnalysis: "Run COO Analysis",
         noResults: "No process or SLA results were found for this analysis.",
         errorPrefix: "Error:",
+        tocDefault: "Identify the constraint and increase capacity",
+      },
+    },
+    cfo: {
+      title: "CFO overview",
+      description: "Financial performance, cash position, and priority items.",
+      sections: {
+        pnlSummary: "P&L summary",
+        cashFlow: "Cash flow",
+        forecast: "12-month forecast",
+        opex: "Expense breakdown",
+        reports: "Reports",
+        alerts: "Critical alerts",
+        related: "Related analyses",
+      },
+      body: {
+        pnlSubtitle: "Revenue, cost, and profit analysis",
+        revenue: "Revenue",
+        grossProfit: "Gross profit",
+        ebitda: "EBITDA",
+        netProfit: "Net profit",
+        totalCogs: "Total COGS",
+        margin: "{margin} margin",
+        cfoComment: "CFO comment",
+        noExpenseData: "No expense data",
+        amount: "Amount",
+        cashFlowSubtitle: "Monthly cash in/out analysis",
+        netChange: "Net change",
+        operating: "Operating",
+        investing: "Investing",
+        financing: "Financing",
+        monthlyCashMovement: "Monthly cash movement",
+        chartLegendAria: "Chart legend",
+        inflow: "Inflow",
+        outflow: "Outflow",
+        forecastSubtitle: "Scenario-based revenue projection",
+        colScenario: "Scenario",
+        colNet12: "12-month net",
+        colRunway: "Runway",
+        colAssumption: "Assumption",
+        months: "{months} mo",
+        stable: "Stable",
+        reportsEmpty: "No reports yet. Reports appear here once the analysis finishes.",
+        reportsSubtitle: "Downloadable Excel / PDF reports",
+        download: "Download",
+        downloadAria: "Download {title}",
+        showAll: "All",
+        alertsSubtitle: "Items that need priority action",
+        loadingAria: "Loading CFO data",
+        emptyHeading: "Data needed for a CFO analysis",
+        emptyBody:
+          "Upload a bank statement, invoice CSV, or Excel file — AI CFO prepares your analysis in seconds.",
+        uploadData: "Upload data",
+        lastAnalysis: "Last analysis {date}",
+        transactionCount: "{count} transactions",
+        pnlDetail: "P&L detail",
+        cashFlowLink: "Cash flow",
+        opexSubtitle: "Operating expenses by category",
+        related: {
+          forecast: "Forecast",
+          budget: "Budget",
+          anomalies: "Anomalies",
+          tax: "Tax",
+          whatIf: "What-If",
+          comparison: "Comparison",
+          ceo: "CEO summary",
+          risk: "Risk",
+        },
       },
     },
   },

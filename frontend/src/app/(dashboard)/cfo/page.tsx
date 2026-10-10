@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { useDashboard, useTopAlerts, useReports } from "@/hooks/useCFO";
 import { useActiveCFOJob } from "@/hooks/useCompanyContext";
+import { useI18n } from "@/hooks/useI18n";
 import { formatPercent, cn } from "@/lib/utils";
 import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { downloadReport } from "@/lib/api/cfo";
@@ -40,6 +41,11 @@ const axisStyle = {
   axisLine: { stroke: "var(--border)" },
   tickLine: false as const,
 };
+
+/** BCP47 tag for the active app locale — used by toLocale*String calls. */
+function localeTag(locale: string): string {
+  return locale === "tr" ? "tr-TR" : "en-US";
+}
 
 // ── KPI metric card ───────────────────────────────────────────────────────────
 
@@ -95,38 +101,40 @@ function SectionHeader({
 
 function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
   const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
   const netPositive = pnl.net_income >= 0;
   const ebitdaPositive = pnl.ebitda >= 0;
 
   return (
-    <section aria-label="P&L Özeti">
-      <SectionHeader icon={DollarSign} title="P&L Özeti" subtitle="Gelir, gider ve kâr analizi" />
+    <section aria-label={cfo.sections.pnlSummary}>
+      <SectionHeader icon={DollarSign} title={cfo.sections.pnlSummary} subtitle={cfo.body.pnlSubtitle} />
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KPICard
-          label="Gelir (Revenue)"
+          label={cfo.body.revenue}
           value={fmt(pnl.revenue)}
           neutral
         />
         <KPICard
-          label="Brüt Kâr"
+          label={cfo.body.grossProfit}
           value={fmt(pnl.gross_profit)}
-          sub={formatPercent(pnl.gross_margin) + " marj"}
+          sub={cfo.body.margin.replace("{margin}", formatPercent(pnl.gross_margin))}
           positive={pnl.gross_profit >= 0}
         />
         <KPICard
-          label="EBITDA"
+          label={cfo.body.ebitda}
           value={fmt(pnl.ebitda)}
-          sub={formatPercent(pnl.ebitda_margin) + " marj"}
+          sub={cfo.body.margin.replace("{margin}", formatPercent(pnl.ebitda_margin))}
           positive={ebitdaPositive}
         />
         <KPICard
-          label="Net Kâr"
+          label={cfo.body.netProfit}
           value={fmt(pnl.net_income)}
-          sub={formatPercent(pnl.net_margin) + " marj"}
+          sub={cfo.body.margin.replace("{margin}", formatPercent(pnl.net_margin))}
           positive={netPositive}
         />
         <KPICard
-          label="Toplam COGS"
+          label={cfo.body.totalCogs}
           value={fmt(pnl.cogs)}
           neutral
         />
@@ -135,7 +143,7 @@ function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
       {/* CFO narrative */}
       {pnl.narrative && (
         <div className="mt-3 rounded-lg border border-primary/20 bg-primary/[0.045] px-4 py-3">
-          <p className="mb-1 text-xs font-semibold text-primary">CFO Yorumu</p>
+          <p className="mb-1 text-xs font-semibold text-primary">{cfo.body.cfoComment}</p>
           <p className="text-sm leading-relaxed text-muted-foreground max-w-prose">
             {pnl.narrative}
           </p>
@@ -150,6 +158,8 @@ function PnLSummary({ pnl }: { pnl: DashboardData["pnl"] }) {
 function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
   const fmt = useCurrencyFormat();
   const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
   const data = Object.entries(opex)
     .filter(([, v]) => v != null && v > 0)
     .map(([k, v]) => ({ name: k.replace(/_/g, " "), value: v ?? 0 }))
@@ -159,7 +169,7 @@ function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
   if (!data.length) {
     return (
       <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
-        Gider verisi yok
+        {cfo.body.noExpenseData}
       </div>
     );
   }
@@ -174,7 +184,7 @@ function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
           tickFormatter={(v: number) => `${symbol}${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
         />
         <YAxis dataKey="name" type="category" {...axisStyle} width={90} tick={{ ...axisStyle.tick, textAnchor: "end" }} />
-        <Tooltip {...tooltipStyle} formatter={(v: number) => [fmt(v), "Tutar"]} />
+        <Tooltip {...tooltipStyle} formatter={(v: number) => [fmt(v), cfo.body.amount]} />
         <Bar dataKey="value" fill="var(--chart-primary)" radius={[0, 3, 3, 0]} maxBarSize={16} />
       </BarChart>
     </ResponsiveContainer>
@@ -186,6 +196,8 @@ function OpExChart({ opex }: { opex: DashboardData["pnl"]["opex"] }) {
 function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) {
   const fmt = useCurrencyFormat();
   const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
   const netPositive = cashflow.net_change >= 0;
   const series = cashflow.monthly_series.map((m) => ({
     month: m.month.slice(5),
@@ -195,27 +207,27 @@ function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) 
   }));
 
   return (
-    <section aria-label="Nakit Akışı">
-      <SectionHeader icon={Waves} title="Nakit Akışı" subtitle="Aylık nakit giriş/çıkış analizi" />
+    <section aria-label={cfo.sections.cashFlow}>
+      <SectionHeader icon={Waves} title={cfo.sections.cashFlow} subtitle={cfo.body.cashFlowSubtitle} />
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KPICard
-          label="Net Değişim"
+          label={cfo.body.netChange}
           value={fmt(cashflow.net_change)}
           positive={netPositive}
         />
         <KPICard
-          label="Operasyonel"
+          label={cfo.body.operating}
           value={fmt(cashflow.operating)}
           positive={cashflow.operating >= 0}
         />
         <KPICard
-          label="Yatırım"
+          label={cfo.body.investing}
           value={fmt(cashflow.investing)}
           positive={cashflow.investing >= 0}
         />
         <KPICard
-          label="Finansman"
+          label={cfo.body.financing}
           value={fmt(cashflow.financing)}
           positive={cashflow.financing >= 0}
         />
@@ -224,15 +236,15 @@ function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) 
       {series.length > 1 && (
         <div className="mt-4 rounded-xl border border-border/80 bg-card p-4 sm:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm font-medium">Aylık nakit hareketi</p>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground" aria-label="Grafik açıklaması">
+            <p className="text-sm font-medium">{cfo.body.monthlyCashMovement}</p>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground" aria-label={cfo.body.chartLegendAria}>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-[color:var(--chart-primary)]" aria-hidden="true" />
-                Giriş
+                {cfo.body.inflow}
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-[color:var(--chart-secondary)]" aria-hidden="true" />
-                Çıkış
+                {cfo.body.outflow}
               </span>
             </div>
           </div>
@@ -253,8 +265,8 @@ function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) 
               <YAxis {...axisStyle} tickFormatter={(v: number) => `${symbol}${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
               <Tooltip {...tooltipStyle} formatter={(v: number, name: string) => [fmt(v), name]} />
               <ReferenceLine y={0} stroke="var(--muted-foreground)" strokeWidth={1} />
-              <Area type="monotone" dataKey="in" name="Giriş" stroke="var(--chart-primary)" strokeWidth={2} fill="url(#cfo-gIn)" dot={false} />
-              <Area type="monotone" dataKey="out" name="Çıkış" stroke="var(--chart-secondary)" strokeWidth={2} fill="url(#cfo-gOut)" dot={false} />
+              <Area type="monotone" dataKey="in" name={cfo.body.inflow} stroke="var(--chart-primary)" strokeWidth={2} fill="url(#cfo-gIn)" dot={false} />
+              <Area type="monotone" dataKey="out" name={cfo.body.outflow} stroke="var(--chart-secondary)" strokeWidth={2} fill="url(#cfo-gOut)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -288,23 +300,32 @@ function CashFlowSection({ cashflow }: { cashflow: DashboardData["cashflow"] }) 
 
 function ForecastSection({ forecast }: { forecast: DashboardData["forecast"] }) {
   const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
   const scenarios = Object.values(forecast.scenarios);
   if (!scenarios.length) return null;
 
+  const columns = [
+    { key: "scenario",   label: cfo.body.colScenario,   right: false },
+    { key: "net12",      label: cfo.body.colNet12,      right: true },
+    { key: "runway",     label: cfo.body.colRunway,     right: true },
+    { key: "assumption", label: cfo.body.colAssumption, right: false },
+  ];
+
   return (
-    <section aria-label="Tahmin">
-      <SectionHeader icon={TrendingUp} title="12 Aylık Tahmin" subtitle="Senaryo bazlı gelir tahmini" />
+    <section aria-label={cfo.sections.forecast}>
+      <SectionHeader icon={TrendingUp} title={cfo.sections.forecast} subtitle={cfo.body.forecastSubtitle} />
       <div className="mt-3 rounded-lg border border-border bg-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm" role="table">
             <thead>
               <tr className="border-b border-border">
-                {["Senaryo", "12 Ay Net", "Nakit Süresi", "Varsayım"].map((h) => (
-                  <th key={h} className={cn(
+                {columns.map((h) => (
+                  <th key={h.key} className={cn(
                     "px-4 py-2.5 text-xs font-medium text-muted-foreground",
-                    h === "12 Ay Net" || h === "Nakit Süresi" ? "text-right" : "text-left"
+                    h.right ? "text-right" : "text-left"
                   )}>
-                    {h}
+                    {h.label}
                   </th>
                 ))}
               </tr>
@@ -337,7 +358,9 @@ function ForecastSection({ forecast }: { forecast: DashboardData["forecast"] }) 
                       {(s.twelve_month_net >= 0 ? "+" : "")}{fmt(s.twelve_month_net)}
                     </td>
                     <td className="px-4 py-3 text-right tabular text-sm text-muted-foreground">
-                      {s.runway_months != null ? `${s.runway_months} ay` : "Stabil"}
+                      {s.runway_months != null
+                        ? cfo.body.months.replace("{months}", String(s.runway_months))
+                        : cfo.body.stable}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px] hidden sm:table-cell">
                       {s.description}
@@ -364,6 +387,8 @@ function ForecastSection({ forecast }: { forecast: DashboardData["forecast"] }) 
 
 function ReportsSection({ jobId }: { jobId: string }) {
   const { data: reports, isLoading } = useReports(jobId);
+  const { locale, t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
 
   if (isLoading) {
     return (
@@ -378,7 +403,7 @@ function ReportsSection({ jobId }: { jobId: string }) {
   if (!reports?.length) {
     return (
       <p className="text-sm text-muted-foreground py-4">
-        Henüz rapor üretilmedi. Analiz tamamlandığında raporlar burada görünür.
+        {cfo.body.reportsEmpty}
       </p>
     );
   }
@@ -395,7 +420,7 @@ function ReportsSection({ jobId }: { jobId: string }) {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{r.title ?? r.report_type}</p>
               <p className="text-xs text-muted-foreground">
-                {new Date(r.created_at).toLocaleDateString("tr-TR")}
+                {new Date(r.created_at).toLocaleDateString(localeTag(locale))}
               </p>
             </div>
           </div>
@@ -408,10 +433,10 @@ function ReportsSection({ jobId }: { jobId: string }) {
               "px-3 py-1.5 text-xs font-medium text-muted-foreground",
               "transition-colors hover:border-primary/30 hover:text-primary"
             )}
-            aria-label={`${r.title ?? r.report_type} indir`}
+            aria-label={cfo.body.downloadAria.replace("{title}", String(r.title ?? r.report_type))}
           >
             <Download className="h-3 w-3" aria-hidden="true" />
-            İndir
+            {cfo.body.download}
           </a>
         </div>
       ))}
@@ -423,14 +448,16 @@ function ReportsSection({ jobId }: { jobId: string }) {
 
 function AlertsSection({ jobId }: { jobId: string | null }) {
   const { data: topAlertsData } = useTopAlerts(jobId);
+  const { t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
   if (!topAlertsData?.top_alerts?.length) return null;
 
   return (
-    <section aria-label="Kritik Uyarılar">
+    <section aria-label={cfo.sections.alerts}>
       <SectionHeader
         icon={ShieldAlert}
-        title="Kritik Uyarılar"
-        subtitle="Öncelikli aksiyon gerektiren konular"
+        title={cfo.sections.alerts}
+        subtitle={cfo.body.alertsSubtitle}
       />
       <div className="mt-3 space-y-2">
         {topAlertsData.top_alerts.map((alert, i) => (
@@ -471,8 +498,9 @@ function AlertsSection({ jobId }: { jobId: string | null }) {
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function CFOSkeleton() {
+  const { t } = useI18n();
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8" aria-busy="true" aria-label="CFO verisi yükleniyor">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8" aria-busy="true" aria-label={t.roleDashboards.cfo.body.loadingAria}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {[...Array(5)].map((_, i) => (
           <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
@@ -490,14 +518,16 @@ function CFOSkeleton() {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function CFOEmptyState() {
+  const { t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">CFO analizi için veri gerekli</h2>
+      <h2 className="text-base font-semibold">{cfo.body.emptyHeading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Banka ekstresi, fatura CSV veya Excel dosyası yükleyin — AI CFO analizinizi saniyeler içinde hazırlar.
+        {cfo.body.emptyBody}
       </p>
       <Link
         href="/upload"
@@ -508,7 +538,7 @@ function CFOEmptyState() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         )}
       >
-        Veri Yükle
+        {cfo.body.uploadData}
         <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
       </Link>
     </div>
@@ -522,6 +552,8 @@ export default function CFOPage() {
   const urlJobId = searchParams.get("job");
   const contextJobId = useActiveCFOJob();
   const jobId = urlJobId ?? contextJobId;
+  const { locale, t } = useI18n();
+  const cfo = t.roleDashboards.cfo;
 
   const { data: dashboard, isLoading } = useDashboard(jobId);
 
@@ -535,14 +567,21 @@ export default function CFOPage() {
       {/* Page header */}
       <div className="flex flex-col justify-between gap-5 border-b border-border/80 pb-6 sm:flex-row sm:items-end">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">CFO Görünümü</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">{cfo.title}</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Finansal performans, nakit pozisyonu ve öncelikli konular.
+            {cfo.description}
           </p>
           <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="tabular-nums">{dashboard.transaction_count} işlem</span>
+            <span className="tabular-nums">
+              {cfo.body.transactionCount.replace("{count}", String(dashboard.transaction_count))}
+            </span>
             <span aria-hidden="true" className="text-border">/</span>
-            <span>Son analiz {new Date(dashboard.generated_at).toLocaleString("tr-TR")}</span>
+            <span>
+              {cfo.body.lastAnalysis.replace(
+                "{date}",
+                new Date(dashboard.generated_at).toLocaleString(localeTag(locale)),
+              )}
+            </span>
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -551,14 +590,14 @@ export default function CFOPage() {
             className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card/60 px-3.5 text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-card hover:text-foreground"
           >
             <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-            P&L Detay
+            {cfo.body.pnlDetail}
           </Link>
           <Link
             href={`/cashflow?job=${jobId}`}
             className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card/60 px-3.5 text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-card hover:text-foreground"
           >
             <Waves className="h-3.5 w-3.5" aria-hidden="true" />
-            Nakit akışı
+            {cfo.body.cashFlowLink}
           </Link>
         </div>
       </div>
@@ -570,8 +609,8 @@ export default function CFOPage() {
       <PnLSummary pnl={dashboard.pnl} />
 
       {/* Charts — OpEx + trend */}
-      <section aria-label="Gider Analizi">
-        <SectionHeader icon={Activity} title="Gider Dağılımı" subtitle="Kategorilere göre operasyonel giderler" />
+      <section aria-label={cfo.sections.opex}>
+        <SectionHeader icon={Activity} title={cfo.sections.opex} subtitle={cfo.body.opexSubtitle} />
         <div className="mt-3 rounded-lg border border-border bg-card p-4">
           <OpExChart opex={dashboard.pnl.opex} />
         </div>
@@ -586,14 +625,14 @@ export default function CFOPage() {
       )}
 
       {/* Reports */}
-      <section aria-label="Raporlar">
+      <section aria-label={cfo.sections.reports}>
         <div className="flex items-center justify-between">
-          <SectionHeader icon={FileText} title="Raporlar" subtitle="İndirilebilir Excel / PDF raporlar" />
+          <SectionHeader icon={FileText} title={cfo.sections.reports} subtitle={cfo.body.reportsSubtitle} />
           <Link
             href={`/reports?job=${jobId}`}
             className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Tümü
+            {cfo.body.showAll}
             <ChevronRight className="h-3 w-3" aria-hidden="true" />
           </Link>
         </div>
@@ -603,20 +642,20 @@ export default function CFOPage() {
       </section>
 
       {/* Navigation links to related views */}
-      <section aria-label="İlgili analizler">
+      <section aria-label={cfo.sections.related}>
         <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Bağlı Analizler
+          {cfo.sections.related}
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {[
-            { href: `/forecast?job=${jobId}`,    icon: TrendingUp,   label: "Tahmin" },
-            { href: `/budget?job=${jobId}`,      icon: DollarSign,   label: "Bütçe" },
-            { href: `/anomalies?job=${jobId}`,   icon: ShieldAlert,  label: "Anomaliler" },
-            { href: `/tax?job=${jobId}`,         icon: FileText,     label: "Vergi" },
-            { href: `/sensitivity?job=${jobId}`, icon: Activity,     label: "What-If" },
-            { href: `/comparison?job=${jobId}`,  icon: BarChart2,    label: "Karşılaştırma" },
-            { href: `/ceo?job=${jobId}`,         icon: TrendingUp,   label: "CEO Özeti" },
-            { href: `/risk?job=${jobId}`,        icon: ShieldAlert,  label: "Risk" },
+            { href: `/forecast?job=${jobId}`,    icon: TrendingUp,   label: cfo.body.related.forecast },
+            { href: `/budget?job=${jobId}`,      icon: DollarSign,   label: cfo.body.related.budget },
+            { href: `/anomalies?job=${jobId}`,   icon: ShieldAlert,  label: cfo.body.related.anomalies },
+            { href: `/tax?job=${jobId}`,         icon: FileText,     label: cfo.body.related.tax },
+            { href: `/sensitivity?job=${jobId}`, icon: Activity,     label: cfo.body.related.whatIf },
+            { href: `/comparison?job=${jobId}`,  icon: BarChart2,    label: cfo.body.related.comparison },
+            { href: `/ceo?job=${jobId}`,         icon: TrendingUp,   label: cfo.body.related.ceo },
+            { href: `/risk?job=${jobId}`,        icon: ShieldAlert,  label: cfo.body.related.risk },
           ].map(({ href, icon: Icon, label }) => (
             <Link
               key={href}
