@@ -211,20 +211,18 @@ export type MessageTree = {
       body: {
         totalHeadcount: string;
         totalFte: string;
-        newHires30d: string;
+        recentHires: string;
         avgTenure: string;
         yrs: string;
-        netChange30d: string;
+        netChange: string;
         byDepartment: string;
         avg: string;
         noAlerts: string;
         totalAttritions: string;
         voluntary: string;
-        annualRate: string;
+        earlyRate: string;
         attritionCost: string;
         topDepartureReasons: string;
-        highAttritionRiskRoles: string;
-        riskLabel: string;
         totalPayroll: string;
         avgSalary: string;
         equityBurn: string;
@@ -233,10 +231,12 @@ export type MessageTree = {
         aboveMarket: string;
         byLevel: string;
         employees: string;
+        employeeOne: string;
         hrScore: string;
         topHrRisks: string;
         quickWins: string;
         effort: string;
+        effortLevel: { low: string; medium: string; high: string };
         validationError: string;
         unknownError: string;
         csvManualHeading: string;
@@ -247,7 +247,6 @@ export type MessageTree = {
         compensationCsvLabel: string;
         analyzing: string;
         runAnalysis: string;
-        loadExampleData: string;
         pipelineError: string;
       };
     };
@@ -596,20 +595,18 @@ export const en: MessageTree = {
       body: {
         totalHeadcount: "Total Headcount",
         totalFte: "Total FTE",
-        newHires30d: "New Hires (30d)",
+        recentHires: "Hired (last 12 months)",
         avgTenure: "Avg Tenure",
         yrs: "yrs",
-        netChange30d: "Net Change (30d):",
+        netChange: "Net change (hires − departures):",
         byDepartment: "By Department",
         avg: "avg",
         noAlerts: "No alerts.",
         totalAttritions: "Total Attritions",
         voluntary: "Voluntary",
-        annualRate: "Annual Rate",
+        earlyRate: "Early Departures (<6 mo)",
         attritionCost: "Attrition Cost",
         topDepartureReasons: "Top Departure Reasons",
-        highAttritionRiskRoles: "High Attrition Risk Roles",
-        riskLabel: "Risk:",
         totalPayroll: "Total Payroll",
         avgSalary: "Avg Salary",
         equityBurn: "Equity Burn",
@@ -618,10 +615,12 @@ export const en: MessageTree = {
         aboveMarket: "Above Market:",
         byLevel: "By Level",
         employees: "employees",
+        employeeOne: "employee",
         hrScore: "HR Score",
         topHrRisks: "Top HR Risks",
         quickWins: "Quick Wins",
         effort: "effort",
+        effortLevel: { low: "low", medium: "medium", high: "high" },
         validationError: "All three CSV inputs (headcount, attrition, compensation) are required.",
         unknownError: "Unknown error",
         csvManualHeading: "Manual analysis via CSV",
@@ -632,7 +631,6 @@ export const en: MessageTree = {
         compensationCsvLabel: "Compensation CSV",
         analyzing: "Analyzing...",
         runAnalysis: "Run CHRO Analysis",
-        loadExampleData: "Load Example Data",
         pipelineError: "Pipeline error:",
       },
     },

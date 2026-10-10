@@ -57,9 +57,12 @@ function detectCrossInsights(
     numMetric(semanticMetrics, "finance.runway_months") ??
     ((forecast as Record<string, unknown>)?.scenarios as Record<string, Record<string, number>> | null)?.base?.runway_months ??
     99;
+  const attrition = chro?.attrition as Record<string, number> | null;
   const attritionRate =
     numMetric(semanticMetrics, "people.attrition_rate") ??
-    ((chro?.attrition as Record<string, number> | null)?.annualized_attrition_rate ?? 0);
+    // The pipeline reports early-departure rate; older results may carry an
+    // annualized rate. Missing metrics must read as 0, not NaN.
+    (attrition?.annualized_attrition_rate ?? attrition?.early_departure_rate ?? 0);
   const roas = numMetric(semanticMetrics, "growth.overall_roas");
   const ctoScore = (cto?.cto_summary as Record<string, number> | null)?.overall_health_score ?? 10;
 

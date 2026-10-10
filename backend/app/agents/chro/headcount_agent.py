@@ -41,6 +41,7 @@ def _parse_headcount_csv(csv_text: str) -> list[dict[str, Any]]:
     location_col = _col("location", "office", "city", "region")
     start_col = _col("start_date", "hire_date", "joined")
     status_col = _col("status", "employment_status", "state")
+    fte_col = _col("fte", "fte_count", "full_time_equivalent")
 
     rows = []
     for i, row in enumerate(reader, start=1):
@@ -51,6 +52,15 @@ def _parse_headcount_csv(csv_text: str) -> list[dict[str, Any]]:
             role = (row.get(role_col) or "").strip()
             status = (row.get(status_col) or "active").strip().lower()
             location = (row.get(location_col) or "").strip()
+
+            # FTE — documented in the dropzone format; defaults to one
+            # full-time equivalent per head when the column is absent.
+            fte = 1.0
+            if fte_col and row.get(fte_col):
+                try:
+                    fte = float(str(row.get(fte_col)).replace(",", "").strip())
+                except (ValueError, TypeError):
+                    fte = 1.0
 
             # Salary in cents
             salary = 0
@@ -80,6 +90,7 @@ def _parse_headcount_csv(csv_text: str) -> list[dict[str, Any]]:
                 "location": location,
                 "start_date": start_date,
                 "status": status,
+                "fte": max(0.0, fte),
             })
         except Exception:
             pass
@@ -92,6 +103,7 @@ def _compute_headcount_metrics(employees: list[dict[str, Any]]) -> dict[str, Any
 
     active = [e for e in employees if e["status"] == "active"]
     total_headcount = len(active)
+    total_fte = round(sum(e.get("fte", 1.0) for e in active), 1)
 
     # By level
     by_level = {}
@@ -151,6 +163,7 @@ def _compute_headcount_metrics(employees: list[dict[str, Any]]) -> dict[str, Any
 
     return {
         "total_headcount": total_headcount,
+        "total_fte": total_fte,
         "by_level": by_level,
         "by_department": by_dept,
         "total_annual_payroll": total_annual_payroll,

@@ -15,6 +15,10 @@ from app.agents.chro.state import CHROState, CHROStepLog
 
 logger = logging.getLogger(__name__)
 
+# Values (lowercase) that mark a non-voluntary departure — matched against
+# either the structured departure_type column or the free-text reason.
+INVOLUNTARY_MARKERS = frozenset({"termination", "fired", "involuntary", "layoff"})
+
 
 def _parse_datetime(raw: str) -> datetime | None:
     """Parse datetime flexibly."""
@@ -56,8 +60,11 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
     level_col = _col("level", "seniority", "grade")
     dept_col = _col("department", "dept", "team")
     departure_col = _col("departure_date", "exit_date", "last_day", "date")
-    tenure_col = _col("tenure", "tenure_months", "months", "years_employed")
+    # Documented dropzone format ships `tenure_years` — columns whose name
+    # says "year" are converted to months below.
+    tenure_col = _col("tenure", "tenure_months", "tenure_years", "months", "years_employed")
     reason_col = _col("reason", "departure_reason", "attrition_reason", "cause")
+    type_col = _col("departure_type", "exit_type", "separation_type")
     replaced_col = _col("replaced", "replacement_hired", "backfilled")
 
     rows = []
@@ -67,6 +74,7 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
             level = (row.get(level_col) or "mid").strip().lower()
             dept = (row.get(dept_col) or "unknown").strip()
             reason = (row.get(reason_col) or "voluntary").strip().lower()
+            departure_type = (row.get(type_col) or "").strip().lower()
 
             # Departure date
             departure_date = None
@@ -78,7 +86,10 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
             if tenure_col and row.get(tenure_col):
                 try:
                     tenure_str = str(row.get(tenure_col)).replace(",", "").strip()
-                    tenure_months = int(float(tenure_str))
+                    tenure_value = float(tenure_str)
+                    if "year" in tenure_col.lower():
+                        tenure_value *= 12
+                    tenure_months = int(tenure_value)
                 except (ValueError, TypeError):
                     tenure_months = 0
 
@@ -93,6 +104,7 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
                 "level": level,
                 "department": dept,
                 "departure_date": departure_date,
+                "departure_type": departure_type,
                 "tenure_months": tenure_months,
                 "reason": reason,
                 "replaced": replaced,
@@ -135,8 +147,12 @@ def _compute_attrition_metrics(departures: list[dict[str, Any]]) -> dict[str, An
     recent_threshold = max(1, total_departures // 3)
     recent_departures = departures[:recent_threshold]
 
-    # Involuntary departures
-    involuntary = [d for d in departures if d["reason"] in ["termination", "fired", "involuntary", "layoff"]]
+    # Involuntary departures — either the `departure_type` column (documented
+    # dropzone format) or the free-text reason says so.
+    involuntary = [
+        d for d in departures
+        if d.get("departure_type") in INVOLUNTARY_MARKERS or d["reason"] in INVOLUNTARY_MARKERS
+    ]
     involuntary_rate = len(involuntary) / total_departures if total_departures > 0 else 0
 
     # Cost estimation (rough)

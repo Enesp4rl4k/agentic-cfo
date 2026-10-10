@@ -37,9 +37,9 @@ def _parse_compensation_csv(csv_text: str) -> list[dict[str, Any]]:
     dept_col = _col("department", "dept", "team")
     salary_col = _col("salary", "base_salary", "base")
     bonus_col = _col("bonus", "bonus_percentage", "target_bonus")
-    equity_col = _col("equity_shares", "equity", "stock_options", "option_grant", "options")
+    equity_col = _col("equity_shares", "equity_annual", "equity", "stock_options", "option_grant", "options")
     equity_vesting_col = _col("vesting", "vest_date", "vesting_schedule")
-    benefits_col = _col("benefits", "benefits_cost", "benefits_package")
+    benefits_col = _col("benefits", "benefits_annual", "benefits_cost", "benefits_package")
     market_salary_col = _col("market_salary", "market_rate", "industry_rate")
 
     rows = []
