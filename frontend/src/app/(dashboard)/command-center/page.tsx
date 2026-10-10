@@ -174,8 +174,9 @@ function CrossRiskCard({ risk }: { risk: CrossRiskItem }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className="font-semibold text-sm">{risk.title}</span>
-            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold border uppercase", getSeverityStyle(risk.severity))}>
-              {risk.severity}
+            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold border", getSeverityStyle(risk.severity))}>
+              {/* JS casing: CSS uppercase follows html lang (tr → dotted I in "CRITICAL"). */}
+              {risk.severity.toUpperCase()}
             </span>
           </div>
           <p className="text-xs opacity-80">{risk.impact}</p>

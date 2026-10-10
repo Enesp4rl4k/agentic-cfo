@@ -174,8 +174,9 @@ function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
               <div className="flex items-center gap-1.5 min-w-0">
                 {domainIcon(risk.domain)}
                 <p className="text-xs font-medium truncate capitalize">{risk.domain}</p>
-                <span className={cn("rounded px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide", severityBadge(risk.severity))}>
-                  {risk.severity}
+                <span className={cn("rounded px-1 py-0.5 text-[9px] font-medium tracking-wide", severityBadge(risk.severity))}>
+                  {/* JS casing: CSS uppercase follows html lang (tr → "CRITICAL" with dotted I). */}
+                  {risk.severity.toUpperCase()}
                 </span>
               </div>
             </div>

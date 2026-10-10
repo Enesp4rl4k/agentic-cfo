@@ -304,6 +304,9 @@ async def login(
                 "email":     user.email,
                 "full_name": user.full_name,
                 "role":      user.role,
+                # NextAuth bakes this into the session at sign-in; the CEO
+                # synthesize button and org-scoped queries gate on it.
+                "org_id":    user.org_id,
             },
         },
         "error": None,
@@ -353,6 +356,7 @@ async def get_me(current_user: User = Depends(get_current_user)) -> dict[str, An
             "email":         current_user.email,
             "full_name":     current_user.full_name,
             "role":          current_user.role,
+            "org_id":        current_user.org_id,
             "is_active":     current_user.is_active,
             "has_api_key":   current_user.api_key is not None,
             "last_login_at": current_user.last_login_at.isoformat() if current_user.last_login_at else None,

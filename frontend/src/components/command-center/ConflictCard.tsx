@@ -90,13 +90,13 @@ export function ConflictCard() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-medium">{c.topic}</p>
-                  <span className="text-[10px] uppercase opacity-80">{severity}</span>
+                  <span className="text-[10px] opacity-80">{severity.toUpperCase()}</span>
                 </div>
                 {(c.agent_a || c.agent_b) && (
-                  <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold uppercase">
-                    <span className="rounded bg-black/10 px-1.5 py-0.5">{c.agent_a ?? "?"}</span>
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
+                    <span className="rounded bg-black/10 px-1.5 py-0.5">{(c.agent_a ?? "?").toUpperCase()}</span>
                     <span className="opacity-60">vs</span>
-                    <span className="rounded bg-black/10 px-1.5 py-0.5">{c.agent_b ?? "?"}</span>
+                    <span className="rounded bg-black/10 px-1.5 py-0.5">{(c.agent_b ?? "?").toUpperCase()}</span>
                   </div>
                 )}
                 <div className="grid gap-1 text-[11px] opacity-90">

@@ -179,7 +179,7 @@ function AlertList({ alerts }: { alerts: Array<{ level: string; message: string 
     <div className="space-y-2">
       {alerts.map((a, i) => (
         <div key={i} className={`rounded px-3 py-2 text-xs ${severityColor(a.level)}`}>
-          <span className="font-semibold uppercase mr-2">{a.level}</span>
+          <span className="font-semibold mr-2">{a.level.toUpperCase()}</span>
           {a.message}
         </div>
       ))}
