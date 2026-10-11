@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from app.agents.chro.state import CHROState, CHROStepLog
+from app.core.financial import format_currency_try
 
 
 def _parse_headcount_csv(csv_text: str) -> list[dict[str, Any]]:
@@ -235,9 +236,8 @@ async def _generate_headcount_narrative(
         )
 
     if payroll > 0:
-        payroll_millions = payroll / 100 / 1_000_000
         narrative_lines.append(
-            f"Annual payroll commitment: ${payroll_millions:.1f}M"
+            f"Annual payroll commitment: {format_currency_try(payroll)}"
         )
 
     return " ".join(narrative_lines)

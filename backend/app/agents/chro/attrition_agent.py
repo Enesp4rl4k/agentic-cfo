@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from app.agents.chro.state import CHROState, CHROStepLog
+from app.core.financial import format_currency_try
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ def _compute_attrition_metrics(departures: list[dict[str, Any]]) -> dict[str, An
 
     # Cost estimation (rough)
     # Assuming avg replacement cost = 6-9 months salary for mid-level
-    replacement_cost_estimate = total_departures * 75_000 * 100  # $75k avg in cents
+    replacement_cost_estimate = total_departures * 75_000 * 100  # ~75k per departure, in cents
 
     return {
         "total_departures": total_departures,
@@ -203,11 +204,10 @@ def _build_attrition_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
     # High attrition cost
     cost = metrics.get("estimated_replacement_cost", 0)
-    if cost > 1_000_000 * 100:  # > $1M
-        cost_millions = cost / 100 / 1_000_000
+    if cost > 1_000_000 * 100:  # > 1,000,000 lira
         alerts.append({
             "level": "warning",
-            "message": f"Estimated replacement cost: ${cost_millions:.1f}M — consider retention programs"
+            "message": f"Estimated replacement cost: {format_currency_try(cost)} — consider retention programs"
         })
 
     return alerts

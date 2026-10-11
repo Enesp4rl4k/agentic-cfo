@@ -3,7 +3,8 @@
 import { useAgentJob } from "@/hooks/useAgentJob";
 import { AgentJobPanel } from "@/components/ui/agent-job-panel";
 import { ProactiveActionCards } from "@/components/ui/proactive-actions";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiClient } from "@/lib/api/client";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -90,9 +91,31 @@ export default function CTODashboardPage() {
 
   // One engine: the CTO orchestrator, on files attached to the job (panel) or
   // pasted below. Nothing is shown that was not computed from real input.
-  const { activeCFOJobId } = useCompanyContextStore();
+  const { orgId, activeCFOJobId } = useCompanyContextStore();
   const [panelResult, setPanelResult] = useState<CTOResult | null>(null);
   const [panelKey, setPanelKey] = useState(0);
+
+  // Hydrate from the stored result so a completed analysis is still visible on
+  // revisit — matches the CMO/COO/CHRO pages (no re-run needed to see it).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = orgId ? `/context/${orgId}` : "/context/me";
+        const res = await apiClient.get(target);
+        const ctx = res.data?.data ?? res.data;
+        const last = ctx?.last_cto_result;
+        if (!cancelled && last && typeof last === "object" && last.cto_summary) {
+          setPanelResult(last as unknown as CTOResult);
+        }
+      } catch {
+        /* empty until analyze */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
 
   const ctoResult: CTOResult | null =
     isDone && result ? (result as unknown as CTOResult) : panelResult;
@@ -108,7 +131,9 @@ export default function CTODashboardPage() {
         key={panelKey}
         alan="cto"
         jobId={activeCFOJobId}
-        onResult={(r) => setPanelResult(r as unknown as CTOResult)}
+        onResult={(r) => {
+          if (r) setPanelResult(r as unknown as CTOResult);
+        }}
       />
 
       <GitHubConnectorCard onSynced={() => setPanelKey((k) => k + 1)} />
@@ -137,10 +162,10 @@ export default function CTODashboardPage() {
           </div>
 
           <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {Object.entries(ctoResult.cto_summary.component_scores).map(([domain, score]) => (
+            {Object.entries(ctoResult.cto_summary.component_scores ?? {}).map(([domain, score]) => (
               <div key={domain} className="text-center">
                 <p className="text-[10px] uppercase text-muted-foreground">
-                  {domain.replace("_", " ")}
+                  {domain.replace("_", " ").toUpperCase()}
                 </p>
                 <p className={`text-base font-bold ${healthColor(score as number)}`}>
                   {(score as number).toFixed(1)}

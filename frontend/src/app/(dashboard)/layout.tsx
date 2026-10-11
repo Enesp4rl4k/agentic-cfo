@@ -282,7 +282,7 @@ function SidebarContent({
           return (
           <details key={group.label} className="group/nav mb-1" open={hasCurrentPage || index === 0}>
             <summary className="mx-2 flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground [&::-webkit-details-marker]:hidden">
-              <span>{group.label}</span>
+              <span>{group.label.toUpperCase()}</span>
               <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
             </summary>
             <div className="space-y-0.5 px-2 pb-1">

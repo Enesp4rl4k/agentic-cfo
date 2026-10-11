@@ -109,6 +109,10 @@ async def test_user_registration_login_and_auth_flow(test_client):
     login_body = login_resp.json()
     token = login_body.get("data", {}).get("access_token")
     assert token is not None
+    # NextAuth copies user.org_id into session.user.orgId; when the backend
+    # omitted the key, session.user.orgId stayed null forever and every
+    # orgId-gated feature (CEO synthesize, context hydration) silently died.
+    assert "org_id" in login_body.get("data", {}).get("user", {})
 
     # Access protected /auth/me
     me_resp = await test_client.get(
@@ -120,6 +124,7 @@ async def test_user_registration_login_and_auth_flow(test_client):
     assert me_body.get("data", {}).get("email") == "cfo.test@company.com"
     # The server assigns the role; a registrant does not get to pick one.
     assert me_body.get("data", {}).get("role") == "analyst"
+    assert "org_id" in me_body.get("data", {})
 
 
 @pytest.mark.asyncio
