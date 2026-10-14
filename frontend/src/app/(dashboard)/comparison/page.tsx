@@ -11,7 +11,9 @@ import {
   ResponsiveContainer, LineChart, Line,
 } from "recharts";
 import { apiClient } from "@/lib/api/client";
-import { formatCurrency, formatPercent, cn } from "@/lib/utils";
+import { formatPercent, cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { JobSummary } from "@/lib/api/cfo";
@@ -60,17 +62,21 @@ function PeriodSelector({
   loading: boolean;
   onCompare: () => void;
 }) {
+  const { t, locale } = useI18n();
+  const { selector } = t.comparison;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+
   if (jobs.length === 0) {
     return (
       <Card className="p-4 text-center text-sm text-muted-foreground">
-        Karşılaştırılacak analiz bulunamadı. En az 2 dönem yükleyin.
+        {selector.empty}
       </Card>
     );
   }
 
   return (
     <Card className="p-4 space-y-3">
-      <p className="text-sm font-semibold">Dönem Seçimi</p>
+      <p className="text-sm font-semibold">{selector.heading}</p>
       <div className="space-y-2">
         {jobs.map((job) => (
           <label key={job.job_id} className="flex items-center gap-2 cursor-pointer">
@@ -88,7 +94,7 @@ function PeriodSelector({
               className="rounded"
             />
             <span className="text-sm flex-1 min-w-0">
-              {job.filename} · {new Date(job.created_at).toLocaleDateString("tr-TR")}
+              {job.filename} · {new Date(job.created_at).toLocaleDateString(dateTag)}
             </span>
             <span className="text-xs text-muted-foreground shrink-0">
               {job.status === "completed" ? "✓" : "…"}
@@ -97,7 +103,9 @@ function PeriodSelector({
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        2-3 dönem seçebilirsiniz. {selectedIds.length}/{Math.min(3, jobs.length)} seçili.
+        {selector.hint
+          .replace("{selected}", String(selectedIds.length))
+          .replace("{total}", String(Math.min(3, jobs.length)))}
       </p>
       <Button
         disabled={selectedIds.length < 2 || loading}
@@ -107,10 +115,10 @@ function PeriodSelector({
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-            Karşılaştırılıyor…
+            {selector.comparing}
           </>
         ) : (
-          "Karşılaştır"
+          selector.compare
         )}
       </Button>
     </Card>
@@ -120,16 +128,20 @@ function PeriodSelector({
 // ── Metrics Table ─────────────────────────────────────────────────────────────
 
 function MetricsTable({ periods }: { periods: PeriodMetrics[] }) {
-  const metrics = [
-    { key: "revenue", label: "Ciro", format: formatCurrency, unit: "TRY" },
-    { key: "gross_profit", label: "Brüt Kâr", format: formatCurrency, unit: "TRY" },
-    { key: "gross_margin", label: "Brüt Marj", format: formatPercent, unit: "%" },
-    { key: "ebitda", label: "FAVÖK", format: formatCurrency, unit: "TRY" },
-    { key: "ebitda_margin", label: "FAVÖK Marjı", format: formatPercent, unit: "%" },
-    { key: "net_income", label: "Net Gelir", format: formatCurrency, unit: "TRY" },
-    { key: "net_margin", label: "Net Marj", format: formatPercent, unit: "%" },
-    { key: "opex", label: "OpEx", format: formatCurrency, unit: "TRY" },
-    { key: "cash_flow", label: "Nakit Akışı", format: formatCurrency, unit: "TRY" },
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { metrics: metricText } = t.comparison;
+
+  const metrics: Array<{ key: keyof PeriodMetrics; label: string; isPercent: boolean }> = [
+    { key: "revenue", label: metricText.labels.revenue, isPercent: false },
+    { key: "gross_profit", label: metricText.labels.gross_profit, isPercent: false },
+    { key: "gross_margin", label: metricText.labels.gross_margin, isPercent: true },
+    { key: "ebitda", label: metricText.labels.ebitda, isPercent: false },
+    { key: "ebitda_margin", label: metricText.labels.ebitda_margin, isPercent: true },
+    { key: "net_income", label: metricText.labels.net_income, isPercent: false },
+    { key: "net_margin", label: metricText.labels.net_margin, isPercent: true },
+    { key: "opex", label: metricText.labels.opex, isPercent: false },
+    { key: "cash_flow", label: metricText.labels.cash_flow, isPercent: false },
   ];
 
   return (
@@ -138,7 +150,7 @@ function MetricsTable({ periods }: { periods: PeriodMetrics[] }) {
         <thead>
           <tr className="border-b border-border">
             <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
-              Metrik
+              {metricText.colMetric}
             </th>
             {periods.map((p) => (
               <th
@@ -155,10 +167,10 @@ function MetricsTable({ periods }: { periods: PeriodMetrics[] }) {
             <tr key={m.key} className="border-b border-border/50 last:border-0">
               <td className="px-4 py-3 font-medium text-xs">{m.label}</td>
               {periods.map((p) => {
-                const val = (p as any)[m.key];
+                const val = p[m.key];
                 return (
                   <td key={p.period} className="px-4 py-3 text-right font-mono text-xs">
-                    {m.format(val)}
+                    {typeof val === "number" && m.isPercent ? formatPercent(val) : fmt(Number(val ?? 0))}
                   </td>
                 );
               })}
@@ -177,8 +189,10 @@ function ChangeIndicator({
 }: {
   change: ComparisonResult["changes"][0];
 }) {
+  const fmt = useCurrencyFormat();
   const isPositive = change.direction === "up";
-  const icon = isPositive ? "↑" : change.direction === "down" ? "↓" : "→";
+  const Icon = isPositive ? TrendingUp : change.direction === "down" ? TrendingDown : null;
+  const arrow = isPositive ? "↑" : change.direction === "down" ? "↓" : "→";
   const color = isPositive
     ? "text-emerald-400"
     : change.direction === "down"
@@ -190,20 +204,21 @@ function ChangeIndicator({
       <p className="text-xs text-muted-foreground">{change.metric}</p>
       <div className="flex items-end justify-between gap-2">
         <div>
-          <p className={cn("text-sm font-mono font-semibold", color)}>
-            {icon} {Math.abs(change.change_percent).toFixed(1)}%
+          <p className={cn("text-sm font-mono font-semibold flex items-center gap-1", color)}>
+            {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+            {arrow} {Math.abs(change.change_percent).toFixed(1)}%
           </p>
           <p className="text-xs text-muted-foreground">
-            {formatCurrency(change.change_amount)}
+            {fmt(change.change_amount)}
           </p>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">
-            {formatCurrency(change.period1_value)}
+            {fmt(change.period1_value)}
           </p>
           <p className="text-xs font-medium">→</p>
           <p className="text-xs text-muted-foreground">
-            {formatCurrency(change.period2_value)}
+            {fmt(change.period2_value)}
           </p>
         </div>
       </div>
@@ -219,6 +234,9 @@ export default function ComparisonPage() {
   const [result, setResult] = useState<ComparisonResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
+  const symbol = useCurrencySymbol();
+  const { errors, chart } = t.comparison;
 
   // Fetch available jobs
   useEffect(() => {
@@ -232,12 +250,12 @@ export default function ComparisonPage() {
         );
         setJobs(res.data.data?.jobs ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "İşler yüklenemedi");
+        setError(err instanceof Error ? err.message : errors.jobs);
       }
     }
 
     fetchJobs();
-  }, []);
+  }, [errors.jobs]);
 
   // Run comparison
   const handleCompare = async () => {
@@ -252,7 +270,7 @@ export default function ComparisonPage() {
       );
       setResult(res.data.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Karşılaştırma başarısız");
+      setError(err instanceof Error ? err.message : errors.compare);
     } finally {
       setLoading(false);
     }
@@ -265,15 +283,15 @@ export default function ComparisonPage() {
         <div className="flex items-center gap-3">
           <BarChart3 className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold">Dönem Karşılaştırması</h1>
+            <h1 className="text-2xl font-bold">{t.comparison.title}</h1>
             <p className="text-sm text-muted-foreground">
-              Q1 vs Q2, 2023 vs 2024 — finansal metrikleri yan yana karşılaştırın
+              {t.comparison.subtitle}
             </p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
           <RefreshCw className="h-4 w-4 mr-1" />
-          Yenile
+          {t.comparison.refresh}
         </Button>
       </div>
 
@@ -301,9 +319,9 @@ export default function ComparisonPage() {
           {!result ? (
             <Card className="flex flex-col items-center justify-center py-20 text-center">
               <Calendar className="h-12 w-12 text-muted-foreground/40 mb-3" />
-              <p className="font-medium">Karşılaştırma Hazır</p>
+              <p className="font-medium">{t.comparison.emptyResult.heading}</p>
               <p className="text-sm text-muted-foreground max-w-sm mt-1">
-                Sol panelden 2-3 dönem seçerek karşılaştırma yapın.
+                {t.comparison.emptyResult.body}
               </p>
             </Card>
           ) : (
@@ -314,7 +332,7 @@ export default function ComparisonPage() {
               {/* Narrative */}
               {result.narrative && (
                 <Card className="p-4 border-blue-500/20 bg-blue-500/5">
-                  <p className="text-xs font-semibold text-blue-400 mb-2">Özet</p>
+                  <p className="text-xs font-semibold text-blue-400 mb-2">{t.comparison.summary}</p>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {result.narrative}
                   </p>
@@ -323,7 +341,7 @@ export default function ComparisonPage() {
 
               {/* Changes grid */}
               <div className="space-y-3">
-                <p className="text-sm font-semibold">Dönemler Arası Değişiklikler</p>
+                <p className="text-sm font-semibold">{t.comparison.changesHeading}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {result.changes.slice(0, 8).map((c, i) => (
                     <ChangeIndicator key={i} change={c} />
@@ -334,7 +352,7 @@ export default function ComparisonPage() {
               {/* Dual-axis chart */}
               {result.periods.length >= 2 && (
                 <Card className="p-4 space-y-3">
-                  <p className="text-sm font-semibold">Ciro vs Marj Trendi</p>
+                  <p className="text-sm font-semibold">{chart.heading}</p>
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart
                       data={result.periods.map((p) => ({
@@ -348,7 +366,7 @@ export default function ComparisonPage() {
                       <XAxis dataKey="period" tick={{ fontSize: 11 }} opacity={0.6} />
                       <YAxis
                         yAxisId="left"
-                        tickFormatter={(v: number) => `${v}M₺`}
+                        tickFormatter={(v: number) => `${v}M${symbol}`}
                         tick={{ fontSize: 11 }}
                         opacity={0.6}
                       />
@@ -371,7 +389,7 @@ export default function ComparisonPage() {
                       <Bar
                         yAxisId="left"
                         dataKey="revenue"
-                        name="Ciro (Milyon TRY)"
+                        name={chart.revenue.replace("{currency}", symbol)}
                         fill="oklch(0.79 0.115 83)"
                         radius={[4, 4, 0, 0]}
                       />
@@ -379,7 +397,7 @@ export default function ComparisonPage() {
                         yAxisId="right"
                         type="monotone"
                         dataKey="margin"
-                        name="Net Marj (%)"
+                        name={chart.margin}
                         stroke="oklch(0.58 0.14 145)"
                         strokeWidth={2}
                       />
@@ -395,10 +413,7 @@ export default function ComparisonPage() {
       {/* Info banner */}
       <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-blue-400">
         <BarChart3 className="h-4 w-4 mt-0.5 shrink-0" />
-        <p>
-          En fazla 3 dönem seçebilirsiniz. Karşılaştırma her dönemdeki finansal göstergeler arasındaki
-          farkları, yüzde değişimleri ve trendleri gösterir.
-        </p>
+        <p>{t.comparison.info}</p>
       </div>
     </main>
   );

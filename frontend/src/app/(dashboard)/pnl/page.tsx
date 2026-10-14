@@ -15,8 +15,10 @@ import {
 import { Upload, TrendingUp, TrendingDown, ChevronDown, ChevronRight, BarChart3, ChevronUp, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/hooks/useCFO";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { apiClient } from "@/lib/api/client";
-import { formatCurrency, formatPercent, cn } from "@/lib/utils";
+import { formatPercent, cn } from "@/lib/utils";
 import type { PnLData } from "@/types";
 
 // ── Chart style ───────────────────────────────────────────────────────────────
@@ -51,33 +53,42 @@ function MarginBar({ value, max = 1 }: { value: number; max?: number }) {
   );
 }
 
+/** Backend opex key ("other_expense") → human label when no translation exists. */
+function titleCaseKey(key: string): string {
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function KPIStrip({ pnl }: { pnl: PnLData }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { kpi } = t.pnl;
+
   const items = [
     {
-      label: "Revenue",
-      value: formatCurrency(pnl.revenue),
-      sub: "Total income",
+      label: kpi.revenue,
+      value: fmt(pnl.revenue),
+      sub: kpi.totalIncome,
       positive: true,
       neutral: true,
     },
     {
-      label: "Gross Profit",
-      value: formatCurrency(pnl.gross_profit),
-      sub: `${formatPercent(pnl.gross_margin)} margin`,
+      label: kpi.grossProfit,
+      value: fmt(pnl.gross_profit),
+      sub: kpi.margin.replace("{margin}", formatPercent(pnl.gross_margin)),
       positive: pnl.gross_profit >= 0,
       margin: pnl.gross_margin,
     },
     {
-      label: "EBITDA",
-      value: formatCurrency(pnl.ebitda),
-      sub: `${formatPercent(pnl.ebitda_margin)} margin`,
+      label: kpi.ebitda,
+      value: fmt(pnl.ebitda),
+      sub: kpi.margin.replace("{margin}", formatPercent(pnl.ebitda_margin)),
       positive: pnl.ebitda >= 0,
       margin: pnl.ebitda_margin,
     },
     {
-      label: "Net Income",
-      value: formatCurrency(pnl.net_income),
-      sub: `${formatPercent(pnl.net_margin)} margin`,
+      label: kpi.netIncome,
+      value: fmt(pnl.net_income),
+      sub: kpi.margin.replace("{margin}", formatPercent(pnl.net_margin)),
       positive: pnl.net_income >= 0,
       margin: pnl.net_margin,
     },
@@ -108,8 +119,12 @@ function KPIStrip({ pnl }: { pnl: PnLData }) {
 // Built with Recharts stacked bars: invisible "base" bar + colored "value" bar
 
 function WaterfallChart({ pnl }: { pnl: PnLData }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { waterfall, opex } = t.pnl;
+
   const opexEntries = Object.entries(pnl.opex).filter(([, v]) => v != null && v !== 0);
-  const totalOpex = opexEntries.reduce((s, [, v]) => s + (v ?? 0), 0);
 
   // Build waterfall steps
   const steps: { name: string; base: number; value: number; color: string }[] = [];
@@ -118,7 +133,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
 
   // Revenue bar (start)
   steps.push({
-    name: "Revenue",
+    name: waterfall.revenue,
     base: 0,
     value: pnl.revenue,
     color: "oklch(0.72 0.19 142)",
@@ -128,7 +143,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
   // COGS (negative)
   if (pnl.cogs > 0) {
     steps.push({
-      name: "COGS",
+      name: waterfall.cogs,
       base: pnl.revenue - pnl.cogs,
       value: pnl.cogs,
       color: "oklch(0.58 0.22 25 / 0.7)",
@@ -141,7 +156,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
     const v = val ?? 0;
     running -= v;
     steps.push({
-      name: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      name: opex.labels[key] ?? titleCaseKey(key),
       base: running,
       value: v,
       color: "oklch(0.62 0.10 240 / 0.7)",
@@ -150,20 +165,20 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
 
   // Net income (final)
   steps.push({
-    name: "Net Income",
+    name: waterfall.netIncome,
     base: 0,
     value: pnl.net_income,
     color: pnl.net_income >= 0 ? "oklch(0.72 0.19 142)" : "oklch(0.58 0.22 25)",
   });
 
   const fmtK = (v: number) =>
-    `${v < 0 ? "-" : ""}₺${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.round(Math.abs(v))}`;
+    `${v < 0 ? "-" : ""}${symbol}${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.round(Math.abs(v))}`;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h2 className="mb-0.5 text-sm font-medium">P&amp;L Waterfall</h2>
+      <h2 className="mb-0.5 text-sm font-medium">{waterfall.heading}</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Revenue → COGS → OpEx → Net Income
+        {waterfall.flow}
       </p>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={steps} margin={{ top: 4, right: 4, left: -4, bottom: 40 }}>
@@ -179,7 +194,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
           <Tooltip
             {...tooltipStyle}
             formatter={(v: number, name: string) =>
-              name === "value" ? [formatCurrency(v), "Amount"] : null
+              name === "value" ? [fmt(v), waterfall.amount] : null
             }
           />
           {/* Invisible base (spacer) */}
@@ -209,6 +224,11 @@ const OPEX_COLORS: Record<string, string> = {
 
 function OpExDrillDown({ pnl }: { pnl: PnLData }) {
   const [expanded, setExpanded] = useState(true);
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { opex } = t.pnl;
+
   const entries = Object.entries(pnl.opex)
     .filter(([, v]) => v != null && v !== 0)
     .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0));
@@ -218,7 +238,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
   if (!entries.length) return null;
 
   const data = entries.map(([key, val]) => ({
-    name: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    name: opex.labels[key] ?? titleCaseKey(key),
     value: val ?? 0,
     pct: total > 0 ? ((val ?? 0) / total) * 100 : 0,
     color: OPEX_COLORS[key] ?? "oklch(0.60 0.015 75)",
@@ -237,9 +257,11 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
         )}
         <div>
-          <h2 className="text-sm font-medium">Operating Expenses Breakdown</h2>
+          <h2 className="text-sm font-medium">{opex.heading}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Total: {formatCurrency(total)} · {entries.length} categories
+            {opex.total
+              .replace("{amount}", fmt(total))
+              .replace("{count}", String(entries.length))}
           </p>
         </div>
       </button>
@@ -257,7 +279,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
                 type="number"
                 {...axisStyle}
                 tickFormatter={(v: number) =>
-                  `₺${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
+                  `${symbol}${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
                 }
               />
               <YAxis
@@ -269,7 +291,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
               />
               <Tooltip
                 {...tooltipStyle}
-                formatter={(v: number) => [formatCurrency(v), "Amount"]}
+                formatter={(v: number) => [fmt(v), opex.amount]}
               />
               <Bar dataKey="value" radius={[0, 3, 3, 0]} maxBarSize={14}>
                 {data.map((d, i) => (
@@ -292,7 +314,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-xs text-muted-foreground">{item.name}</span>
                     <span className="shrink-0 tabular-nums text-xs font-medium">
-                      {formatCurrency(item.value)}
+                      {fmt(item.value)}
                     </span>
                   </div>
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
@@ -330,6 +352,8 @@ interface RowProps {
 }
 
 function PnLRow({ label, value, indent, bold, positive, isPercent, separator }: RowProps) {
+  const fmt = useCurrencyFormat();
+
   if (separator) {
     return (
       <tr>
@@ -341,7 +365,7 @@ function PnLRow({ label, value, indent, bold, positive, isPercent, separator }: 
   }
 
   const displayValue =
-    value == null ? "—" : isPercent ? formatPercent(value) : formatCurrency(value);
+    value == null ? "—" : isPercent ? formatPercent(value) : fmt(value);
 
   const valueColor =
     positive === undefined
@@ -382,66 +406,69 @@ function PnLRow({ label, value, indent, bold, positive, isPercent, separator }: 
 }
 
 function PnLStatement({ pnl }: { pnl: PnLData }) {
+  const { t } = useI18n();
+  const { statement, opex } = t.pnl;
+
   const opexEntries = Object.entries(pnl.opex).filter(([, v]) => v != null && v !== 0);
   const totalOpex = opexEntries.reduce((s, [, v]) => s + (v ?? 0), 0);
 
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Profit & Loss Statement</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Full income statement breakdown</p>
+        <h2 className="text-sm font-medium">{statement.heading}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{statement.subtitle}</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full" aria-label="P&L Statement">
+        <table className="w-full" aria-label={statement.aria}>
           <thead>
             <tr className="border-b border-border">
               <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                Line Item
+                {statement.colLine}
               </th>
               <th className="w-8" />
               <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-                Amount
+                {statement.colAmount}
               </th>
             </tr>
           </thead>
           <tbody>
-            <PnLRow label="Revenue" value={pnl.revenue} bold positive={pnl.revenue >= 0} />
-            <PnLRow label="Cost of Goods Sold (COGS)" value={-pnl.cogs} indent positive={pnl.cogs === 0} />
+            <PnLRow label={statement.revenue} value={pnl.revenue} bold positive={pnl.revenue >= 0} />
+            <PnLRow label={statement.cogs} value={-pnl.cogs} indent positive={pnl.cogs === 0} />
             <PnLRow separator />
-            <PnLRow label="Gross Profit" value={pnl.gross_profit} bold positive={pnl.gross_profit >= 0} />
-            <PnLRow label="Gross Margin" value={pnl.gross_margin} indent isPercent positive={pnl.gross_margin >= 0} />
+            <PnLRow label={statement.grossProfit} value={pnl.gross_profit} bold positive={pnl.gross_profit >= 0} />
+            <PnLRow label={statement.grossMargin} value={pnl.gross_margin} indent isPercent positive={pnl.gross_margin >= 0} />
             <PnLRow separator />
 
             <tr>
               <td className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Operating Expenses
+                {statement.operatingExpenses}
               </td>
               <td /><td />
             </tr>
             {opexEntries.map(([key, val]) => (
               <PnLRow
                 key={key}
-                label={key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                label={opex.labels[key] ?? titleCaseKey(key)}
                 value={-(val ?? 0)}
                 indent
               />
             ))}
-            <PnLRow label="Total OpEx" value={-totalOpex} bold positive={totalOpex === 0} />
+            <PnLRow label={statement.totalOpex} value={-totalOpex} bold positive={totalOpex === 0} />
             <PnLRow separator />
 
-            <PnLRow label="EBITDA" value={pnl.ebitda} bold positive={pnl.ebitda >= 0} />
-            <PnLRow label="EBITDA Margin" value={pnl.ebitda_margin} indent isPercent positive={pnl.ebitda_margin >= 0} />
+            <PnLRow label={statement.ebitda} value={pnl.ebitda} bold positive={pnl.ebitda >= 0} />
+            <PnLRow label={statement.ebitdaMargin} value={pnl.ebitda_margin} indent isPercent positive={pnl.ebitda_margin >= 0} />
             <PnLRow separator />
 
-            <PnLRow label="Net Income" value={pnl.net_income} bold positive={pnl.net_income >= 0} />
-            <PnLRow label="Net Margin" value={pnl.net_margin} indent isPercent positive={pnl.net_margin >= 0} />
+            <PnLRow label={statement.netIncome} value={pnl.net_income} bold positive={pnl.net_income >= 0} />
+            <PnLRow label={statement.netMargin} value={pnl.net_margin} indent isPercent positive={pnl.net_margin >= 0} />
           </tbody>
         </table>
       </div>
 
       {pnl.narrative && (
         <div className="border-t border-border/50 px-4 py-3">
-          <p className="mb-1 text-xs font-medium text-primary">CFO Commentary</p>
+          <p className="mb-1 text-xs font-medium text-primary">{statement.cfoCommentary}</p>
           <p className="text-sm leading-relaxed text-muted-foreground max-w-prose">
             {pnl.narrative}
           </p>
@@ -454,14 +481,17 @@ function PnLStatement({ pnl }: { pnl: PnLData }) {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useI18n();
+  const { empty } = t.pnl;
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">No P&L data</h2>
+      <h2 className="text-base font-semibold">{empty.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Upload a financial document and run an analysis to see the P&L statement.
+        {empty.body}
       </p>
       <a
         href="/upload"
@@ -471,7 +501,7 @@ function EmptyState() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         )}
       >
-        Upload document
+        {empty.cta}
       </a>
     </div>
   );
@@ -484,6 +514,7 @@ export default function PnLPage() {
   const jobId = searchParams.get("job");
 
   const { data: dashboard, isLoading } = useDashboard(jobId);
+  const { t } = useI18n();
 
   if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
 
@@ -510,9 +541,9 @@ export default function PnLPage() {
   return (
     <div className="space-y-4 p-5">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">P&amp;L Statement</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{t.pnl.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Profit &amp; loss breakdown with operating expense detail
+          {t.pnl.subtitle}
         </p>
       </div>
 
@@ -520,7 +551,7 @@ export default function PnLPage() {
       <WaterfallChart pnl={pnl} />
       <OpExDrillDown pnl={pnl} />
       <PnLStatement pnl={pnl} />
-      <BenchmarkPanel jobId={jobId} pnl={pnl} />
+      <BenchmarkPanel jobId={jobId} />
     </div>
   );
 }
@@ -543,24 +574,6 @@ interface BenchmarkData {
   overall_label: string;
 }
 
-const SECTOR_LABELS: Record<string, string> = {
-  default:       "Genel Ortalama",
-  retail:        "Perakende",
-  manufacturing: "Üretim / İmalat",
-  technology:    "Teknoloji / Yazılım",
-  construction:  "İnşaat / Gayrimenkul",
-  services:      "Hizmet",
-  food_beverage: "Yiyecek-İçecek",
-  logistics:     "Lojistik",
-};
-
-const METRIC_LABELS: Record<string, string> = {
-  gross_margin:    "Brüt Kâr Marjı",
-  net_margin:      "Net Kâr Marjı",
-  ebitda_margin:   "FAVÖK Marjı",
-  opex_to_revenue: "Gider/Ciro Oranı",
-};
-
 function percentileColor(pos: string): { bar: string; badge: string; text: string } {
   switch (pos) {
     case "top_25":   return { bar: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", text: "text-emerald-400" };
@@ -570,19 +583,18 @@ function percentileColor(pos: string): { bar: string; badge: string; text: strin
   }
 }
 
-function percentileLabel(pos: string): string {
-  switch (pos) {
-    case "top_25":  return "İlk %25";
-    case "p50_p75": return "%50–75";
-    case "p25_p50": return "%25–50";
-    default:        return "Alt %25";
-  }
-}
-
 function BenchmarkMetricRow({ metricKey, data }: { metricKey: string; data: BenchmarkMetric }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
+  const bench = t.pnl.benchmark;
+
   const colors = percentileColor(data.percentile_position);
-  const label = METRIC_LABELS[metricKey] ?? metricKey;
+  const label = bench.metrics[metricKey] ?? metricKey;
+  const percentileText =
+    data.percentile_position === "top_25" ? bench.percentile.top25
+    : data.percentile_position === "p50_p75" ? bench.percentile.p50p75
+    : data.percentile_position === "p25_p50" ? bench.percentile.p25p50
+    : bench.percentile.bottom25;
   const companyPct = (data.company_value * 100).toFixed(1);
   const medianPct  = (data.benchmark.p50 * 100).toFixed(1);
   const delta      = data.vs_median_pct;
@@ -608,7 +620,7 @@ function BenchmarkMetricRow({ metricKey, data }: { metricKey: string; data: Benc
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
             <span>P25: {(data.benchmark.p25 * 100).toFixed(0)}%</span>
-            <span>Medyan: {medianPct}%</span>
+            <span>{bench.median}: {medianPct}%</span>
             <span>P75: {(data.benchmark.p75 * 100).toFixed(0)}%</span>
           </div>
           <div className="relative h-2 w-full rounded-full bg-muted/40">
@@ -638,13 +650,13 @@ function BenchmarkMetricRow({ metricKey, data }: { metricKey: string; data: Benc
         <div className="w-20 text-right shrink-0">
           <p className={cn("text-sm font-bold tabular-nums", colors.text)}>{companyPct}%</p>
           <p className={cn("text-[10px]", delta >= 0 ? "text-emerald-400" : "text-red-400")}>
-            {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% vs medyan
+            {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% {bench.vsMedian}
           </p>
         </div>
 
         {/* Badge */}
         <span className={cn("shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold", colors.badge)}>
-          {percentileLabel(data.percentile_position)}
+          {percentileText}
         </span>
 
         {/* Expand */}
@@ -659,7 +671,7 @@ function BenchmarkMetricRow({ metricKey, data }: { metricKey: string; data: Benc
           <p className="text-xs text-foreground">{data.interpretation}</p>
           {data.recommendation && (
             <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-primary">→ Öneri:</span> {data.recommendation}
+              <span className="font-medium text-primary">{bench.recommendation}</span> {data.recommendation}
             </p>
           )}
         </div>
@@ -668,9 +680,11 @@ function BenchmarkMetricRow({ metricKey, data }: { metricKey: string; data: Benc
   );
 }
 
-function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) {
+function BenchmarkPanel({ jobId }: { jobId: string | null }) {
   const [sector, setSector] = useState("default");
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
+  const bench = t.pnl.benchmark;
 
   const { data, isLoading, refetch, isFetching } = useQuery<BenchmarkData>({
     queryKey: ["benchmark", jobId, sector],
@@ -705,9 +719,9 @@ function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) 
         <div className="flex items-center gap-2.5">
           <BarChart3 className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
           <div>
-            <p className="text-sm font-semibold">Sektör Karşılaştırması</p>
+            <p className="text-sm font-semibold">{bench.title}</p>
             <p className="text-[11px] text-muted-foreground">
-              TCMB/BDDK verilerine göre sektör ortalaması ile kıyasla
+              {bench.subtitle}
             </p>
           </div>
         </div>
@@ -731,7 +745,7 @@ function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) 
           {/* Sector selector */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/10">
             <label htmlFor="sector-select" className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-              Sektör:
+              {bench.sector}
             </label>
             <div className="relative">
               <select
@@ -740,7 +754,7 @@ function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) 
                 onChange={(e) => setSector(e.target.value)}
                 className="appearance-none rounded border border-input bg-background pl-3 pr-8 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring transition-state"
               >
-                {Object.entries(SECTOR_LABELS).map(([key, label]) => (
+                {Object.entries(bench.sectors).map(([key, label]) => (
                   <option key={key} value={key}>{label}</option>
                 ))}
               </select>
@@ -752,7 +766,7 @@ function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) 
               className="ml-auto flex items-center gap-1.5 rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-state disabled:opacity-50"
             >
               <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} aria-hidden="true" />
-              {isFetching ? "Yükleniyor…" : "Yenile"}
+              {isFetching ? bench.refreshing : bench.refresh}
             </button>
           </div>
 
@@ -760,7 +774,7 @@ function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) 
           {isLoading && (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
               <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Benchmark verileri yükleniyor…
+              {bench.loading}
             </div>
           )}
 
@@ -774,8 +788,7 @@ function BenchmarkPanel({ jobId, pnl }: { jobId: string | null; pnl: PnLData }) 
               {/* Footer */}
               <div className="px-4 py-2.5 bg-muted/10 border-t border-border">
                 <p className="text-[10px] text-muted-foreground">
-                  Kaynak: TCMB/BDDK Sektör İstatistikleri 2023-2024 ·{" "}
-                  {SECTOR_LABELS[data.sector] ?? data.sector}
+                  {bench.source.replace("{sector}", bench.sectors[data.sector] ?? data.sector)}
                 </p>
               </div>
             </div>

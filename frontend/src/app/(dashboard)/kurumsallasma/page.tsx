@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, TrendingUp, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -47,6 +48,9 @@ function Sparkline({ points }: { points: IndexHistoryPoint[] }) {
 }
 
 export default function KurumsallasmaPage() {
+  const { t, locale } = useI18n();
+  const ks = t.kurumsallasma;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const [snap, setSnap] = useState<InstitutionalizationSnapshot | null>(null);
   const [history, setHistory] = useState<IndexHistoryPoint[]>([]);
   const [busy, setBusy] = useState(false);
@@ -62,9 +66,9 @@ export default function KurumsallasmaPage() {
       setSnap(s);
       setHistory(h);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "yüklenemedi");
+      setErr(e instanceof Error ? e.message : ks.loadError);
     }
-  }, []);
+  }, [ks]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -75,25 +79,24 @@ export default function KurumsallasmaPage() {
       setSnap(await recomputeInstitutionalizationIndex());
       setHistory(await getInstitutionalizationHistory());
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "hesaplanamadı");
+      setErr(e instanceof Error ? e.message : ks.recomputeError);
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [ks]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Kurumsallaşma Endeksi</h1>
+          <h1 className="text-2xl font-semibold">{ks.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Şirketin kurumsallaşma düzeyi — yetki delegasyonu, karar izlenebilirliği,
-            insan gözetimi, süreç ritmi ve kilit-kişi riski üzerinden 0–100.
+            {ks.subtitle}
           </p>
         </div>
         <Button onClick={recompute} disabled={busy} variant="outline" className="gap-2">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Yeniden hesapla
+          {ks.recompute}
         </Button>
       </div>
 
@@ -111,28 +114,36 @@ export default function KurumsallasmaPage() {
               )}
             >
               <span className="text-3xl font-bold">{snap.overall_score}</span>
-              <span className="text-xs">not: {snap.grade}</span>
+              <span className="text-xs">{ks.gradeLabel.replace("{grade}", snap.grade)}</span>
             </div>
             <div className="min-w-[200px] flex-1 space-y-1">
               <div className="flex items-center gap-2 text-sm font-medium">
-                <TrendingUp className="h-4 w-4 text-primary" /> Trend
+                <TrendingUp className="h-4 w-4 text-primary" /> {ks.trend}
               </div>
               <Sparkline points={history} />
               <p className="text-xs text-muted-foreground">
-                {history.length} ölçüm · son:{" "}
-                {snap.computed_at ? new Date(snap.computed_at).toLocaleString("tr-TR") : "—"}
+                {ks.measurements
+                  .replace("{count}", String(history.length))
+                  .replace(
+                    "{date}",
+                    snap.computed_at
+                      ? new Date(snap.computed_at).toLocaleString(dateTag)
+                      : "—",
+                  )}
               </p>
             </div>
           </Card>
 
           <Card className="space-y-3 p-4">
-            <div className="text-sm font-medium">Boyutlar</div>
+            <div className="text-sm font-medium">{ks.dimensions}</div>
             {snap.dimensions.map((d) => (
               <div key={d.key} className="space-y-1">
                 <div className="flex items-center justify-between text-sm">
                   <span>{d.label}</span>
                   <span className="font-mono tabular-nums text-muted-foreground">
-                    {d.score} · ağırlık %{Math.round(d.weight * 100)}
+                    {ks.weightLine
+                      .replace("{score}", String(d.score))
+                      .replace("{weight}", String(Math.round(d.weight * 100)))}
                   </span>
                 </div>
                 <div className="h-2 overflow-hidden rounded bg-muted">
@@ -146,7 +157,7 @@ export default function KurumsallasmaPage() {
 
           {snap.recommendations.length > 0 && (
             <Card className="space-y-2 p-4">
-              <div className="text-sm font-medium">Öncelikli adımlar</div>
+              <div className="text-sm font-medium">{ks.recommendations}</div>
               {snap.recommendations.slice(0, 6).map((r, i) => (
                 <div key={i} className="flex gap-2 text-sm">
                   <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />

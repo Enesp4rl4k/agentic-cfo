@@ -7,6 +7,7 @@ import {
   Trash2, RefreshCw, Loader2, AlertCircle, Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -79,12 +80,13 @@ function StatCard({ label, value, sub, color = "text-foreground" }: {
 // ── NPS gauge ─────────────────────────────────────────────────────────────────
 
 function NpsGauge({ score }: { score: number | null }) {
-  if (score === null) return <p className="text-sm text-muted-foreground">Henüz veri yok</p>;
+  const { t } = useI18n();
+  if (score === null) return <p className="text-sm text-muted-foreground">{t.pilot.noData}</p>;
   const color = score >= 50 ? "text-emerald-400" : score >= 0 ? "text-yellow-400" : "text-destructive";
   return (
     <div className="flex items-end gap-2">
       <span className={cn("text-3xl font-bold tabular-nums", color)}>{score}</span>
-      <span className="mb-1 text-xs text-muted-foreground">/ 100 NPS</span>
+      <span className="mb-1 text-xs text-muted-foreground">{t.pilot.npsOutOf}</span>
     </div>
   );
 }
@@ -108,6 +110,9 @@ function StarDisplay({ value }: { value: number | null }) {
 export default function PilotAdminPage() {
   const { data: session } = useSession();
   const accessToken = (session as any)?.accessToken as string | undefined;
+  const { t, locale } = useI18n();
+  const p = t.pilot;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
 
   const [invites, setInvites] = useState<Invite[]>([]);
   const [feedback, setFeedback] = useState<FeedbackEntry[]>([]);
@@ -148,11 +153,11 @@ export default function PilotAdminPage() {
       setSummary(sumData.data ?? null);
       setStatus(stData.data ?? null);
     } catch {
-      setError("Veriler yüklenemedi.");
+      setError(p.loadError);
     } finally {
       setLoading(false);
     }
-  }, [h]);
+  }, [h, p]);
 
   useEffect(() => { if (accessToken) loadAll(); }, [accessToken, loadAll]);
 
@@ -165,12 +170,12 @@ export default function PilotAdminPage() {
         body: JSON.stringify({ note: genNote || null, email: genEmail || null, count: 1 }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail ?? "Hata");
+      if (!res.ok) throw new Error(data?.detail ?? p.genericError);
       await loadAll();
       setGenNote("");
       setGenEmail("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Hata");
+      setError(err instanceof Error ? err.message : p.genericError);
     } finally {
       setGenerating(false);
     }
@@ -195,9 +200,9 @@ export default function PilotAdminPage() {
     <div className="space-y-6 p-5 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Pilot Program</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{p.title}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Davet kodları ve kullanıcı feedback'leri
+            {p.subtitle}
           </p>
         </div>
         <button
@@ -206,7 +211,7 @@ export default function PilotAdminPage() {
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          Yenile
+          {p.refresh}
         </button>
       </div>
 
@@ -220,38 +225,40 @@ export default function PilotAdminPage() {
       {/* Status strip */}
       {status && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Toplam Kullanıcı" value={status.current_users} sub={`/ ${status.max_users} maks`} />
-          <StatCard label="Boş Slot" value={status.slots_remaining} color={status.slots_remaining > 0 ? "text-emerald-400" : "text-destructive"} />
-          <StatCard label="Bekleyen Davet" value={unusedInvites.length} />
-          <StatCard label="Kullanılan Davet" value={usedInvites.length} />
+          <StatCard label={p.stats.totalUsers} value={status.current_users} sub={p.stats.maxUsers.replace("{max}", String(status.max_users))} />
+          <StatCard label={p.stats.freeSlots} value={status.slots_remaining} color={status.slots_remaining > 0 ? "text-emerald-400" : "text-destructive"} />
+          <StatCard label={p.stats.pendingInvites} value={unusedInvites.length} />
+          <StatCard label={p.stats.usedInvites} value={usedInvites.length} />
         </div>
       )}
 
       {/* NPS + ratings */}
       {summary && summary.total_responses > 0 && (
         <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-4 text-sm font-medium">Feedback Özeti ({summary.total_responses} yanıt)</h2>
+          <h2 className="mb-4 text-sm font-medium">
+            {p.feedback.summary.replace("{count}", String(summary.total_responses))}
+          </h2>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
-              <p className="mb-1 text-xs text-muted-foreground">NPS Skoru</p>
+              <p className="mb-1 text-xs text-muted-foreground">{p.feedback.npsScore}</p>
               <NpsGauge score={summary.nps_score} />
               <div className="mt-2 flex gap-3 text-xs">
-                <span className="text-emerald-400">😊 {summary.promoters} promoter</span>
-                <span className="text-yellow-400">😐 {summary.passives} pasif</span>
-                <span className="text-destructive">😞 {summary.detractors} detractor</span>
+                <span className="text-emerald-400">😊 {p.feedback.promoters.replace("{count}", String(summary.promoters))}</span>
+                <span className="text-yellow-400">😐 {p.feedback.passives.replace("{count}", String(summary.passives))}</span>
+                <span className="text-destructive">😞 {p.feedback.detractors.replace("{count}", String(summary.detractors))}</span>
               </div>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Analiz kalitesi</span>
+                <span className="text-xs text-muted-foreground">{p.feedback.analysisQuality}</span>
                 <StarDisplay value={summary.avg_analysis_rating} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Doğruluk</span>
+                <span className="text-xs text-muted-foreground">{p.feedback.accuracy}</span>
                 <StarDisplay value={summary.avg_accuracy_rating} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Kullanışlılık</span>
+                <span className="text-xs text-muted-foreground">{p.feedback.usefulness}</span>
                 <StarDisplay value={summary.avg_usefulness_rating} />
               </div>
             </div>
@@ -259,7 +266,7 @@ export default function PilotAdminPage() {
 
           {summary.top_benefits.length > 0 && (
             <div className="mt-4">
-              <p className="mb-1.5 text-xs font-medium text-emerald-400">En çok beğenilen:</p>
+              <p className="mb-1.5 text-xs font-medium text-emerald-400">{p.feedback.topBenefits}</p>
               <ul className="space-y-1">
                 {summary.top_benefits.slice(0, 5).map((b, i) => (
                   <li key={i} className="text-xs text-muted-foreground">• {b}</li>
@@ -270,7 +277,7 @@ export default function PilotAdminPage() {
 
           {summary.top_gaps.length > 0 && (
             <div className="mt-3">
-              <p className="mb-1.5 text-xs font-medium text-orange-400">En çok eksik görülen:</p>
+              <p className="mb-1.5 text-xs font-medium text-orange-400">{p.feedback.topGaps}</p>
               <ul className="space-y-1">
                 {summary.top_gaps.slice(0, 5).map((g, i) => (
                   <li key={i} className="text-xs text-muted-foreground">• {g}</li>
@@ -285,21 +292,21 @@ export default function PilotAdminPage() {
       <div className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
           <Plus className="h-4 w-4 text-muted-foreground" />
-          Davet Kodu Oluştur
+          {p.generate.heading}
         </h2>
         <div className="flex flex-wrap gap-2">
           <input
             type="email"
             value={genEmail}
             onChange={(e) => setGenEmail(e.target.value)}
-            placeholder="E-posta (isteğe bağlı)"
+            placeholder={p.generate.emailPlaceholder}
             className="h-8 flex-1 min-w-[160px] rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <input
             type="text"
             value={genNote}
             onChange={(e) => setGenNote(e.target.value)}
-            placeholder="Not (ör. şirket adı)"
+            placeholder={p.generate.notePlaceholder}
             className="h-8 flex-1 min-w-[140px] rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <button
@@ -308,7 +315,7 @@ export default function PilotAdminPage() {
             className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-            Oluştur
+            {p.generate.submit}
           </button>
         </div>
       </div>
@@ -317,7 +324,9 @@ export default function PilotAdminPage() {
       {invites.length > 0 && (
         <div className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Davet Kodları ({invites.length})</h2>
+            <h2 className="text-sm font-medium">
+              {p.invites.heading.replace("{count}", String(invites.length))}
+            </h2>
           </div>
           <div className="divide-y divide-border/50">
             {invites.map((inv) => (
@@ -327,13 +336,13 @@ export default function PilotAdminPage() {
                 </code>
                 {inv.note && <span className="text-xs text-muted-foreground">{inv.note}</span>}
                 {inv.used ? (
-                  <span className="text-xs text-emerald-400">Kullanıldı</span>
+                  <span className="text-xs text-emerald-400">{p.invites.used}</span>
                 ) : (
                   <>
                     <button
                       onClick={() => copyInviteLink(inv.code)}
                       className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label="Linki kopyala"
+                      aria-label={p.invites.copyLink}
                     >
                       {copied === inv.code ? (
                         <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -344,7 +353,7 @@ export default function PilotAdminPage() {
                     <button
                       onClick={() => revokeInvite(inv.id)}
                       className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
-                      aria-label="İptal et"
+                      aria-label={p.invites.revoke}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -360,7 +369,9 @@ export default function PilotAdminPage() {
       {feedback.length > 0 && (
         <div className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Son Feedback'ler ({feedback.length})</h2>
+            <h2 className="text-sm font-medium">
+              {p.recent.heading.replace("{count}", String(feedback.length))}
+            </h2>
           </div>
           <div className="divide-y divide-border/50">
             {feedback.slice(0, 10).map((f) => (
@@ -373,12 +384,12 @@ export default function PilotAdminPage() {
                       f.nps_score >= 7 ? "bg-blue-950/30 text-blue-400" :
                       "bg-destructive/10 text-destructive"
                     )}>
-                      NPS {f.nps_score}
+                      {p.recent.npsBadge.replace("{score}", String(f.nps_score))}
                     </span>
                   )}
                   {f.analysis_rating && <StarDisplay value={f.analysis_rating} />}
                   <span className="text-xs text-muted-foreground">
-                    {new Date(f.created_at).toLocaleDateString("tr-TR")}
+                    {new Date(f.created_at).toLocaleDateString(dateTag)}
                   </span>
                   {f.page_context && (
                     <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -404,9 +415,9 @@ export default function PilotAdminPage() {
       {!loading && invites.length === 0 && feedback.length === 0 && (
         <div className="rounded-lg border border-border bg-card px-4 py-12 text-center">
           <Users className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Pilot program başlamadı</p>
+          <p className="text-sm font-medium">{p.empty.heading}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Yukarıdan bir davet kodu oluşturun ve paylaşın.
+            {p.empty.body}
           </p>
         </div>
       )}

@@ -3,7 +3,9 @@
 import { useSearchParams } from "next/navigation";
 import { Upload, AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
-import { formatCurrency, cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { cn } from "@/lib/utils";
 import {
   LineChart,
   Line,
@@ -75,11 +77,13 @@ const axisStyle = {
 };
 
 function TrendBadge({ trend }: { trend: string }) {
+  const { t } = useI18n();
+  const { badges } = t.trends;
   const config = {
-    improving: { label: "İyileşiyor", cls: "bg-emerald-950/30 text-emerald-400 ring-emerald-500/20", icon: TrendingUp },
-    declining: { label: "Düşüyor", cls: "bg-destructive/10 text-destructive ring-destructive/20", icon: TrendingDown },
-    stable: { label: "Stabil", cls: "bg-muted text-muted-foreground ring-border", icon: Minus },
-    insufficient_data: { label: "Yetersiz veri", cls: "bg-muted text-muted-foreground ring-border", icon: Minus },
+    improving: { label: badges.improving, cls: "bg-emerald-950/30 text-emerald-400 ring-emerald-500/20", icon: TrendingUp },
+    declining: { label: badges.declining, cls: "bg-destructive/10 text-destructive ring-destructive/20", icon: TrendingDown },
+    stable: { label: badges.stable, cls: "bg-muted text-muted-foreground ring-border", icon: Minus },
+    insufficient_data: { label: badges.insufficient, cls: "bg-muted text-muted-foreground ring-border", icon: Minus },
   };
   const cfg = config[trend as keyof typeof config] ?? config.stable;
   const Icon = cfg.icon;
@@ -105,24 +109,26 @@ function PctBadge({ pct }: { pct: number | null }) {
 
 function PeriodComparisonCards({ data }: { data: MultiPeriodData }) {
   const { mom, yoy } = data;
+  const { t } = useI18n();
+  const { mom: momText, yoy: yoyText } = t.trends;
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       {/* MoM */}
       <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="mb-3 text-sm font-medium">Aylık Karşılaştırma (MoM)</h3>
+        <h3 className="mb-3 text-sm font-medium">{momText.heading}</h3>
         {mom ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Gelir</span>
+              <span className="text-muted-foreground">{momText.revenue}</span>
               <PctBadge pct={mom.revenue_change_pct} />
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Giderler</span>
+              <span className="text-muted-foreground">{momText.expenses}</span>
               <PctBadge pct={mom.expenses_change_pct ? -mom.expenses_change_pct : null} />
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Net Nakit Akışı</span>
+              <span className="text-muted-foreground">{momText.net}</span>
               <PctBadge pct={mom.net_change_pct} />
             </div>
             <div className="mt-3 border-t border-border/50 pt-3 text-xs text-muted-foreground">
@@ -130,25 +136,25 @@ function PeriodComparisonCards({ data }: { data: MultiPeriodData }) {
             </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Karşılaştırma için en az 2 ay veri gerekli.</p>
+          <p className="text-sm text-muted-foreground">{momText.empty}</p>
         )}
       </div>
 
       {/* YoY */}
       <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="mb-3 text-sm font-medium">Yıllık Karşılaştırma (YoY)</h3>
+        <h3 className="mb-3 text-sm font-medium">{yoyText.heading}</h3>
         {yoy ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Gelir</span>
+              <span className="text-muted-foreground">{momText.revenue}</span>
               <PctBadge pct={yoy.revenue_yoy_pct} />
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Giderler</span>
+              <span className="text-muted-foreground">{momText.expenses}</span>
               <PctBadge pct={yoy.expenses_yoy_pct ? -yoy.expenses_yoy_pct : null} />
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Net Nakit Akışı</span>
+              <span className="text-muted-foreground">{momText.net}</span>
               <PctBadge pct={yoy.net_yoy_pct} />
             </div>
             <div className="mt-3 border-t border-border/50 pt-3 text-xs text-muted-foreground">
@@ -156,7 +162,7 @@ function PeriodComparisonCards({ data }: { data: MultiPeriodData }) {
             </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">YoY karşılaştırma için 12+ ay veri gerekli.</p>
+          <p className="text-sm text-muted-foreground">{yoyText.empty}</p>
         )}
       </div>
     </div>
@@ -166,6 +172,11 @@ function PeriodComparisonCards({ data }: { data: MultiPeriodData }) {
 // ── Trend chart ───────────────────────────────────────────────────────────────
 
 function TrendChart({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { chart } = t.trends;
+
   const data = Object.entries(monthly)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, v]) => ({
@@ -178,7 +189,7 @@ function TrendChart({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }
   if (data.length < 2) {
     return (
       <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
-        Trend grafiği için en az 2 aylık veri gerekli.
+        {chart.empty}
       </div>
     );
   }
@@ -190,17 +201,17 @@ function TrendChart({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }
         <XAxis dataKey="month" {...axisStyle} />
         <YAxis
           {...axisStyle}
-          tickFormatter={(v: number) => `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
+          tickFormatter={(v: number) => `${symbol}${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
         />
         <Tooltip
           {...tooltipStyle}
-          formatter={(v: number, name: string) => [formatCurrency(v), name]}
+          formatter={(v: number, name: string) => [fmt(v), name]}
         />
         <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.72 0.017 78)" }} />
         <ReferenceLine y={0} stroke="oklch(0.40 0.02 70)" strokeWidth={1} />
-        <Line type="monotone" dataKey="revenue" name="Gelir" stroke="oklch(0.58 0.18 145)" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="expenses" name="Gider" stroke="oklch(0.58 0.22 25)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-        <Line type="monotone" dataKey="net" name="Net" stroke="oklch(0.79 0.115 83)" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="revenue" name={chart.revenue} stroke="oklch(0.58 0.18 145)" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="expenses" name={chart.expense} stroke="oklch(0.58 0.22 25)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+        <Line type="monotone" dataKey="net" name={chart.net} stroke="oklch(0.79 0.115 83)" strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -209,26 +220,29 @@ function TrendChart({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }
 // ── KPI trend strip ───────────────────────────────────────────────────────────
 
 function KpiTrendStrip({ trends, direction, months }: { trends: KpiTrends; direction: string; months: number }) {
+  const { t } = useI18n();
+  const { kpi } = t.trends;
+
   return (
     <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
       <div className="bg-card px-4 py-4">
-        <p className="text-xs text-muted-foreground">Genel Yön</p>
+        <p className="text-xs text-muted-foreground">{kpi.overall}</p>
         <div className="mt-1.5"><TrendBadge trend={direction} /></div>
-        <p className="mt-1 text-xs text-muted-foreground">{months} ay veri</p>
+        <p className="mt-1 text-xs text-muted-foreground">{kpi.monthsData.replace("{count}", String(months))}</p>
       </div>
       <div className="bg-card px-4 py-4">
-        <p className="text-xs text-muted-foreground">Gelir Trendi</p>
+        <p className="text-xs text-muted-foreground">{kpi.revenue}</p>
         <div className="mt-1.5"><TrendBadge trend={trends.revenue_trend} /></div>
       </div>
       <div className="bg-card px-4 py-4">
-        <p className="text-xs text-muted-foreground">Gider Trendi</p>
+        <p className="text-xs text-muted-foreground">{kpi.expenses}</p>
         <div className="mt-1.5">
           <TrendBadge trend={trends.expense_trend === "improving" ? "declining" : trends.expense_trend === "declining" ? "improving" : trends.expense_trend} />
         </div>
-        <p className="mt-1 text-xs text-muted-foreground opacity-60">↑ artış = kötü</p>
+        <p className="mt-1 text-xs text-muted-foreground opacity-60">{kpi.expenseUp}</p>
       </div>
       <div className="bg-card px-4 py-4">
-        <p className="text-xs text-muted-foreground">Net Trend</p>
+        <p className="text-xs text-muted-foreground">{kpi.net}</p>
         <div className="mt-1.5"><TrendBadge trend={trends.net_trend} /></div>
       </div>
     </div>
@@ -238,22 +252,26 @@ function KpiTrendStrip({ trends, direction, months }: { trends: KpiTrends; direc
 // ── Monthly data table ────────────────────────────────────────────────────────
 
 function MonthlyTable({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { table } = t.trends;
+
   const rows = Object.entries(monthly).sort(([a], [b]) => b.localeCompare(a));
   if (!rows.length) return null;
 
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Aylık Özet Tablo</h2>
+        <h2 className="text-sm font-medium">{table.heading}</h2>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm" role="table">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Ay</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Gelir</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Gider</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Net</th>
+              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">{table.colMonth}</th>
+              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">{table.colRevenue}</th>
+              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">{table.colExpense}</th>
+              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">{table.colNet}</th>
             </tr>
           </thead>
           <tbody>
@@ -263,13 +281,13 @@ function MonthlyTable({ monthly }: { monthly: MultiPeriodData["monthly_summary"]
                 <tr key={month} className="border-b border-border/40 last:border-0 hover:bg-muted/10 transition-colors">
                   <td className="px-4 py-2.5 text-xs tabular-nums text-muted-foreground">{month}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-sm text-emerald-400">
-                    {formatCurrency(v.revenue / 100)}
+                    {fmt(v.revenue / 100)}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-sm text-destructive">
-                    {formatCurrency(v.expenses / 100)}
+                    {fmt(v.expenses / 100)}
                   </td>
                   <td className={cn("px-4 py-2.5 text-right tabular-nums text-sm font-medium", netPos ? "text-emerald-400" : "text-destructive")}>
-                    {netPos ? "+" : "−"}{formatCurrency(Math.abs(v.net / 100))}
+                    {netPos ? "+" : "−"}{fmt(Math.abs(v.net / 100))}
                   </td>
                 </tr>
               );
@@ -284,20 +302,23 @@ function MonthlyTable({ monthly }: { monthly: MultiPeriodData["monthly_summary"]
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useI18n();
+  const { empty } = t.trends;
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">Trend verisi yok</h2>
+      <h2 className="text-base font-semibold">{empty.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        En az 2 aylık veri içeren bir belge yükleyin.
+        {empty.body}
       </p>
       <a href="/upload" className={cn(
         "mt-5 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground",
         "transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       )}>
-        Belge yükle
+        {empty.cta}
       </a>
     </div>
   );
@@ -309,6 +330,8 @@ export default function TrendsPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
   const { data: dashboard, isLoading } = useDashboard(jobId);
+  const { t } = useI18n();
+  const { noTrend, cfoAnalysis } = t.trends;
 
   if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
 
@@ -329,7 +352,7 @@ export default function TrendsPage() {
     );
   }
 
-  const multiPeriod = (dashboard as any)?.multi_period as MultiPeriodData | null | undefined;
+  const multiPeriod = (dashboard as { multi_period?: MultiPeriodData })?.multi_period;
 
   if (!multiPeriod) {
     return (
@@ -337,9 +360,9 @@ export default function TrendsPage() {
         <div className="mb-4 rounded-full bg-muted p-4">
           <AlertCircle className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
         </div>
-        <h2 className="text-base font-semibold">Dönem analizi bulunamadı</h2>
+        <h2 className="text-base font-semibold">{noTrend.heading}</h2>
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-          Bu analiz için yeterli dönem verisi yok. En az 2 ay gerekli.
+          {noTrend.body}
         </p>
       </div>
     );
@@ -348,9 +371,11 @@ export default function TrendsPage() {
   return (
     <div className="space-y-4 p-5">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">Dönem Analizi & Trendler</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{t.trends.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {multiPeriod.month_range} · {multiPeriod.months_available} ay veri
+          {t.trends.subtitle
+            .replace("{range}", multiPeriod.month_range)
+            .replace("{months}", String(multiPeriod.months_available))}
         </p>
       </div>
 
@@ -362,14 +387,14 @@ export default function TrendsPage() {
 
       {multiPeriod.narrative && (
         <div className="rounded-lg border border-border bg-card px-4 py-3.5">
-          <p className="mb-1 text-xs font-medium text-primary">CFO Analizi</p>
+          <p className="mb-1 text-xs font-medium text-primary">{cfoAnalysis}</p>
           <p className="text-sm leading-relaxed text-muted-foreground max-w-prose">{multiPeriod.narrative}</p>
         </div>
       )}
 
       <div className="rounded-lg border border-border bg-card p-4">
-        <h2 className="mb-0.5 text-sm font-medium">Aylık Trend Grafiği</h2>
-        <p className="mb-4 text-xs text-muted-foreground">Gelir, gider ve net nakit akışı trendi</p>
+        <h2 className="mb-0.5 text-sm font-medium">{t.trends.chart.heading}</h2>
+        <p className="mb-4 text-xs text-muted-foreground">{t.trends.chart.subtitle}</p>
         <TrendChart monthly={multiPeriod.monthly_summary} />
       </div>
 

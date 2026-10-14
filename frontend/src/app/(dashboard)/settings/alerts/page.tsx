@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api/client";
+import { useI18n } from "@/hooks/useI18n";
 
 type Prefs = {
   slack_webhook_url?: string;
@@ -10,6 +11,8 @@ type Prefs = {
 };
 
 export default function AlertsSettingsPage() {
+  const { t } = useI18n();
+  const a = t.settingsAlerts;
   const [prefs, setPrefs] = useState<Prefs>({ enabled: true });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,14 +40,14 @@ export default function AlertsSettingsPage() {
     setMessage(null);
     try {
       await apiClient.put("/alerts/preferences", prefs);
-      setMessage("Alert preferences saved.");
+      setMessage(a.saved);
     } catch (e) {
       // Fallback: store locally if API missing
       try {
         localStorage.setItem("alert_prefs", JSON.stringify(prefs));
-        setMessage("Saved locally (API unavailable). Configure SMTP/Slack in backend for delivery.");
+        setMessage(a.savedLocal);
       } catch {
-        setError(e instanceof Error ? e.message : "Save failed");
+        setError(e instanceof Error ? e.message : a.saveFailed);
       }
     } finally {
       setSaving(false);
@@ -54,9 +57,9 @@ export default function AlertsSettingsPage() {
   return (
     <main className="mx-auto max-w-xl space-y-6 p-4 sm:p-6 lg:p-8">
       <div>
-        <h1 className="text-2xl font-bold">Alert settings</h1>
+        <h1 className="text-2xl font-bold">{a.title}</h1>
         <p className="text-sm text-muted-foreground">
-          Route SLA breaches and critical agent alerts to Slack or email.
+          {a.subtitle}
         </p>
       </div>
 
@@ -66,28 +69,28 @@ export default function AlertsSettingsPage() {
           checked={Boolean(prefs.enabled)}
           onChange={(e) => setPrefs((p) => ({ ...p, enabled: e.target.checked }))}
         />
-        Enable outbound alerts
+        {a.enable}
       </label>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="slack">Slack webhook URL</label>
+        <label className="text-sm font-medium" htmlFor="slack">{a.slackLabel}</label>
         <input
           id="slack"
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           value={prefs.slack_webhook_url ?? ""}
           onChange={(e) => setPrefs((p) => ({ ...p, slack_webhook_url: e.target.value }))}
-          placeholder="https://hooks.slack.com/services/…"
+          placeholder={a.slackPlaceholder}
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="email">Email recipients (comma-separated)</label>
+        <label className="text-sm font-medium" htmlFor="email">{a.emailLabel}</label>
         <input
           id="email"
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           value={prefs.email_recipients ?? ""}
           onChange={(e) => setPrefs((p) => ({ ...p, email_recipients: e.target.value }))}
-          placeholder="ops@company.com"
+          placeholder={a.emailPlaceholder}
         />
       </div>
 
@@ -100,7 +103,7 @@ export default function AlertsSettingsPage() {
         onClick={() => void save()}
         className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
       >
-        {saving ? "Saving…" : "Save"}
+        {saving ? a.saving : a.save}
       </button>
     </main>
   );

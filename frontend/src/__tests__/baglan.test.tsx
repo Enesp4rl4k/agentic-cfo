@@ -31,6 +31,20 @@ vi.mock("@/store/companyContext", () => ({
   useCompanyContextStore: () => ({ setActiveCFOJob }),
 }));
 
+// The page renders through useI18n, which resolves the org locale to pick the
+// message tree — these assertions pin the Turkish copy of a tr-TR org.
+vi.mock("@/hooks/useOrgSettings", () => ({
+  useOrgSettings: () => ({
+    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
+    loading: false,
+    error: null,
+    refresh: () => {},
+    hasTrPack: true,
+    baseCurrency: "TRY",
+    locale: "tr-TR",
+  }),
+}));
+
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) =>
     React.createElement("a", { href, ...rest }, children),

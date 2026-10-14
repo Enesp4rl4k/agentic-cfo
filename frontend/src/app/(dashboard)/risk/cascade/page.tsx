@@ -12,6 +12,8 @@ import {
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api/client";
 import { useFullContext } from "@/hooks/useCompanyContext";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,55 +54,61 @@ interface CascadeRequest {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+// Icons/colours are presentation; labels and descriptions come from the tree
+// (t.risk.cascade) at render time.
 
-const TRIGGER_TYPES = [
+type TriggerKey =
+  | "cash_crisis"
+  | "revenue_drop"
+  | "key_person_loss"
+  | "cyber_incident"
+  | "custom";
+
+type SeverityKey = "low" | "medium" | "high" | "critical";
+
+const TRIGGER_TYPES: {
+  key: TriggerKey;
+  icon: typeof DollarSign;
+  color: string;
+  bg: string;
+}[] = [
   {
     key: "cash_crisis",
-    label: "Nakit Krizi",
     icon: DollarSign,
     color: "text-red-400",
     bg: "bg-red-950/20 border-red-800/40",
-    desc: "Nakit rezervleri kritik seviyeye düşerse ne olur?",
   },
   {
     key: "revenue_drop",
-    label: "Gelir Düşüşü",
     icon: TrendingDown,
     color: "text-orange-400",
     bg: "bg-orange-950/20 border-orange-800/40",
-    desc: "Gelirde ani düşüş yaşanırsa tüm departmanlar nasıl etkilenir?",
   },
   {
     key: "key_person_loss",
-    label: "Kilit Kişi Kaybı",
     icon: Users,
     color: "text-amber-400",
     bg: "bg-amber-950/20 border-amber-800/40",
-    desc: "CTO, CPO veya kritik bir yönetici ayrılırsa?",
   },
   {
     key: "cyber_incident",
-    label: "Siber Saldırı",
     icon: Shield,
     color: "text-clay-400",
     bg: "bg-clay-950/20 border-clay-700/40",
-    desc: "Veri ihlali veya ransomware saldırısı yaşanırsa?",
   },
   {
     key: "custom",
-    label: "Özel Senaryo",
     icon: Zap,
     color: "text-mapblue-400",
     bg: "bg-mapblue-950/20 border-mapblue-700/40",
-    desc: "Kendi senaryonuzu tanımlayın",
   },
 ];
 
-const SEVERITY_LEVELS = [
-  { key: "low",      label: "Düşük",     color: "text-blue-400",   ring: "ring-blue-500/40" },
-  { key: "medium",   label: "Orta",      color: "text-yellow-400", ring: "ring-yellow-500/40" },
-  { key: "high",     label: "Yüksek",    color: "text-orange-400", ring: "ring-orange-500/40" },
-  { key: "critical", label: "Kritik",    color: "text-red-400",    ring: "ring-red-500/40" },
+const SEVERITY_LEVELS: { key: SeverityKey; color: string; ring: string }[] = [
+  { key: "low",      color: "text-blue-400",   ring: "ring-blue-500/40" },
+  { key: "medium",   color: "text-yellow-400", ring: "ring-yellow-500/40" },
+  { key: "high",     color: "text-orange-400", ring: "ring-orange-500/40" },
+  { key: "critical", color: "text-red-400",    ring: "ring-red-500/40" },
 ];
 
 const DOMAIN_ICONS: Record<string, { icon: typeof DollarSign; color: string }> = {
@@ -149,6 +157,8 @@ async function runCascade(req: CascadeRequest): Promise<CascadeResult> {
 
 function DomainImpactCard({ impact }: { impact: DomainImpact }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
+  const cas = t.risk.cascade;
   const colors = impactColors(impact.impact_level);
   const meta = DOMAIN_ICONS[impact.domain] ?? { icon: BarChart3, color: "text-muted-foreground" };
   const Icon = meta.icon;
@@ -163,7 +173,7 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className={cn("rounded px-2 py-0.5 text-[10px] font-semibold uppercase", colors.badge)}>
-            {impact.impact_level}
+            {impact.impact_level.toUpperCase()}
           </span>
           <span className="text-lg font-bold tabular-nums">{impact.impact_score}</span>
         </div>
@@ -174,7 +184,7 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
         <div
           className={cn("h-full rounded-full transition-all duration-700", colors.bar)}
           style={{ width: `${impact.impact_score}%` }}
-          aria-label={`Impact score: ${impact.impact_score}/100`}
+          aria-label={cas.result.impactScoreAria.replace("{score}", String(impact.impact_score))}
         />
       </div>
 
@@ -184,7 +194,9 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
       {/* Time to impact */}
       <div className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Clock className="h-3 w-3" aria-hidden="true" />
-        <span>{impact.time_to_impact_weeks} hafta içinde etki</span>
+        <span>
+          {cas.result.timeToImpact.replace("{weeks}", String(impact.time_to_impact_weeks))}
+        </span>
       </div>
 
       {/* Expand/collapse */}
@@ -194,7 +206,7 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
         aria-expanded={expanded}
       >
         <ChevronRight className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")} aria-hidden="true" />
-        {expanded ? "Gizle" : "Detaylar & Aksiyonlar"}
+        {expanded ? cas.card.hide : cas.card.show}
       </button>
 
       {expanded && (
@@ -202,7 +214,7 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
           {impact.secondary_effects.length > 0 && (
             <div>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                İkincil Etkiler
+                {cas.card.secondary}
               </p>
               <ul className="space-y-1">
                 {impact.secondary_effects.map((e, i) => (
@@ -217,7 +229,7 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
           {impact.recommended_actions.length > 0 && (
             <div>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Önerilen Aksiyonlar
+                {cas.card.actions}
               </p>
               <ul className="space-y-1">
                 {impact.recommended_actions.map((a, i) => (
@@ -248,6 +260,19 @@ export default function CascadeSimulatorPage() {
   const [runway, setRunway] = useState("");
   const [headcount, setHeadcount] = useState("");
 
+  const { t } = useI18n();
+  const symbol = useCurrencySymbol();
+  const cas = t.risk.cascade;
+
+  // Localized copies of the static config above (labels/descriptions live in
+  // the message tree, icons/colors stay in the constants).
+  const triggers = TRIGGER_TYPES.map((tr) => ({
+    ...tr,
+    label: cas.triggers[tr.key].label,
+    desc: cas.triggers[tr.key].desc,
+  }));
+  const severities = SEVERITY_LEVELS.map((s) => ({ ...s, label: cas.severity[s.key] }));
+
   // Pre-fill from CompanyContext if available
   const { data: ctx } = useFullContext();
   const companyName = ctx?.company_name ?? undefined;
@@ -260,7 +285,7 @@ export default function CascadeSimulatorPage() {
   const isLoading = mutation.isPending;
 
   function handleRun() {
-    const trigger = TRIGGER_TYPES.find((t) => t.key === triggerType);
+    const trigger = triggers.find((tr) => tr.key === triggerType);
     mutation.mutate({
       trigger_type: triggerType,
       trigger_description: triggerDesc || trigger?.desc || triggerType,
@@ -273,7 +298,7 @@ export default function CascadeSimulatorPage() {
     });
   }
 
-  const selectedTrigger = TRIGGER_TYPES.find((t) => t.key === triggerType);
+  const selectedTrigger = triggers.find((tr) => tr.key === triggerType);
 
   return (
     <main className="mx-auto max-w-screen-xl space-y-6 p-4 sm:p-6 lg:p-8">
@@ -283,10 +308,8 @@ export default function CascadeSimulatorPage() {
           <Zap className="h-6 w-6 text-red-400" aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">Cascade Risk Simulator</h1>
-          <p className="text-sm text-muted-foreground">
-            &quot;Ne olursa ne olur?&quot; — Bir tetikleyici olay tüm departmanları nasıl etkiler?
-          </p>
+          <h1 className="text-xl font-bold">{cas.title}</h1>
+          <p className="text-sm text-muted-foreground">{cas.subtitle}</p>
         </div>
       </div>
 
@@ -294,9 +317,7 @@ export default function CascadeSimulatorPage() {
           the simulator, not relations measured in this company's data. Said
           here, because the output otherwise reads like a finding. */}
       <p className="rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        Bu ekran bir senaryo aracıdır: zincirleme etkiler, sektörde kabul gören genel kurallarla
-        hesaplanır. Sizin geçmiş verinizden ölçülmüş oranlar değildir; sonuçlar bir tahmin değil,
-        &quot;böyle bir olay olursa nereye bakmalıyım&quot; listesidir.
+        {cas.disclaimer}
       </p>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -304,26 +325,26 @@ export default function CascadeSimulatorPage() {
         <div className="space-y-5 lg:col-span-1">
           {/* Trigger type */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold">Tetikleyici Senaryo</h2>
+            <h2 className="mb-3 text-sm font-semibold">{cas.triggers.heading}</h2>
             <div className="space-y-2">
-              {TRIGGER_TYPES.map((t) => {
-                const Icon = t.icon;
-                const selected = triggerType === t.key;
+              {triggers.map((tr) => {
+                const Icon = tr.icon;
+                const selected = triggerType === tr.key;
                 return (
                   <button
-                    key={t.key}
+                    key={tr.key}
                     type="button"
-                    onClick={() => setTriggerType(t.key)}
+                    onClick={() => setTriggerType(tr.key)}
                     className={cn(
                       "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      selected ? cn("border-primary/50 bg-primary/5", t.bg) : "border-border hover:bg-muted/30"
+                      selected ? cn("border-primary/50 bg-primary/5", tr.bg) : "border-border hover:bg-muted/30"
                     )}
                   >
-                    <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", t.color)} aria-hidden="true" />
+                    <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", tr.color)} aria-hidden="true" />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium">{t.label}</p>
-                      <p className="text-[10px] text-muted-foreground leading-snug">{t.desc}</p>
+                      <p className="text-sm font-medium">{tr.label}</p>
+                      <p className="text-[10px] text-muted-foreground leading-snug">{tr.desc}</p>
                     </div>
                   </button>
                 );
@@ -333,9 +354,9 @@ export default function CascadeSimulatorPage() {
 
           {/* Severity */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold">Şiddet Seviyesi</h2>
+            <h2 className="mb-3 text-sm font-semibold">{cas.severity.heading}</h2>
             <div className="grid grid-cols-2 gap-2">
-              {SEVERITY_LEVELS.map((s) => (
+              {severities.map((s) => (
                 <button
                   key={s.key}
                   type="button"
@@ -356,16 +377,16 @@ export default function CascadeSimulatorPage() {
 
           {/* Financial context */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold">Finansal Bağlam (İsteğe Bağlı)</h2>
+            <h2 className="mb-3 text-sm font-semibold">{cas.context.heading}</h2>
             <p className="mb-3 text-[10px] text-muted-foreground">
-              Bu değerleri girerek simülasyonu daha gerçekçi yapın.
+              {cas.context.hint}
             </p>
             <div className="space-y-3">
               {[
-                { id: "burn", label: "Aylık Burn Rate (TRY)", value: burnRate, set: setBurnRate, placeholder: "1000000" },
-                { id: "rev",  label: "Aylık Gelir (TRY)",    value: revenue,  set: setRevenue,  placeholder: "2000000" },
-                { id: "run",  label: "Cash Runway (ay)",      value: runway,   set: setRunway,   placeholder: "6" },
-                { id: "hc",   label: "Çalışan Sayısı",        value: headcount,set: setHeadcount,placeholder: "50" },
+                { id: "burn", label: cas.context.burnRate.replace("{symbol}", symbol), value: burnRate, set: setBurnRate, placeholder: "1000000" },
+                { id: "rev",  label: cas.context.revenue.replace("{symbol}", symbol),  value: revenue,  set: setRevenue,  placeholder: "2000000" },
+                { id: "run",  label: cas.context.runway,     value: runway,   set: setRunway,   placeholder: "6" },
+                { id: "hc",   label: cas.context.headcount,   value: headcount,set: setHeadcount,placeholder: "50" },
               ].map(({ id, label, value, set, placeholder }) => (
                 <div key={id}>
                   <label htmlFor={id} className="mb-1 block text-[10px] font-medium text-muted-foreground">
@@ -388,13 +409,13 @@ export default function CascadeSimulatorPage() {
           {triggerType === "custom" && (
             <div className="rounded-lg border border-border bg-card p-4">
               <label htmlFor="custom-desc" className="mb-2 block text-sm font-semibold">
-                Senaryo Açıklaması
+                {cas.customDesc.label}
               </label>
               <textarea
                 id="custom-desc"
                 value={triggerDesc}
                 onChange={(e) => setTriggerDesc(e.target.value)}
-                placeholder="Örn: Ana tedarikçimiz iflas etti ve 3 ay stok yok..."
+                placeholder={cas.customDesc.placeholder}
                 rows={3}
                 className="w-full rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               />
@@ -413,15 +434,15 @@ export default function CascadeSimulatorPage() {
             )}
           >
             {isLoading ? (
-              <><RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />Simüle ediliyor…</>
+              <><RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />{cas.running}</>
             ) : (
-              <><Play className="h-4 w-4" aria-hidden="true" />Simülasyonu Çalıştır</>
+              <><Play className="h-4 w-4" aria-hidden="true" />{cas.run}</>
             )}
           </button>
 
           {mutation.isError && (
             <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
-              Hata: {(mutation.error as Error)?.message ?? "Simülasyon başarısız"}
+              {cas.errorPrefix} {(mutation.error as Error)?.message ?? cas.errorFallback}
             </div>
           )}
         </div>
@@ -433,9 +454,9 @@ export default function CascadeSimulatorPage() {
               <div className="mb-4 rounded-full bg-muted p-4">
                 <Zap className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
               </div>
-              <h3 className="text-base font-semibold">Simülasyon Hazır</h3>
+              <h3 className="text-base font-semibold">{cas.empty.heading}</h3>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Sol panelden bir senaryo ve şiddet seviyesi seçin, ardından "Simülasyonu Çalıştır" butonuna basın.
+                {cas.empty.body}
               </p>
             </div>
           )}
@@ -443,8 +464,8 @@ export default function CascadeSimulatorPage() {
           {isLoading && (
             <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card py-20 text-center">
               <RefreshCw className="mb-4 h-8 w-8 animate-spin text-primary" aria-hidden="true" />
-              <p className="text-sm font-medium">Etki hesaplanıyor…</p>
-              <p className="mt-1 text-xs text-muted-foreground">Tüm domainlere zincirleme etkiler analiz ediliyor</p>
+              <p className="text-sm font-medium">{cas.loading.heading}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{cas.loading.body}</p>
             </div>
           )}
 
@@ -456,7 +477,7 @@ export default function CascadeSimulatorPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Simülasyon #{result.simulation_id}
+                        {cas.result.idLabel.replace("{id}", result.simulation_id)}
                       </span>
                     </div>
                     <h2 className="text-lg font-bold">{selectedTrigger?.label ?? result.trigger_type}</h2>
@@ -467,10 +488,10 @@ export default function CascadeSimulatorPage() {
                       {result.overall_risk_score}
                     </p>
                     <p className={cn("text-xs font-semibold uppercase", overallRiskColor(result.overall_risk_level))}>
-                      {result.overall_risk_level} risk
+                      {cas.result.riskLevel.replace("{level}", result.overall_risk_level.toUpperCase())}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      ~{result.estimated_recovery_weeks} hafta kurtarma
+                      {cas.result.recovery.replace("{weeks}", String(result.estimated_recovery_weeks))}
                     </p>
                   </div>
                 </div>
@@ -483,7 +504,7 @@ export default function CascadeSimulatorPage() {
                 {result.recommended_priorities.length > 0 && (
                   <div className="mt-4">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Acil Öncelikler
+                      {cas.result.priorities}
                     </p>
                     <div className="space-y-1.5">
                       {result.recommended_priorities.map((p, i) => (
@@ -504,7 +525,7 @@ export default function CascadeSimulatorPage() {
                 <div className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                     <ArrowRight className="h-4 w-4 text-primary" aria-hidden="true" />
-                    Zincirleme Etki Akışı
+                    {cas.result.sequence}
                   </h3>
                   <div className="space-y-2">
                     {result.cascade_sequence.map((step, i) => (
@@ -521,7 +542,7 @@ export default function CascadeSimulatorPage() {
 
               {/* Domain impact grid */}
               <div>
-                <h3 className="mb-3 text-sm font-semibold">Domain Etki Analizi</h3>
+                <h3 className="mb-3 text-sm font-semibold">{cas.result.domainHeading}</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {result.domain_impacts.map((impact) => (
                     <DomainImpactCard key={impact.domain} impact={impact} />

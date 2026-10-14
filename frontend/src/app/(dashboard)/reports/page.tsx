@@ -23,39 +23,29 @@ import { useReports } from "@/hooks/useCFO";
 import { downloadReport } from "@/lib/api/cfo";
 import { fetchWithAuth } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import type { MessageTree } from "@/lib/i18n";
 import type { ReportMeta } from "@/types";
 
 // ── Type config ───────────────────────────────────────────────────────────────
+// Icons/colours are presentation; the label/description come from the tree.
 
-const REPORT_TYPE_CONFIG: Record<
+const REPORT_TYPE_META: Record<
   string,
-  { label: string; description: string; icon: React.ElementType; color: string }
+  { icon: React.ElementType; color: string }
 > = {
-  full: {
-    label: "Full Financial Report",
-    description: "Complete P&L, cash flow, forecast, and KPIs",
-    icon: Layers,
-    color: "text-primary",
-  },
-  pnl: {
-    label: "P&L Statement",
-    description: "Profit & loss with OPEX breakdown",
-    icon: DollarSign,
-    color: "text-emerald-400",
-  },
-  cashflow: {
-    label: "Cash Flow Statement",
-    description: "Operating, investing, and financing activities",
-    icon: BarChart2,
-    color: "text-mapblue-400",
-  },
-  forecast: {
-    label: "12-Month Forecast",
-    description: "Scenario analysis with Monte Carlo simulation",
-    icon: TrendingUp,
-    color: "text-brass-400",
-  },
+  full: { icon: Layers, color: "text-primary" },
+  pnl: { icon: DollarSign, color: "text-emerald-400" },
+  cashflow: { icon: BarChart2, color: "text-mapblue-400" },
+  forecast: { icon: TrendingUp, color: "text-brass-400" },
 };
+
+function reportTypeLabel(
+  type: string,
+  types: MessageTree["reports"]["types"],
+): string {
+  return types[type as keyof typeof types]?.label ?? type;
+}
 
 // ── Format config ─────────────────────────────────────────────────────────────
 
@@ -108,6 +98,9 @@ function JsonPreviewModal({
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t, locale } = useI18n();
+  const rep = t.reports;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
 
   async function load() {
     if (content || loading) return;
@@ -118,7 +111,7 @@ function JsonPreviewModal({
       const json = await res.json();
       setContent(JSON.stringify(json, null, 2));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setError(e instanceof Error ? e.message : rep.error);
     } finally {
       setLoading(false);
     }
@@ -127,15 +120,14 @@ function JsonPreviewModal({
   // Load on mount
   if (!content && !loading && !error) load();
 
-  const typeLabel =
-    REPORT_TYPE_CONFIG[report.report_type]?.label ?? report.report_type;
+  const typeLabel = reportTypeLabel(report.report_type, rep.types);
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
-      aria-label={`Preview ${typeLabel}`}
+      aria-label={rep.previewLabel.replace("{type}", typeLabel)}
     >
       {/* Backdrop */}
       <div
@@ -153,14 +145,14 @@ function JsonPreviewModal({
             <div>
               <p className="text-sm font-semibold">{typeLabel}</p>
               <p className="text-xs text-muted-foreground">
-                JSON Preview · {new Date(report.created_at).toLocaleString()}
+                {rep.jsonPreview.replace("{date}", new Date(report.created_at).toLocaleString(dateTag))}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Close preview"
+            aria-label={rep.closePreview}
           >
             <X className="h-4 w-4" />
           </button>
@@ -171,7 +163,7 @@ function JsonPreviewModal({
           {loading && (
             <div className="flex items-center justify-center py-16 gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading…
+              {rep.loading}
             </div>
           )}
           {error && (
@@ -193,7 +185,7 @@ function JsonPreviewModal({
             onClick={onClose}
             className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            Close
+            {rep.close}
           </button>
           <a
             href="#"
@@ -205,7 +197,7 @@ function JsonPreviewModal({
             )}
           >
             <Download className="h-3 w-3" />
-            Download JSON
+            {rep.downloadJson}
           </a>
         </div>
       </div>
@@ -219,14 +211,18 @@ function ReportCard({ report }: { report: ReportMeta }) {
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const { t, locale } = useI18n();
+  const rep = t.reports;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
 
-  const typeCfg = REPORT_TYPE_CONFIG[report.report_type] ?? {
-    label: report.report_type,
-    description: "",
+  const typeMeta = REPORT_TYPE_META[report.report_type] ?? {
     icon: FileText,
     color: "text-muted-foreground",
   };
-  const TypeIcon = typeCfg.icon;
+  const TypeIcon = typeMeta.icon;
+  const typeInfo = rep.types[report.report_type as keyof typeof rep.types];
+  const typeLabel = typeInfo?.label ?? report.report_type;
+  const typeDescription = typeInfo?.description ?? "";
 
   async function handleDownload(e?: { preventDefault: () => void }) {
     e?.preventDefault();
@@ -248,22 +244,22 @@ function ReportCard({ report }: { report: ReportMeta }) {
       <div className="group flex items-start gap-4 rounded-lg border border-border bg-card px-4 py-4 transition-colors hover:border-border/80 hover:bg-muted/10">
         {/* Icon */}
         <div className="mt-0.5 rounded-md border border-border bg-muted/30 p-2">
-          <TypeIcon className={cn("h-4 w-4", typeCfg.color)} aria-hidden="true" />
+          <TypeIcon className={cn("h-4 w-4", typeMeta.color)} aria-hidden="true" />
         </div>
 
         {/* Main content */}
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold">{typeCfg.label}</p>
+            <p className="text-sm font-semibold">{typeLabel}</p>
             <FormatBadge format={report.report_format} />
           </div>
-          {typeCfg.description && (
-            <p className="mt-0.5 text-xs text-muted-foreground">{typeCfg.description}</p>
+          {typeDescription && (
+            <p className="mt-0.5 text-xs text-muted-foreground">{typeDescription}</p>
           )}
           <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" aria-hidden="true" />
-              {new Date(report.created_at).toLocaleString("tr-TR", {
+              {new Date(report.created_at).toLocaleString(dateTag, {
                 day: "2-digit",
                 month: "short",
                 year: "numeric",
@@ -285,10 +281,10 @@ function ReportCard({ report }: { report: ReportMeta }) {
                 "text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               )}
-              aria-label={`Preview ${typeCfg.label}`}
+              aria-label={rep.previewLabel.replace("{type}", typeLabel)}
             >
               <Eye className="h-3 w-3" aria-hidden="true" />
-              Preview
+              {rep.preview}
             </button>
           )}
 
@@ -306,7 +302,7 @@ function ReportCard({ report }: { report: ReportMeta }) {
                   ? "border-border text-muted-foreground opacity-70 pointer-events-none"
                   : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
               )}
-              aria-label={`Download ${typeCfg.label}`}
+              aria-label={`${rep.download} ${typeLabel}`}
             >
               {downloading ? (
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -315,10 +311,10 @@ function ReportCard({ report }: { report: ReportMeta }) {
               ) : (
                 <Download className="h-3 w-3" aria-hidden="true" />
               )}
-              {downloaded ? "Downloaded" : downloading ? "Preparing…" : "Download"}
+              {downloaded ? rep.downloaded : downloading ? rep.preparing : rep.download}
             </a>
           ) : (
-            <span className="text-xs text-muted-foreground">JSON only</span>
+            <span className="text-xs text-muted-foreground">{rep.jsonOnly}</span>
           )}
         </div>
       </div>
@@ -336,14 +332,16 @@ function ReportCard({ report }: { report: ReportMeta }) {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyReports() {
+  const { t } = useI18n();
+  const rep = t.reports;
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="mb-4 rounded-full bg-muted p-4">
         <InboxIcon className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h3 className="text-sm font-semibold">No reports yet</h3>
+      <h3 className="text-sm font-semibold">{rep.empty.heading}</h3>
       <p className="mt-1 max-w-xs text-xs text-muted-foreground leading-relaxed">
-        Run an analysis from the Upload page to generate P&amp;L, cash flow, and forecast reports.
+        {rep.empty.body}
       </p>
       <a
         href="/upload"
@@ -353,7 +351,7 @@ function EmptyReports() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         )}
       >
-        Upload document
+        {rep.empty.cta}
       </a>
     </div>
   );
@@ -366,13 +364,15 @@ export default function ReportsPage() {
   const jobId = searchParams.get("job");
 
   const { data: reports, isLoading, isError } = useReports(jobId);
+  const { t } = useI18n();
+  const rep = t.reports;
 
   return (
     <div className="p-5">
       <div className="mb-5">
-        <h1 className="text-lg font-semibold tracking-tight">Reports</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{rep.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Download or preview generated financial reports.
+          {rep.subtitle}
         </p>
       </div>
 
@@ -382,7 +382,7 @@ export default function ReportsPage() {
           className="flex items-start gap-2.5 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          No analysis selected. Open a dashboard with a job ID to see its reports.
+          {rep.noJob}
         </div>
       )}
 
@@ -400,7 +400,7 @@ export default function ReportsPage() {
           className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          Failed to load reports. The analysis may still be running.
+          {rep.loadError}
         </div>
       )}
 
@@ -411,7 +411,10 @@ export default function ReportsPage() {
           ) : (
             <div className="space-y-2">
               <p className="mb-3 text-xs text-muted-foreground">
-                {reports.length} report{reports.length !== 1 ? "s" : ""} generated
+                {(reports.length === 1 ? rep.generated : rep.generatedPlural).replace(
+                  "{count}",
+                  String(reports.length),
+                )}
               </p>
               {reports.map((r) => (
                 <ReportCard key={r.id} report={r} />

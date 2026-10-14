@@ -5,19 +5,10 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Copy, Mail, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useI18n } from "@/hooks/useI18n";
 import {
   epostaAdresi, epostaAdresiYenile, gelenEpostalar, type EpostaAdresi, type GelenEposta,
 } from "@/lib/api/veri";
-
-const DURUM: Record<string, string> = {
-  eklendi: "eklendi",
-  onceden_alindi: "daha önce alınmış",
-  secim_gerekli: "türü seçilmeli",
-  taninmadi: "tanınamadı",
-  reddedildi: "reddedildi",
-  finansal_dosya_gerekli: "önce ekstre gerekli",
-  ek_yok: "ek yok",
-};
 
 /**
  * The organisation's data mail address: set up forwarding once, and the files
@@ -25,6 +16,9 @@ const DURUM: Record<string, string> = {
  * a person can see the automation working — or why a file was not added.
  */
 export function EpostaKutusu() {
+  const { t, locale } = useI18n();
+  const email = t.baglan.email;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const [adres, setAdres] = useState<EpostaAdresi | null>(null);
   const [gelen, setGelen] = useState<GelenEposta[]>([]);
   const [kopyalandi, setKopyalandi] = useState(false);
@@ -38,7 +32,8 @@ export function EpostaKutusu() {
         setAdres(a);
         if (a.acik) gelenEpostalar().then(setGelen).catch(() => setGelen([]));
       })
-      .catch((e) => setHata(e instanceof Error ? e.message : "Adres alınamadı."));
+      .catch((e) => setHata(e instanceof Error ? e.message : email.fetchFailed));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);
 
   async function kopyala() {
@@ -48,7 +43,7 @@ export function EpostaKutusu() {
       setKopyalandi(true);
       setTimeout(() => setKopyalandi(false), 2000);
     } catch {
-      setHata("Kopyalanamadı; adresi seçip kendiniz kopyalayın.");
+      setHata(email.copyFailed);
     }
   }
 
@@ -58,7 +53,7 @@ export function EpostaKutusu() {
       setAdres(await epostaAdresiYenile());
       setOnay(false);
     } catch (e) {
-      setHata(e instanceof Error ? e.message : "Adres yenilenemedi.");
+      setHata(e instanceof Error ? e.message : email.refreshFailed);
     } finally {
       setMesgul(false);
     }
@@ -70,7 +65,7 @@ export function EpostaKutusu() {
   return (
     <Card className="space-y-3 p-4">
       <p className="flex items-center gap-1.5 text-sm font-semibold">
-        <Mail className="h-4 w-4" aria-hidden="true" /> E-postayla otomatik gönderin
+        <Mail className="h-4 w-4" aria-hidden="true" /> {email.title}
       </p>
 
       {!adres.acik ? (
@@ -81,7 +76,7 @@ export function EpostaKutusu() {
             <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs" title={adres.adres ?? ""}>
               {adres.adres}
             </code>
-            <Button size="sm" variant="outline" onClick={kopyala} aria-label="Adresi kopyala">
+            <Button size="sm" variant="outline" onClick={kopyala} aria-label={email.copyAria}>
               {kopyalandi
                 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                 : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -92,36 +87,37 @@ export function EpostaKutusu() {
           </ul>
           {!onay ? (
             <button type="button" onClick={() => setOnay(true)} className="text-xs text-muted-foreground underline">
-              Adresi yenile
+              {email.refreshAddress}
             </button>
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span>Eski adrese gelen posta artık alınmaz. Emin misiniz?</span>
+              <span>{email.refreshConfirm}</span>
               <Button size="sm" variant="destructive" disabled={mesgul} onClick={yenile}>
-                <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" /> Yenile
+                <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" /> {email.refresh}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setOnay(false)}>Vazgeç</Button>
+              <Button size="sm" variant="ghost" onClick={() => setOnay(false)}>{email.cancel}</Button>
             </div>
           )}
 
           <div className="border-t border-border/60 pt-2">
-            <p className="text-xs font-medium">Gelen e-postalar</p>
+            <p className="text-xs font-medium">{email.inboxTitle}</p>
             {gelen.length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">Henüz e-posta gelmedi.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{email.inboxEmpty}</p>
             ) : (
               <ul className="mt-1 space-y-2">
                 {gelen.map((m) => (
                   <li key={m.id} className="text-xs">
-                    <p className="truncate font-medium" title={m.konu}>{m.konu || "(konusuz)"}</p>
+                    <p className="truncate font-medium" title={m.konu}>{m.konu || email.noSubject}</p>
                     <p className="text-muted-foreground">
-                      {m.gonderen}{m.alindi ? ` · ${new Date(m.alindi).toLocaleString("tr-TR")}` : ""}
+                      {m.gonderen}{m.alindi ? ` · ${new Date(m.alindi).toLocaleString(dateTag)}` : ""}
                     </p>
                     <ul className="mt-0.5 space-y-0.5">
                       {m.dosyalar.map((d, i) => (
                         <li key={`${d.dosya}-${i}`} className="text-muted-foreground" title={d.mesaj}>
-                          {d.dosya ?? "—"}: {d.etiket ? `${d.etiket}, ` : ""}{DURUM[d.durum] ?? d.durum}
+                          {d.dosya ?? "—"}: {d.etiket ? `${d.etiket}, ` : ""}
+                          {email.statuses[d.durum] ?? d.durum}
                           {d.sayfa && (
-                            <Link href={d.sayfa} className="ml-1 text-primary hover:underline">aç</Link>
+                            <Link href={d.sayfa} className="ml-1 text-primary hover:underline">{email.open}</Link>
                           )}
                         </li>
                       ))}

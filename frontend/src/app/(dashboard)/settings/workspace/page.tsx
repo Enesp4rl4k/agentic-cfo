@@ -26,6 +26,8 @@ import {
   useTestSlack,
 } from "@/hooks/useNotifications";
 import { rebuildSemantic } from "@/lib/api/semantic";
+import { useI18n } from "@/hooks/useI18n";
+import type { MessageTree } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -59,39 +61,34 @@ type OrgData = {
   regional_packs?: string[];
 };
 
-const LOCALE_OPTIONS = [
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "tr-TR", label: "Türkçe" },
-  { value: "de-DE", label: "Deutsch" },
-];
-
-const CURRENCY_OPTIONS = ["USD", "EUR", "GBP", "TRY", "AED", "SGD"];
-const COUNTRY_OPTIONS = [
-  { value: "US", label: "United States" },
-  { value: "GB", label: "United Kingdom" },
-  { value: "TR", label: "Türkiye" },
-  { value: "DE", label: "Germany" },
-  { value: "AE", label: "UAE" },
-  { value: "SG", label: "Singapore" },
-];
+const LOCALE_OPTIONS = ["en-US", "en-GB", "tr-TR", "de-DE"] as const;
+const CURRENCY_OPTIONS = ["USD", "EUR", "GBP", "TRY", "AED", "SGD"]; // i18n-exempt: ISO 4217 currency codes are locale-invariant
+const COUNTRY_OPTIONS = ["US", "GB", "TR", "DE", "AE", "SG"] as const;
 
 // ── Role badge ────────────────────────────────────────────────────────────────
 
+type Roles = MessageTree["settingsWorkspace"]["roles"];
+
+function roleLabel(role: string, roles: Roles): string {
+  return roles[role as keyof Roles] ?? role;
+}
+
 function RoleBadge({ role }: { role: string }) {
-  const cfg: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
-    owner:   { label: "Owner",   cls: "bg-amber-950/30 text-amber-400 ring-amber-500/20",  icon: Crown  },
-    admin:   { label: "Admin",   cls: "bg-mapblue-950/30 text-mapblue-400 ring-mapblue-500/20",     icon: Shield },
-    cfo:     { label: "CFO",     cls: "bg-brass-950/30 text-brass-400 ring-brass-500/20", icon: Shield },
-    analyst: { label: "Analyst", cls: "bg-muted text-muted-foreground ring-border",         icon: Users  },
-    viewer:  { label: "Viewer",  cls: "bg-muted text-muted-foreground ring-border",         icon: Eye    },
+  const { t } = useI18n();
+  const roles = t.settingsWorkspace.roles;
+  const cfg: Record<string, { cls: string; icon: React.ElementType }> = {
+    owner:   { cls: "bg-amber-950/30 text-amber-400 ring-amber-500/20",  icon: Crown  },
+    admin:   { cls: "bg-mapblue-950/30 text-mapblue-400 ring-mapblue-500/20",     icon: Shield },
+    cfo:     { cls: "bg-brass-950/30 text-brass-400 ring-brass-500/20", icon: Shield },
+    analyst: { cls: "bg-muted text-muted-foreground ring-border",         icon: Users  },
+    viewer:  { cls: "bg-muted text-muted-foreground ring-border",         icon: Eye    },
   };
   const c = cfg[role] ?? cfg.analyst;
   const Icon = c.icon;
   return (
     <span className={cn("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset", c.cls)}>
       <Icon className="h-3 w-3" aria-hidden="true" />
-      {c.label}
+      {roleLabel(role, roles)}
     </span>
   );
 }
@@ -99,6 +96,8 @@ function RoleBadge({ role }: { role: string }) {
 // ── Alert Preferences Panel ───────────────────────────────────────────────────
 
 function AlertPreferencesPanel() {
+  const { t } = useI18n();
+  const ws = t.settingsWorkspace;
   const { data: prefs, isLoading } = useNotificationPreferences();
   const updatePrefs = useUpdatePreferences();
   const testSlack = useTestSlack();
@@ -149,7 +148,7 @@ function AlertPreferencesPanel() {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        Alert ayarları yükleniyor…
+        {ws.alerts.loading}
       </div>
     );
   }
@@ -158,7 +157,7 @@ function AlertPreferencesPanel() {
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
       <div className="flex items-center gap-2">
         <Bell className="h-4 w-4 text-primary" aria-hidden="true" />
-        <h2 className="text-sm font-semibold">Alert & Bildirim Ayarları</h2>
+        <h2 className="text-sm font-semibold">{ws.alerts.title}</h2>
       </div>
 
       <form onSubmit={handleSave} className="space-y-4">
@@ -168,43 +167,43 @@ function AlertPreferencesPanel() {
             <div className="flex h-6 w-6 items-center justify-center rounded bg-[#4A154B]">
               <Link2 className="h-3.5 w-3.5 text-white" aria-hidden="true" />
             </div>
-            <h3 className="text-sm font-medium">Slack Entegrasyonu</h3>
+            <h3 className="text-sm font-medium">{ws.alerts.slack.title}</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            Kritik alertler ve günlük özetleri Slack kanalınıza gönderin.{" "}
+            {ws.alerts.slack.body}{" "}
             <a
               href="https://api.slack.com/messaging/webhooks"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary underline"
             >
-              Webhook URL nasıl alınır?
+              {ws.alerts.slack.howto}
             </a>
           </p>
           <div className="space-y-2">
             <div>
               <label htmlFor="slack-webhook" className="mb-1 block text-xs font-medium">
-                Webhook URL
+                {ws.alerts.slack.webhookLabel}
               </label>
               <input
                 id="slack-webhook"
                 type="url"
                 value={slackWebhook}
                 onChange={(e) => setSlackWebhook(e.target.value)}
-                placeholder="https://hooks.slack.com/services/T.../B.../..."
+                placeholder={ws.alerts.slack.webhookPlaceholder}
                 className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
             <div>
               <label htmlFor="slack-channel" className="mb-1 block text-xs font-medium">
-                Kanal (opsiyonel)
+                {ws.alerts.slack.channelLabel}
               </label>
               <input
                 id="slack-channel"
                 type="text"
                 value={slackChannel}
                 onChange={(e) => setSlackChannel(e.target.value)}
-                placeholder="#finance-alerts"
+                placeholder={ws.alerts.slack.channelPlaceholder}
                 className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
@@ -220,19 +219,19 @@ function AlertPreferencesPanel() {
                 ) : (
                   <Send className="h-3 w-3" aria-hidden="true" />
                 )}
-                Test mesajı gönder
+                {ws.alerts.slack.test}
               </button>
             )}
             {testSlack.isSuccess && (
               <p className="flex items-center gap-1 text-xs text-emerald-400">
                 <Check className="h-3 w-3" aria-hidden="true" />
-                Test mesajı gönderildi!
+                {ws.alerts.slack.testSent}
               </p>
             )}
             {testSlack.isError && (
               <p className="flex items-center gap-1 text-xs text-destructive">
                 <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                Slack testi başarısız — webhook URL'sini kontrol edin.
+                {ws.alerts.slack.testFailed}
               </p>
             )}
           </div>
@@ -241,22 +240,22 @@ function AlertPreferencesPanel() {
         {/* Email */}
         <div className="space-y-2">
           <label htmlFor="email-list" className="block text-xs font-medium">
-            E-posta Alıcıları
+            {ws.alerts.email.label}
           </label>
           <input
             id="email-list"
             type="text"
             value={emailList}
             onChange={(e) => setEmailList(e.target.value)}
-            placeholder="cfo@sirket.com, ceo@sirket.com"
+            placeholder={ws.alerts.email.placeholder}
             className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          <p className="text-[10px] text-muted-foreground">Birden fazla adres için virgülle ayırın.</p>
+          <p className="text-[10px] text-muted-foreground">{ws.alerts.email.hint}</p>
         </div>
 
         {/* Min severity */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium">Minimum Uyarı Seviyesi</label>
+          <label className="block text-xs font-medium">{ws.alerts.severity.label}</label>
           <div className="flex gap-2">
             {(["info", "warning", "critical"] as const).map((level) => (
               <button
@@ -274,12 +273,12 @@ function AlertPreferencesPanel() {
                     : "border-border text-muted-foreground hover:bg-muted/30"
                 )}
               >
-                {level === "info" ? "Bilgi" : level === "warning" ? "Uyarı" : "Kritik"}
+                {ws.alerts.severity[level]}
               </button>
             ))}
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Bu seviyenin altındaki alertler bildirim oluşturmaz.
+            {ws.alerts.severity.hint}
           </p>
         </div>
 
@@ -302,8 +301,8 @@ function AlertPreferencesPanel() {
             />
           </div>
           <div>
-            <p className="text-sm font-medium">Günlük Özet</p>
-            <p className="text-[10px] text-muted-foreground">Her sabah 08:00 UTC tüm alertlerin özeti gönderilir.</p>
+            <p className="text-sm font-medium">{ws.alerts.digest.title}</p>
+            <p className="text-[10px] text-muted-foreground">{ws.alerts.digest.body}</p>
           </div>
         </label>
 
@@ -315,16 +314,16 @@ function AlertPreferencesPanel() {
             className="flex items-center gap-1.5 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {updatePrefs.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-            Kaydet
+            {ws.alerts.save}
           </button>
           {updatePrefs.isSuccess && (
             <span className="flex items-center gap-1 text-xs text-emerald-400">
               <Check className="h-3 w-3" aria-hidden="true" />
-              Kaydedildi
+              {ws.alerts.saved}
             </span>
           )}
           {updatePrefs.isError && (
-            <span className="text-xs text-destructive">Kaydetme başarısız.</span>
+            <span className="text-xs text-destructive">{ws.alerts.saveFailed}</span>
           )}
         </div>
       </form>
@@ -345,6 +344,8 @@ function LocaleSettingsPanel({
   headers: () => Promise<Record<string, string>>;
   onUpdated: (next: OrgData) => void;
 }) {
+  const { t } = useI18n();
+  const ws = t.settingsWorkspace;
   const [locale, setLocale] = useState(org.locale ?? "en-US");
   const [currency, setCurrency] = useState(org.base_currency ?? "USD");
   const [country, setCountry] = useState(org.country_code ?? "US");
@@ -370,7 +371,7 @@ function LocaleSettingsPanel({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail ?? "Save failed");
+      if (!res.ok) throw new Error(data?.detail ?? ws.locale.saveFailed);
       onUpdated({
         ...org,
         ...(data.data ?? {}),
@@ -391,14 +392,14 @@ function LocaleSettingsPanel({
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
       <div>
-        <h2 className="text-sm font-semibold">Locale &amp; Regional Packs</h2>
+        <h2 className="text-sm font-semibold">{ws.locale.title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Currency, language, and country packs (e.g. Turkey SMMM / e-Fatura).
+          {ws.locale.subtitle}
         </p>
       </div>
       <form onSubmit={handleSave} className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label htmlFor="org-locale" className="mb-1 block text-xs font-medium">Locale</label>
+          <label htmlFor="org-locale" className="mb-1 block text-xs font-medium">{ws.locale.localeLabel}</label>
           <select
             id="org-locale"
             value={locale}
@@ -407,12 +408,12 @@ function LocaleSettingsPanel({
             className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
           >
             {LOCALE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o} value={o}>{ws.localeOptions[o]}</option>
             ))}
           </select>
         </div>
         <div>
-          <label htmlFor="org-currency" className="mb-1 block text-xs font-medium">Base currency</label>
+          <label htmlFor="org-currency" className="mb-1 block text-xs font-medium">{ws.locale.currencyLabel}</label>
           <select
             id="org-currency"
             value={currency}
@@ -426,7 +427,7 @@ function LocaleSettingsPanel({
           </select>
         </div>
         <div>
-          <label htmlFor="org-country" className="mb-1 block text-xs font-medium">Country</label>
+          <label htmlFor="org-country" className="mb-1 block text-xs font-medium">{ws.locale.countryLabel}</label>
           <select
             id="org-country"
             value={country}
@@ -435,7 +436,7 @@ function LocaleSettingsPanel({
             className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
           >
             {COUNTRY_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o} value={o}>{ws.countries[o]}</option>
             ))}
           </select>
         </div>
@@ -459,9 +460,9 @@ function LocaleSettingsPanel({
             />
           </div>
           <div>
-            <p className="text-sm font-medium">Turkey regional pack</p>
+            <p className="text-sm font-medium">{ws.locale.trPackTitle}</p>
             <p className="text-[10px] text-muted-foreground">
-              Enables THP CoA, SMMM approval queue, and e-Fatura flows.
+              {ws.locale.trPackBody}
             </p>
           </div>
         </label>
@@ -473,16 +474,16 @@ function LocaleSettingsPanel({
               className="flex items-center gap-1.5 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-              Save locale
+              {ws.locale.save}
             </button>
             {saveMsg === "ok" && (
               <span className="flex items-center gap-1 text-xs text-emerald-400">
                 <Check className="h-3 w-3" aria-hidden="true" />
-                Saved
+                {ws.locale.saved}
               </span>
             )}
             {saveMsg === "err" && (
-              <span className="text-xs text-destructive">Save failed.</span>
+              <span className="text-xs text-destructive">{ws.locale.saveFailed}</span>
             )}
           </div>
         )}
@@ -492,6 +493,8 @@ function LocaleSettingsPanel({
 }
 
 function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
+  const { t } = useI18n();
+  const ws = t.settingsWorkspace;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -500,9 +503,13 @@ function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
     setMsg(null);
     try {
       const snap = await rebuildSemantic();
-      setMsg(`Rebuilt ${snap.metrics.length} metrics for ${snap.period.key}.`);
+      setMsg(
+        ws.semantic.rebuilt
+          .replace("{count}", String(snap.metrics.length))
+          .replace("{period}", snap.period.key)
+      );
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Rebuild failed");
+      setMsg(err instanceof Error ? err.message : ws.semantic.rebuildFailed);
     } finally {
       setBusy(false);
     }
@@ -510,9 +517,9 @@ function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium">Semantic company model</h2>
+      <h2 className="text-sm font-medium">{ws.semantic.title}</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Reproject canonical metrics and decision brief from agent results + transactions.
+        {ws.semantic.subtitle}
       </p>
       <button
         type="button"
@@ -521,7 +528,7 @@ function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
         className="mt-3 inline-flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
       >
         {busy && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
-        Rebuild semantic model
+        {ws.semantic.rebuild}
       </button>
       {msg && <p className="mt-2 text-xs text-muted-foreground">{msg}</p>}
     </div>
@@ -531,6 +538,9 @@ function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function WorkspaceSettingsPage() {
+  const { t, locale } = useI18n();
+  const ws = t.settingsWorkspace;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const { data: session } = useSession();
   const accessToken = (session as { accessToken?: string } | null)?.accessToken;
 
@@ -566,7 +576,7 @@ export default function WorkspaceSettingsPage() {
       ]);
 
       if (orgRes.status === 400) {
-        setError("Henüz bir workspace'e üye değilsiniz.");
+        setError(ws.errors.noWorkspace);
         setLoaded(true);
         return;
       }
@@ -582,7 +592,7 @@ export default function WorkspaceSettingsPage() {
       setInvites(invitesData.data ?? []);
       setLoaded(true);
     } catch {
-      setError("Veriler yüklenirken hata oluştu.");
+      setError(ws.errors.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -603,7 +613,7 @@ export default function WorkspaceSettingsPage() {
         body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail ?? "Davet gönderilemedi.");
+      if (!res.ok) throw new Error(data?.detail ?? ws.errors.inviteFailed);
 
       // Add to invites list
       setInvites((prev) => [
@@ -627,7 +637,7 @@ export default function WorkspaceSettingsPage() {
 
       setInviteEmail("");
     } catch (err) {
-      setInviteError(err instanceof Error ? err.message : "Hata oluştu.");
+      setInviteError(err instanceof Error ? err.message : ws.errors.generic);
     } finally {
       setInviting(false);
     }
@@ -654,9 +664,9 @@ export default function WorkspaceSettingsPage() {
   return (
     <div className="space-y-6 p-5 max-w-2xl">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">Workspace Ayarları</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{ws.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Organizasyonunuzu ve üyelerinizi yönetin
+          {ws.subtitle}
         </p>
       </div>
 
@@ -664,17 +674,17 @@ export default function WorkspaceSettingsPage() {
       {loading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Yükleniyor…
+          {ws.loading}
         </div>
       )}
 
       {error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">
           {error}
-          {error.includes("workspace") && (
+          {error === ws.errors.noWorkspace && (
             <div className="mt-2">
               <a href="/settings/workspace/create" className="text-primary underline">
-                Workspace oluşturun →
+                {ws.createWorkspace}
               </a>
             </div>
           )}
@@ -692,9 +702,10 @@ export default function WorkspaceSettingsPage() {
               <p className="font-semibold">{org.name}</p>
               <p className="text-xs text-muted-foreground">/{org.slug}</p>
               <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                <span className="rounded bg-muted px-2 py-0.5 capitalize">{org.plan} plan</span>
-                <span>{org.member_count} / {org.max_members} üye</span>
+                <span className="rounded bg-muted px-2 py-0.5 capitalize">{ws.planBadge.replace("{plan}", org.plan)}</span>
+                <span>{ws.memberCount.replace("{count}", String(org.member_count)).replace("{max}", String(org.max_members))}</span>
                 {org.locale && (
+                  // i18n-exempt: backend data values (org locale tag + ISO currency code)
                   <span className="rounded bg-muted px-2 py-0.5">{org.locale} · {org.base_currency ?? "USD"}</span>
                 )}
               </div>
@@ -722,7 +733,7 @@ export default function WorkspaceSettingsPage() {
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-medium">
               <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              Üyeler ({members.length})
+              {ws.members.title.replace("{count}", String(members.length))}
             </h2>
           </div>
           <div className="divide-y divide-border/50">
@@ -740,7 +751,7 @@ export default function WorkspaceSettingsPage() {
                   <button
                     onClick={() => removeMember(m.user_id)}
                     className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
-                    aria-label={`${m.email} kişisini çıkar`}
+                    aria-label={ws.members.removeAria.replace("{email}", m.email)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -748,7 +759,7 @@ export default function WorkspaceSettingsPage() {
               </div>
             ))}
             {!members.length && (
-              <p className="px-4 py-3 text-sm text-muted-foreground">Henüz üye yok.</p>
+              <p className="px-4 py-3 text-sm text-muted-foreground">{ws.members.empty}</p>
             )}
           </div>
         </div>
@@ -759,7 +770,7 @@ export default function WorkspaceSettingsPage() {
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
             <UserPlus className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            Üye Davet Et
+            {ws.invite.title}
           </h2>
 
           {inviteError && (
@@ -774,7 +785,7 @@ export default function WorkspaceSettingsPage() {
               required
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="kullanici@sirket.com"
+              placeholder={ws.invite.placeholder}
               className={cn(
                 "h-8 flex-1 rounded-md border border-border bg-background px-3 text-sm",
                 "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -785,9 +796,9 @@ export default function WorkspaceSettingsPage() {
               onChange={(e) => setInviteRole(e.target.value)}
               className="h-8 rounded-md border border-border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <option value="analyst">Analyst</option>
-              <option value="viewer">Viewer</option>
-              <option value="admin">Admin</option>
+              <option value="analyst">{ws.roles.analyst}</option>
+              <option value="viewer">{ws.roles.viewer}</option>
+              <option value="admin">{ws.roles.admin}</option>
             </select>
             <button
               type="submit"
@@ -798,12 +809,12 @@ export default function WorkspaceSettingsPage() {
               )}
             >
               {inviting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
-              Davet Et
+              {ws.invite.button}
             </button>
           </form>
 
           <p className="mt-2 text-xs text-muted-foreground">
-            Davet bağlantısı otomatik olarak panonuza kopyalanır.
+            {ws.invite.hint}
           </p>
         </div>
       )}
@@ -812,7 +823,7 @@ export default function WorkspaceSettingsPage() {
       {isAdmin && invites.length > 0 && (
         <div className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Bekleyen Davetler ({invites.length})</h2>
+            <h2 className="text-sm font-medium">{ws.pendingInvites.title.replace("{count}", String(invites.length))}</h2>
           </div>
           <div className="divide-y divide-border/50">
             {invites.map((inv) => (
@@ -821,7 +832,9 @@ export default function WorkspaceSettingsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="truncate text-sm">{inv.email}</p>
                   <p className="text-xs text-muted-foreground">
-                    {inv.role} · {new Date(inv.expires_at).toLocaleDateString("tr-TR")} tarihine kadar
+                    {ws.pendingInvites.expiresAt
+                      .replace("{role}", roleLabel(inv.role, ws.roles))
+                      .replace("{date}", new Date(inv.expires_at).toLocaleDateString(dateTag))}
                   </p>
                 </div>
                 <button
@@ -832,7 +845,7 @@ export default function WorkspaceSettingsPage() {
                     setTimeout(() => setCopiedToken(null), 2000);
                   }}
                   className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-                  aria-label="Bağlantıyı kopyala"
+                  aria-label={ws.pendingInvites.copyAria}
                 >
                   {copiedToken === inv.invite_id ? (
                     <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -843,7 +856,7 @@ export default function WorkspaceSettingsPage() {
                 <button
                   onClick={() => cancelInvite(inv.invite_id)}
                   className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
-                  aria-label="Daveti iptal et"
+                  aria-label={ws.pendingInvites.cancelAria}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>

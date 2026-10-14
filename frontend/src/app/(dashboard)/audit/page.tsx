@@ -13,9 +13,9 @@ import {
 } from "recharts";
 import { apiClient } from "@/lib/api/client";
 import {
-  formatDateTR, formatPercent, getSeverityColorClass, daysBetween,
-  generateHeatmapData, valueToColor,
+  formatDateTR, getSeverityColorClass, valueToColor,
 } from "@/lib/dashboard-utils";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -106,9 +106,11 @@ interface HeatmapProps {
   controls: Control[];
 }
 
-const CONTROL_TYPES = ["Design", "Operating"] as const;
+const CONTROL_TYPES = ["design", "operating"] as const;
 
 function ControlHeatmap({ controls }: HeatmapProps) {
+  const { t } = useI18n();
+  const heat = t.audit.heatmap;
   const categories = Array.from(new Set(controls.map((c) => c.category)));
 
   const cells = useMemo(() => {
@@ -117,7 +119,7 @@ function ControlHeatmap({ controls }: HeatmapProps) {
       CONTROL_TYPES.forEach((type, j) => {
         const catControls = controls.filter((c) => c.category === cat);
         const avg =
-          type === "Design"
+          type === "design"
             ? catControls.reduce((sum, c) => sum + c.design_effectiveness, 0) /
               catControls.length
             : catControls.reduce((sum, c) => sum + c.operating_effectiveness, 0) /
@@ -138,13 +140,13 @@ function ControlHeatmap({ controls }: HeatmapProps) {
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <Shield className="h-4 w-4" />
-        Kontrol Etkinliği Heatmap (IIA Maturity)
+        {heat.title}
       </h3>
       <div className="overflow-x-auto">
         <div className="min-w-[300px] grid gap-1 p-2" style={{ gridTemplateColumns: `60px repeat(${CONTROL_TYPES.length}, 1fr)` }}>
           <div className="text-xs font-medium text-muted-foreground" />
           {CONTROL_TYPES.map((type) => (
-            <div key={type} className="text-xs font-medium text-center">{type}</div>
+            <div key={type} className="text-xs font-medium text-center">{heat.types[type]}</div>
           ))}
           {categories.map((cat) => (
             <>
@@ -152,14 +154,18 @@ function ControlHeatmap({ controls }: HeatmapProps) {
               {CONTROL_TYPES.map((type) => {
                 const cell = cells.find((c) => c.category === cat && c.type === type);
                 const color = valueToColor(cell?.value ?? 0);
+                const pct = fmt((cell?.value ?? 0) * 100, 0);
                 return (
                   <div
                     key={`${cat}-${type}`}
                     className="rounded p-2 text-center text-xs font-semibold text-white"
                     style={{ backgroundColor: color }}
-                    title={`${cat} - ${type}: ${fmt((cell?.value ?? 0) * 100, 0)}%`}
+                    title={heat.cellTooltip
+                      .replace("{category}", cat)
+                      .replace("{type}", heat.types[type])
+                      .replace("{pct}", pct)}
                   >
-                    {fmt((cell?.value ?? 0) * 100, 0)}%
+                    {heat.cellValue.replace("{pct}", pct)}
                   </div>
                 );
               })}
@@ -174,20 +180,26 @@ function ControlHeatmap({ controls }: HeatmapProps) {
 // ── Repeat Findings Trend Chart ───────────────────────────────────────────────
 
 function RepeatFindingsTrend() {
+  const { t, locale } = useI18n();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+  // Sample demo series; month axis labels are locale-bound dates.
   const data = [
-    { month: "Jan", repeat: 8, new: 12 },
-    { month: "Feb", repeat: 5, new: 10 },
-    { month: "Mar", repeat: 7, new: 9 },
-    { month: "Apr", repeat: 4, new: 11 },
-    { month: "May", repeat: 3, new: 8 },
-    { month: "Jun", repeat: 2, new: 6 },
-  ];
+    { repeat: 8, new: 12 },
+    { repeat: 5, new: 10 },
+    { repeat: 7, new: 9 },
+    { repeat: 4, new: 11 },
+    { repeat: 3, new: 8 },
+    { repeat: 2, new: 6 },
+  ].map((d, i) => ({
+    month: new Date(2024, i, 1).toLocaleDateString(dateTag, { month: "short" }),
+    ...d,
+  }));
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <TrendingUp className="h-4 w-4" />
-        Tekrarlayan Bulgular Trendi
+        {t.audit.trend.title}
       </h3>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={data}>
@@ -196,8 +208,8 @@ function RepeatFindingsTrend() {
           <YAxis stroke="currentColor" opacity={0.5} />
           <Tooltip contentStyle={{ backgroundColor: "transparent", border: "none" }} />
           <Legend />
-          <Line type="monotone" dataKey="repeat" stroke="#ef4444" strokeWidth={2} name="Tekrarlayan" />
-          <Line type="monotone" dataKey="new" stroke="#3b82f6" strokeWidth={2} name="Yeni" />
+          <Line type="monotone" dataKey="repeat" stroke="#ef4444" strokeWidth={2} name={t.audit.trend.repeat} />
+          <Line type="monotone" dataKey="new" stroke="#3b82f6" strokeWidth={2} name={t.audit.trend.newFindings} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -206,13 +218,16 @@ function RepeatFindingsTrend() {
 
 // ── Risk-Based Audit Plan (Gantt-style) ───────────────────────────────────────
 
+type GanttTaskNameKey = "it" | "finance" | "hr" | "vendor" | "security";
+
 function AuditPlanGantt() {
-  const tasks: Array<{ id: number; name: string; start: number; duration: number; risk: "high" | "medium" | "low" }> = [
-    { id: 1, name: "IT Altyapısı", start: 0, duration: 15, risk: "high" },
-    { id: 2, name: "Finansal Kontroller", start: 16, duration: 20, risk: "medium" },
-    { id: 3, name: "İK Operasyonları", start: 37, duration: 18, risk: "low" },
-    { id: 4, name: "Satıcı Yönetimi", start: 10, duration: 25, risk: "high" },
-    { id: 5, name: "Bilgi Güvenliği", start: 28, duration: 22, risk: "high" },
+  const { t } = useI18n();
+  const tasks: Array<{ id: number; nameKey: GanttTaskNameKey; start: number; duration: number; risk: "high" | "medium" | "low" }> = [
+    { id: 1, nameKey: "it", start: 0, duration: 15, risk: "high" },
+    { id: 2, nameKey: "finance", start: 16, duration: 20, risk: "medium" },
+    { id: 3, nameKey: "hr", start: 37, duration: 18, risk: "low" },
+    { id: 4, nameKey: "vendor", start: 10, duration: 25, risk: "high" },
+    { id: 5, nameKey: "security", start: 28, duration: 22, risk: "high" },
   ];
 
   const riskColors: Record<"high" | "medium" | "low", string> = {
@@ -225,18 +240,18 @@ function AuditPlanGantt() {
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <Calendar className="h-4 w-4" />
-        90 Günlük Denetim Planı
+        {t.audit.gantt.title}
       </h3>
       <div className="space-y-3">
         {tasks.map((task) => (
           <div key={task.id}>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium">{task.name}</span>
+              <span className="text-xs font-medium">{t.audit.gantt.tasks[task.nameKey]}</span>
               <span
                 className="text-xs px-2 py-0.5 rounded font-medium text-white"
                 style={{ backgroundColor: riskColors[task.risk] }}
               >
-                {task.risk.toUpperCase()}
+                {t.audit.gantt.riskLevels[task.risk].toUpperCase()}
               </span>
             </div>
             <div className="w-full bg-muted rounded h-6 relative overflow-hidden">
@@ -254,7 +269,12 @@ function AuditPlanGantt() {
           </div>
         ))}
       </div>
-      <div className="mt-4 text-xs text-muted-foreground">Toplam: 90 gün | Paralel: 5 denetim | Kapsamlılık: 98%</div>
+      <div className="mt-4 text-xs text-muted-foreground">
+        {t.audit.gantt.footer
+          .replace("{days}", "90")
+          .replace("{count}", "5")
+          .replace("{coverage}", "98")}
+      </div>
     </div>
   );
 }
@@ -267,6 +287,9 @@ interface FindingModalProps {
 }
 
 function FindingModal({ finding, onClose }: FindingModalProps) {
+  const { t, locale } = useI18n();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+
   if (!finding) return null;
 
   return (
@@ -282,35 +305,37 @@ function FindingModal({ finding, onClose }: FindingModalProps) {
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-xs text-muted-foreground">Önem Derecesi</p>
+              <p className="text-xs text-muted-foreground">{t.audit.modal.severity}</p>
               <p className={`text-sm font-semibold ${scoreColor(finding.severity === "critical" ? 100 : 50)}`}>
                 {finding.severity.toUpperCase()}
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Durum</p>
+              <p className="text-xs text-muted-foreground">{t.audit.modal.status}</p>
               <p className="text-sm font-semibold">{finding.status.toUpperCase()}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Kategori</p>
+              <p className="text-xs text-muted-foreground">{t.audit.modal.category}</p>
               <p className="text-sm">{finding.category.replace(/_/g, " ")}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Sahip</p>
+              <p className="text-xs text-muted-foreground">{t.audit.modal.owner}</p>
               <p className="text-sm">{finding.owner}</p>
             </div>
           </div>
 
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Bitiş Tarihi</p>
-            <p className="text-sm font-mono">{formatDateTR(finding.due_date)}</p>
+            <p className="text-xs text-muted-foreground mb-1">{t.audit.modal.dueDate}</p>
+            <p className="text-sm font-mono">{formatDateTR(finding.due_date, dateTag)}</p>
             {finding.days_overdue && finding.days_overdue > 0 && (
-              <p className="text-xs text-red-400 mt-1">⚠️ {finding.days_overdue} gün gecikmiş</p>
+              <p className="text-xs text-red-400 mt-1">
+                ⚠️ {t.audit.modal.daysLate.replace("{count}", String(finding.days_overdue))}
+              </p>
             )}
           </div>
 
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Düzeltme Durumu</p>
+            <p className="text-xs text-muted-foreground mb-1">{t.audit.modal.remediationStatus}</p>
             <p className="text-sm capitalize">{finding.remediation_status.replace(/_/g, " ")}</p>
           </div>
         </div>
@@ -319,7 +344,7 @@ function FindingModal({ finding, onClose }: FindingModalProps) {
           onClick={onClose}
           className="mt-6 w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
-          Kapat
+          {t.audit.modal.close}
         </button>
       </div>
     </div>
@@ -329,6 +354,8 @@ function FindingModal({ finding, onClose }: FindingModalProps) {
 // ── Main Page (Part 1) ───────────────────────────────────────────────────────
 
 export default function AuditDashboardEnhancedPage() {
+  const { t, locale } = useI18n();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const [findingsCsv, setFindingsCsv] = useState("");
   const [controlsCsv, setControlsCsv] = useState("");
   const [coverageCsv, setCoverageCsv] = useState("");
@@ -343,7 +370,7 @@ export default function AuditDashboardEnhancedPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!findingsCsv && !controlsCsv && !coverageCsv) {
-      setError("En az bir veri kaynağı (bulgular, kontroller veya kapsam CSV) gereklidir.");
+      setError(t.audit.validationError);
       return;
     }
     setLoading(true);
@@ -359,7 +386,7 @@ export default function AuditDashboardEnhancedPage() {
       if (res.data.error) throw new Error(res.data.error);
       setResult(res.data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Bilinmeyen hata");
+      setError(err instanceof Error ? err.message : t.audit.unknownError);
     } finally {
       setLoading(false);
     }
@@ -386,9 +413,9 @@ export default function AuditDashboardEnhancedPage() {
       <div className="flex items-center gap-3">
         <FileSearch className="h-6 w-6 text-primary" />
         <div>
-          <h1 className="text-2xl font-bold">İç Denetim Panosu</h1>
+          <h1 className="text-2xl font-bold">{t.audit.title}</h1>
           <p className="text-sm text-muted-foreground">
-            Bulgular takibi, kontrol etkinliği ve denetim kapsama analizi
+            {t.audit.subtitle}
           </p>
         </div>
       </div>
@@ -397,7 +424,7 @@ export default function AuditDashboardEnhancedPage() {
       <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="audit-company" className="mb-1 block text-xs font-medium">Şirket Adı</label>
+            <label htmlFor="audit-company" className="mb-1 block text-xs font-medium">{t.audit.form.company}</label>
             <input
               id="audit-company"
               type="text"
@@ -408,7 +435,7 @@ export default function AuditDashboardEnhancedPage() {
             />
           </div>
           <div>
-            <label htmlFor="audit-period" className="mb-1 block text-xs font-medium">Denetim Dönemi</label>
+            <label htmlFor="audit-period" className="mb-1 block text-xs font-medium">{t.audit.form.period}</label>
             <input
               id="audit-period"
               type="text"
@@ -422,9 +449,9 @@ export default function AuditDashboardEnhancedPage() {
 
         <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           {[
-            { label: "Bulgular CSV", value: findingsCsv, set: setFindingsCsv, id: "audit-findings" },
-            { label: "Kontroller CSV", value: controlsCsv, set: setControlsCsv, id: "audit-controls" },
-            { label: "Kapsam CSV", value: coverageCsv, set: setCoverageCsv, id: "audit-coverage" },
+            { label: t.audit.form.findingsCsv, value: findingsCsv, set: setFindingsCsv, id: "audit-findings" },
+            { label: t.audit.form.controlsCsv, value: controlsCsv, set: setControlsCsv, id: "audit-controls" },
+            { label: t.audit.form.coverageCsv, value: coverageCsv, set: setCoverageCsv, id: "audit-coverage" },
           ].map(({ label, value, set, id }) => (
             <div key={id}>
               <label htmlFor={id} className="mb-1 block text-xs font-medium">{label}</label>
@@ -432,7 +459,7 @@ export default function AuditDashboardEnhancedPage() {
                 id={id}
                 value={value}
                 onChange={(e) => set(e.target.value)}
-                placeholder="CSV verisi yapıştırın..."
+                placeholder={t.audit.form.csvPlaceholder}
                 rows={6}
                 className="w-full rounded border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
               />
@@ -452,7 +479,7 @@ export default function AuditDashboardEnhancedPage() {
             disabled={loading}
             className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
-            {loading ? "Analiz yapılıyor…" : "Denetimi Çalıştır"}
+            {loading ? t.audit.analyzing : t.audit.run}
           </button>
           <button
             type="button"
@@ -463,7 +490,7 @@ export default function AuditDashboardEnhancedPage() {
             }}
             className="rounded border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
           >
-            Örnek Veri Yükle
+            {t.audit.loadSample}
           </button>
         </div>
       </form>
@@ -484,17 +511,17 @@ export default function AuditDashboardEnhancedPage() {
               <div className="rounded-lg border border-border bg-card p-4">
                 <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
                   <BarChart2 className="h-4 w-4" />
-                  Denetim Özeti
+                  {t.audit.summary.heading}
                 </h3>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Genel Puan</span>
+                    <span className="text-xs text-muted-foreground">{t.audit.summary.overallScore}</span>
                     <span className={`text-lg font-bold ${scoreColor(result.audit_summary.overall_audit_score * 10)}`}>
                       {fmt(result.audit_summary.overall_audit_score)}/10
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Olgunluk</span>
+                    <span className="text-xs text-muted-foreground">{t.audit.summary.maturity}</span>
                     <span className="text-sm font-semibold capitalize">{result.audit_summary.audit_maturity.replace(/_/g, " ")}</span>
                   </div>
                 </div>
@@ -508,7 +535,7 @@ export default function AuditDashboardEnhancedPage() {
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" />
-                  En Önemli Bulgular ({topFindings.length})
+                  {t.audit.topFindings.replace("{count}", String(topFindings.length))}
                 </h3>
                 <div className="flex items-center gap-2">
                   <select
@@ -516,9 +543,9 @@ export default function AuditDashboardEnhancedPage() {
                     onChange={(e) => setSortBy(e.target.value as any)}
                     className="rounded border border-input bg-background px-2 py-1 text-xs"
                   >
-                    <option value="severity">Önem Derecesi</option>
-                    <option value="due_date">Bitiş Tarihi</option>
-                    <option value="days_overdue">Gecikme</option>
+                    <option value="severity">{t.audit.sort.severity}</option>
+                    <option value="due_date">{t.audit.sort.dueDate}</option>
+                    <option value="days_overdue">{t.audit.sort.overdue}</option>
                   </select>
                 </div>
               </div>
@@ -538,7 +565,7 @@ export default function AuditDashboardEnhancedPage() {
                             {f.severity.toUpperCase()}
                           </span>
                           <span className="text-xs text-muted-foreground">{f.owner}</span>
-                          <span className="text-xs text-muted-foreground">{formatDateTR(f.due_date)}</span>
+                          <span className="text-xs text-muted-foreground">{formatDateTR(f.due_date, dateTag)}</span>
                         </div>
                       </div>
                       <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-1" />
@@ -551,7 +578,7 @@ export default function AuditDashboardEnhancedPage() {
 
           {result.error && (
             <div role="alert" className="rounded border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-400">
-              Pipeline hatası: {result.error}
+              {t.audit.pipelineError} {result.error}
             </div>
           )}
         </div>

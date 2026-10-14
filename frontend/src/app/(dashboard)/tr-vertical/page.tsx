@@ -8,12 +8,15 @@ import {
   Play, CheckCircle2, AlertTriangle, ShieldAlert, FileText, Loader2,
   ArrowRight, TrendingUp, TrendingDown, Landmark, Download,
 } from "lucide-react";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfidenceBreakdown } from "@/components/ui/confidence-breakdown";
 import { DefensibilityPacketCard } from "@/components/smmm/DefensibilityPacketCard";
 import { EDefterCard } from "@/components/smmm/EDefterCard";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import type { MessageTree } from "@/lib/i18n";
 import { listJobs, type JobSummary } from "@/lib/api/cfo";
 import {
   runTrVertical, downloadTrBoardDeck, hasApprovedJournal,
@@ -23,16 +26,20 @@ import {
 const STAGES: Array<TrVerticalResult["stage"]> = [
   "cfo", "accounting", "board_deck", "done",
 ];
-const STAGE_LABEL: Record<string, string> = {
-  ingest: "Veri Alımı",
-  cfo: "CFO Analizi",
-  accounting: "TR Muhasebe (THP)",
-  board_deck: "Yönetim Kurulu Sunumu",
-  done: "Tamamlandı",
+
+// Backend stage keys → message-tree keys.
+const STAGE_KEY: Record<string, keyof MessageTree["trVertical"]["stages"]> = {
+  ingest: "ingest",
+  cfo: "cfo",
+  accounting: "accounting",
+  board_deck: "boardDeck",
+  done: "done",
 };
 
 function StageTrack({ current }: { current: TrVerticalResult["stage"] }) {
   const idx = STAGES.indexOf(current);
+  const { t } = useI18n();
+  const stages = t.trVertical.stages;
   return (
     <div className="flex items-center gap-2 text-xs">
       {STAGES.map((s, i) => (
@@ -45,7 +52,7 @@ function StageTrack({ current }: { current: TrVerticalResult["stage"] }) {
               i > idx && "border-border text-muted-foreground",
             )}
           >
-            {STAGE_LABEL[s]}
+            {stages[STAGE_KEY[s]]}
           </span>
           {i < STAGES.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
         </div>
@@ -55,17 +62,16 @@ function StageTrack({ current }: { current: TrVerticalResult["stage"] }) {
 }
 
 function ApprovalGate({ result }: { result: TrVerticalResult }) {
+  const { t } = useI18n();
+  const approval = t.trVertical.approval;
   if (!result.approval_required) {
     return (
       <Card className="border-emerald-500/30 bg-emerald-500/5 p-4">
         <div className="flex items-center gap-2 text-emerald-400 font-medium">
           <CheckCircle2 className="h-5 w-5" />
-          Onay gerekmiyor — otomatik ilerleyebilir
+          {approval.autoOk}
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          CFO analizi, mutabakat ve yevmiye kayıtları tutarlı. Yine de nihai kararı
-          insan onaylar.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{approval.autoOkBody}</p>
       </Card>
     );
   }
@@ -73,7 +79,7 @@ function ApprovalGate({ result }: { result: TrVerticalResult }) {
     <Card className="border-amber-500/40 bg-amber-500/5 p-4">
       <div className="flex items-center gap-2 text-amber-400 font-medium">
         <ShieldAlert className="h-5 w-5" />
-        İnsan onayı bekleniyor
+        {approval.waiting}
       </div>
       <ul className="mt-2 space-y-1 text-sm">
         {result.approval_reasons.map((r, i) => (
@@ -87,22 +93,25 @@ function ApprovalGate({ result }: { result: TrVerticalResult }) {
         href="/smmm-onay"
         className="mt-3 inline-flex items-center gap-1 text-sm text-primary hover:underline"
       >
-        SMMM onay kuyruğuna git <ArrowRight className="h-3.5 w-3.5" />
+        {approval.queueLink} <ArrowRight className="h-3.5 w-3.5" />
       </Link>
     </Card>
   );
 }
 
 function PnlSnapshot({ result }: { result: TrVerticalResult }) {
+  const { t } = useI18n();
+  const fmt = useCurrencyFormat();
+  const pnlSnapshot = t.trVertical.pnl;
   const pnl = result.cfo.pnl;
   if (!pnl) return null;
   const net = (pnl.net_income ?? 0) / 100;
   const positive = net >= 0;
   const items = [
-    { label: "Gelir", value: (pnl.revenue ?? 0) / 100 },
-    { label: "Brüt Kâr", value: (pnl.gross_profit ?? 0) / 100 },
-    { label: "FAVÖK", value: (pnl.ebitda ?? 0) / 100 },
-    { label: "Net Kâr / Zarar", value: net, accent: true },
+    { label: pnlSnapshot.revenue, value: (pnl.revenue ?? 0) / 100 },
+    { label: pnlSnapshot.grossProfit, value: (pnl.gross_profit ?? 0) / 100 },
+    { label: pnlSnapshot.ebitda, value: (pnl.ebitda ?? 0) / 100 },
+    { label: pnlSnapshot.netProfit, value: net, accent: true },
   ];
   return (
     <Card className="p-4">
@@ -112,9 +121,9 @@ function PnlSnapshot({ result }: { result: TrVerticalResult }) {
         ) : (
           <TrendingDown className="h-4 w-4 text-red-400" />
         )}
-        CFO Özeti
+        {pnlSnapshot.summary}
         <span className="text-muted-foreground">
-          · {result.cfo.transaction_count ?? 0} işlem
+          · {pnlSnapshot.transactions.replace("{count}", String(result.cfo.transaction_count ?? 0))}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -127,15 +136,16 @@ function PnlSnapshot({ result }: { result: TrVerticalResult }) {
                 it.accent && (positive ? "text-emerald-400" : "text-red-400"),
               )}
             >
-              {formatCurrency(it.value)}
+              {fmt(it.value)}
             </div>
           </div>
         ))}
       </div>
       {typeof pnl.net_margin === "number" && (
         <div className="mt-2 text-xs text-muted-foreground">
-          Net marj: %{(pnl.net_margin * 100).toFixed(1)} · min. güven:{" "}
-          {((result.cfo.min_confidence ?? 0) * 100).toFixed(0)}%
+          {pnlSnapshot.marginLine
+            .replace("{margin}", (pnl.net_margin * 100).toFixed(1))
+            .replace("{confidence}", ((result.cfo.min_confidence ?? 0) * 100).toFixed(0))}
         </div>
       )}
     </Card>
@@ -145,6 +155,8 @@ function PnlSnapshot({ result }: { result: TrVerticalResult }) {
 function BoardDeckCard({ jobId, donem, sizeKb }: { jobId: string; donem: string; sizeKb: number }) {
   const [downloading, setDownloading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { t } = useI18n();
+  const deck = t.trVertical.deck;
 
   const download = useCallback(async () => {
     setDownloading(true);
@@ -154,21 +166,24 @@ function BoardDeckCard({ jobId, donem, sizeKb }: { jobId: string; donem: string;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
+      // i18n-exempt: download file name, not user-facing UI copy
       a.download = `yonetim-kurulu-${donem || jobId}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      setErr("PDF indirilemedi.");
+      setErr(deck.downloadError);
     } finally {
       setDownloading(false);
     }
-  }, [jobId, donem]);
+  }, [jobId, donem, deck]);
 
   return (
     <Card className="flex flex-wrap items-center gap-3 p-4 text-sm">
       <FileText className="h-4 w-4 text-primary" />
-      Yönetim kurulu sunumu oluşturuldu
-      <span className="text-muted-foreground">({sizeKb.toFixed(1)} KB)</span>
+      {deck.ready}
+      <span className="text-muted-foreground">
+        {deck.size.replace("{size}", sizeKb.toFixed(1))}
+      </span>
       <Button
         onClick={download}
         disabled={downloading}
@@ -176,7 +191,7 @@ function BoardDeckCard({ jobId, donem, sizeKb }: { jobId: string; donem: string;
         className="ml-auto gap-2"
       >
         {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        İndir
+        {deck.download}
       </Button>
       {err && <span className="w-full text-red-400">{err}</span>}
     </Card>
@@ -184,32 +199,34 @@ function BoardDeckCard({ jobId, donem, sizeKb }: { jobId: string; donem: string;
 }
 
 function AccountingSummary({ result }: { result: TrVerticalResult }) {
+  const { t } = useI18n();
   const acc = result.accounting;
+  const summary = t.trVertical.accounting;
   if (!acc) return null;
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-        <Landmark className="h-4 w-4 text-primary" /> TR Muhasebe (THP)
+        <Landmark className="h-4 w-4 text-primary" /> {summary.title}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
         <div>
-          <div className="text-xs text-muted-foreground">İşlem</div>
+          <div className="text-xs text-muted-foreground">{summary.transactions}</div>
           <div className="font-semibold">{acc.islem_sayisi}</div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Yevmiye Kaydı</div>
+          <div className="text-xs text-muted-foreground">{summary.journalEntries}</div>
           <div className="font-semibold">{acc.kayit_sayisi}</div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Onay Bekleyen</div>
+          <div className="text-xs text-muted-foreground">{summary.pendingApproval}</div>
           <div className={cn("font-semibold", acc.onay_bekleyen > 0 && "text-amber-400")}>
             {acc.onay_bekleyen}
           </div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Denge</div>
+          <div className="text-xs text-muted-foreground">{summary.balance}</div>
           <div className={cn("font-semibold", acc.dengeli ? "text-emerald-400" : "text-red-400")}>
-            {acc.dengeli ? "Dengeli" : "Dengesiz"}
+            {acc.dengeli ? summary.balanced : summary.unbalanced}
           </div>
         </div>
       </div>
@@ -229,6 +246,10 @@ export default function TrVerticalPage() {
   // moment the user walked to the approval queue and came back. Ask the
   // server instead of relying on what this page happens to remember.
   const [journalReady, setJournalReady] = useState(false);
+
+  const { t, locale } = useI18n();
+  const tv = t.trVertical;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
 
   useEffect(() => {
     listJobs()
@@ -257,45 +278,42 @@ export default function TrVerticalPage() {
       setResult(resp.data);
       if (resp.error) setError(resp.error);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Bilinmeyen hata");
+      setError(e instanceof Error ? e.message : tv.unknownError);
     } finally {
       setRunning(false);
     }
-  }, [jobId, companyName]);
+  }, [jobId, companyName, tv]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-semibold">TR Muhasebe Otopilotu (L3)</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Yüklenen dosyayı tek geçişte CFO analizi → THP yevmiye kayıtları → yönetim
-          kurulu sunumu boyunca işler ve tek bir onay kapısında durur. Otomatik onay yok.
-        </p>
+        <h1 className="text-2xl font-semibold">{tv.title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{tv.subtitle}</p>
       </div>
 
       <Card className="space-y-3 p-4">
-        <label className="block text-sm font-medium">Tamamlanmış analiz işi</label>
+        <label className="block text-sm font-medium">{tv.jobLabel}</label>
         <select
           value={jobId}
           onChange={(e) => setJobId(e.target.value)}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
         >
-          {jobs.length === 0 && <option value="">Tamamlanmış iş yok</option>}
+          {jobs.length === 0 && <option value="">{tv.noJobs}</option>}
           {jobs.map((j) => (
             <option key={j.job_id} value={j.job_id}>
-              {j.filename} · {new Date(j.created_at).toLocaleDateString("tr-TR")}
+              {j.filename} · {new Date(j.created_at).toLocaleDateString(dateTag)}
             </option>
           ))}
         </select>
         <input
           value={companyName}
           onChange={(e) => setCompanyName(e.target.value)}
-          placeholder="Şirket adı (opsiyonel)"
+          placeholder={tv.companyPlaceholder}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
         />
         <Button onClick={run} disabled={!jobId || running} className="gap-2">
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          {running ? "Çalışıyor…" : "Otopilotu Başlat"}
+          {running ? tv.running : tv.start}
         </Button>
       </Card>
 
@@ -316,12 +334,14 @@ export default function TrVerticalPage() {
 
           {result.reconciliation && result.reconciliation.action !== "proceed" && (
             <Card className="border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-              <div className="font-medium text-amber-400">Mutabakat: {result.reconciliation.action}</div>
+              <div className="font-medium text-amber-400">
+                {tv.reconciliation.replace("{action}", result.reconciliation.action)}
+              </div>
               {result.reconciliation.identity_failures.map((f, i) => (
                 <div key={i}>• {f}</div>
               ))}
               {result.reconciliation.ungrounded_claims.map((f, i) => (
-                <div key={`u${i}`}>• dayanaksız: {f}</div>
+                <div key={`u${i}`}>• {tv.ungrounded}: {f}</div>
               ))}
             </Card>
           )}

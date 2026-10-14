@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { useActiveCFOJob } from "@/hooks/useCompanyContext";
-import { formatCurrency, cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -106,6 +108,9 @@ function cellColor(value: number, min: number, max: number, base: number): strin
 
 function SensitivityHeatmap({ result }: { result: MatrixResult }) {
   const [showMargin, setShowMargin] = useState(false);
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { heatmap } = t.sensitivity;
   const allVals = result.matrix.flat();
   const minVal = Math.min(...allVals);
   const maxVal = Math.max(...allVals);
@@ -114,9 +119,11 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Sensitivity Matrix</h3>
+          <h3 className="text-sm font-semibold">{heatmap.heading}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {result.row_label} (satırlar) × {result.col_label} (sütunlar)
+            {heatmap.subtitle
+              .replace("{row}", result.row_label)
+              .replace("{col}", result.col_label)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -124,7 +131,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
             onClick={() => setShowMargin((v) => !v)}
             className="rounded border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted transition-state"
           >
-            {showMargin ? "Net Gelir Göster" : "Marj % Göster"}
+            {showMargin ? heatmap.showNet : heatmap.showMargin}
           </button>
         </div>
       </div>
@@ -179,8 +186,8 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
                       )}
                       title={
                         showMargin
-                          ? `Marj: %${val.toFixed(1)}`
-                          : `Net gelir: ${formatCurrency(val)}`
+                          ? heatmap.marginTooltip.replace("{val}", val.toFixed(1))
+                          : heatmap.netTooltip.replace("{val}", fmt(val))
                       }
                     >
                       {showMargin
@@ -200,12 +207,12 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
 
       {/* Legend */}
       <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
-        <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-emerald-700/60" /> En yüksek</div>
-        <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-muted/40" /> Baz</div>
-        <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-700/60" /> En düşük</div>
+        <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-emerald-700/60" /> {heatmap.legendHigh}</div>
+        <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-muted/40" /> {heatmap.legendBase}</div>
+        <div className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-700/60" /> {heatmap.legendLow}</div>
         {result.base_net_income !== 0 && (
           <span className="ml-auto">
-            Baz net gelir: <strong className="text-foreground">{formatCurrency(result.base_net_income)}</strong>
+            {heatmap.baseNet} <strong className="text-foreground">{fmt(result.base_net_income)}</strong>
           </span>
         )}
       </div>
@@ -215,21 +222,21 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
         <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
           <div className="flex items-center gap-1.5 mb-1">
             <TrendingUp className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wide">En İyi Senaryo</span>
+            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wide">{heatmap.bestCase}</span>
           </div>
           <p className="text-xs text-muted-foreground">{result.best_case.label}</p>
           <p className="text-sm font-bold text-emerald-400 mt-0.5">
-            {formatCurrency(result.best_case.net_income)}
+            {fmt(result.best_case.net_income)}
           </p>
         </div>
         <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2.5">
           <div className="flex items-center gap-1.5 mb-1">
             <TrendingDown className="h-3.5 w-3.5 text-red-400" aria-hidden="true" />
-            <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wide">En Kötü Senaryo</span>
+            <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wide">{heatmap.worstCase}</span>
           </div>
           <p className="text-xs text-muted-foreground">{result.worst_case.label}</p>
           <p className="text-sm font-bold text-red-400 mt-0.5">
-            {formatCurrency(result.worst_case.net_income)}
+            {fmt(result.worst_case.net_income)}
           </p>
         </div>
       </div>
@@ -240,6 +247,10 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
 // ── 1D Chart component ────────────────────────────────────────────────────────
 
 function SingleVariableChart({ result }: { result: SingleResult }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { single } = t.sensitivity;
+
   const chartData = result.outcomes.map((o) => ({
     change: `${o.change_pct > 0 ? "+" : ""}${o.change_pct}%`,
     net_income: Math.round(o.net_income),
@@ -251,16 +262,18 @@ function SingleVariableChart({ result }: { result: SingleResult }) {
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h3 className="mb-1 text-sm font-semibold">{result.variable_label} Analizi</h3>
+      <h3 className="mb-1 text-sm font-semibold">
+        {single.heading.replace("{label}", result.variable_label)}
+      </h3>
       <p className="mb-4 text-xs text-muted-foreground">
-        Bu değişken değiştikçe net gelirin nasıl etkilendiği
+        {single.subtitle}
       </p>
 
       {hasBreakeven && (
         <div className="mb-3 flex items-center gap-2 rounded border border-warning/30 bg-warning/5 px-3 py-1.5">
           <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0" aria-hidden="true" />
           <p className="text-xs text-warning">
-            Başabaş noktası: <strong>%{result.breakeven_threshold?.toFixed(1)}</strong> değişimde net gelir sıfırlanır
+            {single.breakeven.replace("{threshold}", result.breakeven_threshold?.toFixed(1) ?? "")}
           </p>
         </div>
       )}
@@ -287,7 +300,7 @@ function SingleVariableChart({ result }: { result: SingleResult }) {
               borderRadius: "6px",
               fontSize: 12,
             }}
-            formatter={(value: number) => [formatCurrency(value), "Net Gelir"]}
+            formatter={(value: number) => [fmt(value), single.tooltip]}
           />
           <ReferenceLine y={0} stroke="currentColor" strokeOpacity={0.3} />
           <Bar
@@ -350,6 +363,8 @@ export default function SensitivityPage() {
   const urlJobId = searchParams.get("job");
   const contextJobId = useActiveCFOJob();
   const jobId = urlJobId ?? contextJobId;
+  const { t } = useI18n();
+  const s = t.sensitivity;
 
   const [rowVar, setRowVar] = useState("headcount_change_pct");
   const [colVar, setColVar] = useState("pricing_change_pct");
@@ -384,15 +399,15 @@ export default function SensitivityPage() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
         <FlaskConical className="mb-4 h-12 w-12 text-muted-foreground/30" aria-hidden="true" />
-        <h2 className="text-base font-semibold">Analiz Gerekli</h2>
+        <h2 className="text-base font-semibold">{s.noJob.heading}</h2>
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-          Sensitivity analizini çalıştırmak için önce bir CFO analizi yapın.
+          {s.noJob.body}
         </p>
         <a
           href="/upload"
           className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-state"
         >
-          Veri Yükle
+          {s.noJob.cta}
         </a>
       </div>
     );
@@ -406,9 +421,9 @@ export default function SensitivityPage() {
           <FlaskConical className="h-6 w-6 text-primary" aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">What-If Analizi</h1>
+          <h1 className="text-xl font-bold">{s.title}</h1>
           <p className="text-sm text-muted-foreground">
-            Değişkenler farklı seviyelerde olsaydı net geliriniz ne olurdu?
+            {s.subtitle}
           </p>
         </div>
       </div>
@@ -428,7 +443,7 @@ export default function SensitivityPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              {tab === "matrix" ? "2D Matrix" : "Tek Değişken"}
+              {tab === "matrix" ? s.tabs.matrix : s.tabs.single}
             </button>
           ))}
         </div>
@@ -436,7 +451,7 @@ export default function SensitivityPage() {
         {varsLoading ? (
           <div className="h-20 flex items-center gap-2 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
-            Değişkenler yükleniyor…
+            {s.varsLoading}
           </div>
         ) : variables && variables.length > 0 ? (
           <div className="space-y-4">
@@ -444,7 +459,7 @@ export default function SensitivityPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <VarSelect
                   id="row-var"
-                  label="Satır Değişkeni (Y ekseni)"
+                  label={s.labels.rowVar}
                   value={rowVar}
                   onChange={setRowVar}
                   variables={variables}
@@ -452,7 +467,7 @@ export default function SensitivityPage() {
                 />
                 <VarSelect
                   id="col-var"
-                  label="Sütun Değişkeni (X ekseni)"
+                  label={s.labels.colVar}
                   value={colVar}
                   onChange={setColVar}
                   variables={variables}
@@ -462,7 +477,7 @@ export default function SensitivityPage() {
             ) : (
               <VarSelect
                 id="single-var"
-                label="Analiz Edilecek Değişken"
+                label={s.labels.singleVar}
                 value={singleVar}
                 onChange={setSingleVar}
                 variables={variables}
@@ -479,22 +494,22 @@ export default function SensitivityPage() {
                 )}
               >
                 {(matrixMutation.isPending || singleMutation.isPending) ? (
-                  <><RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />Hesaplanıyor…</>
+                  <><RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />{s.calculating}</>
                 ) : (
-                  <><FlaskConical className="h-4 w-4" aria-hidden="true" />Analizi Çalıştır</>
+                  <><FlaskConical className="h-4 w-4" aria-hidden="true" />{s.run}</>
                 )}
               </button>
 
               {(matrixMutation.isError || singleMutation.isError) && (
                 <p className="text-xs text-destructive">
-                  Hata: CFO analizi önce çalıştırılmalı.
+                  {s.error}
                 </p>
               )}
             </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Sensitivity analizi için önce CFO analizi çalıştırın.
+            {s.needAnalysis}
           </p>
         )}
       </div>
@@ -511,12 +526,12 @@ export default function SensitivityPage() {
       {!matrixMutation.data && !singleMutation.data && (
         <div className="rounded-lg border border-dashed border-border bg-muted/10 p-6 text-center">
           <p className="text-sm text-muted-foreground">
-            Üstten değişkenlerinizi seçin ve <strong className="text-foreground">Analizi Çalıştır</strong>'a tıklayın.
+            {s.info.body.replace("{run}", s.run)}
           </p>
           <div className="mt-3 flex flex-wrap justify-center gap-3 text-xs text-muted-foreground/70">
-            <span>• Personel sayısı %20 azalırsa?</span>
-            <span>• Fiyatlar %10 artarsa?</span>
-            <span>• Faaliyet giderleri değişirse?</span>
+            <span>• {s.info.ex1}</span>
+            <span>• {s.info.ex2}</span>
+            <span>• {s.info.ex3}</span>
           </div>
         </div>
       )}
