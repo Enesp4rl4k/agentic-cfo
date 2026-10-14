@@ -242,6 +242,7 @@ export type MessageTree = {
           sprintCsv: string;
         };
         formHint: string;
+        fillWithSample: string;
         analyzing: string;
         runAnalysis: string;
         healthScoreHeading: string;
@@ -2154,6 +2155,7 @@ export const en: MessageTree = {
         },
         formHint:
           "Paste at least one data source. All fields are optional — agents skip missing inputs.",
+        fillWithSample: "Fill with sample data",
         analyzing: "Analyzing…",
         runAnalysis: "Run CTO Analysis",
         healthScoreHeading: "Technology health score",

@@ -348,6 +348,11 @@ async def _run_chained_agent(
         import uuid
 
         job_id = f"auto-{agent}-{uuid.uuid4().hex[:8]}"
+        # `ctx` was loaded when the chain started — seconds ago. Saving that
+        # copy here would revert every result persisted in between (context
+        # saves are whole-row read-modify-write; observed as lost cto/coo
+        # results during demo prefill). Reload before marking the active job.
+        ctx = await get_company_context(org_id, db)
         ctx.set_active_job(agent, job_id)
         await save_company_context(ctx, db)
 

@@ -246,6 +246,7 @@ export const tr: MessageTree = {
         },
         formHint:
           "En az bir veri kaynağı yapıştırın. Tüm alanlar isteğe bağlıdır — agentlar eksik girdileri atlar.",
+        fillWithSample: "Örnek veriyle doldur",
         analyzing: "Analiz yapılıyor…",
         runAnalysis: "CTO Analizini Başlat",
         healthScoreHeading: "Teknoloji sağlık puanı",
