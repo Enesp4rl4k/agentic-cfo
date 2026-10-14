@@ -1,3 +1,5 @@
+> ⚠️ **Bu dosya artık tarihsel kayıt.** Güncel plan: [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) (2026-10-11).
+
 # Differentiation Sprint Plan — RAG v2 · Conflict UI · Golden Path · TR Moat
 
 > **Horizon:** 6 hafta (3 sprint × 2 hafta)  

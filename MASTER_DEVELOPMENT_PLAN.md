@@ -1,3 +1,5 @@
+> ⚠️ **Bu dosya artık tarihsel kayıt.** Güncel ve tek geçerli plan: [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) (2026-10-11).
+
 # 🏛️ Master Geliştirme, Güvenlik ve Performans Planı — Agentic CFO
 
 > **Hedef:** Mevcut 3.400+ testlik güçlü temeli; kurumsal seviyede siber güvenlik, dağıtık performans/lock yönetimi, derinleştirilmiş C-Suite zekası ve Türkiye muhasebe moatı ile donatılmış, production-ready bir SaaS platformuna dönüştürmek.  
