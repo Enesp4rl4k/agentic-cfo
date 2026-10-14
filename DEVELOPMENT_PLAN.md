@@ -13,7 +13,7 @@
 ## 0. Başlangıç durumu (2026-10-14, kanıtlı)
 
 **Yeşil:**
-- `python scripts/verify.py --fast --backend` → exit 0 · **3459 passed, 48 skipped**; frontend `tsc` ✅ `lint` ✅ `vitest` 90/90 ✅.
+- `python scripts/verify.py --fast --backend` → exit 0 · **3459 passed, 48 skipped**; frontend `tsc` ✅ `lint` ✅ `vitest` 95/95 ✅ (90 değil: `baslangic.test.tsx` 6 testi `718a663`'ten beri gizli kırmızıydı — QueryClientProvider + tr-TR locale mock eklendi).
 - Backend: FastAPI + LangGraph, 41 Alembic migration, ARQ kuyruğu, job lease, field encryption, audit zinciri, e-Fatura/e-Defter kapısı, SMMM onay kuyruğu, TCMB EVDS client, grounding validator + `EvidenceBundle`, eval harness, semantic snapshot/rebuild.
 - Frontend: Next 14 App Router, Karar Atlası paleti (`DESIGN.md`), TR/EN message tree — **Grup A–D (17 sayfa) message tree'de**.
 - Rol matrisi canlı doğrulandı (2026-10-14): **CHRO** (İK Puanı 7.0/10, ₺ anlatıları), **CEO** (synthesize 200, brif dolu), **CMO** (ROAS 3.9×, ₺), **CTO** (hydration + sağlık 2.0/10), **COO** (boş durum dürüst) — 0 undefined / 0 NaN / 0 konsol hatası.
@@ -61,9 +61,12 @@
 
 ## ⚡ Hemen (dev-flow, yarım gün — S2/S5/S6)
 
-- [ ] Backend dev `.env`: sabit `BACKEND_SECRET_KEY` (restart → re-login yok) + uvicorn `--reload`
-- [ ] `git push` (remote varsa) — sonrası her iş küçük commit'le
-- [ ] `npm audit` + `ruff check` + `mypy` taze tur → sonuç bu dosyaya not edilir
+- [x] Backend dev `.env`: sabit `BACKEND_SECRET_KEY` (restart → re-login yok) + uvicorn `--reload` (2026-10-14: `backend/.env` oluşturuldu, gitignore'lu)
+- [x] `git push` ✓ (origin `feat/edefter-tahakkuk` güncel) — sonrası her iş küçük commit'le
+- [x] `npm audit` + `ruff check` + `mypy` taze tur (2026-10-14):
+  - `ruff check app` ✅ · `mypy --config-file mypy_strict.ini` ✅ (162 dosya). `tests/` içinde ruff'ın 53 legacy hatası var — kapı dışı, temizlik görevi.
+  - npm audit: **23 (4 critical, 14 high) dev-only zincirler** (vitest/tinypool/eslint/tailwind); **prod'da 2** (`next` zinciri, 1 critical + 1 high). → **Ayrı task:** prod `next` patch upgrade + vitest 5 migration ile birlikte; `npm audit fix` (non-breaking) 4 kritik kapattı ama lock HEAD'te tutuldu (tek seferde, testler yeşilken upgrade).
+  - vitest: 6 test kırmızı çıktı (`No QueryClient set` + TR/EN assertion) → `baslangic.test.tsx`'e QueryClientProvider + `useOrgSettings` tr-TR mock'u eklendi; **95/95** ✅.
 
 ---
 
