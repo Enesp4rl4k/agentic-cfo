@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { ActionCenter } from "@/components/ActionCenter";
 import { DomainDataSources } from "@/components/ceo/DomainDataSources";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
 
 import { BoardDeckViewer }     from "@/components/ceo/BoardDeckViewer";
 import { OKRWeightedScorecard } from "@/components/ceo/OKRScorecard";
@@ -193,6 +194,9 @@ export default function CEODashboardPage() {
   // empty state. Any real result or decision brief clears it — sample data is
   // never shown once live data exists (DEMO_PLAN §D2).
   const [sampleMode, setSampleMode] = useState(false);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the form below is never gated on this.
+  const [hydrating, setHydrating] = useState(true);
 
   // Prefer live CompanyContext / last CEO result over SAMPLE CSV paste.
   // Context hydration is NOT cancelled on effect re-runs (orgId flips fetch
@@ -224,6 +228,8 @@ export default function CEODashboardPage() {
       } catch {
         if (isDemoMode()) setSampleMode(true);
         /* empty state until analyze */
+      } finally {
+        setHydrating(false);
       }
     })();
   }, [orgId]);
@@ -359,6 +365,8 @@ export default function CEODashboardPage() {
           ) : undefined
         }
       />
+
+      {hydrating && showEmpty && <HydrationHint />}
 
       <ActionCenter />
 

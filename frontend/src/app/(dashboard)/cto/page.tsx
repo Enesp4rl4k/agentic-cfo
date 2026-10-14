@@ -14,6 +14,7 @@ import { GitHubConnectorCard } from "@/components/cto/GitHubConnectorCard";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
 import { useI18n } from "@/hooks/useI18n";
 import { normalizeCTOResult } from "@/lib/cto-result";
 import {
@@ -264,6 +265,9 @@ export default function CTODashboardPage() {
   const { orgId, activeCFOJobId } = useCompanyContextStore();
   const [panelResult, setPanelResult] = useState<CTOResult | null>(null);
   const [panelKey, setPanelKey] = useState(0);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the form is never gated on this.
+  const [hydrating, setHydrating] = useState(true);
 
   // Hydrate from the stored result so a completed analysis is still visible on
   // revisit — matches the CMO/COO/CHRO pages (no re-run needed to see it).
@@ -280,6 +284,8 @@ export default function CTODashboardPage() {
         }
       } catch {
         /* empty until analyze */
+      } finally {
+        setHydrating(false);
       }
     })();
   }, [orgId]);
@@ -293,6 +299,8 @@ export default function CTODashboardPage() {
         title={t.roleDashboards.cto.title}
         description={t.roleDashboards.cto.description}
       />
+
+      {hydrating && !ctoResult && <HydrationHint />}
 
       <DomainPanel
         key={panelKey}

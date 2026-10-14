@@ -177,6 +177,7 @@ export const tr: MessageTree = {
   empty: {
     noRoleData: "Henüz canlı agent sonucu yok. Veri yükleyin veya analiz çalıştırın.",
     enableDemo: "Demo modunda örnek veri gösterilebilir.",
+    hydration: "Son analiz yükleniyor…",
   },
   roleDashboards: {
     ceo: {

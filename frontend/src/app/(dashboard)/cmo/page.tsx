@@ -12,6 +12,7 @@ import { apiClient } from "@/lib/api/client";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
 import { useI18n } from "@/hooks/useI18n";
 import { normalizeCMOResult } from "@/lib/cmo-result";
 import { type MessageTree } from "@/lib/i18n";
@@ -563,6 +564,9 @@ export default function CMODashboardPage() {
   const { t } = useI18n();
   const { orgId, activeCFOJobId } = useCompanyContextStore();
   const [liveResult, setLiveResult] = useState<CMOResult | null>(null);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the paste form below opens immediately regardless.
+  const [hydrating, setHydrating] = useState(true);
   const {
     enqueue, reset,
     status, progress, result, logs, error,
@@ -585,6 +589,8 @@ export default function CMODashboardPage() {
         }
       } catch {
         /* empty until analyze */
+      } finally {
+        setHydrating(false);
       }
     })();
   }, [orgId]);
@@ -597,6 +603,8 @@ export default function CMODashboardPage() {
         title={t.roleDashboards.cmo.title}
         description={t.roleDashboards.cmo.description}
       />
+
+      {hydrating && !cmoResult && <HydrationHint />}
 
       {/* The one entry point: real data, or what is missing and how to get it.
           The CSV boxes below are the fallback for someone who already has the

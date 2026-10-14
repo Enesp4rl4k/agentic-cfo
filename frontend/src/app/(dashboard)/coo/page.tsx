@@ -19,6 +19,7 @@ import { AgentJobPanel } from "@/components/ui/agent-job-panel";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
 import { useI18n } from "@/hooks/useI18n";
 import { normalizeCOOResult } from "@/lib/coo-result";
 
@@ -349,6 +350,9 @@ export default function COODashboardPage() {
   } = useAgentJob("coo");
 
   const [liveResult, setLiveResult] = useState<COOResult | null>(null);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the paste form below opens immediately regardless.
+  const [hydrating, setHydrating] = useState(true);
 
   // Same-data context hydration — not cancelled on re-runs (see cmo/page).
   useEffect(() => {
@@ -364,6 +368,8 @@ export default function COODashboardPage() {
         if (last && typeof last === "object") setLiveResult(normalizeCOOResult(last));
       } catch {
         /* empty until analyze */
+      } finally {
+        setHydrating(false);
       }
     })();
   }, [orgId]);
@@ -442,6 +448,8 @@ export default function COODashboardPage() {
         title={t.roleDashboards.coo.title}
         description={t.roleDashboards.coo.description}
       />
+
+      {hydrating && !cooResult && <HydrationHint />}
 
       <DomainPanel
         alan="coo"

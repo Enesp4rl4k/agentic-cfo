@@ -11,6 +11,7 @@ import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
 import { useI18n } from "@/hooks/useI18n";
 import {
   normalizeCHROResult,
@@ -327,6 +328,9 @@ export default function CHRODashboardPage() {
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState<CHROView | null>(null);
   const [error,    setError]    = useState<string | null>(null);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the paste form below opens immediately regardless.
+  const [hydrating, setHydrating] = useState(true);
 
   // Same-data context hydration — not cancelled on re-runs (see cmo/page).
   useEffect(() => {
@@ -342,6 +346,8 @@ export default function CHRODashboardPage() {
         if (last && typeof last === "object") setResult(normalizeCHROResult(last as RawCHROResult));
       } catch {
         /* empty until analyze */
+      } finally {
+        setHydrating(false);
       }
     })();
   }, [orgId]);
@@ -381,6 +387,8 @@ export default function CHRODashboardPage() {
         title={t.roleDashboards.chro.title}
         description={t.roleDashboards.chro.description}
       />
+
+      {hydrating && !result && <HydrationHint />}
 
       {/* The one entry point: real data, or what is missing and how to get it.
           The CSV boxes below are the fallback for someone who already has the

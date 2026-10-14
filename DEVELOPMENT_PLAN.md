@@ -108,9 +108,9 @@ CHRO'da düzeltildi sınıfı (UI ↔ backend anahtar uyumsuzluğu) tüm rol say
 - Not: Çoklu para birimi sembol tablosu/org-seçimi bilinçli olarak kapsam dışı (bkz. Kapsam dışı); TR varsayılanı ₺.
 
 ### 1.5 Hydration & yükleme UX'i (U2/S1) — **yeni**
-- [ ] Context yüklenirken **skeleton / "Son analiz yükleniyor"** göstergesi; form ve sonuç aynı anda yarışmaz (form, hydrasyon kararına göre gecikmeden açılır).
+- [x] Context yüklenirken **skeleton / "Son analiz yükleniyor"** göstergesi; form ve sonuç aynı anda yarışmaz (form, hydrasyon kararına göre gecikmeden açılır). (2026-10-14: `HydrationHint` — `role="status"`, `t.empty.hydration` tr/en — 5 rol sayfasında (ceo/cto/cmo/coo/chro); `hydrating` state hydrasyon effect'inde `finally` ile kapanır, sonuç zaten varken hint görünmez, form hiçbir sayfada hint'e bağlı değil. Kapı: `hydration-hint.test.tsx` — bekleyen fetch'te hint + form ikisi birden görünür, settle olunca hint düşer.)
 - [x] `company_context` Redis okumasında **2sn timeout** → hemen DB fallback (Redis kesintisi 15-20sn'ye değil ~2sn'ye düşer). (2026-10-14: `socket_timeout=2` + `asyncio.wait_for` — DNS çözümlemesi dahil her adım sınırlı; başarısız connect'e 30sn cooldown → ceza istek başına değil pencere başına; test `test_company_context_timeout.py` — asılı okuma/init <4sn'de DB fallback'e düşer.)
-- [ ] İpucu: `refetchIntervalInBackground` ile zombi polling kapanır.
+- [x] İpucu: `refetchIntervalInBackground` ile zombi polling kapanır. (2026-10-14: `useAgentJobStatus`'taki `refetchIntervalInBackground: true` kaldırıldı — takılan bir job gizli sekmede sonsuza dek 2sn'de bir istek yakıyordu; sekre gizliyken polling react-query varsayılanıyla durur, odak dönüşünde `refetchOnWindowFocus` (açık) + `staleTime: 0` anında tazeler. Uzun soluklu diğer poller — context 60s / notifications 20-30s / conflicts / system-ops — arka plan polling'ini zaten kapalı tutuyor.)
 
 **DoD:** Redis yokken sayfa açılıştan ≤3sn'de karar verir; form→sonuç yutması canlıda tekrarlanmaz.
 

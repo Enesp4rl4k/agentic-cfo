@@ -175,6 +175,7 @@ export type MessageTree = {
   empty: {
     noRoleData: string;
     enableDemo: string;
+    hydration: string;
   };
   roleDashboards: {
     ceo: {
@@ -2086,6 +2087,7 @@ export const en: MessageTree = {
   empty: {
     noRoleData: "No live agent results yet. Upload data or run an analysis.",
     enableDemo: "Demo mode can show sample data when enabled.",
+    hydration: "Loading the last analysis…",
   },
   roleDashboards: {
     ceo: {

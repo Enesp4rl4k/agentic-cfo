@@ -107,10 +107,10 @@ export function useAgentJobStatus(jobId: string | null) {
       if (status === "completed" || status === "failed") return false;
       return 2000;
     },
-    // Keep polling while the tab is hidden — jobs finish in seconds and the
-    // panel would otherwise freeze on a stale progress percentage (occluded
-    // window / background tab), with no update until the next user gesture.
-    refetchIntervalInBackground: true,
+    // Polling pauses while the tab is hidden (react-query default): a stuck
+    // job must not burn a request every 2s in a background tab forever
+    // (DEVELOPMENT_PLAN 1.5b). Catching up on return is free — refetchOnWindowFocus
+    // is on globally and staleTime is 0 here, so the progress is fresh on view.
     staleTime: 0,
   });
 }
