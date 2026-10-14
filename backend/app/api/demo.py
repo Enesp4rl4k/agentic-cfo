@@ -4,6 +4,7 @@ Demo Seed API — /api/v1/demo/seed
 Loads the Logo Tiger 2024 demo CSV and starts a full CFO analysis pipeline.
 New users can explore the platform without uploading their own data.
 
+POST /demo/guest     → One-click guest session (isolated demo org + JWT, no signup)
 POST /demo/seed      → Create a demo analysis job using logo_tiger_2024.csv
 GET  /demo/status    → Check if org already has demo data loaded
 DELETE /demo/reset   → Remove demo job from context (org can start fresh)
@@ -11,17 +12,18 @@ DELETE /demo/reset   → Remove demo job from context (org can start fresh)
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.database import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 
 router = APIRouter(tags=["demo"])
 logger = logging.getLogger(__name__)
@@ -65,6 +67,80 @@ async def _get_demo_csv_content() -> bytes:
         return _DEMO_CSV_PATH.read_bytes()
     logger.warning("Demo CSV not found at %s — using minimal fallback", _DEMO_CSV_PATH)
     return _DEMO_CSV_FALLBACK.encode("utf-8")
+
+
+@router.post("/demo/guest", status_code=status.HTTP_201_CREATED)
+async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """
+    One-click guest demo session — try the product without signing up.
+
+    Mints an isolated demo organization (TR locale / TRY currency) plus a
+    throwaway owner user, and returns the same token shape as /auth/login so
+    the frontend signs in through the existing NextAuth credentials shortcut
+    (authorize() validates the access token against /auth/me).
+
+    Every guest gets a fresh org — demos never share data. Gated by
+    settings.demo_mode (secure default: disabled).
+    """
+    from app.api.org import _regional_defaults
+    from app.config import get_settings
+    from app.models.organization import Organization
+    from app.services.auth import (
+        create_access_token,
+        create_refresh_token,
+        hash_password,
+    )
+
+    settings = get_settings()
+    if not settings.demo_mode:
+        raise HTTPException(status_code=403, detail="Demo modu kapalı.")
+
+    # 12 hex chars → unique-index collision risk negligible (slug + email).
+    suffix = secrets.token_hex(6)
+
+    org = Organization(
+        name=settings.demo_company_name,
+        slug=f"demo-{suffix}",
+        description="Otomatik oluşturulmuş misafir demo çalışma alanı.",
+        **_regional_defaults("TR"),
+    )
+    db.add(org)
+    await db.flush()  # org.id before wiring the user to it
+
+    # Random unusable password: satisfies the NOT NULL contract without ever
+    # letting anyone sign in with it — the guest only holds the JWT below.
+    user = User(
+        email=f"demo-{suffix}@demo.local",
+        hashed_password=hash_password(secrets.token_urlsafe(32)),
+        full_name="Demo Misafir",
+        role=UserRole.OWNER,  # owns this isolated org, like /org/create
+        org_id=org.id,
+    )
+    user.last_login_at = datetime.now(UTC)
+    db.add(user)
+    await db.flush()
+    await db.commit()
+
+    access_token = create_access_token(user.id, user.email, user.role)
+    refresh_token = create_refresh_token(user.id)
+
+    logger.info("Demo guest: org=%s user=%s", org.id, user.id)
+    return {
+        "data": {
+            "access_token":  access_token,
+            "refresh_token": refresh_token,
+            "token_type":    "bearer",
+            "expires_in":    1800,
+            "user": {
+                "user_id":   user.id,
+                "email":     user.email,
+                "full_name": user.full_name,
+                "role":      user.role,
+                "org_id":    user.org_id,
+            },
+        },
+        "error": None,
+    }
 
 
 @router.post("/demo/seed")
