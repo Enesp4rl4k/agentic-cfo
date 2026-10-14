@@ -87,6 +87,7 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/system/health"): "liveness probe",
     ("POST", "/api/v1/auth/register"): "creates the user",
     ("POST", "/api/v1/auth/login"): "issues the token",
+    ("POST", "/api/v1/demo/guest"): "mints an isolated demo session without signup (gated by demo_mode)",
     ("POST", "/api/v1/auth/refresh"): "exchanges a refresh token, which it verifies",
     ("GET", "/api/v1/auth/sso/providers"): "lists login options before login",
     ("GET", "/api/v1/auth/sso/{provider}/login"): "starts an SSO login",

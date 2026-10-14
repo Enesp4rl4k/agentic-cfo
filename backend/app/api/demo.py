@@ -24,12 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.services.demo_template import clone_demo_workspace
 
 router = APIRouter(tags=["demo"])
 logger = logging.getLogger(__name__)
 
-# Path to bundled demo CSV (relative to repo root)
-_DEMO_CSV_PATH = Path(__file__).resolve().parents[4] / "demo" / "data" / "logo_tiger_2024.csv"
+# Path to bundled demo CSV (relative to repo root):
+# parents[0]=api [1]=app [2]=backend [3]=repo root — parents[4] pointed at the
+# parent of the repo, so the bundled file was never found and every seed
+# silently fell back to the minimal 25-row CSV.
+_DEMO_CSV_PATH = Path(__file__).resolve().parents[3] / "demo" / "data" / "logo_tiger_2024.csv"
 
 # Fallback: generated minimal demo data if file not found
 _DEMO_CSV_FALLBACK = """tarih,tutar,aciklama,kategori
@@ -120,6 +124,25 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
     db.add(user)
     await db.flush()
     await db.commit()
+
+    # D2: clone the pre-computed golden demo workspace so the visitor lands on
+    # a full dashboard. A clone failure must never block guest entry — the
+    # session still works, the org just starts empty (D1 behaviour).
+    try:
+        outcome = await clone_demo_workspace(db, str(org.id))
+        if outcome.cloned:
+            logger.info(
+                "Guest org=%s cloned golden demo job=%s counts=%s",
+                org.id,
+                outcome.job_id,
+                outcome.counts,
+            )
+    except Exception as exc:
+        logger.warning("Demo clone failed for org=%s: %s", org.id, exc)
+        try:
+            await db.rollback()
+        except Exception:  # pragma: no cover - session already clean
+            pass
 
     access_token = create_access_token(user.id, user.email, user.role)
     refresh_token = create_refresh_token(user.id)
