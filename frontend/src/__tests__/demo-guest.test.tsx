@@ -11,7 +11,8 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { signIn } from "next-auth/react";
+import type { Session } from "next-auth";
+import { getSession, signIn } from "next-auth/react";
 
 const { push, refresh } = vi.hoisted(() => ({
   push: vi.fn(),
@@ -44,6 +45,9 @@ function okGuestResponse() {
 describe("Demo — guest entry (D1)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations — re-pin the happy default so a
+    // per-test override (e.g. the session-missing race) cannot leak forward.
+    vi.mocked(getSession).mockResolvedValue({ accessToken: "tok" } as Session);
   });
 
   afterEach(() => {
@@ -113,5 +117,62 @@ describe("Demo — guest entry (D1)", () => {
       ).toBeDefined();
     });
     expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate when signIn 'succeeds' but no session was established", async () => {
+    // The csrf race: a late duplicate /api/auth/session response overwrites the
+    // csrf cookie mid-flow → callback answers 200 with an error-less URL and no
+    // session cookie. Trusting result.error alone navigates to /upload, where
+    // the middleware bounces the visitor to the login page.
+    const fetchMock = okGuestResponse();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(signIn).mockResolvedValue({
+      ok: true,
+      error: null,
+      status: 200,
+      url: "/api/auth/signin?csrf=true",
+    });
+    // Both attempts see no session → the retry must not save it either.
+    vi.mocked(getSession).mockResolvedValue(null);
+
+    render(<GuestDemoButton>Demoyu Dene</GuestDemoButton>);
+    fireEvent.click(screen.getByRole("button", { name: "Demoyu Dene" }));
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole("button", { name: "Başlatılamadı — tekrar deneyin" })
+        ).toBeDefined();
+      },
+      { timeout: 4000 }
+    );
+    expect(signIn).toHaveBeenCalledTimes(2);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("rides out the csrf race with one re-attempt and lands on /upload", async () => {
+    const fetchMock = okGuestResponse();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(signIn).mockResolvedValue({
+      ok: true,
+      error: null,
+      status: 200,
+      url: "/api/auth/signin?csrf=true",
+    });
+    vi.mocked(getSession)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ accessToken: "guest-access" } as Session);
+
+    render(<GuestDemoButton>Demoyu Dene</GuestDemoButton>);
+    fireEvent.click(screen.getByRole("button", { name: "Demoyu Dene" }));
+
+    await waitFor(
+      () => {
+        expect(push).toHaveBeenCalledWith("/upload");
+      },
+      { timeout: 4000 }
+    );
+    expect(signIn).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // the guest org is minted once
   });
 });

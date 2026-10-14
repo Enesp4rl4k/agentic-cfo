@@ -328,14 +328,14 @@ export default function CHRODashboardPage() {
   const [result,   setResult]   = useState<CHROView | null>(null);
   const [error,    setError]    = useState<string | null>(null);
 
+  // Same-data context hydration — not cancelled on re-runs (see cmo/page).
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
-        if (cancelled || !ctx) return;
+        if (!ctx) return;
         if (ctx.company_name) setCompany(String(ctx.company_name));
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const last = ctx.last_chro_result;
@@ -344,9 +344,6 @@ export default function CHRODashboardPage() {
         /* empty until analyze */
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [orgId]);
 
   async function handleSubmit(e: React.FormEvent) {

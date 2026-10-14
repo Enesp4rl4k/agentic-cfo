@@ -98,24 +98,21 @@ export default function CTODashboardPage() {
 
   // Hydrate from the stored result so a completed analysis is still visible on
   // revisit — matches the CMO/COO/CHRO pages (no re-run needed to see it).
+  // Not cancelled on re-runs: orgId flips fetch the same snapshot (cmo/page).
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
         const last = ctx?.last_cto_result;
-        if (!cancelled && last && typeof last === "object" && last.cto_summary) {
+        if (last && typeof last === "object" && last.cto_summary) {
           setPanelResult(normalizeCTOResult(last));
         }
       } catch {
         /* empty until analyze */
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [orgId]);
 
   const ctoResult: CTOResult | null =

@@ -90,6 +90,14 @@ export default withAuth(
     return NextResponse.next();
   },
   {
+    // The middleware previously used next-auth's default /api/auth/signin as
+    // the unauthorized target, so a bounced request made an extra hop through
+    // it (which rewrote callbackUrl to an absolute URL) before reaching the
+    // custom page. Pointing it at the configured pages lands directly on ours.
+    pages: {
+      signIn: "/auth/login",
+      error: "/auth/login",
+    },
     callbacks: {
       // authorized() returning false → redirects to /auth/login automatically
       authorized: ({ token }) => !!token,

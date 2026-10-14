@@ -569,24 +569,24 @@ export default function CMODashboardPage() {
     isActive, isEnqueueing,
   } = useAgentJob("cmo");
 
+  // Hydration is deliberately NOT cancelled on effect re-runs: orgId flips
+  // (undefined → org) re-fetch the same caller-org snapshot, and dropping the
+  // earlier run's response on the flip left the input form visible whenever
+  // the follow-up fetch failed silently (observed on the live demo scan).
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
         const last = ctx?.last_cmo_result;
-        if (!cancelled && last && typeof last === "object") {
+        if (last && typeof last === "object") {
           setLiveResult(normalizeCMOResult(last));
         }
       } catch {
         /* empty until analyze */
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [orgId]);
 
   const cmoResult = (result ? normalizeCMOResult(result) : null) ?? liveResult;

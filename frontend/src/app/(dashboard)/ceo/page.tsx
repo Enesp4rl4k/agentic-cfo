@@ -190,14 +190,16 @@ export default function CEODashboardPage() {
   const [synthesizing, setSynthesizing] = useState(false);
 
   // Prefer live CompanyContext / last CEO result over SAMPLE CSV paste.
+  // Context hydration is NOT cancelled on effect re-runs (orgId flips fetch
+  // the same caller-org snapshot; dropping the earlier response on the flip
+  // left the page empty whenever the follow-up fetch failed — see cmo/page).
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
-        if (cancelled || !ctx) return;
+        if (!ctx) return;
         if (ctx.company_name) setCompany(String(ctx.company_name));
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const lastCeo = ctx.last_ceo_result;
@@ -212,6 +214,14 @@ export default function CEODashboardPage() {
       } catch {
         /* empty state until analyze */
       }
+    })();
+  }, [orgId]);
+
+  // Brief + period history stay cancelled-on-rerun: they ARE period-sensitive,
+  // so a stale response from a previous selection must never win.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
       try {
         const b = await getDecisionBrief(selectedPeriod);
         if (!cancelled && b.brief) setBrief(b.brief);

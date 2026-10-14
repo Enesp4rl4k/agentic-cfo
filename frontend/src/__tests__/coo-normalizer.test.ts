@@ -70,3 +70,72 @@ describe("normalizeCOOResult", () => {
     expect(v!.processes).toBeNull();
   });
 });
+
+/**
+ * The PERSISTED wire shape — `context.last_coo_result` as the backend writes
+ * it after a pipeline run (golden demo org, 2026-10-14): aggregate summaries,
+ * no row arrays. Accepting only the row shape normalized this to null, so the
+ * COO page showed the empty input form forever despite prefilled context.
+ */
+const AGGREGATE = {
+  job_id: "7cf4adcc-a02e-430e-9a00-fb0edf10461c",
+  processes: {
+    total_processes: 3,
+    bottleneck_process: "Order Processing",
+    bottleneck_recommendation: "Gereksiz onay adımlarını kaldır.",
+    by_process: {
+      "Inventory Check": { cycle_time: 2, throughput: 40, wip: 15, constraint_type: "material" },
+      "Order Processing": { cycle_time: 5, throughput: 20, wip: 45, constraint_type: "policy" },
+      "Shipping Preparation": { cycle_time: 4, throughput: 25, wip: 35, constraint_type: "resource" },
+    },
+    toc_analysis: [
+      { rank: 1, process: "Order Processing", toc_recommendation: "Delegasyon matrisini gözden geçir.", throughput_loss_pct: 47.1 },
+      { rank: 2, process: "Shipping Preparation", toc_recommendation: "Rota optimizasyonu uygula.", throughput_loss_pct: 21.4 },
+    ],
+  },
+  sla: {
+    total_tickets: 5,
+    open_tickets: 5,
+    sla_breach_rate: 0.0,
+    by_tier: { p1: { label: "P1-Kritik", tickets: 1, breach_rate: 0.0 } },
+  },
+  error: null,
+};
+
+describe("normalizeCOOResult — persisted aggregate wire", () => {
+  it("derives process rows from by_process, ranked by toc_analysis", () => {
+    const v = normalizeCOOResult(AGGREGATE);
+    expect(v).not.toBeNull();
+    expect(v!.processes!.map((p) => p.process_name)).toEqual([
+      "Order Processing",
+      "Shipping Preparation",
+      "Inventory Check",
+    ]);
+    const top = v!.processes![0];
+    expect(top.cycle_time).toBe(5);
+    expect(top.throughput).toBe(20);
+    expect(top.wip).toBe(45);
+    expect(top.constraint_type).toBe("policy");
+    expect(top.toc_recommendation).toContain("Delegasyon");
+    expect(top.impact_score).toBe(47.1);
+  });
+
+  it("leaves TOC-unranked processes honest — no borrowed recommendation, no fake impact", () => {
+    const v = normalizeCOOResult(AGGREGATE);
+    const tail = v!.processes!.find((p) => p.process_name === "Inventory Check")!;
+    expect(tail.toc_recommendation).toBe("");
+    expect(tail.impact_score).toBe(0);
+  });
+
+  it("reads the SLA rate from sla_breach_rate and keeps missing rows empty", () => {
+    const v = normalizeCOOResult(AGGREGATE);
+    expect(v!.sla).not.toBeNull();
+    expect(v!.sla!.breach_rate).toBe(0);
+    expect(v!.sla!.tickets).toHaveLength(0);
+    expect(v!.sla!.trend).toHaveLength(0);
+  });
+
+  it("stays null when the aggregate has nothing to show", () => {
+    expect(normalizeCOOResult({ processes: { total_processes: 0 }, sla: { total_tickets: 0 } })).toBeNull();
+  });
+});

@@ -112,10 +112,61 @@ function normalizeTicket(raw: Record<string, unknown>): SLATicket | null {
 }
 
 function normalizeProcesses(raw: unknown): ProcessBottleneck[] | null {
-  if (!Array.isArray(raw)) return null;
-  const rows = records(raw)
-    .map(normalizeProcess)
-    .filter((p): p is ProcessBottleneck => p !== null);
+  if (Array.isArray(raw)) {
+    const rows = records(raw)
+      .map(normalizeProcess)
+      .filter((p): p is ProcessBottleneck => p !== null);
+    return rows.length > 0 ? rows : null;
+  }
+  // Persisted wire shape (`context.last_coo_result.processes`): an aggregate
+  // summary — per-process numbers live under `by_process` (keyed by name) and
+  // the ranked TOC rows under `toc_analysis`. Derive the view rows here, once,
+  // so both entry points (live AgentJob rows, persisted summary) render.
+  if (isRecord(raw)) return processesFromSummary(raw);
+  return null;
+}
+
+function processesFromSummary(raw: Record<string, unknown>): ProcessBottleneck[] | null {
+  const byProcess = raw.by_process;
+  if (!isRecord(byProcess)) return null;
+
+  const toc = new Map(
+    records(raw.toc_analysis).map((t) => [str(t.process), t] as const),
+  );
+  const bottleneck = str(raw.bottleneck_process);
+
+  const rows: ProcessBottleneck[] = [];
+  const seen = new Set<string>();
+  // Ranked TOC order first, then any process the TOC list did not rank.
+  for (const [name, t] of toc) {
+    const entry = byProcess[name];
+    if (!isRecord(entry)) continue;
+    seen.add(name);
+    rows.push({
+      process_name: name,
+      cycle_time: num0(entry.cycle_time),
+      throughput: num0(entry.throughput),
+      wip: num0(entry.wip),
+      constraint_type: str(entry.constraint_type),
+      toc_recommendation: str(t.toc_recommendation),
+      // impact_score is 0-100: the TOC pipeline's per-process throughput loss
+      // is that scale and is what the loss bar actually measures.
+      impact_score: num0(t.throughput_loss_pct),
+    });
+  }
+  for (const [name, entry] of Object.entries(byProcess)) {
+    if (seen.has(name) || !isRecord(entry)) continue;
+    rows.push({
+      process_name: name,
+      cycle_time: num0(entry.cycle_time),
+      throughput: num0(entry.throughput),
+      wip: num0(entry.wip),
+      constraint_type: str(entry.constraint_type),
+      toc_recommendation:
+        name === bottleneck ? str(raw.bottleneck_recommendation) : "",
+      impact_score: 0,
+    });
+  }
   return rows.length > 0 ? rows : null;
 }
 
@@ -124,7 +175,10 @@ function normalizeSla(raw: unknown): SLAData | null {
   const tickets = records(raw.tickets)
     .map(normalizeTicket)
     .filter((t): t is SLATicket => t !== null);
-  const breachRate = num(raw.breach_rate);
+  // Row wire shape has `breach_rate`; the persisted aggregate uses
+  // `sla_breach_rate` (with per-tier counts under `by_tier`) and carries no
+  // ticket rows — the count KPI renders from the rate, the table stays "—".
+  const breachRate = num(raw.breach_rate) ?? num(raw.sla_breach_rate);
   if (tickets.length === 0 && breachRate === null) return null;
   return {
     tickets,
