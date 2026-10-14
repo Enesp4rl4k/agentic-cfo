@@ -20,6 +20,7 @@ import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
 import { useI18n } from "@/hooks/useI18n";
+import { normalizeCOOResult } from "@/lib/coo-result";
 
 const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -30,7 +31,7 @@ interface ProcessBottleneck {
   cycle_time: number; // days
   throughput: number; // items/day
   wip: number; // work in progress count
-  constraint_type: "resource" | "policy" | "market" | "material";
+  constraint_type: string;
   toc_recommendation: string;
   impact_score: number; // 0-100
 }
@@ -44,8 +45,8 @@ interface SLATicket {
   hours_remaining: number;
   /** A 0–1 ordering score from the backend's rule, never a probability. */
   risk_score?: number;
-  risk_level?: "kritik" | "yüksek" | "orta" | "düşük";
-  priority: "critical" | "high" | "medium" | "low";
+  risk_level?: string;
+  priority: string;
   status: string;
 }
 
@@ -360,7 +361,7 @@ export default function COODashboardPage() {
         if (ctx.company_name) setCompany(String(ctx.company_name));
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const last = ctx.last_coo_result;
-        if (last && typeof last === "object") setLiveResult(last as COOResult);
+        if (last && typeof last === "object") setLiveResult(normalizeCOOResult(last));
       } catch {
         /* empty until analyze */
       }
@@ -370,7 +371,7 @@ export default function COODashboardPage() {
     };
   }, [orgId]);
 
-  const cooResult = (result as COOResult | null) ?? liveResult;
+  const cooResult = (result ? normalizeCOOResult(result) : null) ?? liveResult;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -448,7 +449,7 @@ export default function COODashboardPage() {
       <DomainPanel
         alan="coo"
         jobId={activeCFOJobId}
-        onResult={(r) => setLiveResult(r as unknown as COOResult)}
+        onResult={(r) => setLiveResult(normalizeCOOResult(r))}
       />
 
       {/* Input form */}

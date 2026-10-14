@@ -88,7 +88,7 @@ Taşıma kuralı: sabit metin `tr.ts`/`en.ts`'e; iki ağaç anahtar olarak eşit
 ### 1.2 Rol dashboard'ları: şema sözleşmesi
 CHRO'da düzeltildi sınıfı (UI ↔ backend anahtar uyumsuzluğu) tüm rol sayfalarında sözleşme altına alınır.
 
-- [ ] Her rol sayfası için `lib/<role>-result.ts` normalizer'ı (varsa) ve **"backend ne dönerse o" testi**: gerçek API yanıt fixture'ı (kayıttan alınmış) — `undefined`/`String(undefined)`/`NaN` basamaz. Kapsam: **cto, cmo, coo, ceo, risk, audit** (cfo/chro var).
+- [ ] Her rol sayfası için `lib/<role>-result.ts` normalizer'ı (varsa) ve **"backend ne dönerse o" testi**: gerçek API yanıt fixture'ı (kayıttan alınmış) — `undefined`/`String(undefined)`/`NaN` basamaz. Kapsam: **cto ✅ cmo ✅ coo ✅** (`aed6355` + bu commit: wire fixture + NaN/bozuk-veri/boş-durum testleri; cast'ler tek normalize noktasına indi; union'lar dürüst `string`'e açıldı) — **kalan: ceo, risk, audit**.
 - [ ] Para her yerde `useCurrencyFormat` + org locale/currency; `₺`-hardcode ve USD-default kalmaz (frontend tarafı Grup A–D'de büyük ölçüde bitti; kalan tarama bu maddede).
 - [ ] **Casing grep kapısı:** CSS `text-transform: uppercase` + İngilizce veri token'ı birleşimini arayan test/kontrol (düzeltme kuralı: JS `.toUpperCase()`). Bu hafta düzeltildi: CHRO/CEO/CMO/Command-Center/ConflictCard rozetleri (`87cd317`, `335991e`), CTO severity + component keys + sidebar group labels (`712c027`) — **kalan sayfa taraması + kalıcı kapı bu madde.**
 

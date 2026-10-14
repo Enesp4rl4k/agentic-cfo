@@ -13,6 +13,7 @@ import { useCompanyContextStore } from "@/store/companyContext";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
 import { useI18n } from "@/hooks/useI18n";
+import { normalizeCMOResult } from "@/lib/cmo-result";
 import { type MessageTree } from "@/lib/i18n";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 
@@ -75,7 +76,7 @@ interface CohortData {
   churn_rate: number;
   best_cohort: { period: string; retention_30d: number; ltv_cents: number } | null;
   worst_cohort: { period: string; retention_30d: number; ltv_cents: number } | null;
-  retention_trend: "improving" | "stable" | "degrading";
+  retention_trend: string;
   alerts: Array<{ level: string; message: string }>;
   narrative: string;
 }
@@ -577,7 +578,7 @@ export default function CMODashboardPage() {
         const ctx = res.data?.data ?? res.data;
         const last = ctx?.last_cmo_result;
         if (!cancelled && last && typeof last === "object") {
-          setLiveResult(last as CMOResult);
+          setLiveResult(normalizeCMOResult(last));
         }
       } catch {
         /* empty until analyze */
@@ -588,7 +589,7 @@ export default function CMODashboardPage() {
     };
   }, [orgId]);
 
-  const cmoResult = (result as CMOResult | null) ?? liveResult;
+  const cmoResult = (result ? normalizeCMOResult(result) : null) ?? liveResult;
 
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
@@ -603,7 +604,7 @@ export default function CMODashboardPage() {
       <DomainPanel
         alan="cmo"
         jobId={activeCFOJobId}
-        onResult={(r) => setLiveResult(r as unknown as CMOResult)}
+        onResult={(r) => setLiveResult(normalizeCMOResult(r))}
       />
 
       {(isActive || status === "failed") && (
