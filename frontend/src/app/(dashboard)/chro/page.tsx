@@ -273,6 +273,10 @@ function CHROSummarySection({ data }: { data: CHROSummaryView }) {
         ))}
       </div>
 
+      {/* U8: a 10/10 component next to a 7/10 overall reads as a bug unless
+          the weighting is said out loud. */}
+      <p className="mb-4 text-[11px] text-muted-foreground">{body.scoreScaleNote}</p>
+
       {data.top_risks.length > 0 && (
         <div className="mb-4">
           <p className="mb-2 text-xs font-semibold">{body.topHrRisks}</p>

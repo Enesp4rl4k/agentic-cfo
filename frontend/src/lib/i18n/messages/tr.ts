@@ -194,6 +194,8 @@ export const tr: MessageTree = {
         preparingAnalysis: "Analiz hazırlanıyor…",
         summarizeFromCfo: "CFO analizinden özetle",
         runAnalysis: "CEO analizini başlat",
+        noCfoInputHint:
+          "CEO analizi için önce CFO analisini çalıştırın — pipeline finansal veya teknoloji verisi olmadan çalışmaz.",
         refreshingSummary: "Özet yenileniyor…",
         refreshExecutiveSummary: "Yönetim özetini yenile",
         emptyState:
@@ -359,6 +361,8 @@ export const tr: MessageTree = {
         employeeOne: "çalışan",
         hrScore: "İK Puanı",
         topHrRisks: "Başlıca İK Riskleri",
+        scoreScaleNote:
+          "Bileşenler kendi ölçütlerine puanlanır; genel skor bunların ağırlıklı özettidir.",
         quickWins: "Kolay Kazanımlar",
         effort: "efor",
         effortLevel: { low: "düşük", medium: "orta", high: "yüksek" },

@@ -409,7 +409,15 @@ export default function CEODashboardPage() {
           </p>
         )}
 
-        <Button type="submit" disabled={loading}>
+        {/* U6: without a CFO job the /ceo/analyze path can only 400 — say what
+            to do instead of firing the doomed request. */}
+        {!activeCFOJobId && (
+          <p className="mb-3 rounded border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {t.roleDashboards.ceo.body.noCfoInputHint}
+          </p>
+        )}
+
+        <Button type="submit" disabled={loading || !activeCFOJobId}>
           {loading ? t.roleDashboards.ceo.body.preparingAnalysis : activeCFOJobId ? t.roleDashboards.ceo.body.summarizeFromCfo : t.roleDashboards.ceo.body.runAnalysis}
         </Button>
         <Button

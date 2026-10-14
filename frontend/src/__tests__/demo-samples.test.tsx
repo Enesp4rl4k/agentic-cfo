@@ -167,3 +167,20 @@ describe("CEO page sample", () => {
     expect(screen.queryByText(tr.csvInput.sampleData)).toBeNull();
   });
 });
+
+// ── U6 / 1.6: the main button must not fire a doomed 400 ──────────────────────
+// Same render harness as above: store has no active CFO job, which is exactly
+// the state where POST /ceo/analyze can only answer "Provide at least one
+// input". The button is disabled and the page says what to do instead.
+
+describe("CEO no-input guard", () => {
+  it("disables the main button and explains until a CFO job exists", async () => {
+    wrap(<CeoPage />);
+    expect(
+      await screen.findByText(tr.roleDashboards.ceo.body.noCfoInputHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: tr.roleDashboards.ceo.body.runAnalysis }),
+    ).toBeDisabled();
+  });
+});

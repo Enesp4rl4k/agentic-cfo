@@ -192,6 +192,7 @@ export type MessageTree = {
         preparingAnalysis: string;
         summarizeFromCfo: string;
         runAnalysis: string;
+        noCfoInputHint: string;
         refreshingSummary: string;
         refreshExecutiveSummary: string;
         emptyState: string;
@@ -351,6 +352,7 @@ export type MessageTree = {
         employeeOne: string;
         hrScore: string;
         topHrRisks: string;
+        scoreScaleNote: string;
         quickWins: string;
         effort: string;
         effortLevel: { low: string; medium: string; high: string };
@@ -2104,6 +2106,8 @@ export const en: MessageTree = {
         preparingAnalysis: "Preparing analysis...",
         summarizeFromCfo: "Summarize from CFO analysis",
         runAnalysis: "Start CEO analysis",
+        noCfoInputHint:
+          "Run the CFO analysis first — the CEO pipeline needs financial or tech data.",
         refreshingSummary: "Refreshing summary...",
         refreshExecutiveSummary: "Refresh executive summary",
         emptyState:
@@ -2269,6 +2273,8 @@ export const en: MessageTree = {
         employeeOne: "employee",
         hrScore: "HR Score",
         topHrRisks: "Top HR Risks",
+        scoreScaleNote:
+          "Components are scored against their own criteria; the overall score is their weighted roll-up.",
         quickWins: "Quick Wins",
         effort: "effort",
         effortLevel: { low: "low", medium: "medium", high: "high" },

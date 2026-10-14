@@ -242,7 +242,9 @@ async def on_agent_complete(
         downstream = [] if upstream_synthetic else AGENT_CHAIN.get(agent_lower, [])
         for next_agent in downstream:
             if not _conductor_allows(next_agent, runnable_roles, has_plan=has_conductor_plan):
-                logger.debug(
+                # Skips are info, not debug: an operator must be able to see why
+                # the chain stopped at this role (U6 — "silent skip").
+                logger.info(
                     "Auto-chain: conductor skipped %s for org=%s",
                     next_agent,
                     org_id,
@@ -255,7 +257,7 @@ async def on_agent_complete(
                 )
                 await _run_chained_agent(next_agent, org_id, ctx, db)
             else:
-                logger.debug(
+                logger.info(
                     "Auto-chain: %s skipped — missing required data for org=%s",
                     next_agent, org_id,
                 )
@@ -272,7 +274,7 @@ async def on_agent_complete(
                 )
                 await _run_ceo_synthesis(org_id, ctx, db)
             elif ctx.last_cfo_result is not None and has_conductor_plan:
-                logger.debug(
+                logger.info(
                     "Auto-chain: conductor skipped CEO synthesis for org=%s",
                     org_id,
                 )
