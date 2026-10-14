@@ -1,5 +1,7 @@
 # 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v2)
 
+> **Demo deneyimi ayrı planda:** `DEMO_PLAN.md` (2026-10-14) — "satın almadan dene" akışı: mevcut envanter + boşluklar + D1–D6 fazları (konuk giriş → anında dolu dashboard → tour → reset → public → CTA).
+
 > **Tarih:** 2026-10-14 (v1: 2026-10-11) · **Ufuk:** 3 faz (Faz 1 güven turu → Faz 2 moat → Faz 3 production kanıtı)
 > **Yasa:** `CLAUDE.md` — Done = `python scripts/verify.py` (Windows) / `./verify.sh` exit 0. Confidence gate ≥ 0.80. Raw SQL yok. Money = kuruş integer.
 > **Kuzey yıldızı:** Yüklediğin veri → kanıtlanmış sayı → rol-dashboard'unda org'un dilinde ve **org'un para birimiyle** doğru çizilen tek bir gerçeklik → karar → mühürlü kayıt. Bir halka kanıtlanmadan iş bitmiş sayılmaz.
