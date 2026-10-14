@@ -107,7 +107,7 @@ CHRO'da düzeltildi sınıfı (UI ↔ backend anahtar uyumsuzluğu) tüm rol say
 
 ### 1.5 Hydration & yükleme UX'i (U2/S1) — **yeni**
 - [ ] Context yüklenirken **skeleton / "Son analiz yükleniyor"** göstergesi; form ve sonuç aynı anda yarışmaz (form, hydrasyon kararına göre gecikmeden açılır).
-- [ ] `company_context` Redis okumasında **2sn timeout** → hemen DB fallback (Redis kesintisi 15-20sn'ye değil ~2sn'ye düşer).
+- [x] `company_context` Redis okumasında **2sn timeout** → hemen DB fallback (Redis kesintisi 15-20sn'ye değil ~2sn'ye düşer). (2026-10-14: `socket_timeout=2` + `asyncio.wait_for` — DNS çözümlemesi dahil her adım sınırlı; başarısız connect'e 30sn cooldown → ceza istek başına değil pencere başına; test `test_company_context_timeout.py` — asılı okuma/init <4sn'de DB fallback'e düşer.)
 - [ ] İpucu: `refetchIntervalInBackground` ile zombi polling kapanır.
 
 **DoD:** Redis yokken sayfa açılıştan ≤3sn'de karar verir; form→sonuç yutması canlıda tekrarlanmaz.

@@ -16,8 +16,10 @@ Usage:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -34,6 +36,10 @@ except ImportError:
     logger.debug("redis package not installed — CompanyContext will use DB-only mode")
 
 _redis_client: Any = None
+# After a failed connect, don't retry on every read — cooldown keeps the
+# Redis-missing path at ~2s once, not 2s per request (1.5 hydration UX).
+_redis_retry_after: float = 0.0
+_REDIS_RETRY_COOLDOWN_SECONDS = 30.0
 CONTEXT_TTL_SECONDS = 1800  # 30 minutes
 
 
@@ -41,8 +47,10 @@ async def _get_redis() -> Any | None:
     """Return async Redis client, or None if unavailable."""
     if not _REDIS_AVAILABLE:
         return None
-    global _redis_client
+    global _redis_client, _redis_retry_after
     if _redis_client is None:
+        if time.monotonic() < _redis_retry_after:
+            return None
         try:
             from app.config import get_settings
             settings = get_settings()
@@ -51,11 +59,18 @@ async def _get_redis() -> Any | None:
                 encoding="utf-8",
                 decode_responses=True,
                 socket_connect_timeout=2,
+                # Per-command bound: a stalled connection can't hang reads or
+                # cache writes (1.5: Redis kesintisi context'i ~2sn'ye düşürür).
+                socket_timeout=2,
             )
-            await _redis_client.ping()
+            # wait_for also bounds DNS resolution, which the socket timeouts
+            # above do not cover.
+            await asyncio.wait_for(_redis_client.ping(), timeout=2)
+            _redis_retry_after = 0.0
         except Exception as exc:
             logger.warning("Redis unavailable (%s) — using DB-only context", exc)
             _redis_client = None
+            _redis_retry_after = time.monotonic() + _REDIS_RETRY_COOLDOWN_SECONDS
     return _redis_client
 
 
@@ -199,11 +214,11 @@ async def get_company_context(
     Load CompanyContext for the given org.
     Priority: Redis → DB snapshot → new empty context.
     """
-    # 1. Try Redis
+    # 1. Try Redis (bounded: a stalled server must cost ≤2s before DB fallback)
     redis = await _get_redis()
     if redis:
         try:
-            raw = await redis.get(_redis_key(org_id))
+            raw = await asyncio.wait_for(redis.get(_redis_key(org_id)), timeout=2)
             if raw:
                 return CompanyContext.from_dict(json.loads(raw))
         except Exception as exc:
