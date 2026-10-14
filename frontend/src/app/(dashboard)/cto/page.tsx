@@ -15,6 +15,7 @@ import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
 import { useI18n } from "@/hooks/useI18n";
+import { normalizeCTOResult } from "@/lib/cto-result";
 import {
   InfraSection,
   TechDebtSection,
@@ -106,7 +107,7 @@ export default function CTODashboardPage() {
         const ctx = res.data?.data ?? res.data;
         const last = ctx?.last_cto_result;
         if (!cancelled && last && typeof last === "object" && last.cto_summary) {
-          setPanelResult(last as unknown as CTOResult);
+          setPanelResult(normalizeCTOResult(last));
         }
       } catch {
         /* empty until analyze */
@@ -118,7 +119,7 @@ export default function CTODashboardPage() {
   }, [orgId]);
 
   const ctoResult: CTOResult | null =
-    isDone && result ? (result as unknown as CTOResult) : panelResult;
+    isDone && result ? normalizeCTOResult(result) : panelResult;
 
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
@@ -132,7 +133,7 @@ export default function CTODashboardPage() {
         alan="cto"
         jobId={activeCFOJobId}
         onResult={(r) => {
-          if (r) setPanelResult(r as unknown as CTOResult);
+          if (r) setPanelResult(normalizeCTOResult(r));
         }}
       />
 
