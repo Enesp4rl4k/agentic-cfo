@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Download, ShieldAlert, TrendingUp, Users, Cpu, ChevronDown } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary } from "@/lib/api/semantic";
 import { type CEOResult, type BoardSlide, type OKRObjective } from "@/components/ceo/types";
 import { normalizeCEOResult, type CEOView } from "@/lib/ceo-result";
+import { SAMPLE_CEO_WIRE, isDemoMode } from "@/lib/demo-samples";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { useI18n } from "@/hooks/useI18n";
 
@@ -188,6 +189,10 @@ export default function CEODashboardPage() {
   const [rebuildingBrief, setRebuildingBrief] = useState(false);
   const [approvingBrief, setApprovingBrief] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
+  // Demo-only, prefill-less fallback: a labelled sample board instead of a bare
+  // empty state. Any real result or decision brief clears it — sample data is
+  // never shown once live data exists (DEMO_PLAN §D2).
+  const [sampleMode, setSampleMode] = useState(false);
 
   // Prefer live CompanyContext / last CEO result over SAMPLE CSV paste.
   // Context hydration is NOT cancelled on effect re-runs (orgId flips fetch
@@ -199,7 +204,10 @@ export default function CEODashboardPage() {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
-        if (!ctx) return;
+        if (!ctx) {
+          if (isDemoMode()) setSampleMode(true);
+          return;
+        }
         if (ctx.company_name) setCompany(String(ctx.company_name));
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const lastCeo = ctx.last_ceo_result;
@@ -210,8 +218,11 @@ export default function CEODashboardPage() {
           if (view?.decision_brief) {
             setBrief(view.decision_brief);
           }
+        } else if (isDemoMode()) {
+          setSampleMode(true);
         }
       } catch {
+        if (isDemoMode()) setSampleMode(true);
         /* empty state until analyze */
       }
     })();
@@ -224,7 +235,11 @@ export default function CEODashboardPage() {
     (async () => {
       try {
         const b = await getDecisionBrief(selectedPeriod);
-        if (!cancelled && b.brief) setBrief(b.brief);
+        if (!cancelled && b.brief) {
+          setBrief(b.brief);
+          // A real brief exists: the sample board drops out entirely.
+          setSampleMode(false);
+        }
         const periods = await getSemanticHistory(12);
         if (!cancelled) setPeriodHistory(periods);
       } catch {
@@ -240,7 +255,10 @@ export default function CEODashboardPage() {
     setApprovingBrief(true);
     try {
       const res = await approveDecisionBrief(selectedPeriod);
-      if (res.brief) setBrief(res.brief);
+      if (res.brief) {
+        setBrief(res.brief);
+        setSampleMode(false);
+      }
     } finally {
       setApprovingBrief(false);
     }
@@ -251,7 +269,10 @@ export default function CEODashboardPage() {
     try {
       await rebuildSemantic();
       const b = await getDecisionBrief(selectedPeriod);
-      if (b.brief) setBrief(b.brief);
+      if (b.brief) {
+        setBrief(b.brief);
+        setSampleMode(false);
+      }
     } finally {
       setRebuildingBrief(false);
     }
@@ -267,6 +288,7 @@ export default function CEODashboardPage() {
       if (data) {
         setResult(normalizeCEOResult(data));
         setLiveLoaded(true);
+        setSampleMode(false);
       }
       const b = await getDecisionBrief(selectedPeriod);
       if (b.brief) setBrief(b.brief);
@@ -292,6 +314,7 @@ export default function CEODashboardPage() {
         if (res.data?.error) throw new Error(res.data.error);
         setResult(normalizeCEOResult(data));
         setLiveLoaded(true);
+        setSampleMode(false);
       } else {
         const res = await apiClient.post<CEOResult>("/ceo/analyze", {
           company_name: company || null,
@@ -300,6 +323,7 @@ export default function CEODashboardPage() {
         if (res.data.error) throw new Error(res.data.error);
         setResult(normalizeCEOResult(res.data));
         setLiveLoaded(true);
+        setSampleMode(false);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t.roleDashboards.ceo.body.unknownError);
@@ -308,7 +332,12 @@ export default function CEODashboardPage() {
     }
   }
 
-  const display = result;
+  const sampleView = useMemo(
+    () => (isDemoMode() && sampleMode ? normalizeCEOResult(SAMPLE_CEO_WIRE) : null),
+    [sampleMode],
+  );
+  const display = result ?? sampleView;
+  const sampleActive = sampleMode && result === null;
   const showEmpty = !display;
 
   return (
@@ -317,7 +346,18 @@ export default function CEODashboardPage() {
       <RoleDashboardHeader
         title={t.roleDashboards.ceo.title}
         description={t.roleDashboards.ceo.description}
-        context={liveLoaded ? <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />{t.roleDashboards.ceo.body.currentCompanyContext}</span> : undefined}
+        context={
+          sampleActive ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
+              {t.csvInput.sampleData}
+            </span>
+          ) : liveLoaded ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+              {t.roleDashboards.ceo.body.currentCompanyContext}
+            </span>
+          ) : undefined
+        }
       />
 
       <ActionCenter />
@@ -418,12 +458,12 @@ export default function CEODashboardPage() {
           {display?.outlook && <OutlookChart outlook={display.outlook} />}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <SWOTWidget
-              data={result?.swot ?? null}
+              data={display?.swot ?? null}
               jobId={activeCFOJobId}
               orgId={orgId}
             />
             <CrossRiskTimeline
-              risks={result?.cross_risks ?? []}
+              risks={display?.cross_risks ?? []}
             />
           </div>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Shield, AlertTriangle, Zap, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { KRIGauge, KRIList, RiskPostureBadge } from "@/components/risk/KRIGauge";
 import { useRiskCascadeFromJob, useRiskCascadeFromOrg } from "@/hooks/useRisk";
 import { postureBg, postureColor } from "@/lib/api/risk";
+import { normalizeRiskCascadeReport } from "@/lib/risk-report";
+import { SAMPLE_RISK_WIRE, isDemoMode } from "@/lib/demo-samples";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useI18n } from "@/hooks/useI18n";
@@ -181,7 +183,20 @@ export default function RiskPage() {
   const fromOrg = useRiskCascadeFromOrg();
 
   const active = orgId ? fromOrg : fromJob;
-  const report: RiskCascadeReport | null = active.result;
+
+  // Prefill-less degradation, demo mode only (DEMO_PLAN §D2): a labelled
+  // sample fills the dashboard while no live report exists — the memo gates on
+  // active.result, so real data always wins, and without
+  // NEXT_PUBLIC_DEMO_MODE the page keeps its honest empty state.
+  const sampleReport = useMemo(
+    () =>
+      isDemoMode() && !active.result && !active.loading && !active.error
+        ? normalizeRiskCascadeReport(SAMPLE_RISK_WIRE)
+        : null,
+    [active.result, active.loading, active.error],
+  );
+  const report: RiskCascadeReport | null = active.result ?? sampleReport;
+  const sampleActive = active.result === null && sampleReport !== null;
 
   const handleLoad = () => {
     if (orgId) {
@@ -208,6 +223,11 @@ export default function RiskPage() {
         <div className="flex items-center gap-2">
           <Shield className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-bold tracking-tight">{t.risk.title}</h1>
+          {sampleActive && (
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
+              {t.csvInput.sampleData}
+            </span>
+          )}
         </div>
         <Button onClick={handleLoad} disabled={active.loading} size="sm" variant="outline">
           <RefreshCw className={cn("h-4 w-4 mr-2", active.loading && "animate-spin")} />
