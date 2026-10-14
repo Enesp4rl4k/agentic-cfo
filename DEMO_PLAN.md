@@ -45,11 +45,12 @@
 
 ## 3. Fazlar
 
-### D1 — Sürtünmesiz giriş (konuk hesabı) — ÖNCELİK 1
-- [ ] `POST /demo/guest`: yoksa anonymous user + org (tr-TR/TRY) + JWT; `is_demo` flag.
-- [ ] Landing/buton: kayıt olmadan `QuickDemoBanner`-tarzı tek tık → guest token → dolu dashboard.
-- [ ] Konuk org `demo` etiketli; `DemoBanner` her zaman görünür (`DEMO_MODE` bağımsız ziyaretçi flag'i).
-- [ ] Kapı: test — token'sız `/demo/seed` 401, guest token ile 200; guest org izole (org B → A job'ı 404).
+### D1 — Sürtünmesiz giriş (konuk hesabı) — ÖNCELİK 1 ✅ (2026-10-14)
+- [x] `POST /demo/guest`: anonymous user + org (tr-TR/TRY) + JWT, `/auth/login` ile aynı token şekli (NextAuth SSO kısa yolu). `is_demo` kolonu yok → migration'sız etiketleme: org `demo-` slug öneki + açıklama; gate = `settings.demo_mode` → 403 (güvenli varsayılan: kapalı).
+- [x] Landing/buton: Hero + CTABand "Demoyu Dene" ve login "Kayıt olmadan demoyu dene" → `startGuestDemo()` → konuk oturum → `/upload` (QuickDemoBanner ateşleyici). "Dolu dashboard" iddiası D2 prefill'e bağlı — şimdilik tek tık → tek tık örnek analiz.
+- [x] Konuk org `demo` etiketli ✓; `DemoBanner` her zaman görünür → `NEXT_PUBLIC_DEMO_MODE` env bayrağı (D5).
+- [x] QuickDemoBanner token düzeltmesi: `useSession()` fallback'i — prop'suz çağrída seed 401 → sessizce boş dashboard'a atlıyordu.
+- [x] Kapı: backend 6 test (`test_demo_guest.py`: token'sız `/demo/seed` 401, guest 200; izolasyon — org B A'nın job'ını görmez; demo_mode-off 403; org tr-TR/TRY) + frontend 3 test (`demo-guest.test.tsx`: başarılı akış, dürüst hata durumu, tokensız yanıt).
 
 ### D2 — Anında dolu dashboard'lar — ÖNCELİK 1
 - [ ] **Ön-hesaplama scripti** `scripts/demo_prefill.py`: demo org + `demo_seeder`/Logo Tiger verisi + pipeline'ı bir kez çalıştır → company_context + `last_*_result` snapshot'ları DB'de; ziyaret anında hydration yeter.

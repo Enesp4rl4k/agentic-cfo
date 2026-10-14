@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Zap, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GuestDemoButton } from "@/components/demo/GuestDemoButton";
 import { brand } from "@/lib/branding";
 
 // ── Animated number counter ───────────────────────────────────────────────────
@@ -238,16 +239,9 @@ export function HeroSection() {
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
               </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                asChild
-                className="h-12 px-7 text-base border-white/15 hover:border-white/30 press-feedback"
-              >
-                <Link href="/auth/login">
-                  Demo İzle
-                </Link>
-              </Button>
+              <GuestDemoButton className="inline-flex h-12 items-center justify-center rounded-md border border-white/15 px-7 text-base font-medium text-foreground shadow-sm transition-colors hover:border-white/30 hover:bg-white/5 press-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
+                Demoyu Dene
+              </GuestDemoButton>
             </div>
 
             {/* Trust row */}

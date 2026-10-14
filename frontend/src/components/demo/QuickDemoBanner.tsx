@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Loader2, ArrowRight, FileSpreadsheet, Activity } from "lucide-react";
 
 export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  // Parent-provided token wins; otherwise fall back to the NextAuth session.
+  // Without this the seed call went out unauthenticated (401) and the banner
+  // silently pushed to an empty dashboard instead of starting the analysis.
+  const { data: session } = useSession();
+  const token = accessToken ?? session?.accessToken;
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -14,7 +20,7 @@ export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
     setLoading(true);
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch(`${API_BASE}/api/v1/demo/seed`, {
         method: "POST",

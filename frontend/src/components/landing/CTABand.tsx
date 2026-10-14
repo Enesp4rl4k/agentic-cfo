@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Upload, BarChart3, FileText } from "lucide-react";
+import { GuestDemoButton } from "@/components/demo/GuestDemoButton";
 
 const STEPS = [
   {
@@ -124,12 +125,9 @@ export function CTABand() {
                 Ücretsiz Başla
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
-              <Link
-                href="/auth/login"
-                className="inline-flex h-12 items-center gap-2 rounded-lg border border-white/15 px-8 text-sm font-medium text-foreground transition-colors hover:border-white/30 hover:bg-white/5 press-feedback"
-              >
-                Demo İzle
-              </Link>
+              <GuestDemoButton className="inline-flex h-12 items-center gap-2 rounded-lg border border-white/15 px-8 text-sm font-medium text-foreground transition-colors hover:border-white/30 hover:bg-white/5 press-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
+                Demoyu Dene
+              </GuestDemoButton>
             </div>
 
             <p className="mt-4 text-sm text-muted-foreground">

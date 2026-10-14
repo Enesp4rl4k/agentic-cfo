@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { APP_HOME } from "@/lib/routes";
+import { GuestDemoButton } from "@/components/demo/GuestDemoButton";
 import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -312,6 +313,11 @@ export default function LoginPage() {
               {loading ? "Giriş yapılıyor…" : "Giriş Yap"}
             </button>
           </form>
+
+          {/* Guest demo (D1) — try the product without signing up */}
+          <GuestDemoButton className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card text-sm font-medium transition-colors hover:bg-muted press-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
+            Kayıt olmadan demoyu dene
+          </GuestDemoButton>
 
           {/* Footer */}
           <p className="mt-6 text-center text-sm text-muted-foreground">
