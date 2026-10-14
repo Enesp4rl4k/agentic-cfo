@@ -34,7 +34,7 @@ ENV_KEYWORDS = {
 }
 
 # Services considered high-waste risk if cost > threshold
-WASTE_THRESHOLD_CENTS = 5_000_00  # $5,000/month per service triggers review
+WASTE_THRESHOLD_CENTS = 5_000_00  # ₺5,000/month per service triggers review
 
 
 def _detect_environment(name: str) -> str:
@@ -147,7 +147,7 @@ def _compute_infra_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if cost > WASTE_THRESHOLD_CENTS and _detect_environment(svc) in ("dev", "staging"):
             waste_items.append({
                 "service": svc,
-                "reason": f"Non-production environment spending ${cost/100:,.0f}/month",
+                "reason": f"Non-production environment spending ₺{cost/100:,.0f}/month",
                 "savings_cents": int(cost * 0.6),  # assume 60% reducible
             })
 
@@ -177,11 +177,11 @@ def _build_infra_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
         alerts[0]["level"] = "critical"  # type: ignore[index]
 
     waste = metrics.get("waste_estimate_cents", 0)
-    if waste > 10_000_00:  # > $10k/month waste
+    if waste > 10_000_00:  # > ₺10k/month waste
         alerts.append({
             "level": "warning",
             "message": (
-                f"Estimated ${waste/100:,.0f}/month cloud waste detected. "
+                f"Estimated ₺{waste/100:,.0f}/month cloud waste detected. "
                 "Review non-production environment sizing."
             ),
         })
@@ -209,7 +209,7 @@ async def _generate_infra_narrative(
 
     top = metrics.get("top_cost_drivers", [])[:5]
     top_text = "\n".join(
-        f"  - {d['service']}: ${d['cost_cents']/100:,.0f} ({d['pct']}%)"
+        f"  - {d['service']}: ₺{d['cost_cents']/100:,.0f} ({d['pct']}%)"
         for d in top
     )
     alert_text = (
@@ -282,10 +282,10 @@ async def run_infra_agent(
         confidence = 0.92 if not has_critical else 0.80
 
         logger.info(
-            "InfraAgent: job=%s total=$%,.0f waste=$%,.0f alerts=%d",
+            "InfraAgent: job=%s total=₺%s waste=₺%s alerts=%d",
             state.get("job_id"),
-            metrics["total_cost_cents"] / 100,
-            metrics["waste_estimate_cents"] / 100,
+            f"{metrics['total_cost_cents'] / 100:,.0f}",
+            f"{metrics['waste_estimate_cents'] / 100:,.0f}",
             len(alerts),
         )
 
@@ -295,8 +295,8 @@ async def run_infra_agent(
             confidence=confidence,
             needs_review=has_critical,
             detail=(
-                f"Cloud spend: ${metrics['total_cost_cents']/100:,.0f}, "
-                f"waste: ${metrics['waste_estimate_cents']/100:,.0f}, "
+                f"Cloud spend: ₺{metrics['total_cost_cents']/100:,.0f}, "
+                f"waste: ₺{metrics['waste_estimate_cents']/100:,.0f}, "
                 f"alerts: {len(alerts)}"
             ),
         )

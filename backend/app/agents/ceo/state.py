@@ -7,7 +7,7 @@ then synthesizes their outputs into cross-domain insights.
 CEO's unique value:
   CFO says "cash runway 4 months"
   CTO says "infra costs 40% above benchmark"
-  CEO synthesizes: "optimize infra → save $X → extend runway by 2 months"
+  CEO synthesizes: "optimize infra → save ₺X → extend runway by 2 months"
 
 CEOState carries:
   - financial_summary: condensed CFO pipeline output

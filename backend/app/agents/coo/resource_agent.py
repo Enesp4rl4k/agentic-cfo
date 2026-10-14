@@ -239,11 +239,11 @@ def _build_resource_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
             ),
         })
 
-    if rev_fte > 0 and rev_fte < 5_000_000:  # < $50k/FTE/year
+    if rev_fte > 0 and rev_fte < 5_000_000:  # < ₺50k/FTE/year
         alerts.append({
             "level": "medium",
             "message": (
-                f"Revenue per FTE ${rev_fte / 100:,.0f} is below $50k benchmark. "
+                f"Revenue per FTE ₺{rev_fte / 100:,.0f} is below ₺50k benchmark. "
                 "Review pricing, product mix, or team structure."
             ),
         })

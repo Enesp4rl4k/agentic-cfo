@@ -218,7 +218,7 @@ def _build_campaign_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
             "level": "high",
             "message": (
                 f"{len(under)} underperforming campaign(s) wasting "
-                f"${spend_wasted / 100:,.0f}. Pause or reallocate budget."
+                f"₺{spend_wasted / 100:,.0f}. Pause or reallocate budget."
             ),
         })
 
@@ -236,11 +236,11 @@ def _build_campaign_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
                 ),
             })
 
-    if cac > 50000 and roas < 2.0:  # CAC > $500 with low ROAS
+    if cac > 50000 and roas < 2.0:  # CAC > ₺500 with low ROAS
         alerts.append({
             "level": "medium",
             "message": (
-                f"High CAC (${cac / 100:,.0f}) combined with low ROAS. "
+                f"High CAC (₺{cac / 100:,.0f}) combined with low ROAS. "
                 "Customer lifetime value must exceed CAC to be sustainable."
             ),
         })

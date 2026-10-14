@@ -97,12 +97,13 @@ CHRO'da düzeltildi sınıfı (UI ↔ backend anahtar uyumsuzluğu) tüm rol say
 ### 1.3 Kanıt/ provenance bileşeni
 - [ ] Gerçek · Tahmin · Benchmark ayrımı tek ortak bileşenle (DESIGN.md kuralı) metric kartına iliştirilir; `pnl`, `tax`, `analytics`, `budget` öncelikli.
 
-### 1.4 Para birimi dürüst süpürmesi (U1) — **yeni**
-- [ ] `app/core/financial.py`'de tek formatter (kuruş → org para birimi; TR platform varsayılanı ₺, sembol tablosu TRY→₺ / USD→$ / EUR→€).
-- [ ] Backend'de kalan **33 `$` sitesi** tek tek sınıflandırılıp düzeltilir: org verisi (pnl, cashflow, forecast, budget, chat_agent, infra, synthesis, strategic_priorities, loss, campaign, resource, exporters) → formatter; **gerçekten USD olanlar allowlist** (`model_gateway` LLM harcaması $, gömülü JS template `ws_alerts`, test fixture'ları).
-- [ ] **Grep kapısı testi:** `app/` içinde currency-`$` deseni yalnız allowlist'te olabilir; CHRO anlatıları gibi yeni fallback yazıları da bu kapıdan geçer.
-
-**DoD:** TRY org'unda hiçbir kullanıcıya `$`'lı tutar görünmez; kapı testi yeşil; `pytest tests/ -q` yeşil.
+### 1.4 Para birimi dürüst süpürmesi (U1) — ✅ (2026-10-14)
+- [x] **33 `$` sitesi sınıflandırılıp ₺'ye çevrildi** (inline ₺ swap — her sitenin sayı formatı korundu; `pnl/cashflow/forecast/chat/infra/synthesis/strategic_priorities/loss/campaign/resource/budget` + **exporter Excel/CSV başlıkları** (`Amount (₺)`, `Cash In (₺)`) + **chat LLM promptu** (`Format currency as ₺X,XXX`) + yorumlar/loglar (`risk/orchestrator` dahil).
+- [x] **Ek dürüstlük bulguları (süpürme sırasında):**
+  - `chat_agent.fmt` kuruşu **bölmeden** basıyordu → CFO chat LLM bağlamı 100× şişirilmiş tutar üretiyordu (ör. ₺45,900 yerine "₺4,590,000") → `₺{cents / 100}` ile fix.
+  - `infra_agent` logger `%,.0f` geçersiz spec — log formatting error (latent) → `₺%s` + f-string ile onarıldı.
+- [x] **Kapı testi:** `backend/tests/test_honesty_currency.py` — `app/` genelinde `$`+rakam/`${` deseni yalnız belgeli allowlist'te geçer: `model_gateway`/`services/llm_router` (LLM harcaması gerçekten USD), `stream`/`ws_alerts` (gömülü JS template), `financial.format_currency_usd`, asyncpg `$n` placeholder satırları.
+- Not: Çoklu para birimi sembol tablosu/org-seçimi bilinçli olarak kapsam dışı (bkz. Kapsam dışı); TR varsayılanı ₺.
 
 ### 1.5 Hydration & yükleme UX'i (U2/S1) — **yeni**
 - [ ] Context yüklenirken **skeleton / "Son analiz yükleniyor"** göstergesi; form ve sonuç aynı anda yarışmaz (form, hydrasyon kararına göre gecikmeden açılır).

@@ -15,9 +15,9 @@ from app.core.interfaces import IReportExporter
 
 
 def _fmt(cents: float) -> str:
-    """Format integer cents into a currency string ($XX,XXX.XX)."""
+    """Format integer cents into a currency string (₺XX,XXX.XX)."""
     amt = cents_to_amount(cents)
-    return f"${amt:,.2f}"
+    return f"₺{amt:,.2f}"
 
 
 class ExcelReportExporter(IReportExporter):
@@ -47,7 +47,7 @@ class ExcelReportExporter(IReportExporter):
         # ── Sheet 1: P&L ──────────────────────────────────────────────────────────
         ws_pnl = wb.active
         ws_pnl.title = "Profit & Loss"
-        ws_pnl.append(["Line Item", "Amount ($)"])
+        ws_pnl.append(["Line Item", "Amount (₺)"])
         for cell in ws_pnl[1]:
             cell.fill = header_fill
             cell.font = header_font
@@ -80,7 +80,7 @@ class ExcelReportExporter(IReportExporter):
 
         # ── Sheet 2: Cash Flow ────────────────────────────────────────────────────
         ws_cf = wb.create_sheet("Cash Flow")
-        ws_cf.append(["Activity", "Amount ($)"])
+        ws_cf.append(["Activity", "Amount (₺)"])
         for cell in ws_cf[1]:
             cell.fill = header_fill
             cell.font = header_font
@@ -99,7 +99,7 @@ class ExcelReportExporter(IReportExporter):
         ws_cf.append([])
         ws_cf.append(["Monthly Cash Flow"])
         ws_cf.cell(row=ws_cf.max_row, column=1).font = Font(bold=True)
-        ws_cf.append(["Month", "Cash In ($)", "Cash Out ($)", "Net ($)"])
+        ws_cf.append(["Month", "Cash In (₺)", "Cash Out (₺)", "Net (₺)"])
         for cell in ws_cf[ws_cf.max_row]:
             cell.fill = subheader_fill
 
@@ -124,7 +124,7 @@ class ExcelReportExporter(IReportExporter):
         for scenario in forecast.get("scenarios", {}).values():
             ws_fc.append([scenario["label"], scenario.get("description", "")])
             ws_fc.cell(row=ws_fc.max_row, column=1).font = Font(bold=True)
-            ws_fc.append(["Month", "Cash In ($)", "Cash Out ($)", "Net ($)"])
+            ws_fc.append(["Month", "Cash In (₺)", "Cash Out (₺)", "Net (₺)"])
             for cell in ws_fc[ws_fc.max_row]:
                 cell.fill = header_fill
                 cell.font = header_font

@@ -28,7 +28,7 @@ FINANCING_CATEGORIES = {"loan"}
 
 
 def _fmt(cents: int) -> str:
-    return f"${cents / 100:,.2f}"
+    return f"₺{cents / 100:,.2f}"
 
 
 def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:

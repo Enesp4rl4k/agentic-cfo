@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _fmt(cents: int) -> str:
-    return f"${cents / 100:,.2f}"
+    return f"₺{cents / 100:,.2f}"
 
 
 def _monthly_buckets(transactions: list[dict[str, Any]], tx_type: str) -> dict[str, int]:

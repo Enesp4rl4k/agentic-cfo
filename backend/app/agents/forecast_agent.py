@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _fmt(cents: int) -> str:
-    return f"${cents / 100:,.0f}"
+    return f"₺{cents / 100:,.0f}"
 
 
 def _detect_seasonality(
