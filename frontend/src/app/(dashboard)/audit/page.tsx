@@ -17,6 +17,8 @@ import {
 } from "@/lib/dashboard-utils";
 import { useI18n } from "@/hooks/useI18n";
 
+import { normalizeAuditResult } from "@/lib/audit-result";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Finding {
@@ -384,7 +386,7 @@ export default function AuditDashboardEnhancedPage() {
         coverage_csv: coverageCsv || "",
       });
       if (res.data.error) throw new Error(res.data.error);
-      setResult(res.data);
+      setResult(normalizeAuditResult(res.data));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t.audit.unknownError);
     } finally {

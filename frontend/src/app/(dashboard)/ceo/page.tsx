@@ -22,26 +22,9 @@ import { SWOTWidget }           from "@/components/ceo/SWOTWidget";
 import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary } from "@/lib/api/semantic";
 import { type CEOResult, type BoardSlide, type OKRObjective } from "@/components/ceo/types";
+import { normalizeCEOResult, type CEOView } from "@/lib/ceo-result";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { useI18n } from "@/hooks/useI18n";
-
-// ── Sample data ────────────────────────────────────────────────────────────────
-
-const SAMPLE_BOARD_DECK: BoardSlide[] = [
-  { slide_number: 1, title: "Executive Summary",    content: "H1 2024 sağlam finansal performans gösterdi. Revenue +18% YoY, EBITDA marjı 25%.",         metrics: { revenue: 45.2, ebitda_margin: 0.25, growth: 0.18 } },
-  { slide_number: 2, title: "Financial Performance", content: "Üç ana segment tümü beklentileri aştı. Operasyonel verimlilik %12 iyileşti.",              metrics: { segment_1: 18.5, segment_2: 12.3, segment_3: 14.4 } },
-  { slide_number: 3, title: "Market Expansion",      content: "Yeni pazarlara giriş başarılı. Müşteri tabanı %35 genişledi.",                              metrics: { new_markets: 3, customer_growth: 0.35, market_share: 0.062 } },
-  { slide_number: 4, title: "Risk Assessment",       content: "Önemli riskler kontrol altında. Siber güvenlik altyapısı güçlendirildi.",                   metrics: { risk_score: 0.45, compliance_rate: 0.98, audit_score: 0.92 } },
-  { slide_number: 5, title: "Strategic Priorities",  content: "2025 stratejisi: Dijital transformasyon, ESG uyumu, jeopolitik çeşitlendirme.",              metrics: { digital_investment: 0.35, esg_score: 0.78, diversification: 0.62 } },
-  { slide_number: 6, title: "Outlook & Guidance",    content: "2024 Full Year: Revenue $185-195M. 2025 Growth: 15-18% midpoint.",                          metrics: { fy2024_revenue: 190, fy2025_growth: 0.165, confidence: 0.88 } },
-];
-
-const SAMPLE_OKRS: OKRObjective[] = [
-  { objective_id: "O1", name: "Revenue Growth & Profitability", weight: 0.30, score: 0.92, momentum: "up",     key_results: [{ name: "Revenue +20% YoY", progress: 0.95 }, { name: "EBITDA Margin 26%", progress: 0.88 }] },
-  { objective_id: "O2", name: "Customer Satisfaction",          weight: 0.25, score: 0.78, momentum: "stable", key_results: [{ name: "NPS Score 60+", progress: 0.82 }, { name: "Churn Rate <5%", progress: 0.75 }] },
-  { objective_id: "O3", name: "Digital Transformation",         weight: 0.25, score: 0.65, momentum: "up",     key_results: [{ name: "Cloud Migration 80%", progress: 0.60 }, { name: "Automation ROI $5M", progress: 0.70 }] },
-  { objective_id: "O4", name: "Team Excellence & Retention",    weight: 0.20, score: 0.82, momentum: "down",   key_results: [{ name: "Employee Engagement 75%", progress: 0.85 }, { name: "Turnover <12%", progress: 0.79 }] },
-];
 
 // ── PDF export ─────────────────────────────────────────────────────────────────
 // Uses /advanced/board-deck-pdf which reads from CompanyContext directly —
@@ -196,7 +179,7 @@ export default function CEODashboardPage() {
   const [company, setCompany] = useState("");
   const [period,  setPeriod]  = useState("");
   const [loading, setLoading] = useState(false);
-  const [result,  setResult]  = useState<CEOResult | null>(null);
+  const [result,  setResult]  = useState<CEOView | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [liveLoaded, setLiveLoaded] = useState(false);
   const [brief, setBrief] = useState<DecisionBrief | null>(null);
@@ -219,10 +202,11 @@ export default function CEODashboardPage() {
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const lastCeo = ctx.last_ceo_result;
         if (lastCeo && typeof lastCeo === "object") {
-          setResult(lastCeo as CEOResult);
+          const view = normalizeCEOResult(lastCeo);
+          setResult(view);
           setLiveLoaded(true);
-          if (lastCeo.decision_brief) {
-            setBrief(lastCeo.decision_brief as DecisionBrief);
+          if (view?.decision_brief) {
+            setBrief(view.decision_brief);
           }
         }
       } catch {
@@ -271,7 +255,7 @@ export default function CEODashboardPage() {
       const data = res.data?.data ?? res.data;
       if (res.data?.error) throw new Error(res.data.error);
       if (data) {
-        setResult(data as CEOResult);
+        setResult(normalizeCEOResult(data));
         setLiveLoaded(true);
       }
       const b = await getDecisionBrief(selectedPeriod);
@@ -296,7 +280,7 @@ export default function CEODashboardPage() {
         });
         const data = res.data?.data ?? res.data;
         if (res.data?.error) throw new Error(res.data.error);
-        setResult(data as CEOResult);
+        setResult(normalizeCEOResult(data));
         setLiveLoaded(true);
       } else {
         const res = await apiClient.post<CEOResult>("/ceo/analyze", {
@@ -304,7 +288,7 @@ export default function CEODashboardPage() {
           period:       period  || null,
         });
         if (res.data.error) throw new Error(res.data.error);
-        setResult(res.data);
+        setResult(normalizeCEOResult(res.data));
         setLiveLoaded(true);
       }
     } catch (err: unknown) {
@@ -400,7 +384,7 @@ export default function CEODashboardPage() {
       ) : (
         <div className="space-y-6">
           <DecisionBriefPanel
-            brief={brief ?? ((display as CEOResult & { decision_brief?: DecisionBrief })?.decision_brief ?? null)}
+            brief={brief ?? display?.decision_brief ?? null}
             periodOptions={periodHistory}
             selectedPeriod={selectedPeriod}
             onPeriodChange={(pk) => setSelectedPeriod(pk)}
@@ -424,12 +408,12 @@ export default function CEODashboardPage() {
           {display?.outlook && <OutlookChart outlook={display.outlook} />}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <SWOTWidget
-              data={(result as CEOResult & { swot?: { strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[]; strategic_priorities?: string[] } })?.swot ?? null}
+              data={result?.swot ?? null}
               jobId={activeCFOJobId}
               orgId={orgId}
             />
             <CrossRiskTimeline
-              risks={(result as CEOResult & { cross_risks?: CrossRisk[] })?.cross_risks ?? []}
+              risks={result?.cross_risks ?? []}
             />
           </div>
         </div>

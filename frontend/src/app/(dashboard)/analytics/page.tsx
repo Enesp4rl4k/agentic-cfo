@@ -12,6 +12,7 @@ import {
   Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { useActiveCFOJob } from "@/hooks/useCompanyContext";
+import { useI18n } from "@/hooks/useI18n";
 import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatPercent, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ interface BenchmarkData {
 // ── Macro Snapshot Card ────────────────────────────────────────────────────────
 
 function MacroCard({ data, loading }: { data: MacroSnapshot | null; loading: boolean }) {
+  const { t, locale } = useI18n();
   if (loading) {
     return (
       <Card className="p-4 space-y-3 animate-pulse">
@@ -76,7 +78,7 @@ function MacroCard({ data, loading }: { data: MacroSnapshot | null; loading: boo
   if (!data) {
     return (
       <Card className="p-4 text-center text-sm text-muted-foreground">
-        TCMB verileri yüklenemedi
+        {t.analytics.macro.loadError}
       </Card>
     );
   }
@@ -84,18 +86,18 @@ function MacroCard({ data, loading }: { data: MacroSnapshot | null; loading: boo
   const metrics = [
     { label: "USD/TRY", value: data.usd_try, format: (v: number) => v.toFixed(2) },
     { label: "EUR/TRY", value: data.eur_try, format: (v: number) => v.toFixed(2) },
-    { label: "Politika Oranı", value: data.policy_rate_pct, format: (v: number) => `${v.toFixed(1)}%` },
-    { label: "Enflasyon", value: data.inflation_pct, format: (v: number) => `${v.toFixed(1)}%` },
-    { label: "UFE", value: data.ppi_pct, format: (v: number) => `${v.toFixed(1)}%` },
-    { label: "Repo Oranı", value: data.repo_rate_pct, format: (v: number) => `${v.toFixed(1)}%` },
+    { label: t.analytics.macro.policyRate, value: data.policy_rate_pct, format: (v: number) => `${v.toFixed(1)}%` },
+    { label: t.analytics.macro.inflation, value: data.inflation_pct, format: (v: number) => `${v.toFixed(1)}%` },
+    { label: t.analytics.macro.ufe, value: data.ppi_pct, format: (v: number) => `${v.toFixed(1)}%` },
+    { label: t.analytics.macro.repoRate, value: data.repo_rate_pct, format: (v: number) => `${v.toFixed(1)}%` },
   ];
 
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">TCMB Makroekonomik Göstergeler</h3>
+        <h3 className="text-sm font-semibold">{t.analytics.macro.title}</h3>
         <span className="text-xs text-muted-foreground">
-          {new Date(data.as_of).toLocaleDateString("tr-TR")}
+          {new Date(data.as_of).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US")}
         </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -107,7 +109,7 @@ function MacroCard({ data, loading }: { data: MacroSnapshot | null; loading: boo
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        Gerçek Sermaye Maliyeti: {data.real_cost_of_capital.toFixed(1)}%
+        {t.analytics.macro.wacc}: {data.real_cost_of_capital.toFixed(1)}%
       </p>
     </Card>
   );
@@ -162,6 +164,7 @@ function BenchmarkMetricRow({ item }: { item: BenchmarkMetric }) {
 // ── Benchmark Widget Card ─────────────────────────────────────────────────────
 
 function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading: boolean }) {
+  const { t } = useI18n();
   if (loading) {
     return (
       <Card className="p-4 space-y-3 animate-pulse">
@@ -182,7 +185,7 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
   if (!data) {
     return (
       <Card className="p-4 text-center text-sm text-muted-foreground">
-        Benchmark verisi yüklenemedi
+        {t.analytics.benchmark.loadError}
       </Card>
     );
   }
@@ -194,13 +197,15 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
     <Card className="p-4 space-y-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-semibold text-sm">{data.company_name} — Sektör Benchmark</p>
+          <p className="font-semibold text-sm">
+            {t.analytics.benchmark.title.replace("{company}", String(data.company_name ?? "—"))}
+          </p>
           <p className="text-xs text-muted-foreground capitalize">
             {data.sector} · {data.company_size}
           </p>
         </div>
         <span className="text-[10px] text-muted-foreground/60 shrink-0">
-          P25 / şirket / P75
+          {t.analytics.benchmark.percentiles}
         </span>
       </div>
 
@@ -223,7 +228,7 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
         <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
           {strengths.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-emerald-400 mb-1.5">Güçlü Yönler</p>
+              <p className="text-xs font-semibold text-emerald-400 mb-1.5">{t.analytics.benchmark.strengths}</p>
               <ul className="space-y-1">
                 {strengths.slice(0, 3).map((s, i) => (
                   <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
@@ -236,7 +241,7 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
           )}
           {weaknesses.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-orange-400 mb-1.5">Gelişim Alanları</p>
+              <p className="text-xs font-semibold text-orange-400 mb-1.5">{t.analytics.benchmark.improvements}</p>
               <ul className="space-y-1">
                 {weaknesses.slice(0, 3).map((w, i) => (
                   <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
@@ -256,6 +261,7 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
 // ── Main Analytics Page ───────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
+  const { t } = useI18n();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
   const contextJobId = useActiveCFOJob();
@@ -287,7 +293,7 @@ export default function AnalyticsPage() {
         );
         setBenchmark(benchRes.data.data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Veri yüklenemedi");
+        setError(err instanceof Error ? err.message : t.analytics.loadError);
       } finally {
         setLoading(false);
       }
@@ -303,9 +309,9 @@ export default function AnalyticsPage() {
         <div className="flex items-center gap-3">
           <BarChart3 className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold">Analitik & Benchmark</h1>
+            <h1 className="text-2xl font-bold">{t.analytics.title}</h1>
             <p className="text-sm text-muted-foreground">
-              TCMB makroekonomik göstergeler ve sektör karşılaştırması
+              {t.analytics.subtitle}
             </p>
           </div>
         </div>
@@ -315,7 +321,7 @@ export default function AnalyticsPage() {
           onClick={() => window.location.reload()}
         >
           <RefreshCw className="h-4 w-4 mr-1" />
-          Yenile
+          {t.analytics.refresh}
         </Button>
       </div>
 
@@ -324,7 +330,7 @@ export default function AnalyticsPage() {
         <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/8 p-4">
           <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-destructive">Hata</p>
+            <p className="text-sm font-medium text-destructive">{t.analytics.errorTitle}</p>
             <p className="text-sm text-muted-foreground">{error}</p>
           </div>
         </div>
@@ -334,9 +340,9 @@ export default function AnalyticsPage() {
       {!finalJobId && !loading && (
         <Card className="flex flex-col items-center justify-center py-16 text-center">
           <BarChart3 className="h-12 w-12 text-muted-foreground/40 mb-3" />
-          <p className="font-medium">Analiz Beklemede</p>
+          <p className="font-medium">{t.analytics.emptyTitle}</p>
           <p className="text-sm text-muted-foreground max-w-sm mt-1">
-            Finansal verisi yüklendikten sonra benchmark analizi görüntülenecektir.
+            {t.analytics.emptyBody}
           </p>
         </Card>
       )}
@@ -383,8 +389,7 @@ export default function AnalyticsPage() {
       <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-blue-400">
         <Zap className="h-4 w-4 mt-0.5 shrink-0" />
         <p>
-          TCMB makroekonomik veriler günlük güncellenir. Benchmark karşılaştırması şirketinizin
-          finansal göstergelerini Türkiye sektör ortalaması ile kıyaslar. P25/P50/P75 = %25/50/75 persentil.
+          {t.analytics.info}
         </p>
       </div>
     </main>

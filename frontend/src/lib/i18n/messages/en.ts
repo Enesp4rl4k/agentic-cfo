@@ -19,12 +19,57 @@ export type MessageTree = {
     smmm: string;
     smmmOnay: string;
   };
+  analytics: {
+    macro: {
+      title: string;
+      policyRate: string;
+      inflation: string;
+      ufe: string;
+      repoRate: string;
+      loadError: string;
+      wacc: string;
+    };
+    benchmark: {
+      title: string;
+      percentiles: string;
+      strengths: string;
+      improvements: string;
+      loadError: string;
+    };
+    loadError: string;
+    title: string;
+    subtitle: string;
+    refresh: string;
+    errorTitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    info: string;
+  };
   commandCenter: {
     title: string;
     subtitle: string;
     generateDeck: string;
     conflicts: string;
     turkeyPackHint: string;
+    deckNoJob: string;
+    deckGenerated: string;
+    deckSynthesis: string;
+    deckFailed: string;
+    relNow: string;
+    relMins: string;
+    relHours: string;
+    relDays: string;
+    nodeRunning: string;
+    nodeWaiting: string;
+    pipelineRunning: string;
+    pipelineDone: string;
+    domainAnalyses: string;
+    ceoSynthesis: string;
+    deckReady: string;
+    pdfError: string;
+    pdfAria: string;
+    pdfDownloading: string;
+    pdfDownload: string;
   };
   billing: {
     title: string;
@@ -1882,12 +1927,58 @@ export const en: MessageTree = {
     smmm: "Turkey accounting review",
     smmmOnay: "SMMM approvals",
   },
+  analytics: {
+    macro: {
+      title: "TCMB Macroeconomic Indicators",
+      policyRate: "Policy Rate",
+      inflation: "Inflation",
+      ufe: "PPI",
+      repoRate: "Repo Rate",
+      loadError: "TCMB data could not be loaded",
+      wacc: "Real Cost of Capital",
+    },
+    benchmark: {
+      title: "{company} — Sector Benchmark",
+      percentiles: "P25 / company / P75",
+      strengths: "Strengths",
+      improvements: "Areas for Improvement",
+      loadError: "Benchmark data could not be loaded",
+    },
+    loadError: "Data could not be loaded",
+    title: "Analytics & Benchmark",
+    subtitle: "TCMB macro indicators and sector comparison",
+    refresh: "Refresh",
+    errorTitle: "Error",
+    emptyTitle: "Analysis Pending",
+    emptyBody: "The benchmark analysis will appear once financial data has been uploaded.",
+    info:
+      "TCMB macro data updates daily. The benchmark comparison measures your financial indicators against the Turkish sector average. P25/P50/P75 = 25/50/75 percentiles.",
+  },
   commandCenter: {
     title: "Executive Command Center",
     subtitle: "Multi-role management OS — depth follows your data.",
     generateDeck: "Generate board deck",
     conflicts: "Open conflicts",
     turkeyPackHint: "Turkey pack enabled",
+    deckNoJob: "No active CFO job - run upload/analysis first.",
+    deckGenerated: "Board deck generated - view it on the CEO page.",
+    deckSynthesis: "CEO synthesis triggered.",
+    deckFailed: "Could not create board deck",
+    relNow: "just now",
+    relMins: "{n}m ago",
+    relHours: "{n}h ago",
+    relDays: "{n}d ago",
+    nodeRunning: "running",
+    nodeWaiting: "waiting",
+    pipelineRunning: "{n} running",
+    pipelineDone: "{done} / {total} complete",
+    domainAnalyses: "Domain Analyses",
+    ceoSynthesis: "CEO Synthesis",
+    deckReady: "Board deck ready",
+    pdfError: "PDF could not be downloaded. Run an analysis first.",
+    pdfAria: "Download Board Deck PDF",
+    pdfDownloading: "Downloading",
+    pdfDownload: "Download Board Deck",
   },
   billing: {
     title: "Choose your plan",

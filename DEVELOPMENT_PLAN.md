@@ -22,7 +22,7 @@
 **Kırmızı (v2 planın gerekçesi — Sorun Envanteri §1):**
 1. Backend anlatı/expanter'larında **33 kalan `$` hardcode** — TRY verisinde dolar (CHRO 3'ü düzeltildi, kalanı yok) → U1.
 2. **Hydration UX**: Redis'siz context okuması 15–20sn; form dolarken sonuç gelip formu yutuyor; loading göstergesi yok → U2/S1.
-3. **Şema fixture testi yok** (1.2 hâlâ açık): CHRO'daki hata sınıfı CTO/CMO/COO/CEO/risk/audit'te canlı bakıldı ama testi yok → U3.
+3. **Şema fixture testi yok** (1.2 hâlâ açık): CHRO'daki hata sınıfı CTO/CMO/COO/CEO/risk/audit'te canlı bakıldı ama testi yok → U3. → **Kapandı**: 6/6 rol normalizer + wire fixture testi.
 4. **Grup E i18n** + kalan dinamik rozet/casing taraması → U4.
 5. **COO hiç populated olmadı** (örnek SLA CSV yok) → U5.
 6. CEO ana buton 400; auto-chain CEO sentezi sessiz skip; health skoru bileşen/overall karışıklığı → U6/U8.
@@ -39,8 +39,8 @@
 |---|-------|-------|---------------|
 | U1 | Backend anlatılarında `$` hardcode (TRY verisinde dolar) | 33 site: `pnl/cashflow/forecast/budget/chat/infra/synthesis/strategic_priorities/loss/campaign/resource/exporters` | **1.4** para birimi süpürmesi + grep kapısı testi |
 | U2 | Hydration "şekil kayması" + yükleme göstergesi yok | Log: her context GET'i timeout→DB fallback (~15-20sn) | **1.5** skeleton + kısa timeout |
-| U3 | Rol şeması fixture testi yok (undefined basan kart sınıfı) | CHRO'da bulundu, diğerleri canlıda temiz ama testsiz | **1.2** normalizer + gerçek yanıt fixture'ı |
-| U4 | Kalan İ-casing + gömülü TR metin | Grup E + tam tarama yapılmadı | **1.1E** + **1.2** grep kapısı |
+| U3 | Rol şeması fixture testi yok (undefined basan kart sınıfı) | CHRO'da bulundu, diğerleri canlıda temiz ama testsiz | ~~**1.2** normalizer + gerçek yanıt fixture'ı~~ **Kapandı** (6/6 rol normalizer + fixture testi) |
+| U4 | Kalan İ-casing + gömülü TR metin | Grup E + tam tarama yapılmadı | **1.1E** + **1.2** grep kapısı → **kapandı** (`casing-gate.test.ts`) |
 | U5 | COO populated durumu doğrulanmadı | `last_coo_result: None` | **1.6** örnek SLA CSV + canlı doğrulama |
 | U6 | CEO buton 400; auto-chain sessiz skip | Gözlem (synthesize tetikleniyor, sonuç yok) | **1.6** micro-fix'ler |
 | U7 | Gerçek/Tahmin/Benchmark ayrımı yok | — | **1.3** provenance bileşeni |
@@ -88,9 +88,9 @@ Taşıma kuralı: sabit metin `tr.ts`/`en.ts`'e; iki ağaç anahtar olarak eşit
 ### 1.2 Rol dashboard'ları: şema sözleşmesi
 CHRO'da düzeltildi sınıfı (UI ↔ backend anahtar uyumsuzluğu) tüm rol sayfalarında sözleşme altına alınır.
 
-- [ ] Her rol sayfası için `lib/<role>-result.ts` normalizer'ı (varsa) ve **"backend ne dönerse o" testi**: gerçek API yanıt fixture'ı (kayıttan alınmış) — `undefined`/`String(undefined)`/`NaN` basamaz. Kapsam: **cto ✅ cmo ✅ coo ✅** (`aed6355` + bu commit: wire fixture + NaN/bozuk-veri/boş-durum testleri; cast'ler tek normalize noktasına indi; union'lar dürüst `string`'e açıldı) — **kalan: ceo, risk, audit**.
+- [x] Her rol sayfası için `lib/<role>-result.ts` normalizer'ı (varsa) ve **"backend ne dönerse o" testi**: gerçek API yanıt fixture'ı (kayıttan alınmış) — `undefined`/`String(undefined)`/`NaN` basamaz. Kapsam: **cto ✅ cmo ✅ coo ✅** (`aed6355` + `7c42e77`: wire fixture + NaN/bozuk-veri/boş-durum testleri; cast'ler tek normalize noktasına indi; union'lar dürüst `string`'e açıldı) + **ceo ✅ risk ✅ audit ✅** (bu sprint: `ceo-result.ts` — cross_risks `title→description`/`domains[0]→domain` alias'ı, JSX `as CEOResult & {}` cast'leri kalktı, ölü `SAMPLE_BOARD_DECK`/`SAMPLE_OKRS` (kullanılmayan uydurma metrikler + `$`) temizlendi; `audit-result.ts` — `any` findings/controls/coverage yerine tipli satırlar; `risk-report.ts` — üç API girişinde tek normalizer, `kri_posture`/`kri_value` nullable, bilinmeyen posture → `no_data`, bilinmeyen KRI status → `amber` (asla sakin yeşil), counts wire kırıksa `all_kris`'ten türetilir).
 - [ ] Para her yerde `useCurrencyFormat` + org locale/currency; `₺`-hardcode ve USD-default kalmaz (frontend tarafı Grup A–D'de büyük ölçüde bitti; kalan tarama bu maddede).
-- [ ] **Casing grep kapısı:** CSS `text-transform: uppercase` + İngilizce veri token'ı birleşimini arayan test/kontrol (düzeltme kuralı: JS `.toUpperCase()`). Bu hafta düzeltildi: CHRO/CEO/CMO/Command-Center/ConflictCard rozetleri (`87cd317`, `335991e`), CTO severity + component keys + sidebar group labels (`712c027`) — **kalan sayfa taraması + kalıcı kapı bu madde.**
+- [x] **Casing + gömülü TR grep kapısı:** `frontend/src/__tests__/casing-gate.test.ts` — (1) tüm `(dashboard)` sayfalarında yorum/template/regex muafiyetli düz TR karakter taraması (gömülü kopya = 0; sample CSV blokları ve TR eşleyen regex'ler veri sayılır, muaf), (2) sayfa kopyası + `tr.ts` üzerinde `I`+sesli harf (yanlış İ-casing) = 0. Rozet `text-transform` düzeltmeleri önceki sprint'te yapıldı (`87cd317`, `335991e`, `712c027`) + canlı tarama doğrulandı. Bu kapı: `analytics` + `command-center` sayfaları i18n'e bağlandı (useI18n yoktu — 30+ satır TR copy → `analytics`/`commandCenter` message key'leri, `relativeTime` locale-parametreli), 1.2 ile birlikte kapandı.
 
 **DoD:** `frontend/src/__tests__/` altında her rol için normalizer/fixture testi; canlı kontrolde 6 rol sayfasında `undefined`/`NaN` basan kart yok; casing kapısı yeşil.
 

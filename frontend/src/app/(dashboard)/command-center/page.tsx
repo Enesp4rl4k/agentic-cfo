@@ -12,6 +12,8 @@ import { FileDown, Loader2 as Loader } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useCommandCenter } from "@/hooks/useCFO";
+import { useI18n } from "@/hooks/useI18n";
+import type { MessageTree } from "@/lib/i18n";
 import { useContextSummary, useActiveCFOJob, useFullContext } from "@/hooks/useCompanyContext";
 import { useSystemHealth, useSystemOps } from "@/hooks/useSystemOps";
 import { apiClient } from "@/lib/api/client";
@@ -209,6 +211,7 @@ function QuickWinCard({ win }: { win: QuickWinItem }) {
 }
 
 function ManagementLayerCard() {
+  const { t } = useI18n();
   const { data: health } = useSystemHealth();
   const { data: ops } = useSystemOps();
   const activeCfoJobId = useActiveCFOJob();
@@ -230,7 +233,7 @@ function ManagementLayerCard() {
 
   async function generateBoardDeck() {
     if (!activeCfoJobId) {
-      setDeckMsg("Aktif CFO job yok — önce upload/analiz çalıştırın.");
+      setDeckMsg(t.commandCenter.deckNoJob);
       return;
     }
     setDeckBusy(true);
@@ -240,12 +243,12 @@ function ManagementLayerCard() {
       const data = (res.data as { data?: { board_deck?: unknown }; board_deck?: unknown })?.data
         ?? res.data;
       if ((data as { board_deck?: unknown })?.board_deck) {
-        setDeckMsg("Board deck üretildi — CEO sayfasından görüntüleyin.");
+        setDeckMsg(t.commandCenter.deckGenerated);
       } else {
-        setDeckMsg("CEO sentezi tetiklendi.");
+        setDeckMsg(t.commandCenter.deckSynthesis);
       }
     } catch (err) {
-      setDeckMsg(err instanceof Error ? err.message : "Board deck oluşturulamadı");
+      setDeckMsg(err instanceof Error ? err.message : t.commandCenter.deckFailed);
     } finally {
       setDeckBusy(false);
     }
@@ -411,14 +414,14 @@ const CHAIN_ROWS: PipelineNode[][] = [
   ],
 ];
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: MessageTree): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "az önce";
-  if (mins < 60) return `${mins}dk önce`;
+  if (mins < 1) return t.commandCenter.relNow;
+  if (mins < 60) return t.commandCenter.relMins.replace("{n}", String(mins));
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}sa önce`;
-  return `${Math.floor(hrs / 24)}g önce`;
+  if (hrs < 24) return t.commandCenter.relHours.replace("{n}", String(hrs));
+  return t.commandCenter.relDays.replace("{n}", String(Math.floor(hrs / 24)));
 }
 
 function PipelineNodeCard({
@@ -432,6 +435,7 @@ function PipelineNodeCard({
   isActive: boolean;
   updatedAt?: string | undefined;
 }) {
+  const { t } = useI18n();
   const Icon = node.icon;
 
   const stateClass = isActive
@@ -461,20 +465,21 @@ function PipelineNodeCard({
       {isActive && (
         <span className="flex items-center gap-0.5 text-[9px] text-primary">
           <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
-          çalışıyor
+          {t.commandCenter.nodeRunning}
         </span>
       )}
       {hasResult && !isActive && updatedAt && (
-        <span className="text-[9px] text-muted-foreground">{relativeTime(updatedAt)}</span>
+        <span className="text-[9px] text-muted-foreground">{relativeTime(updatedAt, t)}</span>
       )}
       {!hasResult && !isActive && (
-        <span className="text-[9px] text-muted-foreground">bekliyor</span>
+        <span className="text-[9px] text-muted-foreground">{t.commandCenter.nodeWaiting}</span>
       )}
     </div>
   );
 }
 
 function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
+  const { t } = useI18n();
   const agents = summary.agents ?? {};
   const activeJobs = summary.active_jobs ?? {};
 
@@ -501,12 +506,14 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
           {totalActive > 0 && (
             <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
               <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
-              {totalActive} çalışıyor
+              {t.commandCenter.pipelineRunning.replace("{n}", String(totalActive))}
             </span>
           )}
         </div>
         <span className="text-xs text-muted-foreground">
-          {totalDone} / {PIPELINE_NODES.length} tamamlandı
+          {t.commandCenter.pipelineDone
+            .replace("{done}", String(totalDone))
+            .replace("{total}", String(PIPELINE_NODES.length))}
         </span>
       </div>
 
@@ -542,7 +549,7 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
       {/* Manual agents row */}
       <div className="mb-3">
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Domain Analizleri
+          {t.commandCenter.domainAnalyses}
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           {CHAIN_ROWS[1].map((node) => {
@@ -555,7 +562,7 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
       {/* CEO synthesis */}
       <div>
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          CEO Sentezi
+          {t.commandCenter.ceoSynthesis}
         </p>
         <div className="flex items-center gap-2">
           {CHAIN_ROWS[2].map((node) => {
@@ -565,7 +572,7 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
           {getNode("ceo").hasResult && (
             <div className="flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-400">
               <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Board deck hazır
+              {t.commandCenter.deckReady}
             </div>
           )}
         </div>
@@ -602,6 +609,7 @@ function CommandCenterSkeleton() {
 // ── Download Board Deck Button ────────────────────────────────────────────────
 
 function DownloadBoardDeckButton() {
+  const { t } = useI18n();
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -619,7 +627,7 @@ function DownloadBoardDeckButton() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError("PDF indirilemedi. Önce analiz çalıştırın.");
+      setError(t.commandCenter.pdfError);
     } finally {
       setDownloading(false);
     }
@@ -630,15 +638,15 @@ function DownloadBoardDeckButton() {
       <button
         onClick={handleDownload}
         disabled={downloading}
-        aria-label="Board Deck PDF indir"
+        aria-label={t.commandCenter.pdfAria}
         className={cn(
           "flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground",
           "hover:opacity-90 transition-state press-feedback disabled:opacity-50"
         )}
       >
         {downloading
-          ? <><Loader className="h-3 w-3 animate-spin" aria-hidden="true" />İndiriliyor…</>
-          : <><FileDown className="h-3 w-3" aria-hidden="true" />Board Deck İndir</>
+          ? <><Loader className="h-3 w-3 animate-spin" aria-hidden="true" />{t.commandCenter.pdfDownloading}…</>
+          : <><FileDown className="h-3 w-3" aria-hidden="true" />{t.commandCenter.pdfDownload}</>
         }
       </button>
       {error && (
