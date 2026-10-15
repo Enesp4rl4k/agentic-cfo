@@ -102,10 +102,12 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
     # 12 hex chars → unique-index collision risk negligible (slug + email).
     suffix = secrets.token_hex(6)
 
+    from app.services.demo_template import GUEST_DESCRIPTION
+
     org = Organization(
         name=settings.demo_company_name,
         slug=f"demo-{suffix}",
-        description="Otomatik oluşturulmuş misafir demo çalışma alanı.",
+        description=GUEST_DESCRIPTION,
         **_regional_defaults("TR"),
     )
     db.add(org)
@@ -268,6 +270,50 @@ async def seed_demo(
             "message": "Demo analizi başlatıldı! Logo Tiger 2024 verisiyle CFO ve tüm C-Suite ajanları çalışacak.",
             "is_new":  True,
         },
+        "error": None,
+    }
+
+
+@router.delete("/demo/reset")
+async def reset_demo(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Remove demo job from context (org can start fresh).
+
+    D4 hijyen: /demo/guest klonunun simetriği — org'un demo analiz job'ları
+    (+ report/transaction/anomaly/decision_log çocukları), şirket context
+    snapshot'ı (Redis cache dahil) ve semantic snapshot silinir; konuk boş bir
+    çalışma alanıyla başlar. Golden şablon org'u (demo-golden) 409 ile
+    korunur — her klonu o besler. settings.demo_mode ile kapalıyken 403.
+    """
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.models.organization import Organization
+    from app.services.demo_template import GOLDEN_SLUG, purge_demo_workspace
+
+    if not get_settings().demo_mode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Demo modu kapalı."
+        )
+
+    org_id = str(current_user.org_id) if current_user.org_id else str(current_user.id)
+
+    org = (
+        await db.execute(select(Organization).where(Organization.id == org_id))
+    ).scalar_one_or_none()
+    if org is not None and org.slug == GOLDEN_SLUG:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Golden demo şablonu sıfırlanamaz — tüm klonlar onu besler.",
+        )
+
+    counts = await purge_demo_workspace(db, org_id)
+    logger.info("Demo reset: org=%s by user=%s counts=%s", org_id, current_user.email, counts)
+    return {
+        "data": {"org_id": org_id, "reset": True, "counts": counts},
         "error": None,
     }
 

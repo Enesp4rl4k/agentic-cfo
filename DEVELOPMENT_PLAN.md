@@ -119,12 +119,13 @@ CHRO'da düzeltildi sınıfı (UI ↔ backend anahtar uyumsuzluğu) tüm rol say
 - [x] **CEO:** girdi yokken ana buton yönlendirici mesaj versin (400 değil); auto-chain skip'i görünür log/not olarak yazsın. (2026-10-14: `activeCFOJobId` yokken submit `disabled` + `noCfoInputHint` yönlendirici notu (tr/en) — mahkum istek hiç gitmiyor; `POST /ceo/analyze`'in "en az bir girdi" 400'ü (api/ceo.py:97) böylece tetiklenmez. auto_chain: üç skip kararı (conductor rol atlaması ×2 + eksik veri) `debug`→`info` — üretim log'unda zincirin nerede durduğu görünür. Kapı: `demo-samples.test.tsx` "CEO no-input guard" (buton disabled + not görünür).)
 - [x] **Health skoru:** kartta "bileşenler kendi ölçeklerinde, genel skor ağırlıklı" açıklaması (10.0 vs 7.0 karışıklığı). (2026-10-14: `scoreScaleNote` (tr/en) İK sağlık kartının skor ızgarasının hemen altında; parite testi korur.)
 
-**Faz 1 çıkış kapısı:**
+**Faz 1 çıkış kapısı:** ✅ GEÇTİ (2026-10-15)
 ```powershell
-python scripts/verify.py          # --fast YOK: mypy da dahil
-cd frontend; npx tsc --noEmit; npx next lint; npx vitest run
-# + canlı dürüstlük taraması: 6 rol sayfasında undefined/NaN/$/İ-casing = 0
+python scripts/verify.py          # --fast YOK: mypy da dahil  → ✓ ALL CHECKS PASSED (6 checks)
+cd frontend; npx tsc --noEmit; npx next lint; npx vitest run  →  0 / 0 / 154-154
+# + canlı dürüstlük taraması: 6 rol sayfasında undefined/NaN/$/İ-casing = 0  → scan 10/10 temiz
 ```
+Kanıt: `verify.py` tek koşuda 6/6 (`db45fb8` öncesi); vitest 154/154 (1.3 rozet testleri dahil); `scan_demo_pages.py` 10/10 (1.3 ekimlerinden sonra). 1.4–1.6 + 1.3 tamam → sıradaki: DEMO_PLAN **D4 → D3 → D5 → D6**.
 
 ---
 

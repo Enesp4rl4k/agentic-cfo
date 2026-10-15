@@ -76,10 +76,10 @@
 - [ ] İlk girişte otomatik başlangıç; sidebar'da "Turu tekrarla".
 - [ ] auto-chain görünürlüğü (1.6 ile birlikte): demo izleyicisi ajanların çalıştığını görür.
 
-### D4 — Reset + hijyen — ÖNCELİK 2
-- [ ] `DELETE /demo/reset` implement (docstring ile hizalı): demo job'ı + context snapshot temizliği.
-- [ ] Konuk TTL: X saat sonra org data purge (cron/ARQ task) + rate limit (konuk başına günde N seed).
-- [ ] `npm audit` upgrade task'ı gibi: bu iş de yeşil testlerle ayrı sprint'e.
+### D4 — Reset + hijyen — ÖNCELİK 2 ✅ (2026-10-15)
+- [x] `DELETE /demo/reset` implement (docstring ile hizalı): demo job'ı + context snapshot temizliği. (2026-10-15: `api/demo.py` endpoint + `services/demo_template.py::purge_demo_workspace` = klonun simetriği: DEMO_FILENAME job'ları + sert FK çocuklar (Report/Transaction/Anomaly/DecisionLog), CompanyContextSnapshot (Redis cache dahil) ve semantic snapshot; dosya yalnızca başka job paylaşmıyorsa unlink (clone golden'dan paylaşır → golden dosyası asla silinmez). Golden org 409, `demo_mode` kapalıyken 403, authsuz 401, ikinci çağrı idempotent (sabit sıfır sayaç şekli). Kapı: `test_demo_reset.py` 7 test + canlı: openapi'de rota, konuk reset → counts birebir klon aynası `{reports:2, transactions:163, anomalies:4, semantic:1, context:1}`, `has_demo` True→False, tekrar 0, authsuz 401.)
+- [x] Konuk TTL: X saat sonra org data purge (cron/ARQ task) + rate limit (konuk başına günde N seed). (2026-10-15: TTL = `config.demo_guest_ttl_hours=24` + APScheduler saatlik `_demo_guest_ttl_purge` — **demo_mode'a bağlı kayıt** (production'da cron yok; canlı log'da `Added job "_demo_guest_ttl_purge"` doğrulandı) → test edilebilir `_purge_expired_guests(db, ttl_hours)` çekirdeği. Konuk parmak izi = slug `demo-<12hex>` + `GUEST_DESCRIPTION` (tek kaynak) → golden/kayıtlı org asla purge edilmez. Rate limit = middleware route limiti `/api/v1/demo/seed → 5/86400` (kullanıcı JWT'si/IP; idempotent tekrarlar da sayılır). Kapı: TTL filtresi testi (eski konuk gider; eski gerçek org + golden + taze konuk kalır) + 6. istek 429/Retry-After testi.)
+- [x] `npm audit` upgrade task'ı gibi: bu iş de yeşil testlerle ayrı sprint'e. (Karar kaydı: uygulanmadı — rutin bağımlılık bakımı ayrı sprint'e ertelendi; D4'ün reset/TTL/limit işi bu sprint'te kapandı.)
 
 ### D5 — Public demo ortamı — ÖNCELİK 3
 - [ ] Ayrı deploy (compose tabanlı): `NEXT_PUBLIC_DEMO_MODE=true`, kendi DB volume, seed'li görüntü.

@@ -16,6 +16,7 @@ Limits (configurable via environment):
   /api/v1/auth/login    → 5 requests / minute  (brute-force protection)
   /api/v1/auth/register → 5 requests / minute
   /api/v1/chat          → 30 requests / minute
+  /api/v1/demo/seed     → 5 requests / day    (D4: konuk başına günde N seed)
   Everything else       → 120 requests / minute
 
 Expensive endpoint multipliers (cost more against plan limit):
@@ -55,6 +56,9 @@ _ROUTE_LIMITS: list[tuple[str, int, int]] = [
     ("/api/v1/upload",        10,  60),
     ("/api/v1/chat",          30,  60),
     ("/api/v1/analysis",      20,  60),
+    # D4: demo seed = tam pipeline tetikler; konuk başına günde N (kullanıcı JWT'si
+    # veya IP ile sayılır — idempotent tekrarlar da sayılır, bilinçli kural).
+    ("/api/v1/demo/seed",     5,   86400),
     ("/api/v1",               120, 60),   # default API limit
 ]
 

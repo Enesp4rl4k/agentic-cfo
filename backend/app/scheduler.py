@@ -14,6 +14,7 @@ import logging
 import socket
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -689,6 +690,71 @@ async def _daily_active_org_analysis() -> None:
         )
 
 
+async def _purge_expired_guests(db: Any, *, ttl_hours: int) -> int:
+    """
+    D4 çekirdeği: TTL'ı dolmuş konuk org'larının workspace'ini purge eder.
+
+    Konuklar /demo/guest parmak iziyle tanınır (slug `demo-<12hex>` + misafir
+    description) — golden ve kullanıcı org'ları regex/description'a takılmaz,
+    yine de son savunma olarak `is_guest_org` uygulanır. Dönüş: purge edilen
+    konuk sayısı.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import or_, select
+
+    from app.models.organization import Organization
+    from app.services.demo_template import (
+        GUEST_DESCRIPTION,
+        GUEST_SLUG_RE,
+        is_guest_org,
+        purge_demo_workspace,
+    )
+
+    cutoff = datetime.now(UTC) - timedelta(hours=ttl_hours)
+    orgs = (
+        await db.execute(
+            select(Organization).where(
+                Organization.created_at < cutoff,
+                or_(
+                    Organization.slug.like("demo-%"),
+                    Organization.description == GUEST_DESCRIPTION,
+                ),
+            )
+        )
+    ).scalars().all()
+
+    purged = 0
+    for org in orgs:
+        if not is_guest_org(org) or not GUEST_SLUG_RE.match(org.slug or ""):
+            continue  # belt & braces: yalnızca kesin konuklar
+        counts = await purge_demo_workspace(db, str(org.id))
+        purged += 1
+        logger.info("Demo TTL purge: org=%s slug=%s counts=%s", org.id, org.slug, counts)
+    if purged:
+        logger.info("Demo TTL purge: %d konuk workspace temizlendi", purged)
+    return purged
+
+
+async def _demo_guest_ttl_purge() -> None:
+    """
+    D4: saatlik cron — TTL'ı dolmuş konuk demo workspace'leri otomatik reset
+    (DEMO_PLAN §D4 "konuk session bitiminde auto-reset"). demo_mode kapalıysa
+    no-op: üretimde cron kaydı zaten yapılmaz.
+    """
+    try:
+        from app.config import get_settings
+        from app.database import engine, get_session_factory
+
+        settings = get_settings()
+        if not settings.demo_mode:
+            return
+        async with get_session_factory(engine())() as db:
+            await _purge_expired_guests(db, ttl_hours=settings.demo_guest_ttl_hours)
+    except Exception as exc:
+        logger.error("Demo TTL purge hatasi: %s", exc)
+
+
 def get_scheduler() -> AsyncIOScheduler:
     """Return the singleton scheduler (create if needed).
 
@@ -804,6 +870,17 @@ def get_scheduler() -> AsyncIOScheduler:
                 _exclusive(_run_stuck_job_reaper, "stuck_job_reaper", ttl=540),
                 CronTrigger(minute="*/10"),
                 id="stuck_job_reaper",
+                replace_existing=True,
+                max_instances=1,
+            )
+
+        # D4: hourly — konuk demo workspace'leri TTL dolunca purge (auto-reset).
+        # demo_mode kapalıysa hiç kaydedilmez (production'da cron tetiklenmez).
+        if get_settings().demo_mode:
+            _scheduler.add_job(
+                _exclusive(_demo_guest_ttl_purge, "demo_guest_ttl_purge"),
+                CronTrigger(minute=25),
+                id="demo_guest_ttl_purge",
                 replace_existing=True,
                 max_instances=1,
             )

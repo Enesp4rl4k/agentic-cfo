@@ -251,6 +251,9 @@ class Settings(BaseSettings):
     # Demo mode: enables /demo/seed endpoint and pre-loaded sample data
     demo_mode:         bool = False
     demo_company_name: str  = "TechNova Yazılım A.Ş."
+    # D4: konuk workspace TTL (saat) — demo cron'u süresi dolan konuk org'larının
+    # iş verisini purge eder (demo job + context + semantic; kimlik satırları kalır).
+    demo_guest_ttl_hours: int = 24
 
     # Stripe Billing (STRIPE sprint)
     stripe_secret_key:      str = ""

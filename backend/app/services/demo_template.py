@@ -16,18 +16,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
+from app.models.decision_log import DecisionLog
 from app.models.organization import Organization
 from app.models.report import Report
 from app.models.transaction import Transaction
@@ -36,6 +39,17 @@ logger = logging.getLogger(__name__)
 
 GOLDEN_SLUG = "demo-golden"
 DEMO_FILENAME = "logo_tiger_2024_demo.csv"
+
+# D4 konuk parmak izi — /demo/guest bu ikisini birlikte yazar; bir kullanıcının
+# kendi org'u (demo-<hex> slug seçse bile) bu description'ı taşımaz, TTL cron'u
+# böylece gerçek org'ın workspace'ine asla dokunmaz.
+GUEST_SLUG_RE = re.compile(r"^demo-[0-9a-f]{12}$")
+GUEST_DESCRIPTION = "Otomatik oluşturulmuş misafir demo çalışma alanı."
+
+
+def is_guest_org(org: Organization) -> bool:
+    """True only for orgs minted by POST /demo/guest (slug + description pair)."""
+    return bool(GUEST_SLUG_RE.match(org.slug or "")) and org.description == GUEST_DESCRIPTION
 
 
 @dataclass
@@ -229,3 +243,114 @@ async def clone_demo_workspace(db: AsyncSession, target_org_id: str) -> CloneOut
         counts,
     )
     return CloneOutcome(cloned=True, reason="ok", job_id=new_job_id, counts=counts)
+
+
+async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
+    """
+    Konuk demo workspace'ini sil — `clone_demo_workspace`'ın tersi (DEMO_PLAN §D4).
+
+    `DELETE /demo/reset` ile TTL cron'unun (`_demo_guest_ttl_purge`) ortak
+    çekirdeği. Silinenler: org'un DEMO_FILENAME job'ları ve onlara sert FK ile
+    bağlı satırlar (Report / Transaction / Anomaly / DecisionLog), org'un
+    CompanyContextSnapshot'ı (Redis cache dahil) ve CompanySemanticSnapshotRow.
+
+    Dosya yalnızca başka hiçbir job'la paylaşılmıyorsa disetten kalkar — clone
+    dosyayı golden'dan kopyalamaz, paylaşır; golden'in dosyası asla silinmez.
+
+    Idempotent: temizlenecek şey yoksa sıfır sayaçlarla döner.
+    """
+    from app.services.company_context import invalidate_company_context
+
+    # Sabit yanıt şekli: idempotent ikinci çağrıda da tüm sayaçlar görünür.
+    counts: dict[str, int] = {
+        "jobs": 0,
+        "reports": 0,
+        "transactions": 0,
+        "anomalies": 0,
+        "decision_logs": 0,
+        "semantic": 0,
+        "context": 0,
+    }
+
+    job_rows = (
+        await db.execute(
+            select(AnalysisJob).where(
+                AnalysisJob.org_id == org_id,
+                AnalysisJob.filename == DEMO_FILENAME,
+            )
+        )
+    ).scalars().all()
+    job_ids = [str(j.id) for j in job_rows]
+    counts["jobs"] = len(job_ids)
+
+    if job_ids:
+        # Hard FK children first (NO ACTION would block the job delete).
+        for label, model in (
+            ("reports", Report),
+            ("transactions", Transaction),
+            ("anomalies", Anomaly),
+            ("decision_logs", DecisionLog),
+        ):
+            result = await db.execute(
+                delete(model)
+                .where(model.job_id.in_(job_ids))
+                .execution_options(synchronize_session=False)
+            )
+            counts[label] = int(result.rowcount or 0)
+
+        # Unlink files no surviving job still references (shared clone path).
+        for job in job_rows:
+            if not job.file_path:
+                continue
+            try:
+                others = (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AnalysisJob)
+                        .where(
+                            AnalysisJob.file_path == job.file_path,
+                            AnalysisJob.id != job.id,
+                        )
+                    )
+                ).scalar_one()
+                if others:
+                    continue
+                path = Path(job.file_path)
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                logger.warning(
+                    "Demo purge: dosya silinemedi org=%s path=%s",
+                    org_id,
+                    job.file_path,
+                )
+
+        for job in job_rows:
+            await db.delete(job)
+
+    semantic = (
+        await db.execute(
+            select(CompanySemanticSnapshotRow).where(
+                CompanySemanticSnapshotRow.org_id == org_id
+            )
+        )
+    ).scalars().all()
+    for row in semantic:
+        await db.delete(row)
+    counts["semantic"] = len(semantic)
+
+    ctx_present = (
+        await db.execute(
+            select(CompanyContextSnapshot.id).where(
+                CompanyContextSnapshot.org_id == org_id
+            )
+        )
+    ).scalar_one_or_none()
+    counts["context"] = 1 if ctx_present else 0
+
+    await db.commit()
+
+    # DB snapshot + Redis key in one shot (same pattern as DELETE /context).
+    await invalidate_company_context(org_id, db)
+    logger.info("Demo workspace purged: org=%s counts=%s", org_id, counts)
+    return counts
