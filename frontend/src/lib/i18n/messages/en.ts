@@ -19,6 +19,14 @@ export type MessageTree = {
     smmm: string;
     smmmOnay: string;
   };
+  provenance: {
+    real: string;
+    realHint: string;
+    estimated: string;
+    estimatedHint: string;
+    benchmark: string;
+    benchmarkHint: string;
+  };
   analytics: {
     macro: {
       title: string;
@@ -1930,6 +1938,14 @@ export const en: MessageTree = {
     integrations: "Integrations",
     smmm: "Turkey accounting review",
     smmmOnay: "SMMM approvals",
+  },
+  provenance: {
+    real: "Real",
+    realHint: "Measured from a connected source or parsed file",
+    estimated: "Estimated",
+    estimatedHint: "Extrapolated from history — not a measurement",
+    benchmark: "Benchmark",
+    benchmarkHint: "Sector assumption / fixed reference — not company data",
   },
   analytics: {
     macro: {

@@ -6,6 +6,8 @@ import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { cn } from "@/lib/utils";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import type { ProvenanceBlock } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,7 +39,7 @@ interface TaxData {
 
 // ── Summary KPI strip ─────────────────────────────────────────────────────────
 
-function TaxKPIStrip({ tax }: { tax: TaxData }) {
+function TaxKPIStrip({ tax, prov }: { tax: TaxData; prov?: ProvenanceBlock }) {
   const fmt = useCurrencyFormat();
   const { t } = useI18n();
   const { kpi } = t.tax;
@@ -78,7 +80,13 @@ function TaxKPIStrip({ tax }: { tax: TaxData }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
+    <>
+      {prov && (
+        <div className="mb-1.5 flex justify-end">
+          <ProvenanceBadge dataSource={prov.data_source} basis={prov.basis} />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
       {items.map((item) => (
         <div key={item.label} className="bg-card px-4 py-4">
           <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -88,7 +96,8 @@ function TaxKPIStrip({ tax }: { tax: TaxData }) {
           <p className="mt-0.5 text-xs text-muted-foreground">{item.sub}</p>
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -313,7 +322,7 @@ export default function TaxPage() {
         </p>
       </div>
 
-      <TaxKPIStrip tax={tax} />
+      <TaxKPIStrip tax={tax} prov={dashboard?.provenance?.tax} />
 
       {tax.narrative && (
         <div className="rounded-lg border border-border bg-card px-4 py-3.5">

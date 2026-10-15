@@ -26,6 +26,7 @@ _BASIS = {
     "benchmark": "sector benchmark assumptions - not analysis",
     "derived": "inferred from other agents' outputs",
     "rule_based": "deterministic rule / catalog evaluation",
+    "manual": "user-entered or pasted input",
 }
 
 

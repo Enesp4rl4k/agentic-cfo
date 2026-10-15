@@ -19,7 +19,8 @@ import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
-import type { PnLData } from "@/types";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import type { PnLData, ProvenanceBlock } from "@/types";
 
 // ── Chart style ───────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ function titleCaseKey(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function KPIStrip({ pnl }: { pnl: PnLData }) {
+function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
   const fmt = useCurrencyFormat();
   const { t } = useI18n();
   const { kpi } = t.pnl;
@@ -95,7 +96,13 @@ function KPIStrip({ pnl }: { pnl: PnLData }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+    <>
+      {prov && (
+        <div className="mb-1.5 flex justify-end">
+          <ProvenanceBadge dataSource={prov.data_source} basis={prov.basis} />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
       {items.map((item) => (
         <div key={item.label} className="bg-card px-4 py-4">
           <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -111,7 +118,8 @@ function KPIStrip({ pnl }: { pnl: PnLData }) {
           {item.margin != null && <MarginBar value={item.margin} />}
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -547,7 +555,7 @@ export default function PnLPage() {
         </p>
       </div>
 
-      <KPIStrip pnl={pnl} />
+      <KPIStrip pnl={pnl} prov={dashboard!.provenance?.pnl} />
       <WaterfallChart pnl={pnl} />
       <OpExDrillDown pnl={pnl} />
       <PnLStatement pnl={pnl} />
@@ -724,6 +732,9 @@ function BenchmarkPanel({ jobId }: { jobId: string | null }) {
               {bench.subtitle}
             </p>
           </div>
+          {/* 1.3: the P25/P50/P75 side of this panel is a sector assumption —
+              labelled so it never reads as a company measurement. */}
+          <ProvenanceBadge dataSource="benchmark" />
         </div>
 
         <div className="flex items-center gap-2 shrink-0">

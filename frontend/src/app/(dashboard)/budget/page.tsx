@@ -6,6 +6,8 @@ import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { cn } from "@/lib/utils";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import type { ProvenanceBlock } from "@/types";
 import {
   BarChart,
   Bar,
@@ -61,14 +63,20 @@ const axisStyle = {
 
 // ── Summary KPI strip ─────────────────────────────────────────────────────────
 
-function BudgetSummary({ budget }: { budget: BudgetData }) {
+function BudgetSummary({ budget, prov }: { budget: BudgetData; prov?: ProvenanceBlock }) {
   const fmt = useCurrencyFormat();
   const { t } = useI18n();
   const { summary, thisPeriod } = t.budget;
   const overBudget = budget.total_variance > 0;
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+    <>
+      {prov && (
+        <div className="mb-1.5 flex justify-end">
+          <ProvenanceBadge dataSource={prov.data_source} basis={prov.basis} />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
       <div className="bg-card px-4 py-4">
         <p className="text-xs text-muted-foreground">{summary.budgeted}</p>
         <p className="mt-1 text-lg font-semibold tabular-nums">
@@ -103,7 +111,8 @@ function BudgetSummary({ budget }: { budget: BudgetData }) {
           {summary.categoriesOver.replace("{count}", String(budget.over_budget_categories.length))}
         </p>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -303,7 +312,7 @@ export default function BudgetPage() {
         </p>
       </div>
 
-      <BudgetSummary budget={budget} />
+      <BudgetSummary budget={budget} prov={dashboard?.provenance?.budget} />
 
       {budget.narrative && (
         <div className="rounded-lg border border-border bg-card px-4 py-3.5">

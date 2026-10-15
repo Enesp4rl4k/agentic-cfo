@@ -20,6 +20,14 @@ export const tr: MessageTree = {
     smmm: "Türkiye muhasebe onayı",
     smmmOnay: "SMMM onayları",
   },
+  provenance: {
+    real: "Gerçek",
+    realHint: "Bağlı kaynaktan veya dosyadan hesaplanan ölçüm değeri",
+    estimated: "Tahmin",
+    estimatedHint: "Geçmiş veriden dışa interpolasyon — ölçüm değil",
+    benchmark: "Benchmark",
+    benchmarkHint: "Sektör varsayımı / sabit referans — şirket verisi değil",
+  },
   analytics: {
     macro: {
       title: "TCMB Makroekonomik Göstergeler",

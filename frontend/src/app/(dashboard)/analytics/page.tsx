@@ -17,6 +17,7 @@ import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatPercent, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import type { BenchmarkReport } from "@/lib/api/benchmark";
 import { BenchmarkComparisonChart } from "@/components/analytics/BenchmarkComparisonChart";
 
@@ -30,6 +31,8 @@ interface MacroSnapshot {
   ppi_pct: number;
   repo_rate_pct: number;
   real_cost_of_capital: number;
+  // "tcmb_api" | "redis_cache" | "static_fallback" — 1.3 provenance badge.
+  data_source: string;
   as_of: string;
 }
 
@@ -94,11 +97,24 @@ function MacroCard({ data, loading }: { data: MacroSnapshot | null; loading: boo
 
   return (
     <Card className="p-4 space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">{t.analytics.macro.title}</h3>
-        <span className="text-xs text-muted-foreground">
-          {new Date(data.as_of).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US")}
-        </span>
+        <div className="flex items-center gap-2">
+          {/* 1.3: live/cached TCMB readings are real; the hard-coded static
+              fallback is a fixed reference — never badged as a live reading. */}
+          <ProvenanceBadge
+            dataSource={
+              data.data_source === "tcmb_api" || data.data_source === "redis_cache"
+                ? "real"
+                : data.data_source === "static_fallback"
+                  ? "benchmark"
+                  : null
+            }
+          />
+          <span className="text-xs text-muted-foreground">
+            {new Date(data.as_of).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US")}
+          </span>
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {metrics.map((m) => (
@@ -204,9 +220,14 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
             {data.sector} · {data.company_size}
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground/60 shrink-0">
-          {t.analytics.benchmark.percentiles}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* 1.3: the P25/P50/P75 markers are sector assumptions — labelled
+              where they appear so they never pass as company measurements. */}
+          <ProvenanceBadge dataSource="benchmark" />
+          <span className="text-[10px] text-muted-foreground/60">
+            {t.analytics.benchmark.percentiles}
+          </span>
+        </div>
       </div>
 
       {/* Metrics */}
