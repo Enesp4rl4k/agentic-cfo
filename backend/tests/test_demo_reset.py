@@ -14,7 +14,6 @@ D4 — Reset + hijyen kapıları (DEMO_PLAN §D4).
 """
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -31,7 +30,7 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.organization import Organization
-from app.models.report import Report, ReportFormat
+from app.models.report import Report
 from app.models.user import User, UserRole
 from app.scheduler import _purge_expired_guests
 from app.services.auth import create_access_token
@@ -45,6 +44,7 @@ from app.services.demo_template import (
     GUEST_DESCRIPTION,
     purge_demo_workspace,
 )
+from tests.golden_seed import _auth, _guest, _seed_golden
 
 
 @pytest_asyncio.fixture
@@ -70,68 +70,6 @@ async def test_client(monkeypatch):
 
     app.dependency_overrides.clear()
     await test_engine.dispose()
-
-
-async def _seed_golden(sessionmaker) -> str:
-    """Golden org + tamamlanmış demo job + report + context (clone kalıbı)."""
-    async with sessionmaker() as db:
-        org = Organization(
-            name="TechNova Yazılım A.Ş.",
-            slug=GOLDEN_SLUG,
-            **_regional_defaults("TR"),
-        )
-        db.add(org)
-        await db.flush()
-
-        job = AnalysisJob(
-            status=JobStatus.COMPLETED,
-            filename=DEMO_FILENAME,
-            file_path="golden_demo.csv",
-            file_type="csv",
-            org_id=str(org.id),
-            user_id=None,
-        )
-        db.add(job)
-        await db.flush()
-
-        db.add(
-            Report(
-                job_id=str(job.id),
-                report_type="full",
-                report_format=ReportFormat.JSON,
-                data={"job_id": str(job.id), "net": 12345},
-            )
-        )
-
-        ctx = CompanyContext(org_id=str(org.id), company_name="TechNova Yazılım A.Ş.")
-        ctx.update_agent_result(
-            "cfo", {"job_id": str(job.id), "dashboard": {"net": 12345}}
-        )
-        ctx.set_active_job("cfo", str(job.id))
-        await save_company_context(ctx, db)
-
-        db.add(
-            CompanySemanticSnapshotRow(
-                org_id=str(org.id),
-                period_key="2024",
-                metrics_json="[]",
-                drivers_json="[]",
-                evidence_json="[]",
-                source_job_ids=json.dumps([str(job.id)]),
-            )
-        )
-        await db.commit()
-        return str(job.id)
-
-
-async def _guest(client: AsyncClient) -> dict:
-    resp = await client.post("/api/v1/demo/guest")
-    assert resp.status_code == 201, resp.text
-    return resp.json()["data"]
-
-
-def _auth(data: dict) -> dict:
-    return {"Authorization": f"Bearer {data['access_token']}"}
 
 
 async def _count(sessionmaker, model, **filters) -> int:

@@ -14,31 +14,22 @@ D2 — golden → konuk klonlama kapıları (DEMO_PLAN §D2).
 """
 from __future__ import annotations
 
-import json
-
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api.org import _regional_defaults
 from app.config import get_settings
 from app.database import Base, get_db
 from app.main import app
-from app.models.analysis_job import AnalysisJob, JobStatus
-from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
-from app.models.organization import Organization
-from app.models.report import Report, ReportFormat
+from app.models.analysis_job import JobStatus
 from app.services.company_context import (
-    CompanyContext,
     get_company_context,
-    save_company_context,
 )
 from app.services.demo_template import (
-    DEMO_FILENAME,
-    GOLDEN_SLUG,
     clone_demo_workspace,
 )
+from tests.golden_seed import _auth, _guest, _seed_golden
 
 
 @pytest_asyncio.fixture
@@ -64,68 +55,6 @@ async def test_client(monkeypatch):
 
     app.dependency_overrides.clear()
     await test_engine.dispose()
-
-
-async def _seed_golden(sessionmaker) -> str:
-    """Build a golden org with one completed demo job + report + context."""
-    async with sessionmaker() as db:
-        org = Organization(
-            name="TechNova Yazılım A.Ş.",
-            slug=GOLDEN_SLUG,
-            **_regional_defaults("TR"),
-        )
-        db.add(org)
-        await db.flush()
-
-        job = AnalysisJob(
-            status=JobStatus.COMPLETED,
-            filename=DEMO_FILENAME,
-            file_path="golden_demo.csv",
-            file_type="csv",
-            org_id=str(org.id),
-            user_id=None,
-        )
-        db.add(job)
-        await db.flush()
-
-        db.add(
-            Report(
-                job_id=str(job.id),
-                report_type="full",
-                report_format=ReportFormat.JSON,
-                data={"job_id": str(job.id), "net": 12345},
-            )
-        )
-
-        ctx = CompanyContext(org_id=str(org.id), company_name="TechNova Yazılım A.Ş.")
-        ctx.update_agent_result(
-            "cfo", {"job_id": str(job.id), "dashboard": {"net": 12345}}
-        )
-        ctx.set_active_job("cfo", str(job.id))
-        await save_company_context(ctx, db)
-
-        db.add(
-            CompanySemanticSnapshotRow(
-                org_id=str(org.id),
-                period_key="2024",
-                metrics_json="[]",
-                drivers_json="[]",
-                evidence_json="[]",
-                source_job_ids=json.dumps([str(job.id)]),
-            )
-        )
-        await db.commit()
-        return str(job.id)
-
-
-async def _guest(client: AsyncClient) -> dict:
-    resp = await client.post("/api/v1/demo/guest")
-    assert resp.status_code == 201, resp.text
-    return resp.json()["data"]
-
-
-def _auth(data: dict) -> dict:
-    return {"Authorization": f"Bearer {data['access_token']}"}
 
 
 async def _context(client: AsyncClient, data: dict) -> dict:
