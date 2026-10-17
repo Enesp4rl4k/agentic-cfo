@@ -1,21 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Shield, AlertTriangle, Zap, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { KRIGauge, KRIList, RiskPostureBadge } from "@/components/risk/KRIGauge";
 import { useRiskCascadeFromJob, useRiskCascadeFromOrg } from "@/hooks/useRisk";
-import { categoryLabel, postureBg, postureColor } from "@/lib/api/risk";
+import { postureBg, postureColor } from "@/lib/api/risk";
+import { normalizeRiskCascadeReport } from "@/lib/risk-report";
+import { SAMPLE_RISK_WIRE, isDemoMode } from "@/lib/demo-samples";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { DomainPanel } from "@/components/domains/DomainPanel";
+import { useI18n } from "@/hooks/useI18n";
 import type { RiskCascadeReport, KRI } from "@/lib/api/risk";
 
 // ── Risk Matrix (ısı haritası) ────────────────────────────────────────────────
-
-const LIKELIHOOD  = ["Nadir", "Olası Değil", "Mümkün", "Muhtemel", "Neredeyse Kesin"];
-const IMPACT      = ["Önemsiz", "Minor", "Orta", "Major", "Kritik"];
 
 const MATRIX_COLORS = [
   ["bg-emerald-500/20", "bg-emerald-500/20", "bg-yellow-500/20",  "bg-yellow-500/20",  "bg-orange-500/20"],
@@ -40,6 +40,10 @@ function buildMatrixItems(kris: KRI[]): RiskItem[] {
 }
 
 function RiskMatrix({ kris }: { kris: KRI[] }) {
+  const { t } = useI18n();
+  const matrix = t.risk.matrix;
+  const LIKELIHOOD = Object.values(matrix.likelihood);
+  const IMPACT = Object.values(matrix.impact);
   const items = buildMatrixItems(kris);
   return (
     <div className="space-y-3">
@@ -47,7 +51,7 @@ function RiskMatrix({ kris }: { kris: KRI[] }) {
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr>
-              <th className="w-24 text-left p-1 text-muted-foreground">Olasılık ↑ / Etki →</th>
+              <th className="w-24 text-left p-1 text-muted-foreground">{matrix.axis}</th>
               {IMPACT.map((imp) => (
                 <th key={imp} className="p-1 text-center text-muted-foreground font-normal w-16">{imp}</th>
               ))}
@@ -172,13 +176,27 @@ function CascadeLinkCard({ link }: { link: RiskCascadeReport["cascade_links"][0]
 
 export default function RiskPage() {
   const { activeCFOJobId, orgId } = useCompanyContextStore();
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<"overview" | "matrix" | "cascade" | "categories">("overview");
 
   const fromJob = useRiskCascadeFromJob();
   const fromOrg = useRiskCascadeFromOrg();
 
   const active = orgId ? fromOrg : fromJob;
-  const report: RiskCascadeReport | null = active.result;
+
+  // Prefill-less degradation, demo mode only (DEMO_PLAN §D2): a labelled
+  // sample fills the dashboard while no live report exists — the memo gates on
+  // active.result, so real data always wins, and without
+  // NEXT_PUBLIC_DEMO_MODE the page keeps its honest empty state.
+  const sampleReport = useMemo(
+    () =>
+      isDemoMode() && !active.result && !active.loading && !active.error
+        ? normalizeRiskCascadeReport(SAMPLE_RISK_WIRE)
+        : null,
+    [active.result, active.loading, active.error],
+  );
+  const report: RiskCascadeReport | null = active.result ?? sampleReport;
+  const sampleActive = active.result === null && sampleReport !== null;
 
   const handleLoad = () => {
     if (orgId) {
@@ -192,10 +210,10 @@ export default function RiskPage() {
   const allKris = posture?.all_kris ?? [];
 
   const TABS = [
-    { id: "overview"  as const, label: "Genel Bakış" },
-    { id: "matrix"    as const, label: "Risk Matrisi" },
-    { id: "cascade"   as const, label: `Zincirleme (${report?.total_cascades ?? 0})` },
-    { id: "categories" as const, label: "Kategoriler" },
+    { id: "overview"  as const, label: t.risk.tabs.overview },
+    { id: "matrix"    as const, label: t.risk.tabs.matrix },
+    { id: "cascade"   as const, label: t.risk.tabs.cascade.replace("{count}", String(report?.total_cascades ?? 0)) },
+    { id: "categories" as const, label: t.risk.tabs.categories },
   ];
 
   return (
@@ -204,11 +222,16 @@ export default function RiskPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Shield className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold tracking-tight">Risk Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t.risk.title}</h1>
+          {sampleActive && (
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
+              {t.csvInput.sampleData}
+            </span>
+          )}
         </div>
         <Button onClick={handleLoad} disabled={active.loading} size="sm" variant="outline">
           <RefreshCw className={cn("h-4 w-4 mr-2", active.loading && "animate-spin")} />
-          {active.loading ? "Yükleniyor..." : "Analizi Çalıştır"}
+          {active.loading ? t.risk.loading : t.risk.run}
         </Button>
       </div>
 
@@ -216,15 +239,15 @@ export default function RiskPage() {
       {!report && !active.loading && (
         <Card className="p-8 text-center space-y-3">
           <Shield className="h-10 w-10 text-muted-foreground mx-auto" />
-          <p className="font-medium">Risk analizi henüz çalıştırılmadı</p>
+          <p className="font-medium">{t.risk.empty.heading}</p>
           <p className="text-sm text-muted-foreground">
             {activeCFOJobId || orgId
-              ? "Şirket verisi mevcut. Analizi başlatmak için butona tıklayın."
-              : "Önce finansal veri yükleyin, ardından buradan risk analizi çalıştırın."}
+              ? t.risk.empty.bodyWithData
+              : t.risk.empty.bodyNoData}
           </p>
           {(activeCFOJobId || orgId) && (
             <Button onClick={handleLoad} className="mt-2">
-              Risk Analizini Başlat
+              {t.risk.empty.cta}
             </Button>
           )}
         </Card>
@@ -243,42 +266,41 @@ export default function RiskPage() {
           {/* KPI row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card className={cn("p-4 border", postureBg(posture.posture as never))}>
-              <p className="text-xs text-muted-foreground mb-1">Risk Pozisyonu</p>
+              <p className="text-xs text-muted-foreground mb-1">{t.risk.kpi.posture}</p>
               <p className={cn("text-lg font-bold", postureColor(posture.posture as never))}>
                 {posture.posture_tr}
               </p>
               <p className="text-xs font-mono text-muted-foreground">
-                {posture.kri_score === null ? "ölçülen KRI yok" : `${posture.kri_score}/10`}
+                {posture.kri_score === null ? t.risk.kpi.noMeasuredKri : `${posture.kri_score}/10`}
               </p>
             </Card>
             <Card className="p-4 border border-red-500/20">
-              <p className="text-xs text-muted-foreground mb-1">Kırmızı KRI</p>
+              <p className="text-xs text-muted-foreground mb-1">{t.risk.kpi.red}</p>
               <p className="text-2xl font-bold text-red-400 tabular-nums">{posture.counts.red}</p>
-              <p className="text-xs text-muted-foreground">{posture.counts.total} toplam</p>
+              <p className="text-xs text-muted-foreground">{t.risk.kpi.totalCount.replace("{count}", String(posture.counts.total))}</p>
             </Card>
             <Card className="p-4 border border-yellow-500/20">
-              <p className="text-xs text-muted-foreground mb-1">Amber KRI</p>
+              <p className="text-xs text-muted-foreground mb-1">{t.risk.kpi.amber}</p>
               <p className="text-2xl font-bold text-yellow-400 tabular-nums">{posture.counts.amber}</p>
-              <p className="text-xs text-muted-foreground">{posture.counts.green} yeşil</p>
+              <p className="text-xs text-muted-foreground">{t.risk.kpi.greenCount.replace("{count}", String(posture.counts.green))}</p>
             </Card>
             <Card className="p-4 border border-orange-500/20">
-              <p className="text-xs text-muted-foreground mb-1">Zincirleme Risk</p>
+              <p className="text-xs text-muted-foreground mb-1">{t.risk.kpi.cascade}</p>
               <p className="text-2xl font-bold text-orange-400 tabular-nums">{report.total_cascades}</p>
-              <p className="text-xs text-muted-foreground">{report.domains_at_risk.length} domain etkilendi</p>
+              <p className="text-xs text-muted-foreground">{t.risk.kpi.domainsAffected.replace("{count}", String(report.domains_at_risk.length))}</p>
             </Card>
           </div>
 
           {posture.sources.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              KRI kaynakları: {posture.sources.join(" · ")}
+              {t.risk.kpi.sources.replace("{sources}", posture.sources.join(" · "))}
             </p>
           )}
 
           {posture.posture === "no_data" && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                Ölçülmüş bir risk göstergesi yok. Finansal raporda nakit ömrü ya da kâr marjı
-                bulunamadı ve bir KRI dosyası yüklenmedi. Tahmini gösterge üretilmez.
+                {t.risk.noDataBody}
               </p>
               <DomainPanel alan="risk" jobId={activeCFOJobId} />
             </div>
@@ -315,11 +337,11 @@ export default function RiskPage() {
             {activeTab === "overview" && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-3">
-                  <KRIList kris={posture.red_kris}   title="🔴 Kırmızı KRI'lar" />
-                  <KRIList kris={posture.amber_kris}  title="🟡 Amber KRI'lar" compact />
+                  <KRIList kris={posture.red_kris}   title={t.risk.lists.red} />
+                  <KRIList kris={posture.amber_kris}  title={t.risk.lists.amber} compact />
                 </div>
                 <div className="space-y-3">
-                  <KRIList kris={posture.cascade_ready} title="⚡ Zincirleme Tetikleyebilir" compact />
+                  <KRIList kris={posture.cascade_ready} title={t.risk.lists.cascadeReady} compact />
                 </div>
               </div>
             )}
@@ -327,7 +349,7 @@ export default function RiskPage() {
             {activeTab === "matrix" && (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Risk matrisi: olasılık × etki. Her nokta bir KRI'yı temsil eder.
+                  {t.risk.matrix.legend}
                 </p>
                 <RiskMatrix kris={allKris} />
               </div>
@@ -337,7 +359,7 @@ export default function RiskPage() {
               <div className="space-y-3">
                 {report.cascade_links.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    Zincirleme risk tetikleyebilecek KRI bulunamadı.
+                    {t.risk.cascadeEmpty}
                   </p>
                 ) : (
                   report.cascade_links.map((link, i) => (
@@ -353,7 +375,9 @@ export default function RiskPage() {
                   .filter(([, kris]) => kris.length > 0)
                   .map(([cat, kris]) => (
                     <Card key={cat} className="p-4 space-y-3">
-                      <h3 className="text-sm font-semibold">{categoryLabel(cat)}</h3>
+                      <h3 className="text-sm font-semibold">
+                        {t.risk.categories[cat as keyof typeof t.risk.categories] ?? cat}
+                      </h3>
                       <KRIList kris={kris} compact />
                     </Card>
                   ))}

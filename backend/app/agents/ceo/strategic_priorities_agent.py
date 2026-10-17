@@ -32,7 +32,7 @@ def _score_priority(risk: dict[str, Any]) -> float:
     """Composite priority score — higher = act first."""
     urgency  = URGENCY_SCORE.get(risk.get("urgency", "90d"), 10)
     severity = SEVERITY_SCORE.get(risk.get("severity", "low"), 2)
-    fin_impact = min(30, risk.get("financial_impact_cents", 0) / 1_000_00)  # cap at $1M
+    fin_impact = min(30, risk.get("financial_impact_cents", 0) / 1_000_00)  # cap at ₺1M
     return urgency + severity + fin_impact
 
 
@@ -114,7 +114,7 @@ def _build_priorities_from_risks(
     waste = tech.get("infra_waste_cents", 0)
     if waste > 5_000_00 and not any("cloud waste" in p["title"].lower() for p in priorities):
         priorities.append({
-            "title":        f"Cloud cost optimization — save ${waste/100:,.0f}/month",
+            "title":        f"Cloud cost optimization — save ₺{waste/100:,.0f}/month",
             "rationale":    "Reduce identified cloud waste with immediate rightsizing and unused resource cleanup.",
             "domains":      ["cto"],
             "urgency":      "30d",

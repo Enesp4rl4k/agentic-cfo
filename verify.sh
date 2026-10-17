@@ -15,7 +15,7 @@
 #
 # Checks:
 #   1. pytest backend/tests/     → 0 failures
-#   2. ruff check backend/       → 0 lint errors
+#   2. ruff check backend/app/ + backend/tests/  → 0 lint errors
 #   3. mypy backend/app/         → 0 type errors   (skip with --fast)
 #   4. npm run build (frontend)  → 0 build errors
 #
@@ -94,7 +94,7 @@ if $RUN_BACKEND; then
     # 2. ruff lint
     if $PYTHON -m ruff --version &>/dev/null 2>&1; then
       check "ruff (lint)" \
-        $PYTHON -m ruff check backend/app/ --output-format=concise
+        $PYTHON -m ruff check backend/app/ backend/tests/ --output-format=concise
     else
       WARN "ruff not installed — install with: pip install ruff"
     fi

@@ -8,6 +8,7 @@ const withBundleAnalyzer = process.env.ANALYZE === "true"
 
 const nextConfig = {
   output: "standalone",
+  distDir: process.env.NEXT_DIST_DIR || ".next",
 
   // This is a fully client-side dashboard app — all pages use useSearchParams
   // and must be rendered dynamically (no static prerendering).

@@ -24,6 +24,8 @@ import {
   useAcknowledgeAnomaly,
 } from "@/hooks/useCFO";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import type { MessageTree } from "@/lib/i18n";
 import type { AnomalyItem } from "@/lib/api/cfo";
 import { fetchWithAuth } from "@/lib/api/client";
 import { EvidenceChainPanel, ConfidenceBadge } from "@/components/ui/evidence-chain-panel";
@@ -33,10 +35,12 @@ import { EvidenceChainPanel, ConfidenceBadge } from "@/components/ui/evidence-ch
 const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;
 type Severity = (typeof SEVERITY_ORDER)[number];
 
+type AnomMessages = MessageTree["anomalies"];
+
+// Labels come from the tree; this config only carries presentation.
 const SEVERITY_CONFIG: Record<
   Severity,
   {
-    label: string;
     icon: React.ElementType;
     card: string;
     badge: string;
@@ -47,7 +51,6 @@ const SEVERITY_CONFIG: Record<
   }
 > = {
   critical: {
-    label: "Critical",
     icon: AlertCircle,
     card: "border-destructive/40 bg-destructive/5",
     badge: "bg-destructive/15 text-destructive ring-destructive/30",
@@ -57,7 +60,6 @@ const SEVERITY_CONFIG: Record<
     bar: "bg-destructive",
   },
   high: {
-    label: "High",
     icon: AlertTriangle,
     card: "border-orange-500/30 bg-orange-950/10",
     badge: "bg-orange-950/30 text-orange-400 ring-orange-500/25",
@@ -67,7 +69,6 @@ const SEVERITY_CONFIG: Record<
     bar: "bg-orange-400",
   },
   medium: {
-    label: "Medium",
     icon: AlertTriangle,
     card: "border-yellow-600/25 bg-yellow-950/10",
     badge: "bg-yellow-950/30 text-yellow-400 ring-yellow-600/25",
@@ -77,7 +78,6 @@ const SEVERITY_CONFIG: Record<
     bar: "bg-yellow-400",
   },
   low: {
-    label: "Low",
     icon: Info,
     card: "border-border bg-card",
     badge: "bg-muted text-muted-foreground ring-border",
@@ -88,18 +88,9 @@ const SEVERITY_CONFIG: Record<
   },
 };
 
-const ANOMALY_TYPE_LABELS: Record<string, string> = {
-  duplicate_payment: "Duplicate Payment",
-  unusual_amount: "Unusual Amount",
-  unusual_vendor: "Unusual Vendor",
-  vendor_concentration: "Vendor Concentration",
-  negative_cashflow_streak: "Negative Cash Flow Streak",
-  expense_spike: "Expense Spike",
-  missing_revenue: "Missing Revenue",
-  round_number: "Round Number Pattern",
-  late_payment: "Late Payment",
-  fx_concentration: "FX Concentration",
-};
+function severityLabel(sev: Severity, anom: AnomMessages): string {
+  return anom.filters[sev];
+}
 
 // ── Summary strip ─────────────────────────────────────────────────────────────
 
@@ -114,12 +105,14 @@ function SummaryStrip({
   activeSeverity: string;
   onFilter: (s: string) => void;
 }) {
+  const { t } = useI18n();
+  const anom = t.anomalies;
   const items = [
-    { key: "all", label: "Total", value: total, cls: "text-foreground", activeCls: "ring-primary/40" },
-    { key: "critical", label: "Critical", value: bySeverity.critical ?? 0, cls: "text-destructive", activeCls: "ring-destructive/40" },
-    { key: "high", label: "High", value: bySeverity.high ?? 0, cls: "text-orange-400", activeCls: "ring-orange-400/40" },
-    { key: "medium", label: "Medium", value: bySeverity.medium ?? 0, cls: "text-yellow-400", activeCls: "ring-yellow-400/40" },
-    { key: "low", label: "Low", value: bySeverity.low ?? 0, cls: "text-muted-foreground", activeCls: "ring-muted-foreground/30" },
+    { key: "all", label: anom.filters.all, value: total, cls: "text-foreground", activeCls: "ring-primary/40" },
+    { key: "critical", label: anom.filters.critical, value: bySeverity.critical ?? 0, cls: "text-destructive", activeCls: "ring-destructive/40" },
+    { key: "high", label: anom.filters.high, value: bySeverity.high ?? 0, cls: "text-orange-400", activeCls: "ring-orange-400/40" },
+    { key: "medium", label: anom.filters.medium, value: bySeverity.medium ?? 0, cls: "text-yellow-400", activeCls: "ring-yellow-400/40" },
+    { key: "low", label: anom.filters.low, value: bySeverity.low ?? 0, cls: "text-muted-foreground", activeCls: "ring-muted-foreground/30" },
   ];
 
   return (
@@ -137,7 +130,7 @@ function SummaryStrip({
               !isActive && "hover:bg-muted/40"
             )}
             aria-pressed={isActive}
-            aria-label={`Filter by ${item.label}`}
+            aria-label={anom.filters.ariaBy.replace("{label}", item.label)}
           >
             <p className="text-xs text-muted-foreground">{item.label}</p>
             <p className={cn("mt-1 text-xl font-semibold tabular-nums", item.cls)}>
@@ -153,9 +146,13 @@ function SummaryStrip({
 // ── Confidence bar ────────────────────────────────────────────────────────────
 
 function ConfidenceBar({ value, barClass }: { value: number; barClass: string }) {
+  const { t } = useI18n();
   const pct = Math.round(value * 100);
   return (
-    <div className="flex items-center gap-2" aria-label={`Confidence: ${pct}%`}>
+    <div
+      className="flex items-center gap-2"
+      aria-label={t.anomalies.confidence.replace("{pct}", String(pct))}
+    >
       <div className="h-1 w-16 overflow-hidden rounded-full bg-muted">
         <div
           className={cn("h-full rounded-full transition-all", barClass)}
@@ -178,11 +175,14 @@ function AnomalyCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const acknowledge = useAcknowledgeAnomaly(jobId);
+  const { t } = useI18n();
+  const anom = t.anomalies;
   const sev = (anomaly.severity as Severity) in SEVERITY_CONFIG
     ? (anomaly.severity as Severity)
     : "low";
   const cfg = SEVERITY_CONFIG[sev];
   const Icon = cfg.icon;
+  const sevLabel = severityLabel(sev, anom);
 
   // RCA (Root Cause Analysis) state
   const [rcaOpen,    setRcaOpen]    = useState(false);
@@ -222,11 +222,11 @@ function AnomalyCard({
         }
       }
     } catch (e: any) {
-      if (e.name !== "AbortError") setRcaText("Analiz başlatılamadı.");
+      if (e.name !== "AbortError") setRcaText(anom.rca.error);
     } finally {
       setRcaLoading(false);
     }
-  }, [anomaly.id, rcaOpen]);
+  }, [anomaly.id, rcaOpen, anom.rca.error]);
 
   return (
     <div
@@ -258,15 +258,15 @@ function AnomalyCard({
                 anomaly.acknowledged ? "bg-muted text-muted-foreground ring-border" : cfg.badge
               )}
             >
-              {cfg.label}
+              {sevLabel}
             </span>
             <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              {ANOMALY_TYPE_LABELS[anomaly.anomaly_type] ?? anomaly.anomaly_type.replace(/_/g, " ")}
+              {anom.types[anomaly.anomaly_type as keyof typeof anom.types] ?? anomaly.anomaly_type.replace(/_/g, " ")}
             </span>
             {anomaly.acknowledged && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <CheckCircle className="h-3 w-3" aria-hidden="true" />
-                Acknowledged
+                {anom.acknowledged}
               </span>
             )}
           </div>
@@ -305,7 +305,7 @@ function AnomalyCard({
               ) : (
                 <Sparkles className="h-3 w-3" />
               )}
-              {rcaOpen ? "Kapat" : "Yapay Zeka ile Açıkla"}
+              {rcaOpen ? anom.rca.close : anom.rca.open}
             </button>
 
             {/* Streaming RCA panel */}
@@ -313,12 +313,12 @@ function AnomalyCard({
               <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                    🔍 Kök Neden Analizi
+                    {anom.rca.heading}
                   </span>
                   {rcaLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
                 </div>
                 <p className="text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap">
-                  {rcaText || (rcaLoading ? <span className="text-muted-foreground animate-pulse">Analiz yapılıyor…</span> : null)}
+                  {rcaText || (rcaLoading ? <span className="text-muted-foreground animate-pulse">{anom.rca.analyzing}</span> : null)}
                 </p>
               </div>
             )}
@@ -339,14 +339,14 @@ function AnomalyCard({
               ? "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
               : "border-border bg-background/50 text-muted-foreground hover:border-emerald-500/40 hover:text-emerald-400"
           )}
-          aria-label={anomaly.acknowledged ? "Restore anomaly" : "Acknowledge anomaly"}
+          aria-label={anomaly.acknowledged ? anom.ariaRestore : anom.ariaDismiss}
         >
           {acknowledge.isPending ? (
             <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
           ) : anomaly.acknowledged ? (
-            "Restore"
+            anom.restore
           ) : (
-            "Dismiss"
+            anom.dismiss
           )}
         </button>
       </div>
@@ -366,13 +366,16 @@ function SeverityGroup({
   jobId: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const { t } = useI18n();
+  const anom = t.anomalies;
   const cfg = SEVERITY_CONFIG[severity];
   const Icon = cfg.icon;
+  const label = severityLabel(severity, anom);
 
   if (!anomalies.length) return null;
 
   return (
-    <section aria-label={`${cfg.label} anomalies`}>
+    <section aria-label={label}>
       <button
         onClick={() => setCollapsed((v) => !v)}
         className="mb-2 flex w-full items-center gap-2 text-left"
@@ -384,7 +387,7 @@ function SeverityGroup({
         />
         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {cfg.label}
+          {label}
         </span>
         <span
           className={cn(
@@ -417,14 +420,16 @@ function SeverityGroup({
 // ── Empty / clean states ──────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useI18n();
+  const emp = t.anomalies.empty;
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">No anomaly data</h2>
+      <h2 className="text-base font-semibold">{emp.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Complete an analysis first, then scan for anomalies.
+        {emp.body}
       </p>
       <a
         href="/upload"
@@ -434,21 +439,23 @@ function EmptyState() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         )}
       >
-        Upload document
+        {emp.cta}
       </a>
     </div>
   );
 }
 
 function CleanState() {
+  const { t } = useI18n();
+  const clean = t.anomalies.clean;
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="mb-4 rounded-full bg-emerald-950/30 p-4">
         <ShieldCheck className="h-8 w-8 text-emerald-400" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold text-emerald-400">All clear</h2>
+      <h2 className="text-base font-semibold text-emerald-400">{clean.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        No anomalies detected in your financial data.
+        {clean.body}
       </p>
     </div>
   );
@@ -465,6 +472,8 @@ export default function AnomaliesPage() {
 
   const { data, isLoading } = useAnomalies(jobId);
   const scan = useScanAnomalies(jobId);
+  const { t } = useI18n();
+  const anom = t.anomalies;
 
   const allAnomalies = useMemo(() => data?.anomalies ?? [], [data?.anomalies]);
 
@@ -540,16 +549,16 @@ export default function AnomaliesPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Anomaly Detection</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{anom.title}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            AI-powered financial anomaly scanner
+            {anom.subtitle}
             {data!.total > 0 && (
               <>
                 {" · "}
-                <span className="text-foreground">{data!.total}</span> issues found
+                {anom.issuesFound.replace("{count}", String(data!.total))}
                 {acknowledgedCount > 0 && (
                   <span className="ml-1 text-muted-foreground">
-                    ({acknowledgedCount} dismissed)
+                    {anom.dismissedCount.replace("{count}", String(acknowledgedCount))}
                   </span>
                 )}
               </>
@@ -568,14 +577,14 @@ export default function AnomaliesPage() {
                 ? "border-primary/40 bg-primary/5 text-foreground"
                 : "border-border text-muted-foreground hover:text-foreground"
             )}
-            aria-label={showAcknowledged ? "Hide acknowledged" : "Show acknowledged"}
+            aria-label={showAcknowledged ? anom.hideAck : anom.showAck}
           >
             {showAcknowledged ? (
               <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             ) : (
               <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
             )}
-            Dismissed {acknowledgedCount > 0 && `(${acknowledgedCount})`}
+            {anom.dismissed} {acknowledgedCount > 0 && `(${acknowledgedCount})`}
           </button>
 
           {/* Re-scan */}
@@ -588,13 +597,13 @@ export default function AnomaliesPage() {
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               "disabled:pointer-events-none disabled:opacity-50"
             )}
-            aria-label="Re-scan for anomalies"
+            aria-label={anom.ariaRescan}
           >
             <RefreshCw
               className={cn("h-3.5 w-3.5", scan.isPending && "animate-spin")}
               aria-hidden="true"
             />
-            {scan.isPending ? "Scanning…" : "Re-scan"}
+            {scan.isPending ? anom.scanning : anom.rescan}
           </button>
         </div>
       </div>
@@ -613,12 +622,12 @@ export default function AnomaliesPage() {
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
           className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Filter by anomaly type"
+          aria-label={anom.filters.ariaType}
         >
-          <option value="all">All types</option>
-          {anomalyTypes.map((t) => (
-            <option key={t} value={t}>
-              {ANOMALY_TYPE_LABELS[t] ?? t.replace(/_/g, " ")}
+          <option value="all">{anom.filters.allTypes}</option>
+          {anomalyTypes.map((ty) => (
+            <option key={ty} value={ty}>
+              {anom.types[ty as keyof typeof anom.types] ?? ty.replace(/_/g, " ")}
             </option>
           ))}
         </select>
@@ -628,12 +637,12 @@ export default function AnomaliesPage() {
             onClick={() => { setFilterSeverity("all"); setFilterType("all"); }}
             className="h-8 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Clear filters
+            {anom.filters.clear}
           </button>
         )}
 
         <span className="text-xs text-muted-foreground">
-          {filtered.length} shown
+          {anom.filters.shown.replace("{count}", String(filtered.length))}
         </span>
       </div>
 
@@ -643,7 +652,7 @@ export default function AnomaliesPage() {
           <CleanState />
         ) : (
           <div className="py-8 text-center text-sm text-muted-foreground">
-            No anomalies match the current filters.
+            {anom.filters.noMatch}
           </div>
         )
       ) : (

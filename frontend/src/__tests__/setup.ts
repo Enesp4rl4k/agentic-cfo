@@ -15,6 +15,10 @@ vi.mock("next/navigation", () => ({
 vi.mock("next-auth/react", () => ({
   signIn:     vi.fn(),
   signOut:    vi.fn(),
+  // Default: an established session (apiClient + startGuestDemo post-check).
+  // Tests override with mockResolvedValueOnce to simulate the csrf race where
+  // signIn reports success but no session cookie exists.
+  getSession: vi.fn().mockResolvedValue({ accessToken: "tok" }),
   useSession: vi.fn().mockReturnValue({
     data:   { user: { id: "1", email: "test@example.com", role: "admin", orgId: "org1" }, accessToken: "tok" },
     status: "authenticated",

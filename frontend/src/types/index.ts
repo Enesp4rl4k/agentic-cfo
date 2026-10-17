@@ -28,6 +28,15 @@ export interface OpEx {
   [key: string]: number | undefined;
 }
 
+// 1.3 (U7): how a number was produced — mirrors backend
+// app/platform/provenance.py `provenance_block`.
+export interface ProvenanceBlock {
+  data_source: string;
+  confidence: number | null;
+  synthetic: boolean;
+  basis: string;
+}
+
 export interface PnLData {
   revenue: number;
   cogs: number;
@@ -128,6 +137,10 @@ export interface DashboardData {
   tax?: Record<string, unknown> | null;
   // Multi-period comparison — present when 2+ months of data
   multi_period?: Record<string, unknown> | null;
+  // Per-section provenance stamped by GET /dashboard at read time (1.3) —
+  // stored reports including demo replays carry it; typed optional because
+  // other dashboard-ish payloads (context shortcuts) may not.
+  provenance?: Record<string, ProvenanceBlock>;
 }
 
 export type JobStatus =

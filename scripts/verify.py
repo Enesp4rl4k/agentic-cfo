@@ -102,7 +102,7 @@ def main() -> int:
             failures += 1
 
         checks += 1
-        if _run("ruff (lint)", [py, "-m", "ruff", "check", str(ROOT / "backend" / "app"), "--output-format=concise"]):
+        if _run("ruff (lint)", [py, "-m", "ruff", "check", str(ROOT / "backend" / "app"), str(ROOT / "backend" / "tests"), "--output-format=concise"]):
             pass
         else:
             # ruff missing is a warning in verify.sh, not a hard fail

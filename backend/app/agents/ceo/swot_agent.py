@@ -413,7 +413,7 @@ async def run_swot_agent(
             patch={},
         )
 
-    swot = _extract_swot(fin, tech, mkt, hr, ops, risk, compliance)
+    swot = _extract_swot(fin, tech, mkt, hr, ops, risk, compliance)  # type: ignore[arg-type]
 
     summary = await _enrich_with_llm(
         swot,

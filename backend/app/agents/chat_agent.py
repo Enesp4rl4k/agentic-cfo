@@ -39,7 +39,7 @@ def _build_financial_context(
     anomalies = dashboard.get("anomalies", [])
 
     def fmt(cents: float | int) -> str:
-        return f"${cents:,.0f}"
+        return f"₺{cents / 100:,.0f}"
 
     lines = [
         "=== FINANCIAL SUMMARY ===",
@@ -94,7 +94,7 @@ def _build_financial_context(
                 f"  {(tx.get('transaction_date') or '')[:10]} | "
                 f"{tx.get('type', '')} | "
                 f"{tx.get('category', '')} | "
-                f"${tx.get('amount_cents', 0) / 100:,.0f} | "
+                f"₺{tx.get('amount_cents', 0) / 100:,.0f} | "
                 f"{tx.get('description', '')[:40]}"
             )
 
@@ -127,8 +127,8 @@ def _build_executive_context(
 
         if infra:
             lines.append(
-                f"Infrastructure Cost: ${infra.get('total_cost_cents', 0)/100:,.0f}/month"
-                f" | Waste: ${infra.get('waste_estimate_cents', 0)/100:,.0f}"
+                f"Infrastructure Cost: ₺{infra.get('total_cost_cents', 0)/100:,.0f}/month"
+                f" | Waste: ₺{infra.get('waste_estimate_cents', 0)/100:,.0f}"
             )
 
         if tech_debt:
@@ -173,8 +173,8 @@ def _build_executive_context(
 
         if fin_summary:
             lines += [
-                f"Revenue: ${fin_summary.get('revenue_cents', 0)/100:,.0f}",
-                f"Net Income: ${fin_summary.get('net_income_cents', 0)/100:,.0f}"
+                f"Revenue: ₺{fin_summary.get('revenue_cents', 0)/100:,.0f}",
+                f"Net Income: ₺{fin_summary.get('net_income_cents', 0)/100:,.0f}"
                 f" ({fin_summary.get('net_margin', 0)*100:.1f}% margin)",
                 f"Cash Runway: {fin_summary.get('cash_runway_months', 'N/A')} months",
             ]
@@ -214,7 +214,7 @@ financial data provided below. Answer questions accurately and concisely.
 Guidelines:
 - Use the financial data provided — don't make up numbers
 - When doing "what-if" scenarios, clearly label them as hypothetical
-- Format currency as $X,XXX
+- Format currency as ₺X,XXX
 - Be direct and actionable — you're talking to a CFO or business owner
 - If data is insufficient to answer, say so clearly
 - Respond in the same language as the question
@@ -231,7 +231,7 @@ Guidelines:
 - Always think cross-domain: financial risks often have tech causes and vice versa
 - Prioritize by urgency and financial impact
 - Be direct and executive-level — no jargon, clear recommendations
-- Format currency as $X,XXX; format scores as X/10
+- Format currency as ₺X,XXX; format scores as X/10
 - If data is missing for one domain, still answer with available data
 - Respond in the same language as the question
 

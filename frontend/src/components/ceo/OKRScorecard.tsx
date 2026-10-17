@@ -72,7 +72,7 @@ export function OKRWeightedScorecard({ objectives, companyScore }: OKRScorecardP
                 aria-valuemax={100}
               >
                 <div
-                  className="h-full rounded bg-gradient-to-r from-blue-500 to-purple-500"
+                  className="h-full rounded bg-gradient-to-r from-brass-500 to-copper-600"
                   style={{ width: `${obj.score * 100}%` }}
                 />
               </div>

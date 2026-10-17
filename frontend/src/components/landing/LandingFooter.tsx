@@ -49,7 +49,7 @@ export function LandingFooter() {
         className="absolute inset-x-0 top-0 h-px"
         style={{
           background:
-            "linear-gradient(90deg, transparent 0%, oklch(0.62 0.26 262 / 0.3) 50%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0%, oklch(0.74 0.13 82 / 0.3) 50%, transparent 100%)",
         }}
       />
 

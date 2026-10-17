@@ -242,7 +242,9 @@ async def on_agent_complete(
         downstream = [] if upstream_synthetic else AGENT_CHAIN.get(agent_lower, [])
         for next_agent in downstream:
             if not _conductor_allows(next_agent, runnable_roles, has_plan=has_conductor_plan):
-                logger.debug(
+                # Skips are info, not debug: an operator must be able to see why
+                # the chain stopped at this role (U6 — "silent skip").
+                logger.info(
                     "Auto-chain: conductor skipped %s for org=%s",
                     next_agent,
                     org_id,
@@ -253,9 +255,9 @@ async def on_agent_complete(
                     "Auto-chain: %s completed → enqueueing %s for org=%s",
                     agent, next_agent, org_id,
                 )
-                await _run_chained_agent(next_agent, org_id, ctx, db)
+                await _run_chained_agent(next_agent, org_id, db)
             else:
-                logger.debug(
+                logger.info(
                     "Auto-chain: %s skipped — missing required data for org=%s",
                     next_agent, org_id,
                 )
@@ -272,7 +274,7 @@ async def on_agent_complete(
                 )
                 await _run_ceo_synthesis(org_id, ctx, db)
             elif ctx.last_cfo_result is not None and has_conductor_plan:
-                logger.debug(
+                logger.info(
                     "Auto-chain: conductor skipped CEO synthesis for org=%s",
                     org_id,
                 )
@@ -295,7 +297,7 @@ async def on_agent_complete(
                             "Feedback loop: %s signal → enqueueing %s for org=%s (%s)",
                             agent, target_agent, org_id, label,
                         )
-                        await _run_chained_agent(target_agent, org_id, ctx, db)
+                        await _run_chained_agent(target_agent, org_id, db)
                     else:
                         # Target already has data — send a cross-agent notification instead
                         logger.info(
@@ -337,7 +339,6 @@ async def on_agent_complete(
 async def _run_chained_agent(
     agent: str,
     org_id: str,
-    ctx: Any,
     db: Any,
 ) -> None:
     """
@@ -348,6 +349,11 @@ async def _run_chained_agent(
         import uuid
 
         job_id = f"auto-{agent}-{uuid.uuid4().hex[:8]}"
+        # Reload instead of trusting the caller's snapshot: context saves are
+        # whole-row read-modify-write, so a copy from chain start would revert
+        # every result persisted in between (observed as lost cto/coo results
+        # during demo prefill). Fresh load before marking the active job.
+        ctx = await get_company_context(org_id, db)
         ctx.set_active_job(agent, job_id)
         await save_company_context(ctx, db)
 
@@ -668,15 +674,17 @@ async def _send_feedback_notification(
             f"{label}. {to_label} verilerinizi güncellemek için ilgili sayfayı kontrol edin."
         )
 
-        svc = NotificationService(db)
-        await svc.create(
-            org_id=org_id,
+        svc = NotificationService()
+        from app.services.alert_router import AlertAction, AlertDecision, RawAlert
+        _alert = RawAlert(
             level="warning",
             domain=from_agent,
             message=message,
             source="auto_chain.feedback_loop",
-            priority_score=65,
+            job_id="",
         )
+        _decision = AlertDecision(alert=_alert, action=AlertAction.ROUTE, priority_score=65)
+        await svc.deliver([_decision], org_id=org_id, db=db)
         logger.info(
             "Feedback notification sent: %s → %s for org=%s",
             from_agent, to_agent, org_id,

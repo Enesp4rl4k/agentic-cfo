@@ -12,7 +12,7 @@ from email.message import EmailMessage
 import pytest
 from sqlalchemy import select
 
-from tests.test_ingest import BANKA, PERSONEL, XLSX, _login, client  # noqa: F401 — fixture
+from tests.test_ingest import BANKA, PERSONEL, XLSX, _login
 
 SECRET = "s3cret-for-tests"
 

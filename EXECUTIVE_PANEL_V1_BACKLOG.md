@@ -1,3 +1,5 @@
+> ⚠️ Bu işin KPI'ları güncel planın Faz 3.5'ine taşındı: [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) (2026-10-11).
+
 # Executive Panel v1 — 1 Haftalık Backlog
 
 Amaç: Yönetici için tek ekranda operasyon + analiz güvenilirliği + aksiyon görünürlüğü.

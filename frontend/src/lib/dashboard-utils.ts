@@ -221,12 +221,12 @@ export function formatRelativeTime(dateString: string): string {
 export function getGradientClass(theme: "primary" | "success" | "warning" | "danger"): string {
   switch (theme) {
     case "primary":
-      return "bg-gradient-to-br from-blue-500/10 to-purple-500/10";
+      return "bg-gradient-to-br from-brass-500/10 to-copper-500/10";
     case "success":
-      return "bg-gradient-to-br from-emerald-500/10 to-teal-500/10";
+      return "bg-gradient-to-br from-sage-500/10 to-emerald-500/10";
     case "warning":
       return "bg-gradient-to-br from-amber-500/10 to-orange-500/10";
     case "danger":
-      return "bg-gradient-to-br from-red-500/10 to-pink-500/10";
+      return "bg-gradient-to-br from-red-500/10 to-clay-500/10";
   }
 }

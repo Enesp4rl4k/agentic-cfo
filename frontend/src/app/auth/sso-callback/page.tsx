@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_HOME } from "@/lib/routes";
 
 /**
  * SSO Callback Page
@@ -65,7 +66,7 @@ export default function SSOCallbackPage() {
 
         setStatus("success");
         setMessage(`${providerLabel(provider)} ile başarıyla giriş yapıldı`);
-        setTimeout(() => router.push("/"), 1000);
+        setTimeout(() => router.push(APP_HOME), 1000);
       } catch (err) {
         setStatus("error");
         setMessage("Oturum oluşturulamadı. Lütfen tekrar deneyin.");
@@ -73,7 +74,7 @@ export default function SSOCallbackPage() {
       }
     }
 
-    handleCallback();
+    void handleCallback();
   }, [router, searchParams]);
 
   return (

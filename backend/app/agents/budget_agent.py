@@ -172,14 +172,14 @@ async def _generate_budget_narrative(
 
         items_text = "\n".join(
             f"- {r['category'].replace('_', ' ').title()}: "
-            f"budgeted ${r['budgeted']/100:,.0f} / "
-            f"actual ${r['actual']/100:,.0f} / "
+            f"budgeted ₺{r['budgeted']/100:,.0f} / "
+            f"actual ₺{r['actual']/100:,.0f} / "
             f"variance {r['variance_pct']:+.1f}% ({'OVER' if r['status'] == 'over' else 'UNDER' if r['status'] == 'under' else 'ON TARGET'})"
             for r in budget.get("items", [])[:10]
         )
         total_line = (
-            f"Total: budgeted ${budget['total_budgeted']/100:,.0f} / "
-            f"actual ${budget['total_actual']/100:,.0f} / "
+            f"Total: budgeted ₺{budget['total_budgeted']/100:,.0f} / "
+            f"actual ₺{budget['total_actual']/100:,.0f} / "
             f"variance {budget['total_variance_pct']:+.1f}%"
         )
 

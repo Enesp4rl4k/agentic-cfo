@@ -68,12 +68,14 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
     comp = state.get("compensation") or {}
     logs = state.get("logs") or []
 
-    # Compute CHRO health score (0-10, lower is better)
-    # Factors:
+    # Compute CHRO risk (0-10, lower is better). Stored inverted as
+    # chro_health_score — component_scores, the cross-domain hub's x10 scale
+    # and the UI's green-when-high colors all read health, where 10 = clean.
+    # Factors (base 3.0):
     # - Org structure risk: +1 if present
-    # - Early departures: +attrition_rate * 5
-    # - Salary compression: +1 if any level > 1.5x
-    # - Below market: +below_count/total * 3
+    # - Early departures: +early_rate * 4
+    # - Salary compression: +0.5 per level > 1.5x
+    # - Below market: +below_count/total * 2
     # - Low equity penetration: +1 if < 50%
 
     chro_score = 3.0  # Base
@@ -205,7 +207,7 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
         logging.getLogger(__name__).warning("CHRO narrative LLM failed: %s", exc)
 
     summary = {
-        "chro_health_score": round(chro_score, 1),
+        "chro_health_score": round(10.0 - chro_score, 1),
         "total_headcount": hc.get("total_headcount", 0),
         "total_departures": att.get("total_departures", 0),
         "total_annual_comp": comp.get("total_annual_comp", 0),

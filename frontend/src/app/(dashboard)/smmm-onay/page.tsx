@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -48,31 +50,38 @@ interface OnayStats {
   onay_orani:  number;
 }
 
+/** Filter chips, in the order the queue has always shown them. */
+const FILTER_ORDER = ["bekliyor", "onaylandi", "duzeltildi", "reddedildi", "all"] as const;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function durumBadge(durum: string) {
-  const cfg: Record<string, { label: string; color: string }> = {
-    bekliyor:   { label: "Bekliyor",   color: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" },
-    onaylandi:  { label: "Onaylandı",  color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-    duzeltildi: { label: "Düzeltildi", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-    reddedildi: { label: "Reddedildi", color: "bg-red-500/10 text-red-400 border-red-500/20" },
+/** Colour is presentation; the status word comes from `t.smmmOnay.status`. */
+function DurumBadge({ durum, status }: { durum: string; status: Record<string, string> }) {
+  const colors: Record<string, string> = {
+    bekliyor:   "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+    onaylandi:  "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    duzeltildi: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    reddedildi: "bg-red-500/10 text-red-400 border-red-500/20",
   };
-  const c = cfg[durum] ?? { label: durum, color: "bg-muted text-muted-foreground border-border" };
+  const color = colors[durum] ?? "bg-muted text-muted-foreground border-border";
+  // Unknown `durum` keys are backend data, so they print exactly as they arrive.
+  const label = status[durum] ?? durum;
   return (
-    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", c.color)}>
-      {c.label}
+    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", color)}>
+      {label}
     </span>
   );
 }
 
-function fmtAmount(v: number | null): string {
+/** `tx_amount_try` arrives in lira (backend divides kuruş by 100). */
+function fmtAmount(v: number | null, fmt: (value: number) => string): string {
   if (v === null) return "—";
-  return `₺${v.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`;
+  return fmt(v);
 }
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, dateTag: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(d).toLocaleDateString(dateTag, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 // ── Düzeltme modal ────────────────────────────────────────────────────────────
@@ -80,6 +89,9 @@ function fmtDate(d: string | null): string {
 function DuzelModal({
   kayit, onClose, onSuccess,
 }: { kayit: OnayKaydi; onClose: () => void; onSuccess: () => void }) {
+  const { t } = useI18n();
+  const d = t.smmmOnay.duzelt;
+  const fmt = useCurrencyFormat();
   const [hesapKodu, setHesapKodu] = useState(kayit.otomatik_hesap_kodu ?? "");
   const [hesapAdi,  setHesapAdi]  = useState("");
   const [aciklama,  setAciklama]  = useState("");
@@ -88,8 +100,8 @@ function DuzelModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!hesapKodu.trim()) { setError("Hesap kodu zorunlu"); return; }
-    if (!hesapAdi.trim())  { setError("Hesap adı zorunlu"); return; }
+    if (!hesapKodu.trim()) { setError(d.codeRequired); return; }
+    if (!hesapAdi.trim())  { setError(d.nameRequired); return; }
     setLoading(true); setError(null);
     try {
       await apiClient.post(`/smmm/onay/${kayit.id}/duzeltle`, {
@@ -99,7 +111,7 @@ function DuzelModal({
       });
       onSuccess();
     } catch {
-      setError("Düzeltme kaydedilemedi");
+      setError(d.saveError);
     } finally {
       setLoading(false);
     }
@@ -108,30 +120,30 @@ function DuzelModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <Card className="w-full max-w-md p-5 space-y-4">
-        <h3 className="font-semibold">Hesap Kodu Düzeltme</h3>
+        <h3 className="font-semibold">{d.title}</h3>
         <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2">
           <p className="truncate">{kayit.tx_description ?? "—"}</p>
-          <p className="font-mono mt-0.5">{fmtAmount(kayit.tx_amount_try)}</p>
+          <p className="font-mono mt-0.5">{fmtAmount(kayit.tx_amount_try, fmt)}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Hesap Kodu *</label>
+            <label className="text-xs text-muted-foreground">{d.codeLabel}</label>
             <input type="text" value={hesapKodu}
               onChange={(e) => setHesapKodu(e.target.value)}
-              placeholder="örn: 320"
+              placeholder={d.codePlaceholder}
               className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Hesap Adı *</label>
+            <label className="text-xs text-muted-foreground">{d.nameLabel}</label>
             <input type="text" value={hesapAdi}
               onChange={(e) => setHesapAdi(e.target.value)}
-              placeholder="örn: Satıcılar"
+              placeholder={d.namePlaceholder}
               className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Gerekçe (opsiyonel)</label>
+            <label className="text-xs text-muted-foreground">{d.reasonLabel}</label>
             <textarea value={aciklama} rows={2}
               onChange={(e) => setAciklama(e.target.value)}
               className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
@@ -139,9 +151,9 @@ function DuzelModal({
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end pt-1">
-            <Button type="button" variant="outline" onClick={onClose}>İptal</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t.smmmOnay.cancel}</Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Kaydediliyor…" : "Düzeltmeyi Kaydet"}
+              {loading ? d.saving : d.save}
             </Button>
           </div>
         </form>
@@ -155,19 +167,21 @@ function DuzelModal({
 function RedModal({
   kayit, onClose, onSuccess,
 }: { kayit: OnayKaydi; onClose: () => void; onSuccess: () => void }) {
+  const { t } = useI18n();
+  const r = t.smmmOnay.red;
   const [neden,   setNeden]   = useState("");
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!neden.trim()) { setError("Red gerekçesi zorunlu"); return; }
+    if (!neden.trim()) { setError(r.reasonRequired); return; }
     setLoading(true); setError(null);
     try {
       await apiClient.post(`/smmm/onay/${kayit.id}/reddet`, { neden });
       onSuccess();
     } catch {
-      setError("Red işlemi gerçekleştirilemedi");
+      setError(r.rejectError);
     } finally {
       setLoading(false);
     }
@@ -176,22 +190,22 @@ function RedModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <Card className="w-full max-w-sm p-5 space-y-4">
-        <h3 className="font-semibold text-red-400">Kaydı Reddet</h3>
+        <h3 className="font-semibold text-red-400">{r.title}</h3>
         <p className="text-xs text-muted-foreground truncate">{kayit.tx_description ?? "—"}</p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Red Gerekçesi *</label>
+            <label className="text-xs text-muted-foreground">{r.reasonLabel}</label>
             <textarea value={neden} rows={3}
               onChange={(e) => setNeden(e.target.value)}
-              placeholder="Neden reddedildi?"
+              placeholder={r.reasonPlaceholder}
               className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
             />
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={onClose}>İptal</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t.smmmOnay.cancel}</Button>
             <Button type="submit" variant="destructive" disabled={loading}>
-              {loading ? "İşleniyor…" : "Reddet"}
+              {loading ? t.smmmOnay.processing : r.submit}
             </Button>
           </div>
         </form>
@@ -210,6 +224,11 @@ function OnayCard({
   onSelect:  (id: string, checked: boolean) => void;
   onRefresh: () => void;
 }) {
+  const { t, locale } = useI18n();
+  const card = t.smmmOnay.card;
+  const actions = t.smmmOnay.actions;
+  const fmt = useCurrencyFormat();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const [expanded,    setExpanded]    = useState(false);
   const [showDuzel,   setShowDuzel]   = useState(false);
   const [showReddet,  setShowReddet]  = useState(false);
@@ -242,20 +261,20 @@ function OnayCard({
             <input type="checkbox" checked={selected}
               onChange={(e) => onSelect(kayit.id, e.target.checked)}
               className="mt-1 h-3.5 w-3.5 rounded border-border"
-              aria-label={`${kayit.tx_description} seç`}
+              aria-label={card.selectAria.replace("{name}", kayit.tx_description ?? "")}
             />
           )}
 
           {/* Main content */}
           <div className="flex-1 min-w-0 space-y-1.5">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <p className="text-sm font-medium truncate">{kayit.tx_description ?? "İşlem açıklaması yok"}</p>
-              {durumBadge(kayit.durum)}
+              <p className="text-sm font-medium truncate">{kayit.tx_description ?? card.noDescription}</p>
+              <DurumBadge durum={kayit.durum} status={t.smmmOnay.status} />
             </div>
 
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <span className="font-mono font-semibold text-foreground">{fmtAmount(kayit.tx_amount_try)}</span>
-              <span>{fmtDate(kayit.tx_tarih)}</span>
+              <span className="font-mono font-semibold text-foreground">{fmtAmount(kayit.tx_amount_try, fmt)}</span>
+              <span>{fmtDate(kayit.tx_tarih, dateTag)}</span>
               {kayit.otomatik_hesap_kodu && (
                 <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
                   {kayit.otomatik_hesap_kodu}
@@ -269,7 +288,7 @@ function OnayCard({
             {/* Was "%30 güven": a number with no stated meaning. */}
             <GuvenRozeti guven={kayit.guven} />
 
-            {/* Onay neden */}
+            {/* Onay neden — backend field value, not our copy. */}
             {kayit.onay_neden && (
               <p className="text-[11px] text-orange-400 border border-orange-500/20 bg-orange-500/5 rounded px-2 py-1">
                 ⚠ {kayit.onay_neden}
@@ -283,7 +302,7 @@ function OnayCard({
                 className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
               >
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {expanded ? "Detayı Gizle" : "Orijinal Kaydı Gör"}
+                {expanded ? card.hideDetails : card.showOriginal}
               </button>
             )}
             {expanded && kayit.orijinal_kayit && (
@@ -300,8 +319,8 @@ function OnayCard({
                 onClick={handleOnayla}
                 disabled={actionLoading}
                 className="rounded p-1.5 text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
-                title="Onayla"
-                aria-label="Onayla"
+                title={actions.approve}
+                aria-label={actions.approve}
               >
                 <CheckCircle2 className="h-4 w-4" />
               </button>
@@ -309,8 +328,8 @@ function OnayCard({
                 onClick={() => setShowDuzel(true)}
                 disabled={actionLoading}
                 className="rounded p-1.5 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50"
-                title="Düzelt ve Onayla"
-                aria-label="Düzelt ve Onayla"
+                title={actions.correct}
+                aria-label={actions.correct}
               >
                 <Edit3 className="h-4 w-4" />
               </button>
@@ -318,8 +337,8 @@ function OnayCard({
                 onClick={() => setShowReddet(true)}
                 disabled={actionLoading}
                 className="rounded p-1.5 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                title="Reddet"
-                aria-label="Reddet"
+                title={actions.reject}
+                aria-label={actions.reject}
               >
                 <XCircle className="h-4 w-4" />
               </button>
@@ -341,6 +360,8 @@ function OnayCard({
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function SMMMonayPage() {
+  const { t } = useI18n();
+  const st = t.smmmOnay;
   const [kayitlar,  setKayitlar]  = useState<OnayKaydi[]>([]);
   const [stats,     setStats]     = useState<OnayStats | null>(null);
   const [loading,   setLoading]   = useState(false);
@@ -360,11 +381,11 @@ export default function SMMMonayPage() {
       setStats(sRes.data.data);
       setSelected(new Set());
     } catch {
-      setError("Veriler yüklenemedi");
+      setError(st.loadError);
     } finally {
       setLoading(false);
     }
-  }, [durum]);
+  }, [durum, st]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -386,13 +407,13 @@ export default function SMMMonayPage() {
 
   async function handleBulkApprove() {
     if (selected.size === 0) return;
-    if (!confirm(`${selected.size} kaydı toplu onaylıyor musunuz?`)) return;
+    if (!confirm(st.bulk.confirm.replace("{count}", String(selected.size)))) return;
     setBulkLoading(true);
     try {
       await apiClient.post("/smmm/onay/toplu-onayla", { kayit_idler: Array.from(selected) });
       fetchData();
     } catch {
-      setError("Toplu onay başarısız");
+      setError(st.bulk.error);
     } finally {
       setBulkLoading(false);
     }
@@ -408,16 +429,16 @@ export default function SMMMonayPage() {
         <div className="flex items-center gap-3">
           <FileText className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold">SMMM Onay Kuyruğu</h1>
-            <p className="text-sm text-muted-foreground">Agent hazırlar, muhasebeci tek tıkla onaylar</p>
+            <h1 className="text-2xl font-bold">{st.title}</h1>
+            <p className="text-sm text-muted-foreground">{st.subtitle}</p>
           </div>
           {bekleyenSayisi > 0 && (
             <span className="rounded-full bg-orange-500/15 border border-orange-500/20 px-2.5 py-0.5 text-sm font-bold text-orange-400">
-              {bekleyenSayisi} bekliyor
+              {st.pendingBadge.replace("{count}", String(bekleyenSayisi))}
             </span>
           )}
         </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} aria-label="Yenile">
+        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} aria-label={st.refresh}>
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </Button>
       </div>
@@ -426,10 +447,10 @@ export default function SMMMonayPage() {
       {stats && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            { label: "Bekliyor",   value: stats.bekliyor,   color: "text-yellow-400" },
-            { label: "Onaylandı",  value: stats.onaylandi,  color: "text-emerald-400" },
-            { label: "Düzeltildi", value: stats.duzeltildi, color: "text-blue-400" },
-            { label: "Reddedildi", value: stats.reddedildi, color: "text-red-400" },
+            { label: st.status.bekliyor,   value: stats.bekliyor,   color: "text-yellow-400" },
+            { label: st.status.onaylandi,  value: stats.onaylandi,  color: "text-emerald-400" },
+            { label: st.status.duzeltildi, value: stats.duzeltildi, color: "text-blue-400" },
+            { label: st.status.reddedildi, value: stats.reddedildi, color: "text-red-400" },
           ].map((s) => (
             <Card key={s.label} className="p-3 space-y-0.5">
               <p className="text-xs text-muted-foreground">{s.label}</p>
@@ -443,7 +464,7 @@ export default function SMMMonayPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          {["bekliyor", "onaylandi", "duzeltildi", "reddedildi", "all"].map((d) => (
+          {FILTER_ORDER.map((d) => (
             <button
               key={d}
               onClick={() => setDurum(d)}
@@ -454,7 +475,7 @@ export default function SMMMonayPage() {
                   : "border-border text-muted-foreground hover:text-foreground"
               )}
             >
-              {d === "all" ? "Tümü" : d === "bekliyor" ? "Bekliyor" : d === "onaylandi" ? "Onaylı" : d === "duzeltildi" ? "Düzeltildi" : "Reddedildi"}
+              {st.filters[d]}
             </button>
           ))}
         </div>
@@ -467,12 +488,14 @@ export default function SMMMonayPage() {
                 onChange={(e) => handleSelectAll(e.target.checked)}
                 className="h-3.5 w-3.5"
               />
-              Tümünü Seç ({allBekliyor.length})
+              {st.bulk.selectAll.replace("{count}", String(allBekliyor.length))}
             </label>
             {selected.size > 0 && (
               <Button size="sm" onClick={handleBulkApprove} disabled={bulkLoading}>
                 <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-                {bulkLoading ? "İşleniyor…" : `${selected.size} Kaydı Toplu Onayla`}
+                {bulkLoading
+                  ? st.processing
+                  : st.bulk.approve.replace("{count}", String(selected.size))}
               </Button>
             )}
           </div>
@@ -498,12 +521,12 @@ export default function SMMMonayPage() {
         <Card className="p-12 text-center space-y-3">
           <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto" />
           <p className="font-semibold text-emerald-400">
-            {durum === "bekliyor" ? "Tüm kayıtlar onaylandı — kuyruk boş!" : "Bu filtrede kayıt yok"}
+            {durum === "bekliyor" ? st.empty.allApproved : st.empty.noRecords}
           </p>
           <p className="text-sm text-muted-foreground">
             {durum === "bekliyor"
-              ? "Yeni bir analiz çalıştırıldığında düşük güvenli işlemler buraya düşer."
-              : "Farklı bir filtre seçin veya analiz başlatın."}
+              ? st.empty.allApprovedBody
+              : st.empty.noRecordsBody}
           </p>
         </Card>
       ) : (

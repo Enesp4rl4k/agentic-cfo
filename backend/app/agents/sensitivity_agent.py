@@ -112,7 +112,7 @@ def compute_sensitivity_matrix(
           "col_variable": "pricing_change_pct",
           "row_values": [-30, -20, ...],
           "col_values": [-20, -10, ...],
-          "matrix": [[net_income_cents, ...], ...],  # [row][col]
+          "matrix": [[net_income, ...], ...],  # [row][col] — LIRA (same unit as input pnl)
           "matrix_margin": [[net_margin_pct, ...], ...],
           "base_net_income": int,
           "best_case": {"row": float, "col": float, "net_income": int},

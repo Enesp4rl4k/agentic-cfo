@@ -83,7 +83,7 @@ export function PricingTable() {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 50% 40% at 50% 0%, oklch(0.62 0.26 262 / 0.07) 0%, transparent 70%)",
+            "radial-gradient(ellipse 50% 40% at 50% 0%, oklch(0.74 0.13 82 / 0.07) 0%, transparent 70%)",
         }}
       />
 

@@ -21,6 +21,7 @@ htmlcov/
 # Node
 node_modules/
 .next/
+.next-auth-smoke/
 out/
 *.tsbuildinfo
 
@@ -32,6 +33,8 @@ backend/uploads/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite-shm
+*.sqlite-wal
 
 # package-lock.json is committed: CI runs `npm ci`, which needs it, and it is
 # what pins the frontend's dependency tree.

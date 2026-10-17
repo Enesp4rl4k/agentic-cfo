@@ -5,7 +5,7 @@ Responsibility: Cross-correlate CFO and CTO outputs to find risks that
 neither pipeline can see alone.
 
 Examples of cross-domain insights:
-  - "Infra cost $50k/month waste + cash runway 4 months → fix infra first"
+  - "Infra cost ₺50k/month waste + cash runway 4 months → fix infra first"
   - "Tech debt score 8/10 + revenue declining → engineering velocity risk"
   - "MTTR 12h + SaaS product → customer churn risk not in financials"
   - "Velocity declining + hiring budget cut → delivery at risk"
@@ -103,7 +103,7 @@ def _detect_cross_risks(
             "financial_impact_cents": infra_waste,
             "tech_impact": "None — pure cost reduction",
             "recommended_action": (
-                f"Eliminate ${monthly_savings:,.0f}/month cloud waste immediately. "
+                f"Eliminate ₺{monthly_savings:,.0f}/month cloud waste immediately. "
                 f"This extends cash runway by ~{infra_waste / max(fin.get('monthly_burn_cents', 1), 1):.1f} months."
             ),
             "urgency": "now" if severity == "critical" else "30d",
@@ -206,7 +206,7 @@ def _detect_cross_risks(
             "financial_impact_cents": monthly_churn_rev,
             "tech_impact": "Churn may indicate product-market fit or reliability issues",
             "recommended_action": (
-                f"Monthly churn {churn_rate:.0%} costs ~${monthly_churn_rev / 100:,.0f}/month. "
+                f"Monthly churn {churn_rate:.0%} costs ~₺{monthly_churn_rev / 100:,.0f}/month. "
                 "Launch retention program and investigate exit reasons."
             ),
             "urgency": "30d",
@@ -241,7 +241,7 @@ def _detect_cross_risks(
             "financial_impact_cents": est_churn_rev,
             "tech_impact": f"SLA breach rate {sla_breach_rate:.0%} — customers experiencing poor service",
             "recommended_action": (
-                f"SLA breach rate {sla_breach_rate:.0%} risks ~${est_churn_rev / 100:,.0f}/month in churn. "
+                f"SLA breach rate {sla_breach_rate:.0%} risks ~₺{est_churn_rev / 100:,.0f}/month in churn. "
                 "Investigate root-cause ticket categories and implement escalation playbooks."
             ),
             "urgency": "now" if severity == "critical" else "30d",
@@ -331,7 +331,7 @@ def _detect_cross_risks(
             "title": "Critical compliance violations creating regulatory penalty risk",
             "domains": ["compliance", "cfo"],
             "severity": "critical" if critical_violations > 2 else "high",
-            "financial_impact_cents": critical_violations * 100_000 * 100,  # ~$100k per critical violation estimate
+            "financial_impact_cents": critical_violations * 100_000 * 100,  # ~₺100k per critical violation estimate
             "tech_impact": f"{critical_violations} critical violation(s) open — potential regulatory fines",
             "recommended_action": (
                 f"{critical_violations} critical violation(s) unresolved with {runway:.0f} months runway. "
@@ -510,7 +510,7 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
     pnl      = cfo_state.get("pnl") or {}
     cashflow = cfo_state.get("cashflow") or {}
     forecast = cfo_state.get("forecast") or {}
-    alerts   = []
+    alerts: list[dict[str, Any]] = []
 
     # Collect all CFO alerts
     for src in [cashflow.get("alerts", []), forecast.get("alerts", [])]:
@@ -722,7 +722,7 @@ async def run_synthesis_agent(
         cross_risks = _detect_cross_risks(
             fin, tech,
             mkt or None, ops or None, compliance or None,
-            risk or None, audit_sum or None,
+            risk or None, audit_sum or None,  # type: ignore[arg-type]
         )
         # Add HR (CHRO) context to risks for HR-related rules
         for risk in cross_risks:

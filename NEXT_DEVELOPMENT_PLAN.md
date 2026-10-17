@@ -1,3 +1,5 @@
+> ⚠️ **Superseded.** Current plan: [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) (2026-10-11). Phase 0 items here are done in code.
+
 # Next development plan — prove the stack, then deepen it
 
 **Horizon:** 3 sprints (≈ 6 weeks)  

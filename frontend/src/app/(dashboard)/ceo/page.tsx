@@ -2,8 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
-import { BarChart3, Download, ShieldAlert, TrendingUp, Users, Cpu } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Download, ShieldAlert, TrendingUp, Users, Cpu, ChevronDown } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,8 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ActionCenter } from "@/components/ActionCenter";
 import { DomainDataSources } from "@/components/ceo/DomainDataSources";
+import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
 
 import { BoardDeckViewer }     from "@/components/ceo/BoardDeckViewer";
 import { OKRWeightedScorecard } from "@/components/ceo/OKRScorecard";
@@ -21,25 +23,10 @@ import { SWOTWidget }           from "@/components/ceo/SWOTWidget";
 import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary } from "@/lib/api/semantic";
 import { type CEOResult, type BoardSlide, type OKRObjective } from "@/components/ceo/types";
+import { normalizeCEOResult, type CEOView } from "@/lib/ceo-result";
+import { SAMPLE_CEO_WIRE, isDemoMode } from "@/lib/demo-samples";
 import { useCompanyContextStore } from "@/store/companyContext";
-
-// ── Sample data ────────────────────────────────────────────────────────────────
-
-const SAMPLE_BOARD_DECK: BoardSlide[] = [
-  { slide_number: 1, title: "Executive Summary",    content: "H1 2024 sağlam finansal performans gösterdi. Revenue +18% YoY, EBITDA marjı 25%.",         metrics: { revenue: 45.2, ebitda_margin: 0.25, growth: 0.18 } },
-  { slide_number: 2, title: "Financial Performance", content: "Üç ana segment tümü beklentileri aştı. Operasyonel verimlilik %12 iyileşti.",              metrics: { segment_1: 18.5, segment_2: 12.3, segment_3: 14.4 } },
-  { slide_number: 3, title: "Market Expansion",      content: "Yeni pazarlara giriş başarılı. Müşteri tabanı %35 genişledi.",                              metrics: { new_markets: 3, customer_growth: 0.35, market_share: 0.062 } },
-  { slide_number: 4, title: "Risk Assessment",       content: "Önemli riskler kontrol altında. Siber güvenlik altyapısı güçlendirildi.",                   metrics: { risk_score: 0.45, compliance_rate: 0.98, audit_score: 0.92 } },
-  { slide_number: 5, title: "Strategic Priorities",  content: "2025 stratejisi: Dijital transformasyon, ESG uyumu, jeopolitik çeşitlendirme.",              metrics: { digital_investment: 0.35, esg_score: 0.78, diversification: 0.62 } },
-  { slide_number: 6, title: "Outlook & Guidance",    content: "2024 Full Year: Revenue $185-195M. 2025 Growth: 15-18% midpoint.",                          metrics: { fy2024_revenue: 190, fy2025_growth: 0.165, confidence: 0.88 } },
-];
-
-const SAMPLE_OKRS: OKRObjective[] = [
-  { objective_id: "O1", name: "Revenue Growth & Profitability", weight: 0.30, score: 0.92, momentum: "up",     key_results: [{ name: "Revenue +20% YoY", progress: 0.95 }, { name: "EBITDA Margin 26%", progress: 0.88 }] },
-  { objective_id: "O2", name: "Customer Satisfaction",          weight: 0.25, score: 0.78, momentum: "stable", key_results: [{ name: "NPS Score 60+", progress: 0.82 }, { name: "Churn Rate <5%", progress: 0.75 }] },
-  { objective_id: "O3", name: "Digital Transformation",         weight: 0.25, score: 0.65, momentum: "up",     key_results: [{ name: "Cloud Migration 80%", progress: 0.60 }, { name: "Automation ROI $5M", progress: 0.70 }] },
-  { objective_id: "O4", name: "Team Excellence & Retention",    weight: 0.20, score: 0.82, momentum: "down",   key_results: [{ name: "Employee Engagement 75%", progress: 0.85 }, { name: "Turnover <12%", progress: 0.79 }] },
-];
+import { useI18n } from "@/hooks/useI18n";
 
 // ── PDF export ─────────────────────────────────────────────────────────────────
 // Uses /advanced/board-deck-pdf which reads from CompanyContext directly —
@@ -53,6 +40,7 @@ function PDFExportButtons({
   orgId?: string | null;
 }) {
   const [exporting, setExporting] = useState<"deck" | "one-pager" | null>(null);
+  const { t } = useI18n();
 
   async function handleExport(type: "deck" | "one-pager") {
     setExporting(type);
@@ -90,20 +78,20 @@ function PDFExportButtons({
         size="sm"
         disabled={exporting !== null}
         onClick={() => handleExport("deck")}
-        aria-label="Board deck PDF indir"
+        aria-label={t.roleDashboards.ceo.body.downloadBoardDeckPdf}
       >
         <Download className="h-4 w-4" aria-hidden="true" />
-        {exporting === "deck" ? "İndiriliyor…" : "Board Deck PDF"}
+        {exporting === "deck" ? t.roleDashboards.ceo.body.downloading : "Board Deck PDF"}
       </Button>
       <Button
         variant="outline"
         size="sm"
         disabled={exporting !== null}
         onClick={() => handleExport("one-pager")}
-        aria-label="One-pager PDF indir"
+        aria-label={t.roleDashboards.ceo.body.downloadOnePagerPdf}
       >
         <Download className="h-4 w-4" aria-hidden="true" />
-        {exporting === "one-pager" ? "İndiriliyor…" : "One-Pager PDF"}
+        {exporting === "one-pager" ? t.roleDashboards.ceo.body.downloading : "One-Pager PDF"}
       </Button>
     </div>
   );
@@ -119,13 +107,14 @@ interface CrossRisk {
 }
 
 function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
+  const { t } = useI18n();
   if (!risks.length) return null;
 
   const domainIcon = (d: string) => {
     switch (d) {
       case "finance": return <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />;
-      case "tech":    return <Cpu className="h-3.5 w-3.5 text-cyan-400" />;
-      case "hr":      return <Users className="h-3.5 w-3.5 text-purple-400" />;
+      case "tech":    return <Cpu className="h-3.5 w-3.5 text-mapblue-400" />;
+      case "hr":      return <Users className="h-3.5 w-3.5 text-sage-400" />;
       default:        return <ShieldAlert className="h-3.5 w-3.5 text-orange-400" />;
     }
   };
@@ -146,9 +135,9 @@ function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
     <Card className="p-4 space-y-3">
       <div className="flex items-center gap-2">
         <ShieldAlert className="h-4 w-4 text-orange-400" />
-        <h3 className="font-semibold text-sm">Cross-Domain Risk Timeline</h3>
+        <h3 className="font-semibold text-sm">{t.roleDashboards.ceo.sections.crossDomainRiskTimeline}</h3>
         <span className="rounded-full bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 text-[10px] text-orange-400 font-medium">
-          {risks.length} risk
+          {risks.length} {t.roleDashboards.ceo.body.risk}
         </span>
       </div>
 
@@ -170,8 +159,9 @@ function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
               <div className="flex items-center gap-1.5 min-w-0">
                 {domainIcon(risk.domain)}
                 <p className="text-xs font-medium truncate capitalize">{risk.domain}</p>
-                <span className={cn("rounded px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide", severityBadge(risk.severity))}>
-                  {risk.severity}
+                <span className={cn("rounded px-1 py-0.5 text-[9px] font-medium tracking-wide", severityBadge(risk.severity))}>
+                  {/* JS casing: CSS uppercase follows html lang (tr → "CRITICAL" with dotted I). */}
+                  {risk.severity.toUpperCase()}
                 </span>
               </div>
             </div>
@@ -187,10 +177,11 @@ function CrossRiskTimeline({ risks }: { risks: CrossRisk[] }) {
 
 export default function CEODashboardPage() {
   const { activeCFOJobId, orgId } = useCompanyContextStore();
+  const { t } = useI18n();
   const [company, setCompany] = useState("");
   const [period,  setPeriod]  = useState("");
   const [loading, setLoading] = useState(false);
-  const [result,  setResult]  = useState<CEOResult | null>(null);
+  const [result,  setResult]  = useState<CEOView | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [liveLoaded, setLiveLoaded] = useState(false);
   const [brief, setBrief] = useState<DecisionBrief | null>(null);
@@ -199,32 +190,62 @@ export default function CEODashboardPage() {
   const [rebuildingBrief, setRebuildingBrief] = useState(false);
   const [approvingBrief, setApprovingBrief] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
+  // Demo-only, prefill-less fallback: a labelled sample board instead of a bare
+  // empty state. Any real result or decision brief clears it — sample data is
+  // never shown once live data exists (DEMO_PLAN §D2).
+  const [sampleMode, setSampleMode] = useState(false);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the form below is never gated on this.
+  const [hydrating, setHydrating] = useState(true);
 
   // Prefer live CompanyContext / last CEO result over SAMPLE CSV paste.
+  // Context hydration is NOT cancelled on effect re-runs (orgId flips fetch
+  // the same caller-org snapshot; dropping the earlier response on the flip
+  // left the page empty whenever the follow-up fetch failed — see cmo/page).
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
-        if (cancelled || !ctx) return;
+        if (!ctx) {
+          if (isDemoMode()) setSampleMode(true);
+          return;
+        }
         if (ctx.company_name) setCompany(String(ctx.company_name));
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const lastCeo = ctx.last_ceo_result;
         if (lastCeo && typeof lastCeo === "object") {
-          setResult(lastCeo as CEOResult);
+          const view = normalizeCEOResult(lastCeo);
+          setResult(view);
           setLiveLoaded(true);
-          if (lastCeo.decision_brief) {
-            setBrief(lastCeo.decision_brief as DecisionBrief);
+          if (view?.decision_brief) {
+            setBrief(view.decision_brief);
           }
+        } else if (isDemoMode()) {
+          setSampleMode(true);
         }
       } catch {
+        if (isDemoMode()) setSampleMode(true);
         /* empty state until analyze */
+      } finally {
+        setHydrating(false);
       }
+    })();
+  }, [orgId]);
+
+  // Brief + period history stay cancelled-on-rerun: they ARE period-sensitive,
+  // so a stale response from a previous selection must never win.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
       try {
         const b = await getDecisionBrief(selectedPeriod);
-        if (!cancelled && b.brief) setBrief(b.brief);
+        if (!cancelled && b.brief) {
+          setBrief(b.brief);
+          // A real brief exists: the sample board drops out entirely.
+          setSampleMode(false);
+        }
         const periods = await getSemanticHistory(12);
         if (!cancelled) setPeriodHistory(periods);
       } catch {
@@ -240,7 +261,10 @@ export default function CEODashboardPage() {
     setApprovingBrief(true);
     try {
       const res = await approveDecisionBrief(selectedPeriod);
-      if (res.brief) setBrief(res.brief);
+      if (res.brief) {
+        setBrief(res.brief);
+        setSampleMode(false);
+      }
     } finally {
       setApprovingBrief(false);
     }
@@ -251,7 +275,10 @@ export default function CEODashboardPage() {
     try {
       await rebuildSemantic();
       const b = await getDecisionBrief(selectedPeriod);
-      if (b.brief) setBrief(b.brief);
+      if (b.brief) {
+        setBrief(b.brief);
+        setSampleMode(false);
+      }
     } finally {
       setRebuildingBrief(false);
     }
@@ -265,13 +292,14 @@ export default function CEODashboardPage() {
       const data = res.data?.data ?? res.data;
       if (res.data?.error) throw new Error(res.data.error);
       if (data) {
-        setResult(data as CEOResult);
+        setResult(normalizeCEOResult(data));
         setLiveLoaded(true);
+        setSampleMode(false);
       }
       const b = await getDecisionBrief(selectedPeriod);
       if (b.brief) setBrief(b.brief);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Synthesis failed");
+      setError(err instanceof Error ? err.message : t.roleDashboards.ceo.body.synthesisFailed);
     } finally {
       setSynthesizing(false);
     }
@@ -290,40 +318,55 @@ export default function CEODashboardPage() {
         });
         const data = res.data?.data ?? res.data;
         if (res.data?.error) throw new Error(res.data.error);
-        setResult(data as CEOResult);
+        setResult(normalizeCEOResult(data));
         setLiveLoaded(true);
+        setSampleMode(false);
       } else {
         const res = await apiClient.post<CEOResult>("/ceo/analyze", {
           company_name: company || null,
           period:       period  || null,
         });
         if (res.data.error) throw new Error(res.data.error);
-        setResult(res.data);
+        setResult(normalizeCEOResult(res.data));
         setLiveLoaded(true);
+        setSampleMode(false);
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : t.roleDashboards.ceo.body.unknownError);
     } finally {
       setLoading(false);
     }
   }
 
-  const display = result;
+  const sampleView = useMemo(
+    () => (isDemoMode() && sampleMode ? normalizeCEOResult(SAMPLE_CEO_WIRE) : null),
+    [sampleMode],
+  );
+  const display = result ?? sampleView;
+  const sampleActive = sampleMode && result === null;
   const showEmpty = !display;
 
   return (
-    <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <BarChart3 className="h-6 w-6 text-primary" aria-hidden="true" />
-        <div>
-          <h1 className="text-2xl font-bold">CEO Command Board</h1>
-          <p className="text-sm text-muted-foreground">
-            Board deck, OKR scorecard, and 12-month outlook from live company context
-            {liveLoaded ? " · live" : ""}
-          </p>
-        </div>
-      </div>
+      <RoleDashboardHeader
+        title={t.roleDashboards.ceo.title}
+        description={t.roleDashboards.ceo.description}
+        context={
+          sampleActive ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
+              {t.csvInput.sampleData}
+            </span>
+          ) : liveLoaded ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+              {t.roleDashboards.ceo.body.currentCompanyContext}
+            </span>
+          ) : undefined
+        }
+      />
+
+      {hydrating && showEmpty && <HydrationHint />}
 
       <ActionCenter />
 
@@ -333,10 +376,15 @@ export default function CEODashboardPage() {
       <DomainDataSources />
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6">
+      <details open={!display} className="group rounded-xl border border-border/80 bg-card">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+          <span className="text-sm font-semibold">{display ? t.roleDashboards.ceo.body.newAnalysis : t.roleDashboards.ceo.body.analysisInputs}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+      <form onSubmit={handleSubmit} className="border-t border-border/80 p-4 sm:p-5">
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="ceo-company">Company</Label>
+            <Label htmlFor="ceo-company">{t.roleDashboards.ceo.body.companyName}</Label>
             <Input
               id="ceo-company"
               value={company}
@@ -345,7 +393,7 @@ export default function CEODashboardPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ceo-period">Period</Label>
+            <Label htmlFor="ceo-period">{t.roleDashboards.ceo.body.period}</Label>
             <Input
               id="ceo-period"
               value={period}
@@ -361,8 +409,16 @@ export default function CEODashboardPage() {
           </p>
         )}
 
-        <Button type="submit" disabled={loading}>
-          {loading ? "Running…" : activeCFOJobId ? "Synthesize from CFO job" : "Run CEO analysis"}
+        {/* U6: without a CFO job the /ceo/analyze path can only 400 — say what
+            to do instead of firing the doomed request. */}
+        {!activeCFOJobId && (
+          <p className="mb-3 rounded border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {t.roleDashboards.ceo.body.noCfoInputHint}
+          </p>
+        )}
+
+        <Button type="submit" disabled={loading || !activeCFOJobId}>
+          {loading ? t.roleDashboards.ceo.body.preparingAnalysis : activeCFOJobId ? t.roleDashboards.ceo.body.summarizeFromCfo : t.roleDashboards.ceo.body.runAnalysis}
         </Button>
         <Button
           type="button"
@@ -370,9 +426,10 @@ export default function CEODashboardPage() {
           disabled={synthesizing || !orgId}
           onClick={() => void handleSynthesizeFromContext()}
         >
-          {synthesizing ? "Synthesizing…" : "Refresh CEO synthesis"}
+          {synthesizing ? t.roleDashboards.ceo.body.refreshingSummary : t.roleDashboards.ceo.body.refreshExecutiveSummary}
         </Button>
       </form>
+      </details>
 
       {showEmpty ? (
         <div className="space-y-4">
@@ -387,14 +444,13 @@ export default function CEODashboardPage() {
             approving={approvingBrief}
           />
           <Card className="p-6 text-sm text-muted-foreground">
-            No live CEO results yet. Upload data and complete a CFO run, or synthesize from an active CFO job.
-            Sample CSV paste has been removed from the default path.
+            {t.roleDashboards.ceo.body.emptyState}
           </Card>
         </div>
       ) : (
         <div className="space-y-6">
           <DecisionBriefPanel
-            brief={brief ?? ((display as CEOResult & { decision_brief?: DecisionBrief })?.decision_brief ?? null)}
+            brief={brief ?? display?.decision_brief ?? null}
             periodOptions={periodHistory}
             selectedPeriod={selectedPeriod}
             onPeriodChange={(pk) => setSelectedPeriod(pk)}
@@ -418,16 +474,16 @@ export default function CEODashboardPage() {
           {display?.outlook && <OutlookChart outlook={display.outlook} />}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <SWOTWidget
-              data={(result as CEOResult & { swot?: { strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[]; strategic_priorities?: string[] } })?.swot ?? null}
+              data={display?.swot ?? null}
               jobId={activeCFOJobId}
               orgId={orgId}
             />
             <CrossRiskTimeline
-              risks={(result as CEOResult & { cross_risks?: CrossRisk[] })?.cross_risks ?? []}
+              risks={display?.cross_risks ?? []}
             />
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

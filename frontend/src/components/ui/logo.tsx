@@ -37,7 +37,7 @@ function LogoMark({ size }: { size: number }) {
       aria-hidden="true"
     >
       {/* Glow background */}
-      <circle cx={cx} cy={cy} r={r + 2} fill="url(#brandGlow)" opacity={0.2} />
+      <circle cx={cx} cy={cy} r={r + 2} fill="url(#brandGlow)" opacity={0.15} />
 
       {/* "C" arc — 220° sweep (gap on right) */}
       <path
@@ -92,12 +92,12 @@ function LogoMark({ size }: { size: number }) {
       {/* Gradient definitions */}
       <defs>
         <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stopColor="oklch(0.72 0.26 262)" />
-          <stop offset="100%" stopColor="oklch(0.58 0.22 220)" />
+          <stop offset="0%"   stopColor="var(--primary)" />
+          <stop offset="100%" stopColor="var(--chart-secondary)" />
         </linearGradient>
         <radialGradient id="brandGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor="oklch(0.62 0.26 262)" stopOpacity="0.6" />
-          <stop offset="100%" stopColor="oklch(0.62 0.26 262)" stopOpacity="0"   />
+          <stop offset="0%"   stopColor="var(--primary)" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="var(--primary)" stopOpacity="0"   />
         </radialGradient>
       </defs>
     </svg>
@@ -147,10 +147,10 @@ function Wordmark() {
 
   return (
     <>
-      <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
+      <span className="font-semibold text-foreground tracking-tight">
         {head}
       </span>
-      {tail && <span className="ml-1 text-foreground/90">{tail}</span>}
+      {tail && <span className="ml-1.5 font-mono text-xs uppercase px-1.5 py-0.5 rounded bg-muted text-foreground border border-border">{tail}</span>}
     </>
   );
 }

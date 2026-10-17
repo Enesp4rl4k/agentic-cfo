@@ -44,7 +44,7 @@ async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
 
 
 async def kullanici(
-    client: AsyncClient, email: str, *, attach_org: bool = True,
+    client: AsyncClient, email: str, *, attach_org: bool = True, role: str = "analyst",
 ) -> tuple[dict[str, str], str | None, str]:
     """Register, optionally attach a fresh organisation, sign in.
 
@@ -60,6 +60,8 @@ async def kullanici(
                       json={"email": email, "password": PAROLA, "full_name": "T"})
     async with client._maker() as db:  # type: ignore[attr-defined]
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        if role != "analyst":
+            user.role = role
         org_id: str | None = None
         if attach_org:
             org = Organization(name=email, slug=email.split("@")[0])

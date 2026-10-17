@@ -57,7 +57,8 @@ async def _attach(db, tmp_path, job, domain: str, source_type: str, content: str
     await db.commit()
 
 
-PNL = {"revenue": 1_000_000_00, "opex": {"technology": 80_000_00, "marketing": 50_000_00, "salary": 300_000_00}}
+# Production-shaped: Report.data is LIRA (report_agent._fmt divides the pipeline's cents).
+PNL = {"revenue": 1_000_000, "opex": {"technology": 80_000, "marketing": 50_000, "salary": 300_000}}
 
 
 @pytest.mark.asyncio
@@ -87,7 +88,7 @@ async def test_the_cfo_books_real_spend_is_shown_with_its_source(db) -> None:
     assert kalemler == [{
         "kategori": "technology",
         "etiket": "Banka hareketlerindeki teknoloji harcaması",
-        "tutar_kurus": 80_000_00,
+        "tutar_lira": 80_000,
         "gelire_orani": 0.08,
         "kaynak": "CFO raporu — 'technology' kategorisindeki işlemlerin toplamı",
     }]

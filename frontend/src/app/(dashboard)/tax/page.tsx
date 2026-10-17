@@ -1,9 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Calendar, AlertCircle, Upload, TrendingDown } from "lucide-react";
+import { Calendar, AlertCircle, Upload } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
-import { formatCurrency, cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import { cn } from "@/lib/utils";
+import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import type { ProvenanceBlock } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,42 +39,54 @@ interface TaxData {
 
 // ── Summary KPI strip ─────────────────────────────────────────────────────────
 
-function TaxKPIStrip({ tax }: { tax: TaxData }) {
+function TaxKPIStrip({ tax, prov }: { tax: TaxData; prov?: ProvenanceBlock }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { kpi } = t.tax;
+
   const items = [
     {
-      label: "KDV (Net)",
-      value: formatCurrency(tax.vat.net_vat_payable / 100),
-      sub: `Çıktı: ${formatCurrency(tax.vat.output_vat / 100)} / Girdi: ${formatCurrency(tax.vat.input_vat / 100)}`,
+      label: kpi.vatNet,
+      value: fmt(tax.vat.net_vat_payable / 100),
+      sub: kpi.vatSub
+        .replace("{output}", fmt(tax.vat.output_vat / 100))
+        .replace("{input}", fmt(tax.vat.input_vat / 100)),
       color: "text-foreground",
     },
     {
-      label: "Stopaj",
-      value: formatCurrency(tax.withholding.income_tax_withholding / 100),
-      sub: `Maaş tabanı: ${formatCurrency(tax.withholding.salary_base / 100)}`,
+      label: kpi.withholding,
+      value: fmt(tax.withholding.income_tax_withholding / 100),
+      sub: kpi.salaryBase.replace("{amount}", fmt(tax.withholding.salary_base / 100)),
       color: "text-foreground",
     },
     {
-      label: "SGK İşveren",
-      value: formatCurrency(tax.withholding.ssi_employer / 100),
-      sub: "Toplam bordro yükü dahil",
+      label: kpi.ssi,
+      value: fmt(tax.withholding.ssi_employer / 100),
+      sub: kpi.ssiSub,
       color: "text-foreground",
     },
     {
-      label: "Kurumlar Vergisi",
-      value: formatCurrency(tax.corporate.corporate_tax_estimate / 100),
-      sub: `Efektif oran: ${tax.corporate.effective_rate}%`,
+      label: kpi.corporate,
+      value: fmt(tax.corporate.corporate_tax_estimate / 100),
+      sub: kpi.effectiveRate.replace("{rate}", String(tax.corporate.effective_rate)),
       color: "text-foreground",
     },
     {
-      label: "Toplam Vergi Yükü",
-      value: formatCurrency(tax.total_tax_burden / 100),
+      label: kpi.total,
+      value: fmt(tax.total_tax_burden / 100),
       sub: tax.reference_month,
       color: "text-destructive",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
+    <>
+      {prov && (
+        <div className="mb-1.5 flex justify-end">
+          <ProvenanceBadge dataSource={prov.data_source} basis={prov.basis} />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
       {items.map((item) => (
         <div key={item.label} className="bg-card px-4 py-4">
           <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -80,17 +96,22 @@ function TaxKPIStrip({ tax }: { tax: TaxData }) {
           <p className="mt-0.5 text-xs text-muted-foreground">{item.sub}</p>
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 
 // ── Payment calendar ──────────────────────────────────────────────────────────
 
 function PaymentCalendar({ payments }: { payments: PaymentItem[] }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { calendar } = t.tax;
+
   if (!payments.length) {
     return (
       <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-        Yaklaşan vergi ödemesi bulunmuyor.
+        {calendar.empty}
       </div>
     );
   }
@@ -131,14 +152,18 @@ function PaymentCalendar({ payments }: { payments: PaymentItem[] }) {
               <p className="text-xs text-muted-foreground">{p.description}</p>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-sm font-semibold tabular-nums">{formatCurrency(p.amount / 100)}</p>
+              <p className="text-sm font-semibold tabular-nums">{fmt(p.amount / 100)}</p>
               <p
                 className={cn(
                   "text-xs tabular-nums",
                   isUrgent ? "text-destructive" : isNear ? "text-yellow-400" : "text-muted-foreground"
                 )}
               >
-                {daysUntil > 0 ? `${daysUntil} gün kaldı` : daysUntil === 0 ? "Bugün!" : "Geçti"}
+                {daysUntil > 0
+                  ? calendar.daysLeft.replace("{count}", String(daysUntil))
+                  : daysUntil === 0
+                  ? calendar.today
+                  : calendar.overdue}
                 {" · "}{p.due_date}
               </p>
             </div>
@@ -152,34 +177,37 @@ function PaymentCalendar({ payments }: { payments: PaymentItem[] }) {
 // ── Breakdown table ───────────────────────────────────────────────────────────
 
 function TaxBreakdown({ tax }: { tax: TaxData }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { breakdown } = t.tax;
   const rows = [
-    { label: "Çıktı KDV (Satışlardan)", amount: tax.vat.output_vat, positive: false },
-    { label: "Girdi KDV (Alışlardan, indirim)", amount: -tax.vat.input_vat, positive: true },
-    { label: "Net KDV Borcu", amount: tax.vat.net_vat_payable, bold: true, positive: false },
+    { label: breakdown.rows.outputVat, amount: tax.vat.output_vat, positive: false },
+    { label: breakdown.rows.inputVat, amount: -tax.vat.input_vat, positive: true },
+    { label: breakdown.rows.netVat, amount: tax.vat.net_vat_payable, bold: true, positive: false },
     { label: "", amount: null },
-    { label: "Brüt Maaş Ödemeleri", amount: tax.withholding.salary_base, positive: false },
-    { label: "Gelir Vergisi Stopajı (%15)", amount: tax.withholding.income_tax_withholding, positive: false },
-    { label: "SGK İşveren Payı (%22.5)", amount: tax.withholding.ssi_employer, positive: false },
-    { label: "Toplam Bordro Vergi Yükü", amount: tax.withholding.total_payroll_tax, bold: true, positive: false },
+    { label: breakdown.rows.grossSalary, amount: tax.withholding.salary_base, positive: false },
+    { label: breakdown.rows.incomeTax, amount: tax.withholding.income_tax_withholding, positive: false },
+    { label: breakdown.rows.ssiEmployer, amount: tax.withholding.ssi_employer, positive: false },
+    { label: breakdown.rows.payrollTax, amount: tax.withholding.total_payroll_tax, bold: true, positive: false },
     { label: "", amount: null },
-    { label: "Vergilendirilebilir Gelir", amount: tax.corporate.taxable_income, positive: false },
-    { label: "Kurumlar Vergisi Tahmini (%25)", amount: tax.corporate.corporate_tax_estimate, bold: true, positive: false },
+    { label: breakdown.rows.taxableIncome, amount: tax.corporate.taxable_income, positive: false },
+    { label: breakdown.rows.corporateEst, amount: tax.corporate.corporate_tax_estimate, bold: true, positive: false },
   ] as const;
 
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Vergi Detay Dökümü</h2>
+        <h2 className="text-sm font-medium">{breakdown.heading}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {tax.reference_month} dönemi tahmini vergi yükümlülükleri
+          {breakdown.subtitle.replace("{month}", tax.reference_month)}
         </p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm" role="table">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Kalem</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Tutar</th>
+              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">{breakdown.colLine}</th>
+              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">{breakdown.colAmount}</th>
             </tr>
           </thead>
           <tbody>
@@ -204,7 +232,7 @@ function TaxBreakdown({ tax }: { tax: TaxData }) {
                     row.positive ? "text-emerald-400" : "text-foreground"
                   )}>
                     {row.positive && row.amount < 0 ? "+" : ""}
-                    {formatCurrency(Math.abs(row.amount) / 100)}
+                    {fmt(Math.abs(row.amount) / 100)}
                   </td>
                 </tr>
               );
@@ -219,20 +247,23 @@ function TaxBreakdown({ tax }: { tax: TaxData }) {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useI18n();
+  const { empty } = t.tax;
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">Vergi verisi yok</h2>
+      <h2 className="text-base font-semibold">{empty.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Finansal belge yükleyip analiz ettirin, vergi hesaplamaları otomatik yapılır.
+        {empty.body}
       </p>
       <a href="/upload" className={cn(
         "mt-5 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground",
         "transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       )}>
-        Belge yükle
+        {empty.cta}
       </a>
     </div>
   );
@@ -244,6 +275,8 @@ export default function TaxPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
   const { data: dashboard, isLoading } = useDashboard(jobId);
+  const { t } = useI18n();
+  const { noTax, advisorCommentary } = t.tax;
 
   if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
 
@@ -264,7 +297,7 @@ export default function TaxPage() {
     );
   }
 
-  const tax = (dashboard as any)?.tax as TaxData | null | undefined;
+  const tax = (dashboard as { tax?: TaxData })?.tax;
 
   if (!tax) {
     return (
@@ -272,9 +305,9 @@ export default function TaxPage() {
         <div className="mb-4 rounded-full bg-muted p-4">
           <AlertCircle className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
         </div>
-        <h2 className="text-base font-semibold">Vergi hesaplaması bulunamadı</h2>
+        <h2 className="text-base font-semibold">{noTax.heading}</h2>
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-          Bu analiz için vergi verisi mevcut değil. Yeniden analiz edin.
+          {noTax.body}
         </p>
       </div>
     );
@@ -283,17 +316,17 @@ export default function TaxPage() {
   return (
     <div className="space-y-4 p-5">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">Vergi Analizi</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{t.tax.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {tax.reference_month} dönemi · KDV, stopaj ve kurumlar vergisi tahmini
+          {t.tax.subtitle.replace("{month}", tax.reference_month)}
         </p>
       </div>
 
-      <TaxKPIStrip tax={tax} />
+      <TaxKPIStrip tax={tax} prov={dashboard?.provenance?.tax} />
 
       {tax.narrative && (
         <div className="rounded-lg border border-border bg-card px-4 py-3.5">
-          <p className="mb-1 text-xs font-medium text-primary">Vergi Danışmanı Yorumu</p>
+          <p className="mb-1 text-xs font-medium text-primary">{advisorCommentary}</p>
           <p className="text-sm leading-relaxed text-muted-foreground max-w-prose">
             {tax.narrative}
           </p>
@@ -305,9 +338,9 @@ export default function TaxPage() {
 
         <div className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Ödeme Takvimi</h2>
+            <h2 className="text-sm font-medium">{t.tax.calendar.heading}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Yaklaşan vergi yükümlülükleri ve son ödeme tarihleri
+              {t.tax.calendar.subtitle}
             </p>
           </div>
           <div className="p-4">

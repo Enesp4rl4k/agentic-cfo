@@ -19,6 +19,7 @@ import { approveJob } from "@/lib/api/cfo";
 import { baslangicDurumu, firmaOlustur, type BaslangicDurumu } from "@/lib/api/baslangic";
 import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 
 type AdimDurumu = "tamam" | "sirada" | "bekliyor";
 
@@ -34,15 +35,17 @@ type AdimDurumu = "tamam" | "sirada" | "bekliyor";
 export default function BaslangicPage() {
   const [durum, setDurum] = useState<BaslangicDurumu | null>(null);
   const [hata, setHata] = useState<string | null>(null);
+  const { t } = useI18n();
+  const bs = t.baslangic;
 
   const yukle = useCallback(async () => {
     try {
       setDurum(await baslangicDurumu());
       setHata(null);
     } catch (e) {
-      setHata(e instanceof Error ? e.message : "Durum okunamadı.");
+      setHata(e instanceof Error ? e.message : bs.loadErrorFallback);
     }
-  }, []);
+  }, [bs]);
 
   useEffect(() => { void yukle(); }, [yukle]);
 
@@ -51,8 +54,8 @@ export default function BaslangicPage() {
     || durum?.son_analiz?.durum === "ingesting";
   useEffect(() => {
     if (!suruyor) return;
-    const t = setInterval(() => { void yukle(); }, 5000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => { void yukle(); }, 5000);
+    return () => clearInterval(timer);
   }, [suruyor, yukle]);
 
   if (hata && !durum) {
@@ -60,11 +63,11 @@ export default function BaslangicPage() {
       <div className="mx-auto max-w-2xl px-4 py-10">
         <Alert variant="destructive">
           <CircleAlert className="h-4 w-4" />
-          <AlertTitle>Durum okunamadı</AlertTitle>
+          <AlertTitle>{bs.loadErrorTitle}</AlertTitle>
           <AlertDescription className="mt-2 space-y-3">
             <p>{hata}</p>
             <Button size="sm" variant="outline" onClick={() => void yukle()}>
-              <RefreshCw className="h-4 w-4" /> Tekrar dene
+              <RefreshCw className="h-4 w-4" /> {bs.retry}
             </Button>
           </AlertDescription>
         </Alert>
@@ -75,10 +78,9 @@ export default function BaslangicPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-6">
       <header>
-        <h1 className="text-2xl font-bold tracking-tight">Başlangıç</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{bs.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Sistemi kullanmaya başlamak için kalan adımlar. Her adım verinizden okunur; bir adımı
-          tamamladığınızda burası kendiliğinden güncellenir.
+          {bs.subtitle}
         </p>
       </header>
 
@@ -104,6 +106,8 @@ function Yukleniyor() {
 }
 
 function Adimlar({ durum, yenile }: { durum: BaslangicDurumu; yenile: () => Promise<void> }) {
+  const { t } = useI18n();
+  const bs = t.baslangic;
   const analiz = durum.son_analiz;
   const firmaTamam = durum.firma.var;
   const veriTamam = durum.veri.analiz_sayisi > 0 || durum.veri.parasut_bagli;
@@ -112,7 +116,7 @@ function Adimlar({ durum, yenile }: { durum: BaslangicDurumu; yenile: () => Prom
 
   const zorunlu = [firmaTamam, veriTamam, analizTamam];
   const tamamSayisi = zorunlu.filter(Boolean).length;
-  const siradaki = zorunlu.findIndex((t) => !t); // -1 → hepsi tamam
+  const siradaki = zorunlu.findIndex((x) => !x); // -1 → hepsi tamam
 
   const d = (i: number): AdimDurumu =>
     zorunlu[i] ? "tamam" : i === siradaki ? "sirada" : "bekliyor";
@@ -122,20 +126,22 @@ function Adimlar({ durum, yenile }: { durum: BaslangicDurumu; yenile: () => Prom
       <div className="space-y-2">
         <div className="flex items-baseline justify-between text-sm">
           <span className="font-medium">
-            {tamamSayisi === 3 ? "Kurulum tamam" : `3 adımdan ${tamamSayisi}'i tamam`}
+            {tamamSayisi === 3
+              ? bs.progress.complete
+              : bs.progress.count.replace("{done}", String(tamamSayisi))}
           </span>
           <span className="text-muted-foreground">{tamamSayisi}/3</span>
         </div>
-        <Progress value={(tamamSayisi / 3) * 100} aria-label="Kurulum ilerlemesi" />
+        <Progress value={(tamamSayisi / 3) * 100} aria-label={bs.progress.aria} />
       </div>
 
       <Card className="divide-y">
         <Adim
           durumu={d(0)}
           ikon={Building2}
-          baslik="Firmanızı tanımlayın"
+          baslik={bs.steps.company.title}
           ozet={durum.firma.ad ?? undefined}
-          aciklama="Analizler ve raporlar bu firmanın adına düzenlenir."
+          aciklama={bs.steps.company.body}
         >
           <FirmaFormu yenile={yenile} />
         </Adim>
@@ -143,23 +149,27 @@ function Adimlar({ durum, yenile }: { durum: BaslangicDurumu; yenile: () => Prom
         <Adim
           durumu={d(1)}
           ikon={FileSpreadsheet}
-          baslik="Verilerinizi bağlayın"
+          baslik={bs.steps.data.title}
           ozet={veriTamam
-            ? durum.veri.parasut_bagli ? "Paraşüt bağlı" : `${durum.veri.analiz_sayisi} veri yüklendi`
+            ? durum.veri.parasut_bagli
+              ? bs.steps.data.parasutConnected
+              : bs.steps.data.uploaded.replace("{count}", String(durum.veri.analiz_sayisi))
             : undefined}
-          aciklama="Muhasebe programınızdan ya da bankanızdan aldığınız dosyayı bırakmanız yeterli; ne olduğunu sistem anlar."
+          aciklama={bs.steps.data.body}
         >
           <Button asChild>
-            <Link href="/baglan">Verilerimi bağla <ArrowRight className="h-4 w-4" /></Link>
+            <Link href="/baglan">{bs.steps.data.cta} <ArrowRight className="h-4 w-4" /></Link>
           </Button>
         </Adim>
 
         <Adim
           durumu={d(2)}
           ikon={Clock}
-          baslik="İlk analiziniz"
-          ozet={analizTamam ? `${durum.tamamlanan_analiz} analiz tamamlandı` : undefined}
-          aciklama="Veriniz geldiğinde analiz kendiliğinden başlar."
+          baslik={bs.steps.analysis.title}
+          ozet={analizTamam
+            ? bs.steps.analysis.done.replace("{count}", String(durum.tamamlanan_analiz))
+            : undefined}
+          aciklama={bs.steps.analysis.body}
         >
           <AnalizAdimi analiz={analiz} veriTamam={veriTamam} yenile={yenile} />
         </Adim>
@@ -167,16 +177,16 @@ function Adimlar({ durum, yenile }: { durum: BaslangicDurumu; yenile: () => Prom
         <Adim
           durumu={otomatikTamam ? "tamam" : "sirada"}
           ikon={Repeat}
-          baslik="Verilerin kendiliğinden gelmesi"
+          baslik={bs.steps.auto.title}
           istegeBagli
           ozet={otomatikTamam
-            ? [durum.otomatik.eposta ? "E-posta adresi açık" : null,
-               durum.otomatik.parasut_otomatik ? "Paraşüt otomatik" : null].filter(Boolean).join(" · ")
+            ? [durum.otomatik.eposta ? bs.steps.auto.emailOn : null,
+               durum.otomatik.parasut_otomatik ? bs.steps.auto.parasutAuto : null].filter(Boolean).join(" · ")
             : undefined}
-          aciklama="Dosyaları her seferinde elle yüklemek yerine size özel e-posta adresine gönderin ya da Paraşüt bağlantınızı otomatiğe alın."
+          aciklama={bs.steps.auto.body}
         >
           <Button variant="outline" asChild>
-            <Link href="/baglan">Otomatiğe al <ArrowRight className="h-4 w-4" /></Link>
+            <Link href="/baglan">{bs.steps.auto.cta} <ArrowRight className="h-4 w-4" /></Link>
           </Button>
         </Adim>
       </Card>
@@ -184,10 +194,10 @@ function Adimlar({ durum, yenile }: { durum: BaslangicDurumu; yenile: () => Prom
       {tamamSayisi === 3 && (
         <div className="flex items-center justify-between gap-4 rounded-lg border bg-muted/30 p-4">
           <p className="text-sm text-muted-foreground">
-            Kurulum tamamlandı. Şirketinizin durumu Komuta Merkezi&apos;nde.
+            {bs.doneBanner.body}
           </p>
           <Button asChild>
-            <Link href="/command-center">Komuta Merkezi <ArrowRight className="h-4 w-4" /></Link>
+            <Link href="/command-center">{bs.doneBanner.cta} <ArrowRight className="h-4 w-4" /></Link>
           </Button>
         </div>
       )}
@@ -208,6 +218,8 @@ function Adim({
 }) {
   const tamam = durumu === "tamam";
   const acik = durumu === "sirada";
+  const { t } = useI18n();
+  const bs = t.baslangic;
 
   return (
     <section className={cn("flex items-start gap-3 p-4", !acik && !tamam && "opacity-60")}>
@@ -224,8 +236,8 @@ function Adim({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h2 className={cn("text-sm font-medium", tamam && "text-muted-foreground")}>{baslik}</h2>
-          {istegeBagli && !tamam && <Badge variant="outline">isteğe bağlı</Badge>}
-          <span className="sr-only">{tamam ? "tamamlandı" : "yapılacak"}</span>
+          {istegeBagli && !tamam && <Badge variant="outline">{bs.optionalBadge}</Badge>}
+          <span className="sr-only">{tamam ? bs.status.done : bs.status.todo}</span>
         </div>
 
         {tamam ? (
@@ -245,6 +257,8 @@ function FirmaFormu({ yenile }: { yenile: () => Promise<void> }) {
   const [ad, setAd] = useState("");
   const [kaydediliyor, setKaydediliyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
+  const { t } = useI18n();
+  const bs = t.baslangic;
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
@@ -255,7 +269,7 @@ function FirmaFormu({ yenile }: { yenile: () => Promise<void> }) {
       await firmaOlustur(ad.trim());
       await yenile();
     } catch (err) {
-      setHata(err instanceof Error ? err.message : "Firma oluşturulamadı.");
+      setHata(err instanceof Error ? err.message : bs.form.createError);
     } finally {
       setKaydediliyor(false);
     }
@@ -264,17 +278,17 @@ function FirmaFormu({ yenile }: { yenile: () => Promise<void> }) {
   return (
     <form onSubmit={kaydet} className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <label htmlFor="firma-adi" className="sr-only">Firma adı</label>
+        <label htmlFor="firma-adi" className="sr-only">{bs.form.nameLabel}</label>
         <Input
           id="firma-adi"
           value={ad}
           onChange={(e) => setAd(e.target.value)}
-          placeholder="Örn. Yıldız Tekstil Ltd. Şti."
+          placeholder={bs.form.namePlaceholder}
           className="w-full sm:w-72"
         />
         <Button type="submit" disabled={kaydediliyor || ad.trim().length < 2}>
           {kaydediliyor && <Loader2 className="h-4 w-4 animate-spin" />}
-          Kaydet
+          {bs.form.save}
         </Button>
       </div>
       {hata && <p className="text-xs text-destructive">{hata}</p>}
@@ -292,11 +306,13 @@ function AnalizAdimi({
   const [onayAcik, setOnayAcik] = useState(false);
   const [onaylaniyor, setOnaylaniyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
+  const { t } = useI18n();
+  const bs = t.baslangic;
 
   if (!analiz) {
     return (
       <p className="text-xs text-muted-foreground">
-        {veriTamam ? "Analiz birazdan başlayacak." : "Önce bir veri bağlayın."}
+        {veriTamam ? bs.analysis.startingSoon : bs.analysis.connectFirst}
       </p>
     );
   }
@@ -307,18 +323,18 @@ function AnalizAdimi({
       <>
         <Alert variant="warning">
           <CircleAlert className="h-4 w-4" />
-          <AlertTitle>Analiz onayınızı bekliyor</AlertTitle>
+          <AlertTitle>{bs.analysis.approvalTitle}</AlertTitle>
           <AlertDescription className="mt-1 space-y-3">
             <p className="text-muted-foreground">
               {guven === null
-                ? "Sistem bazı kalemlerden emin olamadı, bu yüzden sonucu size sormadan kullanmıyor."
-                : `Sistemin bu analize güveni %${guven}. Eşik %80 olduğu için sonucu size sormadan kullanmıyor.`}
+                ? bs.analysis.confidenceLow
+                : bs.analysis.confidenceWith.replace("{pct}", String(guven))}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
-                <Link href={`/pnl?job=${analiz.id}`}>Önce sonuçlara bakayım</Link>
+                <Link href={`/pnl?job=${analiz.id}`}>{bs.analysis.viewResults}</Link>
               </Button>
-              <Button size="sm" onClick={() => setOnayAcik(true)}>Onayla ve tamamla</Button>
+              <Button size="sm" onClick={() => setOnayAcik(true)}>{bs.analysis.approveAndFinish}</Button>
             </div>
             {hata && <p className="text-xs text-destructive">{hata}</p>}
           </AlertDescription>
@@ -330,14 +346,13 @@ function AnalizAdimi({
         <Dialog open={onayAcik} onOpenChange={setOnayAcik}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Analizi onaylıyor musunuz?</DialogTitle>
+              <DialogTitle>{bs.analysis.confirmTitle}</DialogTitle>
               <DialogDescription>
-                Onayladığınızda bu analiz tamamlanmış sayılır: sonuçları şirket görünümüne işlenir ve
-                diğer analizler bu veriyi kullanmaya başlar. Onayı kimin verdiği kayda geçer.
+                {bs.analysis.confirmBody}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOnayAcik(false)}>Vazgeç</Button>
+              <Button variant="outline" onClick={() => setOnayAcik(false)}>{bs.analysis.cancel}</Button>
               <Button
                 disabled={onaylaniyor}
                 onClick={async () => {
@@ -348,7 +363,7 @@ function AnalizAdimi({
                     setOnayAcik(false);
                     await yenile();
                   } catch (e) {
-                    setHata(e instanceof Error ? e.message : "Onaylanamadı.");
+                    setHata(e instanceof Error ? e.message : bs.analysis.approveError);
                     setOnayAcik(false);
                   } finally {
                     setOnaylaniyor(false);
@@ -356,7 +371,7 @@ function AnalizAdimi({
                 }}
               >
                 {onaylaniyor && <Loader2 className="h-4 w-4 animate-spin" />}
-                Onayla
+                {bs.analysis.approve}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -369,11 +384,11 @@ function AnalizAdimi({
     return (
       <Alert variant="destructive">
         <CircleAlert className="h-4 w-4" />
-        <AlertTitle>Son analiz tamamlanamadı</AlertTitle>
+        <AlertTitle>{bs.analysis.failedTitle}</AlertTitle>
         <AlertDescription className="mt-1 space-y-3">
-          <p>{analiz.hata ?? "Sebep kaydedilmemiş."}</p>
+          <p>{analiz.hata ?? bs.analysis.noReason}</p>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/baglan">Dosyayı yeniden bağla</Link>
+            <Link href="/baglan">{bs.analysis.reconnect}</Link>
           </Button>
         </AlertDescription>
       </Alert>
@@ -383,7 +398,7 @@ function AnalizAdimi({
   return (
     <p className="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      {analiz.dosya} işleniyor…
+      {bs.analysis.processing.replace("{file}", analiz.dosya)}
     </p>
   );
 }

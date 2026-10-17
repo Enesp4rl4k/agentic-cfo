@@ -69,7 +69,11 @@ async def _meta(client, job_id: str) -> dict[str, Any]:
         return dict((await db.get(AnalysisJob, job_id)).result_metadata or {})
 
 
-async def _bekle(kosul, deneme: int = 100) -> None:
+async def _bekle(kosul, deneme: int = 300) -> None:
+    # 6s, not 2s: under a full-suite run the in-process continuation can take
+    # longer than two seconds to be scheduled and finish — the claim/reaper
+    # logic below is what the test pins, not the poll's speed. A genuinely
+    # broken continuation still fails the final assertion after the budget.
     for _ in range(deneme):
         if await kosul():
             return

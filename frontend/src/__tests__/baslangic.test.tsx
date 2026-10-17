@@ -6,6 +6,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const { api, cfo, packet } = vi.hoisted(() => ({
   api: { baslangicDurumu: vi.fn(), firmaOlustur: vi.fn() },
@@ -20,6 +21,20 @@ vi.mock("next/link", () => ({
     React.createElement("a", { href }, children),
 }));
 
+// The page renders through useI18n, which resolves the org locale to pick the
+// message tree — these assertions pin the Turkish copy of a tr-TR org.
+vi.mock("@/hooks/useOrgSettings", () => ({
+  useOrgSettings: () => ({
+    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
+    loading: false,
+    error: null,
+    refresh: () => {},
+    hasTrPack: true,
+    baseCurrency: "TRY",
+    locale: "tr-TR",
+  }),
+}));
+
 import BaslangicPage from "@/app/(dashboard)/baslangic/page";
 
 const durum = (over: Record<string, unknown> = {}) => ({
@@ -30,6 +45,19 @@ const durum = (over: Record<string, unknown> = {}) => ({
   otomatik: { eposta: false, parasut_otomatik: false },
   ...over,
 });
+
+// The decision-packet panel polls with useQuery, so the tree needs a real
+// QueryClient. The packet mock rejects (retry off) and the panel stays hidden.
+const renderPage = () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <BaslangicPage />
+    </QueryClientProvider>,
+  );
+};
 
 describe("Başlangıç", () => {
   beforeEach(() => {
@@ -43,7 +71,7 @@ describe("Başlangıç", () => {
 
   it("counts the steps the organisation has actually finished", async () => {
     api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 2 }));
-    render(<BaslangicPage />);
+    renderPage();
     expect(await screen.findByText("Kurulum tamam")).toBeInTheDocument();
     expect(screen.getByText("3/3")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Komuta Merkezi/ })).toHaveAttribute("href", "/command-center");
@@ -52,7 +80,7 @@ describe("Başlangıç", () => {
   it("asks for a company name when there is none, and creates it", async () => {
     api.baslangicDurumu.mockResolvedValue(durum({ firma: { var: false, ad: null }, veri: { analiz_sayisi: 0, parasut_bagli: false } }));
     api.firmaOlustur.mockResolvedValue(undefined);
-    render(<BaslangicPage />);
+    renderPage();
     expect(await screen.findByText("3 adımdan 0'i tamam")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Firma adı"), { target: { value: "Yıldız Tekstil" } });
     fireEvent.click(screen.getByRole("button", { name: "Kaydet" }));
@@ -64,7 +92,7 @@ describe("Başlangıç", () => {
       son_analiz: { id: "job-1", durum: "awaiting_review", onay_bekliyor: true, guven: 0.62,
                     dosya: "ekstre.csv", hata: null, olusturma: null },
     }));
-    render(<BaslangicPage />);
+    renderPage();
     expect(await screen.findByText(/güveni %62/)).toBeInTheDocument();
     expect(screen.getByText(/Eşik %80/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Önce sonuçlara bakayım/ })).toHaveAttribute("href", "/pnl?job=job-1");
@@ -76,7 +104,7 @@ describe("Başlangıç", () => {
                     dosya: "ekstre.csv", hata: null, olusturma: null },
     }));
     cfo.approveJob.mockResolvedValue(undefined);
-    render(<BaslangicPage />);
+    renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Onayla ve tamamla" }));
     expect(await screen.findByText("Analizi onaylıyor musunuz?")).toBeInTheDocument();
     expect(cfo.approveJob).not.toHaveBeenCalled();
@@ -89,14 +117,14 @@ describe("Başlangıç", () => {
       son_analiz: { id: "job-2", durum: "failed", onay_bekliyor: false, guven: null,
                     dosya: "ekstre.csv", hata: "Tarih sütunu bulunamadı.", olusturma: null },
     }));
-    render(<BaslangicPage />);
+    renderPage();
     expect(await screen.findByText("Tarih sütunu bulunamadı.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Dosyayı yeniden bağla/ })).toHaveAttribute("href", "/baglan");
   });
 
   it("says so when the status cannot be read, instead of an empty page", async () => {
     api.baslangicDurumu.mockRejectedValue(new Error("Ağ hatası"));
-    render(<BaslangicPage />);
+    renderPage();
     expect(await screen.findByText("Durum okunamadı")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Tekrar dene/ })).toBeInTheDocument();
   });

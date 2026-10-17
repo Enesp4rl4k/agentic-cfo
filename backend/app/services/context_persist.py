@@ -9,6 +9,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,25 +26,41 @@ _last_rebuild_at: dict[str, float] = {}
 _trailing_tasks: dict[str, asyncio.Task[None]] = {}
 
 
+def _jsonable_log(entry: Any) -> Any:
+    """Coerce one log entry to JSON-safe values.
+
+    Mirrors ``app.api.agent_jobs._jsonable`` (a service must not import
+    upward), so context logs stay shape-identical to ``job.result_json``:
+    log entries arrive as dataclasses (AuditStepLog, RiskStepLog, …) or plain
+    dicts, and silently dropping everything that is not ``.step``/dict made
+    context ``logs`` differ from the job row on every run.
+    """
+    import dataclasses
+    from enum import Enum
+
+    if entry is None or isinstance(entry, (str, int, float, bool)):
+        return entry
+    if dataclasses.is_dataclass(entry) and not isinstance(entry, type):
+        return _jsonable_log(dataclasses.asdict(entry))
+    if isinstance(entry, Enum):
+        return _jsonable_log(entry.value)
+    if isinstance(entry, dict):
+        return {str(k): _jsonable_log(v) for k, v in entry.items()}
+    if isinstance(entry, (list, tuple, set, frozenset)):
+        return [_jsonable_log(v) for v in entry]
+    if isinstance(entry, datetime):
+        return entry.isoformat()
+    if hasattr(entry, "model_dump"):  # pydantic v2 model
+        return _jsonable_log(entry.model_dump())
+    return str(entry)
+
+
 def _serialize_result(result: dict[str, Any]) -> dict[str, Any]:
     """Make pipeline state JSON-safe for context storage."""
     out: dict[str, Any] = {}
     for key, val in result.items():
         if key == "logs":
-            logs = []
-            for lg in val or []:
-                if hasattr(lg, "step"):
-                    logs.append(
-                        {
-                            "step": getattr(lg, "step", None),
-                            "ok": getattr(lg, "ok", None),
-                            "detail": getattr(lg, "detail", None),
-                            "confidence": getattr(lg, "confidence", None),
-                        }
-                    )
-                elif isinstance(lg, dict):
-                    logs.append(lg)
-            out["logs"] = logs
+            out["logs"] = [_jsonable_log(lg) for lg in val or []]
         elif hasattr(val, "__dict__") and not isinstance(val, (str, int, float, bool)):
             try:
                 out[key] = dict(val.__dict__)

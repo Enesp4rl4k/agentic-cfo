@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ComposedChart,
-  AreaChart,
   Area,
   Line,
   Bar,
@@ -18,32 +17,34 @@ import {
 } from "recharts";
 import { AlertTriangle, Upload, TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
-import { formatCurrency, cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { cn } from "@/lib/utils";
 import type { Alert, ForecastScenario } from "@/types";
 
 // ── Chart style ───────────────────────────────────────────────────────────────
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.17 0.022 255)",
-    border: "1px solid oklch(0.27 0.018 255)",
+    background: "oklch(0.21 0.018 70)",
+    border: "1px solid oklch(0.32 0.019 68)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.92 0.008 255)",
+    color: "oklch(0.94 0.012 85)",
     padding: "8px 12px",
   },
-  cursor: { stroke: "oklch(0.32 0.018 255)", strokeWidth: 1 },
+  cursor: { stroke: "oklch(0.38 0.02 70)", strokeWidth: 1 },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.52 0.012 255)" },
-  axisLine: { stroke: "oklch(0.27 0.018 255)" },
+  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
+  axisLine: { stroke: "oklch(0.32 0.019 68)" },
   tickLine: false as const,
 };
 
 const SCENARIO_COLORS = {
   optimistic:  { line: "oklch(0.72 0.19 142)",  fill: "oklch(0.72 0.19 142 / 0.12)" },
-  base:        { line: "oklch(0.60 0.19 255)",  fill: "oklch(0.60 0.19 255 / 0.18)" },
+  base:        { line: "oklch(0.79 0.115 83)",  fill: "oklch(0.79 0.115 83 / 0.18)" },
   pessimistic: { line: "oklch(0.58 0.22 25)",   fill: "oklch(0.58 0.22 25 / 0.12)" },
 };
 
@@ -117,11 +118,16 @@ function MonteCarloFanChart({
 }: {
   scenarios: Record<string, ForecastScenario>;
 }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { fan } = t.forecast;
+
   const base = scenarios.base?.months ?? [];
   if (!base.length) {
     return (
       <div className="flex h-[260px] items-center justify-center text-xs text-muted-foreground">
-        No projection data available
+        {fan.empty}
       </div>
     );
   }
@@ -142,30 +148,30 @@ function MonteCarloFanChart({
   });
 
   const fmtK = (v: number) =>
-    `${v < 0 ? "-" : ""}₺${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.abs(v)}`;
+    `${v < 0 ? "-" : ""}${symbol}${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.abs(v)}`;
 
   return (
     <ResponsiveContainer width="100%" height={280}>
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
         <defs>
           <linearGradient id="fanGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor="oklch(0.60 0.19 255)" stopOpacity={0.18} />
-            <stop offset="95%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0.04} />
+            <stop offset="5%"  stopColor="oklch(0.79 0.115 83)" stopOpacity={0.18} />
+            <stop offset="95%" stopColor="oklch(0.79 0.115 83)" stopOpacity={0.04} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
         <XAxis dataKey="month" {...axisStyle} />
         <YAxis {...axisStyle} tickFormatter={fmtK} />
         <Tooltip
           {...tooltipStyle}
-          formatter={(v: number, name: string) => [formatCurrency(v), name]}
+          formatter={(v: number, name: string) => [fmt(v), name]}
         />
-        <ReferenceLine y={0} stroke="oklch(0.35 0.018 255)" strokeDasharray="3 3" />
+        <ReferenceLine y={0} stroke="oklch(0.40 0.02 70)" strokeDasharray="3 3" />
 
         {/* Confidence band */}
         <Area
           dataKey="band"
-          name="Confidence band"
+          name={fan.band}
           fill="url(#fanGradient)"
           stroke="none"
           activeDot={false}
@@ -176,7 +182,7 @@ function MonteCarloFanChart({
         <Line
           type="monotone"
           dataKey="pessimistic"
-          name="Pessimistic"
+          name={fan.pessimistic}
           stroke={SCENARIO_COLORS.pessimistic.line}
           strokeWidth={1.5}
           dot={false}
@@ -187,7 +193,7 @@ function MonteCarloFanChart({
         <Line
           type="monotone"
           dataKey="optimistic"
-          name="Optimistic"
+          name={fan.optimistic}
           stroke={SCENARIO_COLORS.optimistic.line}
           strokeWidth={1.5}
           dot={false}
@@ -198,13 +204,13 @@ function MonteCarloFanChart({
         <Line
           type="monotone"
           dataKey="base"
-          name="Base"
+          name={fan.base}
           stroke={SCENARIO_COLORS.base.line}
           strokeWidth={2.5}
           dot={false}
         />
 
-        <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }} />
+        <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.72 0.017 78)" }} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -221,6 +227,10 @@ function ScenarioTable({
   activeScenario: string;
   onSelect: (key: string) => void;
 }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { table } = t.forecast;
+
   const rows = ["optimistic", "base", "pessimistic"]
     .filter((k) => k in scenarios)
     .map((k) => [k, scenarios[k]] as [string, ForecastScenario]);
@@ -228,26 +238,26 @@ function ScenarioTable({
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Scenario Comparison</h2>
+        <h2 className="text-sm font-medium">{table.heading}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Click a row to view its monthly breakdown below
+          {table.hint}
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" role="table" aria-label="Forecast scenarios">
+        <table className="w-full text-sm" role="table" aria-label={table.ariaLabel}>
           <thead>
             <tr className="border-b border-border">
               <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                Scenario
+                {table.colScenario}
               </th>
               <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-                12-Month Net
+                {table.colNet}
               </th>
               <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-                Runway
+                {table.colRunway}
               </th>
               <th className="hidden px-4 py-2.5 text-left text-xs font-medium text-muted-foreground sm:table-cell">
-                Assumption
+                {table.colAssumption}
               </th>
             </tr>
           </thead>
@@ -283,10 +293,12 @@ function ScenarioTable({
                     )}
                   >
                     {netPositive ? "+" : ""}
-                    {formatCurrency(s.twelve_month_net)}
+                    {fmt(s.twelve_month_net)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-sm text-muted-foreground">
-                    {s.runway_months != null ? `${s.runway_months} mo` : "Stable"}
+                    {s.runway_months != null
+                      ? table.monthsShort.replace("{count}", String(s.runway_months))
+                      : table.stable}
                   </td>
                   <td className="hidden px-4 py-3 text-xs text-muted-foreground sm:table-cell max-w-[220px]">
                     {s.description}
@@ -310,6 +322,11 @@ function MonthlyBreakdownChart({
   scenario: ForecastScenario;
   scenarioKey: string;
 }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { breakdown } = t.forecast;
+
   const months = scenario.months ?? [];
   if (!months.length) return null;
 
@@ -324,7 +341,7 @@ function MonthlyBreakdownChart({
   }));
 
   const fmtK = (v: number) =>
-    `${v < 0 ? "-" : ""}₺${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.abs(v)}`;
+    `${v < 0 ? "-" : ""}${symbol}${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(0)}k` : Math.abs(v)}`;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -334,31 +351,33 @@ function MonthlyBreakdownChart({
           style={{ background: color }}
           aria-hidden="true"
         />
-        <h2 className="text-sm font-medium">{scenario.label} — Monthly Breakdown</h2>
+        <h2 className="text-sm font-medium">
+          {breakdown.heading.replace("{label}", scenario.label)}
+        </h2>
       </div>
       <p className="mb-4 text-xs text-muted-foreground">
-        Revenue, expenses, and net cash flow per month
+        {breakdown.subtitle}
       </p>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
           <XAxis dataKey="month" {...axisStyle} />
           <YAxis {...axisStyle} tickFormatter={fmtK} />
           <Tooltip
             {...tooltipStyle}
-            formatter={(v: number, name: string) => [formatCurrency(v), name]}
+            formatter={(v: number, name: string) => [fmt(v), name]}
           />
-          <Bar dataKey="revenue"  name="Revenue"  fill="oklch(0.72 0.19 142)" opacity={0.75} maxBarSize={10} />
-          <Bar dataKey="expenses" name="Expenses" fill="oklch(0.58 0.22 25)"  opacity={0.65} maxBarSize={10} />
+          <Bar dataKey="revenue"  name={breakdown.revenue}  fill="oklch(0.72 0.19 142)" opacity={0.75} maxBarSize={10} />
+          <Bar dataKey="expenses" name={breakdown.expenses} fill="oklch(0.58 0.22 25)"  opacity={0.65} maxBarSize={10} />
           <Line
             type="monotone"
             dataKey="net"
-            name="Net"
+            name={breakdown.net}
             stroke={color}
             strokeWidth={2}
             dot={false}
           />
-          <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.52 0.012 255)" }} />
+          <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.72 0.017 78)" }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -368,14 +387,17 @@ function MonthlyBreakdownChart({
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useI18n();
+  const { empty } = t.forecast;
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">No forecast data</h2>
+      <h2 className="text-base font-semibold">{empty.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Upload a financial document and run an analysis to generate 12-month forecasts.
+        {empty.body}
       </p>
       <a
         href="/upload"
@@ -385,7 +407,7 @@ function EmptyState() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         )}
       >
-        Upload document
+        {empty.cta}
       </a>
     </div>
   );
@@ -399,6 +421,9 @@ export default function ForecastPage() {
   const [activeScenario, setActiveScenario] = useState("base");
 
   const { data: dashboard, isLoading } = useDashboard(jobId);
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { kpi, fan } = t.forecast;
 
   if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
 
@@ -423,6 +448,7 @@ export default function ForecastPage() {
   const opt  = scenarios.optimistic;
   const pes  = scenarios.pessimistic;
 
+  // Backend alert messages are data, filtered on their English keywords.
   const alerts = (dashboard!.alerts ?? []).filter(
     (a) =>
       a.message.toLowerCase().includes("runway") ||
@@ -436,7 +462,7 @@ export default function ForecastPage() {
     <div className="space-y-4 p-5">
       {/* Header */}
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">12-Month Forecast</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{t.forecast.title}</h1>
         {forecast.narrative && (
           <p className="mt-1 max-w-prose text-sm text-muted-foreground leading-relaxed">
             {forecast.narrative}
@@ -452,33 +478,37 @@ export default function ForecastPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {base && (
             <KPICard
-              label="Base Case 12-Month Net"
-              value={formatCurrency(base.twelve_month_net)}
-              sub={base.runway_months ? `${base.runway_months} months runway` : "Stable runway"}
+              label={kpi.baseNet}
+              value={fmt(base.twelve_month_net)}
+              sub={
+                base.runway_months
+                  ? kpi.runway.replace("{count}", String(base.runway_months))
+                  : kpi.runwayStable
+              }
               positive={base.twelve_month_net >= 0}
             />
           )}
           {opt && (
             <KPICard
-              label="Optimistic Upside"
+              label={kpi.optimisticUpside}
               value={
                 base
-                  ? `+${formatCurrency(opt.twelve_month_net - base.twelve_month_net)}`
-                  : formatCurrency(opt.twelve_month_net)
+                  ? `+${fmt(opt.twelve_month_net - base.twelve_month_net)}`
+                  : fmt(opt.twelve_month_net)
               }
-              sub="vs base case"
+              sub={kpi.vsBase}
               positive
             />
           )}
           {pes && (
             <KPICard
-              label="Pessimistic Downside"
+              label={kpi.pessimisticDownside}
               value={
                 base
-                  ? `${formatCurrency(pes.twelve_month_net - base.twelve_month_net)}`
-                  : formatCurrency(pes.twelve_month_net)
+                  ? `${fmt(pes.twelve_month_net - base.twelve_month_net)}`
+                  : fmt(pes.twelve_month_net)
               }
-              sub="vs base case"
+              sub={kpi.vsBase}
               positive={false}
             />
           )}
@@ -488,16 +518,16 @@ export default function ForecastPage() {
       {/* Monte Carlo fan chart */}
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-1 flex items-center gap-2">
-          <h2 className="text-sm font-medium">Monte Carlo Projection Fan</h2>
+          <h2 className="text-sm font-medium">{fan.heading}</h2>
           <span
-            title="The shaded band represents the full range between optimistic and pessimistic scenarios"
+            title={fan.tip}
             className="cursor-help"
           >
             <Info className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
           </span>
         </div>
         <p className="mb-4 text-xs text-muted-foreground">
-          Shaded band = scenario spread · solid line = base case
+          {fan.hint}
         </p>
         <MonteCarloFanChart scenarios={scenarios} />
       </div>

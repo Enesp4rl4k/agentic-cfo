@@ -31,7 +31,18 @@ logger = logging.getLogger(__name__)
 # ── Formatter helpers ─────────────────────────────────────────────────────────
 
 def _fmt_tl(cents: int | float) -> str:
+    """True-cents input (fields named *_cents from CTO/CMO raw agents)."""
     val = (cents or 0) / 100
+    if abs(val) >= 1_000_000:
+        return f"₺{val/1_000_000:.1f}M"
+    elif abs(val) >= 1_000:
+        return f"₺{val/1_000:.0f}K"
+    return f"₺{val:,.0f}"
+
+
+def _fmt_lira(lira: int | float) -> str:
+    """Already-lira input (CFO scalars from Report.data / report_agent._fmt boundary)."""
+    val = (lira or 0)
     if abs(val) >= 1_000_000:
         return f"₺{val/1_000_000:.1f}M"
     elif abs(val) >= 1_000:
@@ -65,15 +76,15 @@ def _build_cfo_section(cfo: dict[str, Any]) -> dict[str, Any]:
     return {
         "section": "CFO — Finansal Durum",
         "metrics": {
-            "revenue":         _fmt_tl(pnl.get("revenue", 0)),
-            "gross_profit":    _fmt_tl(pnl.get("gross_profit", 0)),
+            "revenue":         _fmt_lira(pnl.get("revenue", 0)),
+            "gross_profit":    _fmt_lira(pnl.get("gross_profit", 0)),
             "gross_margin":    _pct(pnl.get("gross_margin")),
-            "ebitda":          _fmt_tl(pnl.get("ebitda", 0)),
+            "ebitda":          _fmt_lira(pnl.get("ebitda", 0)),
             "ebitda_margin":   _pct(pnl.get("ebitda_margin")),
-            "net_income":      _fmt_tl(pnl.get("net_income", 0)),
+            "net_income":      _fmt_lira(pnl.get("net_income", 0)),
             "net_margin":      _pct(pnl.get("net_margin")),
             "cash_runway":     f"{base.get('runway_months', '?')} ay" if base.get("runway_months") else "—",
-            "forecast_12m":    _fmt_tl(base.get("twelve_month_net", 0)),
+            "forecast_12m":    _fmt_lira(base.get("twelve_month_net", 0)),
         },
         "critical_alerts": [a for a in alerts if a.get("level") == "critical"],
         "anomaly_count":   len(anomalies),
@@ -154,8 +165,8 @@ def _build_chro_section(chro: dict[str, Any]) -> dict[str, Any]:
             "hr_score":         _score(summary.get("overall_hr_score")),
             "total_headcount":  headcount.get("total_headcount", "—"),
             "attrition_rate":   _pct(attrition.get("annualized_attrition_rate")),
-            "cost_of_attrition": _fmt_tl(attrition.get("cost_of_attrition", 0)),
-            "avg_salary":       _fmt_tl(comp.get("avg_salary", 0)),
+            "cost_of_attrition": _fmt_lira(attrition.get("cost_of_attrition", 0)),
+            "avg_salary":       _fmt_lira(comp.get("avg_salary", 0)),
             "below_market_pct": _pct(comp.get("below_market_pct")),
         },
         "top_risks":  summary.get("top_risks")  or [],
@@ -248,7 +259,7 @@ def build_unified_report(
     # CFO headline
     if cfo:
         pnl = cfo.get("pnl") or {}
-        exec_summary["headline_revenue"]    = _fmt_tl(pnl.get("revenue", 0))
+        exec_summary["headline_revenue"]    = _fmt_lira(pnl.get("revenue", 0))
         exec_summary["headline_net_margin"] = _pct(pnl.get("net_margin"))
 
     # Cross-risks from CEO

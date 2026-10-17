@@ -8,11 +8,13 @@ import {
   RefreshCw, ArrowRight, ChevronDown, ChevronUp, Info, Files, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 import {
   validateAndUpload, acceptColumnMapping,
   type ValidationResult, type ColumnInfo,
 } from "@/lib/api/data_quality";
 import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
+import { QuickDemoBanner } from "@/components/demo/QuickDemoBanner";
 import { POST_UPLOAD_ROUTE } from "@/lib/routes";
 import { apiClient } from "@/lib/api/client";
 
@@ -41,20 +43,14 @@ function healthBorder(score: number): string {
   return "border-red-500/30";
 }
 
-function healthLabel(label: string): string {
-  const map: Record<string, string> = {
-    excellent: "Mükemmel",
-    good: "İyi",
-    fair: "Orta",
-    poor: "Zayıf",
-    critical: "Kritik",
-  };
-  return map[label] ?? label;
+function healthLabel(label: string, labels: Record<string, string>): string {
+  return labels[label] ?? label;
 }
 
 // ── Health Score Ring ─────────────────────────────────────────────────────────
 
 function HealthScoreRing({ score, label }: { score: number; label: string }) {
+  const { t } = useI18n();
   const radius = 36;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
@@ -84,7 +80,7 @@ function HealthScoreRing({ score, label }: { score: number; label: string }) {
         </text>
       </svg>
       <span className={cn("text-sm font-semibold", healthColor(score))}>
-        {healthLabel(label)}
+        {healthLabel(label, t.upload.health)}
       </span>
     </div>
   );
@@ -92,14 +88,16 @@ function HealthScoreRing({ score, label }: { score: number; label: string }) {
 
 // ── Column mapping row ────────────────────────────────────────────────────────
 
-const SYSTEM_FIELDS = [
-  { value: "",             label: "— Eşleştirme yok —" },
-  { value: "date",         label: "Tarih (zorunlu)" },
-  { value: "amount",       label: "Tutar (zorunlu)" },
-  { value: "description",  label: "Açıklama" },
-  { value: "category",     label: "Kategori" },
-  { value: "reference",    label: "Referans No" },
-];
+function systemFields(fields: Record<string, string>): Array<{ value: string; label: string }> {
+  return [
+    { value: "",             label: fields.none },
+    { value: "date",         label: fields.date },
+    { value: "amount",       label: fields.amount },
+    { value: "description",  label: fields.description },
+    { value: "category",     label: fields.category },
+    { value: "reference",    label: fields.reference },
+  ];
+}
 
 function ColumnMappingRow({
   col,
@@ -110,6 +108,9 @@ function ColumnMappingRow({
   mappedField: string;
   onChange: (field: string) => void;
 }) {
+  const { t } = useI18n();
+  const { mapping } = t.upload;
+
   const typeIcon =
     col.detected_type === "date" ? "📅" :
     col.detected_type === "amount" ? "💰" :
@@ -129,7 +130,8 @@ function ColumnMappingRow({
           )}
         </div>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
-          {col.null_pct > 0 && `%${col.null_pct.toFixed(0)} boş · `}
+          {col.null_pct > 0 &&
+            mapping.nullShare.replace("{pct}", col.null_pct.toFixed(0))}
           {col.sample_values.slice(0, 2).join(", ")}
           {col.sample_values.length > 2 && "…"}
         </p>
@@ -149,7 +151,7 @@ function ColumnMappingRow({
           mappedField ? "border-primary/30 text-foreground" : "border-border text-muted-foreground"
         )}
       >
-        {SYSTEM_FIELDS.map((f) => (
+        {systemFields(mapping.fields).map((f) => (
           <option key={f.value} value={f.value}>{f.label}</option>
         ))}
       </select>
@@ -161,6 +163,9 @@ function ColumnMappingRow({
 
 function IssueList({ validation }: { validation: ValidationResult }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
+  const { issues } = t.upload;
+
   const errors = validation.row_issues.filter((i) => i.severity === "error");
   const warnings = validation.row_issues.filter((i) => i.severity === "warning");
   const infos = validation.row_issues.filter((i) => i.severity === "info");
@@ -175,19 +180,19 @@ function IssueList({ validation }: { validation: ValidationResult }) {
         {errors.length > 0 && (
           <span className="flex items-center gap-1 text-red-400">
             <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
-            {errors.length} hata
+            {errors.length} {issues.errors}
           </span>
         )}
         {warnings.length > 0 && (
           <span className="flex items-center gap-1 text-amber-400">
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-            {warnings.length} uyarı
+            {warnings.length} {issues.warnings}
           </span>
         )}
         {infos.length > 0 && (
           <span className="flex items-center gap-1 text-blue-400">
             <Info className="h-3.5 w-3.5" aria-hidden="true" />
-            {infos.length} bilgi
+            {infos.length} {issues.infos}
           </span>
         )}
       </div>
@@ -217,9 +222,9 @@ function IssueList({ validation }: { validation: ValidationResult }) {
           className="flex items-center gap-1 text-xs text-primary hover:opacity-80"
         >
           {expanded ? (
-            <><ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> Daha az göster</>
+            <><ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> {issues.showLess}</>
           ) : (
-            <><ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> {validation.row_issues.length - 5} tane daha göster</>
+            <><ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> {validation.row_issues.length - 5} {issues.showMore}</>
           )}
         </button>
       )}
@@ -238,6 +243,8 @@ function DropZone({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const { t } = useI18n();
+  const { dropzone } = t.upload;
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -250,7 +257,7 @@ function DropZone({
     <div
       role="button"
       tabIndex={0}
-      aria-label="CSV dosyası seçmek için tıklayın veya sürükleyin"
+      aria-label={dropzone.aria}
       onClick={() => inputRef.current?.click()}
       onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -275,13 +282,13 @@ function DropZone({
 
       <div className="text-center">
         <p className="font-semibold">
-          {loading ? "Analiz ediliyor…" : "CSV dosyasını sürükleyin veya tıklayın"}
+          {loading ? dropzone.analyzing : dropzone.hint}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Logo Tiger · Paraşüt · Akbank · Garanti · GİB e-Fatura XML · Genel CSV/Excel
+          {dropzone.sources}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Maksimum 10 MB · .csv, .xlsx, .xls, .pdf, .xml
+          {dropzone.limits}
         </p>
       </div>
 
@@ -311,6 +318,8 @@ type Phase = "idle" | "validating" | "review" | "uploading" | "done" | "error";
 
 export default function UploadPage() {
   const router = useRouter();
+  const { t } = useI18n();
+  const up = t.upload;
   // Set when an accountant arrives from the client list ("/upload?client=…").
   // Every upload path has to carry it or the file lands unattributed and the
   // portal cannot say whose work is waiting.
@@ -344,7 +353,7 @@ export default function UploadPage() {
   useEffect(() => {
     if (phase === "done" && jobId) {
       // Mark tour as pending so dashboard auto-starts the tour on first upload
-      import("@/components/ui/product-tour").then(({ markTourPending }) => {
+      void import("@/components/ui/product-tour").then(({ markTourPending }) => {
         markTourPending();
       });
 
@@ -381,12 +390,13 @@ export default function UploadPage() {
         setPhase("review");
       }
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "Dosya işlenemedi");
+      setErrorMsg(e instanceof Error ? e.message : up.error.processFailed);
       setPhase("error");
     }
     // `clientId` is read inside: without it here, an accountant who switched
-    // clients would keep uploading against the previous one.
-  }, [clientId]);
+    // clients would keep uploading against the previous one. `up.error` holds
+    // the locale's fallback copy, so a locale switch cannot leave it stale.
+  }, [clientId, up.error]);
 
   // Force upload despite low score
   async function handleForceUpload() {
@@ -398,10 +408,10 @@ export default function UploadPage() {
         setJobId(result.job_id);
         setPhase("done");
       } else {
-        throw new Error(result.blocked_reason ?? "Yükleme başarısız");
+        throw new Error(result.blocked_reason ?? up.error.uploadFailed);
       }
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "Yükleme başarısız");
+      setErrorMsg(e instanceof Error ? e.message : up.error.uploadFailed);
       setPhase("error");
     }
   }
@@ -428,7 +438,7 @@ export default function UploadPage() {
       setJobId(result.job_id);
       setPhase("done");
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "Yükleme başarısız");
+      setErrorMsg(e instanceof Error ? e.message : up.error.uploadFailed);
       setPhase("error");
     }
   }
@@ -449,20 +459,24 @@ export default function UploadPage() {
         <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
           <Building2 className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <span>
-            Bu dosya <strong>{clientName ?? "seçili müşteri"}</strong> için
-            yüklenecek.
+            {up.clientBanner.fileFor.split("{client}")[0]}
+            <strong>{clientName ?? up.clientBanner.selectedClient}</strong>
+            {up.clientBanner.fileFor.split("{client}")[1]}
           </span>
           <Link
             href="/smmm"
             className="ml-auto text-xs text-muted-foreground hover:text-foreground"
           >
-            Değiştir
+            {up.clientBanner.change}
           </Link>
         </div>
       )}
 
+      {/* Quick Demo One-Click Onboarding */}
+      <QuickDemoBanner />
+
       {/* Mode tabs */}
-      <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" aria-label="Yükleme modu">
+      <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" aria-label={up.modeTabs.aria}>
         <button
           role="tab"
           aria-selected={uploadMode === "single"}
@@ -475,7 +489,7 @@ export default function UploadPage() {
           )}
         >
           <Upload className="h-4 w-4" aria-hidden="true" />
-          Tekli Yükleme
+          {up.modeTabs.single}
         </button>
         <button
           role="tab"
@@ -489,7 +503,7 @@ export default function UploadPage() {
           )}
         >
           <Files className="h-4 w-4" aria-hidden="true" />
-          Toplu Yükleme
+          {up.modeTabs.batch}
         </button>
       </div>
 
@@ -503,9 +517,9 @@ export default function UploadPage() {
       {/* Single mode — existing flow (hidden when batch is active) */}
       {uploadMode === "single" && (<>
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Veri Yükleme</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{up.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Muhasebe verilerinizi yükleyin — AI ajanları otomatik analiz başlatır.
+          {up.subtitle}
         </p>
       </div>
 
@@ -526,17 +540,17 @@ export default function UploadPage() {
         >
           <p className="font-medium">{errorMsg}</p>
           <ul className="text-xs text-destructive/80 space-y-0.5 list-disc list-inside">
-            <li>Desteklenen formatlar: <strong>.csv, .txt, .tsv</strong></li>
-            <li>Maksimum boyut: <strong>10 MB</strong></li>
-            <li>Logo Tiger, Paraşüt, Akbank, Garanti, Ziraat, İş Bankası export'ları destekleniyor</li>
-            <li>Sorun devam ederse CSV formatında kayıt ederek tekrar deneyin</li>
+            <li>{up.error.formatsLabel} <strong>.csv, .txt, .tsv</strong></li>
+            <li>{up.error.maxSizeLabel} <strong>10 MB</strong></li>
+            <li>{up.error.supportedExports}</li>
+            <li>{up.error.retryAsCsv}</li>
           </ul>
         </div>
       )}
 
       {/* ── Review phase ──────────────────────────────────────────────────── */}
       {phase === "review" && validation && (
-        <div className="space-y-5" role="region" aria-label="Veri kalitesi raporu">
+        <div className="space-y-5" role="region" aria-label={up.review.regionAria}>
 
           {/* Health score card */}
           <div className={cn(
@@ -550,7 +564,8 @@ export default function UploadPage() {
                 <div>
                   <p className="font-semibold">{validation.summary}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Kodlama: {validation.encoding} · Ayraç: {validation.delimiter === "\t" ? "TAB" : `"${validation.delimiter}"`}
+                    {up.review.encoding}: {validation.encoding} · {up.review.delimiter}:{" "}
+                    {validation.delimiter === "\t" ? "TAB" : `"${validation.delimiter}"`}
                   </p>
                 </div>
                 <ul className="space-y-1">
@@ -571,9 +586,9 @@ export default function UploadPage() {
           {/* Column mapping (DQ-2) */}
           <div>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold">Kolon Eşleştirme</h2>
+              <h2 className="font-semibold">{up.mapping.heading}</h2>
               <p className="text-xs text-muted-foreground">
-                Kolonları sistem alanlarıyla eşleştirin
+                {up.mapping.hint}
               </p>
             </div>
             <div className="space-y-2">
@@ -603,7 +618,7 @@ export default function UploadPage() {
               onClick={() => { setPhase("idle"); setValidation(null); }}
               className="h-10 rounded-lg border border-border px-5 text-sm font-medium transition-colors hover:bg-muted press-feedback"
             >
-              Farklı dosya seç
+              {up.review.differentFile}
             </button>
 
             {/* Force upload even with low score */}
@@ -612,7 +627,7 @@ export default function UploadPage() {
                 onClick={handleForceUpload}
                 className="h-10 rounded-lg border border-amber-500/30 bg-amber-500/8 px-5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/15 press-feedback"
               >
-                Yine de yükle
+                {up.review.uploadAnyway}
               </button>
             )}
 
@@ -626,14 +641,14 @@ export default function UploadPage() {
                 "disabled:pointer-events-none disabled:opacity-50"
               )}
             >
-              Eşleştirmeyi Onayla & Yükle
+              {up.mapping.confirm}
               <ArrowRight className="ml-1.5 inline h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 
           {(!columnMapping.date || !columnMapping.amount) && (
             <p className="text-center text-xs text-amber-400">
-              Devam etmek için tarih ve tutar kolonlarını eşleştirin.
+              {up.mapping.needDateAmount}
             </p>
           )}
         </div>
@@ -644,8 +659,8 @@ export default function UploadPage() {
         <div className="flex flex-col items-center gap-4 rounded-xl border border-border py-12">
           <RefreshCw className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
           <div className="text-center">
-            <p className="font-semibold">Yükleniyor…</p>
-            <p className="mt-1 text-sm text-muted-foreground">AI ajanlar hazırlanıyor</p>
+            <p className="font-semibold">{up.uploading.heading}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{up.uploading.body}</p>
           </div>
         </div>
       )}
@@ -657,9 +672,9 @@ export default function UploadPage() {
             <CheckCircle2 className="h-8 w-8 text-emerald-400" aria-hidden="true" />
           </div>
           <div className="text-center">
-            <p className="text-xl font-bold text-emerald-400">Yükleme Başarılı!</p>
+            <p className="text-xl font-bold text-emerald-400">{up.done.heading}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              AI ajanlar analizi başlattı. Dashboard&apos;a yönlendiriliyorsunuz…
+              {up.done.body}
             </p>
           </div>
           {/* Fallback manual button in case redirect is slow */}
@@ -667,7 +682,7 @@ export default function UploadPage() {
             onClick={goToDashboard}
             className="h-10 rounded-lg bg-primary px-8 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 press-feedback"
           >
-            Hemen Git
+            {up.done.goTo}
             <ArrowRight className="ml-1.5 inline h-4 w-4" aria-hidden="true" />
           </button>
         </div>

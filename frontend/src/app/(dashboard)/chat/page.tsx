@@ -11,6 +11,7 @@ import { sendAgentChatMessage } from "@/lib/api/chat";
 import type { ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
 import { ChatEvidenceChips } from "@/components/ui/chat-evidence-chips";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 import { useWSChat } from "@/hooks/useWSChat";
 import { useSSEChat } from "@/hooks/useSSEChat";
 import { useCompanyContextStore } from "@/store/companyContext";
@@ -32,44 +33,27 @@ type Message = {
 
 const SUGGESTION_GROUPS = [
   {
-    label: "Finansal Durum",
+    key: "financial",
     icon: DollarSign,
     color: "text-emerald-400",
-    questions: [
-      "En büyük 3 gider kalemim neler?",
-      "Bu ayın brüt ve net marjı nedir?",
-      "EBITDA durumum nasıl?",
-    ],
+    questions: ["topExpenses", "margins", "ebitda"],
   },
   {
-    label: "Nakit & Tahmin",
+    key: "cash",
     icon: TrendingUp,
     color: "text-blue-400",
-    questions: [
-      "Önümüzdeki 3 ayda nakit pozisyonum ne olur?",
-      "Nakit pisti ne kadar?",
-      "Baz senaryoda 12 aylık net nakit nedir?",
-    ],
+    questions: ["cashOutlook", "runway", "baseNetCash"],
   },
   {
-    label: "Risk & Uyarılar",
+    key: "risk",
     icon: AlertTriangle,
     color: "text-amber-400",
-    questions: [
-      "Kritik anomaliler neler?",
-      "Hangi kategoride bütçemi aştım?",
-      "Vergi yükümlülüklerim nelerdir?",
-    ],
+    questions: ["anomalies", "budgetBreaches", "taxObligations"],
   },
-];
+] as const;
 
 // Follow-up suggestions shown after assistant response
-const FOLLOWUP_CHIPS = [
-  "Bunu detaylandırır mısın?",
-  "Nasıl iyileştirilebilir?",
-  "Sektör ortalamasıyla kıyasla",
-  "Aksiyonları listele",
-];
+const FOLLOWUP_KEYS = ["detail", "improve", "benchmark", "actions"] as const;
 
 // ── Markdown-lite renderer ────────────────────────────────────────────────────
 
@@ -144,8 +128,10 @@ function renderMarkdown(text: string): React.ReactNode[] {
 // ── Typing indicator ──────────────────────────────────────────────────────────
 
 function TypingIndicator() {
+  const { t } = useI18n();
+
   return (
-    <div className="flex items-center gap-1 px-1 py-0.5" aria-label="AI is thinking">
+    <div className="flex items-center gap-1 px-1 py-0.5" aria-label={t.chat.thinkingAria}>
       {[0, 1, 2].map((i) => (
         <span
           key={i}
@@ -169,6 +155,7 @@ function TypingIndicator() {
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
 
   const handleCopy = async () => {
     try {
@@ -188,7 +175,7 @@ function CopyButton({ text }: { text: string }) {
         "text-muted-foreground hover:text-foreground",
         "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       )}
-      aria-label="Copy message"
+      aria-label={t.chat.copyAria}
     >
       {copied
         ? <Check className="h-3 w-3 text-emerald-400" aria-hidden="true" />
@@ -201,12 +188,15 @@ function CopyButton({ text }: { text: string }) {
 // ── Timestamp ─────────────────────────────────────────────────────────────────
 
 function Timestamp({ ts }: { ts: number }) {
+  const { locale } = useI18n();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+
   return (
     <time
       dateTime={new Date(ts).toISOString()}
       className="text-[10px] text-muted-foreground/50 tabular-nums"
     >
-      {new Date(ts).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+      {new Date(ts).toLocaleTimeString(dateTag, { hour: "2-digit", minute: "2-digit" })}
     </time>
   );
 }
@@ -222,6 +212,7 @@ function MessageBubble({
   showFollowups?: boolean;
   onFollowup?: (q: string) => void;
 }) {
+  const { t } = useI18n();
   const isUser = message.role === "user";
 
   return (
@@ -280,21 +271,24 @@ function MessageBubble({
         {/* Follow-up chips — shown after last assistant message */}
         {showFollowups && !message.pending && !isUser && onFollowup && (
           <div className="mt-1 flex flex-wrap gap-1.5">
-            {FOLLOWUP_CHIPS.map((chip) => (
-              <button
-                key={chip}
-                onClick={() => onFollowup(chip)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px]",
-                  "text-muted-foreground bg-card",
-                  "hover:border-primary/50 hover:text-foreground transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                )}
-              >
-                <ChevronRight className="h-2.5 w-2.5" aria-hidden="true" />
-                {chip}
-              </button>
-            ))}
+            {FOLLOWUP_KEYS.map((key) => {
+              const chip = t.chat.followups[key];
+              return (
+                <button
+                  key={key}
+                  onClick={() => onFollowup(chip)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px]",
+                    "text-muted-foreground bg-card",
+                    "hover:border-primary/50 hover:text-foreground transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  )}
+                >
+                  <ChevronRight className="h-2.5 w-2.5" aria-hidden="true" />
+                  {chip}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -305,29 +299,34 @@ function MessageBubble({
 // ── Empty / welcome state ─────────────────────────────────────────────────────
 
 function WelcomeState({ onSend }: { onSend: (q: string) => void }) {
+  const { t } = useI18n();
+  const suggestions = t.chat.suggestions;
+
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6 px-4 py-8">
       <div className="text-center">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
           <Sparkles className="h-6 w-6 text-primary" aria-hidden="true" />
         </div>
-        <h2 className="text-base font-semibold">CFO Asistanı</h2>
+        <h2 className="text-base font-semibold">{t.chat.title}</h2>
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-          Finansal verileriniz hakkında Türkçe soru sorun. Gerçek veri üzerinden analiz yapar.
+          {t.chat.welcomeBody}
         </p>
       </div>
 
       <div className="w-full max-w-lg space-y-3">
         {SUGGESTION_GROUPS.map((group) => {
           const Icon = group.icon;
+          const label = suggestions[group.key];
+          const questions = group.questions.map((k) => suggestions.q[k]);
           return (
-            <div key={group.label}>
+            <div key={group.key}>
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 <Icon className={cn("h-3 w-3", group.color)} aria-hidden="true" />
-                {group.label}
+                {label}
               </div>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-                {group.questions.map((q) => (
+                {questions.map((q) => (
                   <button
                     key={q}
                     onClick={() => onSend(q)}
@@ -352,14 +351,17 @@ function WelcomeState({ onSend }: { onSend: (q: string) => void }) {
 // ── No job state ──────────────────────────────────────────────────────────────
 
 function NoJobState() {
+  const { t } = useI18n();
+  const { noJob } = t.chat;
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">Önce analiz başlatın</h2>
+      <h2 className="text-base font-semibold">{noJob.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Finansal belge yükleyin, analiz tamamlandıktan sonra CFO asistanını kullanabilirsiniz.
+        {noJob.body}
       </p>
       <a
         href="/upload"
@@ -369,7 +371,7 @@ function NoJobState() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         )}
       >
-        Belge Yükle
+        {noJob.cta}
         <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
       </a>
     </div>
@@ -408,6 +410,8 @@ export default function ChatPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
   const { orgId } = useCompanyContextStore();
+  const { t } = useI18n();
+  const chatMsgs = t.chat;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -475,7 +479,7 @@ export default function ChatPage() {
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [inputRef]);
 
   const send = useCallback(async (question: string) => {
     const q = question.trim();
@@ -499,21 +503,21 @@ export default function ChatPage() {
           "/advanced/nl-simulate",
           { query: q, job_id: jobId, org_id: orgId }
         );
-        const answer = res.data.answer ?? "Simülasyon tamamlandı.";
+        const answer = res.data.answer ?? chatMsgs.simulation.done;
         const simType = res.data.simulation_type ?? "simulation";
         setMessages((prev) => [
           ...prev.slice(0, -1),
           {
             id: pendingMsg.id,
             role: "assistant",
-            content: `🧪 **${simType === "headcount" ? "Headcount Simülasyonu" : simType === "cascade" ? "Cascade Risk" : "Senaryo Analizi"}**\n\n${answer}`,
+            content: `🧪 **${simType === "headcount" ? chatMsgs.simulation.headcount : simType === "cascade" ? chatMsgs.simulation.cascade : chatMsgs.simulation.scenario}**\n\n${answer}`,
             ts: Date.now(),
           },
         ]);
       } catch {
         setMessages((prev) => [
           ...prev.slice(0, -1),
-          { id: pendingMsg.id, role: "assistant", content: "Simülasyon çalıştırılamadı.", error: true, ts: Date.now() },
+          { id: pendingMsg.id, role: "assistant", content: chatMsgs.simulation.failed, error: true, ts: Date.now() },
         ]);
       } finally {
         setLoading(false);
@@ -556,7 +560,7 @@ export default function ChatPage() {
           {
             id: pendingMsg.id,
             role: "assistant",
-            content: `Bir hata oluştu: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
+            content: `${chatMsgs.errorPrefix}${err instanceof Error ? err.message : chatMsgs.unknownError}`,
             error: true,
             ts: Date.now(),
           },
@@ -579,7 +583,7 @@ export default function ChatPage() {
       sseChat.send({ question: q, jobId, orgId });
       return;
     }
-  }, [jobId, orgId, loading, messages, chatMode, useWS, ws, sseChat]);
+  }, [jobId, orgId, loading, messages, chatMode, useWS, ws, sseChat, inputRef, chatMsgs]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -612,16 +616,16 @@ export default function ChatPage() {
             <Bot className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
           </div>
           <div>
-            <p className="text-sm font-semibold leading-none">CFO Asistanı</p>
+            <p className="text-sm font-semibold leading-none">{chatMsgs.title}</p>
             <p className="mt-0.5 text-[10px] text-muted-foreground flex items-center gap-1">
               {isBusy ? (
-                <><span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />Yanıt üretiliyor…</>
+                <><span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />{chatMsgs.typing}</>
               ) : chatMode === "grounded" ? (
-                <><Sparkles className="h-2.5 w-2.5 text-primary" />Grounded (RAG + KPI)</>
+                <><Sparkles className="h-2.5 w-2.5 text-primary" />{chatMsgs.mode.grounded}</>
               ) : useWS ? (
-                <><Wifi className="h-2.5 w-2.5 text-emerald-400" />WS Streaming</>
+                <><Wifi className="h-2.5 w-2.5 text-emerald-400" />{chatMsgs.mode.ws}</>
               ) : (
-                <><WifiOff className="h-2.5 w-2.5 text-muted-foreground" />SSE Streaming</>
+                <><WifiOff className="h-2.5 w-2.5 text-muted-foreground" />{chatMsgs.mode.sse}</>
               )}
             </p>
           </div>
@@ -630,7 +634,7 @@ export default function ChatPage() {
           {/* Grounded / Stream toggle */}
           <button
             onClick={() => setChatMode((m) => (m === "grounded" ? "stream" : "grounded"))}
-            title={chatMode === "grounded" ? "Stream moduna geç" : "Grounded moda geç"}
+            title={chatMode === "grounded" ? chatMsgs.mode.toStream : chatMsgs.mode.toGrounded}
             className={cn(
               "rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors",
               chatMode === "grounded"
@@ -638,7 +642,7 @@ export default function ChatPage() {
                 : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
             )}
           >
-            {chatMode === "grounded" ? "Grounded" : "Stream"}
+            {chatMode === "grounded" ? chatMsgs.mode.grounded : chatMsgs.mode.stream}
           </button>
           {messages.length > 0 && (
             <button
@@ -648,10 +652,10 @@ export default function ChatPage() {
                 "hover:bg-muted hover:text-foreground transition-colors",
                 "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               )}
-              aria-label="Konuşmayı temizle"
+              aria-label={chatMsgs.clearAria}
             >
               <RotateCcw className="h-3 w-3" aria-hidden="true" />
-              Temizle
+              {chatMsgs.clear}
             </button>
           )}
         </div>
@@ -679,7 +683,7 @@ export default function ChatPage() {
         {input && isSimulationQuestion(input) && (
           <div className="mb-2 flex items-center gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-xs text-blue-400">
             <FlaskConical className="h-3 w-3 shrink-0" />
-            Simülasyon sorusu algılandı — NL Simulation Engine kullanılacak
+            {chatMsgs.simulation.detected}
           </div>
         )}
         <form onSubmit={handleSubmit}>
@@ -692,7 +696,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Finansal soru veya 'eğer X olursa ne olur?' sorun…"
+              placeholder={chatMsgs.placeholder}
               rows={1}
               disabled={isBusy}
               className={cn(
@@ -702,7 +706,7 @@ export default function ChatPage() {
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
               style={{ minHeight: "24px" }}
-              aria-label="Chat mesajı"
+              aria-label={chatMsgs.inputAria}
             />
             <button
               type="submit"
@@ -713,13 +717,13 @@ export default function ChatPage() {
                 "transition-all hover:opacity-90 disabled:opacity-30",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               )}
-              aria-label="Gönder"
+              aria-label={chatMsgs.sendAria}
             >
               <Send className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
           <p className="mt-1.5 text-center text-[10px] text-muted-foreground/50">
-            Enter ile gönder · Shift+Enter ile yeni satır · AI yanıtları muhasebeciye danışılarak doğrulanmalıdır.
+            {chatMsgs.footer}
           </p>
         </form>
       </div>

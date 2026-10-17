@@ -2,27 +2,33 @@
 
 import { Server, TrendingDown, TrendingUp, Minus, GitBranch, AlertTriangle, Zap } from "lucide-react";
 import { SectionCard, SeverityBadge } from "./SectionCard";
-import { fmtCents, healthColor, type InfraData, type TechDebtData, type IncidentData, type VelocityData } from "./types";
+import { healthColor, type InfraData, type TechDebtData, type IncidentData, type VelocityData } from "./types";
+import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Trend icon ─────────────────────────────────────────────────────────────────
 
 function TrendIcon({ trend }: { trend: string }) {
-  if (trend === "up")   return <TrendingUp  className="h-4 w-4 text-emerald-400" aria-label="Trending up" />;
-  if (trend === "down") return <TrendingDown className="h-4 w-4 text-destructive" aria-label="Trending down" />;
-  return <Minus className="h-4 w-4 text-muted-foreground" aria-label="Stable" />;
+  const { t } = useI18n();
+  if (trend === "up")   return <TrendingUp  className="h-4 w-4 text-emerald-400" aria-label={t.roleDashboards.cto.body.trendingUp} />;
+  if (trend === "down") return <TrendingDown className="h-4 w-4 text-destructive" aria-label={t.roleDashboards.cto.body.trendingDown} />;
+  return <Minus className="h-4 w-4 text-muted-foreground" aria-label={t.roleDashboards.cto.body.stable} />;
 }
 
 // ── Infrastructure Cost ────────────────────────────────────────────────────────
 
 export function InfraSection({ data }: { data: InfraData }) {
+  const { t } = useI18n();
+  const fmtCurrency = useCurrencyFormat();
+  const fmtCents = (cents: number) => fmtCurrency(cents / 100);
   return (
-    <SectionCard title="Infrastructure Cost" icon={<Server className="h-4 w-4 text-primary" aria-hidden="true" />}>
+    <SectionCard title={t.roleDashboards.cto.sections.infrastructureCost} icon={<Server className="h-4 w-4 text-primary" aria-hidden="true" />}>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Total Spend", value: fmtCents(data.total_cost_cents) },
-          { label: "Est. Waste",  value: fmtCents(data.waste_estimate_cents), warning: data.waste_estimate_cents > 500000 },
-          { label: "MoM Change",  value: data.mom_change_pct !== null ? `${data.mom_change_pct > 0 ? "+" : ""}${data.mom_change_pct.toFixed(1)}%` : "N/A" },
-          { label: "Drivers",     value: `${data.top_cost_drivers.length} services` },
+          { label: t.roleDashboards.cto.body.totalSpend, value: fmtCents(data.total_cost_cents) },
+          { label: t.roleDashboards.cto.body.estWaste,  value: fmtCents(data.waste_estimate_cents), warning: data.waste_estimate_cents > 500000 },
+          { label: t.roleDashboards.cto.body.momChange,  value: data.mom_change_pct !== null ? `${data.mom_change_pct > 0 ? "+" : ""}${data.mom_change_pct.toFixed(1)}%` : "N/A" },
+          { label: t.roleDashboards.cto.body.drivers,     value: `${data.top_cost_drivers.length} ${t.roleDashboards.cto.body.services}` },
         ].map((m) => (
           <div key={m.label} className="rounded-md bg-muted/40 p-3">
             <p className="text-[10px] uppercase text-muted-foreground">{m.label}</p>
@@ -34,7 +40,7 @@ export function InfraSection({ data }: { data: InfraData }) {
       </div>
 
       <div className="mb-3">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">TOP COST DRIVERS</p>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">{t.roleDashboards.cto.body.topCostDrivers}</p>
         <div className="space-y-1.5">
           {data.top_cost_drivers.slice(0, 5).map((d) => (
             <div key={d.service} className="flex items-center gap-2">
@@ -72,15 +78,16 @@ export function InfraSection({ data }: { data: InfraData }) {
 // ── Technical Debt ─────────────────────────────────────────────────────────────
 
 export function TechDebtSection({ data }: { data: TechDebtData }) {
+  const { t } = useI18n();
   const scoreColor = healthColor(data.debt_score);
   return (
-    <SectionCard title="Technical Debt" icon={<GitBranch className="h-4 w-4 text-accent" aria-hidden="true" />}>
+    <SectionCard title={t.roleDashboards.cto.sections.technicalDebt} icon={<GitBranch className="h-4 w-4 text-accent" aria-hidden="true" />}>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Debt Score",   value: `${data.debt_score.toFixed(1)}/10`, cls: scoreColor },
-          { label: "Commits",      value: data.total_commits.toString() },
-          { label: "Contributors", value: data.active_contributors.toString() },
-          { label: "Churn Rate",   value: `${(data.churn_rate * 100).toFixed(1)}%` },
+          { label: t.roleDashboards.cto.body.debtScore,   value: `${data.debt_score.toFixed(1)}/10`, cls: scoreColor },
+          { label: t.roleDashboards.cto.body.commits,      value: data.total_commits.toString() },
+          { label: t.roleDashboards.cto.body.contributors, value: data.active_contributors.toString() },
+          { label: t.roleDashboards.cto.body.churnRate,   value: `${(data.churn_rate * 100).toFixed(1)}%` },
         ].map((m) => (
           <div key={m.label} className="rounded-md bg-muted/40 p-3">
             <p className="text-[10px] uppercase text-muted-foreground">{m.label}</p>
@@ -91,14 +98,14 @@ export function TechDebtSection({ data }: { data: TechDebtData }) {
 
       {data.hotspot_files.length > 0 && (
         <div className="mb-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">HOTSPOT FILES</p>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">{t.roleDashboards.cto.body.hotspotFiles}</p>
           <div className="space-y-1">
             {data.hotspot_files.slice(0, 5).map((f) => (
               <div key={f.file} className="flex items-center justify-between text-xs">
                 <span className="flex-1 truncate font-mono text-foreground">{f.file}</span>
-                <span className="ml-3 text-muted-foreground">{f.changes} changes</span>
+                <span className="ml-3 text-muted-foreground">{f.changes} {t.roleDashboards.cto.body.changes}</span>
                 {f.bus_factor_risk && (
-                  <span className="ml-2 text-destructive" role="img" aria-label="Bus factor risk">⚠ bus factor</span>
+                  <span className="ml-2 text-destructive" role="img" aria-label={t.roleDashboards.cto.body.busFactorRisk}>⚠ bus factor</span>
                 )}
               </div>
             ))}
@@ -114,14 +121,15 @@ export function TechDebtSection({ data }: { data: TechDebtData }) {
 // ── Incident & Reliability ─────────────────────────────────────────────────────
 
 export function IncidentSection({ data }: { data: IncidentData }) {
+  const { t } = useI18n();
   return (
-    <SectionCard title="Incident & Reliability" icon={<AlertTriangle className="h-4 w-4 text-yellow-400" aria-hidden="true" />}>
+    <SectionCard title={t.roleDashboards.cto.sections.incidentReliability} icon={<AlertTriangle className="h-4 w-4 text-yellow-400" aria-hidden="true" />}>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Total",        value: data.total_incidents.toString() },
+          { label: t.roleDashboards.cto.body.total,        value: data.total_incidents.toString() },
           { label: "MTTR",         value: data.mttr_hours !== null ? `${data.mttr_hours.toFixed(1)}h` : "N/A", warning: (data.mttr_hours ?? 0) > 4 },
-          { label: "SLA Breaches", value: `${data.sla_breach_count} (${data.sla_breach_pct.toFixed(0)}%)`, warning: data.sla_breach_pct > 20 },
-          { label: "Trend",        value: data.trend.charAt(0).toUpperCase() + data.trend.slice(1) },
+          { label: t.roleDashboards.cto.body.slaBreaches, value: `${data.sla_breach_count} (${data.sla_breach_pct.toFixed(0)}%)`, warning: data.sla_breach_pct > 20 },
+          { label: t.roleDashboards.cto.body.trend,        value: data.trend.charAt(0).toUpperCase() + data.trend.slice(1) },
         ].map((m) => (
           <div key={m.label} className="rounded-md bg-muted/40 p-3">
             <p className="text-[10px] uppercase text-muted-foreground">{m.label}</p>
@@ -149,14 +157,15 @@ export function IncidentSection({ data }: { data: IncidentData }) {
 // ── Engineering Velocity ───────────────────────────────────────────────────────
 
 export function VelocitySection({ data }: { data: VelocityData }) {
+  const { t } = useI18n();
   return (
-    <SectionCard title="Engineering Velocity" icon={<Zap className="h-4 w-4 text-yellow-400" aria-hidden="true" />}>
+    <SectionCard title={t.roleDashboards.cto.sections.engineeringVelocity} icon={<Zap className="h-4 w-4 text-yellow-400" aria-hidden="true" />}>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Avg Velocity",   value: `${data.avg_velocity} pts` },
-          { label: "Trend",          value: data.velocity_trend.charAt(0).toUpperCase() + data.velocity_trend.slice(1), icon: <TrendIcon trend={data.velocity_trend} /> },
-          { label: "Predictability", value: `${(data.predictability_score * 100).toFixed(0)}%`, warning: data.predictability_score < 0.70 },
-          { label: "Carryover",      value: `${(data.carryover_ratio * 100).toFixed(0)}%`,      warning: data.carryover_ratio > 0.20 },
+          { label: t.roleDashboards.cto.body.avgVelocity,   value: `${data.avg_velocity} ${t.roleDashboards.cto.body.pts}` },
+          { label: t.roleDashboards.cto.body.trend,          value: data.velocity_trend.charAt(0).toUpperCase() + data.velocity_trend.slice(1), icon: <TrendIcon trend={data.velocity_trend} /> },
+          { label: t.roleDashboards.cto.body.predictability, value: `${(data.predictability_score * 100).toFixed(0)}%`, warning: data.predictability_score < 0.70 },
+          { label: t.roleDashboards.cto.body.carryover,      value: `${(data.carryover_ratio * 100).toFixed(0)}%`,      warning: data.carryover_ratio > 0.20 },
         ].map((m) => (
           <div key={m.label} className="rounded-md bg-muted/40 p-3">
             <p className="text-[10px] uppercase text-muted-foreground">{m.label}</p>
@@ -172,7 +181,7 @@ export function VelocitySection({ data }: { data: VelocityData }) {
 
       {data.sprint_series.length > 0 && (
         <div className="mb-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">SPRINT COMPLETION RATE</p>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">{t.roleDashboards.cto.body.sprintCompletionRate}</p>
           <div className="space-y-1.5">
             {data.sprint_series.slice(-6).map((s) => (
               <div key={s.sprint} className="flex items-center gap-2">

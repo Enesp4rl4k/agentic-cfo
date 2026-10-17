@@ -32,6 +32,33 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _jsonable(value: Any) -> Any:
+    """Recursively coerce pipeline output into JSON-safe primitives.
+
+    Agent states carry @dataclass entries (e.g. CTOStepLog) and enums that the
+    JSON columns cannot serialize — writing them raw raises TypeError mid-commit
+    and the job stays RUNNING forever.
+    """
+    import dataclasses
+    from enum import Enum
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _jsonable(dataclasses.asdict(value))
+    if isinstance(value, Enum):
+        return _jsonable(value.value)
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if hasattr(value, "model_dump"):  # pydantic v2 model
+        return _jsonable(value.model_dump())
+    return str(value)
+
+
 # ── Request schemas ────────────────────────────────────────────────────────────
 
 class AgentJobRequest(BaseModel):
@@ -121,8 +148,8 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
 
             job.status = AgentJobStatus.COMPLETED
             job.progress = 100
-            job.result_json = result
-            job.logs = result.get("logs", [])
+            job.result_json = _jsonable(result)
+            job.logs = _jsonable(result.get("logs", []))
             job.completed_at = datetime.now(UTC)
             await db.commit()
             logger.info("AgentJob %s (%s) completed", job_id, agent_type)
@@ -149,6 +176,10 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
 
         except Exception as exc:
             logger.error("AgentJob %s (%s) failed: %s", job_id, agent_type, exc, exc_info=True)
+            # The failed commit left the session in a rolled-back state — clear
+            # it first or the FAILED status write below raises PendingRollbackError
+            # and the job stays RUNNING forever.
+            await db.rollback()
             job.status = AgentJobStatus.FAILED
             job.progress = 0
             job.error_message = str(exc)[:1000]

@@ -278,6 +278,82 @@ def test_compensation_empty_csv():
 
 
 # ============================================================================
+# DOCUMENTED DROPZONE FORMAT TESTS — what the UI tells users to upload
+# ============================================================================
+
+HEADCOUNT_DOCUMENTED_CSV = """employee_id,department,level,role,fte,start_date,status
+E01,engineering,senior,backend,1,2021-03-15,active
+E02,engineering,junior,frontend,1,2023-07-01,active
+E03,marketing,mid,content,0.8,2022-09-05,active
+"""
+
+ATTRITION_DOCUMENTED_CSV = """employee_id,department,tenure_years,departure_type,reason
+E11,engineering,1.8,voluntary,better_compensation
+E12,sales,0.9,voluntary,career_change
+E13,support,2.4,involuntary,performance
+E14,marketing,3.1,voluntary,relocation
+E15,engineering,0.5,voluntary,manager_conflict
+"""
+
+COMPENSATION_DOCUMENTED_CSV = """employee_id,level,base_salary,equity_annual,market_rate,benefits_annual
+E01,senior,180000,20000,175000,24000
+E02,junior,80000,0,100000,9000
+E03,senior,160000,15000,140000,18000
+"""
+
+
+def test_headcount_fte_defaults_to_one_per_head_without_column():
+    rows = _parse_headcount_csv(HEADCOUNT_CSV)
+    metrics = _compute_headcount_metrics(rows)
+    assert metrics["total_fte"] == 8
+
+
+def test_headcount_total_fte_sums_documented_column():
+    rows = _parse_headcount_csv(HEADCOUNT_DOCUMENTED_CSV)
+    metrics = _compute_headcount_metrics(rows)
+    assert metrics["total_headcount"] == 3
+    assert metrics["total_fte"] == 2.8
+
+
+def test_attrition_tenure_years_column_converts_to_months():
+    rows = _parse_attrition_csv(ATTRITION_DOCUMENTED_CSV)
+    assert rows[0]["tenure_months"] == 21  # 1.8 years → 21 months
+
+
+def test_attrition_avg_tenure_reads_years_column():
+    rows = _parse_attrition_csv(ATTRITION_DOCUMENTED_CSV)
+    metrics = _compute_attrition_metrics(rows)
+    # ~1.7 years average — a months-shaped column would collapse to ~1
+    assert 15 <= metrics["avg_tenure_months"] <= 30
+
+
+def test_attrition_early_rate_not_inflated_by_years_column():
+    rows = _parse_attrition_csv(ATTRITION_DOCUMENTED_CSV)
+    metrics = _compute_attrition_metrics(rows)
+    # Nobody departed before 6 months (0.5y = 6mo is not < 6mo)
+    assert metrics["early_departures_count"] == 0
+    assert metrics["early_departure_rate"] == 0.0
+
+
+def test_attrition_departure_type_column_marks_involuntary():
+    rows = _parse_attrition_csv(ATTRITION_DOCUMENTED_CSV)
+    metrics = _compute_attrition_metrics(rows)
+    # reason says "performance"; the structured departure_type says involuntary
+    assert metrics["involuntary_departures_count"] == 1
+
+
+def test_compensation_documented_columns_feed_metrics():
+    rows = _parse_compensation_csv(COMPENSATION_DOCUMENTED_CSV)
+    metrics = _compute_compensation_metrics(rows)
+    assert metrics["total_employees"] == 3
+    assert metrics["total_annual_salary"] == (180_000 + 80_000 + 160_000) * 100
+    assert metrics["total_annual_benefits"] == (24_000 + 9_000 + 18_000) * 100
+    assert metrics["employees_with_equity"] == 2  # equity_annual recognized
+    assert metrics["below_market_count"] == 1     # 80k < 100k * 0.90
+    assert metrics["above_market_count"] == 1     # 160k > 140k * 1.10
+
+
+# ============================================================================
 # CHRO ORCHESTRATOR & SYNTHESIS TESTS
 # ============================================================================
 

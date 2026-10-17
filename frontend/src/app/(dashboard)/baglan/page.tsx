@@ -8,14 +8,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { veriEkle, veriTurleri, type DosyaSonucu, type TurSecenegi } from "@/lib/api/veri";
 import { EpostaKutusu } from "@/components/veri/EpostaKutusu";
 
-const ALAN_ADI: Record<string, string> = {
-  cfo: "Finans", cto: "Teknoloji", chro: "İnsan Kaynakları", cmo: "Pazarlama",
-  coo: "Operasyon", risk: "Risk", audit: "İç Denetim", compliance: "Uyum",
-};
 const KABUL = ".xlsx,.csv,.pdf,.txt,.xls";
 
 /**
@@ -28,6 +25,8 @@ const KABUL = ".xlsx,.csv,.pdf,.txt,.xls";
  */
 export default function BaglanPage() {
   const { setActiveCFOJob } = useCompanyContextStore();
+  const { t } = useI18n();
+  const baglan = t.baglan;
   const [sonuclar, setSonuclar] = useState<DosyaSonucu[]>([]);
   const [dosyalar, setDosyalar] = useState<Record<string, File>>({});
   const [yukleniyor, setYukleniyor] = useState(false);
@@ -58,7 +57,7 @@ export default function BaglanPage() {
         return Array.from(yeni.values());
       });
     } catch (e) {
-      setHata(e instanceof Error ? e.message : "Dosyalar gönderilemedi.");
+      setHata(e instanceof Error ? e.message : baglan.uploadFailed);
     } finally {
       setYukleniyor(false);
     }
@@ -83,10 +82,9 @@ export default function BaglanPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Verilerimi Bağla</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{baglan.title}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Kullandığınız programdan (muhasebe, banka, bordro, reklam paneli) aldığınız dosyaları buraya
-          bırakın. Ne olduklarını sütunlarından sistem anlar; sütun adlarını değiştirmenize gerek yok.
+          {baglan.subtitle}
         </p>
       </div>
 
@@ -95,7 +93,7 @@ export default function BaglanPage() {
           <div
             role="button"
             tabIndex={0}
-            aria-label="Dosya bırakın ya da seçin"
+            aria-label={baglan.dropzone.aria}
             onClick={() => secici.current?.click()}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") secici.current?.click(); }}
             onDragOver={(e) => { e.preventDefault(); setSurukle(true); }}
@@ -118,10 +116,10 @@ export default function BaglanPage() {
             )}
             <div>
               <p className="font-medium">
-                {yukleniyor ? "Dosyalar okunuyor…" : "Dosyaları buraya sürükleyin ya da tıklayıp seçin"}
+                {yukleniyor ? baglan.dropzone.reading : baglan.dropzone.hint}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Excel (.xlsx), CSV ya da PDF · birden fazla dosyayı birlikte bırakabilirsiniz · en fazla 10 dosya
+                {baglan.dropzone.formats}
               </p>
             </div>
             <input
@@ -145,14 +143,14 @@ export default function BaglanPage() {
 
           {acilanSayfalar.length > 0 && (
             <Card className="flex flex-wrap items-center gap-2 p-3">
-              <span className="text-sm">Verisi eklenen sayfalar:</span>
+              <span className="text-sm">{baglan.linkedPages}</span>
               {acilanSayfalar.map((s) => (
                 <Link
                   key={s}
                   href={s}
                   className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/20"
                 >
-                  {ALAN_ADI[s.slice(1)] ?? s} <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                  {baglan.areas[s.slice(1)] ?? s} <ArrowRight className="h-3 w-3" aria-hidden="true" />
                 </Link>
               ))}
             </Card>
@@ -176,15 +174,15 @@ export default function BaglanPage() {
           <EpostaKutusu />
           <Card className="p-4">
             <p className="flex items-center gap-1.5 text-sm font-semibold">
-              <HelpCircle className="h-4 w-4" aria-hidden="true" /> Neleri bağlayabilirim?
+              <HelpCircle className="h-4 w-4" aria-hidden="true" /> {baglan.help.title}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Önce bir banka ekstresi ya da muhasebe dosyası ekleyin; diğer dosyalar ona bağlanır.
+              {baglan.help.body}
             </p>
             <div className="mt-3 space-y-3">
               {Array.from(gruplu.entries()).map(([alan, liste]) => (
                 <div key={alan}>
-                  <p className="text-xs font-medium">{ALAN_ADI[alan] ?? alan}</p>
+                  <p className="text-xs font-medium">{baglan.areas[alan] ?? alan}</p>
                   <ul className="mt-0.5 space-y-0.5">
                     {liste.map((t) => (
                       <li key={t.tur} className="text-xs text-muted-foreground">{t.etiket}</li>
@@ -211,6 +209,8 @@ function DosyaKarti({
 }) {
   const [acik, setAcik] = useState(false);
   const [secilen, setSecilen] = useState("");
+  const { t } = useI18n();
+  const baglan = t.baglan;
   const { durum, tanima } = sonuc;
   const ikon =
     durum === "eklendi" ? <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
@@ -236,7 +236,10 @@ function DosyaKarti({
               <p className="text-sm">
                 <span className="font-medium">{tanima.etiket}</span>
                 {tanima.satir_sayisi > 0 && (
-                  <span className="text-muted-foreground"> · {tanima.satir_sayisi} kayıt</span>
+                  <span className="text-muted-foreground">
+                    {" · "}
+                    {baglan.records.replace("{count}", String(tanima.satir_sayisi))}
+                  </span>
                 )}
               </p>
             )}
@@ -246,7 +249,7 @@ function DosyaKarti({
           </div>
           {durum === "eklendi" && sonuc.sayfa && (
             <Link href={sonuc.sayfa} className="shrink-0 text-xs font-medium text-primary hover:underline">
-              Sayfaya git →
+              {baglan.goToPage}
             </Link>
           )}
         </div>
@@ -260,7 +263,7 @@ function DosyaKarti({
               aria-expanded={acik}
             >
               <ChevronDown className={cn("h-3 w-3 transition-transform", acik && "rotate-180")} aria-hidden="true" />
-              Hangi sütunlar okundu
+              {baglan.columnsRead}
             </button>
             {acik && (
               <ul className="mt-1 flex flex-wrap gap-1.5">
@@ -274,22 +277,22 @@ function DosyaKarti({
 
         {secenekler.length > 0 && tekrarGonderilebilir && (
           <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
-            <label htmlFor={`tur-${sonuc.dosya}`} className="text-xs">Bu dosya:</label>
+            <label htmlFor={`tur-${sonuc.dosya}`} className="text-xs">{baglan.thisFile}</label>
             <select
               id={`tur-${sonuc.dosya}`}
               value={secilen}
               onChange={(e) => setSecilen(e.target.value)}
               className="rounded-md border border-border bg-card px-2 py-1 text-xs"
             >
-              <option value="">Seçin…</option>
+              <option value="">{baglan.choose}</option>
               {secenekler.map((t) => (
                 <option key={t.tur} value={t.tur}>
-                  {t.etiket} ({ALAN_ADI[t.alan] ?? t.alan})
+                  {t.etiket} ({baglan.areas[t.alan] ?? t.alan})
                 </option>
               ))}
             </select>
             <Button size="sm" variant="outline" disabled={!secilen || mesgul} onClick={() => onSec(secilen)}>
-              Bu türde ekle
+              {baglan.addAsThisType}
             </Button>
           </div>
         )}

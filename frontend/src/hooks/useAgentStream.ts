@@ -201,9 +201,7 @@ export function useAgentStream(
                 : "failed"
             );
             setCurrentAgent(null);
-            setProgressPct(
-              done.status === "completed" ? 100 : progressPct
-            );
+            setProgressPct((prev) => (done.status === "completed" ? 100 : prev));
             es.close();
             esRef.current = null;
           } else if (event.event === "error") {

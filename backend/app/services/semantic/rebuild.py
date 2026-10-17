@@ -234,6 +234,13 @@ async def rebuild_semantic_snapshot(
         # Mirror brief onto last_ceo_result for FE compat
         if include_brief and snapshot.brief and db is not None:
             try:
+                # Reload first: agent results may have been persisted while the
+                # snapshot was computed above. Saving the copy loaded at the
+                # start of the rebuild would revert them (context saves are
+                # whole-row read-modify-write) — observed as lost chro/risk/
+                # audit results during demo prefill.
+                db.expire_all()
+                ctx = await get_company_context(org_id, db)
                 ceo = dict(ctx.last_ceo_result or {})
                 ceo["decision_brief"] = snapshot.brief.to_dict()
                 ctx.last_ceo_result = ceo

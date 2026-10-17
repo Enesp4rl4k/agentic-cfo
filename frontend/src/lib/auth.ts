@@ -28,9 +28,37 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email:    { label: "Email",    type: "email" },
         password: { label: "Password", type: "password" },
+        access_token:  { label: "SSO access token", type: "text" },
+        refresh_token: { label: "SSO refresh token", type: "text" },
+        provider:      { label: "SSO provider", type: "text" },
       },
 
       async authorize(credentials) {
+        if (credentials?.access_token) {
+          try {
+            const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+              headers: { Authorization: `Bearer ${credentials.access_token}` },
+            });
+            if (!res.ok) return null;
+
+            const json = await res.json();
+            const user = json?.data;
+            if (!user?.user_id || !user?.email) return null;
+
+            return {
+              id: user.user_id,
+              email: user.email,
+              name: user.full_name ?? user.email,
+              role: user.role,
+              orgId: user.org_id ?? null,
+              accessToken: credentials.access_token,
+              refreshToken: credentials.refresh_token ?? "",
+            };
+          } catch {
+            return null;
+          }
+        }
+
         if (!credentials?.email || !credentials?.password) return null;
 
         try {

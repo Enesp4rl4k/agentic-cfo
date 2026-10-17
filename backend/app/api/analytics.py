@@ -356,9 +356,18 @@ async def monte_carlo(
     series, _ = await _load_cashflow_series(body.job_id, "revenue", db)
     if not series:
         raise HTTPException(404, detail="No cashflow data found")
-    engine = MonteCarloEngine()
-    result = engine.run_simulation(series, iterations=body.iterations)
-    return {"data": result, "error": None}
+    import dataclasses
+    mean_val = sum(series) / len(series)
+    initial_cash_cents   = int(series[0])
+    base_monthly_in_cents  = int(max(0.0, mean_val))
+    base_monthly_out_cents = int(max(0.0, -mean_val))
+    result = MonteCarloEngine.simulate(
+        initial_cash_cents=initial_cash_cents,
+        base_monthly_in_cents=base_monthly_in_cents,
+        base_monthly_out_cents=base_monthly_out_cents,
+        iterations=body.iterations,
+    )
+    return {"data": dataclasses.asdict(result), "error": None}
 
 class WorkingCapitalRequest(BaseModel):
     """The figures the page asks for. They used to be ignored: the endpoint
