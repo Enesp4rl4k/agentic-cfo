@@ -356,7 +356,7 @@ export default function COODashboardPage() {
 
   // Same-data context hydration — not cancelled on re-runs (see cmo/page).
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);

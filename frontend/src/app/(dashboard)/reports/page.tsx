@@ -118,7 +118,7 @@ function JsonPreviewModal({
   }
 
   // Load on mount
-  if (!content && !loading && !error) load();
+  if (!content && !loading && !error) void load();
 
   const typeLabel = reportTypeLabel(report.report_type, rep.types);
 

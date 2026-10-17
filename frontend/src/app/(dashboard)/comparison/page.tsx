@@ -254,7 +254,7 @@ export default function ComparisonPage() {
       }
     }
 
-    fetchJobs();
+    void fetchJobs();
   }, [errors.jobs]);
 
   // Run comparison

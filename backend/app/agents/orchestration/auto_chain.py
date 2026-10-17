@@ -255,7 +255,7 @@ async def on_agent_complete(
                     "Auto-chain: %s completed → enqueueing %s for org=%s",
                     agent, next_agent, org_id,
                 )
-                await _run_chained_agent(next_agent, org_id, ctx, db)
+                await _run_chained_agent(next_agent, org_id, db)
             else:
                 logger.info(
                     "Auto-chain: %s skipped — missing required data for org=%s",
@@ -297,7 +297,7 @@ async def on_agent_complete(
                             "Feedback loop: %s signal → enqueueing %s for org=%s (%s)",
                             agent, target_agent, org_id, label,
                         )
-                        await _run_chained_agent(target_agent, org_id, ctx, db)
+                        await _run_chained_agent(target_agent, org_id, db)
                     else:
                         # Target already has data — send a cross-agent notification instead
                         logger.info(
@@ -339,7 +339,6 @@ async def on_agent_complete(
 async def _run_chained_agent(
     agent: str,
     org_id: str,
-    ctx: Any,
     db: Any,
 ) -> None:
     """
@@ -350,10 +349,10 @@ async def _run_chained_agent(
         import uuid
 
         job_id = f"auto-{agent}-{uuid.uuid4().hex[:8]}"
-        # `ctx` was loaded when the chain started — seconds ago. Saving that
-        # copy here would revert every result persisted in between (context
-        # saves are whole-row read-modify-write; observed as lost cto/coo
-        # results during demo prefill). Reload before marking the active job.
+        # Reload instead of trusting the caller's snapshot: context saves are
+        # whole-row read-modify-write, so a copy from chain start would revert
+        # every result persisted in between (observed as lost cto/coo results
+        # during demo prefill). Fresh load before marking the active job.
         ctx = await get_company_context(org_id, db)
         ctx.set_active_job(agent, job_id)
         await save_company_context(ctx, db)

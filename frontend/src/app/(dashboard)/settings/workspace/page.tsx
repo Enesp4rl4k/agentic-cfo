@@ -599,7 +599,7 @@ export default function WorkspaceSettingsPage() {
   }
 
   // Load on first render
-  if (!loaded && !loading && accessToken) loadData();
+  if (!loaded && !loading && accessToken) void loadData();
 
   async function handleInvite(e: FormEvent) {
     e.preventDefault();

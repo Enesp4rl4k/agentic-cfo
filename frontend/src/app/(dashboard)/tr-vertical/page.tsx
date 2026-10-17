@@ -264,7 +264,7 @@ export default function TrVerticalPage() {
   useEffect(() => {
     if (!jobId) { setJournalReady(false); return; }
     let live = true;
-    hasApprovedJournal(jobId).then((ok) => { if (live) setJournalReady(ok); });
+    void hasApprovedJournal(jobId).then((ok) => { if (live) setJournalReady(ok); });
     return () => { live = false; };
   }, [jobId]);
 

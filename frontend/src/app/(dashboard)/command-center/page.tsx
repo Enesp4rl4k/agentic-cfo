@@ -695,7 +695,7 @@ export default function CommandCenterPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const periods = await getSemanticHistory(12);
         if (!cancelled) setPeriodHistory(periods);

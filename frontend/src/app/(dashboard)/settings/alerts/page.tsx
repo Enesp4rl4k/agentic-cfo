@@ -20,7 +20,7 @@ export default function AlertsSettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const res = await apiClient.get("/alerts/preferences").catch(() => null);
         const data = res?.data?.data ?? res?.data;

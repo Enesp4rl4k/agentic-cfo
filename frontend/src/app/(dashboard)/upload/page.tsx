@@ -353,7 +353,7 @@ export default function UploadPage() {
   useEffect(() => {
     if (phase === "done" && jobId) {
       // Mark tour as pending so dashboard auto-starts the tour on first upload
-      import("@/components/ui/product-tour").then(({ markTourPending }) => {
+      void import("@/components/ui/product-tour").then(({ markTourPending }) => {
         markTourPending();
       });
 

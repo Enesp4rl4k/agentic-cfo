@@ -320,7 +320,7 @@ export default function AnalyticsPage() {
       }
     }
 
-    fetchData();
+    void fetchData();
   }, [finalJobId]);
 
   return (

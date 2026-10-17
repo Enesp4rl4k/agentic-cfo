@@ -36,7 +36,7 @@ export default function SimulationPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const live = await getLiveDataStatus();
         if (!cancelled) setLiveStatus(live);

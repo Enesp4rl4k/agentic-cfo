@@ -273,7 +273,7 @@ export default function CTODashboardPage() {
   // revisit — matches the CMO/COO/CHRO pages (no re-run needed to see it).
   // Not cancelled on re-runs: orgId flips fetch the same snapshot (cmo/page).
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);

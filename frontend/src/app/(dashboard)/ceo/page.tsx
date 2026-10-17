@@ -203,7 +203,7 @@ export default function CEODashboardPage() {
   // the same caller-org snapshot; dropping the earlier response on the flip
   // left the page empty whenever the follow-up fetch failed — see cmo/page).
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
@@ -238,7 +238,7 @@ export default function CEODashboardPage() {
   // so a stale response from a previous selection must never win.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const b = await getDecisionBrief(selectedPeriod);
         if (!cancelled && b.brief) {

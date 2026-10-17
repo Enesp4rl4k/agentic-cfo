@@ -578,7 +578,7 @@ export default function CMODashboardPage() {
   // earlier run's response on the flip left the input form visible whenever
   // the follow-up fetch failed silently (observed on the live demo scan).
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);

@@ -209,7 +209,7 @@ export default function IntelligencePage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const [semantic, live] = await Promise.all([
           getSemanticMe(),
@@ -254,7 +254,7 @@ export default function IntelligencePage() {
       }
     }
 
-    fetchKRI();
+    void fetchKRI();
   }, [finalJobId, intel.error]);
 
   const hasSemantic = semanticMetrics.length > 0;

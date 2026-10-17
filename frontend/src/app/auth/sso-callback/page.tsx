@@ -74,7 +74,7 @@ export default function SSOCallbackPage() {
       }
     }
 
-    handleCallback();
+    void handleCallback();
   }, [router, searchParams]);
 
   return (
