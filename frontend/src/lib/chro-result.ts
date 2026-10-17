@@ -26,6 +26,8 @@
  * DomainPanel) normalizes exactly once.
  */
 
+import { isRecord, num } from "@/lib/wire";
+
 export interface CHROAlert {
   level: string;
   message: string;
@@ -99,19 +101,6 @@ export type RawCHROResult = {
   chro_summary?: Record<string, unknown> | null;
   error?: string | null;
 };
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function num(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
 
 /** Kuruş → lira. */
 function toLira(v: unknown): number | null {

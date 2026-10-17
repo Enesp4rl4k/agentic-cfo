@@ -7,6 +7,8 @@
  * without its score is null and the view renders "—".
  */
 
+import { isRecord, num, strOrNull, records } from "@/lib/wire";
+
 export interface AuditFinding {
   finding_id: string;
   title: string;
@@ -37,29 +39,8 @@ export interface AuditResultView {
   error: string | null;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function num(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
 function str(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
-}
-
-function strOrNull(v: unknown): string | null {
-  return typeof v === "string" && v.trim() !== "" ? v : null;
-}
-
-function records(v: unknown): Record<string, unknown>[] {
-  return Array.isArray(v) ? v.filter(isRecord) : [];
 }
 
 function numScores(v: unknown): Record<string, number> {

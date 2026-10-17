@@ -19,34 +19,10 @@ import type {
   TechDebtData,
   VelocityData,
 } from "@/components/cto/types";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function num(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
-function num0(v: unknown): number {
-  return num(v) ?? 0;
-}
+import { isRecord, num, num0, strOrNull, records } from "@/lib/wire";
 
 function str(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
-}
-
-function strOrNull(v: unknown): string | null {
-  return typeof v === "string" && v.trim() !== "" ? v : null;
-}
-
-function records(v: unknown): Record<string, unknown>[] {
-  return Array.isArray(v) ? v.filter(isRecord) : [];
 }
 
 function numMap(v: unknown): Record<string, number> {
