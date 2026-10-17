@@ -14,11 +14,8 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from openpyxl import Workbook
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.services.ingest import schemas as S
 from app.services.ingest.recognize import BELIRSIZ, KESIN, TANINMADI, standart_csv, tani
@@ -120,7 +117,7 @@ def test_equal_fits_are_asked_not_guessed():
 
 
 def test_an_unknown_table_names_what_is_missing():
-    t = tani("Ad Soyad,Unvan,Telefon\nAli,Uzman,555\n".encode(), "rehber.csv")
+    t = tani(b"Ad Soyad,Unvan,Telefon\nAli,Uzman,555\n", "rehber.csv")
     assert t.durum == TANINMADI
     assert "department" in t.ozet
 
@@ -210,32 +207,6 @@ def test_no_header_means_two_columns_in_one_schema():
 
 # ── Over HTTP, into a real analysis ────────────────────────────────────────
 
-@pytest_asyncio.fixture
-async def client(tmp_path, monkeypatch):
-    from app.config import get_settings
-    from app.database import Base, get_db
-    from app.main import app
-
-    settings = get_settings()
-    monkeypatch.setattr(settings, "storage_local_path", str(tmp_path))
-    monkeypatch.setattr(settings, "auto_enqueue_analysis_on_upload", False)
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def override():
-        async with maker() as s:
-            yield s
-
-    app.dependency_overrides[get_db] = override
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        c._maker = maker  # type: ignore[attr-defined]
-        yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
-
-
 async def _login(client, email="kobi@example.com"):
     from app.models.organization import Organization
     from app.models.user import User
@@ -272,7 +243,7 @@ async def test_drop_a_statement_and_three_hr_files_together_and_the_hr_page_anal
     assert r.status_code == 201, r.text
     body = r.json()["data"]
     by = {d["dosya"]: d for d in body["dosyalar"]}
-    assert {k: v["durum"] for k, v in by.items()} == {k: "eklendi" for k in by}
+    assert {k: v["durum"] for k, v in by.items()} == dict.fromkeys(by, "eklendi")
     assert by["ekstre.xlsx"]["job_id"] == body["job_id"]
     assert {by[f]["tanima"]["tur"] for f in ("personel.csv", "ayrilanlar.csv", "ucretler.xlsx")} == {
         "headcount", "attrition", "compensation"}

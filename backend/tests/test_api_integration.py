@@ -399,9 +399,13 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     # Offline fake for the raw GitHub REST client.
     class _FakeCommit:
         def __init__(self, i: int):
-            self.sha = f"sha{i:03d}"; self.message = "feat: ship"; self.author = "dev"
-            self.date = datetime.now(UTC).isoformat(); self.files_changed = 3
-            self.additions = 30; self.deletions = 5
+            self.sha = f"sha{i:03d}"
+            self.message = "feat: ship"
+            self.author = "dev"
+            self.date = datetime.now(UTC).isoformat()
+            self.files_changed = 3
+            self.additions = 30
+            self.deletions = 5
 
     class _FakeData:
         error = None

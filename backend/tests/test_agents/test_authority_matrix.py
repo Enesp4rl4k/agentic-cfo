@@ -10,7 +10,7 @@ from app.platform.authority_matrix import (
 
 
 def _req(**kw):
-    base = dict(domain="journal_entry", amount_kurus=1000)
+    base = {"domain": "journal_entry", "amount_kurus": 1000}
     base.update(kw)
     return AuthorityRequest(**base)
 
