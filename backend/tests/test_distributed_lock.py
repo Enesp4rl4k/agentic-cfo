@@ -2,6 +2,7 @@
 Unit tests for app.core.distributed_lock.
 """
 import asyncio
+
 import pytest
 
 from app.core.distributed_lock import LockAcquisitionError, distributed_lock

@@ -1,7 +1,6 @@
 """
 Unit tests for app.core.crypto (AES-256-GCM encryption & EncryptedString).
 """
-import pytest
 from sqlalchemy import Column, Integer, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Session
 

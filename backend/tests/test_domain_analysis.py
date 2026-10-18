@@ -16,8 +16,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.database import Base
 from app.agents.orchestration import domain_analysis as da
+from app.database import Base
 from tests.test_agents.test_chro_pipeline import HEADCOUNT_CSV
 from tests.test_agents.test_cto_pipeline import BILLING_CSV, INCIDENT_CSV
 
