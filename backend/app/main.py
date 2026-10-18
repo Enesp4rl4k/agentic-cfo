@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
     import app.models.sync_run
     import app.models.sync_schedule
     import app.models.transaction
+    import app.models.trigger
     import app.models.user  # noqa: F401
     from app.database import Base, engine
     from app.scheduler import start_scheduler, stop_scheduler
