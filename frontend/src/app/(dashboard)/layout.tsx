@@ -29,7 +29,7 @@ import {
   ArrowRightLeft, Waves, ShieldAlert, MessageSquare, Receipt,
   PieChart, BarChart2, Cpu, Crown, Megaphone, Layers, ShieldCheck,
   Users, Shield, FileSearch, FileCheck, Activity, Download,
-  LogOut, Building2, ChevronDown, Zap, Link2, CreditCard, Rocket,
+  LogOut, Building2, ChevronDown, Zap, Link2, CreditCard, Rocket, Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
@@ -92,6 +92,7 @@ const NAV_GROUPS = [
       { href: "/compliance",   label: "Compliance",        icon: ShieldCheck },
       { href: "/audit",        label: "Internal Audit",    icon: FileSearch },
       { href: "/sensitivity",  label: "What-If",           icon: Activity },
+      { href: "/tetikler",     label: "Tetikler",          icon: Filter },
     ],
   },
   {

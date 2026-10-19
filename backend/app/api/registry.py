@@ -92,6 +92,7 @@ _ROUTERS = [
     ("app.api.data_freshness",          "router", "data-freshness"),                # Org-level "as of" — shared with packet + OKR
     ("app.api.decisions",               "router", "decisions"),                     # Karar Defteri: record → expected → outcome
     ("app.api.macro",                   "router", "macro"),                         # TCMB EVDS & Macro Stress Testing
+    ("app.api.triggers",                "router", "triggers"),                      # Tetikleyici Motoru CRUD + audit (P4-4)
 ]
 
 _API_PREFIX = "/api/v1"

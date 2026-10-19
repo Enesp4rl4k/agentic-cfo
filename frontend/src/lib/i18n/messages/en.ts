@@ -1918,6 +1918,81 @@ export type MessageTree = {
       cancelAria: string;
     };
   };
+  tetikler: {
+    title: string;
+    subtitle: string;
+    refresh: string;
+    loading: string;
+    newRule: string;
+    editRule: string;
+    formName: string;
+    formNamePlaceholder: string;
+    formEvents: string;
+    formCondition: string;
+    formConditionPlaceholder: string;
+    simpleEditor: string;
+    jsonEditor: string;
+    formAction: string;
+    formCooldown: string;
+    formParams: string;
+    formParamsPlaceholder: string;
+    formEnabled: string;
+    submitCreate: string;
+    submitSaving: string;
+    submitUpdate: string;
+    cancel: string;
+    dryRunTitle: string;
+    dryRunSubtitle: string;
+    dryRunCondition: string;
+    dryRunConditionPlaceholder: string;
+    dryRunValues: string;
+    dryRunButton: string;
+    dryRunBusy: string;
+    dryRunYes: string;
+    dryRunNo: string;
+    dryRunUnknownMetrics: string;
+    dryRunLoadAria: string;
+    rulesHeading: string;
+    rulesEmpty: string;
+    colName: string;
+    colEvents: string;
+    colAction: string;
+    colCooldown: string;
+    colEnabled: string;
+    colLog: string;
+    cooldownUnit: string;
+    toggleEnable: string;
+    toggleDisable: string;
+    editAria: string;
+    deleteAria: string;
+    logAria: string;
+    logFiltered: string;
+    logClearFilter: string;
+    logHeading: string;
+    logFilteredHeading: string;
+    logEmpty: string;
+    colTime: string;
+    colRule: string;
+    colEvent: string;
+    colStatus: string;
+    colDetail: string;
+    statusFired: string;
+    statusCooldown: string;
+    statusConditionFalse: string;
+    statusDuplicate: string;
+    statusError: string;
+    catalogHint: string;
+    errNameRequired: string;
+    errEventsRequired: string;
+    errConditionJson: string;
+    errParamsJson: string;
+    errValuesJson: string;
+    errGeneric: string;
+    confirmDelete: string;
+    updated: string;
+    created: string;
+    deleted: string;
+  };
 };
 
 export const en: MessageTree = {
@@ -3975,5 +4050,86 @@ export const en: MessageTree = {
       copyAria: "Copy link",
       cancelAria: "Cancel invite",
     },
+  },
+  tetikler: {
+    title: "Trigger engine",
+    subtitle:
+      "When an event arrives and a condition holds, an action runs on its own. Rules are org-scoped and every evaluation is written to the audit log.",
+    refresh: "Refresh",
+    loading: "Loading triggers…",
+    newRule: "New rule",
+    editRule: "Edit rule",
+    formName: "Rule name",
+    formNamePlaceholder: "e.g. runway drops below 3 months",
+    formEvents: "Event types",
+    formCondition: "Condition",
+    formConditionPlaceholder:
+      '{"metric": "finance.runway_months", "op": "lt", "value": 3}',
+    simpleEditor: "Switch to JSON editor",
+    jsonEditor: "Back to simple editor",
+    formAction: "Action",
+    formCooldown: "Cooldown (min)",
+    formParams: "Action params (JSON)",
+    formParamsPlaceholder:
+      '{"severity": "critical"}',
+    formEnabled: "Enabled",
+    submitCreate: "Create",
+    submitSaving: "Saving…",
+    submitUpdate: "Update",
+    cancel: "Cancel",
+    dryRunTitle: "Condition test (dry-run)",
+    dryRunSubtitle:
+      "Evaluate a condition against sample metric values. No action runs, nothing is written.",
+    dryRunCondition: "Condition (JSON)",
+    dryRunConditionPlaceholder:
+      '{"metric": "finance.runway_months", "op": "lt", "value": 3}',
+    dryRunValues: "Sample values (JSON)",
+    dryRunButton: "Test",
+    dryRunBusy: "Evaluating…",
+    dryRunYes: "Would fire",
+    dryRunNo: "Would not fire",
+    dryRunUnknownMetrics:
+      "Metrics missing from the catalog: {list} — a live run of this rule would sit at “condition false” forever.",
+    dryRunLoadAria: "Load condition into the tester",
+    rulesHeading: "Rules ({count})",
+    rulesEmpty: "No rules yet. Create your first one with the form above.",
+    colName: "Name",
+    colEvents: "Events",
+    colAction: "Action",
+    colCooldown: "Cooldown",
+    colEnabled: "Enabled",
+    colLog: "",
+    cooldownUnit: "{count} min",
+    toggleEnable: "Disable",
+    toggleDisable: "Enable",
+    editAria: "Edit",
+    deleteAria: "Delete",
+    logAria: "Audit log",
+    logFiltered: "filtered: {name}",
+    logClearFilter: "Clear filter",
+    logHeading: "Audit log",
+    logFilteredHeading: "Audit log ({filter})",
+    logEmpty: "No evaluations yet. Entries accumulate as events are processed.",
+    colTime: "Time",
+    colRule: "Rule",
+    colEvent: "Event",
+    colStatus: "Outcome",
+    colDetail: "Detail",
+    statusFired: "Fired",
+    statusCooldown: "Cooling down",
+    statusConditionFalse: "Condition not met",
+    statusDuplicate: "Duplicate event",
+    statusError: "Error",
+    catalogHint: "{metrics} metrics, {scenarios} cascade scenarios defined.",
+    errNameRequired: "Rule name is required.",
+    errEventsRequired: "Pick at least one event type.",
+    errConditionJson: "Condition JSON is not valid.",
+    errParamsJson: "Action params JSON is not valid.",
+    errValuesJson: "Sample values JSON is not valid.",
+    errGeneric: "Something went wrong.",
+    confirmDelete: "Delete the “{name}” rule? Its audit history is kept.",
+    updated: "“{name}” updated.",
+    created: "“{name}” created.",
+    deleted: "“{name}” deleted.",
   },
 };

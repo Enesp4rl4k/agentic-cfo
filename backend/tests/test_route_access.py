@@ -86,6 +86,9 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/sync/schedules/{schedule_id}/run"): "404 unless row.org_id == caller's org (or user id)",
     ("GET", "/api/v1/analysis/{job_id}/domains/{domain}"): "job resolved by owned_job; domain is a name from a fixed list",
     ("POST", "/api/v1/analysis/{job_id}/domains/{domain}"): "job resolved by owned_job; domain is a name from a fixed list",
+    ("GET", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    ("PATCH", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    ("DELETE", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
 }
 
 
