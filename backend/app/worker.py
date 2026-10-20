@@ -716,6 +716,26 @@ async def continue_after_completion(
         name=f"memory-trend-{job_id[:8]}",
     )
 
+    # ── P4-3: Trigger engine — job.completed / tx.arrived ──────────
+    # Own session, fire-and-forget: a misbehaving trigger must never fail the
+    # analysis it rode in on (same guard as cache invalidation above).
+    async def _emit_trigger_events() -> None:
+        try:
+            from app.database import session_factory
+            from app.services.triggers.sources import emit_job_events
+
+            async with session_factory()() as trig_db:
+                await emit_job_events(
+                    trig_db,
+                    job_id=str(job_id),
+                    org_id=org_id,
+                    dashboard=result.get("dashboard_json") or {},
+                )
+        except Exception as exc:
+            logger.warning("trigger events failed (non-fatal): %s", exc)
+
+    spawn(_emit_trigger_events(), name=f"triggers-{job_id[:8]}")
+
 
 async def _save_to_memory_and_trend(
     org_id: str,
