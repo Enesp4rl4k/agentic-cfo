@@ -63,3 +63,8 @@ knowledge_integrator/
 # GİB resmî belge paketleri — scripts/fetch_gib_corpus.py ile indirilir,
 # vendor edilmez: standarttan sessizce sapmasın.
 backend/tests/fixtures/gib_corpus/
+
+# One-off probe/inspection scripts (underscore prefix) — local only, never committed;
+# anything worth keeping gets a real name and a test.
+backend/scripts/_*.py
+.claude/settings.local.json
