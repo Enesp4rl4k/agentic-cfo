@@ -98,8 +98,9 @@
   (`components/demo/**` tarama kapsamına eklenir).
 
 ## 5. Sıra (öneri)
-**D1 → D2 → D4 → D3 → D5 → D6** — önce "gir ve anında gör" (D1+D2 = kritik yol),
+**D1 ✅ → D2 ✅ → D4 ✅ → D3 → D5 → D6** — önce "gir ve anında gör" (D1+D2 = kritik yol),
 güvenlik/hijyen (D4), sonra hikâye (D3), dağıtım (D5), dönüşüm (D6).
+(2026-10-17: kalan iş `DEVELOPMENT_PLAN.md` v3'e bağlandı — D3 → **Faz 2.6**, D5 → **Faz 3.6**, D6 → **Faz 3.7**.)
 
 D1+D2 bittiğinde: `docker-compose.demo.yml` + `prefill` ile tek komutla **verimsiz bekleme olmadan**
 dolu bir demo elde edilir; public URL D5'te gelir.

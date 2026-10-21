@@ -1,39 +1,47 @@
-# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v2)
+# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v4)
 
 > **Demo deneyimi ayrı planda:** `DEMO_PLAN.md` (2026-10-14) — "satın almadan dene" akışı: mevcut envanter + boşluklar + D1–D6 fazları (konuk giriş → anında dolu dashboard → tour → reset → public → CTA).
 
-> **Tarih:** 2026-10-14 (v1: 2026-10-11) · **Ufuk:** 3 faz (Faz 1 güven turu → Faz 2 moat → Faz 3 production kanıtı)
+> **Tarih:** 2026-10-21 (v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** v4 sırası (§V4) — V0 hijyen → V1 P4 kapanışı → V2 dürüstlük düzeltmeleri → Faz 2 gerçek boşlukları → Faz 3 production kanıtı → D5/D6 + bakım
 > **Yasa:** `CLAUDE.md` — Done = `python scripts/verify.py` (Windows) / `./verify.sh` exit 0. Confidence gate ≥ 0.80. Raw SQL yok. Money = kuruş integer.
 > **Kuzey yıldızı:** Yüklediğin veri → kanıtlanmış sayı → rol-dashboard'unda org'un dilinde ve **org'un para birimiyle** doğru çizilen tek bir gerçeklik → karar → mühürlü kayıt. Bir halka kanıtlanmadan iş bitmiş sayılmaz.
 >
 > Bu dosya şunları **yerine geçer (supersedes)**: `MASTER_DEVELOPMENT_PLAN.md`, `NEXT_DEVELOPMENT_PLAN.md`, `DIFFERENTIATION_SPRINT_PLAN.md`, `EXECUTIVE_PANEL_V1_BACKLOG.md`. Bunlar tarihsel kayıt olarak duruyor; yeni iş buradan takip edilir.
 >
 > **v2 değişikliği:** Faz 1'in A–D grupları bitti; 2026-10-14 canlı doğrulama (CTO/CMO/COO/CHRO/CEO) yeni sorunlar çıkardı → Sorun Envanteri (Kullanıcı U1–U8 / Sistem S1–S6) eklendi, Faz 1'e 1.4–1.6 maddeleri ve "Hemen" dev-flow bölümü girdi. Faz 2/3 değişmedi.
+>
+> **v3 değişikliği (2026-10-17):** **Faz 1 kapandı** (çıkış kapısı 2026-10-15'te geçti: `verify.py` 6/6, vitest 154/154, canlı scan 10/10 — U1–U8 + S1/S2/S5 hepsi çözüldü). `DEMO_PLAN.md`'den **D1 ✅ D2 ✅ D4 ✅** devralındı; kalan açık işler: **D3 (tur) → Faz 2 (moat) → D5+D6 (demo dağıtım/dönüşüm) → Faz 3 (production kanıtı)** + iki bakım görevi (prod `next` upgrade, `tests/` ruff temizliği). S3/S4 (Playwright, IDOR/security) hâlâ açık — Faz 3'te.
+>
+> **v4 değişikliği (2026-10-21):** v3 kodun gerisinde kalmıştı. Kod taraması: Faz 2/3'ün "hiç başlamadı" dediği maddelerin çoğu **kısmen ya da tamamen kodda** (2.1 stres kartı, 2.3 otomatik konsensüs + `ConflictCard` + ops sayacı, 2.4 kontrat testi, 2.6 tur bileşeni, 3.2 SSE Redis pub/sub, 3.4 güvenlik başlıkları + güvensiz secret kontrolü) — her maddeye **"Kodda durum"** notu eklendi. Plan dışı yapılan **P4 tetik motoru** (P4-0…P4-4, 2026-10-18…20) plana alındı; boşluğu: `anomaly.detected` ve `schedule` olaylarının kaynağı yok. Yeni öncelik sırası **§V4**: önce sessiz yanlışlar (çalışmayan tetik, yanlış EUR şoku, kapı kapsamı), sonra yeni yetenek.
 
 ---
 
-## 0. Başlangıç durumu (2026-10-14, kanıtlı)
+## 0. Başlangıç durumu (2026-10-21, kanıtlı)
 
 **Yeşil:**
-- `python scripts/verify.py --fast --backend` → exit 0 · **3459 passed, 48 skipped**; frontend `tsc` ✅ `lint` ✅ `vitest` 95/95 ✅ (90 değil: `baslangic.test.tsx` 6 testi `718a663`'ten beri gizli kırmızıydı — QueryClientProvider + tr-TR locale mock eklendi).
+- **2026-10-21:** `python scripts/verify.py --fast --backend` → exit 0 · **3601 passed, 48 skipped**, ruff ✅ (mypy + frontend bu koşuda atlandı).
+- P4 tetik motoru: koşul DSL'i + zarf kontratı (P4-0), `trigger_definitions`/`trigger_runs` + idempotency/cooldown/audit (P4-1, migration 042), webhook/analysis/cascade/report aksiyonları (P4-2), `job.completed`/`tx.arrived` kaynakları (P4-3), `/tetikler` API + UI + dry-run (P4-4).
+- 2026-10-17: `python scripts/verify.py --fast --backend` → exit 0 · **3459 passed, 48 skipped**; frontend `tsc` ✅ `lint` ✅ `vitest` 95/95 ✅ (90 değil: `baslangic.test.tsx` 6 testi `718a663`'ten beri gizli kırmızıydı — QueryClientProvider + tr-TR locale mock eklendi). **Faz 1 çıkış kapısı 2026-10-15: `verify.py` 6/6, vitest 154/154, `scan_demo_pages.py` 10/10 temiz.**
 - Backend: FastAPI + LangGraph, 41 Alembic migration, ARQ kuyruğu, job lease, field encryption, audit zinciri, e-Fatura/e-Defter kapısı, SMMM onay kuyruğu, TCMB EVDS client, grounding validator + `EvidenceBundle`, eval harness, semantic snapshot/rebuild.
-- Frontend: Next 14 App Router, Karar Atlası paleti (`DESIGN.md`), TR/EN message tree — **Grup A–D (17 sayfa) message tree'de**.
-- Rol matrisi canlı doğrulandı (2026-10-14): **CHRO** (İK Puanı 7.0/10, ₺ anlatıları), **CEO** (synthesize 200, brif dolu), **CMO** (ROAS 3.9×, ₺), **CTO** (hydration + sağlık 2.0/10), **COO** (boş durum dürüst) — 0 undefined / 0 NaN / 0 konsol hatası.
-- `org_id` login/me'de dönüyor (regresyon testi `test_api_integration.py`'de); CHRO CTO hydration + İ-casing + sidebar rozet fix'leri commit `712c027`.
+- Frontend: Next 14 App Router, Karar Atlası paleti (`DESIGN.md`), TR/EN message tree — **tüm sayfalar (Grup A–E) message tree'de**; 6/6 rol normalizer + wire-fixture testi; `casing-gate.test.ts` + `test_honesty_currency.py` grep kapıları ayakta; `ProvenanceBadge` (Gerçek/Tahmin/Benchmark) tek bileşen.
+- Hydration: context 2sn timeout + 30sn cooldown, `HydrationHint`, zombi polling kapalı. CEO no-input guard, auto-chain skip log'ları, COO canlı popülasyon.
+- **DEMO (D1+D2+D4):** konuk girişi (`POST /demo/guest` + csrf-race tek yeniden deneme), golden ön-hesaplama (`demo_prefill.py`, 8/8 dolu) + klonlama (izolasyon korunuyor), CTO örnek girdileri + 6 rol IS_DEMO wire-fixture, `DELETE /demo/reset` + 24sa TTL purge + seed rate-limit, `scan_demo_pages.py` canlı tarama aracı.
 
-**Kırmızı (v2 planın gerekçesi — Sorun Envanteri §1):**
-1. Backend anlatı/expanter'larında **33 kalan `$` hardcode** — TRY verisinde dolar (CHRO 3'ü düzeltildi, kalanı yok) → U1.
-2. **Hydration UX**: Redis'siz context okuması 15–20sn; form dolarken sonuç gelip formu yutuyor; loading göstergesi yok → U2/S1.
-3. **Şema fixture testi yok** (1.2 hâlâ açık): CHRO'daki hata sınıfı CTO/CMO/COO/CEO/risk/audit'te canlı bakıldı ama testi yok → U3. → **Kapandı**: 6/6 rol normalizer + wire fixture testi.
-4. **Grup E i18n** + kalan dinamik rozet/casing taraması → U4.
-5. **COO hiç populated olmadı** (örnek SLA CSV yok) → U5.
-6. CEO ana buton 400; auto-chain CEO sentezi sessiz skip; health skoru bileşen/overall karışıklığı → U6/U8.
-7. Faz 2/3 hiç başlamadı (Playwright, IDOR, security header, TCMB stres, SMMM export) → S3/S4.
-8. Dev-flow: backend `--reload` yok, restart secret yeniliyor, branch push edilmedi → S2/S5.
+**Açık (v4 planın gerekçesi — 2026-10-21 kod taraması):**
+1. **Hijyen:** v3 plan düzenlemeleri commit'lenmemişti; `feat/edefter-tahakkuk` master'ın **38 commit** önünde, birleşmemiş. → **V0**
+2. **P4 sessiz boşluk:** `EventKind` = `job.completed | tx.arrived | anomaly.detected | schedule`, ama yalnız ilk ikisinin kaynağı var → kullanıcı `anomaly.detected`/`schedule` tetiği kurabiliyor, tetik hiç ateşlenmiyor. → **V1**
+3. **Dürüstlük hataları:** `MacroStressTestCard` EUR şokuna USD değerini gönderiyor (`eur_shock_pct: usd`), gömülü TR metin, kaynak etiketi yok; `casing-gate.test.ts` yalnız `(dashboard)/*/page.tsx` tarıyor → bileşenlerdeki gömülü TR (stres kartı, `product-tour.tsx`) kapıdan kaçıyor. → **V2**
+4. **Faz 2 gerçek boşlukları:** 2.2 grounding/citation zorunluluğu, 2.5 SMMM paketinin genişletilmesi, 2.6 turun demo akışına uyarlanması, 2.3'ün canlı doğrulaması. → **2.x**
+5. **Faz 3 gerçek boşlukları:** Playwright E2E (**S3**), şifreleme kanıtı, iki-pod SSE testi, load baseline. → **3.x**
+6. **DEMO D5+D6** — public demo ortamı + CTA/lead ölçümü yok. → **3.6–3.7**
+7. **Bakım:** prod'da kalan 2 npm açığı (`next` critical + gömülü `postcss` high) yalnız **next 14→16 major** ile kapanır; `QUALITY_AUDIT_REPORT.md` bayat. (`tests/` ruff ✅ `9ea3854`; axios/source-map-js ✅ `89007eb`.) → **Bakım sprinti**
+8. **Sahip kararları (hafızadan, ~1 aydır açık — yeniden doğrulanmalı):** → **§Sahip kararları**
 
 ---
 
 ## §1 Sorun envanteri
+
+> **v3 notu:** U1–U8 + S1/S2/S5/S6 kapandı — tablolar tarihsel kayıt olarak duruyor. Açık maddeler: **S3 → Faz 3.1**, **S4 → Faz 3.3–3.4**.
 
 ### 🧑 Kullanıcı sorunları
 
@@ -61,7 +69,7 @@
 
 ---
 
-## ⚡ Hemen (dev-flow, yarım gün — S2/S5/S6)
+## ⚡ Hemen (dev-flow) — ✅ kapandı (2026-10-14)
 
 - [x] Backend dev `.env`: sabit `BACKEND_SECRET_KEY` (restart → re-login yok) + uvicorn `--reload` (2026-10-14: `backend/.env` oluşturuldu, gitignore'lu)
 - [x] `git push` ✓ (origin `feat/edefter-tahakkuk` güncel) — sonrası her iş küçük commit'le
@@ -69,6 +77,13 @@
   - `ruff check app` ✅ · `mypy --config-file mypy_strict.ini` ✅ (162 dosya). `tests/` içinde ruff'ın 53 legacy hatası var — kapı dışı, temizlik görevi.
   - npm audit: **23 (4 critical, 14 high) dev-only zincirler** (vitest/tinypool/eslint/tailwind); **prod'da 2** (`next` zinciri, 1 critical + 1 high). → **Ayrı task:** prod `next` patch upgrade + vitest 5 migration ile birlikte; `npm audit fix` (non-breaking) 4 kritik kapattı ama lock HEAD'te tutuldu (tek seferde, testler yeşilken upgrade).
   - vitest: 6 test kırmızı çıktı (`No QueryClient set` + TR/EN assertion) → `baslangic.test.tsx`'e QueryClientProvider + `useOrgSettings` tr-TR mock'u eklendi; **95/95** ✅.
+
+## 🔧 Bakım sprinti (plan dışı, düşük öncelik — bir ara oturumda)
+
+- [ ] **Prod npm vulnerability upgrade**: `next` zinciri (1 critical + 1 high) — 14.x/15.x'te yama yok (`89007eb` notu) → **next 14→16 major migration**; vitest 5 migration ile **tek seferde**, testler yeşilken; lock tek commit'te; upgrade sonrası tam kapı (`tsc`/`lint`/`vitest`/`verify.py`).
+- [x] **`backend/tests/` ruff temizliği**: 53 legacy hata → ✅ `9ea3854` + `32da052`; `tests/` artık `verify.py` kapısında.
+- [x] **Prod axios/source-map-js açıkları** → ✅ `89007eb` (non-breaking `npm audit fix`).
+- [ ] **Taze kalite denetimi**: `QUALITY_AUDIT_REPORT.md` (2026-08-05) bayat → npm audit + ruff/mypy turlarıyla güncelle.
 
 ---
 
@@ -125,15 +140,55 @@ python scripts/verify.py          # --fast YOK: mypy da dahil  → ✓ ALL CHECK
 cd frontend; npx tsc --noEmit; npx next lint; npx vitest run  →  0 / 0 / 154-154
 # + canlı dürüstlük taraması: 6 rol sayfasında undefined/NaN/$/İ-casing = 0  → scan 10/10 temiz
 ```
-Kanıt: `verify.py` tek koşuda 6/6 (`db45fb8` öncesi); vitest 154/154 (1.3 rozet testleri dahil); `scan_demo_pages.py` 10/10 (1.3 ekimlerinden sonra). 1.4–1.6 + 1.3 tamam → sıradaki: DEMO_PLAN **D4 → D3 → D5 → D6**.
+Kanıt: `verify.py` tek koşuda 6/6 (`db45fb8` öncesi); vitest 154/154 (1.3 rozet testleri dahil); `scan_demo_pages.py` 10/10 (1.3 ekimlerinden sonra). 1.4–1.6 + 1.3 tamam → **Faz 1 kapandı.** Sıradaki: **DEMO D3 (2.6) → Faz 2 → D5/D6 (3.6–3.7) → Faz 3** + Bakım sprinti.
+
+---
+
+## §V4 — Öncelik sırası (2026-10-21)
+
+**Kural:** önce sessiz yanlışlar (kullanıcıya "çalışıyor" görünüp çalışmayan şeyler), sonra yeni yetenek. Her madde ayrı commit + kendi DoD'u; commit yalnız `verify.py` exit 0 iken.
+
+| Sıra | İş | Boyut |
+|---|---|---|
+| **V0** | Plan hijyeni + branch birleştirme kararı | yarım gün |
+| **V1** | P4 tetik motorunu kapat (eksik olay kaynakları + canlı uçtan uca) | 1–2 gün |
+| **V2** | Dürüstlük düzeltmeleri (stres kartı EUR, i18n, kapı kapsamı) | 1 gün |
+| **2.6 → 2.3 → 2.2 → 2.1 → 2.5** | Faz 2 gerçek boşlukları (aşağıda "Kodda durum" notlarıyla) | 1–2 hafta |
+| **3.1 → 3.3 → 3.2 → 3.5** | Faz 3 production kanıtı | 1–2 hafta |
+| **3.6 → 3.7** + Bakım | Demo D5/D6, next 16, kalite denetimi, sahip kararları | — |
+
+### V0 — Plan hijyeni
+- [ ] v3+v4 plan düzenlemelerini commit'le (`DEVELOPMENT_PLAN.md`, `DEMO_PLAN.md`).
+- [ ] `backend/scripts/_*.py` geçici tarama scriptleri: kalıcı olanları adlandırıp commit'le, kalanını sil (bugün untracked).
+- [ ] `feat/edefter-tahakkuk` (master'ın 38 commit önünde) için karar: tek PR mı, tema bazlı bölünmüş PR'lar mı (e-Defter / i18n+UX / demo / triggers). **Sahip kararı.**
+
+**DoD:** `git status` temiz; branch için PR açık ya da bölme planı yazılı.
+
+### V1 — P4 tetik motorunu kapat
+- [ ] `anomaly.detected` kaynağı: anomali kaydı yazıldığı noktada (`Anomaly` insert sonrası) `handle_event` — `event_ref` = anomali id (idempotency).
+- [ ] `schedule` kaynağı: mevcut APScheduler'a periyodik tarayıcı — `trigger_definitions` içindeki zamanlanmış tetikleri değerlendirir; `event_ref` = tetik id + pencere başlangıcı (aynı pencere iki kez ateşlenmez).
+- [ ] Alternatif (kaynak bu sprintte gelmezse): kaynağı olmayan olay `/tetikler` UI'da seçilemez + API 422 — **kurulup hiç ateşlenmeyen tetik olmaz**.
+- [ ] Kapı testi: her `EventKind` değeri için en az bir üretim kaynağı çağrısı var (kontrat ↔ kaynak paritesi; yeni olay türü eklenip bağlanmazsa kırmızı).
+- [ ] Canlı uçtan uca: UI'dan tetik kur → olayı üret → `trigger_runs` satırı + `alert_history` yan etkisi + dry-run sonucu ile tutarlı.
+
+**DoD:** `pytest tests/ -q -k trigger` yeşil + parite testi + canlı koşu kanıtı (tetik id, run status `fired`).
+
+### V2 — Dürüstlük düzeltmeleri
+- [ ] `MacroStressTestCard`: `eur_shock_pct` kendi değerini alsın (ayrı EUR slider ya da açıkça "USD+EUR birlikte" etiketi — sessiz kopya yok); kartın TR metinleri message tree'ye; sonuç kartına `ProvenanceBadge` (`tcmb_api`/`redis_cache` → Gerçek, `static_fallback` → Benchmark, simülasyon çıktısı → Tahmin).
+- [ ] `/macro/simulate` saf fonksiyonu için birim testi (kur şoku → runway/borç maliyeti yönü ve büyüklüğü).
+- [ ] `casing-gate.test.ts` kapsamı `components/**` (+ `components/demo/**`) — gömülü TR/İ-casing bileşenlerde de 0; çıkan bulgular aynı commit'te message tree'ye.
+
+**DoD:** vitest + casing kapısı yeşil (genişletilmiş kapsamla); stres kartı EUR ≠ USD girdisinde farklı sonuç verir (test).
 
 ---
 
 ## FAZ 2 (Sprint 2, Hafta 3–4) — "Moat ve karar döngüsü"
 
-**Tema:** Türkiye'ye özgü derinlik + kanıtlanmış sayısal cevap + çatışma → karar.
+**Tema:** Türkiye'ye özgü derinlik + kanıtlanmış sayısal cevap + çatışma → karar + demo hikâyesi.
+**Önerilen sıra (v4):** 2.6 (tur — bileşen var, uyarlama) → 2.3 (consensus — büyük ölçüde var, canlı doğrulama) → 2.2 (grounding — gerçekten açık) → 2.1 (stres — V2 düzeltmelerinden sonra kalan) → 2.5 (SMMM — en büyük). 2.4 kodda var.
 
 ### 2.1 TCMB EVDS → canlı stres testi
+> **Kodda durum (2026-10-21):** `components/macro/MacroStressTestCard.tsx` (USD/faiz/ödeme gecikmesi slider'ları → `POST /macro/simulate`) `command-center`'da mount'lu. Hatalar V2'de: EUR=USD, gömülü TR, kaynak etiketi yok. V2 sonrası kalan: widget'ın `analytics`'e de taşınması + EVDS anahtarsız fallback'in canlı doğrulaması.
 - [ ] `tcmb_macro` snapshot'ından **Kur/Faiz şok simülatörü**: slider → nakit akışı/FAVÖK etkisi anında.
 - [ ] Zorunlu kaynak etiketi (`tcmb_api` / `redis_cache` / `static_fallback`) + "Tahmin" etiketi; fallback asla canlı gibi sunulmaz.
 - [ ] Widget `analytics`; TR/EN metin message tree'de.
@@ -141,6 +196,7 @@ Kanıt: `verify.py` tek koşuda 6/6 (`db45fb8` öncesi); vitest 154/154 (1.3 roz
 **DoD:** `EVDS_API_KEY` yokken sayfa çalışır ve "statik fallback" etiketiyle çizilir; şok senaryosu pure-fonksiyon testi yeşil.
 
 ### 2.2 Grounding: citation zorunluluğu
+> **Kodda durum:** gerçekten açık. `test_semantic_api_contract.py::test_chat_agent_runway_grounded` tek bir runway iddiasını kapsıyor; genel "her sayısal iddia → `EvidenceBundle`" zorunluluğu ve CI hard-fail yok.
 - [ ] Embedding yazımı worker'da zorunlu; yükleme sonrası boşsa job `awaitingReview` + log.
 - [ ] `/chat/agent` yanıtındaki her sayısal iddia `EvidenceBundle`'a bağlı; bağlanamayan iddia için hard disclaimer.
 - [ ] Eval halüsinasyon case'i > 0 → **CI hard-fail** (`eval-grounding.sh` → `verify.py`).
@@ -148,24 +204,37 @@ Kanıt: `verify.py` tek koşuda 6/6 (`db45fb8` öncesi); vitest 154/154 (1.3 roz
 **DoD:** `pytest tests/test_agents/test_grounding_eval.py test_chat_grounding.py -q` yeşil + "citation yoksa uydurma" case'i.
 
 ### 2.3 Çatışma → konsensüs → CEO kararı
-- [ ] CFO+risk tamamlanınca otomatik `run_consensus` (mevcut `ConsensusEngine`).
-- [ ] Command Center **Conflict Card**: severity, çelişen agent'lar, önerilen konsensüs, tek tıkla karara bağlama.
-- [ ] `GET /system/ops` → `management.conflicts` sayacı.
+> **Kodda durum:** üç madde de kodda — doğrulanmamış. Kalan iş = DoD'un kanıtı (zıt sinyalli fixture testi + canlı koşu) ve çıkan hataların onarımı.
+- [~] CFO+risk tamamlanınca otomatik `run_consensus` (mevcut `ConsensusEngine`). (`auto_chain._run_auto_consensus` — non-fatal; sessiz yutulan hata olup olmadığı kontrol edilecek.)
+- [~] Command Center **Conflict Card**: severity, çelişen agent'lar, önerilen konsensüs, tek tıkla karara bağlama. (`components/command-center/ConflictCard.tsx` mount'lu.)
+- [~] `GET /system/ops` → `management.conflicts` sayacı. (`api/system.py`: `open_conflicts` / `recent_conflicts`.)
 
 **DoD:** Zıt sinyalli fixture'da kart render; resolve sonrası açık çatışma yok. Canlı: `scripts/tr-governance-e2e.sh`.
 
 ### 2.4 Semantic spine API kontrat testleri
-- [ ] `POST /semantic/me/rebuild` → 200 + metrics > 0; `GET /semantic/me` → `snapshot.period.key`; `GET /semantic/me/brief` → runway+conflict; `GET /negotiation/conflicts/{org}` ORM listesi.
+> **Kodda durum:** `backend/tests/test_semantic_api_contract.py` var (rebuild+read, grounded runway). Kalan: `/negotiation/conflicts/{org}` ORM listesi assertion'ının kapsamda olduğunu doğrula; yoksa ekle.
+- [~] `POST /semantic/me/rebuild` → 200 + metrics > 0; `GET /semantic/me` → `snapshot.period.key`; `GET /semantic/me/brief` → runway+conflict; `GET /negotiation/conflicts/{org}` ORM listesi.
 
 ### 2.5 SMMM mühürlü export paketi (moat)
+> **Kodda durum:** temel var — `DefensibilityPacket` (SHA-256 mühür, finalize, PDF export, `smmm-defensibility-smoke.sh`). Kalan iş bu paketi **genişletmek** (KDV/stopaj kontrolü, anomaliler, e-Defter berat özeti, Excel); yeni silo açılmaz.
 - [ ] Tek tıkla resmi paket: yevmiye dökümü, KDV/stopaj kontrolü, anomaliler, e-Defter berat uyumluluk özeti → PDF + Excel.
 - [ ] İmza/metaveri: şirket, dönem, üretim zamanı (UTC), veri kaynakları, "agent üretti, SMMM onayladı" mühür alanı. Otomatik onay yok.
+
+### 2.6 Demo turu (DEMO_PLAN D3) — ÖNCELİK 2
+> **Kodda durum:** `components/ui/product-tour.tsx` (358 satır, popover adımları) yalnız `/upload`'da kullanılıyor; metinler TR sabit. Yeni bileşen yazılmaz — bu bileşen 4 demo adımına + message tree'ye uyarlanır.
+- [ ] 4 adım: (1) CFO özeti & runway, (2) anomali denetimi, (3) CEO brief / çapraz risk, (4) "Şirketinizle deneyin" CTA. Step JSON i18n'de (tr/en) — `driver.js` yok, mevcut ui ile basit step-panel.
+- [ ] İlk girişte otomatik başlangıç; sidebar'da "Turu tekrarla".
+- [ ] auto-chain görünürlüğü (1.6 ile birlikte): demo izleyicisi ajanların çalıştığını görür.
+- [ ] `components/demo/**` `casing-gate.test.ts` tarama kapsamına eklenir (DEMO_PLAN §4 kırmızı çizgisi).
+
+**DoD:** tur tr/en parite testi + `scan_demo_pages.py` yeşil; tur sonunda CTA görünür.
 
 **Faz 2 çıkış kapısı:**
 ```powershell
 python scripts/verify.py
 ./scripts/tr-governance-e2e.sh
 ./scripts/smmm-defensibility-smoke.sh
+python scripts/scan_demo_pages.py   # demo sayfaları hâlâ dürüst + tour erişilebilir
 ```
 
 ---
@@ -180,20 +249,32 @@ python scripts/verify.py
 - [ ] `scripts/golden-path-e2e.sh` bu paketi çağırır.
 
 ### 3.2 SSE Redis Pub/Sub (multi-pod)
-- [ ] `streaming/sse.py`: bellek yerine `org:{org_id}:job:{job_id}` Redis kanalı; iki pod arası event yayını testi.
+> **Kodda durum:** `streaming/sse.py` zaten `sse:job:{job_id}` Redis pub/sub köprüsü (worker yayınlar, API teslim eder). Kalan: iki process arası yayın testi (bu makinede Redis yok → CI'da ya da Docker kararından sonra).
+- [~] `streaming/sse.py`: bellek yerine Redis kanalı ✅; iki pod arası event yayını testi ❌.
 
 ### 3.3 Tenant izolasyonu denetimi (IDOR/BOLA)
-- [ ] `org_id`'li tüm tablolarda otomatik tenant filtresi taraması; negatif test paketi: org B → org A job'ı 404/403.
+> **Kodda durum:** rota düzeyi kapandı (2026-09-13: `app/api/access.py` + `tests/test_route_access.py` her rotayı yürüyor). Kalan: tablo düzeyi tarama + field encryption kanıtı.
+- [~] `org_id`'li tüm tablolarda otomatik tenant filtresi taraması; negatif test paketi: org B → org A job'ı 404/403. (Rota paketi ✅; tablo taraması ❌.)
 - [ ] Hassas kolonlarda (VKN, IBAN, API key) field encryption kanıtı: DB'de şifreli, bellekte net.
 
 ### 3.4 Güvenlik & config sertleştirme
-- [ ] Prod'da insecure `BACKEND_SECRET_KEY` default → exception (testte kalır).
-- [ ] Security headers (CSP, HSTS, X-Content-Type-Options, X-Frame-Options) + test.
+> **Kodda durum:** ilk iki madde kodda — `config.py` `_INSECURE_SECRETS` kontrolü, `middleware/security_headers.py` (HSTS, CSP, …) + `test_agents/test_perf_security.py`. Kalan: prod modunda exception'ın testle kilitli olduğunu doğrula; ARQ ayrım testi.
+- [~] Prod'da insecure `BACKEND_SECRET_KEY` default → exception (testte kalır).
+- [x] Security headers (CSP, HSTS, X-Content-Type-Options, X-Frame-Options) + test.
 - [ ] ARQ analysis/maintenance ayrımının uygulandığını gösteren test (yeni queue mimarisi yok).
 
 ### 3.5 Yük & gözlemlenebilirlik
 - [ ] `./scripts/load-baseline.sh` CI artifact'i; P95: upload→analiz başlangıcı, board deck < 120s.
 - [ ] `/system/ops`: LLM maliyeti, failed job oranı, awaiting-review yükü.
+
+### 3.6 Public demo ortamı (DEMO_PLAN D5) — ÖNCELİK 3
+- [ ] Ayrı deploy (compose tabanlı): `NEXT_PUBLIC_DEMO_MODE=true`, kendi DB volume, seed'li görüntü (golden prefill).
+- [ ] Otel: günlük otomatik `prefill` tazeleme, log/metrics, LLM maliyet cap'i (default kapalı).
+- [ ] Demo → gerçek geçiş: kayıt olunca gerçek org açılır, demo org bağlanmaz (veri izolasyonu).
+
+### 3.7 CTA & ölçüm (DEMO_PLAN D6) — ÖNCELİK 3
+- [ ] Tour sonu + banner CTA: mail capture + pricing; `POST /demo/lead`.
+- [ ] Basit sayaçlar: demo başlattı / tur tamamladı / CTA tıkladı (privacy-hostile değil).
 
 **Faz 3 çıkış kapısı (release adayı):**
 ```powershell
@@ -201,7 +282,20 @@ python scripts/verify.py
 cd frontend; npm run e2e
 ./scripts/golden-path-e2e.sh
 BACKEND_URL=http://localhost:8000 ./scripts/staging-smoke.sh
+docker compose -f docker-compose.demo.yml up -d   # + scan_demo_pages.py → 10/10 temiz
 ```
+
+---
+
+## Sahip kararları (açık — 2026-09 hafızasından, kodda yeniden doğrulanmalı)
+
+Bunlar teknik değil ürün/güvenlik kararı; her biri önce kodda hâlâ geçerli mi diye kontrol edilir, sonra sahibe sorulur (CLAUDE.md DISPATCH).
+
+- [ ] **`/efatura/sync` uydurma GİB API'si** (`/login`, `/earsiv/documents`) + platform-geneli tek kimlik bilgisi + sahipsiz job → kaldır mı, gerçek entegratör (özel entegratör API'si) mi?
+- [ ] **`classify()` (kullanıcı düzeltme kuralları) hiçbir yerden çağrılmıyor** → düzeltmeler sonraki analizlere uygulanmıyor. Bağla mı, kaldır mı?
+- [ ] **Legacy X-API-Key düz metin kabul ediyor** → auth değişikliği (DISPATCH).
+- [ ] **`audit_log`'da `org_id` ve retention yok** → tenant izolasyonu + saklama politikası.
+- [ ] **Docker/Postgres/Redis yok** (2026-08-31 kararı) → worker yolu, iki-pod SSE, Paraşüt ve e-posta sağlayıcısı doğrulanamıyor. Faz 3 kanıtı için yeniden değerlendir.
 
 ---
 
@@ -226,10 +320,10 @@ BACKEND_URL=http://localhost:8000 ./scripts/staging-smoke.sh
 
 | Risk | Mitigasyon |
 |------|-----------|
-| Grup E + 1.2 + 1.4 aynı sprint'i patlatır | Sıra: Hemen → 1.4 → 1.2 → 1.5 → 1.6 → 1.1E; her madde ayrı commit + kendi DoD'su |
-| 33 `$` sitesi arasında yanlış sınıflandırma (gerçek USD'li allowlist) | Site-site gözden geçirme + allowlist'i testte sabitleme |
-| EVDS API anahtarı / erişim yok | 3 katmanlı fallback + kaynak etiketi zorunlu |
+| Faz 2 tek sprint'e sığmaz (6 madde) | Sıra (v4): 2.6 → 2.3 → 2.2 → 2.1 → 2.5; her madde ayrı commit + kendi DoD'su; 2.5 tek başına sprint olabilir |
+| Plan yine koddan kopar (v3'te oldu: P4 plan dışı yapıldı, var olan maddeler "başlamadı" yazıldı) | Plan dışı iş başlamadan önce §V4'e satır eklenir; her faz başında "Kodda durum" notları grep ile tazelenir |
 | Playwright CI'da flaky | İlk sprint sadece golden path, retry 0, locator bekleme |
+| EVDS API anahtarı / erişim yok | 3 katmanlı fallback + kaynak etiketi zorunlu |
 | pgvector yoksa embedding'ler boş | Nullable kalır; boş kalınca job → `awaitingReview` |
 
 ## Günlük ritim
