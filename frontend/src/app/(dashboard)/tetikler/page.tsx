@@ -34,6 +34,21 @@ function isSimpleCondition(
     && typeof c.value === "number" && !c.all && !c.any && !c.not;
 }
 
+type EventKindKey = keyof MessageTree["tetikler"]["eventKinds"];
+
+const EVENT_KIND_KEYS: Record<string, EventKindKey> = {
+  "job.completed": "jobCompleted",
+  "tx.arrived": "txArrived",
+  "anomaly.detected": "anomalyDetected",
+  schedule: "schedule",
+};
+
+/** Label + hint for a wire event kind; an unknown kind shows as-is, never blank. */
+function eventKindText(t: MessageTree, kind: string): { label: string; hint: string } {
+  const key = EVENT_KIND_KEYS[kind];
+  return key ? t.tetikler.eventKinds[key] : { label: kind, hint: kind };
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
   try {
@@ -361,6 +376,7 @@ export default function TetiklerPage() {
                 {(meta?.event_kinds ?? ["job.completed"]).map((k) => (
                   <label
                     key={k}
+                    title={eventKindText(t, k).hint}
                     className={cn(
                       "flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
                       events.includes(k)
@@ -376,7 +392,7 @@ export default function TetiklerPage() {
                         prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]
                       )}
                     />
-                    {k}
+                    {eventKindText(t, k).label}
                   </label>
                 ))}
               </div>
@@ -597,8 +613,8 @@ export default function TetiklerPage() {
                     <td className="py-2.5 pr-3">
                       <div className="flex flex-wrap gap-1">
                         {rule.events.map((ev) => (
-                          <span key={ev} className="rounded bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                            {ev}
+                          <span key={ev} title={eventKindText(t, ev).hint} className="rounded bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                            {eventKindText(t, ev).label}
                           </span>
                         ))}
                       </div>
@@ -711,8 +727,8 @@ export default function TetiklerPage() {
                       {rules.find((r) => r.id === run.trigger_id)?.name ?? run.trigger_id}
                     </td>
                     <td className="py-2 pr-3">
-                      <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                        {run.event_kind}
+                      <span title={run.event_ref} className="rounded bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        {eventKindText(t, run.event_kind).label}
                       </span>
                     </td>
                     <td className="py-2 pr-3">

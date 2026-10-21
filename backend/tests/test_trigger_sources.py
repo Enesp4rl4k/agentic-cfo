@@ -9,13 +9,19 @@ that the two seams which *emit* events deliver them the way the engine promises:
   silent when nothing arrived,
 - event_ref is the job id, so the engine's ``(trigger, event_ref)`` uniqueness
   turns a worker-then-approval continuation (or an ARQ retry) into one firing,
-  not two.
+  not two,
+- ``anomaly.detected`` fires per distinct set of findings (a rescan that finds
+  the same anomalies is a duplicate) and ``schedule`` fires once per UTC day,
+- every ``EventKind`` in the contract has an emitter, so no rule can be built
+  on an event nothing ever sends.
 """
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, get_args
 
 import pytest_asyncio
 from sqlalchemy import select
@@ -27,8 +33,12 @@ from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
 from app.services.semantic.store import save_semantic_snapshot
 from app.services.semantic.types import CompanySemanticSnapshot, MetricPoint, Period
 from app.services.triggers import COOLDOWN, DUPLICATE, FIRED
+from app.services.triggers.contracts import EventKind
 from app.services.triggers.sources import (
+    emit_anomaly_detected,
     emit_job_completed,
+    emit_job_events,
+    emit_schedule_tick,
     emit_tx_arrived,
 )
 
@@ -285,3 +295,194 @@ async def test_tx_arrived_is_idempotent_per_job(db):
     assert first[0].status == FIRED
     assert second[0].status == DUPLICATE
     assert len(await _runs(db)) == 1
+
+
+# ── anomaly.detected ──────────────────────────────────────────────────────────
+
+
+async def _seed_anomalies(
+    db: AsyncSession, job_id: str, findings: list[tuple[str, str, str]]
+) -> None:
+    from app.models.anomaly import Anomaly
+
+    for anomaly_type, severity, title in findings:
+        db.add(
+            Anomaly(
+                job_id=job_id,
+                anomaly_type=anomaly_type,
+                severity=severity,
+                title=title,
+                description=title,
+            )
+        )
+    await db.commit()
+
+
+async def _clear_anomalies(db: AsyncSession, job_id: str) -> None:
+    from app.models.anomaly import Anomaly
+
+    for row in (
+        await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))
+    ).scalars():
+        await db.delete(row)
+    await db.commit()
+
+
+async def test_anomaly_detected_payload_reaches_the_action(db, monkeypatch):
+    seen: dict[str, Any] = {}
+
+    async def _capture(_db, _org, _definition, payload):
+        seen.update(payload)
+        return {"ok": True}
+
+    from app.services.triggers import actions
+
+    monkeypatch.setitem(actions.ACTION_REGISTRY, "alert.dispatch", _capture)
+    await _mk_trigger(db, events=["anomaly.detected"])
+    await _seed_snapshot(db, runway=2.0)
+    await _seed_anomalies(db, "job-a2", [
+        ("duplicate", "high", "A"),
+        ("unusual_amount", "critical", "B"),
+        ("round_number", "high", "C"),
+    ])
+
+    (outcome,) = await emit_anomaly_detected(db, job_id="job-a2", org_id=ORG)
+
+    assert outcome.status == FIRED
+    assert seen == {
+        "job_id": "job-a2",
+        "anomaly_count": 3,
+        "by_severity": {"critical": 1, "high": 2},
+    }
+
+
+async def test_anomaly_detected_skips_when_no_anomalies(db):
+    await _mk_trigger(db, events=["anomaly.detected"])
+    await _seed_snapshot(db, runway=2.0)
+
+    assert await emit_anomaly_detected(db, job_id="job-a3", org_id=ORG) == []
+    assert await _runs(db) == []
+
+
+async def test_anomaly_rescan_with_same_findings_is_duplicate(db):
+    """A rescan deletes and re-inserts rows (new ids) — same findings, one event."""
+    await _mk_trigger(db, events=["anomaly.detected"])
+    await _seed_snapshot(db, runway=2.0)
+    findings = [("duplicate", "high", "Mükerrer ödeme")]
+    await _seed_anomalies(db, "job-a4", findings)
+    first = await emit_anomaly_detected(db, job_id="job-a4", org_id=ORG)
+
+    await _clear_anomalies(db, "job-a4")
+    await _seed_anomalies(db, "job-a4", findings)
+    second = await emit_anomaly_detected(db, job_id="job-a4", org_id=ORG)
+
+    assert first[0].status == FIRED
+    assert second[0].status == DUPLICATE
+    assert len(await _runs(db)) == 1
+
+
+async def test_anomaly_rescan_with_new_findings_is_a_new_event(db):
+    await _mk_trigger(db, events=["anomaly.detected"])
+    await _seed_snapshot(db, runway=2.0)
+    await _seed_anomalies(db, "job-a5", [("duplicate", "high", "A")])
+    await emit_anomaly_detected(db, job_id="job-a5", org_id=ORG)
+
+    await _seed_anomalies(db, "job-a5", [("expense_spike", "critical", "B")])
+    await emit_anomaly_detected(db, job_id="job-a5", org_id=ORG)
+
+    runs = await _runs(db)
+    assert [r.status for r in runs] == [FIRED, FIRED]
+    assert runs[0].event_ref != runs[1].event_ref
+
+
+async def test_job_events_seam_includes_anomaly_detected(db):
+    """The worker/approval seam emits anomaly.detected alongside the others."""
+    await _mk_trigger(db, events=["anomaly.detected"])
+    await _seed_snapshot(db, runway=2.0)
+    await _seed_anomalies(db, "job-a6", [("duplicate", "high", "A")])
+
+    outcomes = await emit_job_events(
+        db, job_id="job-a6", org_id=ORG, dashboard=None
+    )
+
+    assert [o.status for o in outcomes] == [FIRED]
+    (run,) = await _runs(db)
+    assert run.event_kind == "anomaly.detected"
+
+
+# ── schedule ──────────────────────────────────────────────────────────────────
+
+
+DAY1 = datetime(2026, 10, 21, 0, 10, tzinfo=UTC)
+DAY1_LATER = datetime(2026, 10, 21, 13, 10, tzinfo=UTC)
+DAY2 = datetime(2026, 10, 22, 0, 10, tzinfo=UTC)
+
+
+async def test_schedule_fires_once_per_utc_day(db):
+    await _mk_trigger(db, events=["schedule"])
+    await _seed_snapshot(db, runway=2.0)
+
+    first = await emit_schedule_tick(db, now=DAY1)
+    later_same_day = await emit_schedule_tick(db, now=DAY1_LATER)
+    next_day = await emit_schedule_tick(db, now=DAY2)
+
+    assert [o.status for o in first] == [FIRED]
+    assert [o.status for o in later_same_day] == [DUPLICATE]
+    assert [o.status for o in next_day] == [FIRED]
+    assert [r.event_ref for r in await _runs(db)] == [
+        "schedule:2026-10-21",
+        "schedule:2026-10-22",
+    ]
+
+
+async def test_schedule_evaluates_condition_against_latest_snapshot(db):
+    await _mk_trigger(db, events=["schedule"])
+    await _seed_snapshot(db, runway=24.0)
+
+    (outcome,) = await emit_schedule_tick(db, now=DAY1)
+
+    assert outcome.status == "condition_false"
+
+
+async def test_schedule_only_touches_orgs_with_schedule_rules(db):
+    await _mk_trigger(db, events=["job.completed"])  # ORG: not a schedule rule
+    await _mk_trigger(db, events=["schedule"], org_id="org-scheduled")
+
+    outcomes = await emit_schedule_tick(db, now=DAY1)
+
+    (run,) = await _runs(db)
+    assert run.org_id == "org-scheduled"
+    assert len(outcomes) == 1
+
+
+async def test_schedule_skips_disabled_rules(db):
+    row = await _mk_trigger(db, events=["schedule"])
+    row.enabled = False
+    await db.commit()
+
+    assert await emit_schedule_tick(db, now=DAY1) == []
+
+
+def test_scheduler_registers_the_schedule_tick():
+    """The emitter has a door: the app's scheduler calls it hourly."""
+    from app import scheduler as sched
+
+    sched._scheduler = None
+    try:
+        job = sched.get_scheduler().get_job("trigger_schedule_tick")
+        assert job is not None
+    finally:
+        sched._scheduler = None
+
+
+# ── contract ↔ source parity ──────────────────────────────────────────────────
+
+
+def test_every_event_kind_has_an_emitter():
+    """A kind in ``EventKind`` with no ``event_kind="…"`` emitter in sources.py
+    would let users build rules that can never fire — fail instead."""
+    import app.services.triggers.sources as sources
+
+    text = Path(sources.__file__).read_text(encoding="utf-8")
+    emitted = set(re.findall(r'event_kind="([^"]+)"', text))
+    assert emitted == set(get_args(EventKind))

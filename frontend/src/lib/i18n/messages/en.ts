@@ -1928,6 +1928,12 @@ export type MessageTree = {
     formName: string;
     formNamePlaceholder: string;
     formEvents: string;
+    eventKinds: {
+      jobCompleted: { label: string; hint: string };
+      txArrived: { label: string; hint: string };
+      anomalyDetected: { label: string; hint: string };
+      schedule: { label: string; hint: string };
+    };
     formCondition: string;
     formConditionPlaceholder: string;
     simpleEditor: string;
@@ -4062,6 +4068,12 @@ export const en: MessageTree = {
     formName: "Rule name",
     formNamePlaceholder: "e.g. runway drops below 3 months",
     formEvents: "Event types",
+    eventKinds: {
+      jobCompleted: { label: "Analysis completed", hint: "When an analysis finishes; the condition reads that analysis's metrics." },
+      txArrived: { label: "Transactions arrived", hint: "When new transactions land; the condition reads the company's latest metrics." },
+      anomalyDetected: { label: "Anomaly detected", hint: "When a scan finds new anomalies; the same findings on a rescan do not fire again." },
+      schedule: { label: "Daily check", hint: "Once a day (UTC); the condition reads the company's latest metrics." },
+    },
     formCondition: "Condition",
     formConditionPlaceholder:
       '{"metric": "finance.runway_months", "op": "lt", "value": 3}',

@@ -158,20 +158,20 @@ Kanıt: `verify.py` tek koşuda 6/6 (`db45fb8` öncesi); vitest 154/154 (1.3 roz
 | **3.6 → 3.7** + Bakım | Demo D5/D6, next 16, kalite denetimi, sahip kararları | — |
 
 ### V0 — Plan hijyeni
-- [ ] v3+v4 plan düzenlemelerini commit'le (`DEVELOPMENT_PLAN.md`, `DEMO_PLAN.md`).
-- [ ] `backend/scripts/_*.py` geçici tarama scriptleri: kalıcı olanları adlandırıp commit'le, kalanını sil (bugün untracked).
-- [ ] `feat/edefter-tahakkuk` (master'ın 38 commit önünde) için karar: tek PR mı, tema bazlı bölünmüş PR'lar mı (e-Defter / i18n+UX / demo / triggers). **Sahip kararı.**
+- [x] v3+v4 plan düzenlemelerini commit'le (`DEVELOPMENT_PLAN.md`, `DEMO_PLAN.md`). (`58fb661`)
+- [x] `backend/scripts/_*.py` geçici tarama scriptleri: kalıcı olanları adlandırıp commit'le, kalanını sil (bugün untracked). (`9c5c15e`: 8 scriptin hepsi tek seferlikti — ham SQL, sabit org/DB yolu — repodan çıkarıldı; `_` öneki artık gitignore'da "yalnız yerel prob" kuralı.)
+- [x] `feat/edefter-tahakkuk` (master'ın 38 commit önünde) için karar: tek PR mı, tema bazlı bölünmüş PR'lar mı (e-Defter / i18n+UX / demo / triggers). **Sahip kararı (2026-10-21):** önce V1 bu branch'te, sonra PR #4 başlık/açıklama güncellenip tek PR olarak birleşir (force-push yok, ateşlenmeyen tetik master'a girmez).
 
 **DoD:** `git status` temiz; branch için PR açık ya da bölme planı yazılı.
 
 ### V1 — P4 tetik motorunu kapat
-- [ ] `anomaly.detected` kaynağı: anomali kaydı yazıldığı noktada (`Anomaly` insert sonrası) `handle_event` — `event_ref` = anomali id (idempotency).
-- [ ] `schedule` kaynağı: mevcut APScheduler'a periyodik tarayıcı — `trigger_definitions` içindeki zamanlanmış tetikleri değerlendirir; `event_ref` = tetik id + pencere başlangıcı (aynı pencere iki kez ateşlenmez).
-- [ ] Alternatif (kaynak bu sprintte gelmezse): kaynağı olmayan olay `/tetikler` UI'da seçilemez + API 422 — **kurulup hiç ateşlenmeyen tetik olmaz**.
-- [ ] Kapı testi: her `EventKind` değeri için en az bir üretim kaynağı çağrısı var (kontrat ↔ kaynak paritesi; yeni olay türü eklenip bağlanmazsa kırmızı).
-- [ ] Canlı uçtan uca: UI'dan tetik kur → olayı üret → `trigger_runs` satırı + `alert_history` yan etkisi + dry-run sonucu ile tutarlı.
+- [x] `anomaly.detected` kaynağı: `sources.emit_anomaly_detected` — kalıcı `Anomaly` satırlarından okur; analiz (worker + onay devamı `emit_job_events` üzerinden), günlük tarama (`scheduler._scan_recent_jobs`) ve elle tarama (`POST /anomalies/scan`) aynı yolu kullanır. `event_ref` = `anomaly:{job}:{bulgu parmak izi}` — anomali id yerine bulgu kümesi: yeniden tarama yeni id üretir, aynı bulgular yinelenen sayılır, yeni bulgu yeni olaydır. Payload: `anomaly_count` + `by_severity`.
+- [x] `schedule` kaynağı: `sources.emit_schedule_tick` + APScheduler `trigger_schedule_tick` (saatlik, `_exclusive`). Tanımda zamanlama alanı yok → semantik **günde bir kez (UTC)**; `event_ref` = `schedule:{tarih}` — günün ilk tiki ateşler, gece yarısı kapalı sunucu o günü sonraki tikte yine değerlendirir; bir org'un hatası diğerlerini durdurmaz.
+- [x] ~~Alternatif~~ gerekmedi — iki kaynak da bağlandı. Ek: `/tetikler` UI ham anahtar yerine etiket + açıklama gösteriyor ("Günlük kontrol — günde bir kez (UTC)"), tr/en.
+- [x] Kapı testi: `test_every_event_kind_has_an_emitter` (kontrat ↔ `sources.py` paritesi) + `test_scheduler_registers_the_schedule_tick` (emitter'ın kapısı var). `test_trigger_sources.py` 11 → 22 test.
+- [x] Canlı uçtan uca (2026-10-21, SQLite dev backend): konuk org → `POST /tetikler` (`anomaly.detected`+`schedule`) → `POST /anomalies/scan` → run `fired` + `alert_id`; aynı bulgularla ikinci tarama yeni run üretmedi; scheduler tiki 2/2 ateşledi, aynı gün ikinci tik 0 → `/tetikler/runs`'ta `schedule:2026-10-21 fired`. (API ile; tarayıcıdan UI tıklaması yapılmadı.)
 
-**DoD:** `pytest tests/ -q -k trigger` yeşil + parite testi + canlı koşu kanıtı (tetik id, run status `fired`).
+**DoD:** `pytest tests/ -q -k trigger` yeşil + parite testi + canlı koşu kanıtı (tetik id, run status `fired`). → ✅ **V1 kapandı (2026-10-21):** `verify.py` 6/6 (3612 passed, vitest 166/166) + canlı kanıt yukarıda.
 
 ### V2 — Dürüstlük düzeltmeleri
 - [ ] `MacroStressTestCard`: `eur_shock_pct` kendi değerini alsın (ayrı EUR slider ya da açıkça "USD+EUR birlikte" etiketi — sessiz kopya yok); kartın TR metinleri message tree'ye; sonuç kartına `ProvenanceBadge` (`tcmb_api`/`redis_cache` → Gerçek, `static_fallback` → Benchmark, simülasyon çıktısı → Tahmin).

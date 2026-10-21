@@ -191,6 +191,20 @@ async def _scan_recent_jobs() -> None:
                 logger.info(
                     "Scheduler: job=%s — persisted %d anomalies", job.id, len(anomalies)
                 )
+                if job.org_id:
+                    # P4: anomaly.detected — non-fatal, a trigger never fails the scan.
+                    try:
+                        from app.services.triggers.sources import emit_anomaly_detected
+
+                        await emit_anomaly_detected(
+                            db, job_id=str(job.id), org_id=str(job.org_id)
+                        )
+                    except Exception as exc:
+                        await db.rollback()
+                        logger.warning(
+                            "Scheduler: anomaly trigger failed job=%s (non-fatal): %s",
+                            job.id, exc,
+                        )
             else:
                 logger.debug("Scheduler: job=%s — no anomalies found", job.id)
 
@@ -849,6 +863,16 @@ def get_scheduler() -> AsyncIOScheduler:
             max_instances=1,
         )
 
+        # P4: hourly — `schedule` trigger rules, evaluated once per UTC day
+        # (the date is the idempotency key, so a missed midnight still runs).
+        _scheduler.add_job(
+            _exclusive(_trigger_schedule_tick, "trigger_schedule_tick", ttl=3000),
+            CronTrigger(minute=10),
+            id="trigger_schedule_tick",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
         _scheduler.add_job(
             _exclusive(_nightly_usage_prune, "nightly_usage_prune"),
@@ -906,6 +930,23 @@ async def _hourly_proactive_kri_scan() -> None:
                 )
     except Exception as exc:
         logger.error("Hourly proactive scan hatasi: %s", exc)
+
+
+async def _trigger_schedule_tick() -> None:
+    """Hourly: fire today's `schedule` trigger rules (once per UTC day per rule)."""
+    try:
+        from app.database import engine, get_session_factory
+        from app.services.triggers.sources import emit_schedule_tick
+
+        async with get_session_factory(engine())() as db:
+            outcomes = await emit_schedule_tick(db)
+        fired = sum(1 for o in outcomes if o.status == "fired")
+        if outcomes:
+            logger.info(
+                "Trigger schedule tick: %d evaluated, %d fired", len(outcomes), fired
+            )
+    except Exception as exc:
+        logger.error("Trigger schedule tick error: %s", exc)
 
 
 async def _nightly_usage_prune() -> None:

@@ -2066,6 +2066,12 @@ export const tr: MessageTree = {
     formName: "Kural adı",
     formNamePlaceholder: "örn. runway 3 ayın altına düşerse",
     formEvents: "Olay türleri",
+    eventKinds: {
+      jobCompleted: { label: "Analiz tamamlandı", hint: "Bir analiz bittiğinde; koşul o analizin metriklerine bakar." },
+      txArrived: { label: "İşlem geldi", hint: "Yeni işlemler yüklendiğinde; koşul şirketin en güncel metriklerine bakar." },
+      anomalyDetected: { label: "Anomali bulundu", hint: "Tarama yeni anomali bulduğunda; yeniden taramada aynı bulgular tekrar tetiklemez." },
+      schedule: { label: "Günlük kontrol", hint: "Günde bir kez (UTC); koşul şirketin en güncel metriklerine bakar." },
+    },
     formCondition: "Koşul",
     formConditionPlaceholder:
       '{"metric": "finance.runway_months", "op": "lt", "value": 3}',

@@ -7,6 +7,14 @@ events from where they actually happen:
                       approval that released it — both ride
                       ``continue_after_completion``)
     tx.arrived      — parsed transactions landed for that job
+    anomaly.detected — a detection pass persisted anomalies for a job (the
+                      analysis itself, the daily rescan, or a manual rescan)
+    schedule        — once per UTC day, for every org with a schedule rule
+                      (an hourly scheduler tick; the day keys idempotency)
+
+Every ``EventKind`` has an emitter here — ``test_trigger_sources`` pins that
+parity, so a kind added to the contract without a source fails CI instead of
+letting users build rules that can never fire.
 
 Values: ``job.completed`` carries the metrics projected from the very dashboard
 the analysis persisted — the same projector the semantic snapshot uses, so a
@@ -26,12 +34,17 @@ that misbehaves must never fail the analysis it rode in on.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.trigger import TriggerDefinitionRow
 from app.services.triggers.engine import TriggerRunOutcome, handle_event
 
 logger = logging.getLogger(__name__)
@@ -103,6 +116,92 @@ async def emit_tx_arrived(
     )
 
 
+def _severity(value: Any) -> str:
+    return str(getattr(value, "value", value) or "unknown")
+
+
+async def emit_anomaly_detected(
+    db: AsyncSession,
+    *,
+    job_id: str,
+    org_id: str,
+) -> list[TriggerRunOutcome]:
+    """``anomaly.detected`` — the job's persisted anomalies, as one event.
+
+    Reads the ``anomalies`` rows rather than a caller's in-memory list, so the
+    analysis, the daily rescan and a manual rescan all emit the same thing.
+    ``event_ref`` fingerprints the findings (type, severity, title): a rescan
+    that finds the same anomalies is a duplicate, a rescan that finds new ones
+    is a new event. No anomalies → no event. ``values`` stays ``None`` (latest
+    semantic snapshot, as for ``tx.arrived``); the counts ride the payload.
+    """
+    from app.models.anomaly import Anomaly
+
+    rows = (
+        await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))
+    ).scalars().all()
+    if not rows:
+        logger.debug("anomaly.detected skipped: job=%s has no anomalies", job_id)
+        return []
+
+    findings = sorted(
+        (str(r.anomaly_type), _severity(r.severity), str(r.title)) for r in rows
+    )
+    digest = hashlib.sha256(
+        json.dumps(findings, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:16]
+    by_severity = Counter(sev for _, sev, _ in findings)
+    return await handle_event(
+        db,
+        org_id=org_id,
+        event_kind="anomaly.detected",
+        event_ref=f"anomaly:{job_id}:{digest}",
+        payload={
+            "job_id": job_id,
+            "anomaly_count": len(findings),
+            "by_severity": dict(by_severity),
+        },
+    )
+
+
+async def emit_schedule_tick(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> list[TriggerRunOutcome]:
+    """``schedule`` — evaluate every org's schedule rules once per UTC day.
+
+    The scheduler calls this hourly; ``event_ref`` is the UTC date, so the
+    first tick of a day fires and the rest are duplicates — a server that was
+    down at midnight still evaluates that day on its next tick. One org's
+    failure is logged and skipped, never another org's evaluation.
+    """
+    day = (now or datetime.now(UTC)).astimezone(UTC).date().isoformat()
+    rows = (
+        await db.execute(
+            select(TriggerDefinitionRow.org_id, TriggerDefinitionRow.events).where(
+                TriggerDefinitionRow.enabled.is_(True)
+            )
+        )
+    ).all()
+    org_ids = sorted({org for org, events in rows if "schedule" in json.loads(events)})
+
+    outcomes: list[TriggerRunOutcome] = []
+    for org_id in org_ids:
+        try:
+            outcomes += await handle_event(
+                db,
+                org_id=org_id,
+                event_kind="schedule",
+                event_ref=f"schedule:{day}",
+                payload={"date": day},
+            )
+        except Exception as exc:
+            await db.rollback()
+            logger.warning("schedule tick failed for org=%s: %s", org_id, exc)
+    return outcomes
+
+
 async def emit_job_events(
     db: AsyncSession,
     *,
@@ -110,8 +209,9 @@ async def emit_job_events(
     org_id: str,
     dashboard: dict[str, Any] | None,
 ) -> list[TriggerRunOutcome]:
-    """Both completion events, in one session — the call site's single seam."""
+    """The completion events, in one session — the call site's single seam."""
     outcomes = await emit_job_completed(
         db, job_id=job_id, org_id=org_id, dashboard=dashboard
     )
-    return outcomes + await emit_tx_arrived(db, job_id=job_id, org_id=org_id)
+    outcomes += await emit_tx_arrived(db, job_id=job_id, org_id=org_id)
+    return outcomes + await emit_anomaly_detected(db, job_id=job_id, org_id=org_id)
