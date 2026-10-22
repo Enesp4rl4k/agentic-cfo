@@ -44,7 +44,7 @@ def _reference_unusual(txs):
             continue
         mean, std = statistics.mean(amounts), statistics.stdev(amounts)
         q1, q3 = _percentile(amounts, 0.25), _percentile(amounts, 0.75)
-        for t, a in zip(rows, amounts):
+        for t, a in zip(rows, amounts, strict=True):
             z = (a - mean) / std if std else 0.0
             iqr = (a - q3) / (q3 - q1) if q3 != q1 else 0.0
             if abs(z) > Z_SCORE_THRESHOLD and iqr > IQR_MULTIPLIER:

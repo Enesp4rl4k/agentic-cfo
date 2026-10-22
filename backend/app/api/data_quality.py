@@ -176,6 +176,7 @@ async def validate_and_upload(
     )
 
     if not should_proceed:
+        assert validation_result is not None  # guaranteed by should_proceed logic
         blocked_reason = (
             f"Veri kalitesi skoru çok düşük ({validation_result.health_score}/100). "
             f"Devam etmek için score >= {min_score} olmalı veya force=true geçin."

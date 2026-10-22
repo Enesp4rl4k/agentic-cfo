@@ -9,6 +9,7 @@ import csv
 from typing import Any
 
 from app.agents.chro.state import CHROState, CHROStepLog
+from app.core.financial import format_currency_try
 
 
 def _parse_compensation_csv(csv_text: str) -> list[dict[str, Any]]:
@@ -37,9 +38,9 @@ def _parse_compensation_csv(csv_text: str) -> list[dict[str, Any]]:
     dept_col = _col("department", "dept", "team")
     salary_col = _col("salary", "base_salary", "base")
     bonus_col = _col("bonus", "bonus_percentage", "target_bonus")
-    equity_col = _col("equity_shares", "equity", "stock_options", "option_grant", "options")
+    equity_col = _col("equity_shares", "equity_annual", "equity", "stock_options", "option_grant", "options")
     equity_vesting_col = _col("vesting", "vest_date", "vesting_schedule")
-    benefits_col = _col("benefits", "benefits_cost", "benefits_package")
+    benefits_col = _col("benefits", "benefits_annual", "benefits_cost", "benefits_package")
     market_salary_col = _col("market_salary", "market_rate", "industry_rate")
 
     rows = []
@@ -218,7 +219,7 @@ def _build_compensation_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     if burn > 100_000:
         alerts.append({
             "level": "warning",
-            "message": f"High annual equity burn: {burn:,} shares/year — review cap table impact"
+            "message": f"High annual equity burn: ₺{burn:,} of equity vesting per year — review cap table impact"
         })
 
     return alerts
@@ -246,9 +247,8 @@ async def _generate_compensation_narrative(
     narrative_lines = []
 
     if total_comp > 0:
-        total_comp_millions = total_comp / 100 / 1_000_000
         narrative_lines.append(
-            f"Total annual compensation commitment: ${total_comp_millions:.1f}M"
+            f"Total annual compensation commitment: {format_currency_try(total_comp)}"
         )
 
     narrative_lines.append(
@@ -257,7 +257,7 @@ async def _generate_compensation_narrative(
 
     if burn > 0:
         narrative_lines.append(
-            f"Annual equity burn rate: {burn:,} shares at 4-year vest schedule."
+            f"Annual equity burn rate: {format_currency_try(burn * 100)} per year (4-year vest schedule)."
         )
 
     return " ".join(narrative_lines)

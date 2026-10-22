@@ -47,7 +47,7 @@ export function SeverityBadge({ severity }: { severity: string }) {
   const cls = SEVERITY_CLASSES[severity] ?? SEVERITY_CLASSES.low;
   return (
     <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${cls}`}>
-      {severity}
+      {severity.toUpperCase()}
     </span>
   );
 }

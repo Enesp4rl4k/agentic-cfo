@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from app.services.erp import parasut_connector as pc
-from tests.test_ingest import _login, client  # noqa: F401 — fixture
+from tests.test_ingest import _login
 
 
 class Parasut:

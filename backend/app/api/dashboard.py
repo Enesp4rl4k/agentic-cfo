@@ -7,8 +7,28 @@ from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.report import Report, ReportFormat
 from app.models.user import User
+from app.platform.provenance import provenance_block
 
 router = APIRouter()
+
+# 1.3 (U7): how each CFO section was produced. The pipeline computes pnl /
+# kpis / cashflow / multi_period from the parsed file or pasted transactions,
+# evaluates the tax block with deterministic rules, takes the budget plan from
+# user input, and extrapolates the forecast — say which is which so the metric
+# cards can badge themselves as Gerçek / Tahmin (DESIGN.md: "distinguish real,
+# estimated and benchmark data close to the metric"). Read-time stamping on
+# purpose: every stored report — golden demo replays included — gets the
+# correct label without a data migration.
+SECTION_PROVENANCE: dict[str, str] = {
+    "kpis": "real",
+    "pnl": "real",
+    "cashflow": "real",
+    "multi_period": "real",
+    "recent_transactions": "real",
+    "tax": "rule_based",
+    "budget": "manual",
+    "forecast": "estimated",
+}
 
 
 @router.get("/dashboard/{job_id}")
@@ -34,4 +54,9 @@ async def get_dashboard(
             status_code=404,
             detail="Dashboard data not found. Ensure the analysis job has completed.",
         )
-    return {"data": report.data, "error": None}
+    data = dict(report.data or {})
+    data["provenance"] = {
+        name: provenance_block(source, None)
+        for name, source in SECTION_PROVENANCE.items()
+    }
+    return {"data": data, "error": None}

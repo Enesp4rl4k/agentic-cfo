@@ -74,13 +74,13 @@ function formatEvidenceValue(key: string, value: unknown): string {
 
 function getEvidenceIcon(key: string) {
   if (key.includes("z_score") || key.includes("zscore") || key.includes("std"))
-    return <Scale className="h-3 w-3 text-blue-400" />;
+    return <Scale className="h-3 w-3 text-mapblue-400" />;
   if (key.includes("amount") || key.includes("value") || key.includes("expected"))
     return <TrendingUp className="h-3 w-3 text-emerald-400" />;
   if (key.includes("method") || key.includes("rule") || key.includes("pattern"))
-    return <Search className="h-3 w-3 text-purple-400" />;
+    return <Search className="h-3 w-3 text-brass-400" />;
   if (key.includes("source") || key.includes("data"))
-    return <Database className="h-3 w-3 text-cyan-400" />;
+    return <Database className="h-3 w-3 text-sage-400" />;
   return <FileText className="h-3 w-3 text-muted-foreground" />;
 }
 

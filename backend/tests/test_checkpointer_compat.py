@@ -77,11 +77,11 @@ async def test_a_saver_that_does_not_take_new_versions(monkeypatch):
 
     seen: list[tuple] = []
 
-    async def aput(self, config, checkpoint, metadata):      # noqa: ANN001 — the older saver's signature
+    async def aput(self, config, checkpoint, metadata):
         seen.append((config, checkpoint, metadata))
         return config
 
-    def put(self, config, checkpoint, metadata):             # noqa: ANN001
+    def put(self, config, checkpoint, metadata):
         seen.append((config, checkpoint, metadata))
         return config
 

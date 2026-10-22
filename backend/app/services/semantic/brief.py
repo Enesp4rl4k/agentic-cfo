@@ -15,6 +15,11 @@ from app.services.semantic.types import (
 CONFIDENCE_GATE = 0.80
 
 
+def _is_turkish(locale: str | None) -> bool:
+    """Brief copy follows the org locale (snapshot carries org.locale at rebuild)."""
+    return (locale or "").lower().startswith("tr")
+
+
 def _num(v: Any) -> float | None:
     if v is None or isinstance(v, bool):
         return None
@@ -94,6 +99,7 @@ def build_from_snapshot(
     values = snapshot.values()
     mmap = snapshot.metric_map()
     health, _min_conf = compute_health_score(snapshot)
+    tr = _is_turkish(snapshot.locale)
     findings: list[BriefFinding] = []
 
     runway = _num(values.get("finance.runway_months"))
@@ -102,7 +108,11 @@ def build_from_snapshot(
             BriefFinding(
                 severity="critical" if runway < 3 else "high",
                 domain="finance",
-                statement=f"Cash runway is {runway:.1f} months — below the 6-month safety threshold.",
+                statement=(
+                    f"Nakit koşu süresi {runway:.1f} ay — 6 aylık güvenlik eşiğinin altında."
+                    if tr
+                    else f"Cash runway is {runway:.1f} months — below the 6-month safety threshold."
+                ),
                 metric_ids=["finance.runway_months"],
                 evidence_refs=list(mmap["finance.runway_months"].evidence_refs)
                 if "finance.runway_months" in mmap
@@ -119,7 +129,11 @@ def build_from_snapshot(
             BriefFinding(
                 severity="high",
                 domain="finance",
-                statement=f"{int(crit)} critical financial anomalies require review.",
+                statement=(
+                    f"{int(crit)} kritik finansal anormallik incelenmeli."
+                    if tr
+                    else f"{int(crit)} critical financial anomalies require review."
+                ),
                 metric_ids=["finance.critical_anomalies"],
                 confidence=1.0,
             )
@@ -131,7 +145,11 @@ def build_from_snapshot(
             BriefFinding(
                 severity="medium",
                 domain="growth",
-                statement=f"Blended ROAS is {roas:.2f}x — marketing efficiency is under pressure.",
+                statement=(
+                    f"Birleşik ROAS {roas:.2f}x — pazarlama verimliliği baskı altında."
+                    if tr
+                    else f"Blended ROAS is {roas:.2f}x — marketing efficiency is under pressure."
+                ),
                 metric_ids=["growth.overall_roas"],
                 confidence=float(mmap["growth.overall_roas"].confidence)
                 if "growth.overall_roas" in mmap
@@ -147,7 +165,11 @@ def build_from_snapshot(
                 BriefFinding(
                     severity="high",
                     domain="people",
-                    statement=f"Annualized attrition ~{rate * 100:.0f}% — retention risk elevated.",
+                    statement=(
+                        f"Yıllık kayıp oranı ~%{rate * 100:.0f} — elde tutma riski yüksek."
+                        if tr
+                        else f"Annualized attrition ~{rate * 100:.0f}% — retention risk elevated."
+                    ),
                     metric_ids=["people.attrition_rate"],
                     confidence=float(mmap["people.attrition_rate"].confidence)
                     if "people.attrition_rate" in mmap
@@ -161,7 +183,11 @@ def build_from_snapshot(
             BriefFinding(
                 severity="high",
                 domain="risk",
-                statement="Enterprise risk score is elevated.",
+                statement=(
+                    "Kurumsal risk skoru yüksek."
+                    if tr
+                    else "Enterprise risk score is elevated."
+                ),
                 metric_ids=["risk.overall_score"],
                 confidence=float(mmap["risk.overall_score"].confidence)
                 if "risk.overall_score" in mmap
@@ -170,14 +196,18 @@ def build_from_snapshot(
         )
 
     for conflict in conflicts or []:
-        topic = str(conflict.get("topic") or "cross-domain topic")
+        topic = str(conflict.get("topic") or ("konu" if tr else "cross-domain topic"))
         agent_a = str(conflict.get("agent_a") or conflict.get("agent_a") or "?")
         agent_b = str(conflict.get("agent_b") or conflict.get("agent_b") or "?")
         findings.append(
             BriefFinding(
                 severity="high",
                 domain="governance",
-                statement=f"Open agent conflict on {topic} ({agent_a} vs {agent_b}).",
+                statement=(
+                    f"Açık ajan çatışması: {topic} ({agent_a} — {agent_b})."
+                    if tr
+                    else f"Open agent conflict on {topic} ({agent_a} vs {agent_b})."
+                ),
                 metric_ids=[],
                 confidence=float(conflict.get("consensus_score") or 0.75),
             )
@@ -188,7 +218,11 @@ def build_from_snapshot(
             BriefFinding(
                 severity="info",
                 domain="general",
-                statement="No critical semantic alerts — monitor runway, ROAS, and attrition.",
+                statement=(
+                    "Kritik semantik uyarı yok — koşu süresi, ROAS ve kayıp oranını izleyin."
+                    if tr
+                    else "No critical semantic alerts — monitor runway, ROAS, and attrition."
+                ),
                 metric_ids=[],
                 confidence=0.9,
             )
@@ -196,18 +230,30 @@ def build_from_snapshot(
 
     options: list[BriefOption] = [
         BriefOption(
-            title="Protect runway",
-            impact_summary="Defer non-critical opex; accelerate collections.",
+            title="Nakit koşusunu koru" if tr else "Protect runway",
+            impact_summary=(
+                "Kritik olmayan giderleri erteleyin; tahsilatları hızlandırın."
+                if tr
+                else "Defer non-critical opex; accelerate collections."
+            ),
             linked_cf_action="cost_cut",
         ),
         BriefOption(
-            title="Reallocate growth spend",
-            impact_summary="Shift budget from low-ROAS channels to proven cohorts.",
+            title="Bütçeyi yeniden dağıt" if tr else "Reallocate growth spend",
+            impact_summary=(
+                "Düşük ROAS kanallarından kanıtlanmış kohortlara bütçe kaydırın."
+                if tr
+                else "Shift budget from low-ROAS channels to proven cohorts."
+            ),
             linked_cf_action="marketing_invest",
         ),
         BriefOption(
-            title="Hold hiring",
-            impact_summary="Pause net-new headcount until runway > 9 months.",
+            title="İşe alımı durdur" if tr else "Hold hiring",
+            impact_summary=(
+                "Koşu süresi 9 ayı geçene kadar yeni pozisyonları durdurun."
+                if tr
+                else "Pause net-new headcount until runway > 9 months."
+            ),
             linked_cf_action="headcount_change",
         ),
     ]
@@ -227,13 +273,23 @@ def build_from_snapshot(
         awaiting = True
 
     if health >= 75:
-        headline = f"Company health {health}/100 — stable trajectory for {snapshot.period.key}."
+        headline = (
+            f"Şirket sağlığı {health}/100 — {snapshot.period.key} için istikrarlı seyir."
+            if tr
+            else f"Company health {health}/100 — stable trajectory for {snapshot.period.key}."
+        )
     elif health >= 50:
         headline = (
-            f"Company health {health}/100 — mixed signals; prioritize cash and growth efficiency."
+            f"Şirket sağlığı {health}/100 — karmaşık sinyaller; nakit ve büyüme verimliliğini önceliklendirin."
+            if tr
+            else f"Company health {health}/100 — mixed signals; prioritize cash and growth efficiency."
         )
     else:
-        headline = f"Company health {health}/100 — elevated risk; executive action recommended."
+        headline = (
+            f"Şirket sağlığı {health}/100 — yüksek risk; yönetim düzeyinde aksiyon öneriliyor."
+            if tr
+            else f"Company health {health}/100 — elevated risk; executive action recommended."
+        )
 
     return DecisionBrief(
         period=snapshot.period.key,

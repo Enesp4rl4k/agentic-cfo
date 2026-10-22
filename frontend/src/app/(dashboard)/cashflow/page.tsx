@@ -16,26 +16,28 @@ import {
 } from "recharts";
 import { AlertTriangle, Upload } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
-import { formatCurrency, cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
+import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { cn } from "@/lib/utils";
 import type { Alert, MonthlyEntry } from "@/types";
 
 // ── Chart styles (matches dashboard.tsx) ─────────────────────────────────────
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.17 0.022 255)",
-    border: "1px solid oklch(0.27 0.018 255)",
+    background: "oklch(0.21 0.018 70)",
+    border: "1px solid oklch(0.32 0.019 68)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.92 0.008 255)",
+    color: "oklch(0.94 0.012 85)",
     padding: "8px 12px",
   },
-  cursor: { stroke: "oklch(0.32 0.018 255)", strokeWidth: 1 },
+  cursor: { stroke: "oklch(0.38 0.02 70)", strokeWidth: 1 },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.52 0.012 255)" },
-  axisLine: { stroke: "oklch(0.27 0.018 255)" },
+  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
+  axisLine: { stroke: "oklch(0.32 0.019 68)" },
   tickLine: false as const,
 };
 
@@ -100,6 +102,11 @@ function AlertStrip({ alerts }: { alerts: Alert[] }) {
 // ── Monthly cash flow chart ───────────────────────────────────────────────────
 
 function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { monthly } = t.cashflow;
+
   const data = series.map((m) => ({
     month: m.month.slice(5),
     in: m.in / 100,
@@ -110,7 +117,7 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
   if (!data.length) {
     return (
       <div className="flex h-[260px] items-center justify-center text-xs text-muted-foreground">
-        No monthly data available
+        {monthly.empty}
       </div>
     );
   }
@@ -120,32 +127,32 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
       <AreaChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
         <defs>
           <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="oklch(0.60 0.19 255)" stopOpacity={0} />
+            <stop offset="0%" stopColor="oklch(0.79 0.115 83)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="oklch(0.79 0.115 83)" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="oklch(0.58 0.22 25)" stopOpacity={0.2} />
             <stop offset="100%" stopColor="oklch(0.58 0.22 25)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
         <XAxis dataKey="month" {...axisStyle} />
         <YAxis
           {...axisStyle}
           tickFormatter={(v: number) =>
-            `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
+            `${symbol}${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
           }
         />
         <Tooltip
           {...tooltipStyle}
-          formatter={(v: number, name: string) => [formatCurrency(v), name]}
+          formatter={(v: number, name: string) => [fmt(v), name]}
         />
-        <ReferenceLine y={0} stroke="oklch(0.35 0.018 255)" strokeWidth={1} />
+        <ReferenceLine y={0} stroke="oklch(0.40 0.02 70)" strokeWidth={1} />
         <Area
           type="monotone"
           dataKey="in"
-          name="Cash In"
-          stroke="oklch(0.60 0.19 255)"
+          name={monthly.seriesIn}
+          stroke="oklch(0.79 0.115 83)"
           strokeWidth={1.5}
           fill="url(#gIn)"
           dot={false}
@@ -153,7 +160,7 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
         <Area
           type="monotone"
           dataKey="out"
-          name="Cash Out"
+          name={monthly.seriesOut}
           stroke="oklch(0.58 0.22 25)"
           strokeWidth={1.5}
           fill="url(#gOut)"
@@ -167,6 +174,11 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
 // ── Net cash flow bar chart ───────────────────────────────────────────────────
 
 function NetCashFlowBar({ series }: { series: MonthlyEntry[] }) {
+  const fmt = useCurrencyFormat();
+  const symbol = useCurrencySymbol();
+  const { t } = useI18n();
+  const { net } = t.cashflow;
+
   const data = series.map((m) => ({
     month: m.month.slice(5),
     net: m.net / 100,
@@ -176,23 +188,23 @@ function NetCashFlowBar({ series }: { series: MonthlyEntry[] }) {
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h2 className="mb-0.5 text-sm font-medium">Monthly Net Cash Flow</h2>
-      <p className="mb-4 text-xs text-muted-foreground">Positive = surplus · Negative = deficit</p>
+      <h2 className="mb-0.5 text-sm font-medium">{net.heading}</h2>
+      <p className="mb-4 text-xs text-muted-foreground">{net.subtitle}</p>
       <ResponsiveContainer width="100%" height={180}>
         <BarChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.22 0.018 255)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
           <XAxis dataKey="month" {...axisStyle} />
           <YAxis
             {...axisStyle}
             tickFormatter={(v: number) =>
-              `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
+              `${symbol}${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`
             }
           />
           <Tooltip
             {...tooltipStyle}
-            formatter={(v: number) => [formatCurrency(v), "Net"]}
+            formatter={(v: number) => [fmt(v), net.series]}
           />
-          <ReferenceLine y={0} stroke="oklch(0.42 0.018 255)" strokeWidth={1} />
+          <ReferenceLine y={0} stroke="oklch(0.47 0.025 74)" strokeWidth={1} />
           <Bar dataKey="net" radius={[3, 3, 0, 0]} maxBarSize={28}>
             {data.map((entry, i) => (
               <Cell
@@ -244,6 +256,10 @@ function NetBar({ net, maxAbs }: { net: number; maxAbs: number }) {
 }
 
 function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
+  const { table } = t.cashflow;
+
   if (!series.length) return null;
 
   // Compute running balance and max abs net for bar scaling
@@ -261,26 +277,26 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm" role="table" aria-label="Monthly cash flow">
+      <table className="w-full text-sm" role="table" aria-label={table.aria}>
         <thead>
           <tr className="border-b border-border">
             <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-              Month
+              {table.colMonth}
             </th>
             <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-              Cash In
+              {table.colIn}
             </th>
             <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-              Cash Out
+              {table.colOut}
             </th>
             <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">
-              Net
+              {table.colNet}
             </th>
             <th className="hidden px-4 py-2.5 text-center text-xs font-medium text-muted-foreground sm:table-cell">
-              Flow
+              {table.colFlow}
             </th>
             <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-muted-foreground lg:table-cell">
-              Running Balance
+              {table.colBalance}
             </th>
           </tr>
         </thead>
@@ -303,15 +319,15 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
                   {row.month}
                   {row.projected && (
                     <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                      proj
+                      {table.projected}
                     </span>
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-sm text-emerald-400">
-                  {formatCurrency(row.in / 100)}
+                  {fmt(row.in / 100)}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-sm text-muted-foreground">
-                  {formatCurrency(row.out / 100)}
+                  {fmt(row.out / 100)}
                 </td>
                 <td
                   className={cn(
@@ -320,7 +336,7 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
                   )}
                 >
                   {netPositive ? "+" : "−"}
-                  {formatCurrency(Math.abs(row.net / 100))}
+                  {fmt(Math.abs(row.net / 100))}
                 </td>
                 <td className="hidden px-4 py-2.5 sm:table-cell">
                   <div className="flex justify-center">
@@ -334,7 +350,7 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
                   )}
                 >
                   {row.runningBalance >= 0 ? "" : "−"}
-                  {formatCurrency(Math.abs(row.runningBalance / 100))}
+                  {fmt(Math.abs(row.runningBalance / 100))}
                 </td>
               </tr>
             );
@@ -344,13 +360,13 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
         <tfoot>
           <tr className="border-t border-border bg-muted/20">
             <td className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">
-              Total
+              {table.total}
             </td>
             <td className="px-4 py-2.5 text-right tabular-nums text-xs font-semibold text-emerald-400">
-              {formatCurrency(totalIn / 100)}
+              {fmt(totalIn / 100)}
             </td>
             <td className="px-4 py-2.5 text-right tabular-nums text-xs font-semibold text-muted-foreground">
-              {formatCurrency(totalOut / 100)}
+              {fmt(totalOut / 100)}
             </td>
             <td
               className={cn(
@@ -359,7 +375,7 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
               )}
             >
               {totalNet >= 0 ? "+" : "−"}
-              {formatCurrency(Math.abs(totalNet / 100))}
+              {fmt(Math.abs(totalNet / 100))}
             </td>
             <td className="hidden sm:table-cell" />
             <td className="hidden lg:table-cell" />
@@ -373,14 +389,17 @@ function MonthlyTable({ series }: { series: MonthlyEntry[] }) {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useI18n();
+  const { empty } = t.cashflow;
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
       <div className="mb-4 rounded-full bg-muted p-4">
         <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-base font-semibold">No cash flow data</h2>
+      <h2 className="text-base font-semibold">{empty.heading}</h2>
       <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Upload a financial document and run an analysis to see cash flow details.
+        {empty.body}
       </p>
       <a
         href="/upload"
@@ -390,7 +409,7 @@ function EmptyState() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         )}
       >
-        Upload document
+        {empty.cta}
       </a>
     </div>
   );
@@ -403,6 +422,8 @@ export default function CashflowPage() {
   const jobId = searchParams.get("job");
 
   const { data: dashboard, isLoading } = useDashboard(jobId);
+  const fmt = useCurrencyFormat();
+  const { t } = useI18n();
 
   if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
 
@@ -428,16 +449,16 @@ export default function CashflowPage() {
   const opPositive = cf.operating >= 0;
 
   const metrics: MetricItem[] = [
-    { label: "Operating", value: formatCurrency(cf.operating), positive: opPositive, neutral: false },
-    { label: "Investing", value: formatCurrency(cf.investing), neutral: true },
-    { label: "Financing", value: formatCurrency(cf.financing), neutral: true },
-    { label: "Net Change", value: formatCurrency(cf.net_change), positive: netPositive, neutral: false },
+    { label: t.cashflow.metrics.operating, value: fmt(cf.operating), positive: opPositive, neutral: false },
+    { label: t.cashflow.metrics.investing, value: fmt(cf.investing), neutral: true },
+    { label: t.cashflow.metrics.financing, value: fmt(cf.financing), neutral: true },
+    { label: t.cashflow.metrics.netChange, value: fmt(cf.net_change), positive: netPositive, neutral: false },
   ];
 
   return (
     <div className="space-y-4 p-5">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">Cash Flow Statement</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{t.cashflow.title}</h1>
         {cf.narrative && (
           <p className="mt-1 text-sm text-muted-foreground max-w-prose leading-relaxed">
             {cf.narrative}
@@ -453,8 +474,8 @@ export default function CashflowPage() {
 
       {/* Monthly in/out area chart */}
       <div className="rounded-lg border border-border bg-card p-4">
-        <h2 className="mb-0.5 text-sm font-medium">Monthly Cash Flow</h2>
-        <p className="mb-4 text-xs text-muted-foreground">Cash in vs. out per month</p>
+        <h2 className="mb-0.5 text-sm font-medium">{t.cashflow.monthly.heading}</h2>
+        <p className="mb-4 text-xs text-muted-foreground">{t.cashflow.monthly.subtitle}</p>
         <MonthlyCashFlowChart series={cf.monthly_series} />
       </div>
 
@@ -467,7 +488,7 @@ export default function CashflowPage() {
       {cf.monthly_series.length > 0 && (
         <div className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Monthly Breakdown</h2>
+            <h2 className="text-sm font-medium">{t.cashflow.table.breakdown}</h2>
           </div>
           <MonthlyTable series={cf.monthly_series} />
         </div>

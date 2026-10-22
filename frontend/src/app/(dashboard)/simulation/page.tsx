@@ -10,32 +10,22 @@ import { NLQueryPanel } from "@/components/simulation/NLQueryPanel";
 import { BaselineSourceBadge } from "@/components/ui/baseline-source-badge";
 import { getLiveDataStatus, type LiveDataStatus } from "@/lib/api/semantic";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { useI18n } from "@/hooks/useI18n";
 
 type Tab = "cascade" | "counterfactual" | "nl";
 
+// Icons/ids are presentation; labels and descriptions come from
+// t.simulation.tabs at render time.
 const TABS = [
-  {
-    id:    "cascade"        as Tab,
-    label: "Zincirleme Risk",
-    icon:  <Zap       className="h-4 w-4" />,
-    desc:  "Bir risk olayının tüm domainlere yayılımını simüle et",
-  },
-  {
-    id:    "counterfactual" as Tab,
-    label: "Aksiyon Analizi",
-    icon:  <BarChart2 className="h-4 w-4" />,
-    desc:  "Bir kararın CFO + CHRO + CTO + CMO etkisini gör",
-  },
-  {
-    id:    "nl"             as Tab,
-    label: "Doğal Dil",
-    icon:  <Sparkles  className="h-4 w-4" />,
-    desc:  "\"5 mühendis işe alırsam ne olur?\" tarzı soru sor",
-  },
+  { id: "cascade"        as Tab, icon: <Zap       className="h-4 w-4" /> },
+  { id: "counterfactual" as Tab, icon: <BarChart2 className="h-4 w-4" /> },
+  { id: "nl"             as Tab, icon: <Sparkles  className="h-4 w-4" /> },
 ];
 
 export default function SimulationPage() {
   const searchParams = useSearchParams();
+  const { t } = useI18n();
+  const sim = t.simulation;
   const initialTab = (searchParams.get("tab") as Tab | null) ?? "cascade";
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialTab) ? initialTab : "cascade"
@@ -46,7 +36,7 @@ export default function SimulationPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const live = await getLiveDataStatus();
         if (!cancelled) setLiveStatus(live);
@@ -74,48 +64,44 @@ export default function SimulationPage() {
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <Brain className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold tracking-tight">Simülasyon Merkezi</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{sim.title}</h1>
           <BaselineSourceBadge source={baselineSource} />
         </div>
-        <p className="text-muted-foreground">
-          Ekonomik ve yönetimsel senaryoları simüle et, C-Suite etkisini analiz et.
-        </p>
+        <p className="text-muted-foreground">{sim.subtitle}</p>
         {liveStatus?.golden_path_ready && (
-          <p className="text-xs text-emerald-400">
-            Live sync + semantic brief ready — simulations use canonical baselines.
-          </p>
+          <p className="text-xs text-emerald-400">{sim.goldenPath}</p>
         )}
       </div>
 
       {/* Context banner */}
       {!activeCFOJobId && !orgId && !liveStatus?.live_sync_enabled && (
         <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-400">
-          <span className="font-medium">İpucu:</span> Şirket verisi yüklendiğinde simülasyonlar
-          gerçek finansal metriklerinizi kullanır. Şimdi de örnek değerlerle çalışabilirsiniz.
+          <span className="font-medium">{sim.tip.label}</span>{" "}
+          {sim.tip.body}
         </div>
       )}
 
       {/* Tab selector */}
       <div className="grid grid-cols-3 gap-3">
-        {TABS.map((t) => (
+        {TABS.map((tb) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={tb.id}
+            onClick={() => setTab(tb.id)}
             className={cn(
               "flex flex-col items-start gap-1 rounded-xl border p-4 text-left transition-colors",
-              tab === t.id
+              tab === tb.id
                 ? "border-primary bg-primary/10"
                 : "border-border bg-card hover:border-primary/40"
             )}
           >
             <div className={cn(
               "flex items-center gap-2 font-semibold",
-              tab === t.id ? "text-primary" : "text-foreground"
+              tab === tb.id ? "text-primary" : "text-foreground"
             )}>
-              {t.icon}
-              {t.label}
+              {tb.icon}
+              {sim.tabs[tb.id].label}
             </div>
-            <p className="text-xs text-muted-foreground">{t.desc}</p>
+            <p className="text-xs text-muted-foreground">{sim.tabs[tb.id].desc}</p>
           </button>
         ))}
       </div>

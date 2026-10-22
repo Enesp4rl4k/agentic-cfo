@@ -47,6 +47,60 @@ module.exports = {
           DEFAULT:    "var(--warning)",
           foreground: "var(--warning-foreground)",
         },
+
+        // ── Atlas map palette ──────────────────────────────────────────────
+        // Cartographer's accents for the Karar Atlası world: brass (landmark),
+        // copper (terrain edge), clay (settlement), sage (vegetation),
+        // mapblue (water), parchment (paper). Dark 950 steps are tinted badge
+        // surfaces; 400/300 steps carry text on ink.
+        brass: {
+          950: "oklch(0.27 0.045 82)",
+          700: "oklch(0.58 0.10 80)",
+          600: "oklch(0.65 0.11 81)",
+          500: "oklch(0.72 0.115 81)",
+          400: "oklch(0.79 0.115 83)",
+          300: "oklch(0.86 0.10 85)",
+        },
+        copper: {
+          950: "oklch(0.27 0.05 50)",
+          700: "oklch(0.55 0.12 48)",
+          600: "oklch(0.61 0.125 49)",
+          500: "oklch(0.67 0.13 50)",
+          400: "oklch(0.75 0.12 53)",
+          300: "oklch(0.83 0.10 56)",
+        },
+        clay: {
+          950: "oklch(0.27 0.05 30)",
+          700: "oklch(0.55 0.12 30)",
+          600: "oklch(0.62 0.13 31)",
+          500: "oklch(0.68 0.13 30)",
+          400: "oklch(0.76 0.12 32)",
+          300: "oklch(0.84 0.09 35)",
+        },
+        sage: {
+          950: "oklch(0.26 0.04 148)",
+          700: "oklch(0.55 0.08 148)",
+          600: "oklch(0.63 0.085 149)",
+          500: "oklch(0.72 0.085 148)",
+          400: "oklch(0.80 0.08 147)",
+          300: "oklch(0.87 0.07 146)",
+        },
+        mapblue: {
+          950: "oklch(0.26 0.045 242)",
+          700: "oklch(0.54 0.09 244)",
+          600: "oklch(0.60 0.09 243)",
+          500: "oklch(0.66 0.09 242)",
+          400: "oklch(0.74 0.085 241)",
+          300: "oklch(0.83 0.07 240)",
+        },
+        parchment: {
+          950: "oklch(0.27 0.02 85)",
+          700: "oklch(0.58 0.025 80)",
+          600: "oklch(0.67 0.026 79)",
+          500: "oklch(0.74 0.028 80)",
+          400: "oklch(0.86 0.02 84)",
+          300: "oklch(0.93 0.015 86)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

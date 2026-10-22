@@ -20,7 +20,8 @@ export interface AlanKaynagi {
 export interface CfoKalemi {
   kategori: string;
   etiket: string;
-  tutar_kurus?: number;
+  /** LIRA — Report.data stores lira (report_agent._fmt divides). */
+  tutar_lira?: number;
   gelire_orani?: number | null;
   deger?: number;
   birim?: string;

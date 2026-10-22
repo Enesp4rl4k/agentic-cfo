@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api/client";
+import { normalizeRiskCascadeReport } from "@/lib/risk-report";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,8 @@ export interface KRICascadeLink {
   kri_name:       string;
   kri_category:   string;
   kri_status:     KRIStatus;
-  kri_value:      number;
+  /** Null when the value was not readable — never a fabricated zero. */
+  kri_value:      number | null;
   kri_unit:       string;
   trigger_type:   string;
   trigger_params: Record<string, unknown>;
@@ -59,7 +61,8 @@ export interface KRICascadeLink {
 }
 
 export interface RiskCascadeReport {
-  kri_posture:     RiskPostureData;
+  /** Null when the wire carried no posture section at all. */
+  kri_posture:     RiskPostureData | null;
   cascade_links:   KRICascadeLink[];
   total_cascades:  number;
   critical_count:  number;
@@ -86,34 +89,31 @@ export interface RiskCascadeRequest {
 
 export async function analyzeRiskCascade(
   req: RiskCascadeRequest
-): Promise<RiskCascadeReport> {
-  const res = await apiClient.post<RiskCascadeReport>(
-    "/risk-cascade/analyze",
-    req
-  );
-  return res.data;
+): Promise<RiskCascadeReport | null> {
+  const res = await apiClient.post<unknown>("/risk-cascade/analyze", req);
+  return normalizeRiskCascadeReport(res.data);
 }
 
 export async function getRiskCascadeFromJob(
   jobId: string,
   maxCascades = 5
-): Promise<RiskCascadeReport> {
-  const res = await apiClient.post<RiskCascadeReport>(
-    "/risk-cascade/from-job",
-    { job_id: jobId, max_cascades: maxCascades }
-  );
-  return res.data;
+): Promise<RiskCascadeReport | null> {
+  const res = await apiClient.post<unknown>("/risk-cascade/from-job", {
+    job_id: jobId,
+    max_cascades: maxCascades,
+  });
+  return normalizeRiskCascadeReport(res.data);
 }
 
 export async function getRiskCascadeFromOrg(
   orgId: string,
   maxCascades = 5
-): Promise<RiskCascadeReport> {
-  const res = await apiClient.post<RiskCascadeReport>(
-    "/risk-cascade/from-org",
-    { org_id: orgId, max_cascades: maxCascades }
-  );
-  return res.data;
+): Promise<RiskCascadeReport | null> {
+  const res = await apiClient.post<unknown>("/risk-cascade/from-org", {
+    org_id: orgId,
+    max_cascades: maxCascades,
+  });
+  return normalizeRiskCascadeReport(res.data);
 }
 
 // ── Display helpers ───────────────────────────────────────────────────────────

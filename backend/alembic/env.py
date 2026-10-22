@@ -47,6 +47,7 @@ import app.models.smmm_onay  # noqa: F401
 import app.models.smmm_portal  # noqa: F401
 import app.models.sync_run  # noqa: F401
 import app.models.transaction  # noqa: F401
+import app.models.trigger  # noqa: F401
 import app.models.user  # noqa: F401
 
 from app.config import get_settings

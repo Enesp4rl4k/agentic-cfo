@@ -181,18 +181,18 @@ def _build_loss_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     alerts: list[dict[str, str]] = []
 
     net_loss = metrics.get("total_net_loss", 0)
-    if net_loss > 500_000 * 100:         # > $500k
+    if net_loss > 500_000 * 100:         # > ₺500k
         alerts.append({
             "level": "critical",
             "message": (
-                f"Total net operational loss ${net_loss / 100:,.0f} — "
+                f"Total net operational loss ₺{net_loss / 100:,.0f} — "
                 "review risk controls and escalate to board."
             ),
         })
-    elif net_loss > 100_000 * 100:       # > $100k
+    elif net_loss > 100_000 * 100:       # > ₺100k
         alerts.append({
             "level": "warning",
-            "message": f"Operational losses ${net_loss / 100:,.0f} — monitor trends closely.",
+            "message": f"Operational losses ₺{net_loss / 100:,.0f} — monitor trends closely.",
         })
 
     if metrics.get("open_events", 0) > 3:
@@ -234,7 +234,7 @@ async def _generate_loss_narrative(metrics: dict[str, Any], settings: Any) -> st
     open_ev   = metrics.get("open_events", 0)
 
     lines = [
-        f"{total} operational loss events recorded; total net loss ${net_loss / 100:,.0f}.",
+        f"{total} operational loss events recorded; total net loss ₺{net_loss / 100:,.0f}.",
         f"Recovery rate {rec_rate:.0%}; trend is {trend}.",
     ]
     if open_ev:

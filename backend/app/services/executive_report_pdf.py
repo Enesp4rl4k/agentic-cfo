@@ -21,13 +21,22 @@ logger = logging.getLogger(__name__)
 
 
 def _fmt(cents: int | float) -> str:
-    """Format cents to Turkish TL string."""
+    """Format kuruş (raw pipeline series, e.g. monthly_series) to Turkish TL string."""
     val = cents / 100
     if abs(val) >= 1_000_000:
         return f"₺{val/1_000_000:.1f}M"
     elif abs(val) >= 1_000:
         return f"₺{val/1_000:.0f}K"
     return f"₺{val:,.0f}"
+
+
+def _fmt_lira(lira: int | float) -> str:
+    """Format an already-lira value (Report.data scalars — report_agent._fmt boundary)."""
+    if abs(lira) >= 1_000_000:
+        return f"₺{lira/1_000_000:.1f}M"
+    elif abs(lira) >= 1_000:
+        return f"₺{lira/1_000:.0f}K"
+    return f"₺{lira:,.0f}"
 
 
 def _pct(v: float) -> str:
@@ -83,7 +92,7 @@ def _build_html(
     )[:3]
     opex_rows = "".join(
         f'<tr><td class="opex-name">{k.replace("_"," ").title()}</td>'
-        f'<td class="opex-amt">{_fmt(v)}</td></tr>'
+        f'<td class="opex-amt">{_fmt_lira(v)}</td></tr>'
         for k, v in top_opex
     )
 
@@ -99,7 +108,7 @@ def _build_html(
         scenario_rows += f"""
         <tr class="{row_class}">
           <td>{label}</td>
-          <td class="{_sign_class(net12)}">{_fmt(net12)}</td>
+          <td class="{_sign_class(net12)}">{_fmt_lira(net12)}</td>
           <td>{f"{rw} ay" if rw else "Stabil"}</td>
         </tr>"""
 
@@ -329,26 +338,26 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
 <div class="kpi-strip">
   <div class="kpi-card">
     <div class="kpi-label">Ciro</div>
-    <div class="kpi-value">{_fmt(pnl.get('revenue', 0))}</div>
+    <div class="kpi-value">{_fmt_lira(pnl.get('revenue', 0))}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Brüt Kâr</div>
-    <div class="kpi-value">{_fmt(pnl.get('gross_profit', 0))}</div>
+    <div class="kpi-value">{_fmt_lira(pnl.get('gross_profit', 0))}</div>
     <div class="kpi-sub">{_pct(pnl.get('gross_margin', 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">FAVÖK</div>
-    <div class="kpi-value {_sign_class(pnl.get('ebitda', 0))}">{_fmt(pnl.get('ebitda', 0))}</div>
+    <div class="kpi-value {_sign_class(pnl.get('ebitda', 0))}">{_fmt_lira(pnl.get('ebitda', 0))}</div>
     <div class="kpi-sub">{_pct(pnl.get('ebitda_margin', 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Net Kâr</div>
-    <div class="kpi-value {_sign_class(pnl.get('net_income', 0))}">{_fmt(pnl.get('net_income', 0))}</div>
+    <div class="kpi-value {_sign_class(pnl.get('net_income', 0))}">{_fmt_lira(pnl.get('net_income', 0))}</div>
     <div class="kpi-sub">{_pct(pnl.get('net_margin', 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Net Nakit</div>
-    <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{_fmt(cashflow.get('net_change', 0))}</div>
+    <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{_fmt_lira(cashflow.get('net_change', 0))}</div>
     <div class="kpi-sub">Nakit ömrü: {str(runway) + " ay" if runway else "Stabil"}</div>
   </div>
 </div>
@@ -379,7 +388,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
           {opex_rows or "<tr><td colspan='2' style='color:#94a3b8'>Gider verisi yok</td></tr>"}
           <tr style="font-weight:700;border-top:2px solid #e2e8f0">
             <td>Toplam Faaliyet Gideri</td>
-            <td class="opex-amt">{_fmt(pnl.get('total_opex', 0))}</td>
+            <td class="opex-amt">{_fmt_lira(pnl.get('total_opex', 0))}</td>
           </tr>
         </tbody>
       </table>

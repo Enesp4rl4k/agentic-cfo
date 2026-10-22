@@ -94,7 +94,7 @@ export function SocialProofSection() {
         className="pointer-events-none absolute left-0 right-0 h-px"
         style={{
           background:
-            "linear-gradient(90deg, transparent, oklch(0.62 0.26 262 / 0.3), transparent)",
+            "linear-gradient(90deg, transparent, oklch(0.74 0.13 82 / 0.3), transparent)",
         }}
       />
 

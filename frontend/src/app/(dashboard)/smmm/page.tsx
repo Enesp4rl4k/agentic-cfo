@@ -13,6 +13,7 @@ import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -82,24 +83,28 @@ interface DashboardData {
 /**
  * Each stage names something that has or has not happened, rather than scoring
  * the company. An accountant opening this on a Monday is asking one question:
- * whose work is waiting on me.
+ * whose work is waiting on me. The labels live in the message tree (`t.smmm.stage`,
+ * keyed by the backend stage id); tone and dot are presentation.
  */
-const STAGE: Record<ClientDurum["stage"], { label: string; tone: string; dot: string }> = {
-  veri_yok:      { label: "Veri yok",      tone: "bg-muted/50 border-border text-muted-foreground", dot: "bg-muted-foreground" },
-  basarisiz:     { label: "Başarısız",     tone: "bg-red-500/10 border-red-500/30 text-red-400",    dot: "bg-red-400" },
-  onay_bekliyor: { label: "Onay bekliyor", tone: "bg-amber-500/10 border-amber-500/30 text-amber-300", dot: "bg-amber-400" },
-  analiz_edildi: { label: "Analiz edildi", tone: "bg-blue-500/10 border-blue-500/30 text-blue-300",  dot: "bg-blue-400" },
-  muhurlendi:    { label: "Mühürlendi",    tone: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400", dot: "bg-emerald-400" },
+const STAGE: Record<ClientDurum["stage"], { tone: string; dot: string }> = {
+  veri_yok:      { tone: "bg-muted/50 border-border text-muted-foreground", dot: "bg-muted-foreground" },
+  basarisiz:     { tone: "bg-red-500/10 border-red-500/30 text-red-400",    dot: "bg-red-400" },
+  onay_bekliyor: { tone: "bg-amber-500/10 border-amber-500/30 text-amber-300", dot: "bg-amber-400" },
+  analiz_edildi: { tone: "bg-blue-500/10 border-blue-500/30 text-blue-300",  dot: "bg-blue-400" },
+  muhurlendi:    { tone: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400", dot: "bg-emerald-400" },
 };
 
-function fmt(d: string | null): string {
+function fmt(d: string | null, dateTag: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(d).toLocaleDateString(dateTag, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 // ── Register modal ─────────────────────────────────────────────────────────────
 
 function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useI18n();
+  const s = t.smmm;
+  const r = s.register;
   const [form, setForm] = useState({ unvan: "", firma_adi: "", vergi_no: "", oda_no: "", il: "", telefon: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -113,7 +118,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
       onSuccess();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(msg ?? "Kayıt başarısız");
+      setError(msg ?? r.saveError);
     } finally {
       setLoading(false);
     }
@@ -123,19 +128,19 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <Card className="w-full max-w-md p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-lg">SMMM Kaydı</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Kapat">
+          <h2 className="font-semibold text-lg">{r.title}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label={s.close}>
             <X className="h-4 w-4" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           {([
-            ["unvan",     "Ünvan (SMMM / YMM)"],
-            ["firma_adi", "Firma Adı"],
-            ["vergi_no",  "Vergi No"],
-            ["oda_no",    "Oda Sicil No"],
-            ["il",        "İl"],
-            ["telefon",   "Telefon"],
+            ["unvan",     r.fields.unvan],
+            ["firma_adi", r.fields.firmaAdi],
+            ["vergi_no",  r.fields.vergiNo],
+            ["oda_no",    r.fields.odaNo],
+            ["il",        r.fields.il],
+            ["telefon",   r.fields.telefon],
           ] as [keyof typeof form, string][]).map(([key, label]) => (
             <div key={key} className="space-y-1">
               <label className="text-xs text-muted-foreground">{label}</label>
@@ -149,9 +154,9 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           ))}
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>İptal</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{s.cancel}</Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Kaydediliyor…" : "Kaydet"}
+              {loading ? r.saving : r.save}
             </Button>
           </div>
         </form>
@@ -163,6 +168,9 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 // ── Add client modal ───────────────────────────────────────────────────────────
 
 function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useI18n();
+  const s = t.smmm;
+  const a = s.addClient;
   const [form, setForm] = useState<SMMMMusteriCreate>({
     firma_adi: "", vergi_no: "", sektor: "saas", buyukluk: "smb", il: "", notlar: "",
   });
@@ -171,7 +179,7 @@ function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.firma_adi.trim()) { setError("Firma adı zorunlu"); return; }
+    if (!form.firma_adi.trim()) { setError(a.firmaAdiRequired); return; }
     setLoading(true);
     setError(null);
     try {
@@ -179,7 +187,7 @@ function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
       onSuccess();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(msg ?? "Müşteri eklenemedi");
+      setError(msg ?? a.addError);
     } finally {
       setLoading(false);
     }
@@ -189,61 +197,67 @@ function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <Card className="w-full max-w-md p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-lg">Yeni Müşteri Ekle</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Kapat">
+          <h2 className="font-semibold text-lg">{a.title}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label={s.close}>
             <X className="h-4 w-4" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Firma Adı *</label>
+            <label className="text-xs text-muted-foreground">{a.fields.firmaAdi}</label>
             <input type="text" value={form.firma_adi}
               onChange={(e) => setForm((p) => ({ ...p, firma_adi: e.target.value }))}
               className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="Örn: ABC Yazılım A.Ş."
+              placeholder={a.fields.firmaAdiPlaceholder}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Vergi No</label>
+              <label className="text-xs text-muted-foreground">{a.fields.vergiNo}</label>
               <input type="text" value={form.vergi_no ?? ""}
                 onChange={(e) => setForm((p) => ({ ...p, vergi_no: e.target.value }))}
                 className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">İl</label>
+              <label className="text-xs text-muted-foreground">{a.fields.il}</label>
               <input type="text" value={form.il ?? ""}
                 onChange={(e) => setForm((p) => ({ ...p, il: e.target.value }))}
                 className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="İstanbul"
+                placeholder={a.fields.ilPlaceholder}
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Sektör</label>
+              <label className="text-xs text-muted-foreground">{a.fields.sektor}</label>
               <select value={form.sektor ?? "saas"}
                 onChange={(e) => setForm((p) => ({ ...p, sektor: e.target.value }))}
                 className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
-                {["saas", "ecommerce", "fintech", "services", "retail", "manufacturing"].map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                {[
+                  // i18n-exempt: backend enum keys — the value sent to the API is also the option label
+                  "saas", "ecommerce", "fintech", "services", "retail", "manufacturing",
+                ].map((sKey) => (
+                  <option key={sKey} value={sKey}>{sKey}</option>
                 ))}
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Büyüklük</label>
+              <label className="text-xs text-muted-foreground">{a.fields.buyukluk}</label>
               <select value={form.buyukluk ?? "smb"}
                 onChange={(e) => setForm((p) => ({ ...p, buyukluk: e.target.value }))}
                 className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
-                {["startup", "smb", "enterprise"].map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                {[
+                  // i18n-exempt: backend enum keys — the value sent to the API is also the option label
+                  "startup", "smb", "enterprise",
+                ].map((sKey) => (
+                  <option key={sKey} value={sKey}>{sKey}</option>
                 ))}
               </select>
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Notlar</label>
+            <label className="text-xs text-muted-foreground">{a.fields.notlar}</label>
             <textarea value={form.notlar ?? ""} rows={2}
               onChange={(e) => setForm((p) => ({ ...p, notlar: e.target.value }))}
               className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
@@ -251,9 +265,9 @@ function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>İptal</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{s.cancel}</Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Ekleniyor…" : "Müşteri Ekle"}
+              {loading ? a.adding : a.submit}
             </Button>
           </div>
         </form>
@@ -271,6 +285,9 @@ function ClientRow({
   onDelete:  (id: string) => void;
   onAnalyze: (id: string) => void;
 }) {
+  const { t, locale } = useI18n();
+  const s = t.smmm;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   return (
     <tr className="border-b border-border hover:bg-muted/20 transition-colors">
       <td className="py-3 px-3">
@@ -302,7 +319,7 @@ function ClientRow({
           STAGE[client.durum.stage].tone,
         )}>
           <span className={cn("h-1.5 w-1.5 rounded-full", STAGE[client.durum.stage].dot)} />
-          {STAGE[client.durum.stage].label}
+          {s.stage[client.durum.stage]}
           {client.durum.pending_review > 0 && ` · ${client.durum.pending_review}`}
         </div>
       </td>
@@ -313,34 +330,34 @@ function ClientRow({
           <span className="flex items-center gap-1 text-amber-400">
             <AlertTriangle className="h-3 w-3" />
             {client.durum.pending_review > 0
-              ? `${client.durum.pending_review} kayıt onayınızda`
-              : "İnceleme gerekiyor"}
+              ? s.attention.pendingEntries.replace("{count}", String(client.durum.pending_review))
+              : s.attention.reviewNeeded}
           </span>
         ) : client.durum.job_count === 0 ? (
-          <span className="text-muted-foreground">Henüz dosya yüklenmedi</span>
+          <span className="text-muted-foreground">{s.attention.noFiles}</span>
         ) : (
           <span className="flex items-center gap-1 text-emerald-400">
             <CheckCircle2 className="h-3 w-3" />
-            Bekleyen yok
+            {s.attention.nothingPending}
           </span>
         )}
       </td>
-      <td className="py-3 px-3 text-xs text-muted-foreground">{fmt(client.durum.last_analysis_at)}</td>
+      <td className="py-3 px-3 text-xs text-muted-foreground">{fmt(client.durum.last_analysis_at, dateTag)}</td>
       <td className="py-3 px-3">
         <div className="flex items-center gap-1">
           <button
             onClick={() => onAnalyze(client.id)}
             className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-            title="Analiz başlat"
-            aria-label={`${client.firma_adi} için analiz başlat`}
+            title={s.actions.analyze}
+            aria-label={s.actions.analyzeAria.replace("{name}", client.firma_adi)}
           >
             <BarChart3 className="h-4 w-4" />
           </button>
           <button
             onClick={() => onDelete(client.id)}
             className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Müşteri sil"
-            aria-label={`${client.firma_adi} müşterisini sil`}
+            title={s.actions.delete}
+            aria-label={s.actions.deleteAria.replace("{name}", client.firma_adi)}
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -353,6 +370,8 @@ function ClientRow({
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function SMMMMuhasebecPage() {
+  const { t } = useI18n();
+  const s = t.smmm;
   const [profile,    setProfile]    = useState<SMMMMuhasebeci | null>(null);
   const router = useRouter();
   const [dashboard,  setDashboard]  = useState<DashboardData | null>(null);
@@ -380,24 +399,24 @@ export default function SMMMMuhasebecPage() {
       if (status === 404) {
         setNotRegistered(true);
       } else {
-        setError("Veri yüklenemedi. Lütfen tekrar deneyin.");
+        setError(s.loadError);
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [s]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   async function handleDelete(id: string) {
     // Deactivated, not deleted: the client's approved entries and sealed
     // packets have to stay explainable after the engagement ends.
-    if (!confirm("Bu müşteriyi listeden çıkarmak istiyor musunuz? Geçmiş kayıtlar saklanır.")) return;
+    if (!confirm(s.deleteConfirm)) return;
     try {
       await apiClient.delete(`/smmm/clients/${id}`);
       fetchData();
     } catch {
-      setError("Müşteri listeden çıkarılamadı");
+      setError(s.deleteError);
     }
   }
 
@@ -418,13 +437,13 @@ export default function SMMMMuhasebecPage() {
         <div className="rounded-full bg-muted p-5">
           <Users className="h-10 w-10 text-muted-foreground" />
         </div>
-        <h1 className="text-2xl font-bold">SMMM Portalı</h1>
+        <h1 className="text-2xl font-bold">{s.title}</h1>
         <p className="text-muted-foreground text-center max-w-sm">
-          Bu modül muhasebeciler için. Birden fazla müşteri firmasını tek panelden yönetmek için SMMM olarak kayıt olun.
+          {s.notRegistered.body}
         </p>
         <Button onClick={() => setShowRegister(true)} size="lg">
           <Plus className="h-4 w-4 mr-2" />
-          SMMM Olarak Kayıt Ol
+          {s.notRegistered.cta}
         </Button>
         {showRegister && (
           <RegisterModal
@@ -445,19 +464,22 @@ export default function SMMMMuhasebecPage() {
         <div className="flex items-center gap-3">
           <Users className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold">SMMM Portalı</h1>
+            <h1 className="text-2xl font-bold">{s.title}</h1>
             <p className="text-sm text-muted-foreground">
-              {profile?.firma_adi ?? profile?.unvan ?? "Muhasebeci Paneli"} — çoklu müşteri yönetimi
+              {s.subtitle.replace(
+                "{name}",
+                profile?.firma_adi ?? profile?.unvan ?? s.panelFallback,
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} aria-label="Yenile">
+          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} aria-label={s.refresh}>
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
           </Button>
           <Button size="sm" onClick={() => setShowAddClient(true)}>
             <Plus className="h-4 w-4 mr-1.5" />
-            Müşteri Ekle
+            {s.addClientButton}
           </Button>
         </div>
       </div>
@@ -473,18 +495,18 @@ export default function SMMMMuhasebecPage() {
       {dashboard && (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Toplam Müşteri</p>
+            <p className="text-xs text-muted-foreground">{s.summary.total}</p>
             <p className="text-2xl font-bold tabular-nums">{dashboard.summary.total_clients}</p>
           </Card>
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Analiz Edilen</p>
+            <p className="text-xs text-muted-foreground">{s.summary.analyzed}</p>
             <p className="text-2xl font-bold tabular-nums text-blue-400">
               {dashboard.summary.analyzed_clients}
             </p>
           </Card>
           {/* The one an accountant opens the page for. */}
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Sizi Bekleyen</p>
+            <p className="text-xs text-muted-foreground">{s.summary.awaitingYou}</p>
             <p className={cn(
               "text-2xl font-bold tabular-nums",
               dashboard.summary.needs_attention > 0 ? "text-amber-400" : "text-foreground",
@@ -493,12 +515,12 @@ export default function SMMMMuhasebecPage() {
             </p>
             {dashboard.summary.pending_entries > 0 && (
               <p className="text-xs text-muted-foreground">
-                {dashboard.summary.pending_entries} kayıt
+                {s.summary.pendingEntries.replace("{count}", String(dashboard.summary.pending_entries))}
               </p>
             )}
           </Card>
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Mühürlenen</p>
+            <p className="text-xs text-muted-foreground">{s.summary.sealed}</p>
             <p className="text-2xl font-bold tabular-nums text-emerald-400">
               {dashboard.summary.sealed_clients}
             </p>
@@ -513,7 +535,7 @@ export default function SMMMMuhasebecPage() {
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <FileText className="h-4 w-4" />
               {profile.unvan ?? "SMMM"}
-              {profile.oda_no && ` · Oda No: ${profile.oda_no}`}
+              {profile.oda_no && ` · ${s.odaNo.replace("{no}", profile.oda_no)}`}
             </span>
             {profile.il && (
               <span className="flex items-center gap-1">
@@ -534,8 +556,10 @@ export default function SMMMMuhasebecPage() {
       {/* Clients table */}
       <Card className="overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <h2 className="font-semibold text-sm">Müşteri Listesi</h2>
-          <span className="text-xs text-muted-foreground">{clients.length} müşteri</span>
+          <h2 className="font-semibold text-sm">{s.table.title}</h2>
+          <span className="text-xs text-muted-foreground">
+            {s.table.count.replace("{count}", String(clients.length))}
+          </span>
         </div>
 
         {loading && clients.length === 0 ? (
@@ -553,13 +577,13 @@ export default function SMMMMuhasebecPage() {
         ) : clients.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <Building2 className="h-10 w-10 text-muted-foreground mx-auto" />
-            <p className="font-medium">Henüz müşteri yok</p>
+            <p className="font-medium">{s.empty.heading}</p>
             <p className="text-sm text-muted-foreground">
-              Müşteri ekleyerek analiz başlatabilirsiniz.
+              {s.empty.body}
             </p>
             <Button variant="outline" onClick={() => setShowAddClient(true)}>
               <Plus className="h-4 w-4 mr-1.5" />
-              İlk Müşteriyi Ekle
+              {s.empty.cta}
             </Button>
           </div>
         ) : (
@@ -567,13 +591,13 @@ export default function SMMMMuhasebecPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">Firma</th>
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">Sektör</th>
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">İl</th>
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">Sağlık</th>
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">Durum</th>
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">Son Analiz</th>
-                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">İşlem</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.firma}</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.sektor}</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.il}</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.saglik}</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.durum}</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.sonAnaliz}</th>
+                  <th className="py-2.5 px-3 text-left text-xs font-semibold text-muted-foreground">{s.table.cols.islem}</th>
                 </tr>
               </thead>
               <tbody>

@@ -2,6 +2,7 @@
 
 import { Download, FileText, Upload } from "lucide-react";
 import Link from "next/link";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Template definitions ───────────────────────────────────────────────────────
 
@@ -287,14 +288,14 @@ Physical Security,operations,2023-08-15,annual,low,2024-08-15`,
 // ── Agent grouping ────────────────────────────────────────────────────────────
 
 const AGENT_COLORS: Record<string, string> = {
-  CFO:             "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-  CTO:             "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CMO:             "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  COO:             "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  CHRO:            "bg-pink-500/10 text-pink-500 border-pink-500/20",
-  Compliance:      "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
+  CFO:             "bg-brass-500/10 text-brass-500 border-brass-500/20",
+  CTO:             "bg-mapblue-500/10 text-mapblue-500 border-mapblue-500/20",
+  CMO:             "bg-clay-500/10 text-clay-500 border-clay-500/20",
+  COO:             "bg-copper-500/10 text-copper-500 border-copper-500/20",
+  CHRO:            "bg-sage-500/10 text-sage-500 border-sage-500/20",
+  Compliance:      "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
   Risk:            "bg-red-500/10 text-red-500 border-red-500/20",
-  "Internal Audit":"bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  "Internal Audit":"bg-parchment-500/10 text-parchment-500 border-parchment-500/20",
 };
 
 function agentKey(agent: string): string {
@@ -320,6 +321,8 @@ function downloadCSV(filename: string, content: string) {
 function TemplateCard({ template }: { template: CSVTemplate }) {
   const key   = agentKey(template.agent);
   const color = AGENT_COLORS[key] ?? "bg-muted text-muted-foreground border-border";
+  const { t } = useI18n();
+  const tpl = t.templates;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-3 hover:border-primary/40 transition-colors">
@@ -338,14 +341,14 @@ function TemplateCard({ template }: { template: CSVTemplate }) {
       </div>
 
       <div className="rounded bg-muted/40 px-2 py-1.5">
-        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Sütunlar</p>
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">{tpl.columns}</p>
         <p className="font-mono text-xs text-muted-foreground leading-relaxed">{template.columns}</p>
       </div>
 
       <button
         onClick={() => downloadCSV(template.file, template.content)}
         className="flex items-center justify-center gap-2 rounded border border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={`${template.file} dosyasını indir`}
+        aria-label={tpl.downloadFile.replace("{file}", template.file)}
       >
         <Download className="h-3.5 w-3.5" aria-hidden="true" />
         {template.file}
@@ -357,6 +360,8 @@ function TemplateCard({ template }: { template: CSVTemplate }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function TemplatesPage() {
+  const { t } = useI18n();
+  const tpl = t.templates;
   // Group templates by agent key
   const grouped = TEMPLATES.reduce<Record<string, CSVTemplate[]>>((acc, t) => {
     const k = agentKey(t.agent);
@@ -376,9 +381,9 @@ export default function TemplatesPage() {
         <div className="flex items-center gap-3">
           <FileText className="h-6 w-6 text-primary" aria-hidden="true" />
           <div>
-            <h1 className="text-xl font-bold">CSV Şablonları</h1>
+            <h1 className="text-xl font-bold">{tpl.title}</h1>
             <p className="text-sm text-muted-foreground">
-              Her agent için örnek CSV dosyalarını indirin ve kendi verilerinize uyarlayın.
+              {tpl.subtitle}
             </p>
           </div>
         </div>
@@ -388,26 +393,26 @@ export default function TemplatesPage() {
             className="flex items-center gap-2 rounded border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
           >
             <Upload className="h-4 w-4" aria-hidden="true" />
-            Veri Yükle
+            {tpl.upload}
           </Link>
           <button
             onClick={downloadAll}
             className="flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
-            Tümünü İndir ({TEMPLATES.length} dosya)
+            {tpl.downloadAll.replace("{count}", String(TEMPLATES.length))}
           </button>
         </div>
       </div>
 
       {/* Nasıl kullanılır */}
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
-        <p className="mb-2 font-medium text-foreground">Nasıl kullanılır?</p>
+        <p className="mb-2 font-medium text-foreground">{tpl.howto.heading}</p>
         <ol className="space-y-1 text-muted-foreground list-decimal list-inside">
-          <li>İhtiyacınız olan domain şablonunu indirin (örn. CHRO → Çalışan Listesi)</li>
-          <li>Şablonu kendi verilerinizle doldurun — sütun adlarını değiştirmeyin</li>
-          <li><Link href="/upload" className="text-primary underline underline-offset-2">Veri Yükleme</Link> sayfasında banka ekstresini ve domain dosyalarını yükleyin</li>
-          <li>AI agent'lar tüm verileri birleştirerek kapsamlı analiz üretecek</li>
+          <li>{tpl.howto.step1}</li>
+          <li>{tpl.howto.step2}</li>
+          <li>{tpl.howto.step3}</li>
+          <li>{tpl.howto.step4}</li>
         </ol>
       </div>
 
@@ -421,7 +426,7 @@ export default function TemplatesPage() {
                 {agentName}
               </span>
               <span className="text-xs text-muted-foreground">
-                {templates.length} şablon
+                {tpl.templatesCount.replace("{count}", String(templates.length))}
               </span>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,0 +1,180 @@
+/**
+ * Runtime contract between what the COO pipeline returns on the wire and the
+ * dashboard view. The page used to cast with `as COOResult`, so a renamed or
+ * missing backend key surfaced as `undefined`/`NaN` — the bug class the CHRO
+ * page hit on 2026-10-14. Both entry points (context hydration, DomainPanel
+ * onResult) normalize exactly once; a section without data is null and the
+ * view renders "—".
+ *
+ * Wire keys are the ones the backend COO agents emit (process/resource/sla).
+ * Category fields stay plain strings: the pipeline's vocabulary is not
+ * guaranteed, and the view colours badges from whatever it receives.
+ */
+
+import { isRecord, num, num0, strOrNull, records } from "@/lib/wire";
+
+export interface ProcessBottleneck {
+  process_name: string;
+  cycle_time: number; // days
+  throughput: number; // items/day
+  wip: number; // work in progress count
+  constraint_type: string;
+  toc_recommendation: string;
+  impact_score: number; // 0-100
+}
+
+export interface SLATicket {
+  ticket_id: string;
+  title: string;
+  assigned_to: string;
+  created_date: string;
+  due_date: string;
+  hours_remaining: number;
+  /** A 0–1 ordering score from the backend's rule, never a probability. */
+  risk_score?: number;
+  risk_level?: string;
+  priority: string;
+  status: string;
+}
+
+export interface SLAData {
+  tickets: SLATicket[];
+  breach_rate: number;
+  trend: Array<{ date: string; breach_pct: number }>;
+}
+
+export interface COOResult {
+  job_id: string;
+  processes: ProcessBottleneck[] | null;
+  sla: SLAData | null;
+  error: string | null;
+}
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function normalizeProcess(raw: Record<string, unknown>): ProcessBottleneck | null {
+  const name = str(raw.process_name);
+  if (name === "") return null;
+  return {
+    process_name: name,
+    cycle_time: num0(raw.cycle_time),
+    throughput: num0(raw.throughput),
+    wip: num0(raw.wip),
+    constraint_type: str(raw.constraint_type),
+    toc_recommendation: str(raw.toc_recommendation),
+    impact_score: num0(raw.impact_score),
+  };
+}
+
+function normalizeTicket(raw: Record<string, unknown>): SLATicket | null {
+  const id = str(raw.ticket_id);
+  if (id === "") return null;
+  const ticket: SLATicket = {
+    ticket_id: id,
+    title: str(raw.title),
+    assigned_to: str(raw.assigned_to),
+    created_date: str(raw.created_date),
+    due_date: str(raw.due_date),
+    hours_remaining: num0(raw.hours_remaining),
+    priority: str(raw.priority),
+    status: str(raw.status),
+  };
+  const risk = num(raw.risk_score);
+  if (risk !== null) ticket.risk_score = risk;
+  const level = strOrNull(raw.risk_level);
+  if (level !== null) ticket.risk_level = level;
+  return ticket;
+}
+
+function normalizeProcesses(raw: unknown): ProcessBottleneck[] | null {
+  if (Array.isArray(raw)) {
+    const rows = records(raw)
+      .map(normalizeProcess)
+      .filter((p): p is ProcessBottleneck => p !== null);
+    return rows.length > 0 ? rows : null;
+  }
+  // Persisted wire shape (`context.last_coo_result.processes`): an aggregate
+  // summary — per-process numbers live under `by_process` (keyed by name) and
+  // the ranked TOC rows under `toc_analysis`. Derive the view rows here, once,
+  // so both entry points (live AgentJob rows, persisted summary) render.
+  if (isRecord(raw)) return processesFromSummary(raw);
+  return null;
+}
+
+function processesFromSummary(raw: Record<string, unknown>): ProcessBottleneck[] | null {
+  const byProcess = raw.by_process;
+  if (!isRecord(byProcess)) return null;
+
+  const toc = new Map(
+    records(raw.toc_analysis).map((t) => [str(t.process), t] as const),
+  );
+  const bottleneck = str(raw.bottleneck_process);
+
+  const rows: ProcessBottleneck[] = [];
+  const seen = new Set<string>();
+  // Ranked TOC order first, then any process the TOC list did not rank.
+  for (const [name, t] of toc) {
+    const entry = byProcess[name];
+    if (!isRecord(entry)) continue;
+    seen.add(name);
+    rows.push({
+      process_name: name,
+      cycle_time: num0(entry.cycle_time),
+      throughput: num0(entry.throughput),
+      wip: num0(entry.wip),
+      constraint_type: str(entry.constraint_type),
+      toc_recommendation: str(t.toc_recommendation),
+      // impact_score is 0-100: the TOC pipeline's per-process throughput loss
+      // is that scale and is what the loss bar actually measures.
+      impact_score: num0(t.throughput_loss_pct),
+    });
+  }
+  for (const [name, entry] of Object.entries(byProcess)) {
+    if (seen.has(name) || !isRecord(entry)) continue;
+    rows.push({
+      process_name: name,
+      cycle_time: num0(entry.cycle_time),
+      throughput: num0(entry.throughput),
+      wip: num0(entry.wip),
+      constraint_type: str(entry.constraint_type),
+      toc_recommendation:
+        name === bottleneck ? str(raw.bottleneck_recommendation) : "",
+      impact_score: 0,
+    });
+  }
+  return rows.length > 0 ? rows : null;
+}
+
+function normalizeSla(raw: unknown): SLAData | null {
+  if (!isRecord(raw)) return null;
+  const tickets = records(raw.tickets)
+    .map(normalizeTicket)
+    .filter((t): t is SLATicket => t !== null);
+  // Row wire shape has `breach_rate`; the persisted aggregate uses
+  // `sla_breach_rate` (with per-tier counts under `by_tier`) and carries no
+  // ticket rows — the count KPI renders from the rate, the table stays "—".
+  const breachRate = num(raw.breach_rate) ?? num(raw.sla_breach_rate);
+  if (tickets.length === 0 && breachRate === null) return null;
+  return {
+    tickets,
+    breach_rate: breachRate ?? 0,
+    trend: records(raw.trend).map((p) => ({
+      date: str(p.date),
+      breach_pct: num0(p.breach_pct),
+    })),
+  };
+}
+
+export function normalizeCOOResult(raw: unknown): COOResult | null {
+  if (!isRecord(raw)) return null;
+
+  const processes = normalizeProcesses(raw.processes);
+  const sla = normalizeSla(raw.sla);
+  const error = strOrNull(raw.error);
+
+  if (!processes && !sla && !error) return null;
+
+  return { job_id: str(raw.job_id), processes, sla, error };
+}

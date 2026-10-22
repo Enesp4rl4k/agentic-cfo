@@ -104,17 +104,35 @@ async def test_github_adapter_normalizes(monkeypatch):
     from app.connectors.github import GitHubConnector
 
     class _FakeCommit:
-        sha = "abc123"; message = "fix: thing"; author = "dev"; date = "2026-08-01T10:00:00Z"
-        files_changed = 2; additions = 10; deletions = 3
+        sha = "abc123"
+        message = "fix: thing"
+        author = "dev"
+        date = "2026-08-01T10:00:00Z"
+        files_changed = 2
+        additions = 10
+        deletions = 3
 
     class _FakePR:
-        number = 7; title = "feat: x"; author = "dev"; state = "closed"
-        created_at = "2026-08-01T00:00:00Z"; merged_at = "2026-08-02T00:00:00Z"
-        review_count = 1; comments = 2; additions = 5; deletions = 1; files_changed = 1
+        number = 7
+        title = "feat: x"
+        author = "dev"
+        state = "closed"
+        created_at = "2026-08-01T00:00:00Z"
+        merged_at = "2026-08-02T00:00:00Z"
+        review_count = 1
+        comments = 2
+        additions = 5
+        deletions = 1
+        files_changed = 1
 
     class _FakeIssue:
-        number = 9; title = "prod down"; state = "open"; labels = ["bug", "critical"]
-        created_at = "2026-08-03T00:00:00Z"; closed_at = None; comments = 4
+        number = 9
+        title = "prod down"
+        state = "open"
+        labels = ["bug", "critical"]
+        created_at = "2026-08-03T00:00:00Z"
+        closed_at = None
+        comments = 4
 
     class _FakeData:
         error = None

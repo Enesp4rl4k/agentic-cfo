@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, FileUp, Loader2, PlayCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import {
   getDomain,
   runDomain,
@@ -36,6 +37,7 @@ export function DomainPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const pickers = useRef<Record<string, HTMLInputElement | null>>({});
+  const fmtCurrency = useCurrencyFormat();
 
   const refresh = useCallback(async () => {
     if (!jobId) return;
@@ -129,8 +131,8 @@ export function DomainPanel({
               <li key={k.kategori} className="text-xs">
                 <span className="text-foreground">{k.etiket}: </span>
                 <span className="font-mono font-semibold tabular-nums">
-                  {k.tutar_kurus !== undefined
-                    ? formatCurrency(k.tutar_kurus / 100)
+                  {k.tutar_lira !== undefined
+                    ? fmtCurrency(k.tutar_lira)
                     : `${k.deger} ${k.birim ?? ""}`}
                 </span>
                 {k.gelire_orani != null && (

@@ -212,10 +212,17 @@ class TCMBMacroService:
 
         # Static fallback
         logger.info("TCMB API unavailable — using static fallback values")
-        return MacroSnapshot(**{
-            k: v for k, v in _STATIC_FALLBACK.items()
-            if k in MacroSnapshot.__dataclass_fields__
-        })
+        fallback = _STATIC_FALLBACK
+        return MacroSnapshot(
+            usd_try         = float(fallback["usd_try"]),
+            eur_try         = float(fallback["eur_try"]),
+            policy_rate_pct = float(fallback["policy_rate_pct"]),
+            inflation_pct   = float(fallback["inflation_pct"]),
+            ppi_pct         = float(fallback["ppi_pct"]),
+            repo_rate_pct   = float(fallback["repo_rate_pct"]),
+            data_source     = str(fallback["data_source"]),
+            as_of           = str(fallback["as_of"]),
+        )
 
     async def _fetch_from_api(self) -> MacroSnapshot | None:
         """Fetch all series from EVDS API in parallel."""
@@ -241,12 +248,12 @@ class TCMBMacroService:
 
         fallback = _STATIC_FALLBACK
         return MacroSnapshot(
-            usd_try          = mapping.get("usd_try")          or fallback["usd_try"],
-            eur_try          = mapping.get("eur_try")          or fallback["eur_try"],
-            policy_rate_pct  = mapping.get("policy_rate_pct")  or fallback["policy_rate_pct"],
-            inflation_pct    = mapping.get("inflation_pct")    or fallback["inflation_pct"],
-            ppi_pct          = mapping.get("ppi_pct")          or fallback["ppi_pct"],
-            repo_rate_pct    = mapping.get("policy_rate_pct")  or fallback["repo_rate_pct"],
+            usd_try          = float(mapping.get("usd_try")          or fallback["usd_try"]),
+            eur_try          = float(mapping.get("eur_try")          or fallback["eur_try"]),
+            policy_rate_pct  = float(mapping.get("policy_rate_pct")  or fallback["policy_rate_pct"]),
+            inflation_pct    = float(mapping.get("inflation_pct")    or fallback["inflation_pct"]),
+            ppi_pct          = float(mapping.get("ppi_pct")          or fallback["ppi_pct"]),
+            repo_rate_pct    = float(mapping.get("policy_rate_pct")  or fallback["repo_rate_pct"]),
             data_source      = "tcmb_api",
             as_of            = datetime.now().strftime("%Y-%m-%d"),
         )
@@ -258,7 +265,7 @@ class TCMBMacroService:
         """
         if not self._api_key:
             # Return synthetic trend based on current fallback rate
-            base = _STATIC_FALLBACK["usd_try"] if currency == "USD" else _STATIC_FALLBACK["eur_try"]
+            base = float(_STATIC_FALLBACK["usd_try"] if currency == "USD" else _STATIC_FALLBACK["eur_try"])
             return [
                 {
                     "date": (datetime.now() - timedelta(days=days - i)).strftime("%Y-%m-%d"),

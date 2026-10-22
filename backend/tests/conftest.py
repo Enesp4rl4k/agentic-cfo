@@ -111,3 +111,40 @@ def _isolate_service_singletons():
     _reset_singletons()
     yield
     _reset_singletons()
+
+
+# ── 3. Shared HTTP client fixture ────────────────────────────────────────────
+# An in-memory FastAPI app with its own throwaway database, yielded per test.
+# Lives here (not in test_ingest) so every API test file can request `client`
+# without importing it — importing a fixture from another module shadows it in
+# the importer (ruff F811) and hides that it is a fixture at all.
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture
+async def client(tmp_path, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.config import get_settings
+    from app.database import Base, get_db
+    from app.main import app
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "storage_local_path", str(tmp_path))
+    monkeypatch.setattr(settings, "auto_enqueue_analysis_on_upload", False)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override():
+        async with maker() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        c._maker = maker  # type: ignore[attr-defined]
+        yield c
+    app.dependency_overrides.clear()
+    await engine.dispose()

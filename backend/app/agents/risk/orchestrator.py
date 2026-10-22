@@ -60,12 +60,12 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
     # ── Enterprise Risk Score ─────────────────────────────────────────────────
     # Weighted average of three sub-scores, each 0-10:
     #   register score  (35 %) — residual risk portfolio
-    #   loss score      (35 %) — realised losses (normalised vs $1M ceiling)
+    #   loss score      (35 %) — realised losses (normalised vs ₺1M ceiling)
     #   kri score       (30 %) — leading indicator breaches
 
     reg_score  = float(reg.get("enterprise_risk_score", 0.0))
     net_loss   = float(loss.get("total_net_loss", 0))
-    loss_score = min(10.0, (net_loss / (1_000_000 * 100)) * 10.0)  # $1M ceiling
+    loss_score = min(10.0, (net_loss / (1_000_000 * 100)) * 10.0)  # ₺1M ceiling
     kri_score  = float(kri.get("composite_kri_score", 0.0))
 
     enterprise_score = round(

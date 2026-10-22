@@ -37,6 +37,7 @@ from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 from app.models.sync_run import SyncRun
 from app.models.sync_schedule import SyncSchedule
 from app.models.transaction import Transaction, TransactionCategory, TransactionType
+from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
 from app.models.user import User
 
 __all__ = [
@@ -89,6 +90,8 @@ __all__ = [
     "Transaction",
     "TransactionCategory",
     "TransactionType",
+    "TriggerDefinitionRow",
+    "TriggerRunRow",
     "User",
     "UserFeedback",
 ]

@@ -8,14 +8,14 @@ import { Card } from "@/components/ui/card";
 import { EFaturaCard } from "@/components/integrations/EFaturaCard";
 import { ParasutKarti } from "@/components/integrations/ParasutKarti";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/hooks/useI18n";
+import type { MessageTree } from "@/lib/i18n";
 import {
   useERPIntegrations,
   useERPSyncLogs,
   useDeleteERPIntegration,
   useLogoTigerSync,
   useMikroSync,
-  ERP_PROVIDER_LABELS,
-  ERP_PROVIDER_DESCRIPTIONS,
   statusColor,
   statusBg,
   syncStatusColor,
@@ -24,19 +24,14 @@ import type { ERPIntegration } from "@/lib/api/erp";
 
 // ── Relative time helper ──────────────────────────────────────────────────────
 
-function useRelativeTime(isoString: string | null | undefined): string {
-  const [label, setLabel] = useState<string>(() => formatRelative(isoString));
+type IntegrationsMessages = MessageTree["integrations"];
 
-  useEffect(() => {
-    const interval = setInterval(() => setLabel(formatRelative(isoString)), 30_000);
-    return () => clearInterval(interval);
-  }, [isoString]);
-
-  return label;
-}
-
-function formatRelative(isoString: string | null | undefined): string {
-  if (!isoString) return "Hiç sync edilmedi";
+function formatRelative(
+  isoString: string | null | undefined,
+  ig: IntegrationsMessages,
+  dateTag: string,
+): string {
+  if (!isoString) return ig.neverSynced;
   const now = Date.now();
   const then = new Date(isoString).getTime();
   const diffMs = now - then;
@@ -46,12 +41,26 @@ function formatRelative(isoString: string | null | undefined): string {
   const hours = Math.floor(diffMs / 3_600_000);
   const days  = Math.floor(diffMs / 86_400_000);
 
-  if (mins < 1)   return "Az önce";
-  if (mins < 60)  return `${mins} dk önce`;
-  if (hours < 24) return `${hours} saat önce`;
-  if (days < 30)  return `${days} gün önce`;
+  if (mins < 1)   return ig.ago.justNow;
+  if (mins < 60)  return ig.ago.mins.replace("{count}", String(mins));
+  if (hours < 24) return ig.ago.hours.replace("{count}", String(hours));
+  if (days < 30)  return ig.ago.days.replace("{count}", String(days));
 
-  return new Date(isoString).toLocaleDateString("tr-TR");
+  return new Date(isoString).toLocaleDateString(dateTag);
+}
+
+function useRelativeTime(isoString: string | null | undefined): string {
+  const { t, locale } = useI18n();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+  const ig = t.integrations;
+  const [label, setLabel] = useState<string>(() => formatRelative(isoString, ig, dateTag));
+
+  useEffect(() => {
+    const interval = setInterval(() => setLabel(formatRelative(isoString, ig, dateTag)), 30_000);
+    return () => clearInterval(interval);
+  }, [isoString, ig, dateTag]);
+
+  return label;
 }
 
 // ── Integration card ───────────────────────────────────────────────────────────
@@ -59,6 +68,8 @@ function formatRelative(isoString: string | null | undefined): string {
 function IntegrationCard({ integration }: { integration: ERPIntegration }) {
   const { remove, loading: removing } = useDeleteERPIntegration();
   const [confirm, setConfirm] = useState(false);
+  const { t } = useI18n();
+  const ig = t.integrations;
 
   return (
     <div className={cn("rounded-xl border p-4 space-y-3", statusBg(integration.status))}>
@@ -66,7 +77,7 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
         <div className="space-y-0.5">
           <p className="font-semibold">{integration.display_name}</p>
           <p className="text-xs text-muted-foreground">
-            {ERP_PROVIDER_DESCRIPTIONS[integration.provider]}
+            {ig.providers[integration.provider]?.description ?? ""}
           </p>
         </div>
         <span className={cn("text-xs font-semibold px-2 py-0.5 rounded border", statusColor(integration.status))}>
@@ -76,16 +87,16 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
 
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div>
-          <p className="text-muted-foreground">Son Sync</p>
+          <p className="text-muted-foreground">{ig.card.lastSync}</p>
           <p className="font-mono" title={integration.last_sync_at ?? undefined}>
             {useRelativeTime(integration.last_sync_at)}
           </p>
         </div>
         <div>
-          <p className="text-muted-foreground">Son İşlem Sayısı</p>
+          <p className="text-muted-foreground">{ig.card.lastCount}</p>
           <p className={cn("font-mono font-medium", syncStatusColor(integration.last_sync_status))}>
             {integration.last_sync_count != null
-              ? `${integration.last_sync_count} adet`
+              ? ig.card.itemsCount.replace("{count}", String(integration.last_sync_count))
               : "—"}
             {integration.last_sync_status === "success" && (
               <span className="ml-1 text-emerald-400">✓</span>
@@ -105,7 +116,7 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
 
       {integration.token_expired && (
         <p className="text-xs text-orange-400 bg-orange-500/10 rounded p-2">
-          OAuth token süresi doldu — yeniden bağlanın
+          {ig.card.tokenExpired}
         </p>
       )}
 
@@ -124,7 +135,7 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
             onClick={() => remove(integration.id)}
             disabled={removing}
           >
-            Sil?
+            {ig.card.confirmRemove}
           </Button>
         )}
       </div>
@@ -143,14 +154,16 @@ function AddIntegrationCard({
   provider: ERPProvider;
   onSelect: (provider: ERPProvider) => void;
 }) {
+  const { t } = useI18n();
+  const ig = t.integrations;
   return (
     <button
       onClick={() => onSelect(provider)}
       className="rounded-xl border border-dashed border-border p-4 text-left hover:border-primary/50 hover:bg-primary/5 transition-colors w-full space-y-1"
     >
-      <p className="font-semibold text-sm">{ERP_PROVIDER_LABELS[provider]}</p>
-      <p className="text-xs text-muted-foreground">{ERP_PROVIDER_DESCRIPTIONS[provider]}</p>
-      <p className="text-xs text-primary">+ Bağlan</p>
+      <p className="font-semibold text-sm">{ig.providers[provider]?.label ?? provider}</p>
+      <p className="text-xs text-muted-foreground">{ig.providers[provider]?.description ?? ""}</p>
+      <p className="text-xs text-primary">+ {ig.connect.cta}</p>
     </button>
   );
 }
@@ -159,10 +172,13 @@ function AddIntegrationCard({
 
 function SyncLogsPanel() {
   const { data, isLoading } = useERPSyncLogs(undefined, 8);
-  if (isLoading) return <p className="text-sm text-muted-foreground">Yükleniyor...</p>;
+  const { t, locale } = useI18n();
+  const ig = t.integrations;
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+  if (isLoading) return <p className="text-sm text-muted-foreground">{ig.loading}</p>;
   // `data?.logs.length` guards `data` and then dereferences `logs` anyway —
   // an absent `logs` threw and took the page to the error boundary.
-  if (!data?.logs?.length) return <p className="text-sm text-muted-foreground">Henüz sync yapılmadı.</p>;
+  if (!data?.logs?.length) return <p className="text-sm text-muted-foreground">{ig.file.empty}</p>;
 
   return (
     <div className="space-y-1.5">
@@ -176,17 +192,17 @@ function SyncLogsPanel() {
             ) : (
               <AlertCircle className="h-3.5 w-3.5 text-red-400" />
             )}
-            <span className="font-medium">{ERP_PROVIDER_LABELS[log.provider as "parasut" | "logo_tiger" | "mikro" | "netsis"]}</span>
+            <span className="font-medium">{ig.providers[log.provider as "parasut" | "logo_tiger" | "mikro" | "netsis"]?.label ?? log.provider}</span>
             <span className="text-muted-foreground">
-              {new Date(log.started_at).toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              {new Date(log.started_at).toLocaleDateString(dateTag, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className={cn("font-mono", syncStatusColor(log.status as never))}>
-              {log.transactions_synced} işlem
+              {ig.card.transactions.replace("{count}", String(log.transactions_synced))}
             </span>
             {log.triggered_cfo_job_id && (
-              <span className="text-primary/70 text-xs">→ CFO</span>
+              <span className="text-primary/70 text-xs">{ig.logs.toCfo}</span>
             )}
           </div>
         </div>
@@ -201,6 +217,8 @@ function CSVUploadSync({ provider }: { provider: "logo_tiger" | "mikro" }) {
   const logoSync  = useLogoTigerSync();
   const mikroSync = useMikroSync();
   const [file, setFile] = useState<File | null>(null);
+  const { t } = useI18n();
+  const ig = t.integrations;
 
   const handleSync = () => {
     if (!file) return;
@@ -222,21 +240,21 @@ function CSVUploadSync({ provider }: { provider: "logo_tiger" | "mikro" }) {
         />
         <label htmlFor={`file-${provider}`} className="cursor-pointer">
           <p className="text-sm text-muted-foreground">
-            {file ? file.name : "CSV dosyasını sürükle veya seç"}
+            {file ? file.name : ig.file.dropHint}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">Logo Tiger: Fiş Listesi, Hesap Hareketleri</p>
+          <p className="text-xs text-muted-foreground mt-1">{ig.file.logoHint}</p>
         </label>
       </div>
       <Button onClick={handleSync} disabled={!file || loading} className="w-full" size="sm">
         <Zap className={cn("h-3.5 w-3.5 mr-1", loading && "animate-pulse")} />
-        {loading ? "İşleniyor..." : "Yükle ve CFO Analizini Başlat"}
+        {loading ? ig.file.processing : ig.file.submit}
       </Button>
       {result && (
         <div className={cn("rounded-lg border p-3 text-sm",
           result.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-red-500/30 bg-red-500/10 text-red-400"
         )}>
           {result.ok
-            ? `✓ ${result.sync_count} işlem sync edildi${result.cfo_job_id ? " — CFO analizi başlatıldı" : ""}`
+            ? `✓ ${(result.cfo_job_id ? ig.file.successStarted : ig.file.success).replace("{count}", String(result.sync_count))}`
             : result.error}
         </div>
       )}
@@ -251,6 +269,8 @@ type ActivePanel = "logo_tiger" | "mikro" | null;
 export default function IntegrationsPage() {
   const { data, isLoading, refetch } = useERPIntegrations();
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const { t } = useI18n();
+  const ig = t.integrations;
 
   // Paraşüt has its own card: one button, no developer keys.
   const integrations = (data?.integrations ?? []).filter((i) => i.provider !== "parasut");
@@ -263,9 +283,9 @@ export default function IntegrationsPage() {
         <div className="flex items-center gap-2">
           <Link2 className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Entegrasyonlar</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{ig.title}</h1>
             <p className="text-sm text-muted-foreground">
-              Muhasebe programınızı, bankanızı ve e-Faturayı bağlayın
+              {ig.subtitle}
             </p>
           </div>
         </div>
@@ -277,23 +297,23 @@ export default function IntegrationsPage() {
       {/* The way in for most people: export a list, drop it, done. */}
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
-          <h2 className="text-sm font-semibold">Dosyayla bağlayın</h2>
+          <h2 className="text-sm font-semibold">{ig.connect.heading}</h2>
           <p className="text-xs text-muted-foreground">
-            Programınızdan aldığınız Excel, CSV ya da PDF dosyalarını bırakın; sistem ne olduklarını anlar.
+            {ig.connect.subtitle}
           </p>
         </div>
         <Button asChild size="sm">
-          <Link href="/baglan">Verilerimi Bağla</Link>
+          <Link href="/baglan">{ig.connect.cta}</Link>
         </Button>
       </Card>
 
       {/* Mevcut entegrasyonlar */}
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Yükleniyor...</p>
+        <p className="text-sm text-muted-foreground">{ig.loading}</p>
       ) : integrations.length > 0 ? (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Bağlı Entegrasyonlar
+            {ig.connected}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {integrations.map((i) => (
@@ -306,7 +326,7 @@ export default function IntegrationsPage() {
       {/* Yeni entegrasyon ekle */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          Entegrasyon Ekle
+          {ig.addHeading}
         </h2>
         <div className="grid gap-3 sm:grid-cols-3">
           {(["logo_tiger", "mikro"] as const).map((p) => (
@@ -316,7 +336,7 @@ export default function IntegrationsPage() {
           ))}
           {activeProviders.has("logo_tiger") && activeProviders.has("mikro") && (
             <p className="text-sm text-muted-foreground col-span-3 text-center py-4">
-              Tüm desteklenen entegrasyonlar bağlı.
+              {ig.allConnected}
             </p>
           )}
         </div>
@@ -334,7 +354,7 @@ export default function IntegrationsPage() {
       {activePanel === "logo_tiger" && (
         <Card className="p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Logo Tiger CSV Sync</h3>
+            <h3 className="font-semibold">{ig.erp.logoTiger}</h3>
             <button onClick={() => setActivePanel(null)} className="text-xs text-muted-foreground">✕</button>
           </div>
           <CSVUploadSync provider="logo_tiger" />
@@ -344,7 +364,7 @@ export default function IntegrationsPage() {
       {activePanel === "mikro" && (
         <Card className="p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Mikro ERP CSV Sync</h3>
+            <h3 className="font-semibold">{ig.erp.mikro}</h3>
             <button onClick={() => setActivePanel(null)} className="text-xs text-muted-foreground">✕</button>
           </div>
           <CSVUploadSync provider="mikro" />
@@ -354,7 +374,7 @@ export default function IntegrationsPage() {
       {/* Sync history */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          Sync Geçmişi
+          {ig.logs.historyHeading}
         </h2>
         <Card className="p-4">
           <SyncLogsPanel />

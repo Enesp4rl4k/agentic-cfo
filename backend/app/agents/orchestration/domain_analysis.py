@@ -205,7 +205,7 @@ async def _cfo_gercek(db: AsyncSession, job_id: str, alan: Alan) -> dict[str, An
             kalemler.append({
                 "kategori": kat,
                 "etiket": f"Banka hareketlerindeki {_KATEGORI_ETIKETI.get(kat, kat)} harcaması",
-                "tutar_kurus": tutar,
+                "tutar_lira": tutar,   # Report.data stores lira (report_agent._fmt)
                 "gelire_orani": round(tutar / revenue, 4) if revenue else None,
                 "kaynak": f"CFO raporu — '{kat}' kategorisindeki işlemlerin toplamı",
             })

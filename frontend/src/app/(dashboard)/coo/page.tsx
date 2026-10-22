@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useMemo, useEffect } from "react";
 import {
   Zap, TrendingDown, Clock, AlertCircle, CheckCircle, Users,
-  ArrowUp, ArrowDown, Minus,
+  ArrowUp, ArrowDown, Minus, ChevronDown,
 } from "lucide-react";
 import { AgentCsvInput } from "@/components/ui/agent-csv-input";
 import {
@@ -18,6 +18,10 @@ import { useAgentJob } from "@/hooks/useAgentJob";
 import { AgentJobPanel } from "@/components/ui/agent-job-panel";
 import { DomainPanel } from "@/components/domains/DomainPanel";
 import { useCompanyContextStore } from "@/store/companyContext";
+import { RoleDashboardHeader } from "@/components/ui/role-dashboard-header";
+import { HydrationHint } from "@/components/ui/hydration-hint";
+import { useI18n } from "@/hooks/useI18n";
+import { normalizeCOOResult } from "@/lib/coo-result";
 
 const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -28,7 +32,7 @@ interface ProcessBottleneck {
   cycle_time: number; // days
   throughput: number; // items/day
   wip: number; // work in progress count
-  constraint_type: "resource" | "policy" | "market" | "material";
+  constraint_type: string;
   toc_recommendation: string;
   impact_score: number; // 0-100
 }
@@ -42,8 +46,8 @@ interface SLATicket {
   hours_remaining: number;
   /** A 0–1 ordering score from the backend's rule, never a probability. */
   risk_score?: number;
-  risk_level?: "kritik" | "yüksek" | "orta" | "düşük";
-  priority: "critical" | "high" | "medium" | "low";
+  risk_level?: string;
+  priority: string;
   status: string;
 }
 
@@ -93,13 +97,7 @@ function getConstraintColor(type: string): string {
   }
 }
 
-function getConstraintLabel(type: string): string {
-  const labels: Record<string, string> = {
-    resource: "İnsan Kaynakları",
-    policy: "Politika",
-    market: "Pazar",
-    material: "Malzeme",
-  };
+function getConstraintLabel(type: string, labels: Record<string, string>): string {
   return labels[type] || type;
 }
 
@@ -110,6 +108,7 @@ interface BubbleChartProps {
 }
 
 function BottleneckBubbleChart({ processes }: BubbleChartProps) {
+  const { t } = useI18n();
   const data = processes.map((p) => ({
     name: p.process_name.slice(0, 12),
     cycle_time: p.cycle_time,
@@ -123,20 +122,20 @@ function BottleneckBubbleChart({ processes }: BubbleChartProps) {
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <Zap className="h-4 w-4" />
-        Süreç Darboğazları (Verimlilik vs Döngü Zamanı)
+        {t.roleDashboards.coo.sections.bottlenecks}
       </h3>
       <ResponsiveContainer width="100%" height={350}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
           <XAxis
             dataKey="cycle_time"
-            name="Döngü Zamanı (gün)"
+            name={t.roleDashboards.coo.body.cycleTimeAxis}
             stroke="currentColor"
             opacity={0.5}
           />
           <YAxis
             dataKey="throughput"
-            name="Verimlilik (item/gün)"
+            name={t.roleDashboards.coo.body.throughputAxis}
             stroke="currentColor"
             opacity={0.5}
           />
@@ -146,7 +145,7 @@ function BottleneckBubbleChart({ processes }: BubbleChartProps) {
             formatter={(value) => fmt(value as number, 0)}
           />
           <Scatter
-            name="Darboğazlar"
+            name={t.roleDashboards.coo.body.bottlenecksSeries}
             data={data}
             fill="#3b82f6"
             shape="circle"
@@ -159,12 +158,7 @@ function BottleneckBubbleChart({ processes }: BubbleChartProps) {
         </ScatterChart>
       </ResponsiveContainer>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {Object.entries({
-          resource: "İnsan Kaynakları",
-          policy: "Politika",
-          market: "Pazar",
-          material: "Malzeme",
-        }).map(([type, label]) => (
+        {Object.entries(t.roleDashboards.coo.body.constraintLabels).map(([type, label]) => (
           <div key={type} className="flex items-center gap-2 text-xs">
             <div
               className="w-3 h-3 rounded-full"
@@ -185,6 +179,7 @@ interface TOCAnalysisProps {
 }
 
 function TOCAnalysis({ processes }: TOCAnalysisProps) {
+  const { t } = useI18n();
   const topConstraints = useMemo(
     () => processes.sort((a, b) => b.impact_score - a.impact_score).slice(0, 5),
     [processes]
@@ -194,7 +189,7 @@ function TOCAnalysis({ processes }: TOCAnalysisProps) {
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <TrendingDown className="h-4 w-4" />
-        Kısıtlama Teorisi (ToC) Analizi
+        {t.roleDashboards.coo.sections.tocAnalysis}
       </h3>
       <div className="space-y-3">
         {topConstraints.map((proc) => (
@@ -208,11 +203,11 @@ function TOCAnalysis({ processes }: TOCAnalysisProps) {
                 className="text-xs px-2 py-1 rounded font-medium text-white shrink-0"
                 style={{ backgroundColor: getConstraintColor(proc.constraint_type) }}
               >
-                {getConstraintLabel(proc.constraint_type)}
+                {getConstraintLabel(proc.constraint_type, t.roleDashboards.coo.body.constraintLabels)}
               </span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Etki Puanı</span>
+              <span className="text-muted-foreground">{t.roleDashboards.coo.body.impactScore}</span>
               <span className="font-bold">{fmt(proc.impact_score, 0)}/100</span>
             </div>
             <div className="mt-2 w-full bg-muted rounded h-1.5 overflow-hidden">
@@ -234,23 +229,26 @@ function TOCAnalysis({ processes }: TOCAnalysisProps) {
 // ── SLA overdue share ─────────────────────────────────────────────────────────
 
 function SLAOverdueCard({ overdue, total }: { overdue: number; total: number }) {
+  const { t } = useI18n();
   const rate = total > 0 ? overdue / total : 0;
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <TrendingDown className="h-4 w-4" />
-        Süresi Geçmiş Biletler
+        {t.roleDashboards.coo.sections.overdueTickets}
       </h3>
       <div className="flex items-baseline justify-between">
         <span className="text-xs text-muted-foreground">
-          {overdue} / {total} açık bilet bitiş tarihini geçti
+          {t.roleDashboards.coo.body.overdueTicketsLine
+            .replace("{overdue}", String(overdue))
+            .replace("{total}", String(total))}
         </span>
         <span className={`text-lg font-bold ${rate > 0.1 ? "text-red-400" : "text-green-400"}`}>
           {formatPercent(rate)}
         </span>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Trend için birden fazla dönemin bilet listesi gerekir; tek yüklemeden trend çizilmez.
+        {t.roleDashboards.coo.body.trendExplanation}
       </p>
     </div>
   );
@@ -264,6 +262,7 @@ interface AtRiskTableProps {
 }
 
 function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
+  const { t } = useI18n();
   const atRiskTickets = useMemo(
     () =>
       // Ordered by what is measured — how little SLA time is left. The old
@@ -279,18 +278,18 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-4 text-sm font-semibold flex items-center gap-2">
         <AlertCircle className="h-4 w-4" />
-        Risk Altında Biletler ({atRiskTickets.length})
+        {t.roleDashboards.coo.sections.atRiskTickets} ({atRiskTickets.length})
       </h3>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border">
-              <th className="text-left py-2 px-2 font-semibold">Bilet</th>
-              <th className="text-left py-2 px-2 font-semibold">Başlık</th>
-              <th className="text-left py-2 px-2 font-semibold">Atanan</th>
-              <th className="text-center py-2 px-2 font-semibold">Kalan Saat</th>
-              <th className="text-center py-2 px-2 font-semibold">Aciliyet</th>
-              <th className="text-center py-2 px-2 font-semibold">Öncelik</th>
+              <th className="text-left py-2 px-2 font-semibold">{t.roleDashboards.coo.body.colTicket}</th>
+              <th className="text-left py-2 px-2 font-semibold">{t.roleDashboards.coo.body.colTitle}</th>
+              <th className="text-left py-2 px-2 font-semibold">{t.roleDashboards.coo.body.colAssigned}</th>
+              <th className="text-center py-2 px-2 font-semibold">{t.roleDashboards.coo.body.colRemainingHours}</th>
+              <th className="text-center py-2 px-2 font-semibold">{t.roleDashboards.coo.body.colUrgency}</th>
+              <th className="text-center py-2 px-2 font-semibold">{t.roleDashboards.coo.body.colPriority}</th>
             </tr>
           </thead>
           <tbody>
@@ -313,8 +312,8 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
                     }`}
                   >
                     {ticket.hours_remaining <= 0
-                      ? "Süre doldu"
-                      : ticket.risk_level ?? (ticket.hours_remaining < 24 ? "yakın" : "izlemede")}
+                      ? t.roleDashboards.coo.body.timeExpired
+                      : ticket.risk_level ?? (ticket.hours_remaining < 24 ? t.roleDashboards.coo.body.near : t.roleDashboards.coo.body.watching)}
                   </span>
                 </td>
                 <td className="py-2 px-2 text-center">
@@ -334,6 +333,7 @@ function AtRiskTicketsTable({ tickets, onSort }: AtRiskTableProps) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function COODashboardPage() {
+  const { t } = useI18n();
   const [processCsv, setProcessCsv] = useState("");
   const [slaCsv, setSlaCsv] = useState("");
   const [company, setCompany] = useState("");
@@ -350,34 +350,36 @@ export default function COODashboardPage() {
   } = useAgentJob("coo");
 
   const [liveResult, setLiveResult] = useState<COOResult | null>(null);
+  // U2/1.5: context fetch while in flight — hint instead of a false "no
+  // analysis" flash; the paste form below opens immediately regardless.
+  const [hydrating, setHydrating] = useState(true);
 
+  // Same-data context hydration — not cancelled on re-runs (see cmo/page).
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const target = orgId ? `/context/${orgId}` : "/context/me";
         const res = await apiClient.get(target);
         const ctx = res.data?.data ?? res.data;
-        if (cancelled || !ctx) return;
+        if (!ctx) return;
         if (ctx.company_name) setCompany(String(ctx.company_name));
         if (ctx.reporting_period) setPeriod(String(ctx.reporting_period));
         const last = ctx.last_coo_result;
-        if (last && typeof last === "object") setLiveResult(last as COOResult);
+        if (last && typeof last === "object") setLiveResult(normalizeCOOResult(last));
       } catch {
         /* empty until analyze */
+      } finally {
+        setHydrating(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [orgId]);
 
-  const cooResult = (result as COOResult | null) ?? liveResult;
+  const cooResult = (result ? normalizeCOOResult(result) : null) ?? liveResult;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!processCsv && !slaCsv) {
-      setSubmitError("En az bir veri kaynağı (süreçler veya SLA CSV) gereklidir.");
+      setSubmitError(t.roleDashboards.coo.body.validationError);
       return;
     }
     setSubmitError(null);
@@ -402,11 +404,11 @@ export default function COODashboardPage() {
         throughput: parseFloat(values[2]) || 0,
         wip: parseFloat(values[3]) || 0,
         constraint_type: (values[4]?.trim() as any) || "resource",
-        toc_recommendation: "Kısıtlamayı tespit edin ve kapasite artırın",
+        toc_recommendation: t.roleDashboards.coo.body.tocDefault,
         impact_score: parseFloat(values[5]) || 50,
       };
     });
-  }, [processCsv]);
+  }, [processCsv, t]);
 
   const parsedTickets = useMemo(() => {
     if (!slaCsv) return [];
@@ -431,39 +433,42 @@ export default function COODashboardPage() {
     });
   }, [slaCsv]);
 
-  const openTickets = parsedTickets.filter(
-    (t) => !/^(closed|resolved|kapal|çözül)/i.test(t.status) && !Number.isNaN(t.hours_remaining),
+  const displayProcesses = cooResult?.processes?.length ? cooResult.processes : parsedProcesses;
+  const displayTickets = cooResult?.sla?.tickets?.length ? cooResult.sla.tickets : parsedTickets;
+  const displayOpenTickets = displayTickets.filter(
+    (t) => !/^(closed|resolved|kapal|çözül)/i.test(t.status),
   );
-  const overdueCount = openTickets.filter((t) => t.hours_remaining < 0).length;
+  const displayOverdueCount = displayOpenTickets.filter((t) => t.hours_remaining < 0).length;
+  const hasResults = Boolean(cooResult || parsedProcesses.length > 0 || parsedTickets.length > 0);
 
   return (
-    <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <Zap className="h-6 w-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold">COO Operasyon Panosu</h1>
-            <p className="text-sm text-muted-foreground">
-              Süreç darboğazları, ToC analizi ve SLA izleme
-            </p>
-          </div>
-        </div>
-      </div>
+      <RoleDashboardHeader
+        title={t.roleDashboards.coo.title}
+        description={t.roleDashboards.coo.description}
+      />
+
+      {hydrating && !cooResult && <HydrationHint />}
 
       <DomainPanel
         alan="coo"
         jobId={activeCFOJobId}
-        onResult={(r) => setLiveResult(r as unknown as COOResult)}
+        onResult={(r) => setLiveResult(normalizeCOOResult(r))}
       />
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-4">
+      <details open={!hasResults} className="group rounded-xl border border-border/80 bg-card">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+        <span className="text-sm font-semibold">{t.roleDashboards.coo.body.csvManualHeading}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <form onSubmit={handleSubmit} className="space-y-4 border-t border-border/80 p-4 sm:p-5">
         {/* Company / Period */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="coo-company" className="mb-1 block text-xs font-medium">
-              Şirket Adı
+              {t.roleDashboards.coo.body.companyName}
             </label>
             <input
               id="coo-company"
@@ -476,7 +481,7 @@ export default function COODashboardPage() {
           </div>
           <div>
             <label htmlFor="coo-period" className="mb-1 block text-xs font-medium">
-              Dönem
+              {t.roleDashboards.coo.body.period}
             </label>
             <input
               id="coo-period"
@@ -492,7 +497,7 @@ export default function COODashboardPage() {
         {/* CSV inputs — file drop or paste */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <AgentCsvInput
-            label="Süreçler CSV"
+            label={t.roleDashboards.coo.body.processesCsvLabel}
             value={processCsv}
             onChange={setProcessCsv}
             sampleData={IS_DEMO ? SAMPLE_PROCESSES : undefined}
@@ -500,7 +505,7 @@ export default function COODashboardPage() {
             disabled={isActive || isEnqueueing}
           />
           <AgentCsvInput
-            label="SLA / Biletler CSV"
+            label={t.roleDashboards.coo.body.slaCsvLabel}
             value={slaCsv}
             onChange={setSlaCsv}
             sampleData={IS_DEMO ? SAMPLE_SLA : undefined}
@@ -520,32 +525,43 @@ export default function COODashboardPage() {
           disabled={isActive || isEnqueueing}
           className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
-          {isActive ? "Analiz yapılıyor…" : "COO Analizi Çalıştır"}
+          {isActive ? t.roleDashboards.coo.body.analyzing : t.roleDashboards.coo.body.runAnalysis}
         </button>
       </form>
+      </details>
 
       {/* Results */}
-      {(parsedProcesses.length > 0 || parsedTickets.length > 0) && (
+      {hasResults && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {parsedProcesses.length > 0 && <BottleneckBubbleChart processes={parsedProcesses} />}
-            {parsedProcesses.length > 0 && <TOCAnalysis processes={parsedProcesses} />}
-          </div>
+          {displayOpenTickets.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <SLAOverdueCard overdue={displayOverdueCount} total={displayOpenTickets.length} />
+              <AtRiskTicketsTable tickets={displayTickets} onSort={() => {}} />
+            </div>
+          )}
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {openTickets.length > 0 && <SLAOverdueCard overdue={overdueCount} total={openTickets.length} />}
-            {parsedTickets.length > 0 && (
-              <AtRiskTicketsTable tickets={parsedTickets} onSort={() => {}} />
-            )}
-          </div>
+          {displayProcesses.length > 0 && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <BottleneckBubbleChart processes={displayProcesses} />
+              <TOCAnalysis processes={displayProcesses} />
+            </div>
+          )}
 
+          {cooResult?.sla && displayOpenTickets.length === 0 && (
+            <SLAOverdueCard overdue={0} total={0} />
+          )}
+          {cooResult && !cooResult.sla && !cooResult.processes?.length && (
+            <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+              {t.roleDashboards.coo.body.noResults}
+            </p>
+          )}
           {cooResult?.error && (
             <div role="alert" className="rounded border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-400">
-              Hata: {cooResult.error}
+              {t.roleDashboards.coo.body.errorPrefix} {cooResult.error}
             </div>
           )}
         </div>
       )}
-    </main>
+    </div>
   );
 }

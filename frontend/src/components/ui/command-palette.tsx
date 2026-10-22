@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search, LayoutDashboard, Upload, TrendingUp, DollarSign, Waves,
@@ -191,18 +191,27 @@ export function CommandPalette() {
   }, [activeCFOJobId]);
 
   // Detect AI mode: query typed but no command matches
-  const filtered = query.trim()
-    ? COMMANDS
-        .map((cmd) => ({ cmd, s: score(cmd, query) }))
-        .filter((x) => x.s > 0)
-        .sort((a, b) => b.s - a.s)
-        .map((x) => x.cmd)
-    : [
-        ...recentIds.map((id) => COMMANDS.find((c) => c.id === id)).filter(Boolean) as Command[],
-        ...COMMANDS.filter((c) => !recentIds.includes(c.id)).slice(0, 8),
-      ];
+  const filtered = useMemo(() => {
+    return query.trim()
+      ? COMMANDS
+          .map((cmd) => ({ cmd, s: score(cmd, query) }))
+          .filter((x) => x.s > 0)
+          .sort((a, b) => b.s - a.s)
+          .map((x) => x.cmd)
+      : [
+          ...recentIds.map((id) => COMMANDS.find((c) => c.id === id)).filter(Boolean) as Command[],
+          ...COMMANDS.filter((c) => !recentIds.includes(c.id)).slice(0, 8),
+        ];
+  }, [query, recentIds]);
 
   const shouldAiMode = query.trim().length > 4 && filtered.length === 0;
+
+  // Run a command
+  const runCommand = useCallback((cmd: Command) => {
+    addRecent(cmd.id);
+    setOpen(false);
+    cmd.action(router);
+  }, [router]);
 
   // Trigger AI mode
   useEffect(() => {
@@ -215,7 +224,7 @@ export function CommandPalette() {
       setFollowUps([]);
       abortRef.current?.abort();
     }
-  }, [shouldAiMode]);
+  }, [shouldAiMode, aiMode, query, streamAIQuery]);
 
   // Keyboard navigation
   const handleKey = useCallback((e: React.KeyboardEvent) => {
@@ -230,17 +239,11 @@ export function CommandPalette() {
       const cmd = filtered[activeIndex];
       if (cmd) runCommand(cmd);
     }
-  }, [filtered, activeIndex]);
-
-  function runCommand(cmd: Command) {
-    addRecent(cmd.id);
-    setOpen(false);
-    cmd.action(router);
-  }
+  }, [filtered, activeIndex, runCommand]);
 
   // Group the results
   const grouped: Record<string, Command[]> = {};
-  filtered.forEach((cmd) => {
+  filtered.forEach((cmd: Command) => {
     const grp = query.trim() ? cmd.group : (recentIds.includes(cmd.id) ? "Son Kullanılanlar" : cmd.group);
     if (!grouped[grp]) grouped[grp] = [];
     grouped[grp].push(cmd);

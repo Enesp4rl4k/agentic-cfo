@@ -14,7 +14,8 @@ import {
 } from "recharts";
 import { useActiveCFOJob } from "@/hooks/useCompanyContext";
 import { apiClient } from "@/lib/api/client";
-import { formatCurrency, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { BaselineSourceBadge } from "@/components/ui/baseline-source-badge";
@@ -58,6 +59,7 @@ interface KRIData {
 // ── KRI Status Badge ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: "healthy" | "warning" | "critical" }) {
+  const { t } = useI18n();
   const colors = {
     healthy: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
     warning: "bg-amber-500/15 text-amber-400 border-amber-500/30",
@@ -68,10 +70,11 @@ function StatusBadge({ status }: { status: "healthy" | "warning" | "critical" })
     warning: "⚠",
     critical: "!",
   };
+  const labels = t.intelligence.status;
   return (
     <span className={cn("inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium", colors[status])}>
       {icons[status]}
-      {status === "healthy" ? "Sağlıklı" : status === "warning" ? "Uyarı" : "Kritik"}
+      {labels[status]}
     </span>
   );
 }
@@ -79,6 +82,7 @@ function StatusBadge({ status }: { status: "healthy" | "warning" | "critical" })
 // ── KRI Metric Card ───────────────────────────────────────────────────────────
 
 function KRICard({ metric }: { metric: KRIMetric }) {
+  const { t } = useI18n();
   const trendColor = metric.trend >= 0 ? "text-emerald-400" : "text-red-400";
   const trendIcon = metric.trend >= 0 ? "↑" : "↓";
 
@@ -94,7 +98,11 @@ function KRICard({ metric }: { metric: KRIMetric }) {
         <StatusBadge status={metric.status} />
       </div>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Eşik: {metric.threshold}{metric.unit}</span>
+        <span className="text-muted-foreground">
+          {t.intelligence.kpi.threshold
+            .replace("{value}", String(metric.threshold))
+            .replace("{unit}", metric.unit)}
+        </span>
         <span className={cn("font-medium", trendColor)}>
           {trendIcon} {Math.abs(metric.trend).toFixed(1)}%
         </span>
@@ -106,23 +114,27 @@ function KRICard({ metric }: { metric: KRIMetric }) {
 // ── KRI History Chart ─────────────────────────────────────────────────────────
 
 function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
+  const { t, locale } = useI18n();
+  const dateTag = locale === "tr" ? "tr-TR" : "en-US";
+  const kpi = t.intelligence.kpi;
+
   if (!data || data.length === 0) {
     return (
       <Card className="flex items-center justify-center py-20 text-center">
-        <p className="text-sm text-muted-foreground">KRI geçmiş verisi yok</p>
+        <p className="text-sm text-muted-foreground">{kpi.noHistory}</p>
       </Card>
     );
   }
 
   const chartData = data.map((d) => ({
-    date: new Date(d.date).toLocaleDateString("tr-TR", { month: "short", day: "numeric" }),
+    date: new Date(d.date).toLocaleDateString(dateTag, { month: "short", day: "numeric" }),
     runway: d.cash_runway_months,
     margin: d.margin_percent * 100,
   }));
 
   return (
     <Card className="p-4 space-y-3">
-      <h3 className="text-sm font-semibold">KRI Trend (Son 30 Gün)</h3>
+      <h3 className="text-sm font-semibold">{kpi.trendHeading}</h3>
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
@@ -135,7 +147,7 @@ function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
             yAxisId="left"
             tick={{ fontSize: 11 }}
             opacity={0.6}
-            tickFormatter={(v: number) => `${v.toFixed(1)}ay`}
+            tickFormatter={(v: number) => `${v.toFixed(1)}`}
           />
           <YAxis
             yAxisId="right"
@@ -157,8 +169,8 @@ function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
             yAxisId="left"
             type="monotone"
             dataKey="runway"
-            name="Nakit Pisti (ay)"
-            stroke="oklch(0.60 0.19 255)"
+            name={kpi.cashRunway}
+            stroke="oklch(0.79 0.115 83)"
             strokeWidth={2}
             dot={false}
           />
@@ -166,7 +178,7 @@ function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
             yAxisId="right"
             type="monotone"
             dataKey="margin"
-            name="Marj (%)"
+            name={kpi.margin}
             stroke="oklch(0.58 0.14 145)"
             strokeWidth={2}
             dot={false}
@@ -192,10 +204,12 @@ export default function IntelligencePage() {
   const [semanticPeriod, setSemanticPeriod] = useState<string | undefined>();
   const [liveStatus, setLiveStatus] = useState<LiveDataStatus | null>(null);
   const [semanticLoading, setSemanticLoading] = useState(true);
+  const { t } = useI18n();
+  const intel = t.intelligence;
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const [semantic, live] = await Promise.all([
           getSemanticMe(),
@@ -234,14 +248,14 @@ export default function IntelligencePage() {
         );
         setData(res.data.data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "KRI verisi yüklenemedi");
+        setError(err instanceof Error ? err.message : intel.error);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchKRI();
-  }, [finalJobId]);
+    void fetchKRI();
+  }, [finalJobId, intel.error]);
 
   const hasSemantic = semanticMetrics.length > 0;
   const baselineSource = liveStatus?.baseline_source ?? (hasSemantic ? "semantic" : "none");
@@ -254,22 +268,22 @@ export default function IntelligencePage() {
           <Zap className="h-6 w-6 text-primary" />
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold">Proaktif KRI Dashboard</h1>
+              <h1 className="text-2xl font-bold">{intel.title}</h1>
               <BaselineSourceBadge source={baselineSource} />
             </div>
             <p className="text-sm text-muted-foreground">
-              Key Risk Indicators — saatlik KRI taraması ve semantic metrikler
+              {intel.subtitle}
             </p>
             {liveStatus?.golden_path_ready && (
               <p className="text-xs text-emerald-400 mt-1">
-                Live sync + semantic brief ready
+                {intel.goldenPath}
               </p>
             )}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
           <RefreshCw className="h-4 w-4 mr-1" />
-          Yenile
+          {intel.refresh}
         </Button>
       </div>
 
@@ -295,16 +309,15 @@ export default function IntelligencePage() {
       {!finalJobId && !loading && !semanticLoading && !hasSemantic && (
         <Card className="flex flex-col items-center justify-center py-16 text-center">
           <Zap className="h-12 w-12 text-muted-foreground/40 mb-3" />
-          <p className="font-medium">KRI Analizi Beklemede</p>
+          <p className="font-medium">{intel.empty.heading}</p>
           <p className="text-sm text-muted-foreground max-w-sm mt-1">
-            Finansal verisi yüklendikten veya live sync tamamlandıktan sonra
-            göstergeler görüntülenecektir.
+            {intel.empty.bodyLong}
           </p>
           <Link
             href="/command-center"
             className="mt-4 text-sm text-primary hover:underline"
           >
-            Command Center →
+            {intel.empty.ctaCommand}
           </Link>
         </Card>
       )}
@@ -312,10 +325,9 @@ export default function IntelligencePage() {
       {!finalJobId && !loading && hasSemantic && !data && (
         <Card className="p-4 border-dashed">
           <p className="text-sm text-muted-foreground">
-            Semantic metrikler hazır. Tam KRI trend grafiği için CFO analizi
-            tamamlanmalı —{" "}
+            {intel.semantic.ready}{" "}
             <Link href="/" className="text-primary hover:underline">
-              CFO analizi başlat
+              {intel.semantic.link}
             </Link>
             .
           </p>
@@ -354,10 +366,10 @@ export default function IntelligencePage() {
                     : "text-emerald-400"
               )}>
                 {data.critical_count > 0
-                  ? `Bu hafta ${data.critical_count} kritik uyarı`
+                  ? intel.weekly.critical.replace("{count}", String(data.critical_count))
                   : data.warning_count > 0
-                    ? `Bu hafta ${data.warning_count} uyarı`
-                    : "Tüm göstergeler sağlıklı"}
+                    ? intel.weekly.warning.replace("{count}", String(data.warning_count))
+                    : intel.weekly.healthy}
               </p>
               <p className="text-xs text-muted-foreground mt-1">{data.summary}</p>
             </div>
@@ -376,7 +388,7 @@ export default function IntelligencePage() {
           {/* Recommendations */}
           {data.recommendations.length > 0 && (
             <Card className="p-4 space-y-3 border-amber-500/30 bg-amber-500/5">
-              <h3 className="text-sm font-semibold text-amber-400">Öneriler</h3>
+              <h3 className="text-sm font-semibold text-amber-400">{intel.recommendations}</h3>
               <ul className="space-y-1.5">
                 {data.recommendations.map((rec, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -394,7 +406,7 @@ export default function IntelligencePage() {
         <Card className="flex items-center justify-center py-20">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            KRI verisi yükleniyor…
+            {intel.loading}
           </div>
         </Card>
       )}

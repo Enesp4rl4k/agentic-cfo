@@ -5,6 +5,7 @@ Anomalies API — GET /anomalies/{job_id}, POST /anomalies/scan/{job_id},
 Kullanıcı muhasebe verisini yükleyip analiz ettikten sonra
 bu endpoint'ler anomali sonuçlarını döner ve manuel tarama başlatır.
 """
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,6 +23,7 @@ from app.models.anomaly import Anomaly
 from app.models.transaction import Transaction
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -196,6 +198,16 @@ async def scan_anomalies(
         new_rows.append(row)
 
     await db.commit()
+
+    if job.org_id:
+        # P4: anomaly.detected — non-fatal, a trigger never fails the rescan.
+        try:
+            from app.services.triggers.sources import emit_anomaly_detected
+
+            await emit_anomaly_detected(db, job_id=job_id, org_id=str(job.org_id))
+        except Exception as exc:
+            await db.rollback()
+            logger.warning("anomaly trigger failed job=%s (non-fatal): %s", job_id, exc)
 
     narrative = await _generate_anomaly_narrative(all_anomalies, None)
 

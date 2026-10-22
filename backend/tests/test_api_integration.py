@@ -109,6 +109,10 @@ async def test_user_registration_login_and_auth_flow(test_client):
     login_body = login_resp.json()
     token = login_body.get("data", {}).get("access_token")
     assert token is not None
+    # NextAuth copies user.org_id into session.user.orgId; when the backend
+    # omitted the key, session.user.orgId stayed null forever and every
+    # orgId-gated feature (CEO synthesize, context hydration) silently died.
+    assert "org_id" in login_body.get("data", {}).get("user", {})
 
     # Access protected /auth/me
     me_resp = await test_client.get(
@@ -120,6 +124,7 @@ async def test_user_registration_login_and_auth_flow(test_client):
     assert me_body.get("data", {}).get("email") == "cfo.test@company.com"
     # The server assigns the role; a registrant does not get to pick one.
     assert me_body.get("data", {}).get("role") == "analyst"
+    assert "org_id" in me_body.get("data", {})
 
 
 @pytest.mark.asyncio
@@ -394,9 +399,13 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     # Offline fake for the raw GitHub REST client.
     class _FakeCommit:
         def __init__(self, i: int):
-            self.sha = f"sha{i:03d}"; self.message = "feat: ship"; self.author = "dev"
-            self.date = datetime.now(UTC).isoformat(); self.files_changed = 3
-            self.additions = 30; self.deletions = 5
+            self.sha = f"sha{i:03d}"
+            self.message = "feat: ship"
+            self.author = "dev"
+            self.date = datetime.now(UTC).isoformat()
+            self.files_changed = 3
+            self.additions = 30
+            self.deletions = 5
 
     class _FakeData:
         error = None

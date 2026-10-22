@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _fmt(cents: int) -> str:
-    return f"${cents / 100:,.0f}"
+    return f"₺{cents / 100:,.0f}"
 
 
 def _detect_seasonality(
@@ -50,7 +50,7 @@ def _detect_seasonality(
         import numpy as np
 
         # Build arrays indexed by calendar month
-        monthly_revenue = {}  # month_key → income
+        monthly_revenue: dict[int, list[int]] = {}  # month_key → income
         for entry in monthly_series:
             m_num = int(entry["month"][5:7])
             monthly_revenue.setdefault(m_num, []).append(entry["in"])

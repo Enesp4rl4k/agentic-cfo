@@ -51,6 +51,20 @@ def test_project_from_cfo_shapes() -> None:
     assert mmap2["finance.runway_months"].value == 4
 
 
+def test_project_from_cfo_converts_lira_scalars_to_cents() -> None:
+    """Report.data scalars are lira; catalog unit is cents → ×100 at the boundary."""
+    flat = {
+        "pnl": {"revenue": 1_000_000, "ebitda": 250_000},
+        "cashflow": {"operating": 300_000},
+    }
+    pts = project_from_cfo(flat, currency="USD")
+    mmap = {p.metric_id: p for p in pts}
+    assert mmap["finance.revenue"].unit == "cents"
+    assert mmap["finance.revenue"].value == 100_000_000       # 1_000_000 lira
+    assert mmap["finance.ebitda"].value == 25_000_000         # 250_000 lira
+    assert mmap["finance.operating_cashflow"].value == 30_000_000  # 300_000 lira
+
+
 def test_merge_metrics_later_wins() -> None:
     a = [MetricPoint("finance.revenue", 1, "cents", source_agent="cfo")]
     b = [MetricPoint("finance.revenue", 2, "cents", source_agent="canonical", data_source="canonical")]
@@ -95,6 +109,34 @@ def test_decision_brief_confidence_gate() -> None:
     assert score >= 50
     brief2 = build_from_snapshot(healthy)
     assert brief2.awaiting_review is False or all(f.severity != "critical" for f in brief2.findings)
+
+
+def test_decision_brief_localizes_turkish() -> None:
+    """Brief copy follows the org locale carried on the snapshot (tr-TR → Turkish)."""
+
+    def snap(locale: str) -> CompanySemanticSnapshot:
+        return CompanySemanticSnapshot(
+            org_id="org-1",
+            period=Period(key="2026-08"),
+            currency="TRY" if locale.startswith("tr") else "USD",
+            locale=locale,
+            metrics=[
+                MetricPoint("finance.runway_months", 4.0, "months", confidence=0.9),
+                MetricPoint("finance.net_margin", 0.1, "ratio", confidence=0.85),
+            ],
+        )
+
+    tr_brief = build_from_snapshot(snap("tr-TR"))
+    assert tr_brief.headline.startswith("Şirket sağlığı")
+    assert any("Nakit koşu süresi" in f.statement for f in tr_brief.findings)
+    assert tr_brief.options[0].title == "Nakit koşusunu koru"
+    assert tr_brief.recommendation is not None
+    assert tr_brief.recommendation.title == "Nakit koşusunu koru"
+
+    en_brief = build_from_snapshot(snap("en-US"))
+    assert en_brief.headline.startswith("Company health")
+    assert any("Cash runway" in f.statement for f in en_brief.findings)
+    assert en_brief.options[0].title == "Protect runway"
 
 
 def test_project_from_cmo() -> None:

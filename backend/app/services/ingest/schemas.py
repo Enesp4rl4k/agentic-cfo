@@ -109,6 +109,7 @@ SEMALAR: tuple[Sema, ...] = (
         A("start_date", TARIH, "hire_date", "joined", "işe giriş tarihi", "işe başlama tarihi", "giriş tarihi",
           "işe giriş"),
         A("status", KATEGORI, "employment_status", "state", "durum", "çalışma durumu"),
+        A("fte", SAYI, "fte_count", "full_time_equivalent", "zaman dilimi eşdeğeri"),
     )),
     Sema("attrition", "chro", "İşten ayrılanlar", (
         A("name", METIN, "employee", "employee_name", "ad soyad", "adı soyadı", "isim", "personel", "çalışan",
@@ -121,6 +122,7 @@ SEMALAR: tuple[Sema, ...] = (
         A("reason", METIN, "departure_reason", "attrition_reason", "cause", "ayrılış nedeni", "çıkış nedeni",
           "neden", "ayrılma nedeni"),
         A("replaced", EVET_HAYIR, "replacement_hired", "backfilled", "yerine alındı", "yerine alım"),
+        A("departure_type", KATEGORI, "exit_type", "separation_type", "ayrılış türü", "çıkış tipi", "ayrılma şekli"),
     )),
     Sema("compensation", "chro", "Ücret ve yan haklar", (
         A("name", METIN, "employee", "employee_name", "ad soyad", "adı soyadı", "isim", "personel", "çalışan",

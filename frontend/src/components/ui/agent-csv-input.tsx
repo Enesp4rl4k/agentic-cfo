@@ -19,6 +19,7 @@
 import { useCallback, useState, useRef } from "react";
 import { FileText, Upload, X, ChevronDown, ChevronUp, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/useI18n";
 
 interface AgentCsvInputProps {
   /** Field label shown above the dropzone */
@@ -27,7 +28,7 @@ interface AgentCsvInputProps {
   value: string;
   /** Called when value changes (file drop or paste) */
   onChange: (value: string) => void;
-  /** Placeholder shown in the textarea fallback */
+  /** Placeholder shown in the textarea fallback (defaults to localized copy) */
   placeholder?: string;
   /** Sample data string — shown via "Örnek Veri" button */
   sampleData?: string;
@@ -45,13 +46,14 @@ export function AgentCsvInput({
   label,
   value,
   onChange,
-  placeholder = "CSV verisi yapıştırın veya dosya yükleyin…",
+  placeholder,
   sampleData,
   accept = ".csv,.txt",
   rows = 6,
   disabled = false,
   description,
 }: AgentCsvInputProps) {
+  const { t } = useI18n();
   const [isDragOver, setIsDragOver] = useState(false);
   const [showTextarea, setShowTextarea] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -115,7 +117,7 @@ export function AgentCsvInput({
     setTimeout(() => setCopied(false), 1500);
   }, [sampleData, onChange]);
 
-  // ── Clear ────────────────────────────────────────────────────────────────────
+  // ── Clear ───────────────────────────────────────────────────────────────────
 
   const handleClear = useCallback(
     (e: React.MouseEvent) => {
@@ -155,7 +157,7 @@ export function AgentCsvInput({
               ) : (
                 <Copy className="h-3 w-3" aria-hidden="true" />
               )}
-              Örnek veri
+              {t.csvInput.sampleData}
             </button>
           )}
           {hasValue && (
@@ -165,9 +167,9 @@ export function AgentCsvInput({
               className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
             >
               {showTextarea ? (
-                <><ChevronUp className="h-3 w-3" aria-hidden="true" />Gizle</>
+                <><ChevronUp className="h-3 w-3" aria-hidden="true" />{t.csvInput.hide}</>
               ) : (
-                <><ChevronDown className="h-3 w-3" aria-hidden="true" />Düzenle</>
+                <><ChevronDown className="h-3 w-3" aria-hidden="true" />{t.csvInput.edit}</>
               )}
             </button>
           )}
@@ -184,7 +186,7 @@ export function AgentCsvInput({
         type="file"
         accept={accept}
         className="sr-only"
-        aria-label={`${label} dosyası seç`}
+        aria-label={t.csvInput.chooseFile.replace("{label}", label)}
         onChange={handleFileChange}
         disabled={disabled}
       />
@@ -194,7 +196,7 @@ export function AgentCsvInput({
         <div
           role="button"
           tabIndex={disabled ? -1 : 0}
-          aria-label={`${label} — dosya yükle veya sürükle bırak`}
+          aria-label={t.csvInput.dropAria.replace("{label}", label)}
           onClick={handleDropzoneClick}
           onKeyDown={(e) => e.key === "Enter" && handleDropzoneClick()}
           onDragOver={handleDragOver}
@@ -216,23 +218,23 @@ export function AgentCsvInput({
               <FileText className="h-5 w-5 shrink-0 text-emerald-400" aria-hidden="true" />
               <div className="flex-1 min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">
-                  {fileName ?? "Veri yüklendi"}
+                  {fileName ?? t.csvInput.dataLoaded}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  {value.split("\n").length} satır
-                  {" · "}Değiştirmek için tıkla veya
+                  {t.csvInput.lineCount.replace("{count}", String(value.split("\n").length))}
+                  {" · "}{t.csvInput.clickToEdit}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setShowTextarea(true); }}
                     className="ml-1 underline hover:text-foreground"
                   >
-                    düzenle
+                    {t.csvInput.editWord}
                   </button>
                 </p>
               </div>
               <button
                 type="button"
-                aria-label="Veriyi temizle"
+                aria-label={t.csvInput.clearData}
                 onClick={handleClear}
                 className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
@@ -244,10 +246,10 @@ export function AgentCsvInput({
               <Upload className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
               <div>
                 <p className="text-sm text-muted-foreground">
-                  {isDragOver ? "Bırakın!" : "CSV dosyası sürükle & bırak veya tıkla"}
+                  {isDragOver ? t.csvInput.dropHintActive : t.csvInput.dropHint}
                 </p>
                 <p className="text-[10px] text-muted-foreground/60">
-                  {accept.replace(/\./g, "").toUpperCase()} · Maks 5 MB
+                  {accept.replace(/\./g, "").toUpperCase()} · {t.csvInput.maxFile}
                 </p>
               </div>
             </>
@@ -261,7 +263,7 @@ export function AgentCsvInput({
           <textarea
             value={value}
             onChange={(e) => { onChange(e.target.value); setFileName(null); }}
-            placeholder={placeholder}
+            placeholder={placeholder ?? t.csvInput.placeholder}
             rows={rows}
             disabled={disabled}
             aria-label={label}
@@ -273,7 +275,7 @@ export function AgentCsvInput({
           />
           <button
             type="button"
-            aria-label="Düzenlemeyi kapat"
+            aria-label={t.csvInput.closeEditor}
             onClick={() => setShowTextarea(false)}
             className="absolute right-2 top-2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
