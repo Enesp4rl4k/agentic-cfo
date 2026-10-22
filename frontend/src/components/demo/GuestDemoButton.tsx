@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
+import { useI18n } from "@/hooks/useI18n";
 import { startGuestDemo } from "@/lib/demo";
 
 /**
@@ -30,6 +31,7 @@ export function GuestDemoButton({
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const router = useRouter();
+  const { t } = useI18n();
 
   useEffect(() => {
     setHydrated(true);
@@ -58,9 +60,9 @@ export function GuestDemoButton({
       className={className}
     >
       {loading
-        ? "Demo hazırlanıyor…"
+        ? t.demo.preparing
         : failed
-          ? "Başlatılamadı — tekrar deneyin"
+          ? t.demo.failedRetry
           : children}
     </button>
   );

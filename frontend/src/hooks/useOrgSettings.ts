@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { useCallback } from "react";
 import { apiClient } from "@/lib/api/client";
 
@@ -33,13 +34,21 @@ async function fetchOrgSettings(): Promise<OrgSettings | null> {
  *
  * The org changes rarely, so it is cached for a minute and not refetched on
  * window focus. `refresh()` invalidates it after a settings change.
+ *
+ * Only fetched with an authenticated session: on public pages (login, landing)
+ * a visitor has no org, and an unauthenticated `/org/me` 401 makes apiClient
+ * sign out and redirect to the login page — which, rendered by a locale-aware
+ * component there, asked again: an endless reload loop. Without a session the
+ * org is simply `null` and the locale falls back to cookie/browser detection.
  */
 export function useOrgSettings() {
   const qc = useQueryClient();
+  const { status } = useSession();
 
   const { data, isLoading, error } = useQuery<OrgSettings | null>({
     queryKey: ORG_SETTINGS_KEY,
     queryFn: fetchOrgSettings,
+    enabled: status === "authenticated",
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
@@ -55,7 +64,7 @@ export function useOrgSettings() {
 
   return {
     org,
-    loading: isLoading,
+    loading: status === "loading" || (status === "authenticated" && isLoading),
     error: error instanceof Error ? error.message : null,
     refresh,
     hasTrPack: Boolean(org?.regional_packs?.includes("tr")),
