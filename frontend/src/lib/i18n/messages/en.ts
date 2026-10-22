@@ -27,6 +27,60 @@ export type MessageTree = {
     benchmark: string;
     benchmarkHint: string;
   };
+  demo: {
+    preparing: string;
+    failedRetry: string;
+    sandboxTag: string;
+    bannerTitle: string;
+    bannerBody: string;
+    specPnl: string;
+    specAnomalies: string;
+    specMonteCarlo: string;
+    starting: string;
+    startSample: string;
+  };
+  macroStress: {
+    title: string;
+    subtitle: string;
+    sourceTag: string;
+    refresh: string;
+    usdTry: string;
+    eurTry: string;
+    policyRate: string;
+    inflation: string;
+    paramsTitle: string;
+    usdShock: string;
+    eurShock: string;
+    rateDelta: string;
+    delayDays: string;
+    daysValue: string;
+    outputTitle: string;
+    stressedRunway: string;
+    runwayDelta: string;
+    monthsValue: string;
+    noRunwayLimit: string;
+    cashTurnsNegative: string;
+    monthlyIncrease: string;
+    perMonth: string;
+    recsTitle: string;
+    noBaseline: string;
+    loadError: string;
+    estimateBasis: string;
+    assumptionsNote: string;
+    risk: {
+      CRITICAL: string;
+      HIGH: string;
+      MODERATE: string;
+      LOW: string;
+      CASH_NEGATIVE: string;
+    };
+    recs: {
+      fx_contracts_to_try: string;
+      fx_hedge: string;
+      fixed_rate_loans: string;
+      early_payment_discount: string;
+    };
+  };
   analytics: {
     macro: {
       title: string;
@@ -2027,6 +2081,60 @@ export const en: MessageTree = {
     estimatedHint: "Extrapolated from history — not a measurement",
     benchmark: "Benchmark",
     benchmarkHint: "Sector assumption / fixed reference — not company data",
+  },
+  demo: {
+    preparing: "Preparing demo…",
+    failedRetry: "Could not start — try again",
+    sandboxTag: "Sandbox · Logo Tiger 2024",
+    bannerTitle: "Explore the full C-suite analysis loop without uploading data",
+    bannerBody: "Start anomaly review, cash-flow stress testing and the board summary on 12 months of realistic SME accounting data in one click.",
+    specPnl: "12-month P&L",
+    specAnomalies: "Anomaly review",
+    specMonteCarlo: "Monte Carlo runway",
+    starting: "Starting analysis…",
+    startSample: "Start sample company analysis",
+  },
+  macroStress: {
+    title: "TCMB macro indicators & FX/rate shock simulator",
+    subtitle: "Deterministic effect of exchange-rate and interest shocks on runway and borrowing cost",
+    sourceTag: "TCMB EVDS",
+    refresh: "Refresh",
+    usdTry: "USD / TRY",
+    eurTry: "EUR / TRY",
+    policyRate: "Policy rate",
+    inflation: "Annual CPI",
+    paramsTitle: "Shock scenario",
+    usdShock: "USD rate increase (%)",
+    eurShock: "EUR rate increase (%)",
+    rateDelta: "Interest change (basis points)",
+    delayDays: "Collection delay",
+    daysValue: "+{n} days",
+    outputTitle: "Simulation output",
+    stressedRunway: "Runway under stress",
+    runwayDelta: "Runway change",
+    monthsValue: "{n} mo",
+    noRunwayLimit: "No limit",
+    cashTurnsNegative: "Monthly cash flow turns negative under this shock",
+    monthlyIncrease: "Extra monthly cash out (FX + interest + delay):",
+    perMonth: "/ month",
+    recsTitle: "Suggested actions",
+    noBaseline: "Run a CFO analysis first — the simulator only stresses your own figures, never sample numbers.",
+    loadError: "Could not load the simulation.",
+    estimateBasis: "Rule-based model on your last CFO analysis",
+    assumptionsNote: "Assumptions: {fx}% of opex in FX, debt ≈ {debt} months of opex, based on {months} months of data.",
+    risk: {
+      CRITICAL: "Critical cash risk",
+      HIGH: "High risk",
+      MODERATE: "Moderate risk",
+      LOW: "Low risk",
+      CASH_NEGATIVE: "Cash flow turns negative",
+    },
+    recs: {
+      fx_contracts_to_try: "Negotiate FX-priced cloud/SaaS contracts into annual TRY commitments.",
+      fx_hedge: "Consider a forward or futures hedge for your open FX position.",
+      fixed_rate_loans: "Move floating-rate loans to fixed, or review early repayment options.",
+      early_payment_discount: "Offer large customers an early-payment discount (2–3%) to shorten collection.",
+    },
   },
   analytics: {
     macro: {

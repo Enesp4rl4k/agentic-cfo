@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Loader2, ArrowRight, FileSpreadsheet, Activity } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 
 export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { t } = useI18n();
   // Parent-provided token wins; otherwise fall back to the NextAuth session.
   // Without this the seed call went out unauthenticated (401) and the banner
   // silently pushed to an empty dashboard instead of starting the analysis.
@@ -50,26 +52,25 @@ export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
         <div className="space-y-2 max-w-xl">
           <div className="inline-flex items-center gap-2 px-2 py-0.5 rounded text-[11px] font-mono uppercase tracking-wider text-muted-foreground bg-secondary/60 border border-border">
             <Activity className="h-3 w-3 text-foreground" />
-            Sandbox Çevresi · Logo Tiger 2024
+            {t.demo.sandboxTag}
           </div>
           <h3 className="text-lg font-semibold tracking-tight text-foreground">
-            Veri yüklemeden tam C-Suite analiz döngüsünü inceleyin
+            {t.demo.bannerTitle}
           </h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            12 aylık gerçekçi KOBİ muhasebe verileriyle anomali denetimini, nakit akışı stres testini
-            ve yönetim kurulu özetini tek tıkla canlı başlatın.
+            {t.demo.bannerBody}
           </p>
 
           {/* Institutional specs */}
           <div className="flex flex-wrap items-center gap-2 pt-1 font-mono text-[11px] text-muted-foreground">
             <span className="rounded bg-secondary/50 px-2 py-0.5 border border-border">
-              12 Aylık P&amp;L
+              {t.demo.specPnl}
             </span>
             <span className="rounded bg-secondary/50 px-2 py-0.5 border border-border">
-              6 Finansal Anomali
+              {t.demo.specAnomalies}
             </span>
             <span className="rounded bg-secondary/50 px-2 py-0.5 border border-border">
-              Monte Carlo Runway
+              {t.demo.specMonteCarlo}
             </span>
           </div>
         </div>
@@ -83,12 +84,12 @@ export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
             {loading ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Analiz Başlatılıyor...
+                {t.demo.starting}
               </>
             ) : (
               <>
                 <FileSpreadsheet className="h-3.5 w-3.5" />
-                Örnek Şirket Analizini Başlat
+                {t.demo.startSample}
                 <ArrowRight className="h-3.5 w-3.5" />
               </>
             )}
