@@ -28,6 +28,18 @@ export const tr: MessageTree = {
     benchmark: "Benchmark",
     benchmarkHint: "Sektör varsayımı / sabit referans — şirket verisi değil",
   },
+  authAtlas: {
+    ariaLabel: "Karar haritası: şirket verisi CFO, Risk ve CEO ajanlarından geçer, bağımsız olarak doğrulanır ve karara dönüşür.",
+    caption: "Veriden karara — her sayı kaynağına kadar izlenebilir.",
+    ledger: "Muhasebe",
+    invoices: "e-Fatura",
+    bank: "Banka",
+    cfo: "CFO",
+    risk: "Risk",
+    ceo: "CEO",
+    verifier: "Doğrulama",
+    decision: "Karar",
+  },
   demo: {
     preparing: "Demo hazırlanıyor…",
     failedRetry: "Başlatılamadı — tekrar deneyin",

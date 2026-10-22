@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { APP_HOME } from "@/lib/routes";
 import { GuestDemoButton } from "@/components/demo/GuestDemoButton";
+import { DecisionAtlas } from "@/components/auth/DecisionAtlas";
 import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -122,20 +123,14 @@ export default function LoginPage() {
 
         {/* Center copy */}
         <div className="relative z-10 space-y-6">
+          <div className="max-h-[42vh] max-w-md">
+            <DecisionAtlas />
+          </div>
           <div>
             <h2 className="text-2xl font-bold leading-tight text-foreground">
               Tüm C-Suite kararları,
               <br />
-              <span
-                style={{
-                  background: "linear-gradient(135deg, oklch(0.81 0.12 84), oklch(0.68 0.12 58))",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
-              >
-                yapay zeka ile
-              </span>
+              <span className="text-brass-400">yapay zeka ile</span>
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Muhasebe verinizi yükleyin, 5 dakikada kurumsal içgörüler alın.

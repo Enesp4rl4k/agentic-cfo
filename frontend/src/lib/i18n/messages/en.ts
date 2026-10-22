@@ -27,6 +27,18 @@ export type MessageTree = {
     benchmark: string;
     benchmarkHint: string;
   };
+  authAtlas: {
+    ariaLabel: string;
+    caption: string;
+    ledger: string;
+    invoices: string;
+    bank: string;
+    cfo: string;
+    risk: string;
+    ceo: string;
+    verifier: string;
+    decision: string;
+  };
   demo: {
     preparing: string;
     failedRetry: string;
@@ -2081,6 +2093,18 @@ export const en: MessageTree = {
     estimatedHint: "Extrapolated from history — not a measurement",
     benchmark: "Benchmark",
     benchmarkHint: "Sector assumption / fixed reference — not company data",
+  },
+  authAtlas: {
+    ariaLabel: "Decision map: company data flows through the CFO, Risk and CEO agents, is independently verified, then becomes a decision.",
+    caption: "From data to decision — every figure traceable to its source.",
+    ledger: "Ledger",
+    invoices: "e-Invoice",
+    bank: "Bank",
+    cfo: "CFO",
+    risk: "Risk",
+    ceo: "CEO",
+    verifier: "Verification",
+    decision: "Decision",
   },
   demo: {
     preparing: "Preparing demo…",
