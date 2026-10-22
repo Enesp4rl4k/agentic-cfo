@@ -434,7 +434,9 @@
   transform-box: fill-box; transform-origin: center; animation: atlas-spin 40s linear infinite; }
 .decision-atlas .atlas-label { fill: oklch(0.74 0.028 80); font-size: 11px; font-weight: 500; }
 .decision-atlas .atlas-node--decision .atlas-label { fill: oklch(0.86 0.10 85); font-weight: 600; }
-.decision-atlas[data-paused] * { animation-play-state: paused !important; }
+/* (0,2,1) outranks every animated rule above, which tops out at (0,2,0) for the
+   animation shorthand; the (0,3,0) phase rules only set a delay. */
+.decision-atlas[data-paused] svg * { animation-play-state: paused; }
 
 @keyframes atlas-draw {
   0% { stroke-dashoffset: 1; opacity: 1; }
@@ -454,7 +456,7 @@
 @keyframes atlas-spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .decision-atlas * { animation: none !important; }
+  .decision-atlas svg [class] { animation: none; }
   .decision-atlas .atlas-route-lit { stroke-dashoffset: 0; opacity: 0.85; }
   .decision-atlas .atlas-packet, .decision-atlas .atlas-ring { opacity: 0; }
 }

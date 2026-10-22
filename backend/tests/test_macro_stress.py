@@ -69,7 +69,8 @@ def test_no_cfo_analysis_means_no_baseline_not_an_invented_company():
 def test_profitable_forecast_keeps_runway_unbounded():
     cfo = {**CFO_12M, "forecast": {"scenarios": {"base": {"runway_months": None}}}}
     b = baseline_from_cfo(cfo)
-    assert b is not None and b.runway_months is None
+    assert b is not None
+    assert b.runway_months is None
 
 
 # ── simulate ──────────────────────────────────────────────────────────────────

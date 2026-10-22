@@ -44,6 +44,13 @@ const ROUTES: Array<[string, string, 0 | 1 | 2]> = [
 
 const byId = Object.fromEntries(NODES.map((n) => [n.id, n]));
 
+/** Label baseline: sources above their dot, agents/verifier below, decision under its compass. */
+function labelY(n: AtlasNode): number {
+  if (n.kind === "decision") return n.y + 38;
+  if (n.kind === "source") return n.y - 11;
+  return n.y + 24;
+}
+
 function curve(a: AtlasNode, b: AtlasNode): string {
   const mx = (a.x + b.x) / 2;
   return `M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
@@ -102,7 +109,6 @@ export function DecisionAtlas() {
 
         {NODES.map((n) => {
           const above = n.kind === "source";
-          const below = n.kind === "agent" || n.kind === "verifier";
           return (
             <g key={n.id} className={`atlas-node atlas-node--${n.kind}`} data-phase={n.kind}>
               {n.kind === "decision" ? (
@@ -122,7 +128,7 @@ export function DecisionAtlas() {
               )}
               <text
                 x={above ? n.x - 6 : n.x}
-                y={n.kind === "decision" ? n.y + 38 : below ? n.y + 24 : n.y - 11}
+                y={labelY(n)}
                 textAnchor={above ? "start" : "middle"}
                 className="atlas-label"
               >

@@ -73,6 +73,21 @@ def _lira_to_kurus(lira: float) -> int:
     return round(lira * 100)
 
 
+def _period_opex(pnl: dict[str, Any]) -> float | None:
+    """Period opex in lira: ``total_opex`` (pnl_agent shape) or the sum of the
+    per-category ``opex`` the persisted dashboard carries (report_agent)."""
+    total = _num(pnl.get("total_opex"))
+    if total is not None:
+        return total
+    by_category = pnl.get("opex")
+    if not isinstance(by_category, dict) or not by_category:
+        return None
+    parts = [_num(v) for v in by_category.values()]
+    if any(p is None for p in parts):
+        return None
+    return sum(p for p in parts if p is not None)
+
+
 def baseline_from_cfo(cfo_result: dict[str, Any] | None) -> StressBaseline | None:
     """Monthly baseline from ``last_cfo_result`` (dashboard shape, lira totals).
 
@@ -86,13 +101,7 @@ def baseline_from_cfo(cfo_result: dict[str, Any] | None) -> StressBaseline | Non
     forecast = cfo_result.get("forecast") or {}
 
     revenue = _num(pnl.get("revenue"))
-    # The persisted dashboard carries opex by category (report_agent), not a
-    # total; ``total_opex`` is the pnl_agent shape. Accept either.
-    opex = _num(pnl.get("total_opex"))
-    if opex is None and isinstance(pnl.get("opex"), dict):
-        parts = [_num(v) for v in pnl["opex"].values()]
-        if parts and all(p is not None for p in parts):
-            opex = sum(p for p in parts if p is not None)
+    opex = _period_opex(pnl)
     if revenue is None or opex is None:
         return None
     months = len(cashflow.get("monthly_series") or [])

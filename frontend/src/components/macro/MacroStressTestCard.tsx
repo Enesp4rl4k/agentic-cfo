@@ -214,13 +214,13 @@ export function MacroStressTestCard() {
         {/* Output */}
         <div className="lg:col-span-6 space-y-4">
           {failed && !response && (
-            <p role="status" className="text-xs text-muted-foreground">{m.loadError}</p>
+            <output className="block text-xs text-muted-foreground">{m.loadError}</output>
           )}
 
           {response && !result && (
-            <p role="status" className="rounded bg-secondary/30 p-4 border border-border text-xs text-muted-foreground">
+            <output className="block rounded bg-secondary/30 p-4 border border-border text-xs text-muted-foreground">
               {m.noBaseline}
-            </p>
+            </output>
           )}
 
           {result && (
