@@ -181,17 +181,22 @@ def match_rule(
     """
     vendor_f = fold(vendor or "")
     desc_f = fold(description or "")
-    for r in rules:
-        if r.vendor:
-            needle = fold(r.vendor)
-            if needle and (needle in vendor_f or needle in desc_f):
-                return r
-    for r in rules:
-        if r.keyword and not r.vendor:
-            needle = fold(r.keyword)
-            if needle and needle in desc_f:
-                return r
-    return None
+    return next(
+        (r for r in rules if _vendor_hit(r, vendor_f, desc_f)),
+        next((r for r in rules if _keyword_hit(r, desc_f)), None),
+    )
+
+
+def _vendor_hit(rule: RuleSpec, vendor_f: str, desc_f: str) -> bool:
+    needle = fold(rule.vendor or "")
+    return bool(needle) and (needle in vendor_f or needle in desc_f)
+
+
+def _keyword_hit(rule: RuleSpec, desc_f: str) -> bool:
+    if rule.vendor:
+        return False
+    needle = fold(rule.keyword or "")
+    return bool(needle) and needle in desc_f
 
 
 def apply_rules(

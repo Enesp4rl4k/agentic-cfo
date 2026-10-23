@@ -84,7 +84,13 @@ async def start_analysis(
     return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
 
 
-@router.post("/analysis/{job_id}/rerun")
+@router.post(
+    "/analysis/{job_id}/rerun",
+    responses={
+        404: {"description": "Job not found."},
+        409: {"description": "Job is under review, still running, or its SMMM packet is finalized."},
+    },
+)
 async def rerun_analysis(
     job_id: str,
     current_user: User = Depends(get_current_user),

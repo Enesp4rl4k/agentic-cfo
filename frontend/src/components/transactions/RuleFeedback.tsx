@@ -15,7 +15,7 @@ import type { Transaction } from "@/types";
  * analyses it matches were derived from the old categories, and a rerun
  * recomputes them from their files with the rule applied.
  */
-export function UserRuleBadge({ source }: { source: Transaction["category_source"] }) {
+export function UserRuleBadge({ source }: Readonly<{ source: Transaction["category_source"] }>) {
   const { t } = useI18n();
   const r = t.ruleFeedback;
   if (source !== "user_rule" && source !== "user_edit") return null;
@@ -33,10 +33,10 @@ export function UserRuleBadge({ source }: { source: Transaction["category_source
 export function RuleRerunBanner({
   jobIds,
   onDismiss,
-}: {
+}: Readonly<{
   jobIds: string[];
   onDismiss: () => void;
-}) {
+}>) {
   const { t } = useI18n();
   const r = t.ruleFeedback;
   const queryClient = useQueryClient();

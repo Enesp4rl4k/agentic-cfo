@@ -338,7 +338,8 @@ def test_every_ingest_seam_applies_user_rules():
     must apply the org's rules — a new seam without them is the old bug."""
     root = Path(__file__).resolve().parents[1] / "app"
     worker = (root / "worker.py").read_text(encoding="utf-8")
-    assert "load_rules(" in worker and "category_rules=category_rules" in worker
+    assert "load_rules(" in worker
+    assert "category_rules=category_rules" in worker
     assert "org_id=org_id_str" in worker
 
     orchestrator = (root / "agents" / "orchestrator.py").read_text(encoding="utf-8")
