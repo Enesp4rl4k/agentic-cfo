@@ -82,6 +82,36 @@ async def claim_for_analysis(
     return await db.get(AnalysisJob, job_id)
 
 
+_RERUNNABLE_STATUSES = (JobStatus.COMPLETED.value, JobStatus.FAILED.value)
+
+
+async def reopen_for_rerun(db: AsyncSession, job_id: str) -> bool:
+    """Atomically move a finished job back to pending so it is recomputed.
+
+    Rerun = recompute from the source file (DDIA Ch.10): the worker's claim
+    then purges the old outputs and writes new ones, with the organisation's
+    current category rules applied. `awaiting_review` is not reopened — a
+    person holds that one. Does not commit: the caller does, then enqueues.
+    """
+    now = datetime.now(UTC)
+    result = await db.execute(
+        update(AnalysisJob)
+        .where(
+            AnalysisJob.id == job_id,
+            AnalysisJob.status.in_(_RERUNNABLE_STATUSES),
+        )
+        .values(
+            status=JobStatus.PENDING.value,
+            locked_by=None,
+            locked_at=None,
+            lease_expires_at=None,
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
+
+
 async def mark_enqueue_lease(db: AsyncSession, job_id: str) -> bool:
     """Stamp a pending job as handed to the broker (best-effort).
 

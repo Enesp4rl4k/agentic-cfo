@@ -12,7 +12,9 @@ Next time the same vendor/keyword appears, the correct category is applied.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections import Counter
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from app.core.turkish import fold
 
@@ -107,6 +109,128 @@ async def classify(
 
     # 3. Built-in heuristics
     return classify_by_keywords(description)
+
+
+# ── Batch application (plan v5 §F0) ──────────────────────────────────────────
+# `classify()` above answers one transaction at a time with a query and a commit
+# per hit, and no ingest path ever called it: corrections were learned and never
+# applied. Ingest applies them in bulk instead — rules are loaded once per run
+# by whoever holds the session, matched in memory, and hits are counted at the
+# end in the caller's transaction.
+
+USER_RULE = "user_rule"
+
+
+@dataclass(frozen=True)
+class RuleSpec:
+    """A CategoryRule as plain data, safe to carry through the agent state."""
+
+    id: str
+    category: str
+    vendor: str | None = None
+    keyword: str | None = None
+
+
+def rules_to_state(rules: list[RuleSpec]) -> list[dict[str, Any]]:
+    return [r.__dict__.copy() for r in rules]
+
+
+def rules_from_state(raw: list[dict[str, Any]] | None) -> list[RuleSpec]:
+    return [RuleSpec(**r) for r in (raw or [])]
+
+
+async def load_rules(org_id: str | None, db: AsyncSession) -> list[RuleSpec]:
+    """The organisation's standing rules, most-used first.
+
+    Only `apply_always` rules: a correction made without "apply always" changed
+    that one transaction, and the user did not ask for more.
+    """
+    if not org_id:
+        return []
+    from sqlalchemy import select
+
+    from app.models.category_rule import CategoryRule
+
+    rows = (
+        await db.execute(
+            select(CategoryRule)
+            .where(CategoryRule.org_id == org_id, CategoryRule.apply_always.is_(True))
+            .order_by(CategoryRule.hit_count.desc())
+        )
+    ).scalars().all()
+    return [
+        RuleSpec(
+            id=str(r.id),
+            category=r.category,
+            vendor=r.vendor_match or None,
+            keyword=r.keyword_match or None,
+        )
+        for r in rows
+        if r.vendor_match or r.keyword_match
+    ]
+
+
+def match_rule(
+    rules: list[RuleSpec], *, vendor: str | None, description: str | None
+) -> RuleSpec | None:
+    """First rule that matches: vendor rules, then keyword rules (each in the
+    given order). Diacritics are folded on both sides, as for the heuristics.
+
+    A vendor rule also matches a description that names the vendor: bank
+    statements carry the counterparty inside the description, not in a field.
+    """
+    vendor_f = fold(vendor or "")
+    desc_f = fold(description or "")
+    for r in rules:
+        if r.vendor:
+            needle = fold(r.vendor)
+            if needle and (needle in vendor_f or needle in desc_f):
+                return r
+    for r in rules:
+        if r.keyword and not r.vendor:
+            needle = fold(r.keyword)
+            if needle and needle in desc_f:
+                return r
+    return None
+
+
+def apply_rules(
+    transactions: list[dict[str, Any]],
+    rules: list[RuleSpec],
+    *,
+    vendor_key: str = "vendor",
+    description_key: str = "description",
+) -> Counter[str]:
+    """Overwrite `category` where a user rule matches; mark `category_source`.
+
+    Mutates the dicts in place and returns hits per rule id.
+    """
+    hits: Counter[str] = Counter()
+    if not rules:
+        return hits
+    for tx in transactions:
+        rule = match_rule(
+            rules, vendor=tx.get(vendor_key), description=tx.get(description_key)
+        )
+        if rule is None:
+            continue
+        tx["category"] = rule.category
+        tx["category_source"] = USER_RULE
+        hits[rule.id] += 1
+    return hits
+
+
+async def record_hits(hits: Counter[str] | dict[str, int], db: AsyncSession) -> None:
+    """Add this run's hits to the rules. Does not commit — the caller's
+    transaction owns it, so counts land together with the rows they counted."""
+    if not hits:
+        return
+    from app.models.category_rule import CategoryRule
+
+    for rule_id, n in hits.items():
+        rule = await db.get(CategoryRule, rule_id)
+        if rule is not None:
+            rule.hit_count = (rule.hit_count or 0) + int(n)
 
 
 async def learn(

@@ -60,6 +60,7 @@ from app.agents.verifier_node import node_verifier
 from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
 from app.services.agent_memory import EpisodeRecord, get_memory_store
 from app.services.capability_router import get_capability_router
+from app.services.classifier import apply_rules, rules_from_state
 from app.services.reflection_agent import get_reflection_agent
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,19 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
         step="data_ingestion", ok=result.ok, detail=result.detail, confidence=result.confidence
     ))
     patch.update(result.patch)
+
+    # The org's own corrections outrank the heuristics, and must land before
+    # P&L reads a single category (plan v5 §F0).
+    rules = rules_from_state(state.get("category_rules"))
+    if rules and patch.get("transactions"):
+        hits = apply_rules(patch["transactions"], rules)
+        if hits:
+            patch["category_rule_hits"] = dict(hits)
+            logger.info(
+                "data_ingestion: %d transaction(s) categorised by %d user rule(s)",
+                sum(hits.values()), len(hits),
+            )
+
     if not result.ok:
         patch.update({"halted": True, "awaiting_review": True, "error": result.detail})
     if result.needs_review:
@@ -438,6 +452,7 @@ async def run_cfo_pipeline(
     org_id: str | None = None,
     period: str | None = None,
     ek_belgeler: list[dict[str, str]] | None = None,
+    category_rules: list[dict[str, Any]] | None = None,
 ) -> CFOState:
     """
     Run the full CFO analysis pipeline.
@@ -477,6 +492,8 @@ async def run_cfo_pipeline(
         "error": None,
         "triggered_alerts": [],
         "org_id": org_id,
+        "category_rules": category_rules or [],
+        "category_rule_hits": None,
         "routing_plan": None,
         "reflection_scores": None,
         "memory_episode_ids": None,

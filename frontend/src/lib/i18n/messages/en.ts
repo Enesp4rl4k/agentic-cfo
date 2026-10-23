@@ -27,6 +27,19 @@ export type MessageTree = {
     benchmark: string;
     benchmarkHint: string;
   };
+  ruleFeedback: {
+    badgeRule: string;
+    badgeRuleHint: string;
+    badgeEdit: string;
+    badgeEditHint: string;
+    bannerTitle: string;
+    bannerBody: string;
+    rerun: string;
+    rerunning: string;
+    queued: string;
+    partial: string;
+    dismiss: string;
+  };
   analytics: {
     macro: {
       title: string;
@@ -2027,6 +2040,19 @@ export const en: MessageTree = {
     estimatedHint: "Extrapolated from history — not a measurement",
     benchmark: "Benchmark",
     benchmarkHint: "Sector assumption / fixed reference — not company data",
+  },
+  ruleFeedback: {
+    badgeRule: "Your rule",
+    badgeRuleHint: "A rule you saved decided this category.",
+    badgeEdit: "Edited",
+    badgeEditHint: "A person changed this category by hand.",
+    bannerTitle: "Your rule changes {n} analyses",
+    bannerBody: "Their dashboards were computed with the old categories. Rerunning processes their files again with your rules.",
+    rerun: "Rerun analyses",
+    rerunning: "Starting reruns…",
+    queued: "{n} analyses queued.",
+    partial: "{ok} of {n} analyses started; sealed or in-review analyses were skipped.",
+    dismiss: "Dismiss",
   },
   analytics: {
     macro: {

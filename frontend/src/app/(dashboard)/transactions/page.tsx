@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useTransactions, useCorrectCategory } from "@/hooks/useCFO";
+import { RuleRerunBanner, UserRuleBadge } from "@/components/transactions/RuleFeedback";
 import { formatCurrency, cn } from "@/lib/utils";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -61,10 +62,12 @@ function CategoryEditor({
   txId,
   current,
   jobId,
+  onAffected,
 }: {
   txId: string;
   current: string;
   jobId: string;
+  onAffected: (jobIds: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [applyAlways, setApplyAlways] = useState(false);
@@ -73,7 +76,12 @@ function CategoryEditor({
   function select(cat: Category) {
     correct.mutate(
       { transactionId: txId, category: cat, applyAlways },
-      { onSuccess: () => setOpen(false) }
+      {
+        onSuccess: (res) => {
+          setOpen(false);
+          if (res?.affected_job_ids?.length) onAffected(res.affected_job_ids);
+        },
+      }
     );
   }
 
@@ -285,6 +293,8 @@ export default function TransactionsPage() {
 
   // Pagination
   const [page, setPage] = useState(1);
+  // Analyses a just-saved standing rule changes (plan v5 §F0).
+  const [affectedJobs, setAffectedJobs] = useState<string[]>([]);
 
   // Fetch all transactions (up to 2000 — backend paginates beyond this)
   const { data, isLoading } = useTransactions(jobId, 2000, 0);
@@ -494,6 +504,8 @@ export default function TransactionsPage() {
         )}
       </div>
 
+      <RuleRerunBanner jobIds={affectedJobs} onDismiss={() => setAffectedJobs([])} />
+
       {/* Table */}
       <div className="rounded-lg border border-border bg-card">
         <div className="overflow-x-auto">
@@ -580,11 +592,15 @@ export default function TransactionsPage() {
                     {tx.vendor ?? "—"}
                   </td>
                   <td className="px-4 py-2.5">
-                    <CategoryEditor
-                      txId={tx.id}
-                      current={tx.category}
-                      jobId={jobId!}
-                    />
+                    <div className="flex items-center whitespace-nowrap">
+                      <CategoryEditor
+                        txId={tx.id}
+                        current={tx.category}
+                        jobId={jobId!}
+                        onAffected={setAffectedJobs}
+                      />
+                      <UserRuleBadge source={tx.category_source} />
+                    </div>
                   </td>
                   <td
                     className={cn(
