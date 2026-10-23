@@ -301,6 +301,12 @@ async def run_cfo_analysis(
             # More documents of the same analysis (several invoices dropped
             # together). Each used to start an analysis of its own.
             ek_belgeler = await _ek_belgeler(job_id, db)
+            # The organisation's standing category corrections, loaded once
+            # here — the pipeline's nodes hold no session (plan v5 §F0).
+            from app.services.classifier import load_rules, rules_to_state
+
+            org_id_str = str(job.org_id) if job.org_id else None
+            category_rules = rules_to_state(await load_rules(org_id_str, db))
             # Close the read transaction before the long pipeline call: a
             # transaction left open across minutes of work is the exact pattern
             # that once wedged every other writer ("database is locked").
@@ -319,6 +325,10 @@ async def run_cfo_analysis(
                 run_config=run_config,
                 budget_input=budget_input,
                 ek_belgeler=ek_belgeler,
+                # Without it every org-scoped step in the pipeline (memory,
+                # the rules above) ran as if the job belonged to nobody.
+                org_id=org_id_str,
+                category_rules=category_rules,
             )
 
             # Publish each completed step to SSE clients
@@ -361,8 +371,14 @@ async def run_cfo_analysis(
                     stopaj_kurus=tx_data.get("stopaj_cents"),
                     raw_text=tx_data.get("raw_text"),
                     confidence=tx_data.get("confidence"),
+                    category_source=tx_data.get("category_source"),
                 )
                 db.add(tx)
+
+            # Counted in the same transaction as the rows they categorised.
+            from app.services.classifier import record_hits
+
+            await record_hits(result.get("category_rule_hits") or {}, db)
 
             # Persist dashboard JSON report
             if result.get("dashboard_json"):

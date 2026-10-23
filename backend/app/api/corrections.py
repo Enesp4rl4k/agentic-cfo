@@ -6,6 +6,8 @@ User corrects a transaction's category. We:
 2. Persist a CategoryRule (learn from correction)
 3. Return the updated transaction
 """
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,18 +57,33 @@ async def correct_category(
 
     old_category = tx.category
     tx.category = body.category
+    tx.category_source = "user_edit"
     await db.commit()
 
+    org_id = str(job.org_id) if job.org_id else None
     # Persist learning rule
-    await learn(
+    rule = await learn(
         description=tx.description or "",
         vendor=tx.vendor,
         new_category=body.category,
         apply_always=body.apply_always,
         db=db,
         # The rule belongs to the company whose transaction was corrected.
-        org_id=str(job.org_id) if job.org_id else None,
+        org_id=org_id,
     )
+
+    # A standing rule changes every analysis it matches, but their dashboards
+    # were derived from the old categories. Say which ones, so the UI can offer
+    # to recompute them (POST /analysis/{id}/rerun) — rows are not patched in
+    # place, because a derived view patched by hand drifts from its source.
+    affected: list[str] = []
+    if body.apply_always and org_id:
+        found = set(await _jobs_matching_rule(db, org_id, rule))
+        # This job's dashboard predates the correction too; a rerun re-applies
+        # the rule to the row just edited.
+        if job.status in ("completed", "failed"):
+            found.add(str(job.id))
+        affected = sorted(found)
 
     return {
         "data": {
@@ -74,9 +91,39 @@ async def correct_category(
             "old_category": old_category,
             "new_category": body.category,
             "rule_saved": body.apply_always,
+            "affected_job_ids": affected,
         },
         "error": None,
     }
+
+
+async def _jobs_matching_rule(db: AsyncSession, org_id: str, rule: Any) -> list[str]:
+    """Completed/failed jobs of the org with a row the rule would recategorise."""
+    from sqlalchemy import select
+
+    from app.models.analysis_job import AnalysisJob, JobStatus
+    from app.services.classifier import RuleSpec, match_rule
+
+    spec = [RuleSpec(
+        id=str(rule.id), category=rule.category,
+        vendor=rule.vendor_match or None, keyword=rule.keyword_match or None,
+    )]
+    rows = (
+        await db.execute(
+            select(Transaction.job_id, Transaction.vendor, Transaction.description)
+            .join(AnalysisJob, AnalysisJob.id == Transaction.job_id)
+            .where(
+                AnalysisJob.org_id == org_id,
+                AnalysisJob.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value]),
+                Transaction.category != rule.category,
+            )
+        )
+    ).all()
+    jobs = {
+        job_id for job_id, vendor, desc in rows
+        if match_rule(spec, vendor=vendor, description=desc)
+    }
+    return sorted(jobs)
 
 
 @router.get("/transactions/{transaction_id}")

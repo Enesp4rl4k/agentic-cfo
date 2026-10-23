@@ -327,6 +327,13 @@ class ScheduledSyncRunner:
                     duration_ms=int(time.time() * 1000) - t0,
                 )
 
+            # The org's standing category corrections apply to synced rows too
+            # (plan v5 §F0) — counterparty is the vendor on a canonical row.
+            from app.services.classifier import apply_rules, load_rules, record_hits
+
+            category_rules = await load_rules(schedule.org_id, db)
+            rule_hits: dict[str, int] = {}
+
             for row in canonical_rows:
                 row_data = to_insert_dict(
                     org_id=schedule.org_id,
@@ -334,6 +341,12 @@ class ScheduledSyncRunner:
                     sync_run_id=sync_run_id,
                     row=row,
                 )
+                for rule_id, n in apply_rules(
+                    [row_data], category_rules, vendor_key="counterparty"
+                ).items():
+                    rule_hits[rule_id] = rule_hits.get(rule_id, 0) + n
+                # A canonical row has no category_source column (yet — F1).
+                row_data.pop("category_source", None)
                 # Idempotent upsert across repeated sync pulls.
                 dialect = db.bind.dialect.name if db.bind else ""
                 if dialect == "postgresql":
@@ -379,6 +392,7 @@ class ScheduledSyncRunner:
                 else:
                     db.add(CanonicalTransaction(**row_data))
 
+            await record_hits(rule_hits, db)
             await db.commit()
 
             # Live path: partial semantic brief from canonical rows (before CFO completes)

@@ -100,15 +100,30 @@ export async function listTransactions(
   return res.data.data;
 }
 
+export interface CategoryCorrection {
+  transaction_id: string;
+  old_category: string;
+  new_category: string;
+  rule_saved: boolean;
+  /** Finished analyses a standing rule changes — their dashboards predate it. */
+  affected_job_ids: string[];
+}
+
 export async function correctCategory(
   transactionId: string,
   category: string,
   applyAlways = false
-): Promise<void> {
-  await apiClient.patch(`/transactions/${transactionId}/category`, {
-    category,
-    apply_always: applyAlways,
-  });
+): Promise<CategoryCorrection> {
+  const res = await apiClient.patch<{ data: CategoryCorrection }>(
+    `/transactions/${transactionId}/category`,
+    { category, apply_always: applyAlways },
+  );
+  return res.data.data;
+}
+
+/** Recompute a finished analysis from its file with the org's current rules. */
+export async function rerunAnalysis(jobId: string): Promise<void> {
+  await apiClient.post(`/analysis/${jobId}/rerun`, {});
 }
 
 // ── Anomaly API ───────────────────────────────────────────────────────────────

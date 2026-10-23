@@ -84,6 +84,60 @@ async def start_analysis(
     return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
 
 
+@router.post(
+    "/analysis/{job_id}/rerun",
+    responses={
+        404: {"description": "Job not found."},
+        409: {"description": "Job is under review, still running, or its SMMM packet is finalized."},
+    },
+)
+async def rerun_analysis(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Recompute a finished analysis from its file (plan v5 §F0).
+
+    Used after a standing category rule changes: the stored dashboard was
+    derived from the old categories and does not change by itself. The rerun
+    applies the organisation's current rules. Refused while a person is
+    reviewing it, and for a job whose SMMM packet is finalized — a sealed
+    record must not drift from the analysis it seals.
+    """
+    from sqlalchemy import select
+
+    from app.models.defensibility_packet import DefensibilityPacket
+    from app.services.job_state import reopen_for_rerun
+    from app.worker import enqueue_analysis
+
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
+
+    sealed = (
+        await db.execute(
+            select(DefensibilityPacket.id).where(
+                DefensibilityPacket.job_id == job_id,
+                DefensibilityPacket.status == "finalized",
+            )
+        )
+    ).first()
+    if sealed:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu analizin SMMM paketi mühürlendi; yeniden çalıştırılamaz.",
+        )
+    if not await reopen_for_rerun(db, job_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is in status '{job.status}'. Only completed or failed jobs can be rerun.",
+        )
+    await db.commit()
+    await enqueue_analysis(job_id, None)
+    return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
+
+
 async def _idempotency_seized(user_id: str, key: str) -> bool:
     """True when this Idempotency-Key was already used (within the TTL).
 
@@ -311,6 +365,9 @@ async def list_transactions(
                     "vendor": tx.vendor,
                     "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
                     "confidence": float(tx.confidence) if tx.confidence else None,
+                    # "user_rule" / "user_edit" / None — the user's own
+                    # correction decided the category (plan v5 §F0).
+                    "category_source": tx.category_source,
                     # Provenance. Each was persisted and none was returned, so
                     # the one screen a reviewer reads could not say why a row
                     # was held: that its date was invented, what the source
