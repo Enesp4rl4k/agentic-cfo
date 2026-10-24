@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
 from app.models.user import User
+from app.services.pdf import PDFRenderError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -125,8 +126,11 @@ async def download_executive_report(
             company_name=company_name,
             period=period,
         )
+    except PDFRenderError:
+        raise  # → 503 pdf_engine_unavailable (app.main handler)
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.exception("Executive PDF failed for job=%s: %s", job_id, exc)
+        raise HTTPException(status_code=500, detail="Yönetici raporu üretilemedi.") from exc
 
     safe_name = company_name.lower().replace(" ", "-").replace(".", "")[:30]
     filename  = f"{safe_name}-yonetim-raporu.pdf"
