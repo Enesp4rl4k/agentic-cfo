@@ -1,8 +1,8 @@
-# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v6)
+# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v7)
 
 > **Demo deneyimi ayrı planda:** `DEMO_PLAN.md` (2026-10-14) — "satın almadan dene" akışı: mevcut envanter + boşluklar + D1–D6 fazları (konuk giriş → anında dolu dashboard → tour → reset → public → CTA).
 
-> **Tarih:** 2026-10-24 (v5: 2026-10-23, v4: 2026-10-21, v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** **§V6** — ajan sıkılaştırması (güven kapısı, bağımsız doğrulama, dayanıklı çalışma kaydı, "veri yok ≠ iyi", tek veri/skor sözleşmesi), ardından **§V5** — DDIA ilkeleriyle şirket düzeyinde veri omurgası (tek defter → olay günlüğü → yeniden kurulabilir görünümler) ve bunun üstüne gerçek kullanıcı faydası (düzeltmelerin kalıcılığı, sürekli defter, tahmin isabeti, dönem kapanışı). §V4 ve Faz 2/3 maddeleri §V5 sırasına yerleştirildi.
+> **Tarih:** 2026-10-24 (v6 aynı gün, v5: 2026-10-23, v4: 2026-10-21, v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** **§V7** — iş akışı denetiminin çıkardığı kırılmalar ve doğruluk hataları (onaylanan analiz dashboard'suz kalıyor, P&L hesap kodunu yok sayıyor, son yükleme şirket resmini siliyor) önce; ardından **§V6** — ajan sıkılaştırması (güven kapısı, bağımsız doğrulama, dayanıklı çalışma kaydı, "veri yok ≠ iyi", tek veri/skor sözleşmesi), ardından **§V5** — DDIA ilkeleriyle şirket düzeyinde veri omurgası (tek defter → olay günlüğü → yeniden kurulabilir görünümler) ve bunun üstüne gerçek kullanıcı faydası (düzeltmelerin kalıcılığı, sürekli defter, tahmin isabeti, dönem kapanışı). §V4 ve Faz 2/3 maddeleri §V5 sırasına yerleştirildi.
 > **Yasa:** `CLAUDE.md` — Done = `python scripts/verify.py` (Windows) / `./verify.sh` exit 0. Confidence gate ≥ 0.80. Raw SQL yok. Money = kuruş integer.
 > **Kuzey yıldızı:** Yüklediğin veri → kanıtlanmış sayı → rol-dashboard'unda org'un dilinde ve **org'un para birimiyle** doğru çizilen tek bir gerçeklik → karar → mühürlü kayıt. Bir halka kanıtlanmadan iş bitmiş sayılmaz.
 >
@@ -17,6 +17,75 @@
 > **v5 değişikliği (2026-10-23):** V0–V2 kapandı (PR #4 birleşti, PR #5 açık). `DDIA_COMPLIANCE.md` iş (job) düzeyini sağlam gösteriyor — atomik claim, lease, reaper, idempotent yeniden hesaplama. Ama kod taraması **şirket düzeyinde** veri omurgasının olmadığını gösterdi ve bu doğrudan kullanıcı faydasını kırıyor: her yükleme bir ada (çift sayım), kullanıcı düzeltmeleri hiç uygulanmıyor, olaylar çökmede kayboluyor, tahminler hiç ölçülmüyor. **§V5** bunu DDIA bölümleriyle eşleyip sıralar.
 >
 > **v6 değişikliği (2026-10-24):** F0 PR #6'da. 93 ajan dosyasının (26,6 bin satır) taraması + 6 C-suite pipeline'ının demo girdileriyle **canlı koşusu**, CLAUDE.md ilkelerinin CFO pipeline'ı dışında büyük ölçüde **yapısal olarak yok** olduğunu gösterdi: güven kapısı C-suite'te taşıyıcı değil, bağımsız doğrulama yalnız CFO'da, kalıcı çalışma kaydı yalnız muhasebe akışında, veri yokluğu "düşük risk" diye raporlanıyor. **§V6** bunları ilke + DDIA bölümüyle eşleyip §V5'in önüne koyar — yeni defter (F1) bozuk bir ajan katmanının üstüne kurulmamalı.
+>
+> **v7 değişikliği (2026-10-24):** S0 PR #7'de. Kullanıcının dört sorusuyla (**kırılıyor mu · düzgün çalışıyor mu · analiz gerçekçi mi · gerçek bir sorun çözüyor mu**) tüm iş akışları **gerçek dosyalarla canlı** koşturuldu (Logo Tiger CSV, TechNova Ocak/Şubat, GİB e-Defter yevmiyesi, UBL-TR e-Fatura, bozuk CSV) ve sayılar **elle hesapla** karşılaştırıldı. Sonuç: e-Defter yolu doğru, ama en yaygın yol (CSV/ERP dışa aktarımı) yanlış P&L üretiyor, incelemeye düşen her analiz onaydan sonra bile dashboard'suz kalıyor ve tek bir küçük yükleme şirket resmini siliyor. **§V7** bunları §V6'nın önüne koyar.
+
+---
+
+## §V7 — İş akışı denetimi: kırılıyor mu, gerçekçi mi, sorun çözüyor mu (2026-10-24)
+
+**Yöntem:** konuk org üzerinde gerçek dosyalar yüklendi → analiz → (gerekirse) onay → dashboard / işlemler / anomaliler / sohbet / PDF / muhasebe / mizan / e-Defter uçları okundu; demo CSV'nin hesap bazında toplamları elle çıkarıldı. Ham yanıtlar scratchpad'de; prob `scripts/agent_health_probe.py` (S6) ile birleşecek.
+
+### Akış karnesi
+
+| Akış | Kırılıyor mu | Düzgün çalışıyor mu | Analiz gerçekçi mi | Gerçek sorunu çözüyor mu |
+|---|---|---|---|---|
+| Konuk demo / giriş | Hayır (döngü PR #5'te düzeltildi) | Evet | — (golden veri) | Satış için evet |
+| Dosya yükle → CFO analizi (CSV/Logo/ERP) | Hayır | Evet, ~5 sn | **Hayır** — W4: sınıflandırma hesap kodunu yok sayıyor, ₺820k gider "gelir" | **Hayır** — P&L'e güvenilemez |
+| e-Defter yevmiyesi → analiz | Hayır | Evet | **Evet** — gelir 42.373 / net 12.245,88 TL GİB paketiyle birebir | Evet (SMMM'ye defensible) |
+| Güven kapısı → onay | **Evet** — W1: onaylanan analiz **asla** dashboard üretmez | Durum makinesi çalışıyor, çıktı yok | — | **Hayır** — dağınık veride akış çıkmaz sokak |
+| Şirket bağlamı / CEO / semantik | **Evet** — W2: son yüklenen dosya (bozuk olsa da) aktif CFO işi olur; semantik özet gelir/runway = None'a düştü | — | — | Hayır — "şirketin resmi" tek dosyaya esir |
+| Aynı dosyayı tekrar / ay ay yükleme | Hayır | Her yükleme ayrı ada (G2 canlı kanıt) | Ay birleşmesi yok | Kısmen |
+| Düzeltme döngüsü (F0) | Hayır | Evet | Evet | Evet (PR #6) |
+| C-suite rolleri | Hayır | Evet | S0 sonrası "veri yok" dürüst (PR #7) | Kısmen — skorlar heuristik |
+| Vergi sayfası | Hayır | Boş döner | **Hayır** — W5: 17 vergi satırına rağmen `tax: {}` | Hayır |
+| Anomaliler | Hayır | Evet | **Zayıf** — W6: yanlış kategoriden türeyen ve rutin ödemeleri (geçici vergi, yuvarlak kira/maaş) işaretleyen gürültü | Zayıf |
+| Tahmin / runway | Hayır | Evet | **Zayıf** — W7: 12 aydan mevsimsellik (Ocak endeksi 0,627); kârlı şirkette runway yok (doğru) | Kısmen |
+| TR muhasebe (yevmiye/mizan/e-Defter) | Hayır | Evet | Hesaplar makul, KDV ayrışmıyor | **Hayır pratikte** — W8: 163 kaydın 163'ü onay bekliyor, onay olmadan mizan/e-Defter yok |
+| Sohbet (iş sorusu) | **Evet** — W3: LLM anahtarı yokken yakalanmamış 500 | — | — | — |
+| Yönetici PDF'i | **Evet** — W3: WeasyPrint/Pango yokken yakalanmamış 500 (PR #3'ün "sebepli 503" kapsamı dışında kalmış) | — | — | — |
+| Tetikler / uyarılar | Hayır | Evet (V1) | — | Evet |
+
+### Bulgular
+
+| # | Bulgu | Kanıt (canlı) | İlke / DDIA |
+|---|---|---|---|
+| **W1** | **Onaylanan analiz hiçbir zaman dashboard üretmez** | Graf: `verifier → hold_for_review → END`; rapor adımı kapıdan sonra. `approve` işi `completed` yapar, `review_continuation.devam_et` yalnız kaydedilmiş sonuç üzerinde `continue_after_completion` çalıştırır — pipeline'ı sürdürmez. Şubat (zarar), e-Fatura, bozuk CSV: onay 200 → `completed` → `/dashboard` **404** (dakikalar sonra da). Bunu yakalayan test yok | "UI insan onaylayana kadar bekletir" — bekletir ama sonra hiçbir şey üretmez; Ch.7: durum çıktıdan önce yazılıyor |
+| **W2** | **Son yükleme şirket resmini siler** | Bozuk CSV onaylanınca `context.active_jobs.cfo` = bozuk iş; semantik özet `finance.revenue/runway/net_margin = None`. 12 aylık analiz tek dosyalık analizle değiştirildi | Ch.11 — türetilmiş görünüm kaynak seçmeden üzerine yazılıyor (F1'in kök nedeni) |
+| **W3** | **Dış hizmet yokken yakalanmamış 500** | `/chat/job/{id}` ×4 → 500 (`openai_api_key is a placeholder`); `/reports/{id}/executive-pdf` → 500 (`libgobject` yok) | `{data, error}` sözleşmesi; dürüst bozulma |
+| **W4** | **P&L kaynak hesap kodunu yok sayıyor** | Logo CSV her satırda TDHP kodu taşıyor (701 gelir; 740/758/760/770/771 gider; 360/363 vergi). Pipeline Türkçe anahtar kelimeyle sınıflıyor: "Maaş - **Satış** Ekibi" → `revenue` (15 satır, **₺820.000 gider P&L dışında**); "**Yazılım** Lisans Geliri" → `technology`; gelirin ₺3,7M'si `other_expense`. KDV (360) ve geçici vergi (363) **gider** sayılıyor. Dashboard FAVÖK ₺6.033.800 — elle ₺5.213.800 (₺9.799.500 − ₺4.585.700). ERP bağlayıcısı (`logo_tiger_connector`) da `classify_by_keywords` | Kuzey yıldızı: kanıtlanmış sayı; "yüklediğin veri" zaten doğru cevabı taşıyor |
+| **W5** | **Vergi sayfası boş** | csv1: `tax: {}` — 17 vergi satırı (KDV ödemeleri, geçici vergi) var | Kullanıcıya görünmez kayıp |
+| **W6** | **Anomaliler gürültü** | 4 anomalinin 3'ü yanlış kategoriden (₺65.000 "teknoloji gideri" büyük olasılıkla gelir satırı) ya da rutin (Q4 geçici vergi "olağandışı vergi gideri"); "%99 yuvarlak tutar" kira/maaşta anlamsız | Dürüstlük: sinyal/gürültü |
+| **W7** | **Tek yıldan mevsimsellik** | 12 aylık seriden mevsim endeksi (Ocak 0,627) tahmine uygulanıyor | İstatistiksel geçerlilik (≥ 24 ay) |
+| **W8** | **TR muhasebe pratikte kullanılamaz** | `/muhasebe/analiz`: 163 kayıt, **163 onay bekliyor** (ort. güven 0,527); mizan "onaylanmış kayıt bulunamadı" → e-Defter yok. Kaynak hesap kodu yine kullanılmıyor | Yetki Matrisi kuralları var ama kaynak kodu bilinen satırı da insana bırakıyor |
+| **W9** | Doküman yanlışı | DEMO_PLAN demo şirket geliri "~₺4,8M" — gerçek ₺9.799.500 | — |
+
+### Fazlar (öncelik: kullanıcının gördüğü yanlış > kırık akış > fayda)
+
+#### P0 — Kırık akışlar · ~3–4 gün · önce
+- [ ] **W1:** Onay, bekletilen koşuyu **tamamlar**: (a) LangGraph checkpoint'inden aynı `thread_id` ile `report_node`'a devam (durable checkpointer varken), ya da (b) yoksa onay bayrağı (`review_accepted=True`) ile pipeline yeniden hesaplanır ve kapı bu kez rapora yönlendirir (yeniden hesaplama = idempotent, Ch.10). Ingestion'da duran (P&L hiç hesaplanmamış) işler için de aynı yol. `review.devam` "tamam" ancak dashboard yazıldıktan sonra.
+- [ ] **W2:** Şirket bağlamının aktif CFO işi yalnız **dashboard'u olan** tamamlanmış işle değişir; F1 gelene dek daha dar dönemli / tek belgeli bir analiz, daha geniş dönemli olanın yerini sessizce almaz (kullanıcıya "şirket görünümünü bununla değiştir?" seçeneği). DDIA: türetilmiş görünüm hangi kaynaktan kurulduğunu bilmeli.
+- [ ] **W3:** LLM ya da PDF motoru yokken ilgili uçlar **sebepli 503** (`error_code: llm_unavailable | pdf_engine_unavailable`) döner; sohbet, yalnız deterministik verilebilen cevapları (gelir toplamı, en büyük gider) LLM'siz verir.
+- **DoD:** "onaylanan iş dashboard'a sahiptir" testi (ingestion'da ve verifier'da duran iki yol); bozuk dosya onayı şirket görünümünü değiştirmez (test); sohbet/PDF dış hizmetsiz 503 + mesaj (test). Canlı: bu denetimin probu P0 akışlarını yeşil gösterir.
+
+#### P1 — Sayılar doğru · ~1 hafta
+- [ ] **W4:** Kaynak hesap kodu (Logo/Mikro/Netsis "Hesap Kodu", e-Defter) **otoriter**: TDHP sınıfı → tür + kategori (6xx gelir/indirim, 7xx & 62x–68x gider, 1xx/2xx/3xx bilanço — P&L'e girmez). Kod varken anahtar kelime tahmini yapılmaz; kod yoksa kullanıcı kuralı (F0) → anahtar kelime. Tür–kategori tutarlılık kapısı: gider satırı `revenue`, gelir satırı gider kategorisi olamaz (sert doğrulama → `needs_review`). KDV/geçici vergi bilanço hareketi olarak ayrılır. Aynı eşleme ERP bağlayıcısında.
+- [ ] **Altın test (gerçek veri, elle hesap):** demo Logo CSV → gelir 9.799.500, P&L gideri 4.585.700, vergi öncesi 5.213.800, KDV/geçici vergi P&L dışında. Hafızadaki ders: fixture koda göre değil kaynağa göre yazılır.
+- [ ] **W5:** Vergi bölümü 360/191/391 ve geçici vergi hareketlerinden KDV ödemeleri + dönem takvimi üretir; veri yoksa "vergi hareketi yok" der (boş `{}` değil).
+- [ ] **W6:** Anomali dedektörü düzeltilmiş kategoriler üzerinde çalışır; bilinen periyodik ödemeler (aylık KDV, çeyreklik geçici vergi, sabit kira/maaş) taban çizgisinden düşülür; "yuvarlak tutar" yalnız tekrarlamayan kalemlerde. Demo verisinde etiketli küçük bir küme ile isabet ölçülür.
+- [ ] **W7:** Mevsimsellik yalnız ≥ 24 ayda; daha azında düz projeksiyon + "mevsimsellik için yetersiz veri" etiketi.
+- **DoD:** altın test yeşil; tür–kategori kapısı testi; vergi ve anomali testleri; canlı probda demo FAVÖK = 5.213.800.
+
+#### P2 — Gerçek fayda · ~1 hafta
+- [ ] **W8:** Kaynak hesap kodu bilinen satır yüksek güvenle THP'ye eşlenir (Logo 701 → 600 gibi eşleme tablosu, belgeli); Yetki Matrisi varsayılan politikası "kaynak kodlu + tutar eşik altı" satırı otomatik onaylar; SMMM onay kuyruğunda **toplu onay** (filtre: hesap, tutar bandı). Hedef: demo yılında onay bekleyen satır 163 → yalnız gerçekten belirsiz olanlar.
+- [ ] **W9:** DEMO_PLAN rakamı düzeltilir.
+- **DoD:** demo CSV muhasebe analizinde onay bekleyen ≤ %10; mizan dengeli ve dolu; toplu onay testi.
+
+### Sıra ve §V6/§V5 ile ilişki
+**P0 → P1 → S1/S2 (§V6) → P2 → F1 (§V5) …**
+- P0'ın W1'i S1'in "kapı tek yerde" işinin ön koşulu: kapı insanı bekletebilir, ama onay bekletilen işi bitirmek zorunda.
+- P1'in W4'ü F1'in parmak izinden önce gelir: defter yanlış sınıflanmış satırlarla kurulmamalı.
+- W2'nin kalıcı çözümü F1 (tek defter, dönem görünümleri); P0 yalnız kanamayı durdurur.
 
 ---
 
