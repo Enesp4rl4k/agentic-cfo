@@ -122,8 +122,9 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
                     "message":  alert["message"],
                 })
 
-    overall_score = (
-        round(sum(scores.values()) / len(scores), 1) if scores else 0.0
+    # None = nothing measured, not a 0/10 (plan v6 §S0).
+    overall_score: float | None = (
+        round(sum(scores.values()) / len(scores), 1) if scores else None
     )
     growth_efficiency = _compute_growth_efficiency(campaigns, cohorts)
 
@@ -211,7 +212,7 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
 def _compute_growth_efficiency(
     campaigns: dict[str, Any],
     cohorts: dict[str, Any],
-) -> float:
+) -> float | None:
     """
     Growth efficiency score (0-10, higher = better).
     Combines ROAS and LTV:CAC into a single metric.
@@ -227,15 +228,17 @@ def _compute_growth_efficiency(
         # LTV:CAC 4x = score 10, LTV:CAC 1x = score 2.5
         scores.append(min(10.0, ltv_cac * 2.5))
 
-    return round(sum(scores) / len(scores), 1) if scores else 0.0
+    return round(sum(scores) / len(scores), 1) if scores else None
 
 
 def _build_fallback_narrative(
-    score: float,
+    score: float | None,
     campaigns: dict[str, Any],
     funnel: dict[str, Any],
     cohorts: dict[str, Any],
 ) -> str:
+    if score is None:
+        return "Pazarlama skoru ölçülmedi: kampanya, huni veya kohort verisi okunamadı."
     roas  = campaigns.get("overall_roas", 0.0) if campaigns else 0.0
     conv  = funnel.get("overall_conversion_rate", 0.0) if funnel else 0.0
     ltv   = cohorts.get("ltv_cac_ratio", 0.0) if cohorts else 0.0

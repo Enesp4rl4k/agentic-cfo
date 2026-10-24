@@ -448,6 +448,7 @@ def test_condense_ops_summary_has_required_keys():
 
 def test_condense_ops_summary_empty_state():
     condensed = _condense_ops_summary({})
-    assert condensed["overall_ops_score"] == 0.0
+    # No COO run → unknown, not 0.0 ("ideal" on this higher-is-worse scale).
+    assert condensed["overall_ops_score"] is None
     assert condensed["sla_breach_rate"] == 0.0
     assert condensed["top_risks"] == []

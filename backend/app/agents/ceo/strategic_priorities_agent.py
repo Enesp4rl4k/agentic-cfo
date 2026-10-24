@@ -96,8 +96,8 @@ def _build_priorities_from_risks(
         })
 
     # ── CTO-only priorities ────────────────────────────────────────────────────
-    health = tech.get("overall_health_score", 0)
-    if health >= 7.0:
+    health = tech.get("overall_health_score")  # risk scale; None = no CTO run
+    if health is not None and health >= 7.0:
         priorities.append({
             "title":        "Technology health intervention",
             "rationale":    f"Tech health score {health:.1f}/10 indicates systemic issues. Architecture review needed.",

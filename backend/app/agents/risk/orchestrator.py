@@ -63,20 +63,32 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
     #   loss score      (35 %) — realised losses (normalised vs ₺1M ceiling)
     #   kri score       (30 %) — leading indicator breaches
 
-    reg_score  = float(reg.get("enterprise_risk_score", 0.0))
-    net_loss   = float(loss.get("total_net_loss", 0))
-    loss_score = min(10.0, (net_loss / (1_000_000 * 100)) * 10.0)  # ₺1M ceiling
-    kri_score  = float(kri.get("composite_kri_score", 0.0))
+    #
+    # A component counts only if something was measured: a register with no
+    # risks, a loss log with no events or a KRI file with no indicators is
+    # *unknown*, not *safe*. It used to score 0 — and a run with no inputs at
+    # all reported "acceptable (0.0/10)", a calm green nobody had earned
+    # (plan v6 §S0). Weights renormalise over what was measured.
+    measured: dict[str, tuple[float, float]] = {}
+    if reg.get("total_risks", 0):
+        measured["register"] = (float(reg.get("enterprise_risk_score", 0.0)), 0.35)
+    if loss.get("total_events", 0):
+        net_loss = float(loss.get("total_net_loss", 0))
+        measured["losses"] = (min(10.0, (net_loss / (1_000_000 * 100)) * 10.0), 0.35)  # ₺1M ceiling
+    if kri.get("total_kris", 0):
+        measured["kri"] = (float(kri.get("composite_kri_score", 0.0)), 0.30)
 
-    enterprise_score = round(
-        reg_score  * 0.35 +
-        loss_score * 0.35 +
-        kri_score  * 0.30,
-        1,
-    )
+    enterprise_score: float | None
+    if measured:
+        weight = sum(w for _, w in measured.values())
+        enterprise_score = round(sum(s * w for s, w in measured.values()) / weight, 1)
+    else:
+        enterprise_score = None
 
     # ── Risk Posture Label ────────────────────────────────────────────────────
-    if enterprise_score >= 7.0:
+    if enterprise_score is None:
+        posture = "no_data"
+    elif enterprise_score >= 7.0:
         posture = "critical"
     elif enterprise_score >= 5.0:
         posture = "elevated"
@@ -177,64 +189,73 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
         "elevated":   "YÜKSELMİŞ",
         "moderate":   "ORTA",
         "acceptable": "KABUL EDİLEBİLİR",
+        "no_data":    "ÖLÇÜLMEDİ",
     }.get(posture, posture.upper())
 
-    narrative = (
-        f"Kurumsal risk skoru: {enterprise_score}/10 — risk duruşu {posture_tr}. "
-        f"Risk kaydı: {reg.get('total_risks', 0)} risk, "
-        f"{reg.get('by_band', {}).get('critical', 0)} kritik. "
-        f"Operasyonel kayıplar: {loss.get('total_net_loss', 0) / 100:,.0f} ₺ net. "
-        f"KRI: {len(kri.get('breached_red', []))} kırmızı, "
-        f"{len(kri.get('breached_amber', []))} amber."
-    )
+    if enterprise_score is None:
+        narrative = (
+            "Risk duruşu ölçülmedi: risk kaydı, kayıp olayı veya KRI verisi yüklenmedi. "
+            "Bu bir 'düşük risk' sonucu değildir."
+        )
+    else:
+        narrative = (
+            f"Kurumsal risk skoru: {enterprise_score}/10 — risk duruşu {posture_tr}. "
+            f"Risk kaydı: {reg.get('total_risks', 0)} risk, "
+            f"{reg.get('by_band', {}).get('critical', 0)} kritik. "
+            f"Operasyonel kayıplar: {loss.get('total_net_loss', 0) / 100:,.0f} ₺ net. "
+            f"KRI: {len(kri.get('breached_red', []))} kırmızı, "
+            f"{len(kri.get('breached_amber', []))} amber."
+        )
     if top_risks:
         narrative += f" Öncelikli risk: {top_risks[0]['title'][:60]}."
 
-    # LLM enrichment (non-fatal)
-    try:
-        from app.platform.model_gateway import complete_text
-
-        cross_context = ""
-        if cross_correlation and cross_correlation.get("systemic_risks"):
-            sys_names = ", ".join(s["kri"] for s in cross_correlation["systemic_risks"][:2])
-            cross_context = f"\nSistemik risk KRI'ları: {sys_names}"
-        if cross_correlation and cross_correlation.get("leading_indicators"):
-            li = cross_correlation["leading_indicators"][0]
-            cross_context += f"\nÖncü gösterge: {li['interpretation']}"
-
-        # S4-3: Türkiye makro risk faktörleri
+    # LLM enrichment (non-fatal) — not for an unmeasured posture: there is
+    # nothing to assess, and a model asked to assess nothing invents.
+    if enterprise_score is not None:
         try:
-            from app.agents.risk.turkey_macro_risks import build_macro_risk_prompt_block
-            macro_block = build_macro_risk_prompt_block(max_items=3)
-            cross_context += macro_block
-        except Exception:
-            pass
+            from app.platform.model_gateway import complete_text
 
-        narrative = (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir Risk Yöneticisisin. Kurumsal risk verilerini analiz et ve "
-                "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
-                "Yanıt yapısı:\n"
-                "1. Genel risk duruşunun 1-2 cümlelik değerlendirmesi\n"
-                "2. En kritik 1-2 risk (şirkete özgü + Türkiye makro riski varsa)\n"
-                "3. Yönetimin hemen yapması gereken 2-3 somut eylem\n"
-                "Risk profesyoneli bakışıyla pratik öneriler ekle."
-            ),
-            prompt=narrative + cross_context,
-            max_tokens=700,
-        )).strip()
-    except Exception as llm_exc:
-        logger.debug("Risk summary LLM failed: %s", llm_exc)
+            cross_context = ""
+            if cross_correlation and cross_correlation.get("systemic_risks"):
+                sys_names = ", ".join(s["kri"] for s in cross_correlation["systemic_risks"][:2])
+                cross_context = f"\nSistemik risk KRI'ları: {sys_names}"
+            if cross_correlation and cross_correlation.get("leading_indicators"):
+                li = cross_correlation["leading_indicators"][0]
+                cross_context += f"\nÖncü gösterge: {li['interpretation']}"
+
+            # S4-3: Türkiye makro risk faktörleri
+            try:
+                from app.agents.risk.turkey_macro_risks import build_macro_risk_prompt_block
+                macro_block = build_macro_risk_prompt_block(max_items=3)
+                cross_context += macro_block
+            except Exception:
+                pass
+
+            narrative = (await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir Risk Yöneticisisin. Kurumsal risk verilerini analiz et ve "
+                    "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
+                    "Yanıt yapısı:\n"
+                    "1. Genel risk duruşunun 1-2 cümlelik değerlendirmesi\n"
+                    "2. En kritik 1-2 risk (şirkete özgü + Türkiye makro riski varsa)\n"
+                    "3. Yönetimin hemen yapması gereken 2-3 somut eylem\n"
+                    "Risk profesyoneli bakışıyla pratik öneriler ekle."
+                ),
+                prompt=narrative + cross_context,
+                max_tokens=700,
+            )).strip()
+        except Exception as llm_exc:
+            logger.debug("Risk summary LLM failed: %s", llm_exc)
 
     summary = {
         "enterprise_risk_score": enterprise_score,
         "risk_posture":          posture,
         "risk_posture_tr":       posture_tr,
+        # None = not measured (no input for that component), not zero risk.
         "component_scores": {
-            "register":  round(reg_score, 1),
-            "losses":    round(loss_score, 1),
-            "kri":       round(kri_score, 1),
+            name: (round(measured[name][0], 1) if name in measured else None)
+            for name in ("register", "losses", "kri")
         },
         "top_risks":        top_risks[:6],
         "quick_wins":       quick_wins[:5],
@@ -244,7 +265,11 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
 
     log = RiskStepLog(
         node="risk_summary", status="completed",
-        message=f"Risk posture: {posture} ({enterprise_score}/10)",
+        message=(
+            "Risk posture: no_data (no register, loss or KRI input)"
+            if enterprise_score is None
+            else f"Risk posture: {posture} ({enterprise_score}/10)"
+        ),
         metrics={"enterprise_risk_score": enterprise_score},
     )
     logs.append(log)

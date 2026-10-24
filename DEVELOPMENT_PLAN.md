@@ -49,11 +49,14 @@
 > İlke korunur: hiçbir faz kapıyı gevşetmez, yalnız uygulanmadığı yere uygular. `CFOState`'ten alan **kaldırılmaz** (DISPATCH). `backend/app/agents/` dokunan her faz `pytest tests/test_agents/ -q` + `verify.py` (yasa 1, 6). Kolon/tablo düşüren migration yok.
 
 #### S0 — Sessiz yanlışlar · ~2 gün · önce
-- [ ] **H4:** Girdisi olmayan alt skor `None` döner (0 değil); ağırlıklı ortalama yalnız ölçülenler üzerinden; hiç ölçüm yoksa duruş `no_data` + gerekçe (Risk, COO; diğer rollerde aynı tarama). Frontend `no_data`'yı nötr gösterir — asla yeşil.
-- [ ] **H6 (acil kısmı):** Risk "Gider / Gelir" KRI'si dashboard'un kategori bazlı `opex`'inden okunur (PR #5'teki `_period_opex` ile aynı kural, ortak modüle).
-- [ ] **H10:** `proactive_alerts` için ORM modeli; ham SQL → ORM (yasa 4); aktif org = son 24 saatte `analysis_jobs` **veya** `agent_jobs` olan org; yutma yerine log + metrik.
-- [ ] **H9:** `POST /context/{org_id}` kaldırılır (çağıran yok) — ya da yalnız sunucu tarafı kaynaklı (iş kimliği doğrulanmış) sonuç kabul eder. Kaldırma kararı **sahibe sorulur**.
-- **DoD:** canlı prob (aşağıda S6) girdisiz Risk/COO için `no_data` gösterir; KRI listesinde Gider/Gelir görünür; SQLite'ta saatlik tarama en az bir org'u tarar (log).
+- [x] **H4:** Risk: alt skor yalnız ölçüldüyse (`total_risks`/`total_events`/`total_kris` > 0) sayılır, ağırlıklar ölçülenlere yeniden dağıtılır, hiç ölçüm yoksa `risk_posture="no_data"`, `enterprise_risk_score=None`, "bu bir düşük risk sonucu değildir" anlatısı ve LLM'e hiç gidilmez. COO/CTO/CMO: hiç bileşen yoksa genel skor `None` (0.0 değil); COO anlatısı ve LLM istemi eksik girdiyi "ölçülmedi" diye adlandırır ("%0 kaynak kullanımı" uydurulmaz). CEO tüketicileri `None`-güvenli: sentez (`risk_posture` varsayılanı `"acceptable"` → `"no_data"`; uyum varsayılanı `100.0` → `None`), stratejik öncelikler, SWOT (uydurma `5` orta değerleri kaldırıldı).
+- [x] **Yan bulgu — ters polarite (canlı hata):** CEO SWOT, CTO'nun *yüksek = kötü* skorunu *yüksek = iyi* okuyordu → kritik 8/10 "Yüksek teknoloji sağlık skoru" **güçlü yan**, sağlıklı 2/10 zayıf yan; "güçlü teknik ekip" fırsatı da ≥7 riskte tetikleniyordu. Artık ≤2,5 güçlü yan, ≥7 zayıf yan (yönetim kurulu etiketleriyle aynı eşikler). `ceo/state.py`'deki "(lower = worse)" açıklaması düzeltildi.
+- [x] **Yan bulgu — yönetim kurulu sunumu:** CTO verisi yokken uydurma "5,0/10 — Orta (Dikkat)" teknoloji skoru, runway bilinmezken "0,0 ay" + **kritik** uyarı basıyordu → "—/Ölçülmedi" ve "Sınır yok / ölçülmedi", uyarı yok.
+- [x] **Yan bulgu — frontend:** `cross-agent-intelligence` var olmayan `overall_risk_score`'u 0–100'de `>70` ile okuyordu → "Yüksek Risk Yoğunlaşması" asla tetiklenmiyordu; artık `enterprise_risk_score` (0–10, `null` = ölçülmedi).
+- [x] **H6 (acil kısmı):** `app/services/dashboard_contract.py` (`period_opex`, `revenue`) — S4'ün çekirdeği; Risk "Gider / Gelir" KRI'si buradan okur. Eski test `total_opex` biçimiyle (kodun beklediğiyle) yazılmıştı; gerçek dashboard biçimiyle test eklendi.
+- [x] **H10:** `models/proactive_alert.py` (migration 009 şemasının birebir aynası; `known_drift.txt`'den 3 girdi silindi); ham SQL → ORM; aktif org = son 24 saatte `analysis_jobs` **veya** `agent_jobs`; yutma yerine `warning` log; kayıt `alert_id` ile idempotent.
+- [x] **H9:** `POST /context/{org_id}` + kullanılmayan `updateAgentContext` / `useReportAgentResult` kaldırıldı (sahip onayı 2026-10-24). Ajan sonuçları bağlama yalnız sunucu tarafından (`persist_agent_completion`, worker) girer.
+- **DoD:** ✅ `tests/test_s0_no_data.py` (8), `test_proactive_alerts_scan.py` (2), `test_dashboard_contract.py` (4), `test_gercek_kri.py` (+1 gerçek biçim); boş COO özetini `0.0`'a kilitleyen eski test `None`'a çevrildi. Canlı: Risk girdisiz → "Risk posture: no_data"; konuk (yalnız CFO) org'u saatlik tarama buldu (`scanned: 1`, hata yok — önce 0). Sınır: Postgres drift kontrolü bu makinede çalıştırılamadı (Docker yok) — CI doğrular.
 
 #### S1 — Tek ajan sözleşmesi + kapı tek yerde (H1, H2, H13) · ~3–4 gün
 - [ ] Ortak `StepResult` sözleşmesi (`step, ok, status: ok|skipped|failed, confidence: float|None, needs_review, detail, data_source`) — CHRO/Risk/Audit'in `{node,status,message}` logu ve CMO/COO'nun güvensiz adımları buna taşınır. Atlanan adım `status=skipped, confidence=None` (1.0 değil).
@@ -85,6 +88,7 @@
 #### S6 — Ajan sağlık probu ve testler (H15) · S0 ile başlar
 - [ ] Bu taramada kullanılan canlı prob `scripts/agent_health_probe.py` olarak repoya girer: her rol pipeline'ını demo girdileriyle çalıştırır, sözleşme/NaN/`no_data`/kapı ihlallerini raporlar; `verify.py`'ye opsiyonel adım (CI'da SQLite).
 - [ ] Rol başına altın fixture testi (girdi → beklenen skor aralığı + uyarılar).
+- [ ] Kararsız test: `test_muhasebe_throughput::test_the_event_loop_keeps_answering_while_a_large_statement_is_booked` tam paket yükünde 0,516 sn > 0,5 sn eşikle düştü (2026-10-24), tek başına 3/3 geçiyor — duvar saati yerine olay döngüsü gecikmesini ölçen ya da yükten bağımsız bir eşik.
 
 ### Sıra ve §V5 ile ilişki
 **S0 → S1 → S2 → F1 → S3 → S4 → F2 …**, S5/S6 paralel.

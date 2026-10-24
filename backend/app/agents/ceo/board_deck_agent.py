@@ -75,6 +75,18 @@ def _trend_arrow(current: float | None, previous: float | None) -> str:
     return "→"  # Flat
 
 
+def _score_cell(score: float | None) -> tuple[str, str]:
+    """("3.5/10", label) for a measured tech score; ("—", "Ölçülmedi") otherwise."""
+    if score is None:
+        return "—", "Ölçülmedi"
+    return f"{score:.1f}/10", _health_label(score)
+
+
+def _score_line(score: float | None) -> str:
+    value, label = _score_cell(score)
+    return f"{value} ({label.lower()})"
+
+
 def _health_label(score: float) -> str:
     """Exec-ready health labels."""
     if score <= 2.5:
@@ -183,8 +195,11 @@ def _build_slides(
     # `.get(k, default)` yields None when the key is present but null — which
     # is what the CFO condenser emits for an unknown runway. Each of these
     # feeds a format spec or a numeric comparison, so coalesce explicitly.
-    health_score = tech.get("overall_health_score") or 5.0
-    runway = fin.get("cash_runway_months") or 0.0
+    # Unknown stays unknown (plan v6 §S0): no CTO run printed a made-up
+    # "5.0/10 — Orta" tech score, and an unknown runway (profitable, or not
+    # measured) printed "0.0 months" with a critical alert — on a board deck.
+    health_score: float | None = tech.get("overall_health_score")
+    runway: float | None = fin.get("cash_runway_months")
     revenue = fin.get("revenue_cents") or 0
     net_income = fin.get("net_income_cents") or 0
     net_margin = fin.get("net_margin") or 0.0
@@ -203,7 +218,11 @@ def _build_slides(
     # ── Slide 1: Company Health Dashboard ────────────────────────────────────
     momentum_revenue = _trend_arrow(revenue, fin.get("prev_revenue_cents"))
     momentum_margin = _trend_arrow(net_margin, fin.get("prev_net_margin"))
-    momentum_health = _trend_arrow(health_score, tech.get("prev_health_score"))
+    momentum_health = (
+        _trend_arrow(health_score, tech.get("prev_health_score"))
+        if health_score is not None else None
+    )
+    health_value, health_label = _score_cell(health_score)
 
     slides.append({
         "slide_number": 1,
@@ -226,17 +245,17 @@ def _build_slides(
             },
             {
                 "label": "Nakit Pisti",
-                "value": f"{runway:.1f} ay",
-                "momentum": "↓" if runway < 12 else "→",
-                "alert": "critical" if runway < 6 else None,
+                "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
+                "momentum": ("↓" if runway < 12 else "→") if runway is not None else None,
+                "alert": "critical" if runway is not None and runway < 6 else None,
                 "confidence": 0.88,
             },
             {
                 "label": "Teknoloji Sağlığı",
-                "value": f"{health_score:.1f}/10",
-                "label_detail": _health_label(health_score),
+                "value": health_value,
+                "label_detail": health_label,
                 "momentum": momentum_health,
-                "alert": "high" if health_score > 6.5 else None,
+                "alert": "high" if health_score is not None and health_score > 6.5 else None,
                 "confidence": 0.85,
             },
             {
@@ -250,8 +269,11 @@ def _build_slides(
             f"{company} {period} döneminde "
             f"{'pozitif' if net_income > 0 else 'negatif'} finansal performans gösteriyor "
             f"({_fmt_pct(net_margin)} net marj). "
-            f"Teknoloji sağlığı skoru {health_score:.1f}/10 ({_health_label(health_score).lower()}). "
-            f"{len(cross_risks)} çapraz alan riski Denetim Komitesi'nin dikkatini gerektiriyor."
+            + (
+                f"Teknoloji sağlığı skoru {health_value} ({health_label.lower()}). "
+                if health_score is not None else "Teknoloji sağlığı ölçülmedi (CTO verisi yok). "
+            )
+            + f"{len(cross_risks)} çapraz alan riski Denetim Komitesi'nin dikkatini gerektiriyor."
         ),
     })
 
@@ -314,8 +336,8 @@ def _build_slides(
         "key_metrics": [
             {
                 "label": "Sağlık Skoru",
-                "value": f"{health_score:.1f}/10",
-                "label_detail": _health_label(health_score),
+                "value": health_value,
+                "label_detail": health_label,
             },
             {
                 "label": "Cloud Harcaması",
@@ -421,8 +443,11 @@ def _build_slides(
             },
             {
                 "label": "Nakit Pisti",
-                "value": f"{runway:.1f} ay",
-                "alert": "critical" if runway < 6 else "high" if runway < 12 else None,
+                "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
+                "alert": (
+                    None if runway is None
+                    else "critical" if runway < 6 else "high" if runway < 12 else None
+                ),
             },
             {
                 "label": "Aylık Kullanım",
@@ -468,7 +493,7 @@ def _build_one_page_summary(
         f"  • Aylık Kullanım:  {_fmt_currency(fin.get('monthly_burn_cents'))}",
         "",
         "TEKNOLOJİ VE OPERASYONALLİK",
-        f"  • Sağlık Skoru:    {tech.get('overall_health_score', 0):.1f}/10 ({_health_label(tech.get('overall_health_score', 5.0)).lower()})",
+        "  • Sağlık Skoru:    " + _score_line(tech.get("overall_health_score")),
         f"  • Cloud Harcaması: {_fmt_currency(tech.get('infra_cost_cents'))}",
         f"  • Cloud Israfı:    {_fmt_currency(tech.get('infra_waste_cents'))} (tasarruf fırsatı)",
         f"  • Teknik Borç:     {tech.get('debt_score', 0):.1f}/10",

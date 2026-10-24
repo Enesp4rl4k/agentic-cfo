@@ -9,15 +9,12 @@
  * Usage:
  *   const { summary, isLoading } = useContextSummary();
  *   const { context } = useFullContext();
- *   const { reportAgentResult } = useReportAgentResult();
  */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getCompanyContext,
   getContextSummary,
-  updateAgentContext,
   resetCompanyContext,
-  type AgentName,
 } from "@/lib/api/context";
 import { useCompanyContextStore } from "@/store/companyContext";
 
@@ -59,52 +56,6 @@ export function useFullContext() {
   });
 }
 
-/**
- * Report an agent result to the server context.
- * Called after each agent analysis completes.
- */
-export function useReportAgentResult() {
-  const qc = useQueryClient();
-  const store = useCompanyContextStore();
-
-  const mutation = useMutation({
-    mutationFn: ({
-      agent,
-      result,
-      jobId,
-      companyName,
-      reportingPeriod,
-    }: {
-      agent: AgentName;
-      result: Record<string, unknown>;
-      jobId?: string;
-      companyName?: string;
-      reportingPeriod?: string;
-    }) =>
-      updateAgentContext(agent, result, { jobId, companyName, reportingPeriod }),
-
-    onSuccess: (_data, vars) => {
-      // Invalidate both context caches
-      qc.invalidateQueries({ queryKey: contextKeys.summary });
-      qc.invalidateQueries({ queryKey: contextKeys.full });
-
-      // Also update local store if it's a CFO job
-      if (vars.agent === "cfo" && vars.jobId) {
-        store.setActiveCFOJob(
-          vars.jobId,
-          vars.companyName,
-          vars.reportingPeriod,
-        );
-      }
-    },
-  });
-
-  return {
-    reportAgentResult: mutation.mutate,
-    reportAgentResultAsync: mutation.mutateAsync,
-    isReporting: mutation.isPending,
-  };
-}
 
 /**
  * Reset the full company context (new reporting period).
