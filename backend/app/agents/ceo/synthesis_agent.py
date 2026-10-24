@@ -65,20 +65,24 @@ def _detect_cross_risks(
     ops              = ops or {}
     sla_breach_rate  = ops.get("sla_breach_rate", 0.0)
     avg_utilization  = ops.get("avg_utilization_rate", 0.0)
-    ops_score        = ops.get("overall_ops_score", 0.0)
+    # 0-10, higher = worse; None when COO measured nothing (plan v6 §S0).
+    ops_score        = ops.get("overall_ops_score")
     proc_eff_score   = ops.get("process_efficiency_score", 0.0)
 
     # Compliance inputs (optional)
     compliance           = compliance or {}
-    compliance_score     = compliance.get("overall_health_score", 100.0)
+    # None = no compliance run — not a perfect 100 (plan v6 §S0).
+    compliance_score     = compliance.get("overall_health_score")
     critical_violations  = compliance.get("critical_open_violations", 0)
     non_compliant_reqs   = compliance.get("non_compliant_requirements", 0)
     compliance_coverage  = compliance.get("compliance_coverage_pct", 100.0)
 
     # Risk Agent inputs (optional)
     risk                    = risk or {}
-    enterprise_risk_score   = risk.get("enterprise_risk_score", 0.0)
-    risk_posture            = risk.get("risk_posture", "acceptable")
+    # None / "no_data" when the risk pipeline measured nothing — never read as
+    # a 0.0 "acceptable" posture (plan v6 §S0).
+    enterprise_risk_score   = risk.get("enterprise_risk_score")
+    risk_posture            = risk.get("risk_posture") or "no_data"
     unmitigated_critical    = risk.get("unmitigated_critical_count", 0)
     kri_red_count           = risk.get("kri_red_count", 0)
     total_net_loss          = risk.get("total_net_loss_cents", 0)
@@ -264,7 +268,7 @@ def _detect_cross_risks(
         })
 
     # ── Risk 11 (COO): Ops crisis score + critical fin alert ──────────────────
-    if ops_score >= 7.0 and runway is not None and runway <= 6:
+    if ops_score is not None and ops_score >= 7.0 and runway is not None and runway <= 6:
         risks.append({
             "risk_id": "cross-coo-ops-runway",
             "title": "Operational breakdown while cash runway is short",
@@ -357,7 +361,10 @@ def _detect_cross_risks(
         })
 
     # ── Risk 16 (Compliance): Poor compliance health + operational issues ─────
-    if compliance_score < 60 and ops_score >= 6.0:
+    if (
+        compliance_score is not None and compliance_score < 60
+        and ops_score is not None and ops_score >= 6.0
+    ):
         risks.append({
             "risk_id": "cross-compliance-ops-risk",
             "title": "Compliance and operational failures creating compounding risk",
@@ -392,7 +399,12 @@ def _detect_cross_risks(
         })
 
     # ── Risk 18 (Enterprise Risk): Critical risk posture + short runway ───────
-    if enterprise_risk_score >= 7.0 and runway is not None and runway <= 6:
+    if (
+        enterprise_risk_score is not None
+        and enterprise_risk_score >= 7.0
+        and runway is not None
+        and runway <= 6
+    ):
         risks.append({
             "risk_id": "cross-risk-critical-runway",
             "title": "Critical enterprise risk posture while cash runway is short",
@@ -570,7 +582,7 @@ def _condense_marketing_summary(cmo_state: dict[str, Any]) -> dict[str, Any]:
     summary   = cmo_state.get("cmo_summary") or {}
 
     return {
-        "overall_marketing_score":  summary.get("overall_marketing_score", 0),
+        "overall_marketing_score":  summary.get("overall_marketing_score"),
         "overall_roas":             campaigns.get("overall_roas", 0.0),
         "total_spend_cents":        campaigns.get("total_spend_cents", 0),
         "overall_cac_cents":        campaigns.get("overall_cac_cents", 0),
@@ -591,8 +603,8 @@ def _condense_ops_summary(coo_state: dict[str, Any]) -> dict[str, Any]:
     summary   = coo_state.get("coo_summary") or {}
 
     return {
-        "overall_ops_score":           summary.get("overall_ops_score", 0.0),
-        "operational_efficiency_score": summary.get("operational_efficiency_score", 0.0),
+        "overall_ops_score":           summary.get("overall_ops_score"),
+        "operational_efficiency_score": summary.get("operational_efficiency_score"),
         "process_efficiency_score":    processes.get("efficiency_score", 0.0),
         "avg_utilization_rate":        resources.get("avg_utilization_rate", 0.0),
         "sla_breach_rate":             sla.get("sla_breach_rate", 0.0),
@@ -659,8 +671,8 @@ def _condense_risk_summary(risk_state: dict[str, Any]) -> dict[str, Any]:
     summary  = risk_state.get("risk_summary") or {}
 
     return {
-        "enterprise_risk_score":     summary.get("enterprise_risk_score", 0.0),
-        "risk_posture":              summary.get("risk_posture", "acceptable"),
+        "enterprise_risk_score":     summary.get("enterprise_risk_score"),
+        "risk_posture":              summary.get("risk_posture") or "no_data",
         "unmitigated_critical_count": len(register.get("unmitigated_critical", [])),
         "mitigation_coverage":       register.get("mitigation_coverage", 1.0),
         "total_net_loss_cents":      losses.get("total_net_loss", 0),

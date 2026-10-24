@@ -480,53 +480,63 @@ class ProactiveAlertOrchestrator:
         return []
 
     async def _get_active_orgs(self) -> list[str]:
-        """Son 24 saatte aktif olan org'lari getir."""
+        """Orgs with an analysis or an agent job in the last 24 hours.
+
+        This was raw SQL (CLAUDE.md law 4) in Postgres-only syntax
+        (`NOW() - INTERVAL`): on SQLite it raised into an `except: pass` and
+        the hourly scan covered no organisation at all. It also read only
+        `agent_jobs`, so an org that only ran CFO analyses was never scanned
+        (plan v6 §S0).
+        """
+        if not self.db:
+            return []
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import select
+
+        from app.models.agent_job import AgentJob
+        from app.models.analysis_job import AnalysisJob
+
+        since = datetime.now(UTC) - timedelta(hours=24)
         try:
-            if self.db:
-                from sqlalchemy import text
-                result = await self.db.execute(
-                    text("""
-                        SELECT DISTINCT org_id FROM agent_jobs
-                        WHERE created_at > NOW() - INTERVAL '24 hours'
-                        LIMIT 100
-                    """)
+            orgs: set[str] = set()
+            for model in (AnalysisJob, AgentJob):
+                rows = await self.db.execute(
+                    select(model.org_id)
+                    .where(model.created_at > since, model.org_id.isnot(None))
+                    .distinct()
                 )
-                return [row[0] for row in result.fetchall()]
-        except Exception:
-            pass
-        return []
+                orgs.update(str(o) for o in rows.scalars())
+            return sorted(orgs)[:100]
+        except Exception as exc:
+            logger.warning("Proactive scan: active-org query failed: %s", exc)
+            return []
 
     async def _save_alert(self, alert: AlertEvent) -> None:
-        """Alert'i DB'ye kaydet (durable log)."""
+        """Persist the alert (durable log). Idempotent on `alert_id`."""
+        if not self.db:
+            return
+        from app.models.proactive_alert import ProactiveAlert
+
         try:
-            if self.db:
-                from sqlalchemy import text
-                await self.db.execute(
-                    text("""
-                        INSERT INTO proactive_alerts
-                        (alert_id, org_id, trigger, severity, title, body,
-                         metadata, channels, created_at, dispatched)
-                        VALUES
-                        (:alert_id, :org_id, :trigger, :severity, :title, :body,
-                         :metadata, :channels, :created_at, :dispatched)
-                        ON CONFLICT (alert_id) DO NOTHING
-                    """),
-                    {
-                        "alert_id":   alert.alert_id,
-                        "org_id":     alert.org_id,
-                        "trigger":    alert.trigger,
-                        "severity":   alert.severity,
-                        "title":      alert.title,
-                        "body":       alert.body,
-                        "metadata":   json.dumps(alert.metadata),
-                        "channels":   json.dumps(alert.channels),
-                        "created_at": alert.created_at,
-                        "dispatched": alert.dispatched,
-                    }
-                )
-                await self.db.commit()
+            if await self.db.get(ProactiveAlert, alert.alert_id) is not None:
+                return
+            self.db.add(ProactiveAlert(
+                alert_id=alert.alert_id,
+                org_id=alert.org_id,
+                trigger=alert.trigger,
+                severity=alert.severity,
+                title=alert.title,
+                body=alert.body,
+                metadata_json=json.dumps(alert.metadata),
+                channels=json.dumps(alert.channels),
+                created_at=alert.created_at,
+                dispatched=alert.dispatched,
+            ))
+            await self.db.commit()
         except Exception as exc:
-            logger.debug("Alert kayit hatasi (non-fatal): %s", exc)
+            await self.db.rollback()
+            logger.warning("Proactive alert not saved (alert_id=%s): %s", alert.alert_id, exc)
 
 
 # ── Public factory ─────────────────────────────────────────────────────────────

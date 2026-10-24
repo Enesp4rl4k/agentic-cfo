@@ -115,9 +115,14 @@ function detectCrossInsights(
 
   // ── 3. Regulatory Exposure ────────────────────────────────────────────────
   // Risk + Audit both flagging issues
-  const riskScore  = (risk?.risk_summary as Record<string, number> | null)?.overall_risk_score ?? 0;
+  // The risk pipeline emits `enterprise_risk_score` on 0–10 (higher = worse),
+  // null when nothing was measured. This read `overall_risk_score` on 0–100 —
+  // a key that never existed — so the insight could never fire.
+  const enterpriseRisk = (risk?.risk_summary as Record<string, number | null> | null)
+    ?.enterprise_risk_score;
+  const riskScore = typeof enterpriseRisk === "number" ? Math.round(enterpriseRisk * 10) : null;
 
-  if (riskScore > 70 && risk) {
+  if (riskScore !== null && riskScore >= 70 && risk) {
     insights.push({
       id: "regulatory-exposure",
       severity: "high",

@@ -39,8 +39,6 @@ remove_index erp_integrations.ix_erp_integrations_status (status) unique=False
 remove_index org_invites.ix_org_invites_token (token) unique=False
 remove_index organizations.ix_organizations_slug (slug) unique=False
 remove_index pilot_invites.ix_pilot_invites_code (code) unique=False
-remove_index proactive_alerts.ix_proactive_alerts_org (org_id) unique=False
-remove_index proactive_alerts.ix_proactive_alerts_severity (severity) unique=False
 remove_index rag_chunks.ix_rag_chunks_embedding_ivfflat (embedding) unique=False
 remove_index rag_chunks.ix_rag_chunks_source_type_created_at (source_type, created_at) unique=False
 remove_index smmm_musteri_kayit.ix_smmm_musteri_muhasebeci (muhasebeci_id) unique=False
@@ -51,6 +49,5 @@ remove_index temporal_analysis_events.ix_tae_period (org_id, agent, period) uniq
 remove_index usage_events.ix_usage_events_org_id (org_id) unique=False
 remove_index usage_events.ix_usage_events_org_resource_month (org_id, resource, recorded_at) unique=False
 remove_table billing_subscriptions
-remove_table proactive_alerts
 remove_table temporal_analysis_events
 remove_table usage_events

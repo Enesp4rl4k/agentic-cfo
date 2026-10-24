@@ -130,8 +130,11 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
                     "message":  alert["message"],
                 })
 
-    overall_score = (
-        round(sum(scores.values()) / len(scores), 1) if scores else 0.0
+    # 0-10, higher = worse. None when no component was measured — 0.0 meant
+    # "ideal operations" on this scale, a calm result nobody measured
+    # (plan v6 §S0).
+    overall_score: float | None = (
+        round(sum(scores.values()) / len(scores), 1) if scores else None
     )
     ops_efficiency = _compute_ops_efficiency(processes, resources, sla)
 
@@ -178,10 +181,9 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
     try:
         from app.platform.model_gateway import complete_text
 
-        eff    = processes.get("efficiency_score", 0.0)
-        util   = resources.get("avg_utilization_rate", 0.0)
-        breach = sla.get("sla_breach_rate", 0.0)
-        nps    = sla.get("avg_nps_score", 0.0)
+        if overall_score is None:
+            # Nothing measured: a model asked to assess nothing invents.
+            raise _NothingToNarrate
 
         narrative = (await complete_text(
             task="short_narrative",
@@ -195,13 +197,14 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
                 "Lean operasyon perspektifinden pratik öneriler ekle."
             ),
             prompt=(
-                f"Operasyonel Sağlık Skoru: {overall_score}/10\n"
-                f"Süreç Verimliliği: {eff}/10 | Kaynak Kullanımı: %{util*100:.0f} | "
-                f"SLA İhlal Oranı: %{breach*100:.0f} | NPS: {nps:.0f}\n"
-                f"Önemli Risk Sayısı: {len(top_risks)}"
+                f"Operasyon Risk Skoru (0 iyi, 10 kötü): {overall_score}/10\n"
+                + _measured_lines(processes, resources, sla)
+                + f"\nÖnemli Risk Sayısı: {len(top_risks)}"
             ),
             max_tokens=700,
         )).strip()
+    except _NothingToNarrate:
+        pass
     except Exception as exc:
         logger.warning("COO summary narrative failed: %s", exc)
 
@@ -217,7 +220,11 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
     patch = _append_log(state, COOStepLog(
         step="coo_summary",
         ok=True,
-        detail=f"Ops score: {overall_score}/10, risks: {len(top_risks)}",
+        detail=(
+            "Ops score: not measured (no process, resource or SLA input)"
+            if overall_score is None
+            else f"Ops score: {overall_score}/10, risks: {len(top_risks)}"
+        ),
         confidence=0.88,
     ))
     patch["coo_summary"] = summary
@@ -228,9 +235,10 @@ def _compute_ops_efficiency(
     processes: dict[str, Any],
     resources: dict[str, Any],
     sla: dict[str, Any],
-) -> float:
+) -> float | None:
     """
-    Operational efficiency score (0-10, higher = better).
+    Operational efficiency score (0-10, higher = better); None when nothing
+    was measured.
     Combines process throughput, resource utilization balance, and SLA compliance.
     """
     scores: list[float] = []
@@ -256,22 +264,40 @@ def _compute_ops_efficiency(
         sla_score = max(0.0, 10.0 - breach * 30)
         scores.append(min(10.0, sla_score))
 
-    return round(sum(scores) / len(scores), 1) if scores else 0.0
+    return round(sum(scores) / len(scores), 1) if scores else None
+
+
+class _NothingToNarrate(Exception):
+    """No COO component was measured — skip the narrative model."""
+
+
+def _measured_lines(
+    processes: dict[str, Any], resources: dict[str, Any], sla: dict[str, Any]
+) -> str:
+    """Only what was measured; a missing input is named, never shown as 0%."""
+    parts = [
+        f"Süreç Verimliliği: {processes.get('efficiency_score')}/10" if processes
+        else "Süreç verisi: ölçülmedi",
+        f"Kaynak Kullanımı: %{resources.get('avg_utilization_rate', 0) * 100:.0f}" if resources
+        else "Kaynak verisi: ölçülmedi",
+        (f"SLA İhlal Oranı: %{sla.get('sla_breach_rate', 0) * 100:.0f} | "
+         f"NPS: {sla.get('avg_nps_score', 0):.0f}") if sla
+        else "SLA verisi: ölçülmedi",
+    ]
+    return " | ".join(parts)
 
 
 def _build_fallback_narrative(
-    score: float,
+    score: float | None,
     processes: dict[str, Any],
     resources: dict[str, Any],
     sla: dict[str, Any],
 ) -> str:
-    eff    = processes.get("efficiency_score", 0.0) if processes else 0.0
-    util   = resources.get("avg_utilization_rate", 0.0) if resources else 0.0
-    breach = sla.get("sla_breach_rate", 0.0) if sla else 0.0
+    if score is None:
+        return "Operasyon skoru ölçülmedi: süreç, kaynak veya SLA verisi yüklenmedi."
     return (
-        f"Operations health score: {score}/10. "
-        f"Process efficiency {eff}/10, resource utilization {util:.0%}, "
-        f"SLA breach rate {breach:.0%}."
+        "Operasyon risk skoru (0 iyi, 10 kötü): "
+        f"{score}/10. " + _measured_lines(processes, resources, sla) + "."
     )
 
 

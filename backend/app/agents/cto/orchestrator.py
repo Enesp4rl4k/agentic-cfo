@@ -153,7 +153,11 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
             if alert["level"] in ("critical", "warning"):
                 top_risks.append({"domain": "Engineering Velocity", "severity": alert["level"], "message": alert["message"]})
 
-    overall_health = round(sum(scores.values()) / len(scores), 1) if scores else 0.0
+    # 0-10, higher = worse. None when no component parsed — 0.0 read as
+    # "optimal" (plan v6 §S0).
+    overall_health: float | None = (
+        round(sum(scores.values()) / len(scores), 1) if scores else None
+    )
     top_risks.sort(key=lambda r: 0 if r["severity"] == "critical" else 1)
 
     # ── Quick wins (Türkçe) ───────────────────────────────────────────────────
@@ -229,7 +233,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
                 "Teknik jargonu azalt, CEO'nun anlayacağı dilde yaz."
             ),
             prompt=(
-                f"Genel Teknoloji Sağlık Skoru: {overall_health}/10\n"
+                f"Genel Teknoloji Risk Skoru (0 iyi, 10 kötü): {_score_text(overall_health)}\n"
                 f"Bileşen Skorları: {scores_text}\n\n"
                 f"Önemli Riskler:\n{risks_text}"
                 f"{cross_context_block}"
@@ -238,7 +242,10 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
         )).strip()
     except Exception as exc:
         logger.warning("CTO summary narrative failed: %s", exc)
-        narrative = f"Teknoloji sağlık skoru: {overall_health}/10. {len(scores)} alanda {len(top_risks)} risk tespit edildi."
+        narrative = (
+            f"Teknoloji risk skoru: {_score_text(overall_health)}. "
+            f"{len(scores)} alanda {len(top_risks)} risk tespit edildi."
+        )
 
     summary = {
         "overall_health_score": overall_health,
@@ -250,7 +257,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
 
     patch = _append_log(state, CTOStepLog(
         step="cto_summary", ok=True,
-        detail=f"Health score: {overall_health}/10, risks: {len(top_risks)}, quick wins: {len(quick_wins)}",
+        detail=f"Health score: {_score_text(overall_health)}, risks: {len(top_risks)}, quick wins: {len(quick_wins)}",
         confidence=0.90,
     ))
     patch["cto_summary"] = summary
@@ -385,9 +392,14 @@ async def run_cto_pipeline(
     )
 
     logger.info(
-        "CTO pipeline finished: job=%s health=%.1f awaiting_review=%s",
+        "CTO pipeline finished: job=%s health=%s awaiting_review=%s",
         job_id,
         (result.get("cto_summary") or {}).get("overall_health_score", 0),
         result.get("awaiting_review"),
     )
     return result
+
+
+def _score_text(score: float | None) -> str:
+    """"3.5/10", or "ölçülmedi" when no component parsed (plan v6 §S0)."""
+    return "ölçülmedi" if score is None else f"{score}/10"

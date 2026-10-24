@@ -2,9 +2,14 @@
 Context API — /api/v1/context/*
 
 GET    /context/{org_id}         → Get full company context
-POST   /context/{org_id}         → Update agent result (called by each agent on completion)
 DELETE /context/{org_id}         → Reset context (start fresh)
 GET    /context/{org_id}/summary → Lightweight agent status summary
+
+There is no POST: agent results reach the context server-side only
+(`context_persist.persist_agent_completion`, the worker). A client-writable
+endpoint let any member write an unverified "agent result" that the CEO
+synthesis, the semantic snapshot and the triggers then read — and nothing in
+the UI called it (plan v6 §S0).
 """
 from __future__ import annotations
 
@@ -12,10 +17,8 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -23,7 +26,6 @@ from app.services.company_context import (
     get_cache_stats,
     get_company_context,
     invalidate_company_context,
-    save_company_context,
 )
 
 router = APIRouter()
@@ -55,17 +57,6 @@ def _resolve_org_id(org_id: str, current_user: User) -> str:
     return org_id
 
 
-# ── Request schemas ───────────────────────────────────────────────────────────
-
-class UpdateContextRequest(BaseModel):
-    """Update a single agent's result in the company context."""
-    agent: str          # cfo | cto | cmo | coo | chro | risk | audit | compliance | ceo
-    result: dict[str, Any]
-    company_name: str | None = None
-    reporting_period: str | None = None
-    job_id: str | None = None
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/context/{org_id}")
@@ -81,71 +72,6 @@ async def get_context(
     resolved_id = _resolve_org_id(org_id, current_user)
     ctx = await get_company_context(resolved_id, db)
     return {"data": ctx.to_dict(), "error": None}
-
-
-@router.post("/context/{org_id}")
-async def update_context(
-    org_id: str,
-    body: UpdateContextRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """
-    Store (or overwrite) an agent's result in the company context.
-    Called automatically by each agent pipeline on completion.
-    Also triggers auto-chain if the agent has downstream dependencies.
-    """
-    resolved_id = _resolve_org_id(org_id, current_user)
-    ctx = await get_company_context(resolved_id, db)
-
-    # Update agent result
-    ctx.update_agent_result(body.agent, body.result)
-
-    # Update job tracking
-    if body.job_id:
-        # A job id from the request body, loaded without asking whose it was.
-        if body.job_id:
-            await load_owned_job(db, body.job_id, current_user)
-        ctx.set_active_job(body.agent, body.job_id)
-
-    # Update company metadata if provided
-    if body.company_name:
-        ctx.company_name = body.company_name
-    if body.reporting_period:
-        ctx.reporting_period = body.reporting_period
-
-    await save_company_context(ctx, db)
-
-    # Rebuild canonical semantic snapshot (non-blocking best-effort)
-    try:
-        from app.services.semantic.rebuild import rebuild_semantic_snapshot
-
-        await rebuild_semantic_snapshot(resolved_id, db, include_brief=True)
-    except Exception as exc:
-        logger.warning("Semantic rebuild after context update failed (non-fatal): %s", exc)
-
-    # Trigger auto-chain (non-blocking — fire and forget)
-    try:
-        from app.agents.orchestration.auto_chain import on_agent_complete
-        from app.core.background import spawn, with_session
-
-        # On its own session: this request's `db` is closed when it returns.
-        spawn(
-            with_session(lambda own: on_agent_complete(body.agent, resolved_id, body.result, own)),
-            name=f"auto-chain-{body.agent}-{resolved_id[:8]}",
-        )
-    except Exception as exc:
-        logger.warning("Auto-chain trigger failed (non-fatal): %s", exc)
-
-    return {
-        "data": {
-            "org_id": resolved_id,
-            "agent": body.agent,
-            "updated": True,
-            "agent_summary": ctx.agent_summary(),
-        },
-        "error": None,
-    }
 
 
 @router.delete("/context/{org_id}", status_code=status.HTTP_200_OK)

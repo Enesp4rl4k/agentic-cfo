@@ -27,6 +27,21 @@ def test_cfo_figures_become_kris_with_source_and_no_invented_trend():
     assert set(posture["by_category"]) == {"financial"}
 
 
+def test_opex_ratio_reads_the_persisted_dashboard_shape():
+    """The dashboard (report_agent) carries opex per category and never a
+    `total_opex` — the fixture above is the pnl_agent shape. Against the real
+    shape the "Gider / Gelir" KRI was silently never computed (plan v6 §S0)."""
+    dashboard_pnl = {
+        "revenue": 1_000_000.0,
+        "net_margin": 0.05,
+        "opex": {"salary": 600_000.0, "rent": 250_000.0, "technology": 100_000.0},
+    }
+    kris, _ = gercek_kri(dashboard_pnl, None, None)
+    ratio = next(k for k in kris if k["name"] == "Gider / Gelir")
+    assert ratio["current_value"] == 95.0
+    assert ratio["status"] == "amber"
+
+
 def test_missing_figure_is_left_out_not_defaulted():
     # No forecast: runway is not assumed to be 12 months.
     kris, _ = gercek_kri({"revenue": 500_000, "net_margin": 0.12}, None, None)

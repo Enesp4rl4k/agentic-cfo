@@ -118,23 +118,30 @@ def _extract_swot(
         ))
 
     # ── CTO / Teknoloji ───────────────────────────────────────────────────────
-    tech_health   = tech.get("overall_health_score") or tech.get("health_score", 5)
+    # The CTO score is a *risk* scale: 0-10, higher = worse (cto/orchestrator
+    # "Component health scores (0-10, higher = worse)"; board deck labels
+    # ≤2.5 "Sağlıklı", >7.5 "Kritik"). This read it as higher = better, so a
+    # critical 8/10 became a *strength* and a healthy 2/10 a weakness (plan v6
+    # §S0). None = no CTO run — no claim either way, not a made-up 5.
+    tech_risk     = tech.get("overall_health_score")
+    if tech_risk is None:
+        tech_risk = tech.get("health_score")
     debt_score    = tech.get("debt_score", 0) or 0
     infra_waste   = tech.get("infra_waste_pct", 0) or 0
     vel_trend     = tech.get("velocity_trend", "stable") or "stable"
 
-    if tech_health and tech_health >= 8:
+    if tech_risk is not None and tech_risk <= 2.5:
         strengths.append(_item(
-            f"Yuksek teknoloji saglik skoru: {tech_health}/10",
+            f"Dusuk teknoloji riski: {tech_risk}/10",
             "cto", 7,
-            f"Tech health {tech_health}/10 -- guclu muhendislik pratikleri",
+            f"Tech risk {tech_risk}/10 -- guclu muhendislik pratikleri",
             "Teknik ustunlugu urun farklilasmasi olarak kullan",
         ))
-    elif tech_health and tech_health < 5:
+    elif tech_risk is not None and tech_risk >= 7:
         weaknesses.append(_item(
-            f"Dusuk teknoloji saglik skoru: {tech_health}/10",
+            f"Yuksek teknoloji riski: {tech_risk}/10",
             "cto", 8,
-            f"Tech health {tech_health}/10 -- teknik borc kritik seviyede",
+            f"Tech risk {tech_risk}/10 -- teknik borc kritik seviyede",
             "Teknik borc azaltma sprintleri planla",
         ))
 
@@ -303,11 +310,13 @@ def _extract_swot(
             ))
 
     if tech and hr:
-        if (tech_health or 0) >= 7 and (turnover or 0) < 0.15:  # type: ignore[possibly-undefined]
+        # Low tech *risk* (≤2.5 on the CTO's higher-is-worse scale) + low
+        # turnover. This fired on ≥7 — a critical tech score read as strength.
+        if tech_risk is not None and tech_risk <= 2.5 and (turnover or 0) < 0.15:  # type: ignore[possibly-undefined]
             opportunities.append(_item(
                 "Guclü teknik ekip + istikrar -- urun gelistirme kapasitesi hazir",
                 "cto+chro", 7,
-                f"Tech health {tech_health}/10, turnover %{(turnover or 0)*100:.0f}",
+                f"Tech risk {tech_risk}/10, turnover %{(turnover or 0)*100:.0f}",
                 "Yeni urun/ozellik roadmap'ini hizlandir",
             ))
 
@@ -477,7 +486,7 @@ async def run_swot_from_context(
     tech: dict[str, Any] = {}
     if cto_data:
         tech.update({
-            "overall_health_score": cto_data.get("overall_health_score", 5),
+            "overall_health_score": cto_data.get("overall_health_score"),
             "debt_score":           cto_data.get("tech_debt_score", 0),
             "infra_waste_pct":      cto_data.get("infra_waste_pct", 0),
             "velocity_trend":       cto_data.get("velocity_trend", "stable"),
@@ -505,7 +514,8 @@ async def run_swot_from_context(
     if coo_data:
         ops = {
             "sla_compliance":    coo_data.get("sla_compliance", 0),
-            "overall_ops_score": coo_data.get("overall_ops_score", 5),
+            # No COO score is unknown, not a made-up middle 5 (plan v6 §S0).
+            "overall_ops_score": coo_data.get("overall_ops_score"),
         }
 
     synthetic_state: CEOState = {  # type: ignore[typeddict-item]

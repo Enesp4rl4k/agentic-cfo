@@ -29,6 +29,7 @@ from app.models.institutionalization_snapshot import InstitutionalizationSnapsho
 from app.models.llm_call_log import LLMCallLog
 from app.models.organization import Organization
 from app.models.pilot import PilotInvite, UserFeedback
+from app.models.proactive_alert import ProactiveAlert
 from app.models.rag_chunk import RagChunk
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.report import Report, ReportFormat, ReportType
@@ -77,6 +78,7 @@ __all__ = [
     "OnayDurumu",
     "Organization",
     "PilotInvite",
+    "ProactiveAlert",
     "RagChunk",
     "RelatedParty",
     "Report",
