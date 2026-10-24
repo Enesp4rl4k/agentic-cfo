@@ -88,7 +88,7 @@
 #### S6 — Ajan sağlık probu ve testler (H15) · S0 ile başlar
 - [ ] Bu taramada kullanılan canlı prob `scripts/agent_health_probe.py` olarak repoya girer: her rol pipeline'ını demo girdileriyle çalıştırır, sözleşme/NaN/`no_data`/kapı ihlallerini raporlar; `verify.py`'ye opsiyonel adım (CI'da SQLite).
 - [ ] Rol başına altın fixture testi (girdi → beklenen skor aralığı + uyarılar).
-- [ ] Kararsız test: `test_muhasebe_throughput::test_the_event_loop_keeps_answering_while_a_large_statement_is_booked` tam paket yükünde 0,516 sn > 0,5 sn eşikle düştü (2026-10-24), tek başına 3/3 geçiyor — duvar saati yerine olay döngüsü gecikmesini ölçen ya da yükten bağımsız bir eşik.
+- [x] Kararsız test: `test_muhasebe_throughput::test_the_event_loop_keeps_answering_while_a_large_statement_is_booked` tam paket yükünde iki kez düştü (0,516 sn ve 0,859 sn > 0,5 sn mutlak eşik; GIL çekişmesi), tek başına geçiyordu. Artık koşuya göreli: döngü ≥ 5 kez çalışmalı ve en uzun bekleme `max(0,5 sn, toplam/2)`'nin altında kalmalı — eski gerilemeyi (döngü iş bitene kadar hiç çalışmaz) yine yakalar, yükte rastgele düşmez.
 
 ### Sıra ve §V5 ile ilişki
 **S0 → S1 → S2 → F1 → S3 → S4 → F2 …**, S5/S6 paralel.

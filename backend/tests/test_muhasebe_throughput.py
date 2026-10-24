@@ -94,12 +94,21 @@ async def test_the_event_loop_keeps_answering_while_a_large_statement_is_booked(
             gaps.append(now - last)
             last = now
 
+    loop = asyncio.get_running_loop()
     hb = asyncio.create_task(heartbeat())
+    started = loop.time()
     sonuc = await agent.run("perf", txs)
+    elapsed = loop.time() - started
     done.set()
     await hb
     assert sonuc.kayit_sayisi == 6000
     # Rows are classified and booked in a thread; the loop only waits on it.
-    # Before, the loop never ran once until the whole statement was booked.
-    assert gaps, "the event loop did not run at all while the statement was booked"
-    assert max(gaps) < 0.5
+    # Before, the loop never ran once until the whole statement was booked —
+    # one gap as long as the whole run. Judged relative to the run, not by a
+    # wall-clock bound: under a loaded full suite, GIL contention with the
+    # booking thread produced single 0.5–0.9 s pauses that failed an absolute
+    # `max(gaps) < 0.5` while the loop kept answering (plan v6 §S6).
+    assert len(gaps) >= 5, "the event loop barely ran while the statement was booked"
+    assert max(gaps) < max(0.5, elapsed / 2), (
+        f"the loop stalled {max(gaps):.2f}s of a {elapsed:.2f}s run"
+    )

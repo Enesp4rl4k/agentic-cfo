@@ -82,6 +82,20 @@ def _score_cell(score: float | None) -> tuple[str, str]:
     return f"{score:.1f}/10", _health_label(score)
 
 
+def _runway_momentum(runway: float | None) -> str | None:
+    """Arrow for a measured runway; None when it is unknown (no claim)."""
+    if runway is None:
+        return None
+    return "↓" if runway < 12 else "→"
+
+
+def _runway_alert(runway: float | None) -> str | None:
+    """critical < 6 months, high < 12; None when unknown — never a made-up alarm."""
+    if runway is None or runway >= 12:
+        return None
+    return "critical" if runway < 6 else "high"
+
+
 def _score_line(score: float | None) -> str:
     value, label = _score_cell(score)
     return f"{value} ({label.lower()})"
@@ -246,7 +260,7 @@ def _build_slides(
             {
                 "label": "Nakit Pisti",
                 "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
-                "momentum": ("↓" if runway < 12 else "→") if runway is not None else None,
+                "momentum": _runway_momentum(runway),
                 "alert": "critical" if runway is not None and runway < 6 else None,
                 "confidence": 0.88,
             },
@@ -444,10 +458,7 @@ def _build_slides(
             {
                 "label": "Nakit Pisti",
                 "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
-                "alert": (
-                    None if runway is None
-                    else "critical" if runway < 6 else "high" if runway < 12 else None
-                ),
+                "alert": _runway_alert(runway),
             },
             {
                 "label": "Aylık Kullanım",
