@@ -402,3 +402,61 @@
   0%, 100% { background-position: 0% 50%; }
   50%       { background-position: 100% 50%; }
 }
+
+/* ── Login decision atlas (components/auth/DecisionAtlas.tsx) ─────────────
+   Base routes are always visible; the lit layer draws in phase order on a
+   9 s cycle. Paused offscreen/hidden; static and fully drawn under reduced
+   motion. */
+.decision-atlas .atlas-terrain path { stroke: oklch(0.58 0.025 80 / 0.16); stroke-width: 1; }
+.decision-atlas .atlas-route-base { stroke: oklch(0.58 0.025 80 / 0.35); stroke-width: 1.2; }
+.decision-atlas .atlas-route-lit {
+  stroke: oklch(0.79 0.115 83); stroke-width: 1.6; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: atlas-draw 9s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+.decision-atlas .atlas-packet {
+  stroke: oklch(0.83 0.07 240); stroke-width: 3; stroke-linecap: round;
+  stroke-dasharray: 0.03 1; stroke-dashoffset: 1.03;
+  animation: atlas-packet 9s linear infinite;
+}
+.decision-atlas [data-phase="1"] .atlas-route-lit { animation-delay: 1.4s; }
+.decision-atlas [data-phase="2"] .atlas-route-lit { animation-delay: 2.6s; }
+.decision-atlas .atlas-dot { fill: oklch(0.74 0.085 241); }
+.decision-atlas .atlas-node--agent .atlas-dot { fill: oklch(0.86 0.02 84); }
+.decision-atlas .atlas-node--verifier .atlas-dot { fill: oklch(0.80 0.08 147); }
+.decision-atlas .atlas-ring { fill: none; stroke: oklch(0.79 0.115 83 / 0.5); stroke-width: 1; opacity: 0;
+  transform-box: fill-box; transform-origin: center; animation: atlas-ring 9s ease-out infinite 1.2s; }
+.decision-atlas .atlas-node--verifier .atlas-ring { stroke: oklch(0.80 0.08 147 / 0.6); animation-delay: 2.4s; }
+.decision-atlas .atlas-marker { fill: oklch(0.79 0.115 83); }
+.decision-atlas .atlas-halo { fill: oklch(0.79 0.115 83 / 0.12); transform-box: fill-box; transform-origin: center;
+  animation: atlas-ring 9s ease-out infinite 3.4s; }
+.decision-atlas .atlas-compass { fill: none; stroke: oklch(0.79 0.115 83 / 0.45); stroke-width: 1; stroke-dasharray: 2 4;
+  transform-box: fill-box; transform-origin: center; animation: atlas-spin 40s linear infinite; }
+.decision-atlas .atlas-label { fill: oklch(0.74 0.028 80); font-size: 11px; font-weight: 500; }
+.decision-atlas .atlas-node--decision .atlas-label { fill: oklch(0.86 0.10 85); font-weight: 600; }
+/* (0,2,1) outranks every animated rule above, which tops out at (0,2,0) for the
+   animation shorthand; the (0,3,0) phase rules only set a delay. */
+.decision-atlas[data-paused] svg * { animation-play-state: paused; }
+
+@keyframes atlas-draw {
+  0% { stroke-dashoffset: 1; opacity: 1; }
+  25%, 82% { stroke-dashoffset: 0; opacity: 1; }
+  95%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes atlas-packet {
+  0% { stroke-dashoffset: 1.03; opacity: 1; }
+  20% { stroke-dashoffset: 0; opacity: 1; }
+  21%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes atlas-ring {
+  0%, 10% { opacity: 0; transform: scale(0.6); }
+  18% { opacity: 1; transform: scale(1); }
+  40%, 100% { opacity: 0; transform: scale(1.35); }
+}
+@keyframes atlas-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .decision-atlas svg [class] { animation: none; }
+  .decision-atlas .atlas-route-lit { stroke-dashoffset: 0; opacity: 0.85; }
+  .decision-atlas .atlas-packet, .decision-atlas .atlas-ring { opacity: 0; }
+}
