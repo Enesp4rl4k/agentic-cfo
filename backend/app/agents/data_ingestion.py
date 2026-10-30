@@ -439,18 +439,30 @@ def _yukleyenin_kategorisi(raw_cat: str, raw_desc: str, tx_type: str) -> str:
     return category
 
 
+def _tutar_hucresi(r_lower: dict[str, str]) -> str:
+    """The row's signed amount as text. Bank statements split it: "Borç" is
+    money leaving the account, "Alacak" money arriving."""
+    raw_amt = _ilk(r_lower, "amount", "tutar")
+    borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
+    if not raw_amt and (borc or alacak):
+        raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
+    return raw_amt or "0"
+
+
+def _kodsuz_yon(r_lower: dict[str, str], amount_cents: int) -> str:
+    """Direction of a row without an account: its type column, else its sign."""
+    raw_type = _ilk(r_lower, "type", "tip")
+    if raw_type in ("income", "expense"):
+        return raw_type
+    return "expense" if amount_cents < 0 else "income"
+
+
 def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any] | None:
     """One CSV row as a pipeline transaction; None for an empty or skipped row."""
     if not row or not any(row.values()):
         return None
     r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
-    raw_amt = _ilk(r_lower, "amount", "tutar")
-    # Bank statements split the amount: "Borç" is money leaving the
-    # account, "Alacak" money arriving.
-    borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
-    if not raw_amt and (borc or alacak):
-        raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
-    raw_amt = raw_amt or "0"
+    raw_amt = _tutar_hucresi(r_lower)
     raw_desc = _ilk(r_lower, "description", "aciklama", "detay")
     raw_cat = _ilk(r_lower, "category", "kategori")
     account_code = tdhp.ana_hesap(_ilk(r_lower, *_HESAP_KODU_KOLONLARI))
@@ -463,26 +475,24 @@ def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any
         "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
         "raw_text": str(row),
         "account_code": account_code,
+        # A code this map does not know is an income-statement account nobody
+        # has classified: the row is read by its words and its sign, and says so.
+        "confidence": 0.6 if account_code and hesap is None else 0.95,
     }
     if hesap is not None:
+        borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
         satir = _hesap_kodlu_satir(hesap, borc, alacak, raw_amt, raw_desc, raw_cat)
         if satir is None:
             if atlanan is not None:
                 atlanan.append(f"{account_code} {raw_desc}".strip())
             return None
         tx["type"], tx["amount_cents"], tx["category"] = satir
-        tx["confidence"] = 0.95
         return tx
 
     amount_cents = _isaretli_kurus(raw_amt)
-    raw_type = _ilk(r_lower, "type", "tip")
-    tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
-    tx["type"] = tx_type
+    tx["type"] = _kodsuz_yon(r_lower, amount_cents)
     tx["amount_cents"] = abs(amount_cents)
-    tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx_type)
-    # A code this map does not know is an income-statement account nobody has
-    # classified: the row is read by its words and its sign, and says so.
-    tx["confidence"] = 0.6 if account_code else 0.95
+    tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx["type"])
     return tx
 
 
