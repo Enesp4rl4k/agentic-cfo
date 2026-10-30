@@ -24,6 +24,7 @@ from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core import tdhp
 from app.core.turkish import fold
 from app.parsers.base import ParsedStatement
 from app.parsers.registry import ParserRegistry
@@ -47,9 +48,12 @@ _CATEGORY_RULES: list[tuple[str, list[str], int]] = [
     ("salary",        ["salary", "payroll", "maaş", "ücret", "sigorta",
                        "wages", "employee", "social security",
                        "sgk", "personel", "staff"],                             75),
+    # ── KDV ── collected for the state and paid over: cash, not profit, for a
+    # KDV-registered company. Above "tax", which would put it under EBITDA.
+    ("tax_payment",   ["kdv", "katma değer vergisi", "vat payment", "vat"],     74),
     # ── Tax ── (before "loan" to avoid confusing withholding with bank payment)
-    ("tax",           ["kdv", "stopaj", "kurumlar vergisi", "gelir vergisi",
-                       "vat", "withholding", "corporate tax", "income tax",
+    ("tax",           ["stopaj", "kurumlar vergisi", "gelir vergisi",
+                       "withholding", "corporate tax", "income tax",
                        "tax payment", "vergi"],                                 73),
     # ── Loan / Finance ────────────────────────────────────────────────────────
     ("loan",          ["kredi ödemesi", "taksit", "loan repayment",
@@ -74,6 +78,8 @@ _CATEGORY_RULES: list[tuple[str, list[str], int]] = [
                        "subscription", "license", "yazılım"],                  50),
     # ── Other expense fallback ────────────────────────────────────────────────
     ("other_expense", [],                                                       0),
+    # ── Balance-sheet movement; only an account code or a person sets it ─────
+    ("transfer",      [],                                                       0),
 ]
 
 # Build a fast lookup: category → (keywords, priority)
@@ -91,23 +97,41 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {cat: list(kws) for cat, kws, _pri in 
 KNOWN_CATEGORIES: frozenset[str] = frozenset(cat for cat, _kw, _pri in _CATEGORY_RULES)
 
 
-def _guess_category(description: str) -> str:
+INCOME_CATEGORIES: frozenset[str] = frozenset({"revenue", "other_income"})
+
+
+def _yonle_uyumlu(category: str, tx_type: str | None) -> bool:
+    """A P&L category belongs to one direction; a balance-sheet one to either
+    (a KDV refund comes in, a KDV payment goes out)."""
+    if tx_type is None or category in tdhp.BILANCO_KATEGORILERI:
+        return True
+    return (category in INCOME_CATEGORIES) == (tx_type == "income")
+
+
+def _guess_category(description: str, tx_type: str | None = None) -> str:
     """
     Match description against CATEGORY_RULES using keyword matching.
 
     When multiple categories match, the one with the highest priority wins.
     This prevents "bank payment" (loan) from beating "salary" (payroll)
     just because it appears first in a naive loop.
+
+    Given the row's direction, only a category of that direction can win:
+    "Satış Ekibi Maaşı" is money out, and "satış" (revenue, the highest
+    priority) used to take it out of every expense line of the P&L.
     """
+    fallback = "revenue" if tx_type == "income" else "other_expense"
     if not description:
-        return "other_expense"
+        return fallback
     # Folded on both sides: statements write "maas" and "dogalgaz" at least as
     # often as "maaş" and "doğalgaz".
     desc_lower = fold(description)
-    best_category = "other_expense"
+    best_category = fallback
     best_priority = -1
 
     for category, keywords, priority in _CATEGORY_MAP:
+        if not _yonle_uyumlu(category, tx_type):
+            continue
         if priority <= best_priority:
             continue  # can't beat current winner even if matched
         if any(fold(kw) in desc_lower for kw in keywords):
@@ -314,11 +338,16 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
     """Convert ParsedStatement (bank parser output) to the CFO pipeline's transaction format."""
     transactions = []
     for tx in statement.transactions:
+        hesap = tdhp.hesap(tx.account_code)
         transactions.append({
             "amount_cents": tx.amount_cents,
             "currency": tx.currency,
             "type": tx.tx_type,
-            "category": _guess_category(tx.description),
+            "category": (
+                _kodlu_kategori(hesap, tx.description) if hesap is not None
+                else _guess_category(tx.description, tx.tx_type)
+            ),
+            "account_code": tx.account_code,
             "description": tx.description,
             "vendor": tx.vendor,
             "transaction_date": tx.date.isoformat() if tx.date else None,
@@ -334,8 +363,145 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
     return transactions
 
 
-def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
-    """Attempt deterministic CSV parsing if the text is structured CSV."""
+_HESAP_KODU_KOLONLARI = ("hesap kodu", "hesap no", "hesap", "account_code", "account code")
+
+
+def _hesap_kodlu_satir(
+    hesap: tdhp.Hesap, borc: str, alacak: str, raw_amt: str, raw_desc: str, raw_cat: str,
+) -> tuple[str, int, str] | None:
+    """(type, signed kuruş, category) of a row whose account the map knows; None to skip it.
+
+    The account decides direction and whether the row is a P&L event. Within an
+    expense account the nature (salary, rent, …) still comes from the row's own
+    words, since 7/A accounts group by function — but never an income category.
+    """
+    borc_k = abs(_parse_amount(borc) or 0)
+    alacak_k = abs(_parse_amount(alacak) or 0)
+    if not (borc_k or alacak_k):  # one signed "Tutar" column instead of Borç/Alacak
+        tutar = abs(_parse_amount(raw_amt) or 0)
+        borc_k, alacak_k = (tutar, 0) if _is_negative(raw_amt) else (0, tutar)
+    hareket = tdhp.hareket(hesap, borc_k, alacak_k)
+    if hareket is None:
+        return None
+    tx_type, kurus = hareket
+    return tx_type, kurus, _kodlu_kategori(hesap, raw_desc, raw_cat)
+
+
+def _kodlu_kategori(hesap: tdhp.Hesap, description: str, raw_cat: str = "") -> str:
+    """Category of a row the account map knows: the account's own, except that
+    an expense account's nature comes from the row's words when they say it."""
+    if hesap.rol != "gider":
+        return hesap.kategori
+    cat = raw_cat.strip().lower()
+    if cat in KNOWN_CATEGORIES and cat not in INCOME_CATEGORIES:
+        return cat
+    tahmin = _guess_category(description, "expense")
+    return tahmin if tahmin != "other_expense" else hesap.kategori
+
+
+_TUTAR_KOLONLARI = ("amount", "tutar", "borc", "alacak", "amount_cents")
+_TARIH_KOLONLARI = ("date", "tarih", "islem tarihi", "transaction_date")
+
+
+def _ilk(r_lower: dict[str, str], *anahtarlar: str) -> str:
+    """The first non-empty value among these folded column names."""
+    return next((r_lower[k] for k in anahtarlar if r_lower.get(k)), "")
+
+
+def _isaretli_kurus(raw_amt: str) -> int:
+    """Kuruş of an amount cell, negative when the cell says so."""
+    amount_cents = _parse_amount(raw_amt)
+    if amount_cents is None:
+        try:
+            amount_cents = round(float(raw_amt) * 100)
+        except ValueError:
+            amount_cents = 0
+    return -abs(amount_cents) if _is_negative(raw_amt) else amount_cents
+
+
+def _yukleyenin_kategorisi(raw_cat: str, raw_desc: str, tx_type: str) -> str:
+    """Category of a row without an account code.
+
+    A category column is the uploader's word, not ours. "Gıda", "payroll",
+    "sales" — all reasonable to write and none of them something this pipeline
+    groups by, so an unrecognised value is worse than a guessed one: it
+    disappears from every report silently. Keep it only when it is a category
+    we know. "tax" on a KDV payment is the uploader saying a tax was paid, not
+    that it was an expense: KDV is not on a KDV payer's P&L.
+    """
+    cat_lower = raw_cat.strip().lower()
+    category = (
+        cat_lower if cat_lower in KNOWN_CATEGORIES
+        else _guess_category(raw_desc or raw_cat, tx_type)
+    )
+    if category == "tax" and _guess_category(raw_desc, tx_type) == "tax_payment":
+        return "tax_payment"
+    return category
+
+
+def _tutar_hucresi(r_lower: dict[str, str]) -> str:
+    """The row's signed amount as text. Bank statements split it: "Borç" is
+    money leaving the account, "Alacak" money arriving."""
+    raw_amt = _ilk(r_lower, "amount", "tutar")
+    borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
+    if not raw_amt and (borc or alacak):
+        raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
+    return raw_amt or "0"
+
+
+def _kodsuz_yon(r_lower: dict[str, str], amount_cents: int) -> str:
+    """Direction of a row without an account: its type column, else its sign."""
+    raw_type = _ilk(r_lower, "type", "tip")
+    if raw_type in ("income", "expense"):
+        return raw_type
+    return "expense" if amount_cents < 0 else "income"
+
+
+def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any] | None:
+    """One CSV row as a pipeline transaction; None for an empty or skipped row."""
+    if not row or not any(row.values()):
+        return None
+    r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
+    raw_amt = _tutar_hucresi(r_lower)
+    raw_desc = _ilk(r_lower, "description", "aciklama", "detay")
+    raw_cat = _ilk(r_lower, "category", "kategori")
+    account_code = tdhp.ana_hesap(_ilk(r_lower, *_HESAP_KODU_KOLONLARI))
+    hesap = tdhp.hesap(account_code) if account_code else None
+    parsed_dt = _parse_date(_ilk(r_lower, "date", "tarih", "islem tarihi"))
+    tx: dict[str, Any] = {
+        "currency": "TRY",
+        "description": raw_desc,
+        "vendor": _ilk(r_lower, "vendor", "tedarikci") or raw_desc,
+        "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
+        "raw_text": str(row),
+        "account_code": account_code,
+        # A code this map does not know is an income-statement account nobody
+        # has classified: the row is read by its words and its sign, and says so.
+        "confidence": 0.6 if account_code and hesap is None else 0.95,
+    }
+    if hesap is not None:
+        borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
+        satir = _hesap_kodlu_satir(hesap, borc, alacak, raw_amt, raw_desc, raw_cat)
+        if satir is None:
+            if atlanan is not None:
+                atlanan.append(f"{account_code} {raw_desc}".strip())
+            return None
+        tx["type"], tx["amount_cents"], tx["category"] = satir
+        return tx
+
+    amount_cents = _isaretli_kurus(raw_amt)
+    tx["type"] = _kodsuz_yon(r_lower, amount_cents)
+    tx["amount_cents"] = abs(amount_cents)
+    tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx["type"])
+    return tx
+
+
+def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
+    """Attempt deterministic CSV parsing if the text is structured CSV.
+
+    A row naming a transfer or closing account (7x1, 690/692) is not read — it
+    moves what is already counted — and is reported in `atlanan` instead.
+    """
     import csv
     import io
     try:
@@ -346,67 +512,14 @@ def _try_parse_csv(raw_text: str) -> list[dict[str, Any]] | None:
         reader = csv.DictReader(io.StringIO(raw_text), delimiter=delimiter)
         if not reader.fieldnames:
             return None
-        field_lower = [fold(f.strip()) for f in reader.fieldnames if f]
         # Headers are folded (app.core.turkish): "İşlem Tarihi", "AÇIKLAMA" and
         # "Borç" match "islem tarihi", "aciklama", "borc". A running balance
         # ("bakiye") is not a transaction amount.
-        has_amount = any(f in ("amount", "tutar", "borc", "alacak", "amount_cents") for f in field_lower)
-        has_date = any(f in ("date", "tarih", "islem tarihi", "transaction_date") for f in field_lower)
-        if not (has_amount and has_date):
+        field_lower = {fold(f.strip()) for f in reader.fieldnames if f}
+        if not (field_lower & set(_TUTAR_KOLONLARI) and field_lower & set(_TARIH_KOLONLARI)):
             return None
-
-        transactions = []
-        for row in reader:
-            if not row or not any(row.values()):
-                continue
-            r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
-            raw_amt = r_lower.get("amount") or r_lower.get("tutar") or ""
-            # Bank statements split the amount: "Borç" is money leaving the
-            # account, "Alacak" money arriving.
-            borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
-            if not raw_amt and (borc or alacak):
-                raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
-            raw_amt = raw_amt or "0"
-            raw_dt = r_lower.get("date") or r_lower.get("tarih") or r_lower.get("islem tarihi") or ""
-            raw_desc = r_lower.get("description") or r_lower.get("aciklama") or r_lower.get("detay") or ""
-            raw_type = r_lower.get("type") or r_lower.get("tip") or ""
-            raw_cat = r_lower.get("category") or r_lower.get("kategori") or ""
-            raw_vendor = r_lower.get("vendor") or r_lower.get("tedarikci") or raw_desc
-
-            amount_cents = _parse_amount(raw_amt)
-            if amount_cents is None:
-                try:
-                    amount_cents = round(float(raw_amt) * 100)
-                except Exception:
-                    amount_cents = 0
-            if _is_negative(raw_amt):
-                amount_cents = -abs(amount_cents)
-
-            tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
-            # A category column is the uploader's word, not ours. "Gıda",
-            # "payroll", "sales" — all reasonable to write and none of them
-            # something this pipeline groups by, so an unrecognised value is
-            # worse than a guessed one: it disappears from every report
-            # silently. Keep it only when it is a category we know.
-            cat_lower = raw_cat.strip().lower()
-            category = (
-                cat_lower if cat_lower in KNOWN_CATEGORIES
-                else _guess_category(raw_desc or raw_cat)
-            )
-            parsed_dt = _parse_date(raw_dt)
-
-            transactions.append({
-                "amount_cents": abs(amount_cents),
-                "currency": "TRY",
-                "type": tx_type,
-                "category": category,
-                "description": raw_desc,
-                "vendor": raw_vendor,
-                "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
-                "raw_text": str(row),
-                "confidence": 0.95,
-            })
-        return transactions if transactions else None
+        transactions = [tx for row in reader if (tx := _csv_satiri(row, atlanan)) is not None]
+        return transactions or None
     except Exception:
         return None
 
@@ -606,7 +719,7 @@ def _try_parse_makbuz(raw_text: str) -> list[dict[str, Any]] | None:
         return None
 
 
-def _tablo_ekstresi(file_path: str) -> list[dict[str, Any]] | None:
+def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
     """The statement table inside a spreadsheet, found under any title rows, as transactions."""
     from app.services.ingest.recognize import standart_csv, tabloyu_sec
     from app.services.ingest.schemas import BANKA_EKSTRESI
@@ -620,32 +733,60 @@ def _tablo_ekstresi(file_path: str) -> list[dict[str, Any]] | None:
         return None
     if tablo is None or not tablo.satirlar:
         return None
-    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0])
+    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan)
 
 
-def _csv_sonucu(csv_txs: list[dict[str, Any]], raw_text: str, job_id: Any) -> SkillResult:
+def tur_kategori_celiskisi(txs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows whose category belongs to the other direction.
+
+    An expense row filed under "revenue" is in no expense line of the P&L and
+    in no revenue line either — it vanished from the statement without a word.
+    """
+    return [
+        t for t in txs
+        if t.get("category") in KNOWN_CATEGORIES
+        and not _yonle_uyumlu(str(t.get("category")), str(t.get("type")))
+    ]
+
+
+def _csv_sonucu(
+    csv_txs: list[dict[str, Any]], raw_text: str, job_id: Any, atlanan: list[str] | None = None,
+) -> SkillResult:
     # Confidence must reflect data quality: rows with an unparseable
     # date or a zero amount are only partially usable. A file where
     # most dates failed to parse should NOT sail through the gate.
+    # (A correction posted to an account carries a negative amount.)
     well_formed = sum(
         1 for tx in csv_txs
-        if tx.get("transaction_date") and tx.get("amount_cents", 0) > 0
+        if tx.get("transaction_date") and tx.get("amount_cents", 0) != 0
     )
     ratio = well_formed / len(csv_txs)
     overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
+    # What a person has to look at: income-statement accounts the map does not
+    # know (read by their words), rows whose category contradicts their
+    # direction, and transfer/closing postings that were left out.
+    tanimsiz = sorted({
+        str(t["account_code"]) for t in csv_txs
+        if t.get("account_code") and tdhp.hesap(t["account_code"]) is None
+    })
+    celisen = tur_kategori_celiskisi(csv_txs)
+    notlar = [f"{well_formed} well-formed, confidence={overall_confidence:.2f}"]
+    if tanimsiz:
+        notlar.append(f"unmapped accounts {', '.join(tanimsiz)}")
+    if celisen:
+        notlar.append(f"{len(celisen)} rows whose category contradicts their direction")
+    if atlanan:
+        notlar.append(f"{len(atlanan)} transfer/closing postings not read")
     logger.info(
-        "job=%s — deterministic CSV parser: %d transactions, %d well-formed (conf=%.2f)",
-        job_id, len(csv_txs), well_formed, overall_confidence,
+        "job=%s — deterministic CSV parser: %d transactions (%s)",
+        job_id, len(csv_txs), "; ".join(notlar),
     )
     return SkillResult(
         ok=True,
         patch={"raw_text": raw_text, "transactions": csv_txs},
         confidence=overall_confidence,
-        needs_review=overall_confidence < 0.80,
-        detail=(
-            f"Parsed {len(csv_txs)} transactions via CSV parser "
-            f"({well_formed} well-formed, confidence={overall_confidence:.2f})"
-        ),
+        needs_review=overall_confidence < 0.80 or bool(tanimsiz or celisen or atlanan),
+        detail=f"Parsed {len(csv_txs)} transactions via CSV parser ({'; '.join(notlar)})",
     )
 
 
@@ -828,9 +969,10 @@ async def _belgeyi_al(
         # traded places — and one "AKBANK EFT" line in another bank's CSV sent
         # the whole file through Akbank's pattern. A table is read as a table.
         if file_type in ("csv", "xlsx"):
-            table_txs = await asyncio.to_thread(_tablo_ekstresi, file_path)
+            atlanan: list[str] = []
+            table_txs = await asyncio.to_thread(_tablo_ekstresi, file_path, atlanan)
             if table_txs:
-                return _csv_sonucu(table_txs, raw_text, state.get("job_id"))
+                return _csv_sonucu(table_txs, raw_text, state.get("job_id"), atlanan)
 
         # ── Strategy 1: Bank-specific rule-based parser ────────────────────
         detected_bank = await asyncio.to_thread(ParserRegistry.detect, raw_text)
@@ -845,7 +987,7 @@ async def _belgeyi_al(
             if transactions:
                 parseable = sum(
                     1 for tx in transactions
-                    if tx["amount_cents"] > 0 and tx["transaction_date"]
+                    if tx["amount_cents"] != 0 and tx["transaction_date"]
                 )
                 overall_confidence = 0.95 if parseable / len(transactions) >= 0.8 else 0.75
                 # A well-formed row booked on the wrong side is still wrong, so
@@ -872,9 +1014,10 @@ async def _belgeyi_al(
                 )
         # ── Strategy 1.5: Generic CSV parser (deterministic, fast, no LLM) ─
         if file_type in ("csv", "xlsx", "xls") or any(d in raw_text[:500] for d in (",", ";", "\t")):
-            csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text)
+            atlanan = []
+            csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text, atlanan)
             if csv_txs:
-                return _csv_sonucu(csv_txs, raw_text, state.get("job_id"))
+                return _csv_sonucu(csv_txs, raw_text, state.get("job_id"), atlanan)
 
         # ── Strategy 2: LLM fallback ───────────────────────────────────────
         logger.info("job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id"))
@@ -911,7 +1054,7 @@ async def _belgeyi_al(
                 "amount_cents": amount_cents or 0,
                 "currency": tx_currency,
                 "type": t.get("type", "expense"),
-                "category": _guess_category(t.get("description", "")),
+                "category": _guess_category(t.get("description", ""), t.get("type", "expense")),
                 "description": t.get("description", ""),
                 "vendor": t.get("vendor"),
                 "transaction_date": parsed_date.isoformat() if parsed_date else None,

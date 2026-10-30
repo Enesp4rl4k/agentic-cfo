@@ -18,7 +18,7 @@ class ParsedTransaction:
     """Normalised transaction extracted from a bank statement."""
     date: datetime
     description: str
-    amount_cents: int          # Always positive; sign determined by tx_type
+    amount_cents: int          # Positive, sign by tx_type; negative only for a correction posted to an income-statement account
     tx_type: str               # "income" | "expense"
     currency: str = "TRY"
     vendor: str | None = None
@@ -32,6 +32,9 @@ class ParsedTransaction:
     confidence: float = 1.0
     # Why it is not 1.0, in the reviewer's language.
     confidence_note: str = ""
+    # The Tekdüzen Hesap Planı main account, when the source names one
+    # (accounting exports). It decides direction and P&L membership.
+    account_code: str | None = None
 
 
 @dataclass

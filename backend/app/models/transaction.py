@@ -28,6 +28,9 @@ class TransactionCategory(StrEnum):
     LOAN = "loan"
     OTHER_EXPENSE = "other_expense"
     OTHER_INCOME = "other_income"
+    # Balance-sheet movements: cash moved, profit did not (app.core.tdhp).
+    TAX_PAYMENT = "tax_payment"
+    TRANSFER = "transfer"
 
 
 class TransactionType(StrEnum):
@@ -72,6 +75,10 @@ class Transaction(Base):
     # changed this row by hand; None for the built-in heuristics. The UI shows
     # the user that their rule was applied.
     category_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # The Tekdüzen Hesap Planı main account the source posted this row to
+    # ("600", "770"), when the source names one. It decides direction and P&L
+    # membership (app.core.tdhp); None for a bank line or a receipt.
+    account_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )

@@ -835,6 +835,8 @@ export type MessageTree = {
       corporate: string;
       effectiveRate: string;
       total: string;
+      paid: string;
+      paidSub: string;
     };
     calendar: {
       heading: string;
@@ -2979,6 +2981,8 @@ export const en: MessageTree = {
       corporate: "Corporate tax",
       effectiveRate: "Effective rate: {rate}%",
       total: "Total tax burden",
+      paid: "Paid per the books",
+      paidSub: "{n} payments · from the ledger, not an estimate",
     },
     calendar: {
       heading: "Payment calendar",

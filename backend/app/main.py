@@ -183,6 +183,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.platform.model_gateway import LLMUnavailable
+from app.services.pdf import PDFRenderError
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -208,6 +211,35 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "details": exc.detail if not isinstance(exc.detail, str) else None,
             "status_code": exc.status_code,
         },
+    )
+
+
+def _service_unavailable(error: str, code: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"data": None, "error": error, "error_code": code, "status_code": 503},
+    )
+
+
+# A missing external service is not an internal error (plan v7 §P0 / W3): chat
+# with no LLM key and a PDF with no rendering engine were unhandled 500s.
+@app.exception_handler(LLMUnavailable)
+async def llm_unavailable_handler(request: Request, exc: LLMUnavailable):
+    logger.warning("LLM unavailable on %s %s: %s", request.method, request.url.path, exc)
+    return _service_unavailable(
+        "Yapay zekâ modeli şu an kullanılamıyor (yapılandırılmamış). "
+        "Sayısal analizler etkilenmez; sohbet ve anlatı özellikleri geçici olarak kapalı.",
+        "llm_unavailable",
+    )
+
+
+@app.exception_handler(PDFRenderError)
+async def pdf_render_error_handler(request: Request, exc: PDFRenderError):
+    logger.warning("PDF engine unavailable on %s %s: %s", request.method, request.url.path, exc)
+    return _service_unavailable(
+        "PDF üretilemiyor: PDF motoru bu sunucuda kullanılamıyor. "
+        "Raporun kendisi dashboard'da ve Excel çıktısında mevcut.",
+        "pdf_engine_unavailable",
     )
 
 

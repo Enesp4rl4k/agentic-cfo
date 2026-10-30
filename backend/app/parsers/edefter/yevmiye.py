@@ -32,36 +32,19 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.core import tdhp
 from app.core.financial import amount_to_cents
 from app.core.xml_safety import parse_xml
 
 EDEFTER_NS = "http://www.edefter.gov.tr"  # NOSONAR — XML namespace URI, never fetched
 _GL = "{http://www.xbrl.org/int/gl/cor/2006-10-25}"  # NOSONAR — XML namespace URI
 
-# account main-code prefix → (type, category). Longest prefix wins.
-_GELIR: dict[str, str] = {
-    "600": "revenue", "601": "revenue", "602": "revenue",
-    "610": "revenue", "611": "revenue", "612": "revenue",   # deductions: reduce revenue
-    "64": "other_income", "67": "other_income",
-}
-_GIDER: dict[str, str] = {
-    "62": "cogs",
-    "630": "other_expense", "631": "marketing", "632": "other_expense",
-    "65": "other_expense", "66": "other_expense", "68": "other_expense",
-    "691": "tax",
-    # 7/A cost accounts, before they are transferred into 6xx
-    "710": "cogs", "720": "cogs", "730": "cogs", "740": "cogs",
-    "750": "other_expense", "760": "marketing", "770": "other_expense", "780": "other_expense",
-    # 7/B expense-by-nature accounts
-    "790": "other_expense", "791": "other_expense", "792": "other_expense",
-    "793": "other_expense", "794": "other_expense", "795": "other_expense",
-    "796": "other_expense", "797": "other_expense",
-}
-# Sales deductions carry a debit balance: a debit reduces revenue.
-_GELIR_INDIRIMI = ("610", "611", "612")
-# Entries touching these are transfers or closings: skipped whole.
-_YANSITMA = ("711", "721", "731", "741", "751", "761", "771", "781", "798", "799")
-_KAPANIS = ("690", "692")
+# The account map is shared with every other source that names an account.
+_GELIR = tdhp.GELIR
+_GIDER = tdhp.GIDER
+_GELIR_INDIRIMI = tdhp.GELIR_INDIRIMI
+_YANSITMA = tdhp.YANSITMA
+_KAPANIS = tdhp.KAPANIS
 
 
 class NotAJournal(ValueError):
@@ -81,12 +64,7 @@ class YevmiyeSonucu:
     donem: tuple[date, date] | None = None
 
 
-def _eslestir(hesap: str, tablo: dict[str, str]) -> str | None:
-    for uzunluk in (3, 2):
-        kategori = tablo.get(hesap[:uzunluk])
-        if kategori is not None:
-            return kategori
-    return None
+_eslestir = tdhp.eslestir
 
 
 def _defter_turu(kok: Any) -> str:
@@ -166,6 +144,7 @@ def yevmiye_oku(xml: bytes) -> YevmiyeSonucu:
                              f"| {'borç' if borc else 'alacak'} {tutar} TL | tahakkuk esası"),
                 "confidence": 0.95,
                 "basis": "tahakkuk",
+                "account_code": hesap,
             })
 
     return YevmiyeSonucu(
