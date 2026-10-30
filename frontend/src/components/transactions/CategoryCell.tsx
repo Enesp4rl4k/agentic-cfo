@@ -19,6 +19,8 @@ const CATEGORIES = [
   { value: "loan",          label: "Loan" },
   { value: "other_expense", label: "Other Expense" },
   { value: "other_income",  label: "Other Income" },
+  { value: "tax_payment",   label: "Tax / SGK payment" },
+  { value: "transfer",      label: "Transfer" },
 ] as const;
 
 type CategoryValue = (typeof CATEGORIES)[number]["value"];

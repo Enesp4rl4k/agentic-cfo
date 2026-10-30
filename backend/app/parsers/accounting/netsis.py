@@ -18,6 +18,8 @@ import csv
 import io
 import re
 
+from app.core import tdhp
+from app.parsers.accounting import hesap
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 
@@ -132,7 +134,7 @@ class NetsisParser(BankParser):
                     credit_cents = v
 
             tx_type, amount = self._resolve_tx_type(debit_cents, credit_cents, account_code)
-            if amount <= 0:
+            if amount == 0:
                 continue
 
             transactions.append(ParsedTransaction(
@@ -144,6 +146,7 @@ class NetsisParser(BankParser):
                 vendor=description[:50] if description else None,
                 reference=reference or None,
                 raw_row=delimiter.join(row),
+                account_code=tdhp.ana_hesap(account_code),
             ))
         return transactions
 
@@ -180,18 +183,5 @@ class NetsisParser(BankParser):
 
     @staticmethod
     def _resolve_tx_type(debit: int, credit: int, account_code: str) -> tuple[str, int]:
-        """Same logic as Logo Tiger."""
-        acc_prefix = account_code[:1] if account_code else ""
-        if acc_prefix == "6":
-            return ("expense", debit) if debit > 0 else ("income", credit)
-        elif acc_prefix == "7":
-            return ("income", credit) if credit > 0 else ("expense", debit)
-        else:
-            if credit > 0 and debit == 0:
-                return "income", credit
-            elif debit > 0 and credit == 0:
-                return "expense", debit
-            elif credit > 0 and debit > 0:
-                net = credit - debit
-                return ("income", net) if net > 0 else ("expense", abs(net))
-        return "expense", 0
+        """Same rule as Logo Tiger: the account decides (app.core.tdhp)."""
+        return hesap.hareket(debit, credit, account_code) or ("expense", 0)

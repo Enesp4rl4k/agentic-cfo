@@ -372,6 +372,7 @@ async def run_cfo_analysis(
                     raw_text=tx_data.get("raw_text"),
                     confidence=tx_data.get("confidence"),
                     category_source=tx_data.get("category_source"),
+                    account_code=tx_data.get("account_code"),
                 )
                 db.add(tx)
 

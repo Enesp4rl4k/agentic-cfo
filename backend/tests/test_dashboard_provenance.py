@@ -70,10 +70,10 @@ async def test_dashboard_labels_section_provenance(test_client):
     assert prov["pnl"]["synthetic"] is False
     assert prov["kpis"]["data_source"] == "real"
 
-    # Deterministic rules over real data → still non-synthetic, basis says so.
-    assert prov["tax"]["data_source"] == "rule_based"
-    assert prov["tax"]["synthetic"] is False
-    assert "rule" in prov["tax"]["basis"]
+    # Fixed-rate estimates (KDV %20, stopaj, SGK, kurumlar), not the ledger's
+    # payments → "Tahmin" class. "rule_based" badged them "Gerçek" (plan v8 §A2).
+    assert prov["tax"]["data_source"] == "estimated"
+    assert prov["tax"]["synthetic"] is True
 
     # The budget plan is user-entered → non-synthetic, honestly labelled.
     assert prov["budget"]["data_source"] == "manual"

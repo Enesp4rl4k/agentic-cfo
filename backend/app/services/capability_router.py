@@ -316,12 +316,22 @@ class CapabilityRouter:
         cap: AgentCapability,
         state: dict[str, Any],
         completed: set[str],
+        planned: frozenset[str] = frozenset(),
     ) -> RoutingDecision:
-        """Evaluate whether a single agent should run."""
+        """Evaluate whether a single agent should run.
+
+        `planned` are the state keys that agents already planned to run in this
+        pass will produce. The plan is made right after ingestion, before any
+        P&L exists; without them every agent that reads `pnl` was skipped on
+        every run — the tax section was always empty (plan v8 §A2).
+        """
+
+        def available(key: str) -> bool:
+            return key in planned or _has_data(state, key)
 
         # 1. Check requires_all
         for key in cap.requires_all:
-            if not _has_data(state, key):
+            if not available(key):
                 return RoutingDecision(
                     agent=cap.name,
                     should_run=False,
@@ -332,7 +342,7 @@ class CapabilityRouter:
 
         # 2. Check requires_any
         if cap.requires_any:
-            found = any(_has_data(state, k) for k in cap.requires_any)
+            found = any(available(k) for k in cap.requires_any)
             if not found:
                 return RoutingDecision(
                     agent=cap.name,
@@ -356,8 +366,12 @@ class CapabilityRouter:
                 dependencies_met=False,
             )
 
-        # 4. Custom validator
-        if cap.validator:
+        # 4. Custom validator — it reads the inputs' content, which an input
+        # still to be produced in this run does not have yet. The agent checks
+        # its own data when it runs (it reports no_data rather than a number).
+        bekleyen = [k for k in (*cap.requires_all, *cap.requires_any)
+                    if k in planned and not _has_data(state, k)]
+        if cap.validator and not bekleyen:
             ok, reason = cap.validator(state)
             if not ok:
                 return RoutingDecision(
@@ -420,6 +434,7 @@ class CapabilityRouter:
         agents_to_check = requested_agents or list(self.capabilities.keys())
 
         decisions: dict[str, RoutingDecision] = {}
+        planned: set[str] = set()
 
         # Topological sort: process in priority order, track completed
         # Simple approach: multiple passes until stable
@@ -439,13 +454,15 @@ class CapabilityRouter:
                 )
                 continue
 
-            decision = self._evaluate_agent(cap, state, completed)
+            decision = self._evaluate_agent(cap, state, completed, frozenset(planned))
             decisions[agent_name] = decision
 
             # If we're doing a simulated run (for planning), mark as "completed"
-            # so downstream agents can see their deps met
+            # so downstream agents can see their deps met — and what it will
+            # produce as available to them.
             if decision.should_run:
                 completed = completed | {agent_name}
+                planned.update(cap.produces)
 
         # Build execution order (only agents that should run, sorted by priority)
         run_agents = [

@@ -117,11 +117,21 @@ class TestCapabilityRouter:
         assert "pnl_agent" in plan.execution_order
         assert "cashflow_agent" in plan.execution_order
 
-    def test_forecast_requires_pnl_and_cashflow(self):
+    def test_agents_reading_pnl_are_planned_when_pnl_will_be_produced(self):
+        """The plan is made right after ingestion, before any P&L exists. It
+        used to skip every agent that reads `pnl` — the tax section was empty
+        on every run (plan v8 §A2)."""
         router = CapabilityRouter()
-        # State with only transactions (no pnl/cashflow yet)
         plan = router.route(_make_txs_only_state())
-        # forecast_agent should NOT run without pnl+cashflow data
+        order = plan.execution_order
+        for agent in ("pnl_agent", "cashflow_agent", "forecast_agent", "tax_agent"):
+            assert agent in order, plan.decisions[agent].reason
+        assert order.index("pnl_agent") < order.index("tax_agent")
+        assert order.index("cashflow_agent") < order.index("forecast_agent")
+
+    def test_forecast_is_skipped_when_nothing_will_produce_its_inputs(self):
+        router = CapabilityRouter()
+        plan = router.route(_make_txs_only_state(), requested_agents=["forecast_agent"])
         assert "forecast_agent" not in plan.execution_order
 
     def test_forecast_runs_with_full_state(self):

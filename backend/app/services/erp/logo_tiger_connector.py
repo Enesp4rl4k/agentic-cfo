@@ -23,7 +23,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from app.services.classifier import classify_by_keywords
+from app.services.classifier import classify_posting
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,10 @@ class LogoTigerConnector:
                         # "skipped" and the sync reported success having
                         # imported nothing. "other" was not a category either;
                         # the vocabulary's fallback is other_expense.
-                        "category":    classify_by_keywords(tx.description or ""),
+                        "category":    classify_posting(
+                            tx.description or "", tx.tx_type or "expense", tx.account_code
+                        ),
+                        "account_code": tx.account_code,
                         "source":      "logo_tiger",
                         "reference":   tx.reference or "",
                     })
@@ -292,7 +295,10 @@ class MikroConnector:
                     "amount_cents": abs(tx.amount_cents),
                     "type":         tx.tx_type or "expense",
                     "description":  tx.description or "",
-                    "category":     classify_by_keywords(tx.description or ""),
+                    "category":     classify_posting(
+                        tx.description or "", tx.tx_type or "expense", tx.account_code
+                    ),
+                    "account_code": tx.account_code,
                     "source":       "mikro",
                 }
                 for tx in statement.transactions if tx.amount_cents != 0
