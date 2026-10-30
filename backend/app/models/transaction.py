@@ -67,6 +67,11 @@ class Transaction(Base):
     stopaj_kurus: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    # Where `category` came from: "user_rule" when one of the organisation's
+    # standing corrections (CategoryRule) decided it, "user_edit" when a person
+    # changed this row by hand; None for the built-in heuristics. The UI shows
+    # the user that their rule was applied.
+    category_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )

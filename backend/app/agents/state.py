@@ -99,6 +99,12 @@ class CFOState(TypedDict, total=False):
     memory_episode_ids: list[str] | None
     # Org context for memory retrieval
     org_id: str | None
+    # The org's standing category corrections (classifier.RuleSpec as dicts),
+    # loaded by the caller — nodes hold no DB session. Applied right after
+    # ingestion so every downstream figure uses the user's categories.
+    category_rules: list[dict[str, Any]] | None
+    # {rule_id: matches} from this run; the caller adds them to hit_count.
+    category_rule_hits: dict[str, int] | None
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None
     # Numeric reconciliation output (separate LangGraph step, runs before verifier)

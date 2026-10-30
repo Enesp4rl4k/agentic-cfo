@@ -1,8 +1,8 @@
-# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v4)
+# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v5)
 
 > **Demo deneyimi ayrı planda:** `DEMO_PLAN.md` (2026-10-14) — "satın almadan dene" akışı: mevcut envanter + boşluklar + D1–D6 fazları (konuk giriş → anında dolu dashboard → tour → reset → public → CTA).
 
-> **Tarih:** 2026-10-21 (v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** v4 sırası (§V4) — V0 hijyen → V1 P4 kapanışı → V2 dürüstlük düzeltmeleri → Faz 2 gerçek boşlukları → Faz 3 production kanıtı → D5/D6 + bakım
+> **Tarih:** 2026-10-23 (v4: 2026-10-21, v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** **§V5** — DDIA ilkeleriyle şirket düzeyinde veri omurgası (tek defter → olay günlüğü → yeniden kurulabilir görünümler) ve bunun üstüne gerçek kullanıcı faydası (düzeltmelerin kalıcılığı, sürekli defter, tahmin isabeti, dönem kapanışı). §V4 ve Faz 2/3 maddeleri §V5 sırasına yerleştirildi.
 > **Yasa:** `CLAUDE.md` — Done = `python scripts/verify.py` (Windows) / `./verify.sh` exit 0. Confidence gate ≥ 0.80. Raw SQL yok. Money = kuruş integer.
 > **Kuzey yıldızı:** Yüklediğin veri → kanıtlanmış sayı → rol-dashboard'unda org'un dilinde ve **org'un para birimiyle** doğru çizilen tek bir gerçeklik → karar → mühürlü kayıt. Bir halka kanıtlanmadan iş bitmiş sayılmaz.
 >
@@ -13,6 +13,97 @@
 > **v3 değişikliği (2026-10-17):** **Faz 1 kapandı** (çıkış kapısı 2026-10-15'te geçti: `verify.py` 6/6, vitest 154/154, canlı scan 10/10 — U1–U8 + S1/S2/S5 hepsi çözüldü). `DEMO_PLAN.md`'den **D1 ✅ D2 ✅ D4 ✅** devralındı; kalan açık işler: **D3 (tur) → Faz 2 (moat) → D5+D6 (demo dağıtım/dönüşüm) → Faz 3 (production kanıtı)** + iki bakım görevi (prod `next` upgrade, `tests/` ruff temizliği). S3/S4 (Playwright, IDOR/security) hâlâ açık — Faz 3'te.
 >
 > **v4 değişikliği (2026-10-21):** v3 kodun gerisinde kalmıştı. Kod taraması: Faz 2/3'ün "hiç başlamadı" dediği maddelerin çoğu **kısmen ya da tamamen kodda** (2.1 stres kartı, 2.3 otomatik konsensüs + `ConflictCard` + ops sayacı, 2.4 kontrat testi, 2.6 tur bileşeni, 3.2 SSE Redis pub/sub, 3.4 güvenlik başlıkları + güvensiz secret kontrolü) — her maddeye **"Kodda durum"** notu eklendi. Plan dışı yapılan **P4 tetik motoru** (P4-0…P4-4, 2026-10-18…20) plana alındı; boşluğu: `anomaly.detected` ve `schedule` olaylarının kaynağı yok. Yeni öncelik sırası **§V4**: önce sessiz yanlışlar (çalışmayan tetik, yanlış EUR şoku, kapı kapsamı), sonra yeni yetenek.
+>
+> **v5 değişikliği (2026-10-23):** V0–V2 kapandı (PR #4 birleşti, PR #5 açık). `DDIA_COMPLIANCE.md` iş (job) düzeyini sağlam gösteriyor — atomik claim, lease, reaper, idempotent yeniden hesaplama. Ama kod taraması **şirket düzeyinde** veri omurgasının olmadığını gösterdi ve bu doğrudan kullanıcı faydasını kırıyor: her yükleme bir ada (çift sayım), kullanıcı düzeltmeleri hiç uygulanmıyor, olaylar çökmede kayboluyor, tahminler hiç ölçülmüyor. **§V5** bunu DDIA bölümleriyle eşleyip sıralar.
+
+---
+
+## §V5 — DDIA ile veri omurgası ve gerçek fayda (2026-10-23)
+
+**Tez (DDIA Ch.11–12, "derived data"):** Bir sistemde *tek* kayıt sistemi (system of record) olmalı; geri kalan her şey (dashboard, CompanyContext, semantic snapshot, tetik değerlendirmesi, rapor) ondan **türetilmiş, yeniden kurulabilir** görünüm olmalı. Bugün kayıt sistemi parçalı: her analiz kendi `Transaction` adasını taşıyor, şirket düzeyindeki `canonical_transactions`'ı yalnız ERP senkronu besliyor. Kullanıcı açısından sonuç: "şirketimin tek, sürekli, güvenilir defteri" yok — her ay sıfırdan başlıyor.
+
+### Kanıtlı boşluklar (2026-10-23 kod taraması)
+
+| # | Boşluk | Kanıt | Kullanıcıya etkisi | DDIA |
+|---|---|---|---|---|
+| G1 | **Kullanıcı düzeltmeleri uygulanmıyor** | `api/corrections.py` yalnız `classifier.learn()` çağırıyor; `services/classifier.classify()` (CategoryRule uygulayan) hiçbir ingest yolunda çağrılmıyor | Aynı satıcıyı her ay yeniden düzeltiyor; "öğrenen sistem" vaadi boş | Ch.11 — kullanıcı girdisi de bir olay; türetilmiş sınıflandırma onu tüketmeli |
+| G2 | **Her yükleme bir ada, tekilleştirme yok** | `models/transaction.py`: yalnız `job_id`, `org_id`/içerik parmak izi/benzersizlik kısıtı yok; `islemleri_ekle` (Paraşüt, e-posta) her seferinde yeni job | Aynı dosya iki kez → iki kat gelir; çakışan ekstreler çift sayılır; ay ay sürekli görünüm yok | Ch.2/Ch.11 — tek kayıt sistemi; Ch.7 — idempotent yazma |
+| G3 | **İki kayıt sistemi** | `canonical_transactions`'a yalnız `scheduled_sync` yazıyor; `semantic/rebuild` canonical'dan, dashboard job `Transaction`'ından okuyor | ERP'li ve dosyalı şirketin sayıları farklı yoldan gelir; tutarsızlık sessiz | Ch.11 — "unbundling": tek log, çok görünüm |
+| G4 | **Dual-write / olay kaybı** | `worker.continue_after_completion`: commit sonrası tetik/bağlam/semantic `spawn(...)` ile süreç içi ateşle-unut | Süreç commit ile yayın arasında ölürse tetik ateşlenmez, bağlam eskir — kimse fark etmez | Ch.11 — transactional outbox / CDC |
+| G5 | **Tüm-satır JSON bağlam** | `CompanyContextSnapshot.context_json` okuma-değiştirme-yazma; kayıp güncelleme 2026-10-14'te "taze okuma" yamasıyla örtüldü | Eşzamanlı ajanlar birbirinin sonucunu silebilir (gözlendi: 0.0/10 vitrin) | Ch.7 — lost update; optimistic concurrency |
+| G6 | **Tahminler ölçülmüyor** | tahmin/öngörü saklayan model yok | "Runway 8 ay" diyoruz ama geçen ayki tahminimiz ne kadar tuttu bilinmiyor; güven kalibre değil | Ch.10 — batch: geçmiş üzerinde değerlendirme |
+| G7 | **Dönem kavramı yok** | kapanış/kilit modeli yok | Geçmiş ay sessizce değişebilir; SMMM'ye "bu ay kapandı" denemez | Ch.12 — immutability, audit |
+| G8 | Operasyon gözlemlenebilirliği | Prometheus/metrik yok, `OFFSET` pagination, prod backup/PITR runbook yok | Arıza önce kullanıcıdan duyulur | Ch.1/5/6/8 |
+| G9 | Gizlilik açıkları (sahip kararı) | `audit_log` org_id/retention yok; alan şifrelemesi default değil; legacy düz metin API key | KVKK talebine (sil/dışa aktar) cevap verilemez | Ch.12 |
+
+### Fazlar
+
+> Her faz: ayrı branch/PR, kendi DoD'u, `verify.py` exit 0 olmadan commit yok. Model değişen fazlarda Alembic migration zorunlu; kolon/tablo **düşüren** migration DISPATCH (önce sahibe sorulur) — bu plan hiçbir şey düşürmez, yalnız ekler ve backfill yapar.
+
+#### F0 — Düzeltme döngüsünü kapat (G1) · ~1 gün · en yüksek fayda/maliyet
+- [x] Tüm ingest yolları kullanıcının kurallarını uygular. Tasarım: kurallar çağıran tarafta **bir kez** yüklenir (`classifier.load_rules`, yalnız "her zaman uygula" olanlar), bellekte eşleşir (`apply_rules`: satıcı alanı **veya** açıklamadaki satıcı adı — banka ekstresi —, sonra anahtar kelime; Türkçe katlama), isabetler satırlarla aynı transaction'da sayılır (`record_hits`). İki dikiş tüm yolları kapsar: (1) pipeline'ın `data_ingestion` düğümü — dosya, e-posta, Paraşüt ve ERP-CSV hepsi `islemleri_ekle` → job → worker yolundan geçer; (2) `scheduled_sync` — zamanlanmış ERP satırları canonical'a yazılmadan önce. `transactions.category_source` (`user_rule` / `user_edit`, migration 043). Eski tek-satır `classify()` (işlem başına sorgu + commit) toplu yolda kullanılmıyor.
+- [x] **Yan bulgu, düzeltildi:** worker `run_cfo_pipeline`'ı hiç `org_id` vermeden çağırıyordu → pipeline'daki org'a bağlı her adım (ajan belleği dahil) worker yolunda sahipsiz çalışıyordu.
+- [x] ~~Açık job'lardaki satırları yerinde yeniden sınıfla~~ → **yeniden hesaplama** (Ch.10): elle yamanan türetilmiş satır kaynağından sapar, dashboard eski kalır. "Her zaman uygula" düzeltmesi etkilenen bitmiş analizleri döndürür (`affected_job_ids`, düzeltilen iş dahil); yeni `POST /analysis/{id}/rerun` bitmiş/başarısız işi atomik olarak yeniden açıp kuyruğa alır (`job_state.reopen_for_rerun`); incelemedeki ve **SMMM paketi mühürlü** iş reddedilir (409). Tek seferlik (her-zaman-değil) düzeltme yalnız o satırı değiştirir; yeniden hesaplamada korunması satır parmak izi ister → **F1'e taşındı**.
+- [x] UI: `/transactions`'ta "Kuralın" / "Elle" rozeti + "Kuralın N analizi etkiliyor → Analizleri yeniden çalıştır" banner'ı (`components/transactions/RuleFeedback.tsx`, tr/en). Not: kullanılmayan `components/transactions/CategoryCell.tsx` kapısı olmayan ölü bileşen (canlı akış sayfadaki `CategoryEditor`).
+- [ ] `/ayarlar/kurallar` listesi (kuralları gör/sil) — bu turda yapılmadı.
+- **DoD:** ✅ `tests/test_category_rules_apply.py` 18 test (eşleştirici, yalnız standing kurallar, düğüm, worker org+kural+kaynak+isabet, düzeltme→etkilenen işler, tek seferlik düzeltme, rerun: kuyruk / inceleme 409 / mühür 409 / sahiplik, her ingest dikişinin kural uyguladığını gösteren kapı) + `rule-feedback.test.tsx`. Canlı (SQLite dev, konuk org, gerçek pipeline): düzeltme → `affected_job_ids` → rerun → `completed`, satır `user_rule` ile yeniden üretildi, log "1 transaction(s) categorised by 1 user rule(s)"; UI'da banner + rozet görüldü. Sınır: zamanlanmış senkron dikişi yapısal kapıyla korunuyor, davranışsal test yok (`run()` çok katmanlı).
+- **Ayrı bulgu (F0 dışı):** `/transactions` TRY verisini `$9,799,500` gibi dolar işaretiyle gösteriyor (sayfa `formatCurrency` USD varsayılanı) — ₺ süpürmesi bu sayfayı kaçırmış.
+
+#### F1 — Tek defter: şirket düzeyinde kayıt sistemi (G2, G3) · ~1–1,5 hafta · omurga
+- [ ] `canonical_transactions` tek kayıt sistemi olur: **her** ingest yolu buraya `append` eder. Satır kimliği = `org_id + kaynak + kaynak_belge_id` (varsa: e-Fatura UUID, banka referansı, ERP id), yoksa **içerik parmak izi** `sha256(org, tarih, tutar_kurus, yön, normalize(açıklama/satıcı))`. Benzersizlik kısıtı → aynı dosya ikinci kez = 0 yeni satır (Ch.7 idempotent yazma; `ON CONFLICT DO NOTHING` ORM upsert ile, raw SQL yok).
+- [ ] Belirsiz eşleşme (aynı gün, aynı tutar, farklı açıklama) silinmez/birleştirilmez → `possible_duplicate` işaretli, kullanıcı onayına düşer (insan kapısı; confidence gate ilkesi).
+- [ ] `Transaction` (job) bir **görünüm** olur: analiz = "şu dönem aralığındaki defter satırları". Geçişte job tabloları kalır (düşürme yok); yeni job'lar defterden türetilir, eskiler backfill ile deftere taşınır (migration + yeniden çalıştırılabilir backfill scripti).
+- [ ] Yükleme yanıtı ne olduğunu söyler: "312 satır: 290 yeni, 20 zaten defterde, 2 olası mükerrer (onay bekliyor)".
+- **DoD:** (a) aynı CSV iki kez → gelir değişmez; (b) Ocak–Mart + Şubat–Nisan ekstreleri → Şubat–Mart bir kez sayılır; (c) ERP ve dosya yolu aynı dönem için aynı toplamı verir; (d) backfill iki kez çalışınca ikinci koşu 0 satır yazar. Canlı: demo org'da tekrar yükleme kanıtı.
+
+#### F2 — Olay günlüğü + transactional outbox (G4) · ~1 hafta
+- [ ] `domain_events` tablosu (append-only: `id`, `org_id`, `kind`, `aggregate_id`, `payload`, `created_at`). Durum değişikliği ile **aynı transaction'da** yazılır: `ledger.appended`, `job.completed`, `anomaly.detected`, `correction.made`, `period.closed`.
+- [ ] Relay (scheduler + `_exclusive`, ARQ varsa ARQ): tüketici başına `consumer_offsets` ile en-az-bir-kez teslim; tüketiciler idempotent (tetikler zaten `event_ref` ile; bağlam/semantic projeksiyonları olay id'siyle).
+- [ ] `continue_after_completion` içindeki `spawn` zinciri olay tüketicilerine taşınır (tetik, bağlam, semantic, cache invalidation).
+- **DoD:** commit sonrası, yayından önce süreç öldürülür → yeniden başlatmada olay yine teslim edilir (test); aynı olay iki kez teslim → yan etki bir kez; relay gecikmesi ölçülür (F6 metriği).
+
+#### F3 — Yeniden kurulabilir görünümler (G5) · ~1 hafta
+- [ ] CompanyContext tüm-satır JSON yerine anahtar başına satır: `context_entries(org_id, key, value, version, source_event_id)`; yazma `WHERE version = :beklenen` ile (optimistic concurrency, Ch.7) — kayıp güncelleme yapısal olarak imkânsız.
+- [ ] `rebuild --org <id>`: defter + olay günlüğünden bağlam/semantic/dashboard'u sıfırdan üretir; **drift denetimi** gecelik — saklanan projeksiyon ile yeniden hesap farklıysa uyarı (Ch.12 "doğruluğu doğrula, varsayma").
+- **DoD:** iki oturum aynı anda farklı ajan sonucu yazar → ikisi de kalır (test); `rebuild` iki kez → bayt-eş çıktı; demo golden prefill bu yola taşınır (`_reconcile_suite_context` yaması emekli olur).
+
+#### F4 — Tahmin defteri ve kalibrasyon (G6) · ~1 hafta · farklılaştırıcı (#2)
+- [ ] `forecast_records` (değişmez): metrik, ufuk, tahmin değeri + aralık, model/prompt sürümü, girdi parmak izi, `as_of`. Her CFO/forecast koşusu yazar.
+- [ ] Gecelik batch (Ch.10): vadesi dolan tahminleri defterdeki gerçekleşenle notlar (`forecast_grades`); idempotent (aynı tahmin iki kez notlanmaz).
+- [ ] UI: "Runway tahminlerimiz sizin için ortalama +1,8 ay iyimser" — org başına hata ve yön; ProvenanceBadge "Tahmin" kartına isabet satırı. Confidence gate eşiği kalibrasyondan beslenir (gate gevşetilmez, yalnız kanıtla daraltılır).
+- **DoD:** demo verisinde geriye dönük test (ilk 6 ay ile tahmin → sonraki 6 ay ile not); notlama iki kez → aynı sonuç; isabet satırı veri yokken "henüz ölçülmedi" der (uydurma yok).
+
+#### F5 — Dönem kapanışı, tazelik ve eksik veri (G7) · ~1 hafta · SMMM/kurumsallaşma değeri
+- [ ] Ay kapanışı: dönem kilitlenir → o dönemin defter/rapor özeti SHA-256 ile mühürlenir (`DefensibilityPacket` deseni); kilitli döneme sonradan gelen satır **düzeltme kaydı** olarak sonraki döneme yazılır (muhasebe gibi append-only, Ch.12).
+- [ ] Kaynak tazeliği: her bağlantı/yükleme için "son veri", "gecikme", "eksik ay" göstergesi; eksik ay listesi `/baslangic` ve Kurumsallaşma Endeksi'ne (process_cadence) girer.
+- [ ] Tetik motoruna `period.closed` olayı + "dönem kapanmadı" `schedule` kuralı şablonu.
+- **DoD:** kilitli dönem sessizce değişemez (test: kilitli döneme satır → düzeltme kaydı); mühür yeniden hesaplanınca eşleşir; tazelik göstergesi veri yokken "bilinmiyor" der.
+
+#### F6 — Operasyonel dayanıklılık (G8) · paralel iz
+- [ ] Prometheus metrikleri: kuyruk derinliği, relay gecikmesi (F2), projeksiyon drift sayısı (F3), job başarı oranı/p95 (`/runs/slo` zaten var → dışa aktar).
+- [ ] Keyset pagination (`api/analysis.py` listeleri ilk), `OFFSET` kaldırılır.
+- [ ] Postgres yedek + PITR runbook ve **geri yükleme tatbikatı** (yedek, geri yüklenene kadar yedek değildir).
+- [ ] Playwright golden path (eski 3.1): yükle → defter → analiz → düzelt → yeniden yükle (F0/F1 akışını uçtan uca kanıtlar).
+- Not: Docker/Postgres/Redis bu makinede yok (2026-08-31 kararı) → iki-pod SSE, relay'in çok süreçli testi ve PITR tatbikatı ya CI'da ya Docker kararından sonra. **Sahip kararı.**
+
+#### F7 — Güven ve gizlilik (G9) · sahip kararları
+- [ ] `audit_log` + `domain_events` org_id + saklama politikası (öneri: denetim kayıtları 10 yıl — TTK md. 82 saklama süresi, VUK md. 253'ün 5 yılını da kapsar; uygulama logları 90 gün — sahip/hukuk onayıyla).
+- [ ] KVKK: org başına **dışa aktar** ve **sil** — defter + olaylar + türetilmiş görünümler; olay günlüğü sayesinde "nereye kopyalandı" izlenebilir.
+- [ ] Alan şifrelemesi (VKN, IBAN) default açık + mevcut satırlar için backfill.
+- [ ] Legacy düz metin X-API-Key kaldırılır (auth → **DISPATCH**).
+
+### Sıra ve gerekçe
+
+**F0 → F1 → F2 → F3 → F4 → F5**, F6 ve F7 paralel iz.
+- F0 bir günde biter ve kullanıcının her ay hissettiği bir acıyı kaldırır.
+- F1 her şeyin zemini: tek defter olmadan tahmin notlama (F4) neye karşı notlayacağını, dönem kapanışı (F5) neyi kilitleyeceğini bilmez.
+- F2, F3'ten önce gelir: görünümler olaylardan kurulacak.
+- Eski açık maddeler şuraya yerleşir: **2.2 grounding** F1'den sonra (her sayı defter satırına bağlanabilir hâle gelir) · **2.5 SMMM paketi** F5'in mührüyle birleşir · **2.6 tur + V2b i18n göçü** bağımsız, ara işler · **3.1 Playwright** F6 · **D5/D6** F1 sonrası (public demo tek deftere dayanmalı).
+
+### Kapsam dışı (bu döngüde)
+- Kafka/harici akış altyapısı: `domain_events` + relay, bu ölçekte DDIA'nın önerdiği "veritabanı içinde log" yaklaşımı (Ch.11) — dışa taşıma ölçek gerçekten isterse.
+- Çok bölgeli replikasyon, sharding: tek writer Postgres yeterli (Ch.5/6); önce yedek/PITR.
+- Event sourcing'in tamamı (her durumu olaylardan türetmek): yalnız defter ve olay günlüğü; job yaşam döngüsü bugünkü atomik claim/finish ile kalır.
 
 ---
 

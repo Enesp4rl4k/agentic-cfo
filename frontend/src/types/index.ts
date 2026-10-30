@@ -95,6 +95,9 @@ export interface Transaction {
   vendor: string | null;
   transaction_date: string | null;
   confidence: number | null;
+  /** "user_rule": the org's standing correction decided the category;
+   *  "user_edit": a person changed this row; absent: built-in heuristics. */
+  category_source?: "user_rule" | "user_edit" | null;
   /** The source had no readable date; `transaction_date` is a placeholder. */
   date_is_estimated?: boolean;
   /**
