@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.main  # noqa: F401 — full model registration
 from app.database import Base
@@ -18,11 +18,12 @@ from app.services.smmm_defensibility import (
     content_hash,
     finalize_packet,
 )
+from tests.db_helpers import gecici_motor
 
 
 @pytest_asyncio.fixture
 async def db():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as c:
         await c.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, expire_on_commit=False)

@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import get_settings
 from app.database import Base, get_db
@@ -29,13 +29,14 @@ from app.services.company_context import (
 from app.services.demo_template import (
     clone_demo_workspace,
 )
+from tests.db_helpers import gecici_motor
 from tests.golden_seed import _auth, _guest, _seed_golden
 
 
 @pytest_asyncio.fixture
 async def test_client(monkeypatch):
     """In-memory DB dependency override + demo_mode on."""
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = gecici_motor(echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -3,6 +3,7 @@ Tests for RAG v1 service helpers.
 """
 import app.services.rag_service as rag
 from app.services.rag_service import _chunk_text, _tfidf_similarity
+from tests.db_helpers import gecici_motor
 
 
 def test_chunk_text_splits_large_input() -> None:
@@ -36,11 +37,11 @@ async def test_embedding_runs_before_the_transaction_opens(monkeypatch) -> None:
     transactions short). The pin: the first DB statement comes after the
     embed call.
     """
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from app.database import Base
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

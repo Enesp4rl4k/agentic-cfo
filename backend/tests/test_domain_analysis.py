@@ -14,17 +14,18 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.agents.orchestration import domain_analysis as da
 from app.database import Base
+from tests.db_helpers import gecici_motor
 from tests.test_agents.test_chro_pipeline import HEADCOUNT_CSV
 from tests.test_agents.test_cto_pipeline import BILLING_CSV, INCIDENT_CSV
 
 
 @pytest_asyncio.fixture
 async def db():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = gecici_motor(echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

@@ -14,17 +14,18 @@ from datetime import UTC, datetime, timedelta
 
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.database import Base
 from app.models.agent_run import AgentRun
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.services.job_reaper import reap_stuck_jobs
+from tests.db_helpers import gecici_motor
 
 
 @pytest_asyncio.fixture
 async def maker():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)

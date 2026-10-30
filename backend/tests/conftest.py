@@ -32,6 +32,8 @@ import tempfile
 
 import pytest
 
+from tests.db_helpers import gecici_motor
+
 # ── 0. Never the developer's database ────────────────────────────────────────
 # Set before anything imports app.config, whose Settings is cached on first use.
 if not os.environ.get("DATABASE_URL_OVERRIDE"):
@@ -124,7 +126,7 @@ import pytest_asyncio
 @pytest_asyncio.fixture
 async def client(tmp_path, monkeypatch):
     from httpx import ASGITransport, AsyncClient
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from app.config import get_settings
     from app.database import Base, get_db
@@ -133,7 +135,7 @@ async def client(tmp_path, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "storage_local_path", str(tmp_path))
     monkeypatch.setattr(settings, "auto_enqueue_analysis_on_upload", False)
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
@@ -148,3 +150,12 @@ async def client(tmp_path, monkeypatch):
         yield c
     app.dependency_overrides.clear()
     await engine.dispose()
+
+
+# ── 4. The order a failing run used ──────────────────────────────────────────
+# verify runs pytest with --no-header, which hides pytest-randomly's seed; an
+# order-dependent failure is then one nobody can replay.
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    seed = getattr(config.option, "randomly_seed", None)
+    if isinstance(seed, int):
+        terminalreporter.write_line(f"Test order: -p randomly --randomly-seed={seed}")
