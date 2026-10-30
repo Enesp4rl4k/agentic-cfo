@@ -399,6 +399,93 @@ def _kodlu_kategori(hesap: tdhp.Hesap, description: str, raw_cat: str = "") -> s
     return tahmin if tahmin != "other_expense" else hesap.kategori
 
 
+_TUTAR_KOLONLARI = ("amount", "tutar", "borc", "alacak", "amount_cents")
+_TARIH_KOLONLARI = ("date", "tarih", "islem tarihi", "transaction_date")
+
+
+def _ilk(r_lower: dict[str, str], *anahtarlar: str) -> str:
+    """The first non-empty value among these folded column names."""
+    return next((r_lower[k] for k in anahtarlar if r_lower.get(k)), "")
+
+
+def _isaretli_kurus(raw_amt: str) -> int:
+    """Kuruş of an amount cell, negative when the cell says so."""
+    amount_cents = _parse_amount(raw_amt)
+    if amount_cents is None:
+        try:
+            amount_cents = round(float(raw_amt) * 100)
+        except ValueError:
+            amount_cents = 0
+    return -abs(amount_cents) if _is_negative(raw_amt) else amount_cents
+
+
+def _yukleyenin_kategorisi(raw_cat: str, raw_desc: str, tx_type: str) -> str:
+    """Category of a row without an account code.
+
+    A category column is the uploader's word, not ours. "Gıda", "payroll",
+    "sales" — all reasonable to write and none of them something this pipeline
+    groups by, so an unrecognised value is worse than a guessed one: it
+    disappears from every report silently. Keep it only when it is a category
+    we know. "tax" on a KDV payment is the uploader saying a tax was paid, not
+    that it was an expense: KDV is not on a KDV payer's P&L.
+    """
+    cat_lower = raw_cat.strip().lower()
+    category = (
+        cat_lower if cat_lower in KNOWN_CATEGORIES
+        else _guess_category(raw_desc or raw_cat, tx_type)
+    )
+    if category == "tax" and _guess_category(raw_desc, tx_type) == "tax_payment":
+        return "tax_payment"
+    return category
+
+
+def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any] | None:
+    """One CSV row as a pipeline transaction; None for an empty or skipped row."""
+    if not row or not any(row.values()):
+        return None
+    r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
+    raw_amt = _ilk(r_lower, "amount", "tutar")
+    # Bank statements split the amount: "Borç" is money leaving the
+    # account, "Alacak" money arriving.
+    borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
+    if not raw_amt and (borc or alacak):
+        raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
+    raw_amt = raw_amt or "0"
+    raw_desc = _ilk(r_lower, "description", "aciklama", "detay")
+    raw_cat = _ilk(r_lower, "category", "kategori")
+    account_code = tdhp.ana_hesap(_ilk(r_lower, *_HESAP_KODU_KOLONLARI))
+    hesap = tdhp.hesap(account_code) if account_code else None
+    parsed_dt = _parse_date(_ilk(r_lower, "date", "tarih", "islem tarihi"))
+    tx: dict[str, Any] = {
+        "currency": "TRY",
+        "description": raw_desc,
+        "vendor": _ilk(r_lower, "vendor", "tedarikci") or raw_desc,
+        "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
+        "raw_text": str(row),
+        "account_code": account_code,
+    }
+    if hesap is not None:
+        satir = _hesap_kodlu_satir(hesap, borc, alacak, raw_amt, raw_desc, raw_cat)
+        if satir is None:
+            if atlanan is not None:
+                atlanan.append(f"{account_code} {raw_desc}".strip())
+            return None
+        tx["type"], tx["amount_cents"], tx["category"] = satir
+        tx["confidence"] = 0.95
+        return tx
+
+    amount_cents = _isaretli_kurus(raw_amt)
+    raw_type = _ilk(r_lower, "type", "tip")
+    tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
+    tx["type"] = tx_type
+    tx["amount_cents"] = abs(amount_cents)
+    tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx_type)
+    # A code this map does not know is an income-statement account nobody has
+    # classified: the row is read by its words and its sign, and says so.
+    tx["confidence"] = 0.6 if account_code else 0.95
+    return tx
+
+
 def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
     """Attempt deterministic CSV parsing if the text is structured CSV.
 
@@ -415,98 +502,14 @@ def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict
         reader = csv.DictReader(io.StringIO(raw_text), delimiter=delimiter)
         if not reader.fieldnames:
             return None
-        field_lower = [fold(f.strip()) for f in reader.fieldnames if f]
         # Headers are folded (app.core.turkish): "İşlem Tarihi", "AÇIKLAMA" and
         # "Borç" match "islem tarihi", "aciklama", "borc". A running balance
         # ("bakiye") is not a transaction amount.
-        has_amount = any(f in ("amount", "tutar", "borc", "alacak", "amount_cents") for f in field_lower)
-        has_date = any(f in ("date", "tarih", "islem tarihi", "transaction_date") for f in field_lower)
-        if not (has_amount and has_date):
+        field_lower = {fold(f.strip()) for f in reader.fieldnames if f}
+        if not (field_lower & set(_TUTAR_KOLONLARI) and field_lower & set(_TARIH_KOLONLARI)):
             return None
-
-        transactions = []
-        for row in reader:
-            if not row or not any(row.values()):
-                continue
-            r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
-            raw_amt = r_lower.get("amount") or r_lower.get("tutar") or ""
-            # Bank statements split the amount: "Borç" is money leaving the
-            # account, "Alacak" money arriving.
-            borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
-            if not raw_amt and (borc or alacak):
-                raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
-            raw_amt = raw_amt or "0"
-            raw_dt = r_lower.get("date") or r_lower.get("tarih") or r_lower.get("islem tarihi") or ""
-            raw_desc = r_lower.get("description") or r_lower.get("aciklama") or r_lower.get("detay") or ""
-            raw_type = r_lower.get("type") or r_lower.get("tip") or ""
-            raw_cat = r_lower.get("category") or r_lower.get("kategori") or ""
-            raw_vendor = r_lower.get("vendor") or r_lower.get("tedarikci") or raw_desc
-            raw_code = next((r_lower[k] for k in _HESAP_KODU_KOLONLARI if r_lower.get(k)), "")
-            account_code = tdhp.ana_hesap(raw_code)
-            hesap = tdhp.hesap(raw_code) if account_code else None
-            parsed_dt = _parse_date(raw_dt)
-            if hesap is not None:
-                satir = _hesap_kodlu_satir(hesap, borc, alacak, raw_amt, raw_desc, raw_cat)
-                if satir is None:
-                    if atlanan is not None:
-                        atlanan.append(f"{account_code} {raw_desc}".strip())
-                    continue
-                kod_tipi, kod_kurus, kod_kategori = satir
-                transactions.append({
-                    "amount_cents": kod_kurus,
-                    "currency": "TRY",
-                    "type": kod_tipi,
-                    "category": kod_kategori,
-                    "description": raw_desc,
-                    "vendor": raw_vendor,
-                    "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
-                    "raw_text": str(row),
-                    "confidence": 0.95,
-                    "account_code": account_code,
-                })
-                continue
-
-            amount_cents = _parse_amount(raw_amt)
-            if amount_cents is None:
-                try:
-                    amount_cents = round(float(raw_amt) * 100)
-                except Exception:
-                    amount_cents = 0
-            if _is_negative(raw_amt):
-                amount_cents = -abs(amount_cents)
-
-            tx_type = raw_type if raw_type in ("income", "expense") else ("expense" if amount_cents < 0 else "income")
-            # A category column is the uploader's word, not ours. "Gıda",
-            # "payroll", "sales" — all reasonable to write and none of them
-            # something this pipeline groups by, so an unrecognised value is
-            # worse than a guessed one: it disappears from every report
-            # silently. Keep it only when it is a category we know.
-            cat_lower = raw_cat.strip().lower()
-            category = (
-                cat_lower if cat_lower in KNOWN_CATEGORIES
-                else _guess_category(raw_desc or raw_cat, tx_type)
-            )
-            # "tax" on a KDV payment is the uploader saying a tax was paid, not
-            # that it was an expense: KDV is not on a KDV payer's P&L.
-            if category == "tax" and _guess_category(raw_desc, tx_type) == "tax_payment":
-                category = "tax_payment"
-
-            transactions.append({
-                "amount_cents": abs(amount_cents),
-                "currency": "TRY",
-                "type": tx_type,
-                "category": category,
-                "description": raw_desc,
-                "vendor": raw_vendor,
-                "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
-                "raw_text": str(row),
-                # A code this map does not know is an income-statement account
-                # nobody has classified: the row is read by its words and its
-                # sign, and says so.
-                "confidence": 0.6 if account_code else 0.95,
-                "account_code": account_code,
-            })
-        return transactions if transactions else None
+        transactions = [tx for row in reader if (tx := _csv_satiri(row, atlanan)) is not None]
+        return transactions or None
     except Exception:
         return None
 
