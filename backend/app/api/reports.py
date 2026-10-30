@@ -81,7 +81,14 @@ async def list_reports(
     }
 
 
-@router.get("/reports/{job_id}/executive-pdf")
+@router.get(
+    "/reports/{job_id}/executive-pdf",
+    responses={
+        404: {"description": "The job has no analysis data yet."},
+        500: {"description": "The report could not be produced."},
+        503: {"description": "No PDF engine on this server (error_code pdf_engine_unavailable)."},
+    },
+)
 async def download_executive_report(
     job_id: str,
     company_name: str = Query(default="Şirket", description="Rapor başlığındaki şirket adı"),
