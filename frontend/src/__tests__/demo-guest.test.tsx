@@ -24,6 +24,16 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: vi.fn().mockReturnValue(null) }),
   usePathname: () => "/",
 }));
+// The button's copy comes from the message tree (useI18n → useOrgSettings);
+// pin the tr locale so the retry label assertions below read Turkish.
+vi.mock("@/hooks/useOrgSettings", () => ({
+  useOrgSettings: () => ({
+    org: { org_id: "org1", locale: "tr-TR", base_currency: "TRY" },
+    loading: false,
+    error: null,
+    refresh: () => {},
+  }),
+}));
 
 import { GuestDemoButton } from "@/components/demo/GuestDemoButton";
 
