@@ -89,7 +89,7 @@ class CEOState(TypedDict, total=False):
     # ── COO pipeline output (condensed) ───────────────────────────────────────
     ops_summary: dict[str, Any] | None
     # {
-    #   overall_ops_score: float,          # 0-10 (lower = worse)
+    #   overall_ops_score: float | None,   # 0-10 (higher = worse); None = not measured
     #   operational_efficiency_score: float,  # 0-10 (higher = better)
     #   sla_breach_rate: float,
     #   avg_utilization_rate: float,

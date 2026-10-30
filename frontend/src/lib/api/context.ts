@@ -75,28 +75,6 @@ export async function getContextSummary(): Promise<ContextSummary> {
 }
 
 /**
- * Store an agent result in the company context.
- * Called automatically after each agent analysis completes.
- */
-export async function updateAgentContext(
-  agent: AgentName,
-  result: Record<string, unknown>,
-  opts?: {
-    jobId?: string;
-    companyName?: string;
-    reportingPeriod?: string;
-  }
-): Promise<void> {
-  await apiClient.post("/context/me", {
-    agent,
-    result,
-    job_id: opts?.jobId ?? null,
-    company_name: opts?.companyName ?? null,
-    reporting_period: opts?.reportingPeriod ?? null,
-  });
-}
-
-/**
  * Reset the company context (start fresh for a new period).
  */
 export async function resetCompanyContext(): Promise<void> {

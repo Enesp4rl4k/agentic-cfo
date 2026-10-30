@@ -74,7 +74,11 @@ def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list
             "cascade_trigger": "revenue_drop" if pct < 0 else None,
             "cascade_params": {"drop_pct": abs(margin)} if margin < 0 else {},
         })
-    opex = _num(pnl.get("total_opex"))
+    # The dashboard carries opex by category, never `total_opex`: this read
+    # that key and the KRI was never computed (plan v6 §S0).
+    from app.services.dashboard_contract import period_opex
+
+    opex = period_opex(pnl)
     if revenue and opex is not None:
         ratio = round(opex / revenue * 100, 1)
         st = _status(ratio, 90.0, 110.0, higher_is_worse=True)

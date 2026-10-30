@@ -1,8 +1,8 @@
-# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v5)
+# 🗺️ Geliştirme Planı — Agentic CFO (Birleşik, v6)
 
 > **Demo deneyimi ayrı planda:** `DEMO_PLAN.md` (2026-10-14) — "satın almadan dene" akışı: mevcut envanter + boşluklar + D1–D6 fazları (konuk giriş → anında dolu dashboard → tour → reset → public → CTA).
 
-> **Tarih:** 2026-10-23 (v4: 2026-10-21, v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** **§V5** — DDIA ilkeleriyle şirket düzeyinde veri omurgası (tek defter → olay günlüğü → yeniden kurulabilir görünümler) ve bunun üstüne gerçek kullanıcı faydası (düzeltmelerin kalıcılığı, sürekli defter, tahmin isabeti, dönem kapanışı). §V4 ve Faz 2/3 maddeleri §V5 sırasına yerleştirildi.
+> **Tarih:** 2026-10-24 (v5: 2026-10-23, v4: 2026-10-21, v3: 2026-10-17, v2: 2026-10-14, v1: 2026-10-11) · **Ufuk:** **§V6** — ajan sıkılaştırması (güven kapısı, bağımsız doğrulama, dayanıklı çalışma kaydı, "veri yok ≠ iyi", tek veri/skor sözleşmesi), ardından **§V5** — DDIA ilkeleriyle şirket düzeyinde veri omurgası (tek defter → olay günlüğü → yeniden kurulabilir görünümler) ve bunun üstüne gerçek kullanıcı faydası (düzeltmelerin kalıcılığı, sürekli defter, tahmin isabeti, dönem kapanışı). §V4 ve Faz 2/3 maddeleri §V5 sırasına yerleştirildi.
 > **Yasa:** `CLAUDE.md` — Done = `python scripts/verify.py` (Windows) / `./verify.sh` exit 0. Confidence gate ≥ 0.80. Raw SQL yok. Money = kuruş integer.
 > **Kuzey yıldızı:** Yüklediğin veri → kanıtlanmış sayı → rol-dashboard'unda org'un dilinde ve **org'un para birimiyle** doğru çizilen tek bir gerçeklik → karar → mühürlü kayıt. Bir halka kanıtlanmadan iş bitmiş sayılmaz.
 >
@@ -15,6 +15,91 @@
 > **v4 değişikliği (2026-10-21):** v3 kodun gerisinde kalmıştı. Kod taraması: Faz 2/3'ün "hiç başlamadı" dediği maddelerin çoğu **kısmen ya da tamamen kodda** (2.1 stres kartı, 2.3 otomatik konsensüs + `ConflictCard` + ops sayacı, 2.4 kontrat testi, 2.6 tur bileşeni, 3.2 SSE Redis pub/sub, 3.4 güvenlik başlıkları + güvensiz secret kontrolü) — her maddeye **"Kodda durum"** notu eklendi. Plan dışı yapılan **P4 tetik motoru** (P4-0…P4-4, 2026-10-18…20) plana alındı; boşluğu: `anomaly.detected` ve `schedule` olaylarının kaynağı yok. Yeni öncelik sırası **§V4**: önce sessiz yanlışlar (çalışmayan tetik, yanlış EUR şoku, kapı kapsamı), sonra yeni yetenek.
 >
 > **v5 değişikliği (2026-10-23):** V0–V2 kapandı (PR #4 birleşti, PR #5 açık). `DDIA_COMPLIANCE.md` iş (job) düzeyini sağlam gösteriyor — atomik claim, lease, reaper, idempotent yeniden hesaplama. Ama kod taraması **şirket düzeyinde** veri omurgasının olmadığını gösterdi ve bu doğrudan kullanıcı faydasını kırıyor: her yükleme bir ada (çift sayım), kullanıcı düzeltmeleri hiç uygulanmıyor, olaylar çökmede kayboluyor, tahminler hiç ölçülmüyor. **§V5** bunu DDIA bölümleriyle eşleyip sıralar.
+>
+> **v6 değişikliği (2026-10-24):** F0 PR #6'da. 93 ajan dosyasının (26,6 bin satır) taraması + 6 C-suite pipeline'ının demo girdileriyle **canlı koşusu**, CLAUDE.md ilkelerinin CFO pipeline'ı dışında büyük ölçüde **yapısal olarak yok** olduğunu gösterdi: güven kapısı C-suite'te taşıyıcı değil, bağımsız doğrulama yalnız CFO'da, kalıcı çalışma kaydı yalnız muhasebe akışında, veri yokluğu "düşük risk" diye raporlanıyor. **§V6** bunları ilke + DDIA bölümüyle eşleyip §V5'in önüne koyar — yeni defter (F1) bozuk bir ajan katmanının üstüne kurulmamalı.
+
+---
+
+## §V6 — Ajan sıkılaştırması (2026-10-24)
+
+**Tez:** CLAUDE.md'nin ilkeleri (güven kapısı taşıyıcıdır · hiçbir şey kendi ödevini notlamaz · her ajan koşusu kalıcı kayıt yazar · uydurma yok) bugün **bir** pipeline'da (CFO) uygulanıyor, sekiz rolde uygulanmıyor. Sıkılaştırma yeni yetenek eklemez; ilkeleri her role **tek bir yerden** uygular ve "veri yok"u sessiz bir iyi sonuç olmaktan çıkarır.
+
+### Bulgular (2026-10-24, kodda ve canlıda doğrulandı)
+
+| # | Bulgu | Kanıt | İlke / yasa | DDIA |
+|---|---|---|---|---|
+| H1 | **Güven kapısı C-suite'te taşıyıcı değil** | `api/agent_jobs._run_agent_pipeline` pipeline `awaiting_review=True` dönse de işi `COMPLETED` yapar, `persist_agent_completion` + otomatik zincir çalışır; ikisi de `awaiting_review`'a bakmaz; `auto_chain.py:545` CEO state'ini `min_confidence: 1.0, awaiting_review: False` ile sabit kurar | Yasa 10, "UI insan onaylayana kadar bekletir" | Ch.9 — onaylanmamış veri türetilmiş görünüme akıyor |
+| H2 | **CHRO / Risk / Audit'te kapı yapısal olarak yok**; iki farklı log şeması | Canlı: bu üç rolün logu `{node, status, message}` — `confidence`, `awaiting_review`, `min_confidence` hiç yok. CMO/COO adımları `confidence=None` | Yasa 10 | Ch.4 — aynı kavram iki kodlamayla |
+| H3 | **Bağımsız doğrulama yalnız CFO'da** | verifier/reconciliation düğümü 8 rolün hiçbirinde yok (cto, cmo, coo, chro, risk, audit, compliance, ceo) | "Hiçbir şey kendi ödevini notlamaz" | Ch.12 — doğrula, varsayma |
+| H4 | **Veri yok = sakin iyi sonuç** | Canlı: Risk girdisiz → "Risk duruşu: **kabul edilebilir (0,0/10)**" (alt skorlar 0 → ağırlıklı 0 → acceptable, `risk/orchestrator.py:66-86`). COO: hiç alt skor yoksa `overall_score = 0.0` = risk ölçeğinde "ideal" | Dürüstlük kırmızı çizgisi: bilinmeyen asla sakin yeşil değil | Ch.12 |
+| H5 | **Skor polaritesi/ölçeği rolden role farklı** | COO "Ops skoru 0,5/10" ve Risk 0–10 → *yüksek = kötü*; CHRO 7/10, Audit 87,8/**100** → *yüksek = iyi*; CTO belirsiz. UI hepsini "X/10 skor" diye gösteriyor | U8'in kök nedeni | Ch.4 — şemasız değer |
+| H6 | **Dashboard JSON sözleşmesi yok — okuyan herkes anahtar/birim tahmin ediyor** | Risk "Gider / Gelir" KRI'si `last_cfo_result.pnl["total_opex"]` okur — dashboard'da bu alan yok → gösterge **hiç hesaplanmıyor** (`risk/gercek_kri.py:77`, `proactive_alerts.py:214`). Aynı sınıfın 4. örneği (önceki: 100× bölme `b4897a3`, stres testi birim + opex — PR #5) | Kuzey yıldızı: tek gerçeklik | Ch.4 — encoding/şema evrimi |
+| H7 | **Kalıcı çalışma kaydı neredeyse yok** | CLAUDE.md "her koşu JobLog yazar" — `JobLog` tablosu yok (`StepLog` bellekte). `AgentRun` defterini yalnız `api/muhasebe.py` yazar; CFO worker'ı, `/cto|cmo|coo|chro|audit|compliance/analyze` senkron uçları hiçbir kalıcı kayıt yazmaz. Audit ve Compliance senkron sonuçları bağlama hiç girmez (`persist_agent_completion` çağrısı 0) → kullanıcının denetimi CEO'ya ulaşmaz | "Denetim izi zorunlu" | Ch.11 — dayanıklı log |
+| H8 | **AgentJob çalıştırıcısı süreç içi ateşle-unut, lease/reaper yok** | `enqueue_agent_job` → `spawn(...)`; `job_reaper` yalnız `analysis_jobs` + `agent_runs`'ı kapsar → süreç ölürse iş sonsuza dek `RUNNING` | — | Ch.8 — her bekleyişin zaman aşımı |
+| H9 | **Türetilmiş duruma açık istemci yazma kapısı** | `POST /context/{org_id}` istemcinin gönderdiği `agent`+`result`'ı doğrulamadan bağlama yazar, semantic rebuild + otomatik zinciri tetikler; frontend çağıranı (`useReportAgentResult`) hiçbir sayfada kullanılmıyor | Doğrulanmamış veri karar zincirine | Ch.12 — bütünlük |
+| H10 | **Proaktif KRI taraması sessizce ölü** | `orchestration/proactive_alerts.py`: (a) **ham SQL** (yasa 4) — Postgres'e özgü `NOW() - INTERVAL` SQLite'ta patlar, `except: pass` → `[]`; (b) `proactive_alerts` tablosunun ORM modeli yok (yalnız migration 009) → dev'de tablo yok, her kayıt sessizce düşer; (c) "aktif org" = yalnız `agent_jobs` → sadece CFO kullanan org hiç taranmaz | Yasa 4, "sessiz arıza yok" | Ch.1 — güvenilirlik |
+| H11 | **37 sessiz yutma** | `except Exception:` + `pass`/sabit dönüş — en çok `proactive_alerts` (5), CHRO ajanları (7), `compliance/policies_agent` (3), `auto_chain` (2) | "Running it finds bugs" deseninin kaynağı | Ch.8 |
+| H12 | **API hata sözleşmesi** | 83 yerde `detail=f"...{exc}"` — iç istisna metni kullanıcıya sızar, hata biçimi tutarsız | `{data, error}` sözleşmesi | — |
+| H13 | Atlanan adım "tam güven" | 12 ajan girdi yokken `confidence=1.0` döner (tax, budget, cto/infra, cto/velocity, anomaly …) → güven dökümünde doğrulanmamış adım %100 görünür | Güven dökümünün dürüstlüğü | — |
+| H14 | **Rol sonucu tazeliği bilinmiyor** | `CompanyContext` tüm blob için tek `updated_at`; CEO aylar önceki CTO sonucunu bugünkü CFO ile aynı tazelikte birleştirir (OKR ajanı tazelik yerine org yaşını vekil kullanıyor) | — | Ch.11 — türetilmiş verinin yaşı |
+| H15 | İnce test kapsamı | Rol başına ~1,8 bin satıra 1–3 test dosyası (cmo 1, chro 1) | — | — |
+
+### Sıkılaştırma fazları
+
+> İlke korunur: hiçbir faz kapıyı gevşetmez, yalnız uygulanmadığı yere uygular. `CFOState`'ten alan **kaldırılmaz** (DISPATCH). `backend/app/agents/` dokunan her faz `pytest tests/test_agents/ -q` + `verify.py` (yasa 1, 6). Kolon/tablo düşüren migration yok.
+
+#### S0 — Sessiz yanlışlar · ~2 gün · önce
+- [x] **H4:** Risk: alt skor yalnız ölçüldüyse (`total_risks`/`total_events`/`total_kris` > 0) sayılır, ağırlıklar ölçülenlere yeniden dağıtılır, hiç ölçüm yoksa `risk_posture="no_data"`, `enterprise_risk_score=None`, "bu bir düşük risk sonucu değildir" anlatısı ve LLM'e hiç gidilmez. COO/CTO/CMO: hiç bileşen yoksa genel skor `None` (0.0 değil); COO anlatısı ve LLM istemi eksik girdiyi "ölçülmedi" diye adlandırır ("%0 kaynak kullanımı" uydurulmaz). CEO tüketicileri `None`-güvenli: sentez (`risk_posture` varsayılanı `"acceptable"` → `"no_data"`; uyum varsayılanı `100.0` → `None`), stratejik öncelikler, SWOT (uydurma `5` orta değerleri kaldırıldı).
+- [x] **Yan bulgu — ters polarite (canlı hata):** CEO SWOT, CTO'nun *yüksek = kötü* skorunu *yüksek = iyi* okuyordu → kritik 8/10 "Yüksek teknoloji sağlık skoru" **güçlü yan**, sağlıklı 2/10 zayıf yan; "güçlü teknik ekip" fırsatı da ≥7 riskte tetikleniyordu. Artık ≤2,5 güçlü yan, ≥7 zayıf yan (yönetim kurulu etiketleriyle aynı eşikler). `ceo/state.py`'deki "(lower = worse)" açıklaması düzeltildi.
+- [x] **Yan bulgu — yönetim kurulu sunumu:** CTO verisi yokken uydurma "5,0/10 — Orta (Dikkat)" teknoloji skoru, runway bilinmezken "0,0 ay" + **kritik** uyarı basıyordu → "—/Ölçülmedi" ve "Sınır yok / ölçülmedi", uyarı yok.
+- [x] **Yan bulgu — frontend:** `cross-agent-intelligence` var olmayan `overall_risk_score`'u 0–100'de `>70` ile okuyordu → "Yüksek Risk Yoğunlaşması" asla tetiklenmiyordu; artık `enterprise_risk_score` (0–10, `null` = ölçülmedi).
+- [x] **H6 (acil kısmı):** `app/services/dashboard_contract.py` (`period_opex`, `revenue`) — S4'ün çekirdeği; Risk "Gider / Gelir" KRI'si buradan okur. Eski test `total_opex` biçimiyle (kodun beklediğiyle) yazılmıştı; gerçek dashboard biçimiyle test eklendi.
+- [x] **H10:** `models/proactive_alert.py` (migration 009 şemasının birebir aynası; `known_drift.txt`'den 3 girdi silindi); ham SQL → ORM; aktif org = son 24 saatte `analysis_jobs` **veya** `agent_jobs`; yutma yerine `warning` log; kayıt `alert_id` ile idempotent.
+- [x] **H9:** `POST /context/{org_id}` + kullanılmayan `updateAgentContext` / `useReportAgentResult` kaldırıldı (sahip onayı 2026-10-24). Ajan sonuçları bağlama yalnız sunucu tarafından (`persist_agent_completion`, worker) girer.
+- **DoD:** ✅ `tests/test_s0_no_data.py` (8), `test_proactive_alerts_scan.py` (2), `test_dashboard_contract.py` (4), `test_gercek_kri.py` (+1 gerçek biçim); boş COO özetini `0.0`'a kilitleyen eski test `None`'a çevrildi. Canlı: Risk girdisiz → "Risk posture: no_data"; konuk (yalnız CFO) org'u saatlik tarama buldu (`scanned: 1`, hata yok — önce 0). Sınır: Postgres drift kontrolü bu makinede çalıştırılamadı (Docker yok) — CI doğrular.
+
+#### S1 — Tek ajan sözleşmesi + kapı tek yerde (H1, H2, H13) · ~3–4 gün
+- [ ] Ortak `StepResult` sözleşmesi (`step, ok, status: ok|skipped|failed, confidence: float|None, needs_review, detail, data_source`) — CHRO/Risk/Audit'in `{node,status,message}` logu ve CMO/COO'nun güvensiz adımları buna taşınır. Atlanan adım `status=skipped, confidence=None` (1.0 değil).
+- [ ] CLAUDE.md'nin adını koyduğu **`runAgent` kapısı** tek fonksiyon olur: her rol orkestratörünün sonucu oradan geçer → `min_confidence < 0.80` veya herhangi `needs_review` ⇒ `awaiting_review=True`. Rol başına ayrı kapı mantığı kalmaz.
+- [ ] `AgentJob` durum makinesine `awaiting_review` eklenir (migration, ekleme); bu durumda bağlama yazılmaz, otomatik zincir tetiklenmez; onay ucu (`smmm_onay` / Faz 16 RunReview deseni) serbest bırakır. `auto_chain`'in CEO için sabit `1.0/False`'u kaldırılır — girdi rollerinin kapısını devralır.
+- **DoD:** parametrik test — **her** rol orkestratörü sözleşmeyi döndürür ve düşük güvenli girdide `awaiting_review=True` olur; incelemedeki iş bağlama yazılmaz (test).
+
+#### S2 — Her koşu kalıcı kayıt yazar (H7, H8) · ~1 hafta
+- [ ] `run_ledger.agent_run` CFO worker'ını, `AgentJob` çalıştırıcısını ve senkron rol uçlarını sarar → her koşu bir `AgentRun` satırı (durum, düğüm izi, süre, maliyet). CLAUDE.md'deki "JobLog" = `AgentRun` olarak netleştirilir (doküman düzeltmesi).
+- [ ] Senkron `/<rol>/analyze` uçları ya `AgentJob`'a yönlenir ya da aynı `persist_agent_completion` yolunu kullanır — Audit ve Compliance sonuçları bağlama girer.
+- [ ] `AgentJob`'a lease + reaper (analysis_jobs deseni: atomik claim, `lease_expires_at`, 10 dk tarama); `spawn` yerine F2 relay'i hazır olunca kuyruk.
+- **DoD:** her rol için bir koşu → bir `AgentRun` satırı (test); süreç öldürülen `AgentJob` reaper'la `failed` olur (test); kullanıcının Audit sonucu `/context/me`'de görünür (canlı).
+
+#### S3 — Bağımsız doğrulama her rolde (H3) · ~1 hafta
+- [ ] Rol başına ayrı bir doğrulama adımı (aynı fonksiyon değil, ayrı LangGraph düğümü/adımı): (a) **aralık/şema** — skor kendi ölçeğinde, oranlar 0–1, sayımlar ≥ 0; (b) **uzlaştırma** — çıktı toplamları girdiyle tutar (CHRO çalışan sayısı = satır sayısı, CMO harcama toplamı = kampanya satırları, COO süreç sayısı); (c) **köken** — her metrik `data_source` taşır. Başarısız sert kontrol → `needs_review` (S1 kapısı yakalar).
+- **DoD:** her rol için kasıtlı bozuk fixture → doğrulayıcı yakalar, koşu incelemeye düşer.
+
+#### S4 — Veri ve skor sözleşmesi (H5, H6, H14) · ~1 hafta · F1 ile örtüşür
+- [ ] `dashboard_contract` modülü: kalıcı dashboard'un **tek** tipli okuyucusu (`period_opex`, aylık rakamlar, birim lira/kuruş açık). Dashboard'dan anahtar okuyan her modül (risk KRI, macro stress, CEO, triggers projector) buna geçer; kapı testi ham `pnl.get("total_opex")` / tahmini anahtar okumasını yasaklar.
+- [ ] `ScoreSpec` kayıt defteri: her rol skoru `{scale, polarity: higher_is_better|higher_is_worse, label}` ilan eder; UI tek bileşenle çizer ("Operasyon riski 0,5/10 — düşük iyidir"). Audit 0–100 de buraya.
+- [ ] Rol sonucuna `as_of` + kaynak iş kimliği; CEO sentezi bayat girdiyi (eşik: 30 gün) etiketler. (F3'ün `context_entries.version`'ı ile birleşir.)
+- **DoD:** sözleşme kapı testi yeşil; UI'da her skorun yönü yazılı; CEO çıktısında bayat rol etiketi (test).
+
+#### S5 — Hata hijyeni (H11, H12) · paralel iz
+- [ ] Ajanlardaki 37 sessiz yutma: her biri ya log + `StepResult(status=failed)` olur ya da gerçekten beklenen bir durum ise yorumla gerekçelendirilir. **Ratchet testi** (casing kapısı deseni): `agents/**`'taki `except Exception: pass` sayısı yalnız azalır.
+- [ ] API hata sözleşmesi: `detail=f"...{exc}"` → sabit, kullanıcıya uygun mesaj + log'da korelasyon kimliği; ratchet testi aynı.
+- **DoD:** iki ratchet yeşil ve tabanlar düşmüş.
+
+#### S6 — Ajan sağlık probu ve testler (H15) · S0 ile başlar
+- [ ] Bu taramada kullanılan canlı prob `scripts/agent_health_probe.py` olarak repoya girer: her rol pipeline'ını demo girdileriyle çalıştırır, sözleşme/NaN/`no_data`/kapı ihlallerini raporlar; `verify.py`'ye opsiyonel adım (CI'da SQLite).
+- [ ] Rol başına altın fixture testi (girdi → beklenen skor aralığı + uyarılar).
+- [x] Kararsız test: `test_muhasebe_throughput::test_the_event_loop_keeps_answering_while_a_large_statement_is_booked` tam paket yükünde iki kez düştü (0,516 sn ve 0,859 sn > 0,5 sn mutlak eşik; GIL çekişmesi), tek başına geçiyordu. Artık koşuya göreli: döngü ≥ 5 kez çalışmalı ve en uzun bekleme `max(0,5 sn, toplam/2)`'nin altında kalmalı — eski gerilemeyi (döngü iş bitene kadar hiç çalışmaz) yine yakalar, yükte rastgele düşmez.
+
+### Sıra ve §V5 ile ilişki
+**S0 → S1 → S2 → F1 → S3 → S4 → F2 …**, S5/S6 paralel.
+- S0 kullanıcıya yanlış sakinlik gösteren hataları kapatır (en ucuz, en yüksek risk).
+- S1–S2 her rolü aynı kapı ve kayıttan geçirir; F1 defteri bunun üstüne kurulur.
+- S4'ün sözleşme okuyucusu F1'in defter görünümleriyle aynı yerde birleşir; tazelik (H14) F3'ün sürümlü bağlamıyla kapanır.
+
+### Sahip kararları (§V6)
+- `POST /context/{org_id}` kaldırılsın mı (H9)?
+- C-suite'te incelemeye düşen koşuyu kim onaylar (rol sahibi mi, owner/admin mi)? S1'in onay ucu buna göre.
+- CLAUDE.md'deki "JobLog" ifadesinin "AgentRun" olarak güncellenmesi (yasa metni değişikliği).
 
 ---
 
