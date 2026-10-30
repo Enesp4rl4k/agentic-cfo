@@ -29,11 +29,12 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api.access import PUBLIC_ROUTES
 from app.database import Base, get_db
 from app.main import app
+from tests.db_helpers import gecici_motor
 
 AUTH_DEPENDENCIES = {"get_current_user", "require_tr_pack", "stream_ticket_user"}
 JOB_DEPENDENCIES = {"owned_job", "stream_ticket_user"}
@@ -213,7 +214,7 @@ def test_no_route_trusts_a_role_across_organisations() -> None:
 
 @pytest_asyncio.fixture
 async def client():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = gecici_motor(echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

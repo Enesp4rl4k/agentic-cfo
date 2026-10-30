@@ -13,18 +13,20 @@ from typing import Any
 
 from httpx import ASGITransport, AsyncClient
 
+from tests.db_helpers import gecici_motor
+
 PAROLA = "StrongPassword123!"
 
 
 @asynccontextmanager
 async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
     """The app on a fresh in-memory schema; `client._maker` opens sessions on it."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from app.database import Base, get_db
     from app.main import app
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

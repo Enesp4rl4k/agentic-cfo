@@ -25,7 +25,7 @@ from typing import Any, get_args
 
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database import Base
 from app.models.alert_rule import AlertHistory
@@ -41,6 +41,7 @@ from app.services.triggers.sources import (
     emit_schedule_tick,
     emit_tx_arrived,
 )
+from tests.db_helpers import gecici_motor
 
 ORG = "org-trigger-src"
 
@@ -52,7 +53,7 @@ DASH_SAFE_RUNWAY = {"forecast": {"scenarios": {"base": {"runway_months": 12.0}}}
 
 @pytest_asyncio.fixture
 async def db():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = gecici_motor(echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

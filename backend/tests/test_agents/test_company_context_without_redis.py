@@ -11,17 +11,18 @@ saved, and its downstream steps skipped for "no CFO data". Seen in a live run:
 from __future__ import annotations
 
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.database as database
 import app.models.company_context  # noqa: F401 — registers the table
 import app.services.company_context as cc
 from app.database import Base
+from tests.db_helpers import gecici_motor
 
 
 @pytest_asyncio.fixture
 async def maker(monkeypatch):
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = gecici_motor(echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     m = async_sessionmaker(engine, expire_on_commit=False)

@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.services.ingest.ekle as ekle
 from app.database import Base
 from app.models.analysis_job import AnalysisJob
 from app.models.data_source import DataSource, DataSourceDomain, DataSourceType
+from tests.db_helpers import gecici_motor
 
 _FATURA = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
@@ -30,7 +31,7 @@ def _fatura(n: int) -> bytes:
 
 @pytest_asyncio.fixture
 async def db(monkeypatch, tmp_path):
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

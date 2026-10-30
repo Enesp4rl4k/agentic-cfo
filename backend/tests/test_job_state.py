@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 import pytest_asyncio
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.database import Base
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -25,11 +25,12 @@ from app.services.job_state import (
     mark_enqueue_lease,
     purge_job_outputs,
 )
+from tests.db_helpers import gecici_motor
 
 
 @pytest_asyncio.fixture
 async def maker():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)

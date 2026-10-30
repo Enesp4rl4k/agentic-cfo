@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.main  # noqa: F401  — force full model registration for create_all
 from app.connectors import registry
@@ -22,6 +22,7 @@ from app.connectors.runner import run_connector_sync
 from app.database import Base
 from app.models.canonical_eng_signal import CanonicalEngSignal
 from app.models.connector_connection import ConnectorConnection
+from tests.db_helpers import gecici_motor
 
 pytestmark = pytest.mark.connectors
 
@@ -30,7 +31,7 @@ pytestmark = pytest.mark.connectors
 
 @pytest_asyncio.fixture
 async def db():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = gecici_motor()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, expire_on_commit=False)
