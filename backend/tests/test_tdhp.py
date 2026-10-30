@@ -26,7 +26,8 @@ from app.parsers.accounting.netsis import NetsisParser
 ])
 def test_the_account_decides_the_role(kod, rol, kategori):
     h = tdhp.hesap(kod)
-    assert h is not None and (h.rol, h.kategori) == (rol, kategori)
+    assert h is not None
+    assert (h.rol, h.kategori) == (rol, kategori)
 
 
 @pytest.mark.parametrize("kod", ["701", "800", "", "abc"])
