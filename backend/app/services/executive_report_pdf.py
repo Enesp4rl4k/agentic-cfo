@@ -434,10 +434,14 @@ def generate_executive_report(
     Returns:
         PDF bytes
     """
+    from app.services.pdf import PDFRenderError
+
     try:
         from weasyprint import HTML
-    except ImportError as exc:
-        raise RuntimeError(f"weasyprint not installed: {exc}") from exc
+    except (ImportError, OSError) as exc:
+        # OSError, not ImportError, is what a missing Pango/GObject raises —
+        # it slipped past and became an unhandled 500 (plan v7 §P0 / W3).
+        raise PDFRenderError(f"PDF motoru (WeasyPrint) kullanılamıyor: {exc}") from exc
 
     if not period:
         # Try to detect period from transactions
@@ -464,4 +468,4 @@ def generate_executive_report(
         return pdf_bytes
     except Exception as exc:
         logger.exception("WeasyPrint failed to generate executive report")
-        raise RuntimeError(f"PDF generation failed: {exc}") from exc
+        raise PDFRenderError(f"PDF üretilemedi: {exc}") from exc

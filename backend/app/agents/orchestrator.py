@@ -142,6 +142,10 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
         patch.update({"halted": True, "awaiting_review": True, "error": result.detail})
     if result.needs_review:
         patch["awaiting_review"] = True
+    # Below the auto-proceed bar the run is held for a person — but still
+    # analysed, so the person reviews numbers, not a blank (plan v7 §P0).
+    if float(patch.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN:
+        patch["awaiting_review"] = True
 
     # After ingestion, build routing plan for downstream agents
     merged_state = {**state, **patch}
@@ -313,21 +317,31 @@ async def node_hold_for_review(state: CFOState, config: dict) -> CFOState:
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
+# The gate holds *actions*, not *results* (plan v7 §P0 / W1). A held run used to
+# stop before `report_node`, so it saved no dashboard — and approval, which
+# continues from the saved results, then had nothing to continue from: every
+# analysis the gate held showed no dashboard, even after a person approved it.
+# Now a held run computes and saves its report like any other, stays
+# `awaiting_review` (the person reviews the actual numbers), and approval
+# releases what acts on them: company context, the auto-chain, the triggers.
+
+
 def route_after_verifier(state: CFOState) -> str:
     if state.get("halted"):
         return ROUTE_END
-    if state.get("awaiting_review"):
-        return ROUTE_HOLD
     return ROUTE_REPORT
 
 
+def route_after_report(state: CFOState) -> str:
+    """After the report is built: held runs record the hold, the rest end."""
+    return ROUTE_HOLD if state.get("awaiting_review") else ROUTE_END
+
+
 def route_after_ingestion(state: CFOState) -> str:
+    # Low parse confidence holds the run for review (node_data_ingestion sets
+    # `awaiting_review`); it no longer skips the analysis the reviewer needs.
     if state.get("halted"):
         return ROUTE_END
-    if state.get("awaiting_review"):
-        return ROUTE_HOLD
-    if (state.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN:
-        return ROUTE_HOLD
     return ROUTE_PNL
 
 
@@ -373,7 +387,6 @@ def build_cfo_graph() -> StateGraph:
         route_after_ingestion,
         {
             ROUTE_PNL:  "pnl_node",
-            ROUTE_HOLD: "hold_for_review_node",
             ROUTE_END:  END,
         },
     )
@@ -415,11 +428,17 @@ def build_cfo_graph() -> StateGraph:
         route_after_verifier,
         {
             ROUTE_REPORT: "report_node",
-            ROUTE_HOLD:   "hold_for_review_node",
             ROUTE_END:    END,
         },
     )
-    graph.add_edge("report_node",          END)
+    graph.add_conditional_edges(
+        "report_node",
+        route_after_report,
+        {
+            ROUTE_HOLD: "hold_for_review_node",
+            ROUTE_END:  END,
+        },
+    )
     graph.add_edge("hold_for_review_node", END)
 
     return graph
