@@ -705,6 +705,11 @@ async def apply_company_view(
     from app.services.company_context import get_company_context, save_company_context
     from app.services.company_view import should_replace
 
+    # Both reach here from an HTTP request (POST /analysis/{id}/company-view)
+    # and are written into log lines below; strip CR/LF as run_cfo_analysis does.
+    job_id = str(job_id).replace("\r", "").replace("\n", "")
+    org_id = str(org_id).replace("\r", "").replace("\n", "")
+
     try:
         ctx_obj = await get_company_context(org_id, db)
         current = (ctx_obj.last_cfo_result or {}).get("dashboard")
