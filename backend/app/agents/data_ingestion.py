@@ -47,7 +47,10 @@ _CATEGORY_RULES: list[tuple[str, list[str], int]] = [
     # ── Payroll ───────────────────────────────────────────────────────────────
     ("salary",        ["salary", "payroll", "maaş", "ücret", "sigorta",
                        "wages", "employee", "social security",
-                       "sgk", "personel", "staff"],                             75),
+                       "sgk", "personel", "staff",
+                       # a bonus or severance is pay: "Yıl Sonu Prim" fell to
+                       # its sales account's default, marketing
+                       "prim", "ikramiye", "kıdem", "bonus"],                   75),
     # ── KDV ── collected for the state and paid over: cash, not profit, for a
     # KDV-registered company. Above "tax", which would put it under EBITDA.
     ("tax_payment",   ["kdv", "katma değer vergisi", "vat payment", "vat"],     74),
@@ -64,7 +67,9 @@ _CATEGORY_RULES: list[tuple[str, list[str], int]] = [
     ("rent",          ["kira", "office rent", "rent payment",
                        "lease payment", "rent", "lease"],                       65),
     # ── Utilities ─────────────────────────────────────────────────────────────
-    ("utilities",     ["elektrik", "su faturası", "doğalgaz", "fatura",
+    # Not bare "fatura": every bill is a fatura, and "AWS ... Faturası"
+    # became a utility, out-ranking "aws".
+    ("utilities",     ["elektrik", "su faturası", "doğalgaz",
                        "electricity", "water bill", "gas bill",
                        "internet", "phone", "telecom", "utilities"],           60),
     # ── Marketing ─────────────────────────────────────────────────────────────

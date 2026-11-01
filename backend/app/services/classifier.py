@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 KEYWORD_RULES: dict[str, list[str]] = {
     "revenue":        ["satış", "gelir", "tahsilat", "sales", "income", "revenue", "payment received"],
     "cogs":           ["hammadde", "malzeme", "raw material", "goods", "manufacturing", "inventory"],
-    "salary":         ["maaş", "ücret", "bordro", "sgk", "salary", "payroll", "wages", "staff"],
+    "salary":         ["maaş", "ücret", "bordro", "sgk", "prim", "ikramiye", "kıdem",
+                       "salary", "payroll", "wages", "staff", "bonus"],
     "rent":           ["kira", "kiralık", "rent", "lease"],
     "utilities":      ["elektrik", "su", "doğalgaz", "electricity", "water", "gas", "internet", "phone"],
     "marketing":      ["reklam", "pazarlama", "advertising", "marketing", "google ads", "meta ads"],
