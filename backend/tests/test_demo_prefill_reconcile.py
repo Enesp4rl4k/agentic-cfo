@@ -23,10 +23,8 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api.org import _regional_defaults
-from app.database import Base
 from app.models.agent_job import AgentJob, AgentJobStatus
 from app.models.organization import Organization
 from app.services.company_context import (
@@ -34,7 +32,7 @@ from app.services.company_context import (
     get_company_context,
     save_company_context,
 )
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_oturum
 
 _PREFILL = Path(__file__).resolve().parents[1] / "scripts" / "demo_prefill.py"
 _T0 = datetime(2026, 10, 14, 10, 0, 0, tzinfo=UTC)
@@ -51,13 +49,8 @@ def _load_prefill():
 
 @pytest_asyncio.fixture
 async def db():
-    engine = gecici_motor(echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
+    async with gecici_oturum() as session:
         yield session
-    await engine.dispose()
 
 
 def _job(org_id: str, agent: str, *, created: datetime, status, result, jid: str):

@@ -3,7 +3,7 @@ Tests for RAG v1 service helpers.
 """
 import app.services.rag_service as rag
 from app.services.rag_service import _chunk_text, _tfidf_similarity
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_oturum
 
 
 def test_chunk_text_splits_large_input() -> None:
@@ -37,15 +37,6 @@ async def test_embedding_runs_before_the_transaction_opens(monkeypatch) -> None:
     transactions short). The pin: the first DB statement comes after the
     embed call.
     """
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    from app.database import Base
-
-    engine = gecici_motor()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
     order: list[str] = []
 
     def _embed_spy(texts: list[str]) -> list[list[float]] | None:
@@ -54,7 +45,7 @@ async def test_embedding_runs_before_the_transaction_opens(monkeypatch) -> None:
 
     monkeypatch.setattr(rag, "_embed_texts", _embed_spy)
 
-    async with maker() as db:
+    async with gecici_oturum() as db:
         real_execute = db.execute
 
         async def _execute_spy(*args, **kwargs):
@@ -71,7 +62,6 @@ async def test_embedding_runs_before_the_transaction_opens(monkeypatch) -> None:
         )
         await db.rollback()
 
-    await engine.dispose()
 
     assert written >= 1
     assert order[0] == "embed"      # BEFORE any statement touches the txn

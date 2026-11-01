@@ -12,38 +12,21 @@ import asyncio
 from typing import Any
 
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.database as database
 import app.worker as worker
-from app.database import Base, get_db
-from app.main import app
-from tests.db_helpers import gecici_motor
+from tests.api_helpers import bellek_istemcisi
 
 
 @pytest_asyncio.fixture
 async def client():
-    engine = gecici_motor(echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def override_get_db():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        c._maker = maker  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as c:
         yield c
         # The approval spawns its continuation; let it end inside this test.
         from tests.api_helpers import arka_plan_bitsin
 
         await arka_plan_bitsin()
-    app.dependency_overrides.clear()
-    await engine.dispose()
 
 
 async def _user(client, email: str) -> tuple[dict[str, str], str, str]:

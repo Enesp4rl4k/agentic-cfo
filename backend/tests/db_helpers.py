@@ -23,10 +23,17 @@ import os
 import shutil
 import tempfile
 import uuid
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 _DIR = tempfile.mkdtemp(prefix="aicfo_test_db_")
 atexit.register(shutil.rmtree, _DIR, ignore_errors=True)
@@ -57,3 +64,24 @@ def gecici_motor(**kwargs: Any) -> AsyncEngine:
                 pass
 
     return engine
+
+
+@asynccontextmanager
+async def gecici_veritabani(tables: Sequence[Any] | None = None) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """The app's schema (or just `tables`) on a fresh file; yields its sessionmaker."""
+    from app.database import Base
+
+    engine = gecici_motor()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=tables))
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+
+
+@asynccontextmanager
+async def gecici_oturum() -> AsyncIterator[AsyncSession]:
+    """One session on a fresh schema, for tests that need nothing more."""
+    async with gecici_veritabani() as maker, maker() as session:
+        yield session

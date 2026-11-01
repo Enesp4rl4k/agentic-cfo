@@ -13,10 +13,9 @@ from typing import Any
 
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import Base
 from app.models.alert_rule import AlertHistory
 from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat, ReportType
@@ -31,20 +30,15 @@ from app.services.triggers import (
     row_to_definition,
 )
 from app.services.triggers.actions import ACTION_REGISTRY
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_oturum
 
 ORG = "org-trigger-test"
 
 
 @pytest_asyncio.fixture
 async def db():
-    engine = gecici_motor(echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as session:
+    async with gecici_oturum() as session:
         yield session
-    await engine.dispose()
 
 
 async def _mk_trigger(

@@ -18,14 +18,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api.org import _regional_defaults
 from app.config import get_settings
-from app.database import Base, get_db
-from app.main import app
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
@@ -44,33 +40,16 @@ from app.services.demo_template import (
     GUEST_DESCRIPTION,
     purge_demo_workspace,
 )
-from tests.db_helpers import gecici_motor
+from tests.api_helpers import bellek_istemcisi
 from tests.golden_seed import _auth, _guest, _seed_golden
 
 
 @pytest_asyncio.fixture
 async def test_client(monkeypatch):
     """In-memory DB dependency override + demo_mode on (test_demo_clone kalıbı)."""
-    test_engine = gecici_motor(echo=False)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    async def override_get_db():
-        async with TestSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setattr(get_settings(), "demo_mode", True)
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        client._test_sessionmaker = TestSessionLocal  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as client:
         yield client
-
-    app.dependency_overrides.clear()
-    await test_engine.dispose()
 
 
 async def _count(sessionmaker, model, **filters) -> int:

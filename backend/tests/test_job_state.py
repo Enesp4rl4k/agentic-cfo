@@ -12,9 +12,7 @@ from datetime import UTC, datetime
 
 import pytest_asyncio
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.database import Base
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.report import Report
 from app.models.transaction import Transaction
@@ -25,16 +23,13 @@ from app.services.job_state import (
     mark_enqueue_lease,
     purge_job_outputs,
 )
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_veritabani
 
 
 @pytest_asyncio.fixture
 async def maker():
-    engine = gecici_motor()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield async_sessionmaker(engine, expire_on_commit=False)
-    await engine.dispose()
+    async with gecici_veritabani() as maker:
+        yield maker
 
 
 async def _add_job(

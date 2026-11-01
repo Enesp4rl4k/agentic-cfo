@@ -27,14 +27,11 @@ from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api.access import PUBLIC_ROUTES
-from app.database import Base, get_db
 from app.main import app
-from tests.db_helpers import gecici_motor
+from tests.api_helpers import bellek_istemcisi
 
 AUTH_DEPENDENCIES = {"get_current_user", "require_tr_pack", "stream_ticket_user"}
 JOB_DEPENDENCIES = {"owned_job", "stream_ticket_user"}
@@ -214,21 +211,8 @@ def test_no_route_trusts_a_role_across_organisations() -> None:
 
 @pytest_asyncio.fixture
 async def client():
-    engine = gecici_motor(echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def override_get_db():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        c._maker = maker  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as c:
         yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
 
 
 async def _member(client, email: str, *, org: bool = True):

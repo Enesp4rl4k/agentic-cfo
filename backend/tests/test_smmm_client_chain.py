@@ -22,10 +22,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
-    async_sessionmaker,
 )
 
-from app.database import Base
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
@@ -36,7 +34,7 @@ from app.services.smmm_clients import (
     assert_owns_client,
     status_for_clients,
 )
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_oturum
 
 
 @pytest_asyncio.fixture
@@ -46,13 +44,8 @@ async def db_session():
     Matches the pattern in test_api_integration; there is no shared session
     fixture in this suite.
     """
-    engine = gecici_motor(echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as session:
+    async with gecici_oturum() as session:
         yield session
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture

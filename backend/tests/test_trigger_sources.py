@@ -25,9 +25,8 @@ from typing import Any, get_args
 
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import Base
 from app.models.alert_rule import AlertHistory
 from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
 from app.services.semantic.store import save_semantic_snapshot
@@ -41,7 +40,7 @@ from app.services.triggers.sources import (
     emit_schedule_tick,
     emit_tx_arrived,
 )
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_oturum
 
 ORG = "org-trigger-src"
 
@@ -53,13 +52,8 @@ DASH_SAFE_RUNWAY = {"forecast": {"scenarios": {"base": {"runway_months": 12.0}}}
 
 @pytest_asyncio.fixture
 async def db():
-    engine = gecici_motor(echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as session:
+    async with gecici_oturum() as session:
         yield session
-    await engine.dispose()
 
 
 async def _mk_trigger(

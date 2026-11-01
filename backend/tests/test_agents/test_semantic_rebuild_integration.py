@@ -6,9 +6,8 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import Base
 from app.models.agent_conflict import AgentConflict
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.company_context import CompanyContextSnapshot
@@ -21,7 +20,7 @@ from app.services.context_persist import persist_agent_completion
 from app.services.semantic.conflicts import list_org_conflicts
 from app.services.semantic.rebuild import rebuild_semantic_snapshot
 from app.services.semantic.store import get_semantic_snapshot
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_veritabani
 
 ORG_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 PERIOD_KEY = "2026-08"
@@ -45,26 +44,16 @@ async def db_session(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("app.services.company_context._get_redis", _no_redis)
 
-    engine = gecici_motor()
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: Base.metadata.create_all(
-                sync_conn,
-                tables=[
-                    Organization.__table__,
-                    User.__table__,
-                    CompanyContextSnapshot.__table__,
-                    CompanySemanticSnapshotRow.__table__,
-                    SyncRun.__table__,
-                    CanonicalTransaction.__table__,
-                    AgentConflict.__table__,
-                ],
-            )
-        )
-    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    async with factory() as session:
+    async with gecici_veritabani(tables=[
+        Organization.__table__,
+        User.__table__,
+        CompanyContextSnapshot.__table__,
+        CompanySemanticSnapshotRow.__table__,
+        SyncRun.__table__,
+        CanonicalTransaction.__table__,
+        AgentConflict.__table__,
+    ]) as factory, factory() as session:
         yield session
-    await engine.dispose()
 
 
 async def _seed_contradiction_org(db: AsyncSession) -> None:

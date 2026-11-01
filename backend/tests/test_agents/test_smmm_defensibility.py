@@ -5,10 +5,8 @@ from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.main  # noqa: F401 — full model registration
-from app.database import Base
 from app.models.agent_run import AgentRun
 from app.models.report import Report, ReportFormat
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
@@ -18,18 +16,13 @@ from app.services.smmm_defensibility import (
     content_hash,
     finalize_packet,
 )
-from tests.db_helpers import gecici_motor
+from tests.db_helpers import gecici_oturum
 
 
 @pytest_asyncio.fixture
 async def db():
-    engine = gecici_motor()
-    async with engine.begin() as c:
-        await c.run_sync(Base.metadata.create_all)
-    Session = async_sessionmaker(engine, expire_on_commit=False)
-    async with Session() as s:
+    async with gecici_oturum() as s:
         yield s
-    await engine.dispose()
 
 
 def _entry(kayit_id: str, code: str, amount: int, *, needs_review: bool, conf: float):
