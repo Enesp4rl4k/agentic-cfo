@@ -231,6 +231,15 @@ class MuhasebeAgent:
         distinct input, since the same input gets the same answer. Each row's
         result is what the one-at-a-time loop would have given it.
         """
+        from app.services.accounting.thp_classifier import kaynak_sonucu
+
+        # A row whose source names its account keeps it; the rest are classified.
+        # The codes are Tekdüzen Hesap Planı codes: only a TR chart reads them.
+        tdhp_okur = not self.regional_packs or "tr" in self.regional_packs
+        kaynaktan = [
+            kaynak_sonucu(tx.get("account_code")) if tdhp_okur else None
+            for tx in transactions
+        ]
         girdiler = [
             {
                 "description": tx.get("description") or tx.get("vendor") or "",
@@ -241,12 +250,12 @@ class MuhasebeAgent:
             for tx in transactions
         ]
         sonuclar: list[THPSonucu] = await asyncio.to_thread(
-            lambda: [self.classifier.classify(**g) for g in girdiler]
+            lambda: [k or self.classifier.classify(**g) for k, g in zip(kaynaktan, girdiler, strict=True)]
         )
         if not self.use_llm_fallback:
             return sonuclar
 
-        eksik = [i for i, r in enumerate(sonuclar) if getattr(r, "yontem", None) != "kural"]
+        eksik = [i for i, r in enumerate(sonuclar) if getattr(r, "yontem", None) not in ("kural", "kaynak")]
         if not eksik:
             return sonuclar
         sinir = asyncio.Semaphore(_LLM_ESZAMANLI)

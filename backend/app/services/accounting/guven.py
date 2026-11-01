@@ -31,6 +31,13 @@ from typing import Any
 
 # Levels, strongest evidence first. Keys are stored in journals and onay
 # records; labels are what a reviewer reads.
+#
+# KAYNAK is not a classification: the source — the company's own books, a
+# Logo/Netsis posting list or the e-Defter — names the account, and the entry
+# copies it (plan v8 §A4). There is nothing of ours to measure, so it is
+# trusted as the source is, and says so; once the organisation's SMMM has
+# decided GECMIS_ESIGI of them, their own hit rate replaces that.
+KAYNAK = "kaynak_hesap"
 GUCLU_KURAL = "guclu_kural"
 KURAL = "kural"
 ZAYIF_KURAL = "zayif_kural"
@@ -38,6 +45,11 @@ LLM = "llm"
 VARSAYILAN = "varsayilan"
 
 SEVIYELER: dict[str, dict[str, str]] = {
+    KAYNAK: {
+        "etiket": "Kaynak kayıttaki hesap",
+        "aciklama": "Hesabı şirketin kendi muhasebe kaydı belirledi; sistem sınıflandırma yapmadı.",
+        "kontrol": "Kaynak kaydın hesabı muhasebecinin kararıdır; tutar ve dönemi kontrol edin.",
+    },
     GUCLU_KURAL: {
         "etiket": "Güçlü eşleşme",
         "aciklama": "Açıklamada birden çok kelimelik bir hesap ifadesi birebir geçiyor.",
@@ -71,6 +83,7 @@ SEVIYELER: dict[str, dict[str, str]] = {
 # describe a classifier that no longer exists. Levels that cannot be measured
 # offline (the LLM needs a live key; the default is not evidence) are (0, 0).
 KORPUS_OLCUMU: dict[str, tuple[int, int]] = {
+    KAYNAK: (0, 0),
     GUCLU_KURAL: (11, 11),
     KURAL: (26, 29),
     ZAYIF_KURAL: (9, 9),
@@ -102,14 +115,18 @@ class Guven:
     kanit: str
     dogru: int
     toplam: int
-    kaynak: str          # "korpus" | "kurum" | "olculmedi"
+    kaynak: str          # "korpus" | "kurum" | "olculmedi" | "belge"
 
     @property
     def skor(self) -> float:
+        if self.kaynak == "belge":
+            return 1.0   # the source's own account — copied, not inferred
         return round(wilson_alt_sinir(self.dogru, self.toplam), 3)
 
     @property
     def olcum_metni(self) -> str:
+        if self.kaynak == "belge":
+            return "kaynak kayıttan alındı — sınıflandırma yapılmadı"
         if self.toplam == 0:
             return "isabeti ölçülmedi"
         yer = "sizin onaylarınızda" if self.kaynak == "kurum" else "test setinde"
@@ -144,6 +161,8 @@ def degerlendir(
     kendi = (gecmis or {}).get(seviye)
     if kendi and kendi[1] >= GECMIS_ESIGI:
         return Guven(seviye, kanit, kendi[0], kendi[1], "kurum")
+    if seviye == KAYNAK:
+        return Guven(seviye, kanit, 0, 0, "belge")
     dogru, toplam = KORPUS_OLCUMU.get(seviye, (0, 0))
     return Guven(seviye, kanit, dogru, toplam, "korpus" if toplam else "olculmedi")
 
