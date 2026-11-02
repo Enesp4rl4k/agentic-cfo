@@ -474,7 +474,7 @@ async def reject_agent_job(
     return {"data": {"job_id": job_id, "approved": False}, "error": None}
 
 
-@router.get("/agent-jobs/{job_id}")
+@router.get("/agent-jobs/{job_id}", responses={404: {"description": "Job not found."}})
 async def get_agent_job(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -520,7 +520,14 @@ async def list_agent_jobs(
     }
 
 
-@router.delete("/agent-jobs/{job_id}", status_code=204)
+@router.delete(
+    "/agent-jobs/{job_id}",
+    status_code=204,
+    responses={
+        404: {"description": "Job not found."},
+        409: {"description": "A running job cannot be deleted."},
+    },
+)
 async def delete_agent_job(
     job_id: str,
     current_user: User = Depends(get_current_user),

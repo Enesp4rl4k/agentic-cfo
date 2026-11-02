@@ -6,11 +6,11 @@ import { useI18n } from "@/hooks/useI18n";
 import type { GateDecision } from "@/lib/api/agentReview";
 
 /** Says a result on screen is not yet the company's: it awaits the owner's approval. */
-export function HeldResultNotice({ gate }: { gate?: GateDecision | null }) {
+export function HeldResultNotice({ gate }: Readonly<{ gate?: GateDecision | null }>) {
   const { t } = useI18n();
   if (!gate?.awaiting_review) return null;
   return (
-    <div role="status" className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+    <output className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
       <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
       <div>
         <p>{t.reviewQueue.heldNotice}</p>
@@ -21,6 +21,6 @@ export function HeldResultNotice({ gate }: { gate?: GateDecision | null }) {
           {t.reviewQueue.goToQueue}
         </Link>
       </div>
-    </div>
+    </output>
   );
 }
