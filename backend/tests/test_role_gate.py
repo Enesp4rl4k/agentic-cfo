@@ -176,7 +176,8 @@ async def test_only_the_owner_of_this_company_can_approve(ortam):
 
     analist, _, analist_id = await kullanici(client, "analist@example.com", attach_org=False)
     async with client._maker() as db:
-        (await db.get(User, analist_id)).org_id = org_id
+        analist_satiri = await db.get(User, analist_id)
+        analist_satiri.org_id = org_id
         await db.commit()
     assert (await client.post(url, headers=analist)).status_code == 403
     assert not await _context_result(client, org_id)

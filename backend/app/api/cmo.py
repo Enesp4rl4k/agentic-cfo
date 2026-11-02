@@ -72,12 +72,13 @@ async def run_cmo_analysis(
             cohort_csv=body.cohort_csv,
         ))
 
+        inceleme = None
         if current_user.org_id and not result.get("error"):
             try:
                 from app.agents.orchestration.auto_chain import on_agent_complete
                 from app.services.context_persist import persist_agent_completion
 
-                await persist_agent_completion(
+                inceleme = await persist_agent_completion(
                     str(current_user.org_id),
                     "cmo",
                     dict(result),
@@ -109,6 +110,7 @@ async def run_cmo_analysis(
                 "cmo_summary":     result.get("cmo_summary"),
                 "logs":            logs_serializable,
                 "error":           result.get("error"),
+                "inceleme": inceleme,
             },
             "error": None,
         }

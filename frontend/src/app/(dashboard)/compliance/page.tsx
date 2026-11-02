@@ -1,5 +1,7 @@
 "use client";
 
+import { HeldResultNotice } from "@/components/ui/held-result-notice";
+import type { GateDecision } from "@/lib/api/agentReview";
 import { useState } from "react";
 import {
   ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2,
@@ -55,6 +57,7 @@ interface ComplianceSummary {
 }
 
 interface ComplianceResult {
+  inceleme?: GateDecision | null;
   job_id: string; company_name: string | null;
   policies: PoliciesData | null; violations: ViolationsData | null;
   regulations: RegulationsData | null; compliance_summary: ComplianceSummary | null;
@@ -272,6 +275,7 @@ export default function CompliancePage() {
   const [companyName,    setCompanyName]    = useState("");
   const [loading,        setLoading]        = useState(false);
   const [result,         setResult]         = useState<ComplianceResult | null>(null);
+  const [inceleme, setInceleme] = useState<GateDecision | null>(null);
   const [error,          setError]          = useState<string | null>(null);
 
   async function handleAnalyze() {
@@ -288,6 +292,7 @@ export default function CompliancePage() {
       );
       if (res.data.error) throw new Error(res.data.error);
       setResult(res.data.data);
+      setInceleme(res.data.data.inceleme ?? null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Analysis failed");
     } finally {
@@ -364,6 +369,7 @@ export default function CompliancePage() {
           {loading ? "Analyzing…" : "Run Compliance Analysis"}
         </button>
 
+<HeldResultNotice gate={inceleme} />
         {error && (
           <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
             <XCircle className="h-4 w-4 shrink-0" aria-hidden="true" />

@@ -1,5 +1,7 @@
 "use client";
 
+import { HeldResultNotice } from "@/components/ui/held-result-notice";
+import type { GateDecision } from "@/lib/api/agentReview";
 import { useEffect, useState } from "react";
 import {
   Users, TrendingUp, TrendingDown, AlertTriangle,
@@ -331,6 +333,7 @@ export default function CHRODashboardPage() {
   const [period,   setPeriod]   = useState("");
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState<CHROView | null>(null);
+  const [inceleme, setInceleme] = useState<GateDecision | null>(null);
   const [error,    setError]    = useState<string | null>(null);
   // U2/1.5: context fetch while in flight — hint instead of a false "no
   // analysis" flash; the paste form below opens immediately regardless.
@@ -377,6 +380,7 @@ export default function CHRODashboardPage() {
       );
       if (res.data.error) throw new Error(res.data.error);
       setResult(normalizeCHROResult(res.data));
+      setInceleme(res.data.inceleme ?? null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t.roleDashboards.chro.body.unknownError);
     } finally {
@@ -392,6 +396,7 @@ export default function CHRODashboardPage() {
         description={t.roleDashboards.chro.description}
       />
 
+<HeldResultNotice gate={inceleme} />
       {hydrating && !result && <HydrationHint />}
 
       {/* The one entry point: real data, or what is missing and how to get it.

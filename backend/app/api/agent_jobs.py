@@ -35,6 +35,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+_JOB_NOT_FOUND = "Job bulunamadı."
+
+
 def _jsonable(value: Any) -> Any:
     """Recursively coerce pipeline output into JSON-safe primitives.
 
@@ -136,6 +139,10 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
     Opens its own DB session — never shares the request session.
     """
     from app.database import engine, get_session_factory
+
+    # Both reach here from an HTTP request and are written into log lines below.
+    job_id = str(job_id).replace("\r", "").replace("\n", "")
+    agent_type = str(agent_type).replace("\r", "").replace("\n", "")
 
     async with get_session_factory(engine())() as db:
         # Atomic claim: however many times this is delivered, one run happens.
@@ -420,7 +427,7 @@ async def approve_held_job(db: AsyncSession, job: AgentJob, approved_by: str) ->
 async def _held_job_of_org(db: AsyncSession, job_id: str, user: User) -> AgentJob:
     job = await db.get(AgentJob, job_id)
     if not job or job.org_id != _require_org(user):
-        raise HTTPException(404, "Job bulunamadı.")
+        raise HTTPException(404, _JOB_NOT_FOUND)
     return job
 
 
@@ -478,7 +485,7 @@ async def get_agent_job(
 
     job = await db.get(AgentJob, job_id)
     if not job or job.org_id != org_id:
-        raise HTTPException(404, "Job bulunamadı.")
+        raise HTTPException(404, _JOB_NOT_FOUND)
 
     return {"data": _job_dict(job), "error": None}
 
@@ -524,7 +531,7 @@ async def delete_agent_job(
 
     job = await db.get(AgentJob, job_id)
     if not job or job.org_id != org_id:
-        raise HTTPException(404, "Job bulunamadı.")
+        raise HTTPException(404, _JOB_NOT_FOUND)
 
     if job.status == AgentJobStatus.RUNNING:
         raise HTTPException(409, "Çalışan job silinemez. Tamamlanmasını bekleyin.")

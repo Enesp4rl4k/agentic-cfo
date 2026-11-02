@@ -72,12 +72,13 @@ async def run_coo_analysis(
             sla_csv=body.sla_csv,
         ))
 
+        inceleme = None
         if current_user.org_id and not result.get("error"):
             try:
                 from app.agents.orchestration.auto_chain import on_agent_complete
                 from app.services.context_persist import persist_agent_completion
 
-                await persist_agent_completion(
+                inceleme = await persist_agent_completion(
                     str(current_user.org_id),
                     "coo",
                     dict(result),
@@ -109,6 +110,7 @@ async def run_coo_analysis(
                 "coo_summary":  result.get("coo_summary"),
                 "logs":         logs_serializable,
                 "error":        result.get("error"),
+                "inceleme": inceleme,
             },
             "error": None,
         }

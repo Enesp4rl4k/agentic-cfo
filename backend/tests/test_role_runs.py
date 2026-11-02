@@ -172,6 +172,19 @@ async def test_a_run_waiting_for_a_person_does_not_lower_the_success_rate(client
     assert "0.667" in res.text
 
 
+async def test_a_role_endpoint_tells_the_page_its_result_is_held(client):
+    """The CHRO page showed a held result as if it were the company's."""
+    headers, _, _ = await kullanici(client, "chro@example.com", role="owner")
+    res = await client.post("/api/v1/chro/analyze", headers=headers, json={
+        "headcount_csv": "employee_id,name,department,level,role,location,fte,start_date\n"
+                         "1,A,Eng,L1,Dev,IST,1,2024-01-01\n",
+        "attrition_csv": "employee_id,department,exit_date,reason\n",
+        "compensation_csv": "employee_id,base_salary\n1,1000\n",
+    })
+    assert res.status_code == 200, res.text
+    assert res.json()["inceleme"]["awaiting_review"] is True
+
+
 # ── claim and lease ───────────────────────────────────────────────────────────
 
 

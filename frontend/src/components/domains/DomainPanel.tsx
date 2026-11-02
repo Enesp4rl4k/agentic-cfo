@@ -13,7 +13,7 @@ import {
   type Alan,
   type AlanKodu,
 } from "@/lib/api/domains";
-import { useI18n } from "@/hooks/useI18n";
+import { HeldResultNotice } from "@/components/ui/held-result-notice";
 
 /**
  * A domain's single entry point: real data, or what is missing and how to get it.
@@ -67,8 +67,6 @@ export function DomainPanel({
       setBusy(null);
     }
   }
-
-  const { t } = useI18n();
 
   async function run() {
     if (!jobId) return;
@@ -124,12 +122,7 @@ export function DomainPanel({
         </Button>
       </div>
 
-      {data.inceleme?.awaiting_review && (
-        <p className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
-          {t.reviewQueue.heldNotice}
-          {" "}{data.inceleme.reasons.join(" ")}
-        </p>
-      )}
+      <HeldResultNotice gate={data.inceleme} />
 
       {data.cfo_gercek.kalemler.length > 0 && (
         <div className="rounded-md border border-border bg-muted/20 p-3">

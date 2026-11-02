@@ -36,24 +36,29 @@ const STEP_LABELS: Record<string, string> = {
   compliance_summary: "Uyumluluk özeti",
 };
 
+const BAR_COLOR: Partial<Record<AgentJobStatus, string>> = {
+  completed: "bg-success",
+  awaiting_review: "bg-warning",
+  failed: "bg-destructive",
+};
+
+const STATUS_TEXT: Partial<Record<AgentJobStatus, string>> = {
+  pending: "Sıraya alındı…",
+  running: "Analiz yapılıyor…",
+  completed: "Tamamlandı",
+  failed: "Başarısız",
+};
+
 // ── Progress bar ───────────────────────────────────────────────────────────────
 
 function ProgressBar({ progress, status }: { progress: number; status: AgentJobStatus | null }) {
   const { t } = useI18n();
   const pct = Math.max(0, Math.min(100, progress));
 
-  const barColor =
-    status === "completed" ? "bg-success" :
-    status === "awaiting_review" ? "bg-warning" :
-    status === "failed"    ? "bg-destructive" :
-    "bg-primary";
-
-  const statusText =
-    status === "pending"   ? "Sıraya alındı…" :
-    status === "running"   ? "Analiz yapılıyor…" :
-    status === "completed" ? "Tamamlandı" :
-    status === "awaiting_review" ? t.reviewQueue.status :
-    status === "failed"    ? "Başarısız" : "Bekleniyor";
+  const barColor = (status && BAR_COLOR[status]) || "bg-primary";
+  const statusText = status === "awaiting_review"
+    ? t.reviewQueue.status
+    : (status && STATUS_TEXT[status]) || "Bekleniyor";
 
   return (
     <div className="w-full">

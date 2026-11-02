@@ -35,6 +35,7 @@ export const tr: MessageTree = {
     reject: "Reddet",
     ownerOnly: "İşlem yapılamadı. Bu kararı yalnız şirket sahibi verebilir.",
     status: "Onay bekliyor",
+    goToQueue: "Onay kuyruğuna git",
     heldNotice: "Sonuç hazır, ama şirket görünümüne yazılmadı: Command Center'da sahibinin onayını bekliyor.",
   },
   ruleFeedback: {

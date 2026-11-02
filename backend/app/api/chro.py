@@ -55,12 +55,13 @@ async def run_chro_analysis(
             analysis_period=body.analysis_period,
         ))
 
+        inceleme = None
         if current_user.org_id and not result.get("error"):
             try:
                 from app.agents.orchestration.auto_chain import on_agent_complete
                 from app.services.context_persist import persist_agent_completion
 
-                await persist_agent_completion(
+                inceleme = await persist_agent_completion(
                     str(current_user.org_id),
                     "chro",
                     dict(result),
@@ -92,6 +93,7 @@ async def run_chro_analysis(
             "chro_summary": result.get("chro_summary"),
             "logs": logs_serializable,
             "error": result.get("error"),
+            "inceleme": inceleme,
         }
 
     except Exception as e:

@@ -2,6 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
+import { HeldResultNotice } from "@/components/ui/held-result-notice";
+import type { GateDecision } from "@/lib/api/agentReview";
 import { useState, useMemo } from "react";
 import {
   FileSearch, AlertTriangle, CheckCircle, Shield, BarChart2, Clock,
@@ -61,6 +63,7 @@ interface AuditResult {
   coverage: any | null;
   audit_summary: AuditSummary | null;
   error: string | null;
+  inceleme?: GateDecision | null;
 }
 
 // ── Placeholder CSV data ──────────────────────────────────────────────────────
@@ -365,6 +368,7 @@ export default function AuditDashboardEnhancedPage() {
   const [period, setPeriod] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
+  const [inceleme, setInceleme] = useState<GateDecision | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [sortBy, setSortBy] = useState<"severity" | "due_date" | "days_overdue">("severity");
@@ -387,6 +391,7 @@ export default function AuditDashboardEnhancedPage() {
       });
       if (res.data.error) throw new Error(res.data.error);
       setResult(normalizeAuditResult(res.data));
+      setInceleme(res.data.inceleme ?? null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t.audit.unknownError);
     } finally {
@@ -469,6 +474,7 @@ export default function AuditDashboardEnhancedPage() {
           ))}
         </div>
 
+<HeldResultNotice gate={inceleme} />
         {error && (
           <p role="alert" className="mb-3 rounded border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-400">
             {error}
