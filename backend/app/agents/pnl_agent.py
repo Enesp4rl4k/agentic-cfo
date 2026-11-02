@@ -14,6 +14,7 @@ from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core.tdhp import BILANCO_KATEGORILERI
 from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,13 @@ def _compute_trend(monthly: dict[str, int]) -> dict[str, Any]:
 
 
 def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pure calculation — no LLM, no I/O."""
+    """Pure calculation — no LLM, no I/O.
+
+    Balance-sheet movements (`tax_payment`, `transfer`) are cash, not profit: a
+    KDV payment or a loan drawn is neither an expense nor revenue. They stay in
+    the transactions for the cash flow and are left out here.
+    """
+    transactions = [t for t in transactions if t.get("category") not in BILANCO_KATEGORILERI]
     income_txs = [t for t in transactions if t.get("type") == "income"]
     expense_txs = [t for t in transactions if t.get("type") == "expense"]
 

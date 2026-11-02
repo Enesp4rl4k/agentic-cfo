@@ -146,18 +146,12 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
         # Budget agent
         "budget": state.get("budget"),
 
-        # Tax agent
-        "tax": (
-            {
-                "vat_payable": state["tax"]["vat"]["net_vat_payable"],
-                "withholding_tax": state["tax"]["withholding"]["income_tax_withholding"],
-                "corporate_tax_estimate": state["tax"]["corporate"]["corporate_tax_estimate"],
-                "total_tax_burden": state["tax"]["total_tax_burden"],
-                "payment_calendar": state["tax"]["payment_calendar"],
-                "narrative": state["tax"].get("narrative", ""),
-            }
-            if state.get("tax") else None
-        ),
+        # Tax agent — its own shape, in kuruş, which is what the tax page
+        # reads (tax.vat.net_vat_payable, tax.reference_month, tax.paid). This
+        # block used to be flattened into keys the page never read; nobody
+        # noticed because the router skipped the tax agent on every run
+        # (plan v8 §A2), so the block was always None.
+        "tax": dict(state["tax"]) if state.get("tax") else None,
 
         # Multi-period agent
         "multi_period": state.get("multi_period"),

@@ -89,8 +89,15 @@ class TestGuessCategory:
         assert _guess_category("Software license fee") == "technology"
 
     # Tax
-    def test_vat_is_tax(self):
-        assert _guess_category("VAT payment Q1") == "tax"
+    def test_vat_is_a_tax_payment_not_pnl_tax(self):
+        """KDV is collected for the state: cash out, not an expense (plan v8 §A1)."""
+        assert _guess_category("VAT payment Q1") == "tax_payment"
+        assert _guess_category("KDV Ödemesi - Aralık") == "tax_payment"
+
+    def test_a_direction_never_gets_a_category_of_the_other(self):
+        assert _guess_category("Ocak Maaş - Satış Ekibi", "expense") == "salary"
+        assert _guess_category("Satış Ekibi", "expense") == "other_expense"
+        assert _guess_category("Kira iadesi", "income") == "revenue"
 
     def test_corporate_tax_is_tax(self):
         assert _guess_category("Corporate tax installment") == "tax"

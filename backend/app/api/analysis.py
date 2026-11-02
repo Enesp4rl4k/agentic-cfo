@@ -407,6 +407,8 @@ async def list_transactions(
                     # "user_rule" / "user_edit" / None — the user's own
                     # correction decided the category (plan v5 §F0).
                     "category_source": tx.category_source,
+                    # The source's Tekdüzen Hesap Planı account, when it named one.
+                    "account_code": tx.account_code,
                     # Provenance. Each was persisted and none was returned, so
                     # the one screen a reviewer reads could not say why a row
                     # was held: that its date was invented, what the source

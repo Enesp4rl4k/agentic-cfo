@@ -232,25 +232,25 @@ Fiş Listesi Raporu - Hesap Hareketleri
 Rapor Tarihi: 31.12.2024
 
 Tarih;Fiş No;Hesap Kodu;Açıklama;Borç;Alacak;Bakiye
-02.01.2024;G001;701;Ocak Yazılım Lisans Geliri;;285000,00;285000,00
+02.01.2024;G001;600;Ocak Yazılım Lisans Geliri;;285000,00;285000,00
 05.01.2024;F001;760;Ocak Maaş Ödemeleri - Mühendislik;145000,00;;140000,00
 08.01.2024;F002;770;Ocak Ofis Kirası - Levent İstanbul;28500,00;;111500,00
-10.01.2024;G002;701;Danışmanlık Hizmet Bedeli - ABC Holding;;65000,00;176500,00
+10.01.2024;G002;600;Danışmanlık Hizmet Bedeli - ABC Holding;;65000,00;176500,00
 12.01.2024;F003;760;Ocak Maaş - Satış Ekibi;52000,00;;124500,00
-15.01.2024;F004;771;Ocak Elektrik - İGDAŞ;4200,00;;120300,00
-15.01.2024;F005;771;Ocak İnternet - Turkcell;2800,00;;117500,00
-18.01.2024;G003;701;Proje Teslim Ödemesi - XYZ Şirketi;;120000,00;237500,00
+15.01.2024;F004;770;Ocak Elektrik - İGDAŞ;4200,00;;120300,00
+15.01.2024;F005;770;Ocak İnternet - Turkcell;2800,00;;117500,00
+18.01.2024;G003;600;Proje Teslim Ödemesi - XYZ Şirketi;;120000,00;237500,00
 20.01.2024;F006;740;Google Ads - Ocak Kampanyası;18500,00;;219000,00
-22.01.2024;F007;758;AWS Bulut Altyapı Faturası;22000,00;;197000,00
-25.01.2024;F008;758;GitHub Enterprise Lisansı;8500,00;;188500,00
+22.01.2024;F007;750;AWS Bulut Altyapı Faturası;22000,00;;197000,00
+25.01.2024;F008;750;GitHub Enterprise Lisansı;8500,00;;188500,00
 28.01.2024;F009;360;KDV Ödemesi - Ocak;31200,00;;157300,00
-30.01.2024;F010;363;Stopaj Vergisi - Ocak;28750,00;;128550,00
-31.01.2024;G004;701;Aylık SaaS Abonelik Gelirleri;;42000,00;170550,00
-02.02.2024;G005;701;Şubat Yazılım Lisans Geliri;;310000,00;480550,00
+30.01.2024;F010;360;Stopaj Vergisi - Ocak;28750,00;;128550,00
+31.01.2024;G004;600;Aylık SaaS Abonelik Gelirleri;;42000,00;170550,00
+02.02.2024;G005;600;Şubat Yazılım Lisans Geliri;;310000,00;480550,00
 05.02.2024;F011;760;Şubat Maaş - Mühendislik;148000,00;;332550,00
 07.02.2024;F012;760;Şubat Maaş - Satış;53500,00;;279050,00
 08.02.2024;F013;770;Şubat Ofis Kirası;28500,00;;250550,00
-10.02.2024;G006;701;Yeni Müşteri Onboarding Bedeli - DEF Ltd;;95000,00;345550,00
+10.02.2024;G006;600;Yeni Müşteri Onboarding Bedeli - DEF Ltd;;95000,00;345550,00
 """
 
 

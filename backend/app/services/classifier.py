@@ -16,6 +16,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from app.core import tdhp
 from app.core.turkish import fold
 
 if TYPE_CHECKING:
@@ -35,7 +36,9 @@ KEYWORD_RULES: dict[str, list[str]] = {
     "utilities":      ["elektrik", "su", "doğalgaz", "electricity", "water", "gas", "internet", "phone"],
     "marketing":      ["reklam", "pazarlama", "advertising", "marketing", "google ads", "meta ads"],
     "technology":     ["yazılım", "sunucu", "software", "cloud", "aws", "azure", "saas", "license"],
-    "tax":            ["vergi", "kdv", "stopaj", "tax", "vat", "withholding"],
+    # KDV is paid over to the state: cash, not a P&L expense (plan v8 §A1).
+    "tax_payment":    ["kdv", "katma değer", "vat"],
+    "tax":            ["vergi", "stopaj", "tax", "withholding"],
     "loan":           ["kredi", "borç", "faiz", "loan", "interest", "installment"],
 }
 
@@ -54,6 +57,30 @@ def classify_by_keywords(description: str) -> str:
         if any(fold(kw) in folded for kw in keywords):
             return category
     return "other_expense"
+
+
+_INCOME = frozenset({"revenue", "other_income"})
+
+
+def classify_posting(description: str, tx_type: str, account_code: str | None = None) -> str:
+    """Category of a row from an accounting export: the account decides when the
+    source names one (app.core.tdhp); otherwise keywords, but never a category
+    of the other direction — "Satış Ekibi Maaşı" matched `revenue` first."""
+    hesap = tdhp.hesap(account_code)
+    if hesap is not None and hesap.rol != "gider":
+        return hesap.kategori
+    folded = fold(description)
+    for category, keywords in KEYWORD_RULES.items():
+        if hesap is not None or tx_type != "income":
+            if category in _INCOME:
+                continue
+        elif category not in _INCOME and category not in tdhp.BILANCO_KATEGORILERI:
+            continue
+        if any(fold(kw) in folded for kw in keywords):
+            return category
+    if hesap is not None:
+        return hesap.kategori
+    return "revenue" if tx_type == "income" else "other_expense"
 
 
 async def classify(

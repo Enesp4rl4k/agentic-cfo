@@ -22,12 +22,15 @@ OCAK = {
         "gross_profit": 37_700_000,
         "total_opex": 27_300_000,       # salary 197.000 + rent 28.500 + util 7.000 + mkt 18.500 + tech 22.000
         "ebitda": 10_400_000,
-        "tax": 3_120_000,
+        # The 31.200 "KDV Ödemesi" row is KDV paid over to the state — cash,
+        # not an expense for a KDV payer (plan v8 §A1). It used to be counted
+        # as P&L tax: tax 3_120_000, net 7_280_000, expenses 31_920_000.
+        "tax": 0,
         "loan_payments": 0,
-        "net_income": 7_280_000,
-        "total_expenses": 31_920_000,
+        "net_income": 10_400_000,
+        "total_expenses": 28_800_000,
     },
-    "net_margin_min": 0.15,             # ~0.1857 — healthy
+    "net_margin_min": 0.15,             # ~0.2653 — healthy
     "reconciliation_action": "proceed",
     "expect_halted": False,
     "must_flag_anomaly_types": set(),   # nothing critical in a clean month
