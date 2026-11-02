@@ -20,6 +20,7 @@ import logging
 from datetime import UTC
 from typing import Any
 
+from app.platform.run_gate import inherited_confidence
 from app.services.company_context import get_company_context, save_company_context
 from app.services.semantic.rebuild import rebuild_semantic_snapshot
 
@@ -542,7 +543,11 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
             "job_id": job_id,
             "company_name": ctx.company_name,
             "logs": [],
-            "min_confidence": 1.0,
+            # A synthesis is no surer than what it read (plan v9 §K0).
+            "min_confidence": inherited_confidence([
+                ctx.last_cfo_result, ctx.last_cto_result, ctx.last_cmo_result, ctx.last_coo_result,
+                ctx.last_chro_result, ctx.last_risk_result, ctx.last_audit_result,
+            ]),
             "awaiting_review": False,
             "_cfo_result":        ctx.last_cfo_result        or {},
             "_cto_result":        ctx.last_cto_result        or {},
@@ -580,6 +585,7 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
             "agents_used":          agents_used,
             "auto_generated":       True,
             "source_job":           job_id,
+            "min_confidence":       state.get("min_confidence"),
         })
         await save_company_context(ctx_fresh, db)
         logger.info(

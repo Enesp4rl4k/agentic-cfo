@@ -21,6 +21,7 @@ import { CrossAgentIntelligence } from "@/components/ui/cross-agent-intelligence
 import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary, type LiveDataStatus } from "@/lib/api/semantic";
 import { ConflictCard } from "@/components/command-center/ConflictCard";
+import { ReviewQueueCard } from "@/components/command-center/ReviewQueueCard";
 import { AgentRunLedger } from "@/components/ops/AgentRunLedger";
 import { DecisionLogPanel } from "@/components/ui/decision-log-panel";
 import { MacroStressTestCard } from "@/components/macro/MacroStressTestCard";
@@ -887,6 +888,7 @@ export default function CommandCenterPage() {
       <ManagementLayerCard />
 
       {/* Cross-agent conflict surface */}
+      <ReviewQueueCard />
       <ConflictCard />
 
       {/* Agent grid — collapsed when semantic brief is primary */}

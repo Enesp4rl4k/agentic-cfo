@@ -23,6 +23,9 @@ def _utcnow() -> datetime:
 class AgentJobStatus(StrEnum):
     PENDING   = "pending"
     RUNNING   = "running"
+    # Finished, below the gate (app.platform.run_gate): visible to the person
+    # deciding, not written to the company's context until they approve.
+    AWAITING_REVIEW = "awaiting_review"
     COMPLETED = "completed"
     FAILED    = "failed"
 

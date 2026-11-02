@@ -6,6 +6,7 @@ Single write path for agent_jobs, sync analyze APIs, and worker completions.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -13,6 +14,8 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.platform.run_gate import GateDecision, evaluate
 
 # Auto-chain lives in app/agents/orchestration (it coordinates agent kernels).
 # A service must not import upward into agents, so callers in the api / worker
@@ -111,6 +114,36 @@ async def enqueue_trailing_semantic_rebuild(org_id: str, delay_sec: float | None
     )
 
 
+async def _hold_for_review(
+    org_id: str,
+    agent: str,
+    payload: dict[str, Any],
+    gate: GateDecision,
+    db: AsyncSession | None,
+    *,
+    company_name: str | None,
+    reporting_period: str | None,
+) -> dict[str, Any]:
+    """Queue a held result for its owner. Nothing reaches the context."""
+    from app.models.agent_job import AgentJob, AgentJobStatus
+
+    decision = gate.to_dict()
+    logger.info("Held for review agent=%s org=%s: %s", agent, org_id, gate.reasons)
+    if db is None:
+        return decision
+    job = AgentJob(
+        agent_type=agent,
+        org_id=org_id,
+        status=AgentJobStatus.AWAITING_REVIEW,
+        progress=100,
+        input_data={"company_name": company_name, "reporting_period": reporting_period},
+        result_json=json.loads(json.dumps({**payload, "gate": decision}, default=str)),
+    )
+    db.add(job)
+    await db.commit()
+    return {**decision, "agent_job_id": job.id}
+
+
 async def persist_agent_completion(
     org_id: str,
     agent: str,
@@ -123,16 +156,26 @@ async def persist_agent_completion(
     trigger_auto_chain: bool = True,
     auto_chain_hook: AutoChainHook | None = None,
     force_rebuild: bool = False,
-) -> None:
+    approved: bool = False,
+) -> dict[str, Any]:
     """
     Write last_*_result to CompanyContext, rebuild semantic snapshot, optional auto-chain.
     Non-fatal — logs warnings on failure.
     """
+    gate = evaluate(result)
     if not org_id:
-        return
+        return gate.to_dict()
 
     agent_lower = agent.lower()
     payload = _serialize_result(result)
+
+    # The one write into the context, so the one place the gate holds. What it
+    # holds waits in the owner's queue as an AgentJob, whichever path produced it.
+    if gate.awaiting_review and not approved:
+        return await _hold_for_review(
+            org_id, agent_lower, payload, gate, db,
+            company_name=company_name, reporting_period=reporting_period,
+        )
 
     try:
         from app.services.company_context import (
@@ -152,7 +195,7 @@ async def persist_agent_completion(
         logger.info("Context persisted agent=%s org=%s job=%s", agent_lower, org_id, job_id)
     except Exception as exc:
         logger.warning("persist_agent_completion context save failed: %s", exc)
-        return
+        return gate.to_dict()
 
     now = time.monotonic()
     last = _last_rebuild_at.get(org_id, 0.0)
@@ -189,3 +232,5 @@ async def persist_agent_completion(
             "persist_agent_completion: no auto_chain_hook passed — chain not triggered "
             "for agent=%s org=%s", agent_lower, org_id,
         )
+
+    return gate.to_dict()

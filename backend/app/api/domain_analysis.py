@@ -70,7 +70,8 @@ async def run_domain(
             from app.agents.orchestration.auto_chain import on_agent_complete
             from app.services.context_persist import persist_agent_completion
 
-            await persist_agent_completion(
+            # Below the gate it waits for the owner; the person still sees it.
+            out["inceleme"] = await persist_agent_completion(
                 str(job.org_id), domain, out["sonuc"], db,
                 job_id=job.id, auto_chain_hook=on_agent_complete,
             )

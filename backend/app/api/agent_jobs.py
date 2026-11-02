@@ -20,13 +20,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_role
 from app.database import get_db
 from app.models.agent_job import AGENT_TYPES, AgentJob, AgentJobStatus
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.platform.run_gate import evaluate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -118,6 +119,7 @@ def _job_dict(job: AgentJob) -> dict[str, Any]:
         "status":       job.status,
         "progress":     job.progress,
         "result":       job.result_json,
+        "gate":         (job.result_json or {}).get("gate"),
         "logs":         job.logs,
         "error":        job.error_message,
         "created_at":   job.created_at.isoformat(),
@@ -146,10 +148,17 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
         try:
             result = await _dispatch_pipeline(agent_type, job_id, input_data)
 
-            job.status = AgentJobStatus.COMPLETED
+            gate = evaluate(result)
             job.progress = 100
-            job.result_json = _jsonable(result)
+            job.result_json = {**_jsonable(result), "gate": gate.to_dict()}
             job.logs = _jsonable(result.get("logs", []))
+            if gate.awaiting_review:
+                job.status = AgentJobStatus.AWAITING_REVIEW
+                await db.commit()
+                logger.info("AgentJob %s (%s) held: %s", job_id, agent_type, gate.reasons)
+                return
+
+            job.status = AgentJobStatus.COMPLETED
             job.completed_at = datetime.now(UTC)
             await db.commit()
             logger.info("AgentJob %s (%s) completed", job_id, agent_type)
@@ -168,6 +177,7 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
                         company_name=input_data.get("company_name"),
                         reporting_period=input_data.get("reporting_period"),
                         auto_chain_hook=on_agent_complete,
+                        approved=True,   # passed the gate above
                     )
                 except Exception as persist_exc:
                     logger.warning(
@@ -334,6 +344,111 @@ async def enqueue_agent_job(
         },
         "error": None,
     }
+
+
+@router.get("/agent-jobs/review-queue")
+async def review_queue(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Results of this organisation waiting for its owner's decision, oldest first."""
+    org_id = _require_org(user)
+    rows = (await db.execute(
+        select(AgentJob)
+        .where(AgentJob.org_id == org_id, AgentJob.status == AgentJobStatus.AWAITING_REVIEW)
+        .order_by(AgentJob.created_at)
+    )).scalars().all()
+    return {"data": [_job_dict(j) for j in rows], "error": None}
+
+
+async def _close_review(
+    db: AsyncSession, job: AgentJob, status: str, review: dict[str, Any], error: str | None = None
+) -> bool:
+    """Atomic on the status: of two people deciding at once, one wins."""
+    now = datetime.now(UTC)
+    won = await db.execute(
+        update(AgentJob)
+        .where(AgentJob.id == job.id, AgentJob.status == AgentJobStatus.AWAITING_REVIEW)
+        .values(
+            status=status,
+            completed_at=now,
+            error_message=error,
+            result_json={**(job.result_json or {}), "review": {**review, "at": now.isoformat()}},
+        )
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return bool(won.rowcount == 1)
+
+
+async def approve_held_job(db: AsyncSession, job: AgentJob, approved_by: str) -> bool:
+    """Release a held result into the company's context. False if already decided."""
+    from app.agents.orchestration import auto_chain
+    from app.services.context_persist import persist_agent_completion
+
+    if not await _close_review(db, job, AgentJobStatus.COMPLETED, {"approved_by": approved_by}):
+        return False
+    await db.refresh(job)
+    inputs = job.input_data or {}
+    await persist_agent_completion(
+        str(job.org_id), job.agent_type, dict(job.result_json or {}), db,
+        job_id=job.id,
+        company_name=inputs.get("company_name"),
+        reporting_period=inputs.get("reporting_period"),
+        auto_chain_hook=auto_chain.on_agent_complete,
+        approved=True,
+    )
+    return True
+
+
+async def _held_job_of_org(db: AsyncSession, job_id: str, user: User) -> AgentJob:
+    job = await db.get(AgentJob, job_id)
+    if not job or job.org_id != _require_org(user):
+        raise HTTPException(404, "Job bulunamadı.")
+    return job
+
+
+@router.post(
+    "/agent-jobs/{job_id}/approve",
+    responses={
+        403: {"description": "Only the organisation's owner decides."},
+        404: {"description": "Job not found."},
+        409: {"description": "Not waiting for review, or already decided."},
+    },
+)
+async def approve_agent_job(
+    job_id: str,
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """The owner accepts a held result: it reaches the context and the chain runs."""
+    job = await _held_job_of_org(db, job_id, user)
+    if not await approve_held_job(db, job, str(user.id)):
+        raise HTTPException(409, "Bu sonuç onay beklemiyor.")
+    return {"data": {"job_id": job_id, "approved": True}, "error": None}
+
+
+@router.post(
+    "/agent-jobs/{job_id}/reject",
+    responses={
+        403: {"description": "Only the organisation's owner decides."},
+        404: {"description": "Job not found."},
+        409: {"description": "Not waiting for review, or already decided."},
+    },
+)
+async def reject_agent_job(
+    job_id: str,
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """The owner refuses a held result: it stays on record, out of the context."""
+    job = await _held_job_of_org(db, job_id, user)
+    if not await _close_review(
+        db, job, AgentJobStatus.FAILED, {"rejected_by": str(user.id)},
+        error="Sahibi tarafından reddedildi.",
+    ):
+        raise HTTPException(409, "Bu sonuç onay beklemiyor.")
+    return {"data": {"job_id": job_id, "approved": False}, "error": None}
 
 
 @router.get("/agent-jobs/{job_id}")

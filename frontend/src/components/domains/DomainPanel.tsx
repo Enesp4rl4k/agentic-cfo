@@ -13,6 +13,7 @@ import {
   type Alan,
   type AlanKodu,
 } from "@/lib/api/domains";
+import { useI18n } from "@/hooks/useI18n";
 
 /**
  * A domain's single entry point: real data, or what is missing and how to get it.
@@ -67,6 +68,8 @@ export function DomainPanel({
     }
   }
 
+  const { t } = useI18n();
+
   async function run() {
     if (!jobId) return;
     setBusy("run");
@@ -120,6 +123,13 @@ export function DomainPanel({
           Analiz et
         </Button>
       </div>
+
+      {data.inceleme?.awaiting_review && (
+        <p className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+          {t.reviewQueue.heldNotice}
+          {" "}{data.inceleme.reasons.join(" ")}
+        </p>
+      )}
 
       {data.cfo_gercek.kalemler.length > 0 && (
         <div className="rounded-md border border-border bg-muted/20 p-3">

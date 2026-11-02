@@ -45,6 +45,7 @@ from app.agents.ceo.synthesis_agent import (
     _condense_tech_summary,
     run_synthesis_agent,
 )
+from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +299,7 @@ async def node_hold_for_review(state: CEOState, config: dict) -> CEOState:
 def route_after_synthesis(state: CEOState) -> str:
     if state.get("awaiting_review") and _run_config({}).require_review:
         return CEO_ROUTE_HOLD
-    if (state.get("min_confidence") or 1.0) < 0.75:
+    if (state.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN:
         return CEO_ROUTE_HOLD
     return "priorities_step"
 

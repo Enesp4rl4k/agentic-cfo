@@ -194,6 +194,7 @@ async def test_trailing_rebuild_includes_both_agent_blobs(db_session: AsyncSessi
             ctx.last_cfo_result,
             db_session,
             trigger_auto_chain=False,
+            approved=True,   # what is under test is the rebuild, past the gate
         )
         await persist_agent_completion(
             ORG_ID,
@@ -201,6 +202,7 @@ async def test_trailing_rebuild_includes_both_agent_blobs(db_session: AsyncSessi
             {"campaigns": {"overall_roas": 4.0}},
             db_session,
             trigger_auto_chain=False,
+            approved=True,   # what is under test is the rebuild, past the gate
         )
         assert rebuild_mock.await_count == 1
         assert enqueued == [ORG_ID]

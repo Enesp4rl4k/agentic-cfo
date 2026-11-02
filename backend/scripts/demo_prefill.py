@@ -413,7 +413,7 @@ async def _run_cfo(db: Any, org_id: str, force: bool) -> bool:
 
 async def _run_suite_agent(db: Any, org_id: str, agent_type: str, force: bool) -> bool:
     """Run one C-suite agent pipeline and persist it to company context."""
-    from app.api.agent_jobs import _run_agent_pipeline
+    from app.api.agent_jobs import _run_agent_pipeline, approve_held_job
     from app.services.company_context import get_company_context
 
     ctx = await get_company_context(org_id, db)
@@ -446,6 +446,12 @@ async def _run_suite_agent(db: Any, org_id: str, agent_type: str, force: bool) -
 
     db.expire_all()
     row = await db.get(AgentJob, job_id)
+    # The demo company has no owner at the keyboard: a role that measures no
+    # confidence waits at the gate, and the seed script approves it, on record.
+    if row is not None and row.status == AgentJobStatus.AWAITING_REVIEW:
+        await approve_held_job(db, row, "demo_prefill")
+        db.expire_all()
+        row = await db.get(AgentJob, job_id)
     ok = bool(row is not None and row.status == AgentJobStatus.COMPLETED)
     if not ok:
         logger.error(
