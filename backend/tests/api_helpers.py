@@ -13,34 +13,31 @@ from typing import Any
 
 from httpx import ASGITransport, AsyncClient
 
+from tests.db_helpers import gecici_veritabani
+
 PAROLA = "StrongPassword123!"
 
 
 @asynccontextmanager
 async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
-    """The app on a fresh in-memory schema; `client._maker` opens sessions on it."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-    from app.database import Base, get_db
+    """The app on a fresh schema; `client._maker` opens sessions on it."""
+    from app.database import get_db
     from app.main import app
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with gecici_veritabani() as maker:
+        async def _override():
+            async with maker() as session:
+                yield session
 
-    async def _override():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _override
-    try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            c._maker = maker  # type: ignore[attr-defined]
-            yield c
-    finally:
-        app.dependency_overrides.clear()
-        await engine.dispose()
+        app.dependency_overrides[get_db] = _override
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                c._maker = maker  # type: ignore[attr-defined]
+                # The name older API tests seed through.
+                c._test_sessionmaker = maker  # type: ignore[attr-defined]
+                yield c
+        finally:
+            app.dependency_overrides.clear()
 
 
 async def kullanici(

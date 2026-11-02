@@ -11,23 +11,17 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents.orchestration.proactive_alerts import AlertEvent, ProactiveAlertOrchestrator
-from app.database import Base
+from tests.db_helpers import gecici_oturum
 
 
 @pytest_asyncio.fixture
 async def db():
     import app.models  # noqa: F401  — every table, as create_all in dev builds it
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as session:
+    async with gecici_oturum() as session:
         yield session
-    await engine.dispose()
 
 
 async def _analysis(db, org_id: str, *, hours_ago: float) -> None:
