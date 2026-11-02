@@ -11,28 +11,22 @@ saved, and its downstream steps skipped for "no CFO data". Seen in a live run:
 from __future__ import annotations
 
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.database as database
 import app.models.company_context  # noqa: F401 — registers the table
 import app.services.company_context as cc
-from app.database import Base
+from tests.db_helpers import gecici_veritabani
 
 
 @pytest_asyncio.fixture
 async def maker(monkeypatch):
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    m = async_sessionmaker(engine, expire_on_commit=False)
-    monkeypatch.setattr(database, "session_factory", lambda: m)
-
     async def no_redis():
         return None
 
     monkeypatch.setattr(cc, "_get_redis", no_redis)
-    yield m
-    await engine.dispose()
+    async with gecici_veritabani() as m:
+        monkeypatch.setattr(database, "session_factory", lambda: m)
+        yield m
 
 
 async def test_a_context_saved_without_a_session_is_read_back(maker):

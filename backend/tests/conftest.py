@@ -123,28 +123,20 @@ import pytest_asyncio
 
 @pytest_asyncio.fixture
 async def client(tmp_path, monkeypatch):
-    from httpx import ASGITransport, AsyncClient
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
     from app.config import get_settings
-    from app.database import Base, get_db
-    from app.main import app
+    from tests.api_helpers import bellek_istemcisi
 
     settings = get_settings()
     monkeypatch.setattr(settings, "storage_local_path", str(tmp_path))
     monkeypatch.setattr(settings, "auto_enqueue_analysis_on_upload", False)
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def override():
-        async with maker() as s:
-            yield s
-
-    app.dependency_overrides[get_db] = override
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        c._maker = maker  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as c:
         yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
+
+
+# ── 4. The order a failing run used ──────────────────────────────────────────
+# verify runs pytest with --no-header, which hides pytest-randomly's seed; an
+# order-dependent failure is then one nobody can replay.
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    seed = getattr(config.option, "randomly_seed", None)
+    if isinstance(seed, int):
+        terminalreporter.write_line(f"Test order: -p randomly --randomly-seed={seed}")

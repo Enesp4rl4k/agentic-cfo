@@ -14,37 +14,17 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.database import Base, get_db
-from app.main import app
+from app.database import get_db
 from app.services.auth import generate_api_key, hash_api_key
+from tests.api_helpers import bellek_istemcisi
 
 
 @pytest_asyncio.fixture
 async def test_client():
     """Async test client with in-memory SQLite database dependency override."""
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    async def override_get_db():
-        async with TestSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Expose the test sessionmaker so tests can seed rows directly.
-        client._test_sessionmaker = TestSessionLocal  # type: ignore[attr-defined]
+    async with bellek_istemcisi() as client:
         yield client
-
-    app.dependency_overrides.clear()
-    await test_engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -247,7 +227,6 @@ async def test_llm_costs_endpoint_empty_ledger(test_client):
 @pytest.mark.asyncio
 async def test_llm_costs_endpoint_aggregates_rows(test_client):
     """Insert LLMCallLog rows and verify the rollup groups them."""
-    from app.database import get_db
     from app.models.llm_call_log import LLMCallLog
 
     override = test_client._transport.app.dependency_overrides[get_db]

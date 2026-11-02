@@ -17,12 +17,10 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from httpx import AsyncClient
 
 from app.config import get_settings
-from app.database import Base, get_db
-from app.main import app
+from tests.api_helpers import bellek_istemcisi
 
 
 @pytest_asyncio.fixture
@@ -31,25 +29,9 @@ async def test_client(monkeypatch):
 
     Mirrors the harness in test_api_integration.py.
     """
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    async def override_get_db():
-        async with TestSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setattr(get_settings(), "demo_mode", True)
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with bellek_istemcisi() as client:
         yield client
-
-    app.dependency_overrides.clear()
-    await test_engine.dispose()
 
 
 async def _guest(client: AsyncClient) -> dict:

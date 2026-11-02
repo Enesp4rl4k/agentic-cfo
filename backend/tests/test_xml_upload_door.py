@@ -23,6 +23,7 @@ from app.services.upload_service import (
     validate_extension,
     validate_xml_payload,
 )
+from tests.db_helpers import gecici_oturum
 
 GIB = Path(__file__).parent / "fixtures" / "gib_corpus" / "ubl_tr" / "UBLTR_1.2.1_Paketi" / "xml"
 
@@ -100,16 +101,10 @@ def test_the_ubl_parser_refuses_a_bomb_too():
 async def test_the_job_keeps_the_name_the_person_gave_the_file(tmp_path):
     """Every job was called "document.<ext>", so a job list, the setup page and
     an accountant's client screen showed the same word for every upload."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from app.database import Base
     from app.services.upload_service import UploadResult, create_analysis_job
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as db:
+    async with gecici_oturum() as db:
         job = await create_analysis_job(
             result=UploadResult(job_id="j1", file_path=str(tmp_path / "document.xml"), ext="xml",
                                 size_bytes=10, original_name="C:/temp/GIB2025000000001.xml"),
@@ -122,7 +117,6 @@ async def test_the_job_keeps_the_name_the_person_gave_the_file(tmp_path):
             user_id=None, org_id=None, db=db,
         )
         assert adsiz.filename == "document.csv"
-    await engine.dispose()
 
 
 def test_the_upload_page_refuses_xls_with_the_same_advice_as_baglan():
@@ -146,20 +140,14 @@ def test_an_edefter_is_named_at_the_door_not_accepted_and_left_empty():
 
 
 async def test_the_door_refuses_an_edefter_with_advice(tmp_path, monkeypatch):
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     import app.services.ingest.ekle as ekle
     from app.config import get_settings
-    from app.database import Base
 
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path), raising=False)
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+    async with gecici_oturum() as db:
         out = await ekle.dosyalari_ekle(db, ekle.Sahip(org_id="o", user_id="u"),
                                         [("1234567808-201804-Y-000000.xml", _EDEFTER_MINIMAL)])
-    await engine.dispose()
     d = out["dosyalar"][0]
     assert d["durum"] == ekle.REDDEDILDI
     assert "yevmiye defterini" in d["mesaj"]
