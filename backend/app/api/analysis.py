@@ -138,6 +138,45 @@ async def rerun_analysis(
     return {"data": {"job_id": job_id, "status": "queued"}, "error": None}
 
 
+@router.post(
+    "/analysis/{job_id}/company-view",
+    responses={
+        404: {"description": "Job not found."},
+        409: {"description": "Job is not completed or has no dashboard."},
+    },
+)
+async def apply_as_company_view(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Make this finished analysis the company's picture, by the person's choice.
+
+    A completed analysis that adds no period (narrower, inside the current
+    view) is no longer applied automatically (plan v7 §P0 / W2); this applies
+    it on purpose. Server-side only: the stored result of an owned, completed
+    job — never a result sent by the client.
+    """
+    from app.worker import apply_company_view, cfo_chain_result, saved_result, spawn_auto_chain
+
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
+    if job.status != JobStatus.COMPLETED or not job.org_id:
+        raise HTTPException(status_code=409, detail="Only a completed analysis can become the company view.")
+    result = await saved_result(job_id, db)
+    if not result.get("dashboard_json"):
+        raise HTTPException(status_code=409, detail="This analysis has no dashboard.")
+
+    # Read before the commit inside apply_company_view expires the row.
+    org_id = str(job.org_id)
+    chain_result = cfo_chain_result(job_id, result)
+    await apply_company_view(job_id, org_id, chain_result, db, force=True)
+    spawn_auto_chain(job_id, org_id, chain_result)
+    return {"data": {"job_id": job_id, "company_view": True}, "error": None}
+
+
 async def _idempotency_seized(user_id: str, key: str) -> bool:
     """True when this Idempotency-Key was already used (within the TTL).
 
