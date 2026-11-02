@@ -38,6 +38,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core import tdhp
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,11 +116,15 @@ THP_HESAPLARI: dict[str, THPHesap] = {
                     ["kira", "rent", "ofis", "yönetim gider", "muhasebe ücreti",
                      "danışmanlık", "elektrik", "su", "doğalgaz", "internet",
                      "telefon", "posta", "kırtasiye", "temizlik", "güvenlik"]),
-    "771": THPHesap("771", "Pazarlama Satış ve Dağıtım Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
+    # 7/A: 750 AR-GE, 760 Pazarlama Satış Dağıtım, 770 Genel Yönetim. These
+    # were filed under 771 and 772 — the 770 group's transfer (yansıtma) and
+    # variance accounts — so marketing reached the e-Defter on a transfer
+    # account (plan v8 §A4).
+    "760": THPHesap("760", "Pazarlama Satış ve Dağıtım Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
                     ["reklam", "marketing", "pazarlama", "satış gider", "komisyon",
                      "dağıtım", "lojistik", "kargo", "sosyal medya", "google ads",
                      "facebook ads", "dijital pazarlama", "pr "]),
-    "772": THPHesap("772", "Araştırma ve Geliştirme Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
+    "750": THPHesap("750", "Araştırma ve Geliştirme Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
                     ["ar-ge", "r&d", "araştırma", "geliştirme", "prototip",
                      "yazılım geliştirme", "inovasyon"]),
 
@@ -173,6 +179,51 @@ class THPSonucu:
     # country's chart adapter): their level is unknown, not "unclassified".
     guven_seviyesi: str = ""
     kanit: str = ""
+
+
+# ── Kaynağın kendi hesabı ─────────────────────────────────────────────────────
+
+_ANA_GRUP = {
+    "1": ("1 - Dönen Varlıklar", "borç", "varlık"),
+    "2": ("2 - Duran Varlıklar", "borç", "varlık"),
+    "3": ("3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç"),
+    "4": ("4 - Uzun Vadeli Yabancı Kaynaklar", "alacak", "borç"),
+    "5": ("5 - Özkaynaklar", "alacak", "özkaynak"),
+    "6": ("6 - Gelir Tablosu", "alacak", "gelir"),
+    "7": ("7 - Maliyet Hesapları", "borç", "gider"),
+}
+
+
+def kaynak_sonucu(account_code: str | None) -> THPSonucu | None:
+    """The entry for a row whose source names its account; None if it does not.
+
+    A Logo/Netsis posting list or an e-Defter journal already says which
+    account a row was posted to. Re-guessing it from the description put the
+    demo's revenue on 602, its rent on 730 and five rows on 260 (fixed
+    assets), and held all 163 rows for review (plan v8 §A4). The account is
+    copied; only a code the plan map does not know is left to the classifier.
+    """
+    hesap = tdhp.hesap(account_code)
+    if hesap is None or hesap.rol in ("yansitma", "kapanis"):
+        return None
+    tanim = THP_HESAPLARI.get(hesap.kod)
+    ana_grup, normal_bakiye, tip = _ANA_GRUP[hesap.kod[0]]
+    if hesap.rol == "gider":
+        tip, normal_bakiye = "gider", "borç"
+    elif hesap.rol in ("gelir", "gelir_indirimi"):
+        tip, normal_bakiye = "gelir", "alacak"
+    return THPSonucu(
+        hesap_kodu=hesap.kod,
+        hesap_adi=tanim.adi if tanim else f"{hesap.kod} (kaynak kayıttaki hesap)",
+        ana_grup=tanim.ana_grup if tanim else ana_grup,
+        normal_bakiye=tanim.normal_bakiye if tanim else normal_bakiye,
+        tip=tanim.tip if tanim else tip,
+        confidence=1.0,
+        yontem="kaynak",
+        aciklama=f"Kaynak kayıt {hesap.kod} hesabına işlemiş",
+        guven_seviyesi="kaynak_hesap",
+        kanit=f"kaynak hesap kodu {account_code}",
+    )
 
 
 # ── Kural motoru ──────────────────────────────────────────────────────────────

@@ -39,9 +39,9 @@ THP_GOLDEN_CASES: list[tuple[str, str, str, str]] = [
      "Kira genel yönetim gideri"),
     ("Elektrik faturasi odemesi", "expense", "770",
      "Genel yönetim gideri"),
-    ("Google Ads reklam harcamasi", "expense", "771",
+    ("Google Ads reklam harcamasi", "expense", "760",
      "Reklam pazarlama-satış-dağıtım giderine"),
-    ("Ar-Ge prototip gideri", "expense", "772",
+    ("Ar-Ge prototip gideri", "expense", "750",
      "Ar-Ge ayrı bir gider hesabıdır"),
 
     # ── Taxes ─────────────────────────────────────────────────────────────────

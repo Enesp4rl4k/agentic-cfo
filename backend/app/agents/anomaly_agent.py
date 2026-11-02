@@ -15,12 +15,14 @@ done_when: state['anomalies'] listesi dolu veya boş (0 anomali = temiz)
 from __future__ import annotations
 
 import logging
+import re
 import statistics
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
+from app.core.turkish import fold
 
 logger = logging.getLogger(__name__)
 
@@ -143,16 +145,20 @@ def detect_unusual_amounts(
     2. IQR-based (robust, non-normal distributions)
 
     An anomaly is flagged if BOTH methods agree, reducing false positives.
+
+    Rows are compared within their category *and* account when the source
+    names one: a quarterly geçici vergi (193) is not an outlier among monthly
+    KDV payments (360), though both are tax payments (plan v8 §A3).
     """
     anomalies: list[dict[str, Any]] = []
 
-    by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_group: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for tx in transactions:
         if tx.get("type") == "expense":
             cat = tx.get("category", "other_expense")
-            by_category[cat].append(tx)
+            by_group[(cat, str(tx.get("account_code") or ""))].append(tx)
 
-    for cat, txs in by_category.items():
+    for (cat, _account), txs in by_group.items():
         amounts = [t["amount_cents"] for t in txs]
         if len(amounts) < MIN_TRANSACTIONS_FOR_STATS:
             continue
@@ -285,12 +291,52 @@ def detect_expense_spikes(
     return anomalies
 
 
+_AY_ADLARI = (
+    "ocak", "subat", "mart", "nisan", "mayis", "haziran", "temmuz", "agustos",
+    "eylul", "ekim", "kasim", "aralik",
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+)
+RECURRING_MIN_MONTHS = 3       # the same payment in ≥3 distinct months recurs
+
+
+def _tekrar_anahtari(description: str | None) -> str:
+    """The payment a description names, without its month: "Ocak Maaş - Satış
+    Ekibi" and "Şubat Maaş - Satış" are both "maas satis"."""
+    kelimeler = [
+        w for w in re.findall(r"[a-z]+", fold(description or ""))
+        if w not in _AY_ADLARI and len(w) > 1
+    ]
+    return " ".join(kelimeler[:2])
+
+
+def recurring_keys(transactions: list[dict[str, Any]]) -> set[str]:
+    """Payment keys seen in at least RECURRING_MIN_MONTHS distinct months."""
+    aylar: dict[str, set[str]] = defaultdict(set)
+    for t in transactions:
+        key = _tekrar_anahtari(t.get("description"))
+        month = str(t.get("transaction_date") or "")[:7]
+        if key and month:
+            aylar[key].add(month)
+    return {k for k, months in aylar.items() if len(months) >= RECURRING_MIN_MONTHS}
+
+
 def detect_round_numbers(
     transactions: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """High proportion of perfectly round expense amounts — fraud indicator."""
+    """High proportion of perfectly round expense amounts — fraud indicator.
+
+    Only one-off payments are counted. Rent, salaries and subscriptions are
+    agreed round sums paid every month; counting them said "99% of expenses
+    are round — verify against invoices" about a payroll (plan v8 §A3).
+    """
     anomalies: list[dict[str, Any]] = []
-    expenses = [t for t in transactions if t.get("type") == "expense" and t.get("amount_cents", 0) > 0]
+    tekrarlayan = recurring_keys(transactions)
+    expenses = [
+        t for t in transactions
+        if t.get("type") == "expense" and t.get("amount_cents", 0) > 0
+        and _tekrar_anahtari(t.get("description")) not in tekrarlayan
+    ]
     if len(expenses) < 10:
         return []
 
@@ -303,8 +349,9 @@ def detect_round_numbers(
             "severity": "medium",
             "title": "Unusually high proportion of round-number expenses",
             "description": (
-                f"{ratio * 100:.0f}% of expense transactions are round numbers "
-                f"({round_count}/{len(expenses)}). This can indicate manually entered "
+                f"{ratio * 100:.0f}% of one-off expense transactions are round numbers "
+                f"({round_count}/{len(expenses)}; recurring payments such as rent and "
+                f"salaries are not counted). This can indicate manually entered "
                 f"or estimated amounts — verify against actual invoices."
             ),
             "transaction_ids": None,

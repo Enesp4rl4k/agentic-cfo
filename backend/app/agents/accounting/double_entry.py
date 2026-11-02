@@ -147,7 +147,7 @@ def _karsi_hesap_belirle(tx: dict[str, Any]) -> str:
 # exports (601, exempt) and interest/other income (602) are left out.
 KDV_TASIYAN_GELIR = frozenset({"600"})
 KDV_TASIYAN_GIDER = frozenset({
-    "153", "253", "255", "260", "620", "621", "740", "770", "771", "772",
+    "153", "253", "255", "260", "620", "621", "740", "750", "760", "770",
 })
 _HESAPLANAN_KDV = ("391", "Hesaplanan KDV")
 _INDIRILECEK_KDV = ("191", "İndirilecek KDV")
@@ -341,6 +341,17 @@ class DoubleEntryEngine:
                 KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
             ]
 
+        # A correction posted in the source books (a debit on a sales account)
+        # carries a negative amount: book it the other way round, or it would
+        # add to what it corrects.
+        if thp_result.yontem == "kaynak" and int(
+            transaction.get("amount_kurus") or transaction.get("amount_cents") or 0
+        ) < 0:
+            satirlar = [
+                KayitSatiri(s.hesap_kodu, s.hesap_adi, borc=s.alacak, alacak=s.borc, aciklama=s.aciklama)
+                for s in satirlar
+            ]
+
         # ── KDV: split only what the source states ───────────────────────────
         ana = thp_result.hesap_kodu
         kdv_durumu = "yok"
@@ -348,7 +359,11 @@ class DoubleEntryEngine:
         raw_kdv = transaction.get("kdv_kurus")
         kdv = abs(int(raw_kdv)) if raw_kdv not in (None, "") else None
         kdv_tasir = ana in KDV_TASIYAN_GELIR or ana in KDV_TASIYAN_GIDER
-        if kdv is not None:
+        if thp_result.yontem == "kaynak" and kdv is None:
+            # A posting to an account in the company's own books is already
+            # net: the KDV sits on 191/391 in the same books. Nothing to split.
+            kdv_durumu = "kaynakta"
+        elif kdv is not None:
             if kdv == 0:
                 # Stated as zero: exempt, nothing to move.
                 kdv_durumu = "ayrildi" if kdv_tasir else "yok"
