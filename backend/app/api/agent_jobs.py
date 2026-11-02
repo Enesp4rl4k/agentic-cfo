@@ -15,7 +15,7 @@ Frontend /status'u poll eder → COMPLETED/FAILED döner.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,7 +23,9 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.run_ledger import agent_run
 from app.api.auth import get_current_user, require_role
+from app.config import get_settings
 from app.database import get_db
 from app.models.agent_job import AGENT_TYPES, AgentJob, AgentJobStatus
 from app.models.user import User, UserRole
@@ -136,31 +138,44 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
     from app.database import engine, get_session_factory
 
     async with get_session_factory(engine())() as db:
-        job = await db.get(AgentJob, job_id)
-        if not job:
-            logger.error("AgentJob %s not found in background task", job_id)
-            return
-
-        job.status = AgentJobStatus.RUNNING
-        job.progress = 10
+        # Atomic claim: however many times this is delivered, one run happens.
+        claimed = await db.execute(
+            update(AgentJob)
+            .where(AgentJob.id == job_id, AgentJob.status == AgentJobStatus.PENDING)
+            .values(
+                status=AgentJobStatus.RUNNING,
+                progress=10,
+                lease_expires_at=datetime.now(UTC) + timedelta(seconds=get_settings().job_lease_seconds),
+            )
+            .execution_options(synchronize_session=False)
+        )
         await db.commit()
+        if claimed.rowcount != 1:
+            logger.warning("AgentJob %s not claimable; skipping", job_id)
+            return
+        job = await db.get(AgentJob, job_id)
+        if not job:  # pragma: no cover - deleted between the claim and this read
+            return
+        await db.refresh(job)
 
         try:
-            result = await _dispatch_pipeline(agent_type, job_id, input_data)
+            async with agent_run(db, pipeline=agent_type, org_id=job.org_id, job_id=job_id) as run:
+                result = await _dispatch_pipeline(agent_type, job_id, input_data)
 
-            gate = evaluate(result)
-            job.progress = 100
-            job.result_json = {**_jsonable(result), "gate": gate.to_dict()}
-            job.logs = _jsonable(result.get("logs", []))
+                gate = evaluate(result)
+                job.progress = 100
+                job.lease_expires_at = None
+                job.result_json = {**_jsonable(result), "gate": gate.to_dict()}
+                job.logs = _jsonable(result.get("logs", []))
+                if gate.awaiting_review:
+                    job.status = AgentJobStatus.AWAITING_REVIEW
+                    run.row.status = "awaiting_review"
+                else:
+                    job.status = AgentJobStatus.COMPLETED
+                    job.completed_at = datetime.now(UTC)
             if gate.awaiting_review:
-                job.status = AgentJobStatus.AWAITING_REVIEW
-                await db.commit()
                 logger.info("AgentJob %s (%s) held: %s", job_id, agent_type, gate.reasons)
                 return
-
-            job.status = AgentJobStatus.COMPLETED
-            job.completed_at = datetime.now(UTC)
-            await db.commit()
             logger.info("AgentJob %s (%s) completed", job_id, agent_type)
 
             if job.org_id:
@@ -192,6 +207,7 @@ async def _run_agent_pipeline(job_id: str, agent_type: str, input_data: dict) ->
             await db.rollback()
             job.status = AgentJobStatus.FAILED
             job.progress = 0
+            job.lease_expires_at = None
             job.error_message = str(exc)[:1000]
             job.completed_at = datetime.now(UTC)
             await db.commit()

@@ -110,9 +110,12 @@ async def runs_slo(
     for name, b in by_pipeline.items():
         lat = b.pop("_lat")
         done = b["completed"]
+        # A run waiting for a person has not failed: the gate holding it is the
+        # system working, and it has no outcome yet (plan v9 §K0).
+        decided = b["runs"] - b["awaiting_review"]
         out[name] = {
             **b,
-            "success_rate": round(done / b["runs"], 3) if b["runs"] else None,
+            "success_rate": round(done / decided, 3) if decided else None,
             "p50_latency_ms": _pct(lat, 50),
             "p95_latency_ms": _pct(lat, 95),
             "avg_cost_usd": round(b["cost_usd"] / b["runs"], 6) if b["runs"] else None,

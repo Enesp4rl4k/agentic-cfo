@@ -14,6 +14,9 @@ Three ways a run dies without reaching a terminal state:
      between flush and terminal commit leaves them running forever, which
      poisons `/runs/slo`. Past `stale_agent_run_minutes` they are failed.
 
+  4. A role's AgentJob died the same way (lease past), or its in-process task
+     was lost before it started (pending past `stale_pending_minutes`).
+
 `awaiting_review` is deliberately never reaped: a human holding the gate is
 not a fault, and failing it would throw away a finished analysis.
 """
@@ -23,7 +26,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,7 @@ logger = logging.getLogger(__name__)
 async def reap_stuck_jobs(db: AsyncSession) -> dict[str, Any]:
     """Fail every non-terminal row past its lease. Commits; returns counts."""
     from app.config import get_settings
+    from app.models.agent_job import AgentJob, AgentJobStatus
     from app.models.agent_run import AgentRun
     from app.models.analysis_job import AnalysisJob, JobStatus
 
@@ -101,12 +105,36 @@ async def reap_stuck_jobs(db: AsyncSession) -> dict[str, Any]:
         .execution_options(synchronize_session=False)
     )
 
+    # 4. Role runs: a dead claim, or a task lost before it was claimed.
+    expired_agent_jobs = await db.execute(
+        update(AgentJob)
+        .where(or_(
+            and_(
+                AgentJob.status == AgentJobStatus.RUNNING,
+                AgentJob.lease_expires_at.is_not(None),
+                AgentJob.lease_expires_at < now,
+            ),
+            and_(
+                AgentJob.status == AgentJobStatus.PENDING,
+                AgentJob.created_at < now - timedelta(minutes=settings.stale_pending_minutes),
+            ),
+        ))
+        .values(
+            status=AgentJobStatus.FAILED,
+            error_message="Bu analizi çalıştıran süreç bitiremeden durdu. Yeniden çalıştırın.",
+            lease_expires_at=None,
+            completed_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
     await db.commit()
 
     counts = {
         "expired_leases": int(expired.rowcount or 0),
         "stale_pending": int(stale_pending.rowcount or 0),
         "stale_runs": int(stale_runs.rowcount or 0),
+        "expired_agent_jobs": int(expired_agent_jobs.rowcount or 0),
     }
     total = sum(counts.values())
     if total:

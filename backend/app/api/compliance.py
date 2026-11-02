@@ -12,8 +12,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.run_ledger import recorded_run
 from app.api.auth import get_current_user
+from app.database import get_db
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -52,6 +55,7 @@ class ComplianceAnalyzeRequest(BaseModel):
 async def run_compliance_analysis(
     body: ComplianceAnalyzeRequest,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Run Compliance analysis pipeline and return results synchronously.
@@ -73,14 +77,26 @@ async def run_compliance_analysis(
     job_id = str(uuid.uuid4())
 
     try:
-        result = await run_compliance_pipeline(
+        result = await recorded_run(db, "compliance", current_user.org_id, job_id, run_compliance_pipeline(
             job_id=job_id,
             policy_csv=body.policy_csv,
             violations_csv=body.violations_csv,
             regulations_csv=body.regulations_csv,
             company_name=body.company_name,
             audit_period=body.audit_period,
-        )
+        ))
+
+        inceleme = None
+        if current_user.org_id and not result.get("error"):
+            from app.agents.orchestration.auto_chain import on_agent_complete
+            from app.services.context_persist import persist_agent_completion
+
+            # Below the gate this waits in the owner's queue.
+            inceleme = await persist_agent_completion(
+                str(current_user.org_id), "compliance", dict(result), db,
+                job_id=job_id, company_name=body.company_name,
+                reporting_period=body.audit_period, auto_chain_hook=on_agent_complete,
+            )
 
         # Serialize logs (dataclass → dict)
         logs_serializable = [
@@ -104,6 +120,7 @@ async def run_compliance_analysis(
                 "compliance_summary": result.get("compliance_summary"),
                 "logs":               logs_serializable,
                 "error":              result.get("error"),
+                "inceleme":           inceleme,
             },
             "error": None,
         }

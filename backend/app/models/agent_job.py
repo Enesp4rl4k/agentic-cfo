@@ -76,6 +76,12 @@ class AgentJob(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Progress 0–100 for frontend polling
+    # The claim's expiry: a process killed mid-run cannot say so. Past this the
+    # reaper fails the job (app/services/job_reaper.py).
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     progress: Mapped[int] = mapped_column(default=0, nullable=False)
 
     # Timestamps

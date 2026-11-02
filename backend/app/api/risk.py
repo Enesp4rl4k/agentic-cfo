@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.risk.orchestrator import run_risk_pipeline
+from app.agents.run_ledger import recorded_run
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -368,13 +369,13 @@ async def run_risk_analysis(
     """
     try:
         job_id = str(uuid.uuid4())
-        result = await run_risk_pipeline(
+        result = await recorded_run(db, "risk", current_user.org_id, job_id, run_risk_pipeline(
             register_csv=body.register_csv,
             loss_csv=body.loss_csv,
             kri_csv=body.kri_csv,
             company_name=body.company_name,
             reporting_period=body.reporting_period,
-        )
+        ))
 
         if current_user.org_id and not result.get("error"):
             try:

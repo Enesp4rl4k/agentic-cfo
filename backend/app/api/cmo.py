@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.run_ledger import recorded_run
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -62,14 +63,14 @@ async def run_cmo_analysis(
     job_id = str(uuid.uuid4())
 
     try:
-        result = await run_cmo_pipeline(
+        result = await recorded_run(db, "cmo", current_user.org_id, job_id, run_cmo_pipeline(
             job_id=job_id,
             company_name=body.company_name,
             period=body.period,
             campaign_csv=body.campaign_csv,
             funnel_csv=body.funnel_csv,
             cohort_csv=body.cohort_csv,
-        )
+        ))
 
         if current_user.org_id and not result.get("error"):
             try:

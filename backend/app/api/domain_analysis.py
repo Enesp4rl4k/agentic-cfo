@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestration import domain_analysis as da
+from app.agents.run_ledger import recorded_run
 from app.api.access import owned_job
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
@@ -55,7 +56,7 @@ async def run_domain(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        out = await da.analiz_et(db, job, domain)
+        out = await recorded_run(db, domain, job.org_id, job.id, da.analiz_et(db, job, domain), payload=lambda o: o.get("sonuc"))
     except da.AlanBilinmiyor as exc:
         raise HTTPException(status_code=404, detail=f"Bilinmeyen alan: {domain}") from exc
     except ValueError as exc:
