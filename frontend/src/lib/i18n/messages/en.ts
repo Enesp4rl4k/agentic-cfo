@@ -2986,7 +2986,7 @@ export const en: MessageTree = {
     },
     calendar: {
       heading: "Payment calendar",
-      subtitle: "Upcoming tax obligations and due dates",
+      subtitle: "Estimated obligations for {month} and their due dates",
       empty: "No upcoming tax payments.",
       daysLeft: "{count} days left",
       today: "Today!",

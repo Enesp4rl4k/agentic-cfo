@@ -245,15 +245,55 @@ def _build_payment_calendar(
     return calendar
 
 
+def _donem(transactions: list[dict[str, Any]]) -> dict[str, Any]:
+    """The months the figures cover. They are totals over this whole period."""
+    aylar = sorted({
+        str(t.get("transaction_date"))[:7] for t in transactions if t.get("transaction_date")
+    })
+    return {"start": aylar[0], "end": aylar[-1], "months": len(aylar)} if aylar else {
+        "start": None, "end": None, "months": 0,
+    }
+
+
+def _son_ay_takvimi(
+    transactions: list[dict[str, Any]],
+    corp_tax: dict[str, Any],
+    reference_month: str,
+    months: int,
+) -> list[dict[str, Any]]:
+    """What the last month owes, marked past or upcoming.
+
+    The whole period's totals went onto one month's deadlines: a year of KDV
+    fell due on a single date, and a deadline from 2024 read as "upcoming"
+    (plan v9 §K0). A quarter's geçici vergi is a quarter of a full year's
+    estimate, so a shorter period is annualised first.
+    """
+    son_ay = [t for t in transactions if str(t.get("transaction_date") or "").startswith(reference_month)]
+    yillik = {**corp_tax, "corporate_tax_estimate": int(
+        corp_tax.get("corporate_tax_estimate", 0) * 12 / max(months, 1)
+    )}
+    takvim = _build_payment_calendar(
+        _compute_vat(son_ay), _compute_withholding(son_ay), yillik, reference_month
+    )
+    bugun = datetime.now(UTC).strftime("%Y-%m-%d")
+    for p in takvim:
+        p["status"] = "gecti" if p["due_date"] < bugun else "yaklasan"
+    return takvim
+
+
 def _tax_narrative_template(tax: dict[str, Any]) -> str:
     vat = tax["vat"]["net_vat_payable"] / 100
     corp = tax["corporate"]["corporate_tax_estimate"] / 100
     total = tax.get("total_tax_burden", 0) / 100
-    n_due = len(tax.get("payment_calendar", []))
+    takvim = tax.get("payment_calendar", [])
+    yaklasan = sum(1 for p in takvim if p.get("status") == "yaklasan")
+    son = (
+        f"{yaklasan} yaklaşan ödeme takvimde; nakit planlamasında bu tarihleri dikkate alın."
+        if yaklasan else "Takvimdeki son tarihlerin hepsi geçmiş; güncel dönemin verisiyle yenileyin."
+    )
     return (
-        f"Toplam vergi yükü ~{total:,.0f} TL (KDV {vat:,.0f} TL, kurumlar vergisi "
-        f"tahmini {corp:,.0f} TL). {n_due} yaklaşan ödeme takvimde. Nakit planlamasında "
-        "bu tarihleri dikkate alın."
+        f"Tahmini vergi yükü ~{total:,.0f} TL (KDV {vat:,.0f} TL, kurumlar vergisi "
+        f"tahmini {corp:,.0f} TL). {son}"
     )
 
 
@@ -326,7 +366,8 @@ async def run_tax(
         ]
         reference_month = max(dates) if dates else datetime.now(UTC).strftime("%Y-%m")
 
-        calendar = _build_payment_calendar(vat, withholding, corp_tax, reference_month)
+        donem = _donem(transactions)
+        calendar = _son_ay_takvimi(transactions, corp_tax, reference_month, donem["months"])
 
         total_tax_burden = (
             vat["net_vat_payable"]
@@ -335,6 +376,7 @@ async def run_tax(
         )
 
         tax = {
+            "period": donem,
             "paid": _paid_taxes(transactions),
             # vat / withholding / corporate below are estimates at fixed rates
             # (VAT_RATE, WITHHOLDING_RATE, SSI_RATE, CORPORATE_TAX_RATE).

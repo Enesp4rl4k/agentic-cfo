@@ -109,7 +109,7 @@ Patronun her hafta geri dönme nedeni bu aşamadır. Yönetim ritmi ancak buna g
 | UBL-TR vade alanları | `PaymentDueDate` bugün okunmuyor |
 | Banka mutabakatı | Deterministik eşleştirici, belirsizi insana; gerçek DSO ve müşteri gecikmesi buradan çıkar |
 | **Nakit Radarı** | 13 hafta; açık haftası, nedeni, üç eylem. Uzlaştırma ayrı doğrulayıcı adımda |
-| Yükümlülük takvimi | KDV, muhtasar/SGK, geçici vergi; tutar defterden, takvim kuralları sürümlü veri |
+| Yükümlülük takvimi | KDV, muhtasar/SGK, geçici vergi; tutar defterden, takvim kuralları sürümlü veri. Son tarihler resmi kaynakla doğrulanır: `tax_agent.py` SGK için "aynı ayın 28'i" diyor, ertesi ay sonu olması gerekebilir |
 | Tahmin kaydı (F4'ün çekirdeği) | Her radar tahmini değişmez; gerçekleşenle notlanır |
 
 **Çıkış:** Demo ve en az bir pilot verisinde radar çalışıyor; dört hafta önceki tahminin sapması ölçülüp gösteriliyor (hedef değil, ilk ölçüm).
