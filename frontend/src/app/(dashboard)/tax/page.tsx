@@ -35,8 +35,17 @@ interface TaxData {
   total_tax_burden: number;
   reference_month: string;
   narrative: string;
+  /** The months the totals cover; absent on analyses stored before it existed. */
+  period?: { start: string | null; end: string | null; months: number } | null;
   /** What the books say was paid (KDV, stopaj, SGK, geçici vergi); the rest is estimated. */
   paid?: { total: number; row_count: number; by_month: Record<string, number> } | null;
+}
+
+/** The months the totals cover: a year's figures are not "December's". */
+function periodLabel(tax: TaxData): string {
+  const { start, end } = tax.period ?? {};
+  if (!start || !end) return tax.reference_month;
+  return start === end ? start : `${start} – ${end}`;
 }
 
 // ── Summary KPI strip ─────────────────────────────────────────────────────────
@@ -76,7 +85,7 @@ function TaxKPIStrip({ tax, prov }: { tax: TaxData; prov?: ProvenanceBlock }) {
     {
       label: kpi.total,
       value: fmt(tax.total_tax_burden / 100),
-      sub: tax.reference_month,
+      sub: periodLabel(tax),
       color: "text-destructive",
     },
     ...(tax.paid
@@ -133,8 +142,9 @@ function PaymentCalendar({ payments }: { payments: PaymentItem[] }) {
       {payments.map((p, i) => {
         const due = new Date(p.due_date);
         const daysUntil = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        const isUrgent = daysUntil <= 3;
-        const isNear = daysUntil <= 14;
+        // A deadline already gone is history, not an alarm: most analyses cover past months.
+        const isUrgent = daysUntil >= 0 && daysUntil <= 3;
+        const isNear = daysUntil >= 0 && daysUntil <= 14;
 
         return (
           <div
@@ -209,7 +219,7 @@ function TaxBreakdown({ tax }: { tax: TaxData }) {
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-medium">{breakdown.heading}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {breakdown.subtitle.replace("{month}", tax.reference_month)}
+          {breakdown.subtitle.replace("{month}", periodLabel(tax))}
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -328,7 +338,7 @@ export default function TaxPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight">{t.tax.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {t.tax.subtitle.replace("{month}", tax.reference_month)}
+          {t.tax.subtitle.replace("{month}", periodLabel(tax))}
         </p>
       </div>
 
@@ -350,7 +360,7 @@ export default function TaxPage() {
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-sm font-medium">{t.tax.calendar.heading}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {t.tax.calendar.subtitle}
+              {t.tax.calendar.subtitle.replace("{month}", tax.reference_month)}
             </p>
           </div>
           <div className="p-4">

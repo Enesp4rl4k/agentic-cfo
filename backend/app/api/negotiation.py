@@ -21,6 +21,7 @@ from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
+from app.platform.model_gateway import LLMUnavailable
 
 router = APIRouter(tags=["negotiation"])
 logger = logging.getLogger(__name__)
@@ -270,7 +271,13 @@ class BoardroomDebateRequest(BaseModel):
     context: str
     agents: list[str] = ["CFO", "CMO"]
 
-@router.post("/negotiation/boardroom/debate")
+@router.post(
+    "/negotiation/boardroom/debate",
+    responses={
+        500: {"description": "The debate could not be completed."},
+        503: {"description": "No language model configured (error_code llm_unavailable)."},
+    },
+)
 async def start_boardroom_debate(
     body: BoardroomDebateRequest,
     user: User = Depends(get_current_user)
@@ -288,6 +295,8 @@ async def start_boardroom_debate(
             org_id=str(user.org_id) if user.org_id else None,
         )
         return {"status": "success", "debate": result.model_dump()}
+    except LLMUnavailable:
+        raise  # → 503 llm_unavailable (app.main handler)
     except Exception as e:
         logger.error(f"Boardroom debate failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Müzakere tamamlanamadı.") from e

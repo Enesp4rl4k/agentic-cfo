@@ -99,3 +99,33 @@ async def test_the_dashboard_carries_the_tax_shape_the_tax_page_reads():
     assert {"vat", "withholding", "corporate", "payment_calendar", "reference_month", "paid"} <= set(block)
     assert block["vat"]["net_vat_payable"] >= 0
     assert block["paid"]["total"] == 1_156_550_00
+
+
+async def _demo_tax() -> dict:
+    from app.agents.state import AgentRunConfig
+    from app.agents.tax_agent import run_tax
+
+    txs = _txs()
+    return (await run_tax({"transactions": txs, "pnl": _compute_pnl(txs)}, AgentRunConfig())).patch["tax"]
+
+
+async def test_the_tax_section_says_which_period_its_figures_cover():
+    """It said "2024-12 dönemi" over the whole year's totals (plan v9 §K0)."""
+    period = (await _demo_tax())["period"]
+    assert period == {"start": "2024-01", "end": "2024-12", "months": 12}
+
+
+async def test_the_calendar_owes_the_last_month_not_the_whole_year():
+    from app.agents.tax_agent import _compute_vat
+
+    tax = await _demo_tax()
+    aralik = [t for t in _txs() if t["transaction_date"].startswith("2024-12")]
+    kdv = next(p for p in tax["payment_calendar"] if p["type"].startswith("KDV"))
+    assert kdv["amount"] == _compute_vat(aralik)["net_vat_payable"]
+    assert kdv["amount"] < tax["vat"]["net_vat_payable"]
+
+
+async def test_a_past_deadline_is_not_called_upcoming():
+    tax = await _demo_tax()
+    assert {p["status"] for p in tax["payment_calendar"]} == {"gecti"}
+    assert "yaklaşan" not in tax["narrative"]

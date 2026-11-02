@@ -904,7 +904,7 @@ export const tr: MessageTree = {
     },
     calendar: {
       heading: "Ödeme Takvimi",
-      subtitle: "Yaklaşan vergi yükümlülükleri ve son ödeme tarihleri",
+      subtitle: "{month} ayına ait tahmini yükümlülükler ve son ödeme tarihleri",
       empty: "Yaklaşan vergi ödemesi bulunmuyor.",
       daysLeft: "{count} gün kaldı",
       today: "Bugün!",

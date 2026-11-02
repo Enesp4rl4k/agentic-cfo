@@ -40,7 +40,7 @@ async def test_chat_without_an_llm_is_503_llm_unavailable(monkeypatch):
         headers, org_id, _ = await kullanici(client, "sohbet@example.com")
         job_id = await _job_with_dashboard(client, org_id)
         res = await client.post(f"/api/v1/chat/job/{job_id}", headers=headers,
-                                json={"question": "Nakit pistim kaç ay?"})
+                                json={"question": "Bu yıl hangi pazara açılmalıyız, neden?"})
     assert res.status_code == 503, res.text
     body = res.json()
     assert body["error_code"] == "llm_unavailable"
@@ -64,6 +64,22 @@ async def test_executive_pdf_without_an_engine_is_503_pdf_engine_unavailable(mon
     body = res.json()
     assert body["error_code"] == "pdf_engine_unavailable"
     assert "libgobject" not in body["error"]
+
+
+async def test_chat_without_an_llm_still_answers_what_the_analysis_settles(monkeypatch):
+    """Plan v9 §K0: a stored figure needs no model; it says where it came from."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "openai_api_key", "llm-placeholder-dev")
+    async with bellek_istemcisi() as client:
+        headers, org_id, _ = await kullanici(client, "sayi@example.com")
+        job_id = await _job_with_dashboard(client, org_id)
+        res = await client.post(f"/api/v1/chat/job/{job_id}", headers=headers,
+                                json={"question": "Toplam gelirim ne kadar?"})
+    assert res.status_code == 200, res.text
+    body = res.json()["data"]
+    assert body["source"] == "stored_analysis"
+    assert "₺12.000.000" in body["answer"]
 
 
 @pytest.mark.parametrize("exc_name", ["LLMUnavailable"])

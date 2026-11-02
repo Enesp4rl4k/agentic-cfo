@@ -53,6 +53,12 @@ class DebateMemoryRecord:
     org_id: str | None = None
 
 
+# What the no-model fallback used to save as a real decision, on any topic
+# (plan v9 §K0). Kept on disk, marked: never a precedent, never approvable.
+_HAZIR_KARAR = "Pazarlama bütçesi bu ay %15 oranında artırılacak"
+GECERSIZ = "Geçersiz (model yokken üretilmiş hazır metin)"
+
+
 class BoardroomMemoryService:
     """Yönetim kurulu hafıza servisi."""
 
@@ -73,6 +79,11 @@ class BoardroomMemoryService:
                     ]
                     item["action_items"] = actions
                     rec = DebateMemoryRecord(**item)
+                    if rec.final_decision.startswith(_HAZIR_KARAR):
+                        rec.resolution_status = GECERSIZ
+                        for action in rec.action_items:
+                            if action.status == "pending":
+                                action.status = "rejected"
                     self._records[rec.id] = rec
         except Exception as e:
             logger.warning(f"Failed to load boardroom memory: {e}")
@@ -155,7 +166,10 @@ class BoardroomMemoryService:
         a debate was primed with other companies' board decisions — sent to the
         LLM, and echoed into this company's transcript.
         """
-        own = [r for r in self._records.values() if org_id and r.org_id == org_id]
+        own = [
+            r for r in self._records.values()
+            if org_id and r.org_id == org_id and r.resolution_status != GECERSIZ
+        ]
         if not own:
             return "Geçmişte bu veya benzer konularda alınmış kayıtlı bir Yönetim Kurulu kararı bulunmuyor."
 
@@ -201,7 +215,10 @@ class BoardroomMemoryService:
         """
         if not org_id:
             return []
-        own = [r for r in self._records.values() if r.org_id == org_id]
+        own = [
+            r for r in self._records.values()
+            if r.org_id == org_id and r.resolution_status != GECERSIZ
+        ]
         own.sort(key=lambda r: r.created_at, reverse=True)
         return [
             {

@@ -16,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.report import Report, ReportFormat
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.platform.model_gateway import LLMUnavailable, is_placeholder_key
 
 router = APIRouter()
 
@@ -96,7 +98,21 @@ async def chat(
         for tx in txs
     ]
 
-    from app.agents.chat_agent import chat_with_cfo, stream_chat_with_cfo
+    from app.agents.chat_agent import chat_with_cfo, dogrudan_cevap, stream_chat_with_cfo
+
+    # No model: what the stored analysis settles is still answered, and says
+    # where it came from. Anything else is a reasoned 503 (plan v9 §K0).
+    if is_placeholder_key(get_settings().openai_api_key):
+        answer = dogrudan_cevap(body.question, report.data)
+        if answer is None:
+            raise LLMUnavailable("openai_api_key is a placeholder")
+        if body.stream:
+            async def _tek_cevap():
+                yield f"data: {answer}\n\n"
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(_tek_cevap(), media_type="text/event-stream")
+        return {"data": {"answer": answer, "job_id": job_id, "source": "stored_analysis"}, "error": None}
 
     if body.stream:
         async def _generate():

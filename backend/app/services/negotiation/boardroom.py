@@ -12,6 +12,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
+from app.platform.model_gateway import LLMUnavailable, is_placeholder_key
 from app.services.negotiation.boardroom_memory import get_boardroom_memory
 
 logger = logging.getLogger(__name__)
@@ -73,12 +74,10 @@ async def run_boardroom_debate(
     past_memory_context = memory.get_past_context_for_topic(topic, org_id=org_id)
     enriched_context = f"{context}\n\n[KURUMSAL HAFIZA & GEÇMİŞ KARARLAR]:\n{past_memory_context}"
 
-    # Fallback/Mock mode for local dev without a real API key
-    if settings.openai_api_key.startswith("llm-placeholder"):
-        result = _mock_boardroom_debate(topic, agents)
-        rec = memory.save_debate(topic, context, agents, result, org_id=org_id)
-        result.debate_id = rec.id
-        return result
+    # No model, no debate. This used to answer any topic with a canned consensus
+    # and save it to the company's memory with action items (plan v9 §K0).
+    if is_placeholder_key(settings.openai_api_key):
+        raise LLMUnavailable("openai_api_key is a placeholder")
 
     # 1. Tur: Ajanların Açılış Beyanları (Paralel)
     tasks = []
@@ -146,45 +145,3 @@ async def _generate_consensus(topic: str, round_1_summary: str, round_2_summary:
         f"Ortak bir karar metni ve uygulanabilir aksiyon listesi oluştur."
     )
     return await _structured(BoardroomConsensus, prompt, temperature=0.2)
-
-
-def _mock_boardroom_debate(topic: str, agents: list[str]) -> BoardroomDebateResult:
-    """LLM anahtarı olmadığında UI testi için dummy veri döner."""
-    return BoardroomDebateResult(
-        topic=topic,
-        round_1_statements=[
-            BoardroomStatement(
-                agent_name="CMO",
-                argument="Büyüme hedeflerini tutturmak için pazarlama bütçesini %30 artırmamız şart.",
-                proposed_solution="Bütçe artışını 3 aya yayarak uygulayabiliriz."
-            ),
-            BoardroomStatement(
-                agent_name="CFO",
-                argument="Yaklaşan vergi ödemeleri var, nakit akışımız %30'luk anlık artışı kaldıramaz.",
-                proposed_solution="Bu ay sadece %10 artış yapıp, nakit durumuna göre önümüzdeki ay tekrar değerlendirelim."
-            )
-        ],
-        round_2_statements=[
-            BoardroomStatement(
-                agent_name="CMO",
-                argument="CFO'nun nakit kaygısını anlıyorum, ancak momentumu kaybetmemeliyiz.",
-                proposed_solution="Tamam, bu ay %15 artış yapalım, en yüksek ROI getiren kampanyalara odaklanalım."
-            ),
-            BoardroomStatement(
-                agent_name="CFO",
-                argument="Eğer sadece yüksek ROI kampanyalarına odaklanılacaksa, %15 bütçe esnemesini tolere edebiliriz.",
-                proposed_solution="%15 artışa onay veriyorum, 15 gün sonra ROI raporu isterim."
-            )
-        ],
-        consensus=BoardroomConsensus(
-            topic=topic,
-            resolution_status="Uzlaşıldı",
-            final_decision="Pazarlama bütçesi bu ay %15 oranında artırılacak ve bütçe yüksek ROI sağlayan Google Ads kampanyalarına yönlendirilecek.",
-            confidence_score=0.85,
-            action_items=[
-                "CFO: Bütçede %15'lik artış kalemi açılacak.",
-                "CMO: Sadece yüksek dönüşüm sağlayan kampanyalara harcama yapılacak.",
-                "CFO & CMO: 15 gün sonra ortak bir ara değerlendirme toplantısı yapılacak."
-            ]
-        )
-    )

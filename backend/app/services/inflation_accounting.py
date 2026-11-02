@@ -17,16 +17,19 @@ from app.core.financial import cents_to_amount, safe_div
 
 logger = logging.getLogger(__name__)
 
-# Örnek TÜİK Fiyat Endeks Tablosu (2023 - 2024 Referans Endeksleri)
-SAMPLE_CPI_INDEX = {
-    "2023-01": 1203.0,
-    "2023-06": 1350.0,
-    "2023-12": 1859.0,
-    "2024-01": 1984.0,
-    "2024-03": 2139.0,
-    "2024-06": 2340.0,
-    "2024-12": 2680.0,
-}
+class EndeksYok(ValueError):
+    """The price index for a period this calculation needs was not supplied.
+
+    The engine fell back to a sample table and to constants: a restatement
+    computed from made-up indices looks exactly like a real one (plan v9 §K0).
+    No index, no number.
+    """
+
+
+def _endeks(cpi: dict[str, float], period: str) -> float:
+    if period not in cpi:
+        raise EndeksYok(f"{period} dönemi için fiyat endeksi yok")
+    return cpi[period]
 
 
 @dataclass
@@ -61,13 +64,19 @@ class InflationAccountingEngine:
         cls,
         reporting_period: str,
         balance_sheet_items: list[dict[str, Any]],
-        cpi_table: dict[str, float] | None = None,
+        cpi_table: dict[str, float],
     ) -> InflationAdjustmentResult:
         """
         Calculate inflation restatements for a set of balance sheet items.
+
+        `cpi_table` maps "YYYY-MM" to the official index (TÜİK/EVDS). It must
+        hold the reporting period, the prior December (the year's opening) and
+        every non-monetary item's acquisition period; otherwise `EndeksYok`.
         """
-        cpi = cpi_table or SAMPLE_CPI_INDEX
-        end_index = cpi.get(reporting_period, 2340.0)
+        cpi = cpi_table
+        end_index = _endeks(cpi, reporting_period)
+        opening_period = f"{int(reporting_period[:4]) - 1}-12"
+        opening_index = _endeks(cpi, opening_period)
 
         adjusted_items: list[AdjustedAssetItem] = []
         monetary_assets = 0
@@ -99,7 +108,7 @@ class InflationAccountingEngine:
                 ))
             else:
                 # Parasal olmayan kalemler TÜFE katsayısıyla endekslenir
-                start_index = cpi.get(acq_period, end_index)
+                start_index = _endeks(cpi, acq_period)
                 factor = round(safe_div(end_index, start_index, default=1.0), 4)
                 adjusted_cents = round(nominal_cents * factor)
                 diff_cents = adjusted_cents - nominal_cents
@@ -121,7 +130,7 @@ class InflationAccountingEngine:
         # Net Parasal Pozisyon (NPP) = Parasal Varlıklar - Parasal Borçlar
         # Pozitif NPP enflasyon döneminde satın alma gücü kaybı (Zarar) yaratır.
         npp_cents = monetary_assets - monetary_liabilities
-        avg_inflation_rate = safe_div(end_index - 1859.0, 1859.0, default=0.25)
+        avg_inflation_rate = safe_div(end_index - opening_index, opening_index, default=0.0)
         net_monetary_loss = round(npp_cents * avg_inflation_rate)
 
         commentary = (
