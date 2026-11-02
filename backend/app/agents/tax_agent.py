@@ -112,6 +112,30 @@ def _compute_withholding(transactions: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _paid_taxes(transactions: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the books say was actually paid: KDV, stopaj, SGK and geçici vergi
+    payments (`tax_payment`, a balance-sheet movement) and P&L tax (`tax`).
+
+    The other sections are estimates at fixed rates; this one is a fact, and
+    the two used to be indistinguishable because only the estimate existed.
+    """
+    rows = [
+        t for t in transactions
+        if t.get("type") == "expense" and t.get("category") in ("tax_payment", "tax")
+    ]
+    by_month: dict[str, int] = {}
+    for t in rows:
+        month = str(t.get("transaction_date") or "")[:7]
+        if month:
+            by_month[month] = by_month.get(month, 0) + int(t.get("amount_cents", 0))
+    return {
+        "total": sum(int(t.get("amount_cents", 0)) for t in rows),
+        "by_month": dict(sorted(by_month.items())),
+        "row_count": len(rows),
+        "basis": "ledger",
+    }
+
+
 def _compute_corporate_tax(pnl: dict[str, Any]) -> dict[str, int]:
     """Kurumlar vergisi tahmini: EBITDA üzerinden."""
     ebitda = pnl.get("ebitda", 0)
@@ -311,6 +335,10 @@ async def run_tax(
         )
 
         tax = {
+            "paid": _paid_taxes(transactions),
+            # vat / withholding / corporate below are estimates at fixed rates
+            # (VAT_RATE, WITHHOLDING_RATE, SSI_RATE, CORPORATE_TAX_RATE).
+            "estimate_basis": "fixed_rates",
             "vat": vat,
             "withholding": withholding,
             "corporate": corp_tax,

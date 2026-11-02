@@ -229,6 +229,8 @@ async def muhasebe_analiz(
             # instead of telling the reviewer the source said nothing.
             "kdv_kurus": tx.kdv_kurus,
             "stopaj_kurus": tx.stopaj_kurus,
+            # The source's own account: copied into the journal, not re-guessed.
+            "account_code": tx.account_code,
         }
         for tx in txs
     ]

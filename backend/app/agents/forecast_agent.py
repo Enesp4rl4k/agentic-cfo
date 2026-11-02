@@ -27,6 +27,9 @@ def _fmt(cents: int) -> str:
     return f"₺{cents / 100:,.0f}"
 
 
+SEASONALITY_MIN_MONTHS = 24   # every calendar month observed at least twice
+
+
 def _detect_seasonality(
     monthly_series: list[dict[str, Any]],
 ) -> dict[int, float]:
@@ -36,14 +39,13 @@ def _detect_seasonality(
     Returns a dict mapping month number (1-12) to a seasonality multiplier.
     1.0 = average month, 1.3 = 30% above average, 0.7 = 30% below average.
 
-    Algorithm:
-      1. Compute 12-month rolling average at each point (detrend)
-      2. Divide each month's value by its rolling average (seasonal ratio)
-      3. Average ratios for each calendar month across years
-
-    Falls back to uniform multipliers (1.0) if insufficient data.
+    Index = a calendar month's mean income / the mean of all months (no
+    detrending). It needs every calendar month seen at least twice — at least
+    24 months. From one year each "index" is that month's own noise, and it was
+    applied to the forecast (live audit 2026-10-24: January 0,627 from 2024
+    alone; plan v8 §A3). Less history → {} and a flat projection.
     """
-    if len(monthly_series) < 12:
+    if len(monthly_series) < SEASONALITY_MIN_MONTHS:
         return {}  # Not enough data for seasonality
 
     try:
@@ -55,7 +57,7 @@ def _detect_seasonality(
             m_num = int(entry["month"][5:7])
             monthly_revenue.setdefault(m_num, []).append(entry["in"])
 
-        if not monthly_revenue:
+        if len(monthly_revenue) < 12 or min(len(v) for v in monthly_revenue.values()) < 2:
             return {}
 
         # Global mean across all months
@@ -165,7 +167,7 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
     """
     series = cashflow.get("monthly_series", [])
 
-    # Detect seasonality from historical data (returns {} if < 12 months)
+    # Detect seasonality from historical data (returns {} below 24 months)
     seasonality_indices = _detect_seasonality(series)
     has_seasonality = bool(seasonality_indices)
 
@@ -510,6 +512,13 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
             "alerts": alerts,
             "narrative": narrative,
             "seasonality_applied": has_seasonality,
+            # Why there is no seasonal shape, in the reader's words: a flat
+            # projection from less than two years is not "no seasonality".
+            "seasonality_note": (
+                None if has_seasonality else
+                f"Mevsimsellik için yetersiz veri: {len(cashflow.get('monthly_series') or [])} ay "
+                f"(en az {SEASONALITY_MIN_MONTHS} ay gerekir); düz projeksiyon."
+            ),
             "monte_carlo": monte_carlo if monte_carlo else None,
             "scenario_explanation": scenario_explanation,
             "confidence_interval": {

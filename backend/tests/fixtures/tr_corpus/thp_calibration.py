@@ -7,7 +7,9 @@ the right account, per evidence level, and `app/services/accounting/guven.py`
 publishes those counts as the confidence a reviewer sees.
 
 Ground truth is the Tekdüzen Hesap Planı, written before the classifier was
-run on the row — never copied from its output. Three sources:
+run on the row — never copied from its output. (Marketing rows said 771 and
+R&D 772 until plan v8 §A4: under 7/A those are 760 and 750; 771/772 are the
+770 group's transfer and variance accounts.) Three sources:
 
 1. The golden cases (already vetted).
 2. Every row of the TechNova fixtures, the corpus the live runs use.
@@ -32,7 +34,7 @@ _TECHNOVA: list[tuple[str, str, str, str]] = [
     ("Ocak İnternet - Turkcell Superonline", "expense", "770", "ofis iletişimi genel yönetim gideri"),
     ("Ocak Maaş Ödemeleri - Mühendislik Ekibi", "expense", "730", "ücret personel hesabına"),
     ("Ocak Maaş Ödemeleri - Satış Ekibi", "expense", "730", "satış ekibinin ücreti de ücrettir"),
-    ("Google Ads Ocak Kampanyası", "expense", "771", "reklam pazarlama gideri"),
+    ("Google Ads Ocak Kampanyası", "expense", "760", "reklam pazarlama gideri"),
     ("AWS Bulut Altyapı Faturası", "expense", "770", "barındırma hizmeti gider; varlık değil"),
     ("Donanım Alımı - Sunucu Bileşenleri", "expense", "255", "bilgisayar donanımı demirbaştır"),
     ("KDV Ödemesi - Aralık Dönemi", "expense", "360", "ödenen KDV borcu"),
@@ -40,7 +42,7 @@ _TECHNOVA: list[tuple[str, str, str, str]] = [
     ("Şubat Küçük Satış - Tek Müşteri", "income", "600", "satış hasılatı"),
     ("Şubat Ofis Kirası - Levent İstanbul", "expense", "770", "ofis kirası"),
     ("Şubat Maaş Ödemeleri - Tüm Ekip", "expense", "730", "ücret"),
-    ("Aşırı Pazarlama Harcaması - Ajans Kampanyası", "expense", "771", "ajans kampanyası pazarlama gideri"),
+    ("Aşırı Pazarlama Harcaması - Ajans Kampanyası", "expense", "760", "ajans kampanyası pazarlama gideri"),
     ("Tekrar Eden Tedarikçi Ödemesi - XYZ Bilişim", "expense", "320", "tedarikçiye ödeme satıcı borcunu kapatır"),
 ]
 
@@ -54,12 +56,12 @@ _BANKA_EKSTRESI: list[tuple[str, str, str, str]] = [
     ("Kırtasiye alımı", "expense", "770", "büro sarf malzemesi"),
     ("Ofis mobilya alımı", "expense", "255", "mobilya demirbaştır"),
     ("Muhasebe ücreti - SMMM Mart", "expense", "770", "muhasebe hizmeti genel yönetim gideri"),
-    ("Kargo gönderim bedeli - Aras", "expense", "771", "satış dağıtım gideri"),
+    ("Kargo gönderim bedeli - Aras", "expense", "760", "satış dağıtım gideri"),
     ("Ticari mal alımı - Tedarikçi ABC", "expense", "153", "satılmak üzere alınan mal"),
     ("Banka kredisi kullanımı", "income", "300", "kullanılan kredi borçtur, gelir değil"),
     ("İhracat bedeli - Almanya müşteri", "income", "601", "yurt dışı satış"),
     ("Temizlik hizmeti bedeli", "expense", "770", "ofis temizliği"),
-    ("Facebook reklam ödemesi", "expense", "771", "reklam"),
+    ("Facebook reklam ödemesi", "expense", "760", "reklam"),
     ("Geçici vergi ödemesi", "expense", "193", "peşin ödenen vergi"),
     ("Araç yakıt gideri", "expense", "770", "şirket aracı yakıtı genel yönetim gideri"),
     ("Personel yemek kartı yüklemesi", "expense", "730", "personele sağlanan yan hak"),

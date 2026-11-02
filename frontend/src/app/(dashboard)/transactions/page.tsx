@@ -35,6 +35,8 @@ const CATEGORIES = [
   "loan",
   "other_expense",
   "other_income",
+  "tax_payment",
+  "transfer",
 ] as const;
 
 type Category = (typeof CATEGORIES)[number];
@@ -54,6 +56,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   loan:          "bg-amber-950/50 text-amber-400 ring-amber-500/20",
   other_expense: "bg-zinc-800 text-zinc-400 ring-zinc-600/20",
   other_income:  "bg-teal-950/50 text-teal-400 ring-teal-500/20",
+  tax_payment:   "bg-zinc-800 text-zinc-300 ring-zinc-500/20",
+  transfer:      "bg-zinc-800 text-zinc-500 ring-zinc-600/20",
 };
 
 // ── Category editor ───────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ router = APIRouter()
 VALID_CATEGORIES = {
     "revenue", "cogs", "salary", "rent", "utilities",
     "marketing", "technology", "tax", "loan",
-    "other_expense", "other_income",
+    "other_expense", "other_income", "tax_payment", "transfer",
 }
 
 

@@ -899,6 +899,8 @@ export const tr: MessageTree = {
       corporate: "Kurumlar Vergisi",
       effectiveRate: "Efektif oran: {rate}%",
       total: "Toplam Vergi Yükü",
+      paid: "Defterde Ödenen",
+      paidSub: "{n} ödeme · kayıtlardan, tahmin değil",
     },
     calendar: {
       heading: "Ödeme Takvimi",

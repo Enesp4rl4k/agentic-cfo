@@ -25,7 +25,10 @@ SECTION_PROVENANCE: dict[str, str] = {
     "cashflow": "real",
     "multi_period": "real",
     "recent_transactions": "real",
-    "tax": "rule_based",
+    # Fixed-rate estimates (KDV %20, stopaj, SGK, kurumlar) — "rule_based"
+    # badged them "Gerçek". The ledger's actual payments are tax.paid, which
+    # the tax page labels on its own card (plan v8 §A2).
+    "tax": "estimated",
     "budget": "manual",
     "forecast": "estimated",
 }

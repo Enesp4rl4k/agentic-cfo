@@ -372,6 +372,7 @@ async def run_cfo_analysis(
                     raw_text=tx_data.get("raw_text"),
                     confidence=tx_data.get("confidence"),
                     category_source=tx_data.get("category_source"),
+                    account_code=tx_data.get("account_code"),
                 )
                 db.add(tx)
 
@@ -659,6 +660,19 @@ async def saved_result(job_id: str, db: Any) -> dict[str, Any]:
     }
 
 
+def cfo_chain_result(job_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    """The CFO result as the company context stores it."""
+    dashboard = result.get("dashboard_json") or {}
+    return {
+        "job_id":     job_id,
+        "dashboard":  dashboard,
+        "anomalies":  result.get("anomalies") or [],
+        "forecast":   dashboard.get("forecast"),
+        "pnl":        dashboard.get("pnl"),
+        "cashflow":   dashboard.get("cashflow"),
+    }
+
+
 async def continue_after_completion(
     job_id: str, org_id: str, result: dict[str, Any], db: Any
 ) -> None:
@@ -669,20 +683,52 @@ async def continue_after_completion(
     was held for review — only dashboard_json and anomalies are read, both of
     which are persisted, so an approved job continues from what was saved.
     """
-    from app.agents.orchestration.auto_chain import on_agent_complete
-    from app.services.company_context import get_company_context, save_company_context
+    chain_result = cfo_chain_result(job_id, result)
 
-    chain_result: dict[str, Any] = {
-        "job_id":     job_id,
-        "dashboard":  result.get("dashboard_json") or {},
-        "anomalies":  result.get("anomalies") or [],
-        "forecast":   (result.get("dashboard_json") or {}).get("forecast"),
-        "pnl":        (result.get("dashboard_json") or {}).get("pnl"),
-        "cashflow":   (result.get("dashboard_json") or {}).get("cashflow"),
-    }
+    # Plan v7 §P0 / W2: an analysis becomes the company's picture only if it
+    # adds a period — a narrower or unreadable one no longer wipes the view.
+    applied = await apply_company_view(job_id, org_id, chain_result, db, force=False)
+    if applied:
+        # Only a new company picture re-runs what reads it (CEO synthesis…).
+        spawn_auto_chain(job_id, org_id, chain_result)
+    # Job-level events happen for every completed analysis.
+    _job_side_effects(job_id, org_id, result)
+
+
+async def apply_company_view(
+    job_id: str, org_id: str, chain_result: dict[str, Any], db: Any, *, force: bool
+) -> bool:
+    """Make this analysis the company's active CFO view, unless it adds no
+    period (`company_view.should_replace`) and the person did not ask for it.
+    Records the decision on the job either way. Returns whether it applied."""
+    from app.models.analysis_job import AnalysisJob
+    from app.services.company_context import get_company_context, save_company_context
+    from app.services.company_view import should_replace
+
+    # Both reach here from an HTTP request (POST /analysis/{id}/company-view)
+    # and are written into log lines below; strip CR/LF as run_cfo_analysis does.
+    job_id = str(job_id).replace("\r", "").replace("\n", "")
+    org_id = str(org_id).replace("\r", "").replace("\n", "")
 
     try:
         ctx_obj = await get_company_context(org_id, db)
+        current = (ctx_obj.last_cfo_result or {}).get("dashboard")
+        replace, reason = should_replace(current, chain_result.get("dashboard"))
+        if force and chain_result.get("dashboard"):
+            replace, reason = True, "applied_by_user"
+
+        job = await db.get(AnalysisJob, job_id)
+        if job is not None:
+            meta = dict(job.result_metadata or {})
+            meta["company_view"] = {"applied": replace, "reason": reason}
+            job.result_metadata = meta
+            await db.commit()
+        if not replace:
+            logger.info(
+                "Company view kept for org=%s: job=%s not applied (%s)", org_id, job_id, reason
+            )
+            return False
+
         ctx_obj.update_agent_result("cfo", chain_result)
         ctx_obj.set_active_job("cfo", str(job_id))
         await save_company_context(ctx_obj, db)
@@ -695,8 +741,16 @@ async def continue_after_completion(
             job_id,
         )
     except Exception as exc:
+        # Not applied: running the auto-chain on a context that was not
+        # written would synthesise from the old view as if it were new.
         logger.warning("ARQ worker: context/semantic persist failed (non-fatal): %s", exc)
+        return False
+    return True
 
+
+def spawn_auto_chain(job_id: str, org_id: str, chain_result: dict[str, Any]) -> None:
+    """Re-run what reads the company's CFO view (auto-chain → CEO …)."""
+    from app.agents.orchestration.auto_chain import on_agent_complete
     from app.core.background import spawn
 
     spawn(
@@ -709,6 +763,11 @@ async def continue_after_completion(
         name=f"auto-chain-cfo-{job_id[:8]}",
     )
     logger.info("ARQ worker: auto_chain triggered for cfo → org=%s", org_id)
+
+
+def _job_side_effects(job_id: str, org_id: str, result: dict[str, Any]) -> None:
+    """Cache invalidation, memory/trend and trigger events for a completed job."""
+    from app.core.background import spawn
 
     # ── M3: Invalidate analytics cache on CFO completion ───────────
     async def _invalidate_analytics_cache(org_id: str) -> None:

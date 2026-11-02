@@ -26,6 +26,8 @@ import csv
 import io
 import re
 
+from app.core import tdhp
+from app.parsers.accounting import hesap
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 
@@ -188,7 +190,7 @@ class LogoTigerParser(BankParser):
                 debit_cents, credit_cents, account_code
             )
 
-            if amount <= 0:
+            if amount == 0:
                 continue
 
             transactions.append(ParsedTransaction(
@@ -200,6 +202,7 @@ class LogoTigerParser(BankParser):
                 vendor=self._extract_vendor(description),
                 reference=reference,
                 raw_row=delimiter.join(row),
+                account_code=tdhp.ana_hesap(account_code),
             ))
 
         return transactions
@@ -244,43 +247,9 @@ class LogoTigerParser(BankParser):
     def _resolve_tx_type(
         debit: int, credit: int, account_code: str
     ) -> tuple[str, int]:
-        """
-        Determine transaction type and canonical amount.
-
-        Logo Tiger accounting logic:
-        - 6xx accounts (expense): debit = expense, credit = reversal/income
-        - 7xx accounts (income/revenue): credit = income, debit = reversal
-        - If no account code: credit > 0 → income, debit > 0 → expense
-        """
-        acc_prefix = account_code[:1] if account_code else ""
-
-        if acc_prefix == "6":
-            # Cost/expense account
-            if debit > 0:
-                return "expense", debit
-            elif credit > 0:
-                return "income", credit  # reversal treated as income
-        elif acc_prefix == "7":
-            # Revenue account
-            if credit > 0:
-                return "income", credit
-            elif debit > 0:
-                return "expense", debit  # reversal
-        else:
-            # Generic: credit = income, debit = expense
-            if credit > 0 and debit == 0:
-                return "income", credit
-            elif debit > 0 and credit == 0:
-                return "expense", debit
-            elif credit > 0 and debit > 0:
-                # Net position
-                net = credit - debit
-                if net > 0:
-                    return "income", net
-                else:
-                    return "expense", abs(net)
-
-        return "expense", 0
+        """Type and amount from the account (app.core.tdhp); a transfer or
+        closing posting comes back as zero and is skipped."""
+        return hesap.hareket(debit, credit, account_code) or ("expense", 0)
 
     @staticmethod
     def _extract_vendor(description: str) -> str | None:

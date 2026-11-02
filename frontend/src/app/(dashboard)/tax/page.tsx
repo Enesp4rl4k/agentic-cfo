@@ -35,6 +35,8 @@ interface TaxData {
   total_tax_burden: number;
   reference_month: string;
   narrative: string;
+  /** What the books say was paid (KDV, stopaj, SGK, geçici vergi); the rest is estimated. */
+  paid?: { total: number; row_count: number; by_month: Record<string, number> } | null;
 }
 
 // ── Summary KPI strip ─────────────────────────────────────────────────────────
@@ -77,6 +79,14 @@ function TaxKPIStrip({ tax, prov }: { tax: TaxData; prov?: ProvenanceBlock }) {
       sub: tax.reference_month,
       color: "text-destructive",
     },
+    ...(tax.paid
+      ? [{
+          label: kpi.paid,
+          value: fmt(tax.paid.total / 100),
+          sub: kpi.paidSub.replace("{n}", String(tax.paid.row_count)),
+          color: "text-foreground",
+        }]
+      : []),
   ];
 
   return (
@@ -86,7 +96,7 @@ function TaxKPIStrip({ tax, prov }: { tax: TaxData; prov?: ProvenanceBlock }) {
           <ProvenanceBadge dataSource={prov.data_source} basis={prov.basis} />
         </div>
       )}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-6">
       {items.map((item) => (
         <div key={item.label} className="bg-card px-4 py-4">
           <p className="text-xs text-muted-foreground">{item.label}</p>
