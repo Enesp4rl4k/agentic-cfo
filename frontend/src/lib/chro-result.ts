@@ -95,6 +95,8 @@ export interface CHROView {
  *  and narrows cleanly through the isRecord guard. */
 export type RawCHROResult = {
   job_id?: string;
+  /** The confidence gate's decision on this run. */
+  inceleme?: import("@/lib/api/agentReview").GateDecision | null;
   headcount?: Record<string, unknown> | null;
   attrition?: Record<string, unknown> | null;
   compensation?: Record<string, unknown> | null;

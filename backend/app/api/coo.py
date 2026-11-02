@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.run_ledger import recorded_run
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -62,21 +63,22 @@ async def run_coo_analysis(
     job_id = str(uuid.uuid4())
 
     try:
-        result = await run_coo_pipeline(
+        result = await recorded_run(db, "coo", current_user.org_id, job_id, run_coo_pipeline(
             job_id=job_id,
             company_name=body.company_name,
             period=body.period,
             process_csv=body.process_csv,
             resource_csv=body.resource_csv,
             sla_csv=body.sla_csv,
-        )
+        ))
 
+        inceleme = None
         if current_user.org_id and not result.get("error"):
             try:
                 from app.agents.orchestration.auto_chain import on_agent_complete
                 from app.services.context_persist import persist_agent_completion
 
-                await persist_agent_completion(
+                inceleme = await persist_agent_completion(
                     str(current_user.org_id),
                     "coo",
                     dict(result),
@@ -108,6 +110,7 @@ async def run_coo_analysis(
                 "coo_summary":  result.get("coo_summary"),
                 "logs":         logs_serializable,
                 "error":        result.get("error"),
+                "inceleme": inceleme,
             },
             "error": None,
         }

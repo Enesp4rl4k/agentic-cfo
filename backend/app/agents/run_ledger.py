@@ -14,7 +14,7 @@ converge to the same result.
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_run import AgentRun
 from app.models.llm_call_log import LLMCallLog
+from app.platform.run_gate import evaluate
 
 TERMINAL = {"completed", "failed", "halted", "awaiting_review"}
 
@@ -81,7 +82,9 @@ async def agent_run(
         row.error = None
         row.finished_at = None
         row.attempt = attempt
-    await db.flush()
+    # Committed, not flushed: the row must outlive a killed process, and a write
+    # transaction held across minutes of pipeline blocks every other writer.
+    await db.commit()
 
     handle = RunHandle(row=row)
     t0 = time.monotonic()
@@ -138,3 +141,27 @@ async def resume_run(
                 if k in result
             }
     return row, result
+
+
+async def recorded_run(
+    db: AsyncSession,
+    pipeline: str,
+    org_id: Any,
+    job_id: str | None,
+    work: Awaitable[Any],
+    *,
+    payload: Callable[[Any], dict[str, Any] | None] | None = None,
+) -> Any:
+    """Await a role's pipeline with an AgentRun around it (plan v9 §K0 / §V6 S2).
+
+    The row says what the gate decided. `payload` picks the role's result out of
+    a wrapper; a None result means nothing ran, recorded as `halted`.
+    """
+    async with agent_run(db, pipeline=pipeline, org_id=str(org_id) if org_id else None, job_id=job_id) as run:
+        result = await work
+        body = payload(result) if payload else result
+        if body is None:
+            run.row.status = "halted"
+        elif evaluate(body).awaiting_review:
+            run.row.status = "awaiting_review"
+        return result

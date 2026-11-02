@@ -13,6 +13,7 @@ import {
   type Alan,
   type AlanKodu,
 } from "@/lib/api/domains";
+import { HeldResultNotice } from "@/components/ui/held-result-notice";
 
 /**
  * A domain's single entry point: real data, or what is missing and how to get it.
@@ -120,6 +121,8 @@ export function DomainPanel({
           Analiz et
         </Button>
       </div>
+
+      <HeldResultNotice gate={data.inceleme} />
 
       {data.cfo_gercek.kalemler.length > 0 && (
         <div className="rounded-md border border-border bg-muted/20 p-3">

@@ -58,6 +58,8 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/agent-jobs/list/{agent_type}"): "agent type; listed by the caller's org",
     ("GET", "/api/v1/agent-jobs/{job_id}"): "an AgentJob, not an AnalysisJob; 404 unless job.org_id == caller's (org required)",
     ("DELETE", "/api/v1/agent-jobs/{job_id}"): "an AgentJob; 404 unless job.org_id == caller's (org required)",
+    ("POST", "/api/v1/agent-jobs/{job_id}/approve"): "an AgentJob; 404 unless job.org_id == caller's (owner role)",
+    ("POST", "/api/v1/agent-jobs/{job_id}/reject"): "an AgentJob; 404 unless job.org_id == caller's (owner role)",
     ("PATCH", "/api/v1/notifications/{notification_id}/read"): "404 unless notif.org_id == caller's (org required)",
     ("DELETE", "/api/v1/notifications/{notification_id}"): "404 unless notif.org_id == caller's (org required)",
     ("PATCH", "/api/v1/related-parties/{party_id}"): "404 unless party.org_id == caller's manager org",

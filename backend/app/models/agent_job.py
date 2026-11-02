@@ -23,6 +23,9 @@ def _utcnow() -> datetime:
 class AgentJobStatus(StrEnum):
     PENDING   = "pending"
     RUNNING   = "running"
+    # Finished, below the gate (app.platform.run_gate): visible to the person
+    # deciding, not written to the company's context until they approve.
+    AWAITING_REVIEW = "awaiting_review"
     COMPLETED = "completed"
     FAILED    = "failed"
 
@@ -73,6 +76,12 @@ class AgentJob(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Progress 0–100 for frontend polling
+    # The claim's expiry: a process killed mid-run cannot say so. Past this the
+    # reaper fails the job (app/services/job_reaper.py).
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     progress: Mapped[int] = mapped_column(default=0, nullable=False)
 
     # Timestamps

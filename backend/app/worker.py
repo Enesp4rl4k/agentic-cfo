@@ -17,7 +17,9 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -213,6 +215,39 @@ async def _ek_belgeler(job_id: str, db: Any) -> list[dict[str, str]]:
     ]
 
 
+def _records_run(fn: Callable[..., Awaitable[dict[str, Any]]]) -> Callable[..., Awaitable[dict[str, Any]]]:
+    """The CFO analysis with its AgentRun around it (plan v9 §K0 / §V6 S2)."""
+
+    @functools.wraps(fn)
+    async def wrapper(ctx: dict, job_id: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        from app.agents.run_ledger import agent_run
+        from app.database import engine, get_session_factory
+        from app.models.analysis_job import AnalysisJob
+
+        job_id = str(job_id).replace("\r", "").replace("\n", "")
+        async with get_session_factory(engine())() as db:
+            job = await db.get(AnalysisJob, job_id)
+            if job is None:
+                return await fn(ctx, job_id, *args, **kwargs)
+            org_id = str(job.org_id) if job.org_id else None
+            await db.commit()
+            async with agent_run(db, pipeline="cfo", org_id=org_id, job_id=job_id) as run:
+                out = await fn(ctx, job_id, *args, **kwargs)
+                if out.get("skipped"):
+                    # A duplicate delivery ran nothing, so it is no run: it would
+                    # count against the success rate of the run that did.
+                    await db.delete(run.row)
+                elif not out.get("ok"):
+                    run.row.status = "failed"
+                    run.row.error = str(out.get("error") or out.get("reason") or "")[:2000] or None
+                elif "awaiting_review" in str(out.get("status") or "").lower():
+                    run.row.status = "awaiting_review"
+                return out
+
+    return wrapper
+
+
+@_records_run
 async def run_cfo_analysis(
     ctx: dict,
     job_id: str,

@@ -27,6 +27,16 @@ export type MessageTree = {
     benchmark: string;
     benchmarkHint: string;
   };
+  reviewQueue: {
+    title: string;
+    body: string;
+    approve: string;
+    reject: string;
+    ownerOnly: string;
+    status: string;
+    heldNotice: string;
+    goToQueue: string;
+  };
   ruleFeedback: {
     badgeRule: string;
     badgeRuleHint: string;
@@ -2108,6 +2118,16 @@ export const en: MessageTree = {
     estimatedHint: "Extrapolated from history — not a measurement",
     benchmark: "Benchmark",
     benchmarkHint: "Sector assumption / fixed reference — not company data",
+  },
+  reviewQueue: {
+    title: "{n} analyses await your approval",
+    body: "These results did not pass the confidence gate. Until approved they stay out of the company view and the automatic chain does not run.",
+    approve: "Approve",
+    reject: "Reject",
+    ownerOnly: "That did not go through. Only the company owner can make this decision.",
+    status: "Awaiting approval",
+    goToQueue: "Go to the approval queue",
+    heldNotice: "The result is ready but not yet in the company view: it awaits the owner's approval in Command Center.",
   },
   ruleFeedback: {
     badgeRule: "Your rule",

@@ -8,7 +8,7 @@ import { apiClient } from "@/lib/api/client";
 
 export type AgentType = "cto" | "cmo" | "coo" | "chro" | "risk" | "audit" | "compliance";
 
-export type AgentJobStatus = "pending" | "running" | "completed" | "failed";
+export type AgentJobStatus = "pending" | "running" | "awaiting_review" | "completed" | "failed";
 
 export interface AgentJobResult {
   id: string;
@@ -104,7 +104,7 @@ export function useAgentJobStatus(jobId: string | null) {
     enabled: !!jobId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status === "completed" || status === "failed") return false;
+      if (status === "completed" || status === "failed" || status === "awaiting_review") return false;
       return 2000;
     },
     // Polling pauses while the tab is hidden (react-query default): a stuck
@@ -187,7 +187,9 @@ export function useAgentJob(agentType: AgentType) {
     isEnqueueing: enqueueMutation.isPending,
     isPending:    status === "pending",
     isRunning:    status === "running",
-    isDone:       status === "completed",
+    // Below the gate the result is still shown; only the company context waits.
+    isDone:       status === "completed" || status === "awaiting_review",
+    isAwaitingReview: status === "awaiting_review",
     isFailed:     status === "failed",
     isActive:     status === "pending" || status === "running",
     isLoading:    isLoading && !!jobId,

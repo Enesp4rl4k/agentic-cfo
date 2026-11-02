@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.chro.orchestrator import run_chro_pipeline
+from app.agents.run_ledger import recorded_run
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -46,20 +47,21 @@ async def run_chro_analysis(
     try:
         job_id = str(uuid.uuid4())
 
-        result = await run_chro_pipeline(
+        result = await recorded_run(db, "chro", current_user.org_id, job_id, run_chro_pipeline(
             headcount_csv=body.headcount_csv,
             attrition_csv=body.attrition_csv,
             compensation_csv=body.compensation_csv,
             company_name=body.company_name,
             analysis_period=body.analysis_period,
-        )
+        ))
 
+        inceleme = None
         if current_user.org_id and not result.get("error"):
             try:
                 from app.agents.orchestration.auto_chain import on_agent_complete
                 from app.services.context_persist import persist_agent_completion
 
-                await persist_agent_completion(
+                inceleme = await persist_agent_completion(
                     str(current_user.org_id),
                     "chro",
                     dict(result),
@@ -91,6 +93,7 @@ async def run_chro_analysis(
             "chro_summary": result.get("chro_summary"),
             "logs": logs_serializable,
             "error": result.get("error"),
+            "inceleme": inceleme,
         }
 
     except Exception as e:

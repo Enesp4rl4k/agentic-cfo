@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 import { LottiePlayer } from "./lottie-player";
 import type { AgentJobStatus, AgentJobResult } from "@/hooks/useAgentJob";
@@ -35,21 +36,29 @@ const STEP_LABELS: Record<string, string> = {
   compliance_summary: "Uyumluluk özeti",
 };
 
+const BAR_COLOR: Partial<Record<AgentJobStatus, string>> = {
+  completed: "bg-success",
+  awaiting_review: "bg-warning",
+  failed: "bg-destructive",
+};
+
+const STATUS_TEXT: Partial<Record<AgentJobStatus, string>> = {
+  pending: "Sıraya alındı…",
+  running: "Analiz yapılıyor…",
+  completed: "Tamamlandı",
+  failed: "Başarısız",
+};
+
 // ── Progress bar ───────────────────────────────────────────────────────────────
 
 function ProgressBar({ progress, status }: { progress: number; status: AgentJobStatus | null }) {
+  const { t } = useI18n();
   const pct = Math.max(0, Math.min(100, progress));
 
-  const barColor =
-    status === "completed" ? "bg-success" :
-    status === "failed"    ? "bg-destructive" :
-    "bg-primary";
-
-  const statusText =
-    status === "pending"   ? "Sıraya alındı…" :
-    status === "running"   ? "Analiz yapılıyor…" :
-    status === "completed" ? "Tamamlandı" :
-    status === "failed"    ? "Başarısız" : "Bekleniyor";
+  const barColor = (status && BAR_COLOR[status]) || "bg-primary";
+  const statusText = status === "awaiting_review"
+    ? t.reviewQueue.status
+    : (status && STATUS_TEXT[status]) || "Bekleniyor";
 
   return (
     <div className="w-full">
@@ -156,6 +165,8 @@ export function AgentJobPanel({
   const isActive = status === "pending" || status === "running";
   const isDone   = status === "completed";
   const isFailed = status === "failed";
+  const isHeld   = status === "awaiting_review";
+  const { t } = useI18n();
 
   if (!status) return null;
 
@@ -166,6 +177,7 @@ export function AgentJobPanel({
         "transition-[border-color,background-color] duration-300 ease-out",
         isDone   && "border-success/30 bg-success/5",
         isFailed && "border-destructive/30 bg-destructive/5",
+        isHeld   && "border-warning/40 bg-warning/5",
         isActive && "border-primary/30 bg-primary/5 shadow-sm"
       )}
       role="region"
@@ -196,7 +208,7 @@ export function AgentJobPanel({
           </span>
         </div>
 
-        {(isDone || isFailed) && onReset && (
+        {(isDone || isFailed || isHeld) && onReset && (
           <button
             onClick={onReset}
             className={cn(
@@ -216,6 +228,12 @@ export function AgentJobPanel({
       <StepList logs={logs} />
 
       {/* Error message */}
+      {isHeld && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t.reviewQueue.heldNotice}
+        </p>
+      )}
+
       {isFailed && error && (
         <div className="animate-slide-down rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2">
           <p className="text-xs text-destructive">{error}</p>

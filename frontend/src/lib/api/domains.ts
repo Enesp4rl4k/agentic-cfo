@@ -1,3 +1,4 @@
+import type { GateDecision } from "@/lib/api/agentReview";
 import { apiClient } from "@/lib/api/client";
 
 // One engine per domain. Mirrors backend app/agents/orchestration/domain_analysis.py:
@@ -40,6 +41,8 @@ export interface Alan {
   bagli_kaynak_sinyalleri: Record<string, unknown> | null;
   /** Present after a run. Null when there was not enough data. */
   sonuc?: Record<string, unknown> | null;
+  /** The confidence gate's decision; when held, the result awaits the owner. */
+  inceleme?: GateDecision | null;
   neden?: string;
   provenance?: { data_source: "real"; synthetic: false; basis: string };
 }

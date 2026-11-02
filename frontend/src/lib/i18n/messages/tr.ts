@@ -28,6 +28,16 @@ export const tr: MessageTree = {
     benchmark: "Benchmark",
     benchmarkHint: "Sektör varsayımı / sabit referans — şirket verisi değil",
   },
+  reviewQueue: {
+    title: "Onayınızı bekleyen {n} analiz",
+    body: "Bu sonuçlar güven kapısını geçemedi. Onaylamadan şirket görünümüne yazılmaz, otomatik zincir tetiklenmez.",
+    approve: "Onayla",
+    reject: "Reddet",
+    ownerOnly: "İşlem yapılamadı. Bu kararı yalnız şirket sahibi verebilir.",
+    status: "Onay bekliyor",
+    goToQueue: "Onay kuyruğuna git",
+    heldNotice: "Sonuç hazır, ama şirket görünümüne yazılmadı: Command Center'da sahibinin onayını bekliyor.",
+  },
   ruleFeedback: {
     badgeRule: "Kuralın",
     badgeRuleHint: "Bu kategoriyi senin kaydettiğin bir kural belirledi.",
