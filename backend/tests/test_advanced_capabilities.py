@@ -15,7 +15,11 @@ import pytest
 from app.services.alert_dispatcher import AlertDispatcher
 from app.services.board_deck_pdf import BoardDeckPDFExporter
 from app.services.demo_seeder import DemoSeeder
-from app.services.inflation_accounting import InflationAccountingEngine
+from app.services.inflation_accounting import EndeksYok, InflationAccountingEngine
+
+# An index table for the arithmetic; the engine holds no default of its own.
+_ENDEKS = {"2023-01": 1200.0, "2023-06": 1350.0, "2023-12": 1860.0, "2024-01": 1980.0, "2024-06": 2340.0}
+
 
 # ── 1. Executive Board Deck PDF Exporter Tests ─────────────────────────────────
 
@@ -72,6 +76,7 @@ def test_inflation_accounting_engine():
     result = InflationAccountingEngine.calculate_adjustment(
         reporting_period="2024-06",
         balance_sheet_items=balance_sheet,
+        cpi_table=_ENDEKS,
     )
 
     assert result.reporting_period == "2024-06"
@@ -81,6 +86,14 @@ def test_inflation_accounting_engine():
     assert result.net_monetary_loss_cents > 0
     assert len(result.adjusted_assets) == 4
     assert result.cfo_commentary != ""
+
+
+def test_no_official_index_means_no_restatement():
+    items = [{"name": "Makine", "is_monetary": False, "acquisition_period": "2023-03", "amount_cents": 100}]
+    with pytest.raises(EndeksYok):
+        InflationAccountingEngine.calculate_adjustment("2024-06", items, cpi_table=_ENDEKS)
+    with pytest.raises(EndeksYok):
+        InflationAccountingEngine.calculate_adjustment("2025-06", [], cpi_table=_ENDEKS)
 
 
 # ── 3. Multi-Channel Alert Dispatcher Tests ───────────────────────────────────

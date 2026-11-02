@@ -20,6 +20,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.core.turkish import fold
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,8 +40,11 @@ def _build_financial_context(
     forecast = dashboard.get("forecast", {})
     anomalies = dashboard.get("anomalies", [])
 
-    def fmt(cents: float | int) -> str:
-        return f"₺{cents / 100:,.0f}"
+    # The stored dashboard is in lira (report_agent._fmt). This divided by 100
+    # again: the model read revenue of ₺97,995 for a company with ₺9,799,500
+    # and answered from it (plan v9 §K0). Transactions below are kuruş.
+    def fmt(lira: float | int) -> str:
+        return f"₺{lira:,.0f}"
 
     lines = [
         "=== FINANCIAL SUMMARY ===",
@@ -99,6 +104,70 @@ def _build_financial_context(
             )
 
     return "\n".join(lines)
+
+
+# ── Answers that need no model ────────────────────────────────────────────────
+
+_NICEL = ("ne kadar", "kac", "toplam", "hangisi", "nedir", "en buyuk")
+_GIDER_ADI = {
+    "salary": "maaş ve ücretler", "rent": "kira", "utilities": "elektrik, su ve iletişim",
+    "marketing": "pazarlama", "technology": "teknoloji", "other_expense": "diğer giderler",
+}
+
+
+def _tl(lira: float | int) -> str:
+    return f"₺{lira:,.0f}".replace(",", ".")
+
+
+def _pnl_cevabi(soru: str, pnl: dict[str, Any]) -> str | None:
+    for anahtarlar, alan, ad in (
+        (("favok", "ebitda"), "ebitda", "FAVÖK"),
+        (("net kar", "net income"), "net_income", "Net kâr"),
+        (("gelir", "ciro", "revenue"), "revenue", "Toplam gelir"),
+    ):
+        if any(a in soru for a in anahtarlar) and isinstance(pnl.get(alan), (int, float)):
+            return f"{ad}: {_tl(pnl[alan])}."
+    return None
+
+
+def _en_buyuk_gider(pnl: dict[str, Any]) -> str | None:
+    kalemler = dict(pnl.get("opex") or {})
+    if isinstance(pnl.get("cogs"), (int, float)):
+        kalemler["cogs"] = pnl["cogs"]
+    kalemler = {k: v for k, v in kalemler.items() if isinstance(v, (int, float)) and v > 0}
+    if not kalemler:
+        return None
+    en = max(kalemler, key=lambda k: kalemler[k])
+    ad = "satılan malın maliyeti" if en == "cogs" else _GIDER_ADI.get(en, en.replace("_", " "))
+    return f"En büyük gider kalemi {ad}: {_tl(kalemler[en])}."
+
+
+def _runway_cevabi(dashboard: dict[str, Any]) -> str | None:
+    base = ((dashboard.get("forecast") or {}).get("scenarios") or {}).get("base")
+    if not base:
+        return None
+    ay = base.get("runway_months")
+    if isinstance(ay, (int, float)):
+        return f"Baz senaryoda nakit pisti: {ay:.1f} ay."
+    return "Baz senaryoda 12 aylık tahmin içinde nakit tükenmesi görünmüyor."
+
+
+def dogrudan_cevap(soru: str, dashboard: dict[str, Any]) -> str | None:
+    """The answer to a question the stored analysis settles, without a model.
+
+    Only "how much / which" questions: "Geliri nasıl artırırım?" mentions revenue
+    but is not asking for the figure, and answering it with one would mislead.
+    None means a model is needed.
+    """
+    s = fold(soru)
+    pnl = dashboard.get("pnl") or {}
+    if "runway" in s or "nakit pist" in s:
+        return _runway_cevabi(dashboard)
+    if not any(k in s for k in _NICEL):
+        return None
+    if "gider" in s and "en buyuk" in s:
+        return _en_buyuk_gider(pnl)
+    return _pnl_cevabi(s, pnl)
 
 
 # ── CEO/CTO context builder ───────────────────────────────────────────────────
