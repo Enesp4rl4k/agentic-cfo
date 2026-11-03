@@ -2141,7 +2141,7 @@ export const en: MessageTree = {
     expense: "Expenses",
     duplicatesTitle: "{n} records may be the same payment: left out of the totals until you decide",
     alreadyThere: "Already in the ledger: {description}",
-    lastUpload: "Last upload ({file}): {new} new, {already} already in the ledger, {possible} awaiting a decision.",
+    lastUpload: "Last upload ({file}): {new} new, {already} already in the ledger, {possible} possible duplicates.",
     keep: "Separate payment",
     exclude: "Same payment",
   },

@@ -37,7 +37,7 @@ export const tr: MessageTree = {
     expense: "Gider",
     duplicatesTitle: "Aynı ödeme olabilecek {n} kayıt: toplamlara girmedi, kararınızı bekliyor",
     alreadyThere: "Defterde zaten var: {description}",
-    lastUpload: "Son yükleme ({file}): {new} yeni, {already} zaten defterde, {possible} karar bekliyor.",
+    lastUpload: "Son yükleme ({file}): {new} yeni, {already} zaten defterde, {possible} olası mükerrer.",
     keep: "Ayrı ödeme",
     exclude: "Aynı ödeme",
   },
