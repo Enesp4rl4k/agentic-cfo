@@ -1,9 +1,9 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -79,6 +79,11 @@ class Transaction(Base):
     # ("600", "770"), when the source names one. It decides direction and P&L
     # membership (app.core.tdhp); None for a bank line or a receipt.
     account_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # What the source document says about this money, when there is one (e-Fatura).
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    payment_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counterparty: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )

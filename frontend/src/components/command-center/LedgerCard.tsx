@@ -59,6 +59,14 @@ export function LedgerCard() {
           </div>
         </dl>
       )}
+      {summary && summary.open_items.receivable_cents + summary.open_items.payable_cents > 0 && (
+        <p className="text-xs">
+          {copy.openItems
+            .replace("{receivable}", fmt(summary.open_items.receivable_cents / 100))
+            .replace("{payable}", fmt(summary.open_items.payable_cents / 100))
+            .replace("{noDue}", String(summary.open_items.no_due_date))}
+        </p>
+      )}
       {summary?.last_upload && (
         <p className="text-xs text-muted-foreground">
           {copy.lastUpload

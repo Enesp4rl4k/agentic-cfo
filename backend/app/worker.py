@@ -20,7 +20,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from arq import create_pool
@@ -408,6 +408,10 @@ async def run_cfo_analysis(
                     confidence=tx_data.get("confidence"),
                     category_source=tx_data.get("category_source"),
                     account_code=tx_data.get("account_code"),
+                    document_id=tx_data.get("document_id"),
+                    due_date=date.fromisoformat(tx_data["due_date"]) if tx_data.get("due_date") else None,
+                    payment_note=tx_data.get("payment_note"),
+                    counterparty=tx_data.get("counterparty"),
                 )
                 db.add(tx)
 

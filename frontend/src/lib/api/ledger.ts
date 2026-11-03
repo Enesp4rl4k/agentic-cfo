@@ -6,6 +6,7 @@ import { apiClient } from "@/lib/api/client";
 export interface LedgerSummary {
   /** What the newest analysis added. */
   last_upload: { filename: string; new: number; already: number; possible_duplicate: number } | null;
+  open_items: { receivable_cents: number; payable_cents: number; no_due_date: number; other_currency: number };
   rows: number;
   revenue_cents: number;
   expense_cents: number;

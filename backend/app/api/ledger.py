@@ -12,6 +12,7 @@ from app.api.access import ensure_tenant
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.open_item import OpenItem
 from app.models.user import User
 from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, ledger_summary
 
@@ -65,6 +66,36 @@ async def get_possible_duplicates(
         match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
         data.append({**_row(row), "matches": [_row(match)] if match and match.org_id == org_id else []})
     return {"data": data, "error": None}
+
+
+@router.get("/ledger/open-items", responses={400: {"description": "The user has no organisation."}})
+async def get_open_items(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """What this company is owed and owes, soonest due first; undated last."""
+    rows = (await db.execute(
+        select(OpenItem)
+        .where(OpenItem.org_id == _org(user), OpenItem.status == "open")
+        .order_by(OpenItem.due_date.is_(None), OpenItem.due_date, OpenItem.issue_date)
+    )).scalars()
+    return {
+        "data": [
+            {
+                "id": i.id,
+                "direction": i.direction,
+                "counterparty": i.counterparty,
+                "description": i.description,
+                "amount_cents": i.amount_cents,
+                "currency": i.currency,
+                "issue_date": i.issue_date.isoformat(),
+                "due_date": i.due_date.isoformat() if i.due_date else None,
+                "payment_note": i.payment_note,
+            }
+            for i in rows
+        ],
+        "error": None,
+    }
 
 
 @router.post(

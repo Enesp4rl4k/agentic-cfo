@@ -657,6 +657,12 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
                 f"| Type: {inv.invoice_type}{note}"
             ),
             "confidence": confidence,
+            # A cash plan's raw material. Only when we know which side we are
+            # on: without that nobody can be said to owe anybody.
+            "document_id": None if inv.invoice_uuid == "N/A" else inv.invoice_uuid,
+            "due_date": inv.payment_due_date.isoformat() if inv.payment_due_date else None,
+            "payment_note": inv.payment_note or None,
+            "counterparty": counterparty if inv.direction in ("sale", "purchase") else None,
         }]
     except Exception as exc:
         # Was logged at debug. A NameError in this function turned every
