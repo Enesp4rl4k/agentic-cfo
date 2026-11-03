@@ -220,6 +220,8 @@ async def get_analysis_status(
             "filename": job.filename,
             "awaiting_review": job.awaiting_review,
             "min_confidence": float(job.min_confidence) if job.min_confidence else None,
+            # What this upload added to the company ledger; None until it finished.
+            "ledger": (job.result_metadata or {}).get("ledger"),
             "logs": job.logs or [],
             "error": job.error_message,
             "created_at": job.created_at.isoformat(),

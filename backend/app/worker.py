@@ -720,6 +720,16 @@ async def continue_after_completion(
     """
     chain_result = cfo_chain_result(job_id, result)
 
+    # The company's record of its money (plan v9 §K1). Idempotent: if this fails
+    # the analysis stands, and `scripts/ledger_backfill.py` repairs the ledger.
+    try:
+        from app.services.ledger import append_job
+
+        await append_job(db, job_id)
+    except Exception:
+        logger.exception("Ledger append failed for job=%s", str(job_id).replace("\r", "").replace("\n", ""))
+        await db.rollback()
+
     # Plan v7 §P0 / W2: an analysis becomes the company's picture only if it
     # adds a period — a narrower or unreadable one no longer wipes the view.
     applied = await apply_company_view(job_id, org_id, chain_result, db, force=False)

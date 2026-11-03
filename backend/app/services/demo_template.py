@@ -28,12 +28,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
+from app.models.canonical_transaction import CanonicalTransaction
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.decision_log import DecisionLog
 from app.models.organization import Organization
 from app.models.report import Report
 from app.models.transaction import Transaction
+from app.services.ledger import append_job
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +244,8 @@ async def clone_demo_workspace(db: AsyncSession, target_org_id: str) -> CloneOut
         new_job_id[:8],
         counts,
     )
+    await db.flush()
+    counts["ledger"] = (await append_job(db, new_job_id))["new"]
     return CloneOutcome(cloned=True, reason="ok", job_id=new_job_id, counts=counts)
 
 
@@ -282,6 +286,9 @@ async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
     ).scalars().all()
     job_ids = [str(j.id) for j in job_rows]
     counts["jobs"] = len(job_ids)
+
+    ledger = await db.execute(delete(CanonicalTransaction).where(CanonicalTransaction.org_id == org_id))
+    counts["ledger"] = int(ledger.rowcount or 0)
 
     if job_ids:
         # Hard FK children first (NO ACTION would block the job delete).

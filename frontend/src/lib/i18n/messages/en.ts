@@ -27,6 +27,19 @@ export type MessageTree = {
     benchmark: string;
     benchmarkHint: string;
   };
+  ledger: {
+    title: string;
+    body: string;
+    period: string;
+    rows: string;
+    revenue: string;
+    expense: string;
+    duplicatesTitle: string;
+    alreadyThere: string;
+    lastUpload: string;
+    keep: string;
+    exclude: string;
+  };
   reviewQueue: {
     title: string;
     body: string;
@@ -2118,6 +2131,19 @@ export const en: MessageTree = {
     estimatedHint: "Extrapolated from history — not a measurement",
     benchmark: "Benchmark",
     benchmarkHint: "Sector assumption / fixed reference — not company data",
+  },
+  ledger: {
+    title: "Company ledger",
+    body: "Every file you upload joins one record; the same money is never counted twice.",
+    period: "Period",
+    rows: "Records",
+    revenue: "Revenue",
+    expense: "Expenses",
+    duplicatesTitle: "{n} records may be the same payment: left out of the totals until you decide",
+    alreadyThere: "Already in the ledger: {description}",
+    lastUpload: "Last upload ({file}): {new} new, {already} already in the ledger, {possible} possible duplicates.",
+    keep: "Separate payment",
+    exclude: "Same payment",
   },
   reviewQueue: {
     title: "{n} analyses await your approval",

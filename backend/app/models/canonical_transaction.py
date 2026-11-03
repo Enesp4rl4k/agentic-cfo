@@ -57,6 +57,14 @@ class CanonicalTransaction(Base):
     counterparty: Mapped[str | None] = mapped_column(String(200), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The company ledger (app/services/ledger.py).
+    source_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    account_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # active | possible_duplicate (a person decides; not counted until then) | excluded
+    ledger_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active", index=True
+    )
+    duplicate_of: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
