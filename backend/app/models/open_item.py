@@ -36,6 +36,7 @@ class OpenItem(Base):
     counterparty: Mapped[str | None] = mapped_column(String(300), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    paid_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="TRY")
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)

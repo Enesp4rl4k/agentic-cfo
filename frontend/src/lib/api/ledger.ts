@@ -41,3 +41,19 @@ export async function getPossibleDuplicates(): Promise<LedgerRow[]> {
 export async function resolveDuplicate(rowId: string, action: "keep" | "exclude"): Promise<void> {
   await apiClient.post(`/ledger/rows/${rowId}/resolve`, { action });
 }
+
+export interface ProposedSettlement {
+  id: string;
+  amount_cents: number;
+  row: LedgerRow;
+  item: { counterparty: string | null; description: string | null; amount_cents: number; due_date: string | null };
+}
+
+export async function getProposedSettlements(): Promise<ProposedSettlement[]> {
+  const res = await apiClient.get<Envelope<ProposedSettlement[]>>("/ledger/settlements/proposed");
+  return res.data.data;
+}
+
+export async function resolveSettlement(matchId: string, action: "confirm" | "reject"): Promise<void> {
+  await apiClient.post(`/ledger/settlements/${matchId}/resolve`, { action });
+}

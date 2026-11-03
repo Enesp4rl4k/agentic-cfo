@@ -6,10 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
-import { getLedgerSummary, getPossibleDuplicates, resolveDuplicate } from "@/lib/api/ledger";
+import {
+  getLedgerSummary,
+  getPossibleDuplicates,
+  getProposedSettlements,
+  resolveDuplicate,
+  resolveSettlement,
+} from "@/lib/api/ledger";
 
 const SUMMARY_KEY = ["ledger-summary"];
 const DUPLICATES_KEY = ["ledger-duplicates"];
+const SETTLEMENTS_KEY = ["ledger-settlements"];
 
 /** The company's one record of its money, and the rows waiting for a person. */
 export function LedgerCard() {
@@ -19,6 +26,15 @@ export function LedgerCard() {
   const queryClient = useQueryClient();
   const { data: summary } = useQuery({ queryKey: SUMMARY_KEY, queryFn: getLedgerSummary });
   const { data: duplicates } = useQuery({ queryKey: DUPLICATES_KEY, queryFn: getPossibleDuplicates });
+  const { data: settlements } = useQuery({ queryKey: SETTLEMENTS_KEY, queryFn: getProposedSettlements });
+
+  const settle = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "confirm" | "reject" }) => resolveSettlement(id, action),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: SETTLEMENTS_KEY });
+    },
+  });
 
   const decide = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "keep" | "exclude" }) => resolveDuplicate(id, action),
@@ -75,6 +91,38 @@ export function LedgerCard() {
             .replace("{already}", String(summary.last_upload.already))
             .replace("{possible}", String(summary.last_upload.possible_duplicate))}
         </p>
+      )}
+      {!!settlements?.length && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium">{copy.settlementsTitle.replace("{n}", String(settlements.length))}</p>
+          <ul className="space-y-2">
+            {settlements.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
+                <div className="min-w-0 text-xs">
+                  <p className="font-medium tabular-nums">
+                    {s.row.transaction_date} · {fmt(s.amount_cents / 100)}
+                  </p>
+                  <p>{s.row.description}</p>
+                  <p className="text-muted-foreground">
+                    {copy.settlesInvoice
+                      .replace("{invoice}", s.item.description ?? "")
+                      .replace("{amount}", fmt(s.item.amount_cents / 100))}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button size="sm" variant="outline" disabled={settle.isPending}
+                    onClick={() => settle.mutate({ id: s.id, action: "confirm" })}>
+                    {copy.settleYes}
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={settle.isPending}
+                    onClick={() => settle.mutate({ id: s.id, action: "reject" })}>
+                    {copy.settleNo}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {!!duplicates?.length && (
         <div className="space-y-2">

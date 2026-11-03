@@ -38,6 +38,10 @@ export type MessageTree = {
     alreadyThere: string;
     lastUpload: string;
     openItems: string;
+    settlementsTitle: string;
+    settlesInvoice: string;
+    settleYes: string;
+    settleNo: string;
     keep: string;
     exclude: string;
   };
@@ -2144,6 +2148,10 @@ export const en: MessageTree = {
     alreadyThere: "Already in the ledger: {description}",
     lastUpload: "Last upload ({file}): {new} new, {already} already in the ledger, {possible} possible duplicates.",
     openItems: "Open receivables {receivable}, open payables {payable}; {noDue} invoices have no due date.",
+    settlementsTitle: "{n} bank movements may settle an invoice and await your decision",
+    settlesInvoice: "Is this the payment of: {invoice} ({amount})",
+    settleYes: "Yes, this invoice",
+    settleNo: "No, separate money",
     keep: "Separate payment",
     exclude: "Same payment",
   },

@@ -13,14 +13,26 @@ from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
+from app.models.open_item_match import OpenItemMatch
 from app.models.user import User
 from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, ledger_summary
+from app.services.reconciliation import (
+    CONFIRMED,
+    PROPOSED,
+    REJECTED,
+    apply_payment,
+    payment_behaviour,
+)
 
 router = APIRouter()
 
 
 class ResolveRequest(BaseModel):
     action: Literal["keep", "exclude"]
+
+
+class SettlementRequest(BaseModel):
+    action: Literal["confirm", "reject"]
 
 
 def _org(user: User) -> str:
@@ -96,6 +108,86 @@ async def get_open_items(
         ],
         "error": None,
     }
+
+
+@router.get("/ledger/settlements/proposed", responses={400: {"description": "The user has no organisation."}})
+async def get_proposed_settlements(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Bank movements that may pay an invoice, waiting for a person."""
+    org_id = _org(user)
+    matches = (await db.execute(
+        select(OpenItemMatch)
+        .where(OpenItemMatch.org_id == org_id, OpenItemMatch.status == PROPOSED)
+        .order_by(OpenItemMatch.matched_on)
+    )).scalars().all()
+    data = []
+    for m in matches:
+        item = await db.get(OpenItem, m.open_item_id)
+        row = await db.get(CanonicalTransaction, m.ledger_row_id)
+        if item is None or row is None:
+            continue
+        data.append({
+            "id": m.id,
+            "amount_cents": m.amount_cents,
+            "method": m.method,
+            "row": _row(row),
+            "item": {
+                "counterparty": item.counterparty,
+                "description": item.description,
+                "amount_cents": item.amount_cents,
+                "paid_cents": item.paid_cents,
+                "due_date": item.due_date.isoformat() if item.due_date else None,
+            },
+        })
+    return {"data": data, "error": None}
+
+
+@router.post(
+    "/ledger/settlements/{match_id}/resolve",
+    responses={
+        400: {"description": "The user has no organisation."},
+        404: {"description": "No such proposal in this organisation."},
+        409: {"description": "Already decided."},
+    },
+)
+async def resolve_settlement(
+    match_id: str,
+    body: SettlementRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """A person's call. "Reject" is remembered: the line counts as its own money."""
+    _org(user)
+    match = await db.get(OpenItemMatch, match_id)
+    if match is None:
+        raise HTTPException(404, "Kayıt bulunamadı.")
+    ensure_tenant(user, org_id=match.org_id)
+    won = await db.execute(
+        update(OpenItemMatch)
+        .where(OpenItemMatch.id == match_id, OpenItemMatch.status == PROPOSED)
+        .values(status=CONFIRMED if body.action == "confirm" else REJECTED, decided_by=str(user.id))
+        .execution_options(synchronize_session=False)
+    )
+    if won.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(409, "Bu öneri karar beklemiyor.")
+    if body.action == "confirm":
+        item = await db.get(OpenItem, match.open_item_id)
+        if item is not None:
+            apply_payment(item, match.amount_cents)
+    await db.commit()
+    return {"data": {"id": match_id, "action": body.action}, "error": None}
+
+
+@router.get("/ledger/payment-behaviour", responses={400: {"description": "The user has no organisation."}})
+async def get_payment_behaviour(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """How late each counterparty really settles, from matched bank movements."""
+    return {"data": await payment_behaviour(db, _org(user)), "error": None}
 
 
 @router.post(
