@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import uuid
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -40,6 +41,7 @@ from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.open_item import OpenItem
 from app.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
@@ -159,6 +161,11 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             continue
         if not tx.amount_kurus:
             continue
+        if tx.document_id:
+            # The document's own id beats its content: the same invoice is the
+            # same money whatever the row around it says.
+            usable.append((f"doc:{tx.document_id}", tx))
+            continue
         print_ = _fingerprint(org_id, tx)
         seen[print_] += 1
         usable.append((f"fp:{print_}#{seen[print_]}", tx))
@@ -203,8 +210,53 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             counts["possible_duplicate"] += 1
         else:
             counts["new"] += 1
+    await _open_items(db, org_id, job_id, [tx for _, tx in usable])
     await _record(db, job, counts)
     return counts
+
+
+async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Transaction]) -> None:
+    """A document whose side we know opens an item; the same one twice does not."""
+    insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+    for tx in txs:
+        if not (tx.document_id and tx.counterparty):
+            continue
+        await db.execute(
+            insert(OpenItem).values(
+                id=str(uuid.uuid4()),
+                org_id=org_id,
+                direction="receivable" if tx.type == "income" else "payable",
+                instrument="invoice",
+                document_id=tx.document_id,
+                source_job_id=job_id,
+                counterparty=tx.counterparty,
+                description=tx.description,
+                amount_cents=tx.amount_kurus,
+                currency=tx.currency,
+                issue_date=_day(tx.transaction_date),
+                due_date=tx.due_date,
+                payment_note=tx.payment_note,
+                status="open",
+                created_at=datetime.now(UTC),
+            ).on_conflict_do_nothing(index_elements=["org_id", "document_id"])
+        )
+
+
+async def _open_items_summary(db: AsyncSession, org_id: str) -> dict[str, int]:
+    """What is outstanding, in TRY. Other currencies are counted, never converted."""
+    totals = {"receivable_cents": 0, "payable_cents": 0, "no_due_date": 0, "other_currency": 0}
+    rows = await db.execute(
+        select(OpenItem.direction, OpenItem.amount_cents, OpenItem.currency, OpenItem.due_date)
+        .where(OpenItem.org_id == org_id, OpenItem.status == "open")
+    )
+    for direction, amount, currency, due in rows:
+        if due is None:
+            totals["no_due_date"] += 1
+        if currency != "TRY":
+            totals["other_currency"] += 1
+            continue
+        totals["receivable_cents" if direction == "receivable" else "payable_cents"] += amount
+    return totals
 
 
 async def _record(db: AsyncSession, job: AnalysisJob, counts: dict[str, int]) -> None:
@@ -274,6 +326,7 @@ async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
     names = sorted(months)
     return {
         "last_upload": await _last_upload(db, org_id),
+        "open_items": await _open_items_summary(db, org_id),
         "rows": count,
         "revenue_cents": revenue,
         "expense_cents": expense,

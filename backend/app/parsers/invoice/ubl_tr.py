@@ -92,6 +92,11 @@ class ParsedUBLInvoice(BaseModel):
     invoice_type: str = "SATIS"
     profile_id: str = "TICARIFATURA"  # TEMELFATURA, TICARIFATURA, EARSIVFATURA
     issue_date: date
+    # cac:PaymentTerms. None when the document gives none, or gives one we cannot
+    # believe. The note is the document's own words: "%50 peşin, %50 45 gün
+    # sonra" means this date does not cover the whole amount.
+    payment_due_date: date | None = None
+    payment_note: str = ""
     currency_code: str = "TRY"
     supplier: InvoiceParty
     customer: InvoiceParty
@@ -168,6 +173,24 @@ class UBLTRInvoiceParser:
         """
         digits = re.sub(r"\D", "", raw or "")
         return digits if len(digits) in (10, 11) else ""
+
+    @staticmethod
+    def _payment_terms(raw_due: str, note: str, issued: date) -> tuple[date | None, str]:
+        """(due date, note) as far as they can be believed.
+
+        A due date before the invoice exists is a document error: GİB's own
+        TicariFaturaOrnegi is issued 2009-01-05 and due 2008-11-25. Reading it
+        would put money in a past week of a cash plan, so it is reported instead.
+        """
+        if not raw_due:
+            return None, note
+        try:
+            due = date.fromisoformat(raw_due[:10])
+        except ValueError:
+            return None, f"Okunamayan vade: {raw_due}. {note}".strip()
+        if due < issued:
+            return None, f"Belgedeki vade ({raw_due}) fatura tarihinden önce; dikkate alınmadı. {note}".strip()
+        return due, note
 
     @classmethod
     def parse_xml(
@@ -358,7 +381,15 @@ class UBLTRInvoiceParser:
             inv_no=inv_no,
         )
 
+        due_date, payment_note = cls._payment_terms(
+            _find_text(root, "cac:PaymentTerms/cbc:PaymentDueDate"),
+            _find_text(root, "cac:PaymentTerms/cbc:Note"),
+            issue_date,
+        )
+
         return ParsedUBLInvoice(
+            payment_due_date=due_date,
+            payment_note=payment_note,
             invoice_uuid=uuid_str,
             invoice_number=inv_no,
             invoice_type=inv_type,

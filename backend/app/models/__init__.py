@@ -27,6 +27,7 @@ from app.models.erp_integration import ERPIntegration, ERPSyncLog
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
 from app.models.llm_call_log import LLMCallLog
+from app.models.open_item import OpenItem
 from app.models.organization import Organization
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.proactive_alert import ProactiveAlert
@@ -76,6 +77,7 @@ __all__ = [
     "JobStatus",
     "LLMCallLog",
     "OnayDurumu",
+    "OpenItem",
     "Organization",
     "PilotInvite",
     "ProactiveAlert",

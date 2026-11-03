@@ -107,7 +107,7 @@ Patronun her hafta geri dönme nedeni bu aşamadır. Yönetim ritmi ancak buna g
 | F1 tek şirket defteri | Kimlik belge id'si veya parmak izi; aynı dosya iki kez 0 satır |
 | `open_items` (alacak/borç kalemi) | Karşı taraf, tutar, vade, durum, kaynak belge. Çek ve senet ayrı `instrument` türü olarak modele sığar; ayrıştırıcıları sonraya |
 | UBL-TR vade alanları | `PaymentDueDate` bugün okunmuyor |
-| Banka mutabakatı | Deterministik eşleştirici, belirsizi insana; gerçek DSO ve müşteri gecikmesi buradan çıkar |
+| Banka mutabakatı | Deterministik eşleştirici, belirsizi insana; gerçek DSO ve müşteri gecikmesi buradan çıkar. **Defterin çift sayım riskini de bu kapatır:** fatura tahakkuk, banka satırı nakittir; 3 günden uzak aralıkla gelirlerse ikisi de gelir sayılır. Eşleşen tahsilat açık kalemi kapatır ve gelir olarak sayılmaz |
 | **Nakit Radarı** | 13 hafta; açık haftası, nedeni, üç eylem. Uzlaştırma ayrı doğrulayıcı adımda |
 | Yükümlülük takvimi | KDV, muhtasar/SGK, geçici vergi; tutar defterden, takvim kuralları sürümlü veri. Son tarihler resmi kaynakla doğrulanır: `tax_agent.py` SGK için "aynı ayın 28'i" diyor, ertesi ay sonu olması gerekebilir |
 | Tahmin kaydı (F4'ün çekirdeği) | Her radar tahmini değişmez; gerçekleşenle notlanır |
