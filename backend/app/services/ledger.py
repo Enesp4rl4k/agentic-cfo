@@ -35,6 +35,7 @@ import logging
 import re
 import uuid
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
@@ -71,7 +72,7 @@ def _words(text: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", fold(text)).strip()
 
 
-def _day(when: datetime) -> date:
+def day_of(when: datetime) -> date:
     """The UTC day: SQLite hands back naive datetimes, Postgres aware ones."""
     return when.astimezone(UTC).date() if when.tzinfo else when.date()
 
@@ -85,7 +86,7 @@ def _basis(tx: Transaction) -> str:
 def _fingerprint(org_id: str, tx: Transaction) -> str:
     material = "|".join((
         org_id,
-        _day(tx.transaction_date).isoformat(),
+        day_of(tx.transaction_date).isoformat(),
         str(tx.amount_kurus),
         tx.type,
         _words(tx.description or tx.vendor),
@@ -130,7 +131,7 @@ async def _others_by_money(
     found: dict[tuple[int, str, str], list[tuple[date, str]]] = defaultdict(list)
     for r in rows:
         if r.source_job_id != job_id:
-            found[(r.amount_cents, r.direction, r.basis)].append((_day(r.transaction_date), r.id))
+            found[(r.amount_cents, r.direction, r.basis)].append((day_of(r.transaction_date), r.id))
     return found
 
 
@@ -138,7 +139,7 @@ def _repeats(
     others: dict[tuple[int, str, str], list[tuple[date, str]]], tx: Transaction
 ) -> str | None:
     """The nearest row this one may repeat, if any is close enough."""
-    day = _day(tx.transaction_date)
+    day = day_of(tx.transaction_date)
     near = [
         (abs((other - day).days), row_id)
         for other, row_id in others.get((tx.amount_kurus, tx.type, _basis(tx)), [])
@@ -192,7 +193,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
 
     existing = await _existing(db, org_id, [rid for rid, _ in usable])
     others = await _others_by_money(
-        db, org_id, job_id, [_day(tx.transaction_date) for _, tx in usable],
+        db, org_id, job_id, [day_of(tx.transaction_date) for _, tx in usable],
     )
 
     for record_id, tx in usable:
@@ -257,7 +258,7 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
                 amount_cents=tx.amount_kurus,
                 paid_cents=0,
                 currency=tx.currency,
-                issue_date=_day(tx.transaction_date),
+                issue_date=day_of(tx.transaction_date),
                 due_date=tx.due_date,
                 payment_note=tx.payment_note,
                 status="open",
@@ -318,8 +319,23 @@ async def _last_upload(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
     return None
 
 
-async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
-    """The company's figures from the ledger, in kuruş. What awaits a person waits."""
+@dataclass(frozen=True)
+class CompanyRows:
+    """What the ledger counts: profit and cash are different views of one money."""
+
+    profit: list[Any]       # book rows, or documents plus cash that pays no document
+    cash: list[Any]         # bank movements, or postings where there is no statement
+    possible_duplicates: int
+    months: list[str]       # every month a counted row falls in
+    rows: int               # rows the ledger counts, in either view or neither
+
+
+def month_of(when: datetime) -> str:
+    return day_of(when).strftime("%Y-%m")
+
+
+async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
+    """The one reading of the ledger; the summary and the company view both use it."""
     from app.services.reconciliation import rows_settling_items
 
     rows = (await db.execute(
@@ -327,51 +343,59 @@ async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
             CanonicalTransaction.id,
             CanonicalTransaction.transaction_date,
             CanonicalTransaction.amount_cents,
+            CanonicalTransaction.currency,
             CanonicalTransaction.direction,
             CanonicalTransaction.category,
+            CanonicalTransaction.account_code,
+            CanonicalTransaction.counterparty,
+            CanonicalTransaction.description,
             CanonicalTransaction.ledger_status,
             CanonicalTransaction.basis,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
-        )
+        ).order_by(CanonicalTransaction.transaction_date, CanonicalTransaction.id)
     )).all()
     settling = await rows_settling_items(db, org_id)
-    possible = sum(1 for r in rows if r.ledger_status == POSSIBLE_DUPLICATE)
     counted = [r for r in rows if r.ledger_status != POSSIBLE_DUPLICATE]
-
-    def month_of(when: datetime) -> str:
-        return _day(when).strftime("%Y-%m")
-
     book_months = {month_of(r.transaction_date) for r in counted if r.basis == BOOK}
     cash_months = {month_of(r.transaction_date) for r in counted if r.basis == CASH}
-    months: dict[str, dict[str, int]] = defaultdict(lambda: {"cash_in_cents": 0, "cash_out_cents": 0})
-    revenue = expense = 0
-    for r in counted:
-        month = month_of(r.transaction_date)
-        bucket = months[month]
+    return CompanyRows(
+        profit=[
+            r for r in counted
+            # The books already say what their month earned, and a settling line
+            # is an invoice already counted, arriving.
+            if (r.basis == BOOK or month_of(r.transaction_date) not in book_months)
+            and not (r.basis == CASH and r.id in settling)
+        ],
         # A posting list with no bank statement beside it is the best view of cash.
-        if r.basis == CASH or (r.basis == BOOK and month not in cash_months):
-            bucket["cash_in_cents" if r.direction == "income" else "cash_out_cents"] += r.amount_cents
-        if r.category in BILANCO_KATEGORILERI:
-            continue
-        if r.basis != BOOK and month in book_months:
-            continue    # the books already say what this month earned
-        if r.basis == CASH and r.id in settling:
-            continue    # this money is an invoice already counted, arriving
-        if r.direction == "income":
-            revenue += r.amount_cents
-        else:
-            expense += r.amount_cents
-    names = sorted(months)
+        cash=[
+            r for r in counted
+            if r.basis == CASH or (r.basis == BOOK and month_of(r.transaction_date) not in cash_months)
+        ],
+        possible_duplicates=len(rows) - len(counted),
+        months=sorted({month_of(r.transaction_date) for r in counted}),
+        rows=len(counted),
+    )
+
+
+async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
+    """The company's figures from the ledger, in kuruş. What awaits a person waits."""
+    view = await company_rows(db, org_id)
+    months = {m: {"cash_in_cents": 0, "cash_out_cents": 0} for m in view.months}
+    for r in view.cash:
+        key = "cash_in_cents" if r.direction == "income" else "cash_out_cents"
+        months[month_of(r.transaction_date)][key] += r.amount_cents
+    earned = [r for r in view.profit if r.category not in BILANCO_KATEGORILERI]
     return {
         "last_upload": await _last_upload(db, org_id),
         "open_items": await _open_items_summary(db, org_id),
-        "rows": len(counted),
-        "revenue_cents": revenue,
-        "expense_cents": expense,
-        "possible_duplicates": possible,
-        "period": {"start": names[0] if names else None, "end": names[-1] if names else None,
-                   "months": len(names)},
-        "months": [{"month": m, **months[m]} for m in names],
+        "rows": view.rows,
+        "revenue_cents": sum(r.amount_cents for r in earned if r.direction == "income"),
+        "expense_cents": sum(r.amount_cents for r in earned if r.direction != "income"),
+        "possible_duplicates": view.possible_duplicates,
+        "period": {"start": view.months[0] if view.months else None,
+                   "end": view.months[-1] if view.months else None,
+                   "months": len(view.months)},
+        "months": [{"month": m, **months[m]} for m in view.months],
     }

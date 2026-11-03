@@ -222,6 +222,7 @@ async def get_analysis_status(
             "min_confidence": float(job.min_confidence) if job.min_confidence else None,
             # What this upload added to the company ledger; None until it finished.
             "ledger": (job.result_metadata or {}).get("ledger"),
+            "company_view": (job.result_metadata or {}).get("company_view"),
             "logs": job.logs or [],
             "error": job.error_message,
             "created_at": job.created_at.isoformat(),

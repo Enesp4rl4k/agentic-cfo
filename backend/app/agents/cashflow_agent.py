@@ -15,6 +15,7 @@ from typing import Any
 from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.services.ledger import BOOK
 from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
@@ -246,8 +247,11 @@ async def _generate_cashflow_narrative(
 @trace_agent("cashflow_agent")
 async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """Cash Flow Skill. done_when: state['cashflow']['net_change'] is an integer."""
-    transactions = state.get("transactions", [])
-    if not transactions:
+    # An invoice is not cash: the ledger gives this step its own rows, and a
+    # company holding only invoices has no cash movement yet, which is an answer.
+    ledger = state.get("ledger_view")
+    transactions = ledger["cash"] if ledger is not None else state.get("transactions", [])
+    if not transactions and ledger is None:
         return SkillResult(ok=False, detail="No transactions for cash flow analysis.", halt=True)
 
     try:
@@ -264,6 +268,14 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
                 "message": ("Bu tablo e-Defter yevmiyesinin gelir/gider kayıtlarından (tahakkuk "
                             "esası) türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
                             "içerir, gerçek nakit hareketi değildir. Nakit için banka ekstresini yükleyin."),
+            })
+        if any(t.get("ledger_basis") == BOOK for t in transactions):
+            cashflow["esas"] = "tahakkuk"
+            alerts.insert(0, {
+                "level": "warning",
+                "message": ("Banka ekstresi olmayan aylarda bu tablo muhasebe kayıtlarından "
+                            "türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
+                            "içerebilir. Gerçek nakit için banka ekstresi yükleyin."),
             })
         narrative = await _generate_cashflow_narrative(cashflow, alerts, settings, state=state)
 

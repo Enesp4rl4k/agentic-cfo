@@ -846,6 +846,18 @@ async def run_data_ingestion(
     `_belgeyi_al` below and the transactions are put together; the confidence
     is the lowest of them and a review needed for one is a review for the run.
     """
+    ledger = state.get("ledger_view")
+    if ledger is not None:
+        # Rows the company's ledger already holds: nothing to parse, so nothing
+        # uncertain here. A row awaiting a person is not among them, and the
+        # verifier and the gate still judge what is computed from these.
+        return SkillResult(
+            ok=True,
+            patch={"raw_text": "", "transactions": ledger["profit"]},
+            confidence=1.0,
+            detail=f"Defterden {len(ledger['profit'])} satır okundu.",
+        )
+
     sonuc = await _belgeyi_al(
         state.get("file_path", ""), state.get("file_type", ""), state, config,
     )
