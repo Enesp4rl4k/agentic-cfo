@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -734,14 +735,168 @@ async def continue_after_completion(
         logger.exception("Ledger append failed for job=%s", str(job_id).replace("\r", "").replace("\n", ""))
         await db.rollback()
 
-    # Plan v7 §P0 / W2: an analysis becomes the company's picture only if it
-    # adds a period — a narrower or unreadable one no longer wipes the view.
-    applied = await apply_company_view(job_id, org_id, chain_result, db, force=False)
-    if applied:
-        # Only a new company picture re-runs what reads it (CEO synthesis…).
-        spawn_auto_chain(job_id, org_id, chain_result)
+    # Plan v9 §K1: the company's picture is read from its ledger, so one upload
+    # adds what it holds and cannot replace the rest.
+    await refresh_company_view(org_id, db, job_id=job_id, fallback=chain_result)
     # Job-level events happen for every completed analysis.
     _job_side_effects(job_id, org_id, result)
+
+
+def _clean_id(value: str) -> str:
+    """Ids reach here from HTTP requests and go into log lines: no CR/LF."""
+    return str(value).replace("\r", "").replace("\n", "")
+
+
+async def _note_company_view(db: Any, job_id: str | None, applied: bool, reason: str) -> None:
+    """Record on the analysis what became of the company's view, and why."""
+    from app.models.analysis_job import AnalysisJob
+
+    job = await db.get(AnalysisJob, job_id) if job_id else None
+    if job is not None:
+        meta = dict(job.result_metadata or {})
+        meta["company_view"] = {"applied": applied, "reason": reason}
+        job.result_metadata = meta
+        await db.commit()
+
+
+async def _settle_held_views(db: Any, org_id: str, signature: str) -> bool:
+    """Retire held views of an older ledger: approving one would bring old figures
+    back. True if a view of this very ledger is already waiting for its owner."""
+    from sqlalchemy import select
+
+    from app.models.agent_job import AgentJob, AgentJobStatus
+
+    held = (await db.execute(select(AgentJob).where(
+        AgentJob.org_id == org_id,
+        AgentJob.agent_type == "cfo",
+        AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
+    ))).scalars().all()
+    waiting = False
+    for job in held:
+        if (job.result_json or {}).get("ledger_signature") == signature:
+            waiting = True
+        else:
+            job.status = AgentJobStatus.FAILED
+            job.error_message = "Defter değişti; bu görünümün yerine yenisi hesaplandı."
+    await db.commit()
+    return waiting
+
+
+async def _analyse_ledger(view: Any, org_id: str, job_id: str | None, db: Any) -> dict[str, Any]:
+    """The CFO pipeline over the ledger's rows, with its AgentRun around it."""
+    from app.agents import orchestrator
+    from app.agents.run_ledger import agent_run
+
+    async with agent_run(db, pipeline="cfo_ledger", org_id=org_id, job_id=job_id) as run:
+        result = await orchestrator.run_cfo_pipeline(
+            # Its own id: this is not the upload's analysis, and it must not
+            # resume that run's checkpoint or overwrite its report.
+            job_id=str(uuid.uuid4()),
+            file_path="",
+            file_type="ledger",
+            org_id=org_id,
+            ledger_view=view.for_pipeline(),
+        )
+        if result.get("halted"):
+            run.row.status = "halted"
+        elif result.get("awaiting_review"):
+            run.row.status = "awaiting_review"
+    return dict(result)
+
+
+async def _publish_ledger_view(
+    view: Any, result: dict[str, Any], org_id: str, active: str | None, db: Any
+) -> tuple[str, dict[str, Any]]:
+    """One write through the gate. Returns (why, what was written)."""
+    from app.services.company_context import get_company_context
+    from app.services.context_persist import persist_agent_completion
+
+    result["dashboard_json"] = {**result["dashboard_json"], "source": "ledger", "period": view.period}
+    chain = {**cfo_chain_result(active or "", result), "ledger_signature": view.signature}
+    decision = await persist_agent_completion(
+        org_id, "cfo",
+        # The gate reads how the run went, so what it held can say why.
+        {**chain, "logs": result.get("logs") or [], "min_confidence": result.get("min_confidence"),
+         "awaiting_review": result.get("awaiting_review"), "error": result.get("error")},
+        db, job_id=active, trigger_auto_chain=False, force_rebuild=True,
+    )
+    if decision.get("awaiting_review"):
+        return "ledger_view_held", chain
+    written = (await get_company_context(org_id, db)).last_cfo_result or {}
+    # persist_agent_completion logs a failed save and returns; a chain run on a
+    # context that was not written would synthesise the old view as if new.
+    return ("ledger" if written.get("ledger_signature") == view.signature else "ledger_view_failed"), chain
+
+
+async def _ledger_view_reason(
+    org_id: str, db: Any, job_id: str | None, view: Any
+) -> tuple[str, str | None, dict[str, Any] | None]:
+    """(why, the analysis behind the view, what to chain) for a ledger with rows."""
+    from app.services.company_context import get_company_context
+    from app.services.company_view import ledger_view
+
+    current = (await get_company_context(org_id, db)).last_cfo_result or {}
+    active = job_id or current.get("job_id")
+    waiting = await _settle_held_views(db, org_id, view.signature)
+    if current.get("ledger_signature") == view.signature:
+        return "ledger_unchanged", active, None
+    if waiting:
+        return "ledger_view_held", active, None
+
+    result = await _analyse_ledger(view, org_id, active, db)
+    if not result.get("dashboard_json"):
+        logger.error("Ledger view produced no dashboard for org=%s", org_id)
+        return "ledger_view_failed", active, None
+    # Another upload or decision moved the ledger while this ran. Whatever moved
+    # it runs after it, and reads more than this run did.
+    moved = await ledger_view(db, org_id)
+    if moved is None or moved.signature != view.signature:
+        return "ledger_moved", active, None
+    reason, chain = await _publish_ledger_view(view, result, org_id, active, db)
+    return reason, active, chain
+
+
+async def refresh_company_view(
+    org_id: str, db: Any, *, job_id: str | None = None, fallback: dict[str, Any] | None = None
+) -> bool:
+    """Read the company's picture from its ledger; True if the picture changed.
+
+    `job_id` is the analysis that prompted this, if one did; a person's decision
+    on the ledger prompts it too. With no dated row to read, `fallback` (that
+    analysis's own result) goes through the older rule instead.
+    """
+    from app.services.company_view import ledger_view
+
+    org_id = _clean_id(org_id)
+    job_id = _clean_id(job_id) if job_id else None
+    try:
+        view = await ledger_view(db, org_id)
+        if view is None:
+            if job_id and fallback:
+                if await apply_company_view(job_id, org_id, fallback, db, force=False):
+                    spawn_auto_chain(job_id, org_id, fallback)
+                    return True
+            return False
+        reason, active, chain = await _ledger_view_reason(org_id, db, job_id, view)
+        await _note_company_view(db, job_id, reason == "ledger", reason)
+    except Exception:
+        logger.exception("Company view from the ledger failed for org=%s", org_id)
+        await db.rollback()
+        await _note_company_view(db, job_id, False, "ledger_view_failed")
+        return False
+    if reason != "ledger" or chain is None:
+        return False
+    if active:
+        # Only a new company picture re-runs what reads it (CEO synthesis…).
+        spawn_auto_chain(active, org_id, chain)
+    return True
+
+
+async def refresh_company_view_detached(org_id: str) -> None:
+    """For a request's background task: its own session, since the request's closes."""
+    from app.core.background import with_session
+
+    await with_session(lambda db: refresh_company_view(org_id, db))
 
 
 async def apply_company_view(
@@ -750,14 +905,13 @@ async def apply_company_view(
     """Make this analysis the company's active CFO view, unless it adds no
     period (`company_view.should_replace`) and the person did not ask for it.
     Records the decision on the job either way. Returns whether it applied."""
-    from app.models.analysis_job import AnalysisJob
     from app.services.company_context import get_company_context, save_company_context
     from app.services.company_view import should_replace
 
     # Both reach here from an HTTP request (POST /analysis/{id}/company-view)
     # and are written into log lines below; strip CR/LF as run_cfo_analysis does.
-    job_id = str(job_id).replace("\r", "").replace("\n", "")
-    org_id = str(org_id).replace("\r", "").replace("\n", "")
+    job_id = _clean_id(job_id)
+    org_id = _clean_id(org_id)
 
     try:
         ctx_obj = await get_company_context(org_id, db)
@@ -766,12 +920,7 @@ async def apply_company_view(
         if force and chain_result.get("dashboard"):
             replace, reason = True, "applied_by_user"
 
-        job = await db.get(AnalysisJob, job_id)
-        if job is not None:
-            meta = dict(job.result_metadata or {})
-            meta["company_view"] = {"applied": replace, "reason": reason}
-            job.result_metadata = meta
-            await db.commit()
+        await _note_company_view(db, job_id, replace, reason)
         if not replace:
             logger.info(
                 "Company view kept for org=%s: job=%s not applied (%s)", org_id, job_id, reason

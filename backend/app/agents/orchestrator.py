@@ -472,6 +472,7 @@ async def run_cfo_pipeline(
     period: str | None = None,
     ek_belgeler: list[dict[str, str]] | None = None,
     category_rules: list[dict[str, Any]] | None = None,
+    ledger_view: dict[str, list[dict[str, Any]]] | None = None,
 ) -> CFOState:
     """
     Run the full CFO analysis pipeline.
@@ -484,6 +485,7 @@ async def run_cfo_pipeline(
         budget_input: Optional budget dict for BudgetAgent
         org_id:       Organization ID for memory retrieval/storage
         period:       Reporting period label (e.g. "2024-Q4") for memory
+        ledger_view:  The company's ledger rows, read instead of a file
 
     Returns:
         Final CFOState — caller persists to DB.
@@ -513,6 +515,7 @@ async def run_cfo_pipeline(
         "org_id": org_id,
         "category_rules": category_rules or [],
         "category_rule_hits": None,
+        "ledger_view": ledger_view,
         "routing_plan": None,
         "reflection_scores": None,
         "memory_episode_ids": None,

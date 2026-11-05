@@ -144,6 +144,14 @@ async def get_proposed_settlements(
     return {"data": data, "error": None}
 
 
+def _refresh_view(org_id: str) -> None:
+    """A decision changes what the ledger counts, so the company's view follows."""
+    from app.core.background import spawn
+    from app.worker import refresh_company_view_detached
+
+    spawn(refresh_company_view_detached(org_id), name=f"ledger-view-{org_id[:8]}")
+
+
 @router.post(
     "/ledger/settlements/{match_id}/resolve",
     responses={
@@ -164,6 +172,7 @@ async def resolve_settlement(
     if match is None:
         raise HTTPException(404, "Kayıt bulunamadı.")
     ensure_tenant(user, org_id=match.org_id)
+    org_id = str(match.org_id)   # the commit below expires the row
     won = await db.execute(
         update(OpenItemMatch)
         .where(OpenItemMatch.id == match_id, OpenItemMatch.status == PROPOSED)
@@ -178,6 +187,7 @@ async def resolve_settlement(
         if item is not None:
             apply_payment(item, match.amount_cents)
     await db.commit()
+    _refresh_view(org_id)
     return {"data": {"id": match_id, "action": body.action}, "error": None}
 
 
@@ -213,6 +223,7 @@ async def resolve_possible_duplicate(
     if row is None:
         raise HTTPException(404, "Kayıt bulunamadı.")
     ensure_tenant(user, org_id=row.org_id)
+    org_id = str(row.org_id)   # the commit below expires the row
     won = await db.execute(
         update(CanonicalTransaction)
         .where(CanonicalTransaction.id == row_id, CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE)
@@ -222,4 +233,5 @@ async def resolve_possible_duplicate(
     await db.commit()
     if won.rowcount != 1:
         raise HTTPException(409, "Bu kayıt karar beklemiyor.")
+    _refresh_view(org_id)
     return {"data": {"id": row_id, "action": body.action}, "error": None}

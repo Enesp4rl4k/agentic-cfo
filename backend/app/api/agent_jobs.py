@@ -415,7 +415,8 @@ async def approve_held_job(db: AsyncSession, job: AgentJob, approved_by: str) ->
     inputs = job.input_data or {}
     await persist_agent_completion(
         str(job.org_id), job.agent_type, dict(job.result_json or {}), db,
-        job_id=job.id,
+        # A held company view belongs to the analysis behind it, not to this hold.
+        job_id=(job.result_json or {}).get("job_id") if job.agent_type == "cfo" else job.id,
         company_name=inputs.get("company_name"),
         reporting_period=inputs.get("reporting_period"),
         auto_chain_hook=auto_chain.on_agent_complete,
