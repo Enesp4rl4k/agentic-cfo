@@ -364,6 +364,9 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             # not automatically right about which way the money went. A parser
             # that knows better says so, and only then does this cap apply.
             "confidence": min(0.95, tx.confidence),
+            # Not money moved: the bank's own running total, which proves the
+            # balance the statement closes on (app.services.bank_balance).
+            "balance_cents": tx.balance_cents,
         })
     return transactions
 
@@ -498,6 +501,9 @@ def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any
     tx["type"] = _kodsuz_yon(r_lower, amount_cents)
     tx["amount_cents"] = abs(amount_cents)
     tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx["type"])
+    bakiye = _ilk(r_lower, "bakiye", "balance")
+    if bakiye:
+        tx["balance_cents"] = _isaretli_kurus(bakiye)
     return tx
 
 
@@ -519,7 +525,7 @@ def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict
             return None
         # Headers are folded (app.core.turkish): "İşlem Tarihi", "AÇIKLAMA" and
         # "Borç" match "islem tarihi", "aciklama", "borc". A running balance
-        # ("bakiye") is not a transaction amount.
+        # ("bakiye") is not a transaction amount; it is kept beside the row.
         field_lower = {fold(f.strip()) for f in reader.fieldnames if f}
         if not (field_lower & set(_TUTAR_KOLONLARI) and field_lower & set(_TARIH_KOLONLARI)):
             return None
