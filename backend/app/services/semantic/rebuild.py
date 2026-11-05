@@ -72,6 +72,7 @@ async def _load_canonical(
         stmt = select(CanonicalTransaction).where(
             CanonicalTransaction.org_id == str(org_id),
             CanonicalTransaction.ledger_status == "active",
+            CanonicalTransaction.basis != "document",
         )
         if period_start is not None:
             stmt = stmt.where(CanonicalTransaction.transaction_date >= period_start)

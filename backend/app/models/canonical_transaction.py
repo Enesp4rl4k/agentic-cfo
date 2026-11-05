@@ -65,6 +65,10 @@ class CanonicalTransaction(Base):
         String(20), nullable=False, default="active", server_default="active", index=True
     )
     duplicate_of: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # What the row rests on: book (a posting with an account), document (an
+    # invoice) or cash (a bank movement). One sale can appear as a document and as
+    # cash; they are two views of the money, never duplicates of each other.
+    basis: Mapped[str] = mapped_column(String(20), nullable=False, default="cash", server_default="cash")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

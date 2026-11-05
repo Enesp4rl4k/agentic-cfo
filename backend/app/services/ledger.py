@@ -18,6 +18,12 @@ twice under a same-day rule). The machine cannot know. The row is kept as
 `possible_duplicate`, out of the totals, until a person decides. Nothing is merged
 or deleted, and a wrong suspicion costs one click.
 
+**One sale, two views.** A row rests on a `book` posting, a `document` or `cash`.
+Doubt applies only within a basis: an invoice and its receipt are expected, and
+reconciliation (app/services/reconciliation.py) ties them together. Profit comes
+from the books where a month has them; otherwise from documents and from cash that
+pays no document. Cash is what moved through the bank.
+
 **Held analyses stay out.** Only a completed analysis is read, so a run the gate
 held joins when it is approved, and a broken file never reaches the record.
 Rows with no readable date stay out too: their period is unknown.
@@ -53,6 +59,10 @@ ACTIVE = "active"
 POSSIBLE_DUPLICATE = "possible_duplicate"
 EXCLUDED = "excluded"
 
+BOOK = "book"
+DOCUMENT = "document"
+CASH = "cash"
+
 _CHUNK = 500
 DUPLICATE_WINDOW_DAYS = 3    # as the anomaly agent's duplicate check
 
@@ -64,6 +74,12 @@ def _words(text: str | None) -> str:
 def _day(when: datetime) -> date:
     """The UTC day: SQLite hands back naive datetimes, Postgres aware ones."""
     return when.astimezone(UTC).date() if when.tzinfo else when.date()
+
+
+def _basis(tx: Transaction) -> str:
+    if tx.account_code:
+        return BOOK
+    return DOCUMENT if tx.document_id else CASH
 
 
 def _fingerprint(org_id: str, tx: Transaction) -> str:
@@ -93,7 +109,7 @@ async def _existing(db: AsyncSession, org_id: str, ids: list[str]) -> dict[str, 
 
 async def _others_by_money(
     db: AsyncSession, org_id: str, job_id: str, days: list[date]
-) -> dict[tuple[int, str], list[tuple[date, str]]]:
+) -> dict[tuple[int, str, str], list[tuple[date, str]]]:
     """Rows from other uploads around these dates: what a new row might repeat."""
     window = timedelta(days=DUPLICATE_WINDOW_DAYS)
     rows = await db.execute(
@@ -103,6 +119,7 @@ async def _others_by_money(
             CanonicalTransaction.amount_cents,
             CanonicalTransaction.direction,
             CanonicalTransaction.source_job_id,
+            CanonicalTransaction.basis,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
@@ -110,21 +127,21 @@ async def _others_by_money(
             CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
         )
     )
-    found: dict[tuple[int, str], list[tuple[date, str]]] = defaultdict(list)
+    found: dict[tuple[int, str, str], list[tuple[date, str]]] = defaultdict(list)
     for r in rows:
         if r.source_job_id != job_id:
-            found[(r.amount_cents, r.direction)].append((_day(r.transaction_date), r.id))
+            found[(r.amount_cents, r.direction, r.basis)].append((_day(r.transaction_date), r.id))
     return found
 
 
 def _repeats(
-    others: dict[tuple[int, str], list[tuple[date, str]]], tx: Transaction
+    others: dict[tuple[int, str, str], list[tuple[date, str]]], tx: Transaction
 ) -> str | None:
     """The nearest row this one may repeat, if any is close enough."""
     day = _day(tx.transaction_date)
     near = [
         (abs((other - day).days), row_id)
-        for other, row_id in others.get((tx.amount_kurus, tx.type), [])
+        for other, row_id in others.get((tx.amount_kurus, tx.type, _basis(tx)), [])
         if abs((other - day).days) <= DUPLICATE_WINDOW_DAYS
     ]
     return min(near)[1] if near else None
@@ -143,7 +160,7 @@ async def _insert_ignoring_races(db: AsyncSession, values: dict[str, Any]) -> in
 
 async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     """Append a completed analysis to its company's ledger. Idempotent; commits."""
-    counts = {"new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0}
+    counts = {"new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0}
     job = await db.get(AnalysisJob, job_id)
     if job is None or not job.org_id or job.status != JobStatus.COMPLETED:
         return counts
@@ -184,6 +201,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             # Same money, newer reading of it (a correction, a better account).
             row.category = tx.category
             row.account_code = tx.account_code or row.account_code
+            row.basis = _basis(tx)
             counts["already"] += 1
             continue
         duplicate_of = _repeats(others, tx)
@@ -202,6 +220,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             "description": tx.description,
             "confidence": round(float(tx.confidence) * 100) if tx.confidence is not None else None,
             "ledger_status": POSSIBLE_DUPLICATE if duplicate_of else ACTIVE,
+            "basis": _basis(tx),
             "duplicate_of": duplicate_of,
         })
         if not written:
@@ -211,6 +230,10 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         else:
             counts["new"] += 1
     await _open_items(db, org_id, job_id, [tx for _, tx in usable])
+    # Either side may arrive first: an invoice can close a line already here.
+    from app.services.reconciliation import reconcile_org
+
+    counts.update(await reconcile_org(db, org_id))
     await _record(db, job, counts)
     return counts
 
@@ -232,6 +255,7 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
                 counterparty=tx.counterparty,
                 description=tx.description,
                 amount_cents=tx.amount_kurus,
+                paid_cents=0,
                 currency=tx.currency,
                 issue_date=_day(tx.transaction_date),
                 due_date=tx.due_date,
@@ -246,7 +270,7 @@ async def _open_items_summary(db: AsyncSession, org_id: str) -> dict[str, int]:
     """What is outstanding, in TRY. Other currencies are counted, never converted."""
     totals = {"receivable_cents": 0, "payable_cents": 0, "no_due_date": 0, "other_currency": 0}
     rows = await db.execute(
-        select(OpenItem.direction, OpenItem.amount_cents, OpenItem.currency, OpenItem.due_date)
+        select(OpenItem.direction, OpenItem.amount_cents - OpenItem.paid_cents, OpenItem.currency, OpenItem.due_date)
         .where(OpenItem.org_id == org_id, OpenItem.status == "open")
     )
     for direction, amount, currency, due in rows:
@@ -295,39 +319,55 @@ async def _last_upload(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
 
 
 async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
-    """The company's figures from the ledger, in kuruş. Possible duplicates wait."""
-    rows = await db.execute(
+    """The company's figures from the ledger, in kuruş. What awaits a person waits."""
+    from app.services.reconciliation import rows_settling_items
+
+    rows = (await db.execute(
         select(
+            CanonicalTransaction.id,
             CanonicalTransaction.transaction_date,
             CanonicalTransaction.amount_cents,
             CanonicalTransaction.direction,
             CanonicalTransaction.category,
             CanonicalTransaction.ledger_status,
+            CanonicalTransaction.basis,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
         )
-    )
+    )).all()
+    settling = await rows_settling_items(db, org_id)
+    possible = sum(1 for r in rows if r.ledger_status == POSSIBLE_DUPLICATE)
+    counted = [r for r in rows if r.ledger_status != POSSIBLE_DUPLICATE]
+
+    def month_of(when: datetime) -> str:
+        return _day(when).strftime("%Y-%m")
+
+    book_months = {month_of(r.transaction_date) for r in counted if r.basis == BOOK}
+    cash_months = {month_of(r.transaction_date) for r in counted if r.basis == CASH}
     months: dict[str, dict[str, int]] = defaultdict(lambda: {"cash_in_cents": 0, "cash_out_cents": 0})
-    revenue = expense = count = possible = 0
-    for when, amount, direction, category, status in rows:
-        if status == POSSIBLE_DUPLICATE:
-            possible += 1
+    revenue = expense = 0
+    for r in counted:
+        month = month_of(r.transaction_date)
+        bucket = months[month]
+        # A posting list with no bank statement beside it is the best view of cash.
+        if r.basis == CASH or (r.basis == BOOK and month not in cash_months):
+            bucket["cash_in_cents" if r.direction == "income" else "cash_out_cents"] += r.amount_cents
+        if r.category in BILANCO_KATEGORILERI:
             continue
-        count += 1
-        month = months[_day(when).strftime("%Y-%m")]
-        month["cash_in_cents" if direction == "income" else "cash_out_cents"] += amount
-        if category in BILANCO_KATEGORILERI:
-            continue
-        if direction == "income":
-            revenue += amount
+        if r.basis != BOOK and month in book_months:
+            continue    # the books already say what this month earned
+        if r.basis == CASH and r.id in settling:
+            continue    # this money is an invoice already counted, arriving
+        if r.direction == "income":
+            revenue += r.amount_cents
         else:
-            expense += amount
+            expense += r.amount_cents
     names = sorted(months)
     return {
         "last_upload": await _last_upload(db, org_id),
         "open_items": await _open_items_summary(db, org_id),
-        "rows": count,
+        "rows": len(counted),
         "revenue_cents": revenue,
         "expense_cents": expense,
         "possible_duplicates": possible,

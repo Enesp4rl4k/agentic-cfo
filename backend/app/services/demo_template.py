@@ -33,6 +33,7 @@ from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.decision_log import DecisionLog
 from app.models.open_item import OpenItem
+from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
 from app.models.report import Report
 from app.models.transaction import Transaction
@@ -291,6 +292,7 @@ async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
     ledger = await db.execute(delete(CanonicalTransaction).where(CanonicalTransaction.org_id == org_id))
     counts["ledger"] = int(ledger.rowcount or 0)
     await db.execute(delete(OpenItem).where(OpenItem.org_id == org_id))
+    await db.execute(delete(OpenItemMatch).where(OpenItemMatch.org_id == org_id))
 
     if job_ids:
         # Hard FK children first (NO ACTION would block the job delete).
