@@ -149,7 +149,7 @@ async def get_proposed_settlements(
 def _refresh_view(org_id: str) -> None:
     """A decision changes what the ledger counts, so the company's view follows."""
     from app.core.background import spawn
-    from app.worker import refresh_company_view_detached
+    from app.post_completion import refresh_company_view_detached
 
     spawn(refresh_company_view_detached(org_id), name=f"ledger-view-{org_id[:8]}")
 

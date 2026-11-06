@@ -14,6 +14,7 @@ from typing import Any
 import pytest_asyncio
 
 import app.database as database
+import app.post_completion as post_completion
 import app.worker as worker
 from app.services import review_continuation as rc
 from tests.api_helpers import arka_plan_bitsin, bellek_istemcisi, kullanici, ornek_rapor
@@ -43,7 +44,7 @@ def calisanlar(monkeypatch) -> list[str]:
     async def fake(job_id: str, org_id: str, result: dict[str, Any], db: Any) -> None:
         calls.append(job_id)
 
-    monkeypatch.setattr(worker, "continue_after_completion", fake)
+    monkeypatch.setattr(post_completion, "continue_after_completion", fake)
     return calls
 
 
@@ -202,7 +203,7 @@ async def test_two_overlapping_runs_do_the_work_once(client, monkeypatch):
         calls.append(job_id)
         await asyncio.sleep(0.2)
 
-    monkeypatch.setattr(worker, "continue_after_completion", yavas)
+    monkeypatch.setattr(post_completion, "continue_after_completion", yavas)
     _, org_id, _ = await kullanici(client, "cakisma@example.com")
     job_id = await _held_job(client, org_id)
     async with client._maker() as db:
@@ -227,7 +228,7 @@ async def test_a_failed_run_goes_back_to_owed(client, monkeypatch):
     async def patlayan(*a: Any, **k: Any) -> None:
         raise RuntimeError("semantik yeniden kurulum düştü")
 
-    monkeypatch.setattr(worker, "continue_after_completion", patlayan)
+    monkeypatch.setattr(post_completion, "continue_after_completion", patlayan)
     _, org_id, _ = await kullanici(client, "hata@example.com")
     job_id = await _held_job(client, org_id)
     async with client._maker() as db:

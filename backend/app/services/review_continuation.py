@@ -78,7 +78,7 @@ async def devam_et(job_id: str) -> dict[str, Any]:
     """
     from app.database import session_factory
     from app.models.analysis_job import AnalysisJob, JobStatus
-    from app.worker import continue_after_completion, saved_result
+    from app.post_completion import continue_after_completion, saved_result
 
     now = datetime.now(UTC)
     async with session_factory()() as db:

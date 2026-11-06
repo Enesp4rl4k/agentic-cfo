@@ -238,8 +238,8 @@ async def test_a_bank_statement_with_a_balance_column_proves_its_closing_balance
     monkeypatch.setattr(database, "get_session_factory", lambda eng=None: client._maker)
     monkeypatch.setattr(database, "session_factory", lambda: client._maker)
     monkeypatch.setattr(database, "engine", lambda: None)
-    monkeypatch.setattr("app.worker.spawn_auto_chain", lambda *a: None)
-    monkeypatch.setattr("app.worker._job_side_effects", lambda *a, **k: None)
+    monkeypatch.setattr("app.post_completion.spawn_auto_chain", lambda *a: None)
+    monkeypatch.setattr("app.post_completion._job_side_effects", lambda *a, **k: None)
 
     _, org_id, _ = await kullanici(client, "ekstre@example.com")
     path = tmp_path / "banka.csv"
