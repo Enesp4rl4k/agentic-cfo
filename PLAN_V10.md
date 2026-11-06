@@ -143,6 +143,7 @@ v9 §8'deki öteki kararlar (yeni roller, TCMB EVDS anahtarı, mali mühür) bu 
 | Radar yanlış alarm verir | Başlangıç yalnızca kanıtlanmış bakiye; bilinmeyen tarih yerleştirilmez; eksikler ekranda yazılı |
 | Staging maliyeti ve bakımı | Küçük başlanır; yedek ve geri dönüş ilk haftada denenir |
 | Kapsam yeniden genişler | §6 listesi; her PR açıklaması hangi O aşamasına hizmet ettiğini yazar |
+| Dağınık gerçek KOBİ verisi elimizde yok | Zor durum üreteci vekildir (§13.3); üretecin bilmediği zorlukları yalnızca gerçek veri gösterir. İlk gerçek veri bulunduğunda her bulgu üretece ve teste eklenir |
 | Tek geliştirici darboğazı | Aynı anda tek açık PR zinciri |
 
 ## 9. Doğrulama
@@ -205,9 +206,123 @@ Ufuk 1'in uygulaması bittiğinde, pilot verisiyle birlikte ayrı bir **iş yol 
 
 Bu bölümün çıktısı yeni bir belge (`BUSINESS_ROADMAP.md`) olur; bu plan onu başlatan koşulu burada kaydeder.
 
-## 13. Sıradaki adım
+## 13. Motor ve ajan katmanı planı
 
-1. O0 (#20) birleşir; sonra radar ekranı (O2).
-2. §7'deki 2 ve 3 numaralı kararlar (pilotlar, barındırma) O1 başlamadan netleşmeli.
-3. Karar kaydına ölçülebilir beklenti ve sonuç alanları, O3'ün tahmin kaydıyla birlikte tasarlanır (§10).
-4. Ufuk 1 bittiğinde iş yol haritası (§12).
+Bu bölüm, §1'deki pilot hedefinin **mühendislik tarafıdır**: pilotun dayanacağı CFO motorunu ve mevcut ajanları kanıtlı, çökmeyen ve yapay zekayı verimli kullanan hale getirir. Pilot şirket bulunamasa da ilerleyebilir; O1'deki sahip kararlarını beklemez.
+
+### 13.1 Hedef
+
+> **12 hafta sonunda CFO motorunun doğruluğu, dayanıklılığı ve yapay zeka katmanı, kaynağı gösterilebilen verilerle ölçülmüş olsun: ölçülmemiş hiçbir sayı ekranda "gerçek" gibi durmasın.**
+
+Ölçülür hale gelecekler:
+
+| # | Ölçüt | Nasıl ölçülür | Eşik |
+|---|---|---|---|
+| 1 | Hesaplanan oranlar kaynak tablolarla tutuyor mu | KAP bilançolarındaki yayımlanmış rakamlar ve oranlar (§13.3) | Fark 0 (kuruşa kadar) |
+| 2 | Otomatik mutabakat ne kadar doğru | Zor durum üretecinde yanlış otomatik eşleşme sayısı | **0 yanlış otomatik eşleşme**; kaçırılan eşleşme oranı ölçülür |
+| 3 | Aynı veri, aynı sonuç | Metamorfik testler: iki kez yükleme, sıra değiştirme, dosyayı ikiye bölme | Rakamlar değişmez |
+| 4 | Yapay zeka metni sayıyı uyduruyor mu | LLM'li altın küme: anlatıdaki her sayı kaynakla karşılaştırılır | **Uydurma sayı 0**; kapıya düşen oran, maliyet ve gecikme ölçülür |
+| 5 | Kıyas sayıları kaynaklı mı | Kaynağı gösterilemeyen kıyas değeri sayısı | 0 |
+| 6 | Bozulduğunda ne oluyor | Kaos testleri: worker ölümü, Redis yok, yavaş veritabanı | Sessiz yanlış sonuç 0; her koşu ya tamamlanır ya kapıya düşer ya da hata kaydı bırakır |
+
+### 13.2 İlkeler: veriyi tasarla, projeyi değil
+
+*Designing Data-Intensive Applications*'dan, bu depoda zaten `DDIA_COMPLIANCE.md` ve plan v5 §V5'te geçen ilkelerin bu plana uyarlanışı. Kural: **bir özellik, hangi veriyi türettiğini, kaynağını ve yeniden üretilebilirliğini yazmadan başlamaz.**
+
+1. **Tek doğruluk kaynağı.** Para defterdedir (`canonical_transactions`, `open_items`). Şirket görünümü, radar, özet ve bülten **türetilmiş veridir**; hiçbiri kendi kaynağını saklamaz.
+2. **Türetilmiş veri silinip yeniden üretilebilir.** Her görünüm defterden saf bir fonksiyonla hesaplanır. Test: görünümü sil, yeniden hesapla, rakamlar aynı çıkmalı.
+3. **Her etki bir kez.** Aynı girdi iki kez gelirse ikinci kez sayılmaz (kimlik anahtarı, idempotent yazma). Bu defter için yapıldı; öneri, bülten ve hatırlatma gibi **dış etkiler** için de aranır.
+4. **Şema evrimi geriye uyumlu.** Migration'lar yalnız ekler; eski istemci yeni alandan etkilenmez.
+5. **Uçtan uca doğrulama.** Hesaplayan ajan kendi sonucunu doğrulamaz; ayrı adımdaki doğrulayıcı ve güven kapısı kalır.
+6. **Hata sessiz geçmez.** Her koşu `AgentRun` bırakır; zaman aşımı, yeniden deneme ve ölü iş toplayıcısı var olanlarla devam eder.
+7. **Ölçmeden güvenme.** Ölçülmemiş bir özellik "hazır" sayılmaz; kapıdan geçmesi için güveni ölçülür.
+
+### 13.3 Gerçek veri: ne bulunabilir, ne bulunamaz
+
+İnternette **gerçek bir KOBİ'nin işlem düzeyindeki defteri ve ekstresi yoktur**; kişisel ve ticari sır olduğu için yayımlanmaz. Bulunabilenler ve ne işe yaradıkları:
+
+| Kaynak | Gerçek mi | Ne için kullanılır | Ne için kullanılamaz |
+|---|---|---|---|
+| **GİB e-Fatura ve e-Defter paketleri** | Evet (otorite) | Zaten kullanılıyor (`scripts/fetch_gib_corpus.py`) | Dağınık gerçek davranışı vermez |
+| **KAP finansal raporları** (borsa şirketleri, XBRL) | Evet, denetlenmiş | Oran ve tablo formüllerimizi yayımlanmış rakamlara karşı sınamak (§13.1 #1) | İşlem düzeyi veri yoktur; şirketler KOBİ değildir |
+| **TCMB Sektör Bilançoları** | Evet, toplu | Sektöre göre kıyas aralıkları (§13.1 #5) | Tek şirket davranışı vermez; KOBİ'ye özel değildir |
+| Üçüncü taraf sentetik defter veri setleri (ör. LedgerLab, Mindweave) | Hayır, sentetik | Yapısal çeşitlilik, bizim yazmadığımız örnek | "Gerçek" sayılmaz; lisansları kontrol edilmeli |
+| Bizim zor durum üretecimiz | Hayır, sentetik | Bilinen zorlukları sistematik üretmek (§13.4) | Bilmediğimiz zorlukları bulamaz |
+
+**Sonuç:** Motorun doğruluğunu ve dayanıklılığını bu kaynaklarla sınayabiliriz. Dağınık gerçek KOBİ davranışının (gecikmiş ödemeler, aynı açıklamalı farklı ödemeler, kısmi ödemeler) bizim zorlukları doğru tahmin edip etmediğini yalnızca gerçek bir şirketin verisi gösterir. Bu eksiklik §8'e risk olarak yazıldı; veri bulunana kadar zor durum üreteci vekildir ve bunu açıkça bilmeliyiz.
+
+**İndirmeler izne bağlıdır.** Hiçbir kaynak, dosya adı, adres ve boyutu sahibine gösterilip onay alınmadan indirilmez.
+
+**Bulunan bir sorun (E2'nin ilk işi):** `backend/app/services/benchmark.py` sektör ortancalarını koda gömülü bir sözlükte tutuyor ve çıktıya "TCMB/BDDK Sektör İstatistikleri 2023-2024" kaynağını yazıyor; bu kaynağın bu sayıları gerçekten verdiği doğrulanmadı. Yüzdelik aralıkları (p25/p75) da bazı yerlerde ortancanın 0,6 ve 1,4 katı olarak tahmin ediliyor. `benchmark_intelligence.py` benzer biçimde "Türkiye SaaS raporu 2024" ve "KOSGEB" gibi kaynaklara atıfla gömülü yüzdelikler taşıyor. Bunlar plan v8'in dürüstlük ilkesine aykırı olabilir: kaynağı gösterilemeyen kıyas değeri kaldırılır ya da TCMB tablosundan alınıp tarihi ve kaynağıyla yazılır.
+
+### 13.4 Aşamalar
+
+Tek geliştirici için kaba süreler; her aşama bir önceki bitmeden başlamaz, ama E1 ile E2'nin ilk yarısı paralel gidebilir.
+
+#### E1 — Veri sözleşmesi ve yeniden üretilebilirlik · Hafta 1–3
+- Türetilmiş her görünüm (şirket görünümü, radar, özet) için yazılı bir veri sözleşmesi: girdisi, kaynağı, hangi fonksiyonla hesaplandığı.
+- Test: görünümü silip yeniden hesaplamak aynı rakamları verir; yükleme sırasını değiştirmek rakamları değiştirmez.
+- `company_view` imzası bugün satır kimliklerine bağlı; yeniden kurulan bir defterin imzası farklı çıkar. Rakama bağlı bir imza ya da bunun bilinçli bir kabul olarak yazılması.
+- `worker.py` bölünür: iş yürütme, şirket görünümü ve yan etkiler ayrı modüller; davranış değişmez, mevcut testler aynen geçer.
+
+**Bitti sayılır:** Yeniden üretilebilirlik testleri CI'da yeşil; `worker.py` bölünmüş.
+
+#### E2 — Doğruluk külliyatı ve zor durum üreteci · Hafta 2–5
+- **KAP bilançoları:** 3–5 şirketin yayımlanmış tabloları (farklı sektör). Beklenen değerler tablodaki rakamlardır; hesapladığımız oran ve marjlar bunlarla kuruşuna kadar tutmalı (§13.1 #1). İndirme izne bağlıdır (§13.3).
+- **TCMB sektör verisi:** Kıyas aralıkları gömülü sözlükten çıkarılıp tarihi ve kaynağı olan bir tabloya taşınır (§13.1 #5). Kaynağı gösterilemeyen kıyas değeri kaldırılır.
+- **Zor durum üreteci:** bilinen zorlukları parametreyle üretir: aynı açıklamalı farklı ödemeler, kısmi ödeme, bir ödemeyle birçok fatura, döviz, ters işaretli satırlar, BOM, ayırıcı ve tarih biçimi çeşitleri, Türkçe karakter (İ/ı), kesik satır.
+- **Metamorfik testler:** iki kez yükleme, sıra değiştirme, dosyayı ikiye bölme, ilgisiz dosya ekleme: sonuç değişmez (§13.1 #3). Özellik tabanlı bir test kütüphanesi gerekirse CLAUDE.md'nin ikinci kuralı gereği önce `requirements.txt`'e yazılır.
+- Mutabakatta **yanlış otomatik eşleşme 0** olmalı; kaçırılan eşleşme oranı ölçülüp yazılır (§13.1 #2).
+
+**Bitti sayılır:** §13.1'in 1, 2, 3 ve 5 numaralı ölçütleri ölçülmüş ve testte.
+
+#### E3 — Yapay zeka katmanının ölçümü · Hafta 4–8
+- **LLM'li altın küme:** E2'nin verisinden yaklaşık 20 senaryo; gerçek bir model anahtarıyla uçtan uca koşar. Ölçüler: anlatıdaki sayıların kaynağa uyumu, uydurma sayı (hedef 0), kapıya düşen oran, maliyet ve gecikme.
+- LLM'siz sürüm her CI'da koşar; LLM'li sürüm elle ya da gecelik koşar (maliyet).
+- `eval_harness.py` genişler; model değişikliği (model kataloğu) aynı altın kümede iki modelin karşılaştırılmasıyla güvenli hale gelir.
+- Öneri için **beklenti ve sonuç kaydı** şeması (§10) bu aşamada tasarlanır; O3–O5 onu kullanır.
+
+**Bitti sayılır:** §13.1'in 4 numaralı ölçütü ölçülmüş; LLM maliyeti ilk kez sayı olarak biliniyor.
+
+#### E4 — Roller defterden beslenir · Hafta 7–10
+Diğer ajanlar ayrı ürün gibi değil, **defterin bakış açıları** olarak geliştirilir. Bir rolün yeni özelliği ancak şu üçünü sağlıyorsa yapılır: (1) defterden okur, ayrı veri hattı yoktur; (2) aynı güven kapısından geçer; (3) ölçülebilir bir sonucu vardır.
+
+| Rol | İlk bulgu (defterden) |
+|---|---|
+| CHRO | Maaş giderinin gelire oranı ve trendi, SGK ödemelerinin düzenliliği |
+| COO | Tedarikçi yoğunlaşması, vadesi geçmiş borç |
+| CMO | Pazarlama giderinin gelirle ilişkisi |
+| CTO | Bulut ve yazılım giderlerinin trendi |
+
+Her bulgu pazartesi bültenine (O4) girer ve beklenti ve sonuç kaydı taşır.
+
+**Bitti sayılır:** Dört bulgu türü defterden üretiliyor; hiçbiri ayrı dosya istemiyor.
+
+#### E5 — Dayanıklılık · Hafta 9–12
+- **Olay günlüğü:** Defter değişince görünümlerin yenilenmesi bugün eşzamanlı çağrıyla yapılıyor; sıralı ve yeniden oynatılabilir bir olay akışına taşınır (plan v5 F2). Çift gönderim ve kayıp olay testleri.
+- **Kaos testleri** (staging, O1 sonrası): worker öldürme, Redis yok, yavaş veritabanı, bozuk girdi. Beklenti: sessiz yanlış sonuç yok; her koşu tamamlanır, kapıya düşer ya da hata bırakır (§13.1 #6).
+- **SLO'lar** gerçek ortamda ölçülür; ilk sayılar bu plana işlenir.
+- **Dönem kapanışı** (plan v5 F5): ay kilidi ve mühür, E5'in sonunda değerlendirilir.
+
+**Bitti sayılır:** §13.1'in 6 numaralı ölçütü staging'de ölçülmüş.
+
+### 13.5 Pilot yoluyla ilişkisi
+
+| Pilot yolu (§4) | Motor planı (§13.4) |
+|---|---|
+| O0, O2 | Bitti |
+| O1 (staging) | E5'in kaos testlerinin önkoşulu |
+| O3 (radar tamamlama, tahmin kaydı) | E2 ve E3'ün ölçümlerinden yararlanır; öneri kaydı E3'te tasarlanır |
+| O4 (bülten) | E4'ün bulguları bültene girer |
+| O5 (ölçmek) | E3 ve E5'in ölçüm altyapısı |
+
+Sahip kararları (pilot şirketler, barındırma) olmadan ilerleyebilecek olanlar: **E1, E2, E3 ve E4**. Bu yüzden sıradaki iş E1'dir.
+
+## 14. Sıradaki adım
+
+1. #23 (yönetilen Postgres) birleşir.
+2. **E1** (§13.4): veri sözleşmesi, yeniden üretilebilirlik testleri ve `worker.py`'nin bölünmesi. Sahip kararı gerektirmez.
+3. §13.3'teki kaynaklar için indirme izni (KAP bilançoları, TCMB sektör verisi); dosya adı, adres ve boyut gösterilerek.
+4. Sahip kararları (pilot şirketler, barındırma sağlayıcısı, hukuki gözden geçirme) O1 için bekliyor.
+5. Karar kaydına ölçülebilir beklenti ve sonuç alanları E3'te tasarlanır (§10).
+6. Ufuk 1 bittiğinde iş yol haritası (§12).
