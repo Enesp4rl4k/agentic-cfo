@@ -1,0 +1,6 @@
+# helm install aicfo helm/agentic-cfo -f helm/agentic-cfo/values-managed-postgres.yaml \
+#   --set postgres.external.host=<instance host> --set secrets.postgresPassword=<password>
+postgres:
+  enabled: false
+  external:
+    sslmode: require

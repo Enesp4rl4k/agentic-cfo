@@ -68,10 +68,17 @@ frontend:
       memory: 1Gi
 
 postgres:
+  # false: the database is a managed Postgres (plan v10 O1); fill in `external`.
+  # It must offer PostgreSQL 16 with pgvector, TLS and point-in-time recovery
+  # (docs/ops/managed-postgres.md). The in-cluster pod below has no backups.
   enabled: true
   image: postgres:16-alpine
   database: aicfo
   username: aicfo
+  external:
+    host: ""
+    port: 5432
+    sslmode: require
   storage:
     size: 20Gi
     storageClass: ""

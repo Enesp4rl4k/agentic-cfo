@@ -22,8 +22,14 @@ data:
   AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD: {{ .Values.config.autoEnqueueAnalysis | quote }}
   RAG_BACKFILL_ENABLED: {{ .Values.config.ragBackfillEnabled | quote }}
   RAG_EMBEDDING_ENABLED: {{ .Values.config.ragEmbeddingEnabled | quote }}
+  {{- if .Values.postgres.enabled }}
   POSTGRES_HOST: {{ include "agentic-cfo.fullname" . }}-postgres
   POSTGRES_PORT: "5432"
+  {{- else }}
+  POSTGRES_HOST: {{ required "postgres.external.host is required when postgres.enabled is false" .Values.postgres.external.host | quote }}
+  POSTGRES_PORT: {{ .Values.postgres.external.port | quote }}
+  POSTGRES_SSLMODE: {{ .Values.postgres.external.sslmode | quote }}
+  {{- end }}
   POSTGRES_DB: {{ .Values.postgres.database | quote }}
   POSTGRES_USER: {{ .Values.postgres.username | quote }}
   REDIS_URL: "redis://{{ include "agentic-cfo.fullname" . }}-redis:6379/0"
