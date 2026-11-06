@@ -2086,6 +2086,8 @@ export const tr: MessageTree = {
       countryLabel: "Ülke",
       trPackTitle: "Türkiye bölgesel paketi",
       trPackBody: "THP CoA, SMMM onay kuyruğu ve e-Fatura akışlarını etkinleştirir.",
+      focusTitle: "Odaklı menü",
+      focusBody: "Yalnızca nakit akışını gösterir: belge bağlama, defter, nakit ve ayarlar. Diğer ekranlar bağlantıyla açılmaya devam eder.",
       save: "Yerel ayarı kaydet",
       saved: "Kaydedildi",
       saveFailed: "Kaydedilemedi.",

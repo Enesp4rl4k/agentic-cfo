@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -48,6 +48,11 @@ class Organization(Base):
     locale: Mapped[str] = mapped_column(String(16), default="en-US", nullable=False)
     # e.g. ["tr"] enables Turkey regional pack (SMMM, GIB, Paraşüt, THP)
     regional_packs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # A pilot company sees only the flow it is piloting (plan v10 §O0): the
+    # screens outside it are hidden from the menu, not removed.
+    focus_mode: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)

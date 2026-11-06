@@ -12,6 +12,7 @@ export type OrgSettings = {
   base_currency?: string;
   country_code?: string;
   regional_packs?: string[];
+  focus_mode?: boolean;
 };
 
 export const ORG_SETTINGS_KEY = ["org-settings"] as const;
@@ -68,6 +69,7 @@ export function useOrgSettings() {
     error: error instanceof Error ? error.message : null,
     refresh,
     hasTrPack: Boolean(org?.regional_packs?.includes("tr")),
+    focusMode: Boolean(org?.focus_mode),
     baseCurrency: org?.base_currency || "USD",
     locale: org?.locale || "en-US",
   };

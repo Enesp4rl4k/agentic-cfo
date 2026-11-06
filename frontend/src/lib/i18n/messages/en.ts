@@ -1949,6 +1949,8 @@ export type MessageTree = {
       countryLabel: string;
       trPackTitle: string;
       trPackBody: string;
+      focusTitle: string;
+      focusBody: string;
       save: string;
       saved: string;
       saveFailed: string;
@@ -4197,6 +4199,8 @@ export const en: MessageTree = {
       countryLabel: "Country",
       trPackTitle: "Turkey regional pack",
       trPackBody: "Enables THP CoA, SMMM approval queue, and e-Fatura flows.",
+      focusTitle: "Focused menu",
+      focusBody: "Shows only the cash flow: connect documents, ledger, cash and settings. Other screens stay available by link.",
       save: "Save locale",
       saved: "Saved",
       saveFailed: "Save failed.",
