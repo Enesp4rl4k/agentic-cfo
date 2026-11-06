@@ -3,12 +3,12 @@
  *
  * A pilot company pilots one flow: connect its documents, read its ledger and
  * cash, act on it. Everything else stays in the product and is only hidden from
- * the menu; its URLs still open. The cash radar gets its entry here with its
- * screen (§O2).
+ * the menu; its URLs still open.
  */
 export const FOCUS_HREFS: ReadonlySet<string> = new Set([
   "/baslangic",
   "/command-center",
+  "/nakit-radari",
   "/baglan",
   "/upload",
   "/pnl",

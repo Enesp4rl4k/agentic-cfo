@@ -45,6 +45,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/baslangic",     label: "Başlangıç",      icon: Rocket },
       { href: "/command-center", label: "Command Center", icon: Activity },
+      { href: "/nakit-radari",  label: "Nakit Radarı",   icon: Waves },
       { href: "/kurumsallasma",  label: "Kurumsallaşma",  icon: TrendingUp },
       { href: "/iliskili-taraf", label: "İlişkili Taraf",  icon: Users },
       { href: "/pnl",            label: "Dashboard",      icon: LayoutDashboard },

@@ -45,6 +45,37 @@ export type MessageTree = {
     keep: string;
     exclude: string;
   };
+  cashRadar: {
+    title: string;
+    subtitle: string;
+    startingCash: string;
+    asOf: string;
+    unknownCash: string;
+    unknownCashBody: string;
+    noGap: string;
+    gapTitle: string;
+    gapWeek: string;
+    gapLowest: string;
+    gapActions: string;
+    weekly: string;
+    colWeek: string;
+    colDates: string;
+    colIn: string;
+    colOut: string;
+    colBalance: string;
+    colMovement: string;
+    notCountedTitle: string;
+    undatedReceivables: string;
+    undatedPayables: string;
+    overdueReceivables: string;
+    beyondHorizon: string;
+    otherCurrency: string;
+    expectedOn: string;
+    emptyBody: string;
+    connect: string;
+    loading: string;
+    failed: string;
+  };
   reviewQueue: {
     title: string;
     body: string;
@@ -2156,6 +2187,37 @@ export const en: MessageTree = {
     settleNo: "No, separate money",
     keep: "Separate payment",
     exclude: "Same payment",
+  },
+  cashRadar: {
+    title: "Cash radar",
+    subtitle: "The next 13 weeks: open invoices against the last known bank balance.",
+    startingCash: "Starting cash",
+    asOf: "Statement date",
+    unknownCash: "Bank balance unknown",
+    unknownCashBody: "Upload a bank statement with a balance column. Until then the radar shows movement only and claims no cash gap.",
+    noGap: "The balance does not go below zero within 13 weeks.",
+    gapTitle: "Cash gap",
+    gapWeek: "Starts in week",
+    gapLowest: "Lowest balance",
+    gapActions: "What could be done",
+    weekly: "Week by week",
+    colWeek: "Week",
+    colDates: "Dates",
+    colIn: "In",
+    colOut: "Out",
+    colBalance: "Balance",
+    colMovement: "Cumulative movement",
+    notCountedTitle: "Not counted in the radar",
+    undatedReceivables: "Receivables with no due date",
+    undatedPayables: "Payables with no due date",
+    overdueReceivables: "Receivables past their expected day (not counted)",
+    beyondHorizon: "Beyond 13 weeks",
+    otherCurrency: "Items in another currency",
+    expectedOn: "expected",
+    emptyBody: "No open invoices or bank balance yet.",
+    connect: "Connect my data",
+    loading: "Preparing the cash radar…",
+    failed: "The cash radar could not be loaded.",
   },
   reviewQueue: {
     title: "{n} analyses await your approval",

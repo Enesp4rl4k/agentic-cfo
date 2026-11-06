@@ -183,7 +183,7 @@ async def test_a_gap_names_its_week_its_cause_and_real_amounts(client):
     assert gap is not None
     assert (gap.week, gap.week_start, gap.week_end) == (3, "2025-01-15", "2025-01-21")
     assert gap.shortfall_cents == 70_000_00
-    assert "Ana Tedarikci AS" in gap.driver and "₺120,000.00" in gap.driver
+    assert "Ana Tedarikci AS" in gap.driver and "₺120.000,00" in gap.driver
     assert [(a["type"], a["amount_cents"]) for a in gap.actions] == [
         ("early_collection", 45_000_00), ("defer_payment", 120_000_00), ("financing", 70_000_00)]
     # No discount rate, no extra days: nobody offered them.

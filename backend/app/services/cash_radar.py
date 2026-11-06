@@ -39,8 +39,10 @@ NOT_INCLUDED = (
 
 
 def _fmt(cents: int) -> str:
+    """Lira as the Turkish text around it writes it: ₺1.234,56."""
     sign = "-" if cents < 0 else ""
-    return f"{sign}₺{abs(cents) / 100:,.2f}"
+    swapped = f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
+    return f"{sign}₺{swapped}"
 
 
 @dataclass(frozen=True)
