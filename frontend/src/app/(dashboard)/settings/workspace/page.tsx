@@ -474,14 +474,17 @@ function LocaleSettingsPanel({
             </p>
           </div>
         </label>
-        <label className="flex cursor-pointer items-center gap-3 sm:col-span-2">
-          <div
+        <div className="flex items-center gap-3 sm:col-span-2">
+          <button
+            type="button"
             role="switch"
+            id="org-focus-mode"
             aria-checked={focus}
-            aria-disabled={!isAdmin}
-            onClick={() => isAdmin && setFocus((v) => !v)}
+            aria-labelledby="org-focus-mode-title"
+            disabled={!isAdmin}
+            onClick={() => setFocus((v) => !v)}
             className={cn(
-              "relative h-5 w-9 rounded-full transition-colors",
+              "relative h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               focus ? "bg-primary" : "bg-muted",
               !isAdmin && "opacity-50"
             )}
@@ -492,12 +495,12 @@ function LocaleSettingsPanel({
                 focus ? "translate-x-4" : "translate-x-0.5"
               )}
             />
-          </div>
+          </button>
           <div>
-            <p className="text-sm font-medium">{ws.locale.focusTitle}</p>
+            <p id="org-focus-mode-title" className="text-sm font-medium">{ws.locale.focusTitle}</p>
             <p className="text-[10px] text-muted-foreground">{ws.locale.focusBody}</p>
           </div>
-        </label>
+        </div>
         {isAdmin && (
           <div className="flex items-center gap-3 sm:col-span-2">
             <button
