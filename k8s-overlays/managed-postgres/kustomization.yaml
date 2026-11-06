@@ -1,0 +1,46 @@
+# The database is a managed Postgres, not a pod in this namespace (plan v10 §O1).
+#
+#   kubectl apply -k k8s-overlays/managed-postgres
+#
+# Set POSTGRES_HOST below to the instance's host, and put its password in
+# aicfo-secrets (POSTGRES_PASSWORD). The instance must offer PostgreSQL 16 with the
+# pgvector extension, TLS, and daily backups with point-in-time recovery; see
+# docs/ops/managed-postgres.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../k8s
+
+patches:
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+  - target:
+      kind: Service
+      name: postgres
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: postgres
+  - target:
+      kind: ConfigMap
+      name: aicfo-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: aicfo-config
+      data:
+        # Not a real host: an unedited overlay fails to connect instead of reaching
+        # some other database.
+        POSTGRES_HOST: "REPLACE-WITH-MANAGED-POSTGRES-HOST.invalid"
+        POSTGRES_SSLMODE: "require"

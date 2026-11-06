@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import warnings
 from functools import lru_cache
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ── Known-insecure default values (SEC-7) ─────────────────────────────────────
@@ -14,6 +16,26 @@ _INSECURE_SECRETS: frozenset[str] = frozenset({
     "password",
     "",
 })
+
+
+_SSL_MODES: frozenset[str] = frozenset(
+    {"", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
+)
+
+
+def _for_driver(url: str, parameter: str) -> str:
+    """The URL's TLS mode under the spelling one driver reads.
+
+    asyncpg reads `ssl`, psycopg reads `sslmode`, and each refuses the other's. A URL
+    without a mode comes back as it was.
+    """
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    mode = next((value for key, value in query if key in ("ssl", "sslmode")), None)
+    if mode is None:
+        return url
+    rest = [(key, value) for key, value in query if key not in ("ssl", "sslmode")]
+    return urlunsplit(parts._replace(query=urlencode([*rest, (parameter, mode)])))
 
 
 class Settings(BaseSettings):
@@ -40,9 +62,19 @@ class Settings(BaseSettings):
     postgres_db: str = "aicfo"
     postgres_user: str = "aicfo"
     postgres_password: str = "changeme"
+    # TLS to the database: a managed Postgres refuses plain connections. Empty adds
+    # nothing, which is what a database inside the same cluster wants.
+    postgres_sslmode: str = ""
 
     # If set, overrides the postgres_* fields entirely
     database_url_override: str = ""
+
+    @field_validator("postgres_sslmode")
+    @classmethod
+    def _known_ssl_mode(cls, value: str) -> str:
+        if value not in _SSL_MODES:
+            raise ValueError(f"postgres_sslmode must be one of {sorted(_SSL_MODES - {''})}, got {value!r}")
+        return value
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -272,12 +304,13 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         if self.database_url_override:
-            return self.database_url_override
+            return _for_driver(self.database_url_override, "ssl")
         if self.use_sqlite:
             return "sqlite+aiosqlite:///./aicfo_dev.db"
+        tls = f"?ssl={self.postgres_sslmode}" if self.postgres_sslmode else ""
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}{tls}"
         )
 
     @property
@@ -287,16 +320,16 @@ class Settings(BaseSettings):
         # postgres_* defaults — or a SQLite path — while the app itself was
         # talking to the overridden database.
         if self.database_url_override:
-            return (
-                self.database_url_override
-                .replace("+asyncpg", "")
-                .replace("+aiosqlite", "")
+            return _for_driver(
+                self.database_url_override.replace("+asyncpg", "").replace("+aiosqlite", ""),
+                "sslmode",
             )
         if self.use_sqlite:
             return "sqlite:///./aicfo_dev.db"
+        tls = f"?sslmode={self.postgres_sslmode}" if self.postgres_sslmode else ""
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}{tls}"
         )
 
     @property
