@@ -1,5 +1,7 @@
 # Plan v9 — Yönetim İşletim Sistemi
 
+*2026-11-06 notu: odak ve sıra için [PLAN_V10.md](PLAN_V10.md) geçerlidir; bu belgenin tezi ve K2–K4 içeriği orada beklemeye alındı.*
+
 *2026-11-02. Plan v8'in kalanını içine alır; açık işler için tek plan budur. Süreler tek geliştirici için kaba tahmindir, ilk pilot bulgularıyla yeniden yazılır.*
 
 ## 1. Tez
