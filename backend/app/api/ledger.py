@@ -1,6 +1,7 @@
 """The company ledger: what it holds, and the rows waiting for a person."""
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,7 @@ from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.user import User
+from app.services.cash_radar import compute_cash_radar
 from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, ledger_summary
 from app.services.reconciliation import (
     CONFIRMED,
@@ -198,6 +200,23 @@ async def get_payment_behaviour(
 ) -> dict[str, Any]:
     """How late each counterparty really settles, from matched bank movements."""
     return {"data": await payment_behaviour(db, _org(user)), "error": None}
+
+
+@router.get("/ledger/cash-radar", responses={400: {"description": "The user has no organisation or invalid date."}})
+async def get_cash_radar(
+    anchor_date: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """The next 13 weeks of open invoices against the last proven bank balance."""
+    parsed_anchor: date | None = None
+    if anchor_date:
+        try:
+            parsed_anchor = date.fromisoformat(anchor_date)
+        except ValueError:
+            raise HTTPException(400, "Geçersiz tarih biçimi (YYYY-AA-GG bekleniyor).") from None
+    result = await compute_cash_radar(db, _org(user), anchor_date=parsed_anchor)
+    return {"data": result.to_dict(), "error": None}
 
 
 @router.post(

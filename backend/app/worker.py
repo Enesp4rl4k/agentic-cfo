@@ -462,6 +462,11 @@ async def run_cfo_analysis(
             )
             completed_at = datetime.now(UTC)
             meta = dict(job.result_metadata or {})
+            from app.services.bank_balance import closing_balance
+
+            closing = closing_balance(list(result.get("transactions") or []))
+            if closing is not None:
+                meta["closing_balance"] = closing
             try:
                 if meta.get("analysis_started_at"):
                     t0 = datetime.fromisoformat(meta["analysis_started_at"])
