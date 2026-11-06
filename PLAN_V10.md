@@ -70,6 +70,7 @@ Bu akışa hizmet etmeyen iş, ölçüt tutana kadar bekler.
 - **Vergi ve SGK takvimi:** Son günler resmî kaynaktan, sürümlü veri olarak tutulur. Tutarlar defterdeki hesap kodlarından hesaplanır. Kaynağı gösterilemeyen kural eklenmez.
 - **Çek ve senet:** Önce pilotlardan birinin elindeki ERP raporu okunur.
 - **Tahmin kaydı:** Her radar çıktısı değişmeyen bir kayıt olarak saklanır.
+- **Öneri kaydı:** Radarın önerdiği her eylem (§10) makine tarafından okunabilir bir beklentiyle saklanır.
 
 **Bitti sayılır:** Radarın "dahil değil" listesi boş, ya da kalan her madde için pilotta veri olmadığı yazılı.
 
@@ -80,6 +81,7 @@ Bu akışa hizmet etmeyen iş, ölçüt tutana kadar bekler.
   - LLM yoksa şablon kullanılır.
   - Doğrulayıcı, metindeki her sayıyı kaynağıyla karşılaştırır.
 - **Karar ve taahhüt kaydı:** Bültendeki eylem "yaptım / ertele / gerek yok" diye cevaplanır. Sorumlu kişi ve tarih kaydedilir. Bu, v9 K2'nin yalnızca bu akışa yeten kısmıdır.
+- **Beklenti ve sonuç alanları:** Karar kaydı serbest metin değil, ölçülebilir bir beklenti taşır (§10): hangi hafta, hangi tutar, hangi bakiye. Sonuç, sahibin cevabı ve defterin kendisinden doldurulur.
 
 **Bitti sayılır:** Bülten her pazartesi 3 pilota gidiyor; cevaplar kaydediliyor.
 
@@ -87,9 +89,10 @@ Bu akışa hizmet etmeyen iş, ölçüt tutana kadar bekler.
 
 - **İsabet:** Gece notlama, 4 hafta önceki tahmini gerçekleşen bakiyeyle karşılaştırır.
 - **Gösterim:** Sapma bültende ve ekranda gösterilir. İlk sayı ne çıkarsa o gösterilir.
+- **Öneri başarısı:** Nakit tahmininin yanında, önerilen eylemlerin işe yarayıp yaramadığı da ölçülür: eylem yapıldı mı, beklenen etki gerçekleşti mi, sahip önerileri ne oranda düzeltti (§10).
 - **Rapor:** Pilot başına isabet raporu ve bu plana işlenen bulgular.
 
-**Bitti sayılır:** 3 pilotun verisiyle ölçülmüş bir 4 haftalık sapma var.
+**Bitti sayılır:** 3 pilotun verisiyle ölçülmüş bir 4 haftalık sapma ve bir öneri başarı oranı var.
 
 ## 5. Ölçütler
 
@@ -100,6 +103,9 @@ Hedef sayı yalnızca ilk ölçütte var; ötekiler önce ölçülür, sonra hed
 | Bülteni 6 hafta üst üste açan pilot | Kullanım kaydı | 3 / 3 |
 | Radarın 4 haftalık sapması | Tahmin kaydı | Ölçülür, gösterilir |
 | Radardan çıkan gerçek karar | Karar kaydı | En az 1 |
+| Beklentisi ölçülebilir olan karar oranı | Karar kaydı | Ölçülür (hedef %100) |
+| Önerinin işe yarama oranı | Beklenti ve sonuç kaydı | Ölçülür, karar türüne göre |
+| Sahibin öneriyi düzeltme oranı | Karar kaydı | Ölçülür, karar türüne göre |
 | İlk kurulum süresi | Pilot gözlemi | Ölçülür |
 | Okunamayan satır oranı | Yükleme raporu | Ölçülür |
 
@@ -112,6 +118,7 @@ Hedef sayı yalnızca ilk ölçütte var; ötekiler önce ölçülür, sonra hed
 - **Yeni ajan ya da rol yok.** CTO, CMO, COO, CHRO ve CEO ajanları olduğu gibi kalır, menüde görünmez.
 - **v9 K2'nin geri kalanı, K3 ve K4 bekler:** kurul sekreteri, boardroom hafızası, yetki devri, Endeks v2, kanıt dosyası. Ölçüt tuttuktan sonra yeniden değerlendirilir.
 - **Akış dışı ekranlarda yalnızca güvenlik ve veri bütünlüğü hataları düzeltilir.**
+- **Paralel ajanlar ve RLHF yapılmaz.** Darboğazımız hız değil güven; paralellik hataları daha hızlı üretir. Sahibin onay, ret ve düzeltmeleri model eğitimine değil, eval setine ve kurallara gider (§10).
 - **Pilotta karşılığı olmayan iş yapılmaz.** "Güzel olur" diye özellik eklenmez; her yeni iş bir pilot bulgusuna dayanır.
 
 ## 7. Sahip kararları
@@ -145,8 +152,62 @@ v9 §8'deki öteki kararlar (yeni roller, TCMB EVDS anahtarı, mali mühür) bu 
 - Her aşama canlı denenir: staging'de, kullanıcının gördüğü ekranla.
 - CLAUDE.md DISPATCH: yetki ve hız sınırı değişiklikleri, silen migration'lar ve production port değişiklikleri insana gider. O1'deki staging port ve compose değişiklikleri bu kapsamdadır.
 
-## 10. Sıradaki adım
+## 10. Yapay zeka ve yönetim katmanı: karar kalitesi döngüsü
 
-1. `feat/v9-k1-cash-radar` dalını PR olarak açmak.
-2. O0: menü daraltma.
-3. §7'deki 2 ve 3 numaralı kararlar (pilotlar, barındırma) O1 başlamadan netleşmeli.
+Gücümüz, yapay zekayı yönetim katmanıyla birleştirmek. Bunun kanıtı rapor üretmek değil, **kararın sonucunu ölçmek**. Bugünkü durum:
+
+| Var | Yok |
+|---|---|
+| Sayıları LLM üretmez; defter, mutabakat ve radar deterministik. | Önerinin sonucu makine tarafından okunacak biçimde kaydedilmiyor (`DecisionLog.outcome_note` serbest metin). |
+| Güven kapısı ve ayrı doğrulayıcı adımı; düşük güven sahibin kuyruğuna düşer. | Eval'lar sayı doğruluğunu ölçüyor ("FAVÖK 5.213.800 mü"); tavsiyenin iyi olup olmadığını ölçen yok. |
+| `AgentRun` kaydı, SLO, `DecisionLog`, yetki matrisi. | Ajanların önerisi ile sahibin kararı arasındaki fark veri olarak tutulmuyor (muhasebe kuyruğu dışında). |
+| Eval altyapısı, altın testler, düzeltmeden kural çıkaran döngü, muhasebede seviye başına isabet (`guven.py`). | Yönetim kararlarında aynı güven ölçümü yok. |
+
+### Üç seviye
+
+1. **Ölç ve hazırla.** Sayıyı hesapla, riski göster, seçenekleri çıkar. Bugün büyük ölçüde var.
+2. **Öner, insan karar versin, sonucu ölç.** Her öneri bir beklentiyle kaydedilir ("bu tahsilat gelirse 3. haftadaki açık kapanır"), sonra gerçekle karşılaştırılır. Plan v10'un odağı budur.
+3. **Eşik altında kendi karar versin.** Küçük, geri alınabilir işler (ör. ödeme taslağı). Ölçüt: bir karar türünde öneri isabeti en az N kez gerçekle karşılaştırılmış ve sahibin düzeltme oranı bir eşiğin altına inmiş olmalı. N ve eşik ilk pilot verisiyle konur, önceden uydurulmaz. Muhasebe kuyruğunda bu mekanizma var (`guven.py`); genelleştirilir.
+
+### Parçalar ve sıra
+
+| Parça | Ne zaman | Karar |
+|---|---|---|
+| Eval odaklı döngü | O3–O5 | **Yapılır.** Önerinin beklentisi, sonucu ve sahibin düzeltmesi kaydedilir; nakit tahmininin yanında öneri başarısı da notlanır. |
+| Hook ve harness | O1–O2 | **Yapılır, küçük.** Ajan çıktısı öncesi ve sonrası doğrulayıcı, sayı-kaynak kontrolü ve yetki matrisi tek sözleşmede toplanır. Çoğu var (v9 A5); eksik olan bütünlük. |
+| Arka plan ajanları | O1 sonrası | **Kısmen.** Bülten, vade hatırlatma, gece notlama zaten arka plan işi; staging olmadan denenemez. |
+| Paralel ajanlar | Ufuk 3 | **Yapılmaz şimdi.** Pilotta bir koşu fiilen yavaşsa ele alınır. |
+| RLHF | Yok | **Yanlış araç.** Model eğitmiyoruz. Onay, ret ve düzeltmeler veri olarak saklanır; eval setine ve kurallara dönüşür. İnce ayar, işaretli binlerce örnek olmadan zarar verir. |
+
+**Değişmez kural (v9'dan):** Ajanlar ölçer, hazırlar, hatırlatır, önerir. Karar insanındır; seviye 3 ancak yukarıdaki ölçütle ve sahibin açık onayıyla açılır.
+
+## 11. Ufuklar
+
+**Ufuk 1 (hafta 0–8): pilot yolu.** §4'teki O0–O5. Aşağıdaki iki teknik iş bu ufka girer, çünkü pilotta bir hata çıktığında bulunabilir olmak zorundayız:
+
+- **`worker.py`'yi bölmek.** 1.482 satırla projedeki en büyük dosya: iş yürütme, şirket görünümü ve yan etkiler iç içe. Şirket görünümü ve yan etkiler ayrı modüllere taşınır; davranış değişmez, mevcut testler aynen geçer.
+- **Pilot dosyalarından test külliyatı.** Her gerçek pilot dosyası, ayrıştırıcı ve defter için kaynaktan bir testin girdisi olur. Bugüne kadarki hataların neredeyse hepsini canlı denemeler buldu.
+- **Bilgi grafı hijyeni.** `.graphifyignore` ile `.claude/` ve `graphify-out/` graf dışı bırakılır; `connectors/github.py` ile `registry.py` arasındaki döngüsel bağımlılık çözülür.
+
+**Ufuk 2 (Ufuk 1'in ölçütü tutarsa): yönetim ritmi.** v9 K2: toplantı ritmi, karar ve taahhüt defteri, boardroom hafızasının veritabanına taşınması. Bülten ve karar kaydı bunun tohumudur.
+
+**Ufuk 3 (pilot kanıtı varsa): yetki ve hafıza.** v9 K3 ve K4: yetki devri, kurumsal hafıza, dış okuyucu için kanıt dosyası. Seviye 3 otonomi (§10) burada, karar türü başına ve ölçütle açılır. Rol ajanları (CTO, CMO, COO, CHRO) ancak bir pilot isterse menüye döner.
+
+## 12. Uygulamadan sonra: iş yol haritası
+
+Ufuk 1'in uygulaması bittiğinde, pilot verisiyle birlikte ayrı bir **iş yol haritası** yazılır. İçeriği o güne kadar uydurulmaz; yazılırken şu sorular pilot bulgularıyla cevaplanır:
+
+- **Fiyat ve paketleme:** pilotun ödemeye razı olduğu bedel ve birim.
+- **Kanal:** doğrudan satış mı, SMMM ve danışman üzerinden mi; pilot geri bildirimi hangisini gösteriyor.
+- **Segment:** pilotun gösterdiği gerçek segment, §7'deki varsayımla karşılaştırılır.
+- **Birim ekonomisi:** bir şirketin kurulum süresi, destek yükü ve LLM maliyeti (şu an ölçülmemiş).
+- **Rakip konumu:** karar sonucunu ölçmenin (§10) pilotta fark yaratıp yaratmadığı.
+
+Bu bölümün çıktısı yeni bir belge (`BUSINESS_ROADMAP.md`) olur; bu plan onu başlatan koşulu burada kaydeder.
+
+## 13. Sıradaki adım
+
+1. O0 (#20) birleşir; sonra radar ekranı (O2).
+2. §7'deki 2 ve 3 numaralı kararlar (pilotlar, barındırma) O1 başlamadan netleşmeli.
+3. Karar kaydına ölçülebilir beklenti ve sonuç alanları, O3'ün tahmin kaydıyla birlikte tasarlanır (§10).
+4. Ufuk 1 bittiğinde iş yol haritası (§12).
