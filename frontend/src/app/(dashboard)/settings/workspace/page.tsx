@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { useState, FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import {
@@ -59,6 +60,7 @@ type OrgData = {
   base_currency?: string;
   locale?: string;
   regional_packs?: string[];
+  focus_mode?: boolean;
 };
 
 const LOCALE_OPTIONS = ["en-US", "en-GB", "tr-TR", "de-DE"] as const;
@@ -345,11 +347,13 @@ function LocaleSettingsPanel({
   onUpdated: (next: OrgData) => void;
 }) {
   const { t } = useI18n();
+  const { refresh } = useOrgSettings();
   const ws = t.settingsWorkspace;
   const [locale, setLocale] = useState(org.locale ?? "en-US");
   const [currency, setCurrency] = useState(org.base_currency ?? "USD");
   const [country, setCountry] = useState(org.country_code ?? "US");
   const [trPack, setTrPack] = useState((org.regional_packs ?? []).includes("tr"));
+  const [focus, setFocus] = useState(Boolean(org.focus_mode));
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<"ok" | "err" | null>(null);
 
@@ -368,6 +372,7 @@ function LocaleSettingsPanel({
           base_currency: currency,
           country_code: country,
           regional_packs: packs,
+          focus_mode: focus,
         }),
       });
       const data = await res.json();
@@ -379,8 +384,11 @@ function LocaleSettingsPanel({
         base_currency: currency,
         country_code: country,
         regional_packs: packs,
+        focus_mode: focus,
         member_count: org.member_count,
       });
+      // The menu reads the organisation from the shared query, not from this form.
+      await refresh();
       setSaveMsg("ok");
     } catch {
       setSaveMsg("err");
@@ -464,6 +472,30 @@ function LocaleSettingsPanel({
             <p className="text-[10px] text-muted-foreground">
               {ws.locale.trPackBody}
             </p>
+          </div>
+        </label>
+        <label className="flex cursor-pointer items-center gap-3 sm:col-span-2">
+          <div
+            role="switch"
+            aria-checked={focus}
+            aria-disabled={!isAdmin}
+            onClick={() => isAdmin && setFocus((v) => !v)}
+            className={cn(
+              "relative h-5 w-9 rounded-full transition-colors",
+              focus ? "bg-primary" : "bg-muted",
+              !isAdmin && "opacity-50"
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                focus ? "translate-x-4" : "translate-x-0.5"
+              )}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-medium">{ws.locale.focusTitle}</p>
+            <p className="text-[10px] text-muted-foreground">{ws.locale.focusBody}</p>
           </div>
         </label>
         {isAdmin && (

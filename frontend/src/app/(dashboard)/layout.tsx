@@ -34,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { visibleNavGroups } from "@/lib/nav-focus";
 import { useI18n } from "@/hooks/useI18n";
 
 // ── Nav groups ────────────────────────────────────────────────────────────────
@@ -244,7 +245,7 @@ function SidebarContent({
   const { data: jobs } = useJobs();
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
-  const { hasTrPack } = useOrgSettings();
+  const { hasTrPack, focusMode } = useOrgSettings();
   const { t } = useI18n();
 
   function navHref(href: string) {
@@ -254,13 +255,7 @@ function SidebarContent({
 
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
 
-  const groups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => {
-      const needsTr = Boolean((item as { trPack?: boolean }).trPack);
-      return !needsTr || hasTrPack;
-    }),
-  })).filter((g) => g.items.length > 0);
+  const groups = visibleNavGroups(NAV_GROUPS, { hasTrPack, focusMode });
 
   return (
     <div className="flex h-full flex-col">

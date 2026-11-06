@@ -107,6 +107,7 @@ class UpdateOrgRequest(BaseModel):
     base_currency: str | None = Field(default=None, min_length=3, max_length=3)
     locale: str | None = Field(default=None, min_length=2, max_length=16)
     regional_packs: list[str] | None = None
+    focus_mode: bool | None = None
 
 
 class InviteRequest(BaseModel):
@@ -133,6 +134,7 @@ def _org_dict(org: Organization) -> dict[str, Any]:
         "base_currency":        getattr(org, "base_currency", None) or "USD",
         "locale":               getattr(org, "locale", None) or "en-US",
         "regional_packs":       normalize_packs(getattr(org, "regional_packs", None)),
+        "focus_mode":           bool(org.focus_mode),
         "plan":                 org.plan,
         "max_members":          org.max_members,
         "max_jobs_per_month":   org.max_jobs_per_month,
@@ -257,6 +259,8 @@ async def update_org(
         from app.services.regional.packs import normalize_packs
 
         org.regional_packs = normalize_packs(body.regional_packs)
+    if body.focus_mode is not None:
+        org.focus_mode = body.focus_mode
     await db.commit()
     await db.refresh(org)
     return {"data": _org_dict(org), "error": None}
