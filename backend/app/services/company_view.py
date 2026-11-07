@@ -59,8 +59,18 @@ def _as_transaction(row: Any) -> dict[str, Any]:
 
 
 def _signature(profit: list[Any], cash: list[Any]) -> str:
+    """What the figures say, not which row ids say it.
+
+    A row's id is random, so a ledger rebuilt from the same uploads has other ids and
+    the same money; the signature uses the row's content identity (`source_record_id`,
+    which is the document id or the content fingerprint) and sorts, so neither a
+    rebuild nor the order rows are read in moves it.
+    """
     said = [
-        [[r.id, r.amount_cents, r.direction, r.category] for r in rows]
+        sorted(
+            [r.source_record_id, day_of(r.transaction_date).isoformat(), r.amount_cents, r.direction, r.category]
+            for r in rows
+        )
         for rows in (profit, cash)
     ]
     return hashlib.sha256(json.dumps(said).encode()).hexdigest()

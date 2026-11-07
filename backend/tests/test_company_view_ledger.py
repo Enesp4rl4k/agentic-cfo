@@ -38,9 +38,9 @@ async def ortam(monkeypatch):
         monkeypatch.setattr(database, "session_factory", lambda: c._maker)
         monkeypatch.setattr(database, "engine", lambda: None)
         chained: list[str] = []
-        monkeypatch.setattr("app.worker.spawn_auto_chain",
+        monkeypatch.setattr("app.post_completion.spawn_auto_chain",
                             lambda job_id, org_id, chain: chained.append(job_id))
-        monkeypatch.setattr("app.worker._job_side_effects", lambda *a, **k: None)
+        monkeypatch.setattr("app.post_completion._job_side_effects", lambda *a, **k: None)
         headers, org_id, _ = await kullanici(c, "defter@example.com", role="owner")
         c.headers_of_owner = headers
         yield c, org_id, chained
@@ -71,7 +71,7 @@ async def _analysed(client, org_id: str, rows: list[dict[str, Any]]) -> str:
 
 
 async def _continue(client, job_id: str, org_id: str) -> None:
-    from app.worker import continue_after_completion
+    from app.post_completion import continue_after_completion
 
     # The file's own dashboard says only what that file says.
     file_result = {"dashboard_json": {"pnl": {"revenue": 1.0}, "cashflow": {}}}

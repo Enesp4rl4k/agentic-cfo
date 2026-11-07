@@ -157,7 +157,12 @@ async def apply_as_company_view(
     it on purpose. Server-side only: the stored result of an owned, completed
     job — never a result sent by the client.
     """
-    from app.worker import apply_company_view, cfo_chain_result, saved_result, spawn_auto_chain
+    from app.post_completion import (
+        apply_company_view,
+        cfo_chain_result,
+        saved_result,
+        spawn_auto_chain,
+    )
 
     job = await db.get(AnalysisJob, job_id)
     if not job:

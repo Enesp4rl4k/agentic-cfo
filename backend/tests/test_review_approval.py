@@ -15,7 +15,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 import app.database as database
-import app.worker as worker
+import app.post_completion as post_completion
 from tests.api_helpers import bellek_istemcisi
 
 
@@ -73,7 +73,7 @@ async def test_approval_completes_the_job_and_continues_from_saved_results(clien
     async def fake_continue(job_id, org_id, result, db):
         calls.append((job_id, org_id, result))
 
-    monkeypatch.setattr(worker, "continue_after_completion", fake_continue)
+    monkeypatch.setattr(post_completion, "continue_after_completion", fake_continue)
     # The continuation runs in the background on its own session; in the test
     # that session must be the test database's.
     monkeypatch.setattr(database, "session_factory", lambda: client._maker)
@@ -116,7 +116,7 @@ async def test_another_org_cannot_approve(client, monkeypatch):
     async def fake_continue(*a, **k):
         raise AssertionError("must not continue")
 
-    monkeypatch.setattr(worker, "continue_after_completion", fake_continue)
+    monkeypatch.setattr(post_completion, "continue_after_completion", fake_continue)
     monkeypatch.setattr(database, "session_factory", lambda: client._maker)
     _, org_a, _ = await _user(client, "a@example.com")
     headers_b, _, _ = await _user(client, "b@example.com")
