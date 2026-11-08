@@ -723,7 +723,7 @@ export const tr: MessageTree = {
     },
     benchmark: {
       title: "Sektör Karşılaştırması",
-      subtitle: "TCMB/BDDK istatistiklerine göre sektör ortalamasıyla kıyaslayın",
+      subtitle: "Sektör varsayımıyla kıyaslayın (örnek değerler, kaynağı doğrulanmadı)",
       sector: "Sektör:",
       refresh: "Yenile",
       refreshing: "Yenileniyor…",
@@ -731,7 +731,7 @@ export const tr: MessageTree = {
       median: "Medyan",
       vsMedian: "medyana göre",
       recommendation: "→ Öneri:",
-      source: "Kaynak: TCMB/BDDK Sektör İstatistikleri 2023-2024 · {sector}",
+      source: "Kaynak doğrulanmadı: örnek varsayımlar · {sector}",
       percentile: {
         top25: "İlk %25",
         p50p75: "%50–75",

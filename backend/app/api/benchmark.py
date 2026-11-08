@@ -23,6 +23,7 @@ from app.api.access import owned_job
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat
+from app.services.benchmark import UNVERIFIED_SOURCE, VERIFIED
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -79,7 +80,8 @@ async def list_sectors() -> dict[str, Any]:
                 {"key": "opex_to_revenue",   "label": "Gider/Ciro Oranı", "unit": "%"},
                 {"key": "revenue_growth_yoy", "label": "Yıllık Büyüme", "unit": "%"},
             ],
-            "source": "TCMB/BDDK Sektör İstatistikleri 2023-2024",
+            "source": UNVERIFIED_SOURCE,
+            "verified": VERIFIED,
         },
         "error": None,
     }

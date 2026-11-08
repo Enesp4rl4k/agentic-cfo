@@ -351,25 +351,9 @@ async def run_campaign_agent(state: CMOState, config: dict) -> dict[str, Any]:
         except Exception as attr_exc:
             logger.warning("CMO attribution failed: %s", attr_exc)
 
-        # ── Sector benchmark ──────────────────────────────────────────────────
+        # No sector benchmark: ROAS was once compared with the gross margin of a default
+        # sector, which are not the same kind of number (plan v10 §13.3, E2).
         benchmark: dict[str, Any] | None = None
-        try:
-            from app.services.benchmark import get_benchmark_engine
-
-            bm_engine = get_benchmark_engine()
-            roas_val = metrics["overall_roas"]
-            # Build a minimal "pnl-like" dict for CMO metrics
-            # ROAS benchmark: map to gross_margin proxy
-            benchmark = {
-                "roas_vs_benchmark": bm_engine.compare_to_benchmark(
-                    "gross_margin",  # Closest proxy — extend benchmark with CMO metrics later
-                    roas_val / 10,   # Normalize ROAS to 0-1 range for comparison
-                    sector="default",
-                )
-            }
-            metrics["benchmark"] = benchmark
-        except Exception as bm_exc:
-            logger.debug("CMO benchmark skipped: %s", bm_exc)
 
         # ── Narrative ─────────────────────────────────────────────────────────
         try:

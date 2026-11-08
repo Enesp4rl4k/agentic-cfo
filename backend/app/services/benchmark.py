@@ -39,8 +39,15 @@ EVDS_BASE_URL = "https://evds2.tcmb.gov.tr/service/evds"
 BENCHMARK_CACHE_TTL = 86400  # 24 hours
 BENCHMARK_CACHE_PREFIX = "benchmark"
 
-# Statik sektör benchmark verileri (TCMB + BDDK 2023-2024 istatistiklerinden)
-# Kaynak: BDDK Bankacılık Sektörü İstatistikleri + TCMB Sektör Bilanço Analizi
+# Statik sektör değerleri. KAYNAĞI DOĞRULANMADI (plan v10 §13.3, E2): bu sayılar bir TCMB
+# ya da BDDK tablosundan alınmış değildir ve hiçbir yerde böyle adlandırılmaz. Bankacılık,
+# sigorta ve kiralama satırları "brüt marj" diye karşılaştırılabilir bir şey de değildir.
+# Gerçek TCMB Sektör Bilançoları tablosu (tarihi ve kaynağıyla) yüklenince `VERIFIED`
+# doğru olur; o zamana kadar hiçbir çıktı bu değerleri bir kaynağa atfetmez ve yapay zeka
+# metnine girmez.
+VERIFIED = False
+UNVERIFIED_SOURCE = "Örnek varsayım: kaynağı doğrulanmadı"
+
 _STATIC_BENCHMARKS: dict[str, dict[str, float]] = {
     "gross_margin": {
         "retail":        0.28,   # Perakende
@@ -344,7 +351,7 @@ class BenchmarkEngine:
     Sector benchmark engine with Redis caching.
 
     Compares company financial metrics against sector medians
-    using static TCMB/BDDK data (or live data if API key configured).
+    using static sample values whose source is not verified (see VERIFIED).
     Caches results in Redis for 24 hours to improve performance.
     """
 
@@ -387,8 +394,9 @@ class BenchmarkEngine:
             "p25":          round(p25, 4),
             "p50":          round(p50, 4),
             "p75":          round(p75, 4),
-            "source":       "TCMB/BDDK Sektör İstatistikleri 2023-2024",
-            "last_updated": "2024-Q4",
+            "source":       UNVERIFIED_SOURCE,
+            "verified":     VERIFIED,
+            "last_updated": None,
         }
 
     def compare_to_benchmark(
@@ -452,7 +460,7 @@ class BenchmarkEngine:
         Build a full benchmark comparison report from P&L data.
         Returns comparisons for all available metrics.
         """
-        results: dict[str, Any] = {"sector": sector, "metrics": {}}
+        results: dict[str, Any] = {"sector": sector, "verified": VERIFIED, "metrics": {}}
 
         metric_map = {
             "gross_margin":    pnl.get("gross_margin", 0),
