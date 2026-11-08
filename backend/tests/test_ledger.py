@@ -213,13 +213,13 @@ async def test_a_held_analysis_stays_out_until_it_is_approved(client):
 
 async def test_a_finished_analysis_joins_the_ledger_through_the_worker(client, monkeypatch):
     import app.database as database
-    from app.worker import continue_after_completion
+    from app.post_completion import continue_after_completion
 
     monkeypatch.setattr(database, "get_session_factory", lambda eng=None: client._maker)
     monkeypatch.setattr(database, "session_factory", lambda: client._maker)
     monkeypatch.setattr(database, "engine", lambda: None)
-    monkeypatch.setattr("app.worker.spawn_auto_chain", lambda *a: None)
-    monkeypatch.setattr("app.worker._job_side_effects", lambda *a, **k: None)
+    monkeypatch.setattr("app.post_completion.spawn_auto_chain", lambda *a: None)
+    monkeypatch.setattr("app.post_completion._job_side_effects", lambda *a, **k: None)
 
     _, org_id, _ = await kullanici(client, "isci@example.com")
     job_id = await _analysed(client, org_id, _demo_rows("01"))

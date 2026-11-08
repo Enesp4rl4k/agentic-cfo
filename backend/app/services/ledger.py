@@ -341,6 +341,7 @@ async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
     rows = (await db.execute(
         select(
             CanonicalTransaction.id,
+            CanonicalTransaction.source_record_id,
             CanonicalTransaction.transaction_date,
             CanonicalTransaction.amount_cents,
             CanonicalTransaction.currency,

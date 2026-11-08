@@ -66,9 +66,9 @@ async def ortam(monkeypatch):
         monkeypatch.setattr(database, "session_factory", lambda: c._maker)
         monkeypatch.setattr(database, "engine", lambda: None)
         chained: list[str] = []
-        monkeypatch.setattr("app.worker.spawn_auto_chain",
+        monkeypatch.setattr("app.post_completion.spawn_auto_chain",
                             lambda job_id, org_id, chain: chained.append(job_id))
-        monkeypatch.setattr("app.worker._job_side_effects", lambda *a, **k: None)
+        monkeypatch.setattr("app.post_completion._job_side_effects", lambda *a, **k: None)
         yield c, chained
         await arka_plan_bitsin()
 
@@ -89,7 +89,7 @@ async def _completed_job(client, org_id: str, dashboard: dict) -> str:
 
 
 async def _complete(client, job_id: str, org_id: str, dashboard: dict) -> None:
-    from app.worker import continue_after_completion
+    from app.post_completion import continue_after_completion
 
     async with client._maker() as db:
         await continue_after_completion(job_id, org_id, {"dashboard_json": dashboard}, db)
