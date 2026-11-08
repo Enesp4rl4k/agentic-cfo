@@ -2866,7 +2866,7 @@ export const en: MessageTree = {
     },
     benchmark: {
       title: "Sector comparison",
-      subtitle: "Compare against sector averages from TCMB/BDDK statistics",
+      subtitle: "Compare against a sector assumption (sample values, source not verified)",
       sector: "Sector:",
       refresh: "Refresh",
       refreshing: "Refreshing…",
@@ -2874,7 +2874,7 @@ export const en: MessageTree = {
       median: "Median",
       vsMedian: "vs median",
       recommendation: "→ Recommendation:",
-      source: "Source: TCMB/BDDK Sector Statistics 2023-2024 · {sector}",
+      source: "Source not verified: sample assumptions · {sector}",
       percentile: {
         top25: "Top 25%",
         p50p75: "50–75%",

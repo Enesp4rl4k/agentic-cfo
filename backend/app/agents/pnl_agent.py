@@ -168,7 +168,9 @@ async def _generate_cfo_narrative(
         from app.services.benchmark import get_benchmark_engine
         engine = get_benchmark_engine()
         bm = engine.build_full_comparison(pnl, sector=sector)
-        metrics = bm.get("metrics") or {}
+        # An unverified table never reaches the model: it would write "below the sector
+        # median" as if a source said so.
+        metrics = (bm.get("metrics") or {}) if bm.get("verified") else {}
         bm_parts = []
         for metric, data in metrics.items():
             if "company_value" in data and "benchmark" in data:

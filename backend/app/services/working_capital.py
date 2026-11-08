@@ -9,7 +9,7 @@ computed from the inputs and carries the formula it came from, so a reader can
 check it.
 
 No sector benchmark is returned: the benchmark tables in this project
-(app/services/benchmark.py, TCMB/BDDK) carry margins and ratios, not DSO/DPO,
+(app/services/benchmark.py, whose values are unverified) carry margins and ratios, not DSO/DPO,
 and a comparison we cannot source would be a made-up number in an audited
 report.
 """
