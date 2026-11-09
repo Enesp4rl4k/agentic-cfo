@@ -543,7 +543,7 @@ async def synthesize_ceo_from_context(
         node_strategic_priorities,
         node_synthesis,
     )
-    from app.services.company_context import get_company_context, save_company_context
+    from app.services.company_context import get_company_context
 
     # Load company context
     ctx = await get_company_context(org_id, db)
@@ -599,29 +599,29 @@ async def synthesize_ceo_from_context(
 
     # Save CEO result back to CompanyContext
     try:
-        ctx_fresh = await get_company_context(org_id, db)
-        ctx_fresh.update_agent_result("ceo", {
-            "financial_summary":    state.get("financial_summary"),
-            "tech_summary":         state.get("tech_summary"),
-            "marketing_summary":    state.get("marketing_summary"),
-            "ops_summary":          state.get("ops_summary"),
-            "hr_summary":           state.get("hr_summary"),
-            "cross_risks":          state.get("cross_risks") or [],
-            "strategic_priorities": state.get("strategic_priorities") or [],
-            "board_deck":           state.get("board_deck"),
-            "sources": "company_context",
-            "agents_used": [
-                a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
-                if getattr(ctx, f"last_{a}_result", None) is not None
-            ],
-        })
-        await save_company_context(ctx_fresh, db)
-        try:
-            from app.services.semantic.rebuild import rebuild_semantic_snapshot
+        from app.services.context_persist import write_derived_result
 
-            await rebuild_semantic_snapshot(org_id, db, include_brief=True)
-        except Exception as rebuild_exc:
-            logger.warning("CEO synthesis semantic rebuild failed: %s", rebuild_exc)
+        # The same gate as every other write of a derived result (plan v10 G1); it also
+        # rebuilds the semantic snapshot.
+        await write_derived_result(
+            db, org_id, "ceo",
+            {
+                "financial_summary":    state.get("financial_summary"),
+                "tech_summary":         state.get("tech_summary"),
+                "marketing_summary":    state.get("marketing_summary"),
+                "ops_summary":          state.get("ops_summary"),
+                "hr_summary":           state.get("hr_summary"),
+                "cross_risks":          state.get("cross_risks") or [],
+                "strategic_priorities": state.get("strategic_priorities") or [],
+                "board_deck":           state.get("board_deck"),
+                "sources": "company_context",
+                "agents_used": [
+                    a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
+                    if getattr(ctx, f"last_{a}_result", None) is not None
+                ],
+            },
+            parent_agent="cfo", job_id=job_id, own_confidence=state.get("min_confidence"),
+        )
     except Exception as exc:
         logger.warning("Failed to save CEO synthesis to context: %s", exc)
 

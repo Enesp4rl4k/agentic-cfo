@@ -56,6 +56,7 @@ def cfo_chain_result(job_id: str, result: dict[str, Any]) -> dict[str, Any]:
     dashboard = result.get("dashboard_json") or {}
     return {
         "job_id":     job_id,
+        "min_confidence": dashboard.get("min_confidence"),
         "dashboard":  dashboard,
         "anomalies":  result.get("anomalies") or [],
         "forecast":   dashboard.get("forecast"),

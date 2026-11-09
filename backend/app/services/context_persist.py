@@ -168,6 +168,9 @@ async def persist_agent_completion(
 
     agent_lower = agent.lower()
     payload = _serialize_result(result)
+    # What was let through carries the decision that let it through; what is held
+    # carries it in `_hold_for_review`.
+    payload = {**payload, "gate": gate.to_dict()}
 
     # The one write into the context, so the one place the gate holds. What it
     # holds waits in the owner's queue as an AgentJob, whichever path produced it.
@@ -234,3 +237,50 @@ async def persist_agent_completion(
         )
 
     return gate.to_dict()
+
+
+def _confidence_of(result: dict[str, Any] | None) -> float | None:
+    """What a stored result claimed, as its gate recorded it; None when it claimed nothing."""
+    result = result or {}
+    value = (result.get("gate") or {}).get("min_confidence", result.get("min_confidence"))
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+async def write_derived_result(
+    db: AsyncSession,
+    org_id: str,
+    agent: str,
+    payload: dict[str, Any],
+    *,
+    parent_agent: str,
+    job_id: str | None = None,
+    own_confidence: float | None = None,
+) -> dict[str, Any]:
+    """Write a result a role derived from another role's, through the gate (plan v10 G1).
+
+    The auto-chain used to write these straight into the company context, so the same
+    role was held for the owner when run by hand and written unchecked when chained. A
+    derived result claims no more than its parent: it inherits the parent's confidence
+    (the lower of that and its own, if it measured one). A parent that never ran, or that
+    claimed nothing, makes the child's confidence unknown, and the gate holds what is
+    unknown.
+    """
+    from app.services.company_context import get_company_context
+
+    ctx = await get_company_context(org_id, db)
+    confidence = _confidence_of(getattr(ctx, f"last_{parent_agent}_result", None))
+    if confidence is not None and own_confidence is not None:
+        confidence = min(confidence, float(own_confidence))
+    result = {
+        **payload,
+        "logs": [{
+            "step": f"{agent}_from_{parent_agent}",
+            "ok": True,
+            "confidence": confidence,
+            "detail": f"Derived from the {parent_agent} result; its confidence is inherited.",
+        }],
+        "min_confidence": confidence,
+    }
+    return await persist_agent_completion(
+        org_id, agent, result, db, job_id=job_id, trigger_auto_chain=False,
+    )
