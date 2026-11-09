@@ -318,11 +318,85 @@ Her bulgu pazartesi bültenine (O4) girer ve beklenti ve sonuç kaydı taşır.
 
 Sahip kararları (pilot şirketler, barındırma) olmadan ilerleyebilecek olanlar: **E1, E2, E3 ve E4**. Bu yüzden sıradaki iş E1'dir.
 
-## 14. Sıradaki adım
+## 14. Açıklık defteri
 
-1. #23 (yönetilen Postgres) birleşir.
-2. **E1** (§13.4): veri sözleşmesi, yeniden üretilebilirlik testleri ve `worker.py`'nin bölünmesi. Sahip kararı gerektirmez.
-3. §13.3'teki kaynaklar için indirme izni (KAP bilançoları, TCMB sektör verisi); dosya adı, adres ve boyut gösterilerek.
-4. Sahip kararları (pilot şirketler, barındırma sağlayıcısı, hukuki gözden geçirme) O1 için bekliyor.
-5. Karar kaydına ölçülebilir beklenti ve sonuç alanları E3'te tasarlanır (§10).
-6. Ufuk 1 bittiğinde iş yol haritası (§12).
+Bu oturumda ve önceki turlarda kayda geçen açıklıkların tek listesi. Her satırın **kanıtı** vardır: "doğrulandı" demek bu turda koddan yeniden okunduğu, "hafıza notu" demek önceki bir turdan taşındığı ve yeniden doğrulanmadığı anlamına gelir. Risk, **pilot şirketin parasına ve güvenine** etkisine göre yazıldı.
+
+**Kural:** Her PR hangi açıklığı kapattığını (G numarasıyla) yazar; kapanan satırın durumu aynı PR'da güncellenir. Bir açıklık, önce onu yeniden üreten **kırmızı bir test** yazılmadan kapatılmış sayılmaz.
+
+### 14.1 Para ve güven (pilot için en yüksek risk)
+
+| # | Açıklık | Kanıt | Risk | Kapatma | Durum |
+|---|---|---|---|---|---|
+| G1 | Bazı yazımlar **güven kapısını atlıyor**: Risk, Denetim, Uyum ve CEO sonuçları şirket bağlamına doğrudan yazılıyor; CTO senkronu da. CLAUDE.md'ye göre kapı yük taşıyıcıdır. | Doğrulandı: `agents/orchestration/auto_chain.py:400,471,496,576`, `api/ceo.py:603`, `services/scheduled_sync.py:646` `update_agent_result` çağırıyor; yalnız `post_completion.py` ve `context_persist.py` kapıdan geçiyor. | **Yüksek.** Sahip onayı olmadan bağlama giren bir sonuç Command Center'a ve (O4) bültene beslenir. | Tek yazım noktası: tüm çağrılar `persist_agent_completion` üzerinden. Mimari testi `update_agent_result` çağıran her yeri tarar; yeni bir çağrı eklenemez. | Açık |
+| G2 | **Bağlayıcı senkronu kendi kimliğiyle yazıyor**; aynı fatura hem dosyadan hem Paraşüt/ERP senkronundan gelirse iki kez sayılabilir. | Doğrulandı: `services/data_sync/accounting/importers.py` kendi `source_type`'ıyla yazıyor; defterin kimliği belge UUID'si ya da içerik parmak izi. Çift sayımın gerçekten olduğu **henüz yeniden üretilmedi**. | **Yüksek.** Paraşüt tek tıkla bağlantısı pilot yolunda. | Önce çift sayımı yeniden üreten test; sonra senkron kimliğini ortak kimlik sözleşmesine (§13, `data-contracts.md`) bağlamak. | Açık |
+| G3 | **El ile kategori düzeltmesi deftere ulaşmıyor.** | Doğrulandı: `api/corrections.py` yalnız `Transaction`'ı değiştiriyor; defter satırı bir sonraki yeniden okumada güncelleniyor. | Orta. Düzeltme yapılan şirketin kâr rakamı eski kategoriyle kalır. | Düzeltme, aynı kimlikli defter satırını da günceller ve görünümü yeniler. | Açık |
+| G4 | Anlamsal özet **5.000 satırda sıralamasız kesiliyor**. | Doğrulandı: `services/semantic/rebuild.py:81` `limit(5000)`, `order_by` yok. | Orta. Büyük defterde rastgele satırlar düşer; "canlı giriş" yanlış çıkar ve sahte çelişki uyarısı doğurabilir. | Satır çekmek yerine veritabanında toplama; 6.000 satırlık test. | Açık |
+| G5 | **Mükerrer ve eşleşme kararları türetilmiş tabloların içinde.** | Doğrulandı: `docs/data-contracts.md` ("Bilinen boşluk"). | Orta. Defter silinip kurulursa kararlar kaybolur. | Eklemeli, silinmez karar günlüğü (E5); o zamana kadar defter tabloları elle silinmez. | Açık |
+| G6 | **Bir ödeme birden çok faturayı kapatamıyor.** | Doğrulandı: `services/reconciliation.py` başlığı "birkaç fatura uyuyorsa", "faturanın bir kısmı" durumlarını öneri yapıyor; toplu havale yok. | Orta. KOBİ'lerde toplu havale yaygın; satır "kendi parası" gibi sayılabilir. | Toplamı birkaç açık kalemin toplamına tam eşit olan hareket için öneri; her kalem tanımlı olmalı. Yanlış otomatik eşleşme 0 kalır (§13.1 #2). | Açık |
+| G7 | **Vergi tahminleri sabit oranlı.** | Doğrulandı: `services/regional/tax.py` KDV %20, stopaj "tahmini" %20. | **Yüksek**, O3'te vergi takvimi radara girecek. Yanlış tutar yanlış açık demek. | Tahmin etiketi; oranlar GİB kaynağından sürümlü veri; tutarlar defterdeki hesap kodlarından (191/391, 360). Kaynağı gösterilemeyen oran eklenmez. | Açık |
+| G8 | **Şirket görünümü bütün dönemleri topluyor**, ekranda dönem görünmüyor. | Önceki turda canlı görüldü (13 ay toplam); `post_completion.py` `company_rows` hepsini okuyor. | Orta, pilot yıllar boyu veri yükleyecek. | Görünüm bir dönem seçer (varsayılan son 12 ay) ve ekranda dönem etiketi gösterir. | Açık |
+| G9 | **Sohbetin kanıtı son yüklemenin satırlarıyla sınırlı.** | Doğrulandı: `services/chat_grounding.py` etkin CFO `job_id`'sine bağlı. | Orta. Sohbet, defterde olan bir paradan habersiz kalabilir. | Defter tabanlı kanıt. | Açık |
+
+### 14.2 Yapay zeka ve ölçüm
+
+| # | Açıklık | Kanıt | Risk | Kapatma | Durum |
+|---|---|---|---|---|---|
+| G10 | **LLM'li uçtan uca hiç ölçülmedi.** Canlı denemelerin hepsi model anahtarsız koştu. | Oturum kaydı: günlüklerde "openai_api_key is a placeholder". | **Yüksek.** "AI CFO"nun anlatı yarısının kalitesi bilinmiyor. | E3: altın küme, uydurma sayı 0 (§13.1 #4). | Açık |
+| G11 | **Defter değişimi başına ikinci analiz koşusu**; LLM maliyeti ölçülmemiş. | Doğrulandı: `post_completion.refresh_company_view` her imza değişiminde `run_cfo_pipeline` koşturuyor. | Orta. | E3'te maliyet ölçümü; gerekirse sayılar hemen, anlatı gecikmeli. | Açık |
+| G12 | **Karar kalitesini ölçen bir şey yok**; öneri beklentisi ve sonucu serbest metin. | §10. | Orta, değer önermesinin kanıtı. | E3: beklenti ve sonuç alanları. | Açık |
+| G13 | **Rol ajanları (CHRO, Risk, Denetim, Uyum) güvenini ölçmüyor**, hep sahip kuyruğunda bekler. | Hafıza notu, yeniden doğrulanmadı. | Düşük (bu yolda kullanılmıyor). | E4: defterden bulgu ve güven ölçümü. | Açık |
+| G14 | Sektör kıyası hâlâ doğrulanmamış değerlerle ve hepsi SaaS değeri. | #26 ve #28 etiketledi; kaynaklı tablo yok. | Düşük (etiketli, modele girmiyor). | Gerçek TCMB tablosu (indirme onayı bekliyor). | Kısmen kapandı |
+
+### 14.3 Radar ve ekran
+
+| # | Açıklık | Kanıt | Risk | Kapatma | Durum |
+|---|---|---|---|---|---|
+| G15 | Radar **kira/maaş, vergi/SGK, çek/senet** içermiyor. | Doğrulandı: `cash_radar.NOT_INCLUDED` ve ekranda "Radara dahil değil". | **Yüksek.** Radar iyimser kalabilir; bu yüzden ekranda açıkça yazıyor. | O3. | Açık |
+| G16 | Radar metinleri sunucudan **Türkçe sabit**, menüde **İngilizce etiketler** var. | Doğrulandı: `layout.tsx` ("Cash Flow", "Upload"), radar eylem başlıkları. | Orta, pilotun ilk izlenimi. | Etiketler ve eylem metinleri i18n'e. | Açık |
+
+### 14.4 Dış bağlantılar ve operasyon
+
+| # | Açıklık | Kanıt | Risk | Kapatma | Durum |
+|---|---|---|---|---|---|
+| G17 | **Dış bağlayıcıların sözleşmesi doğrulanmamış**: Paraşüt API; GİB senkronunda uydurma API kararı. | Hafıza notu (`hardening-plan`, `easy-integration-plan`), yeniden doğrulanmadı. | Yüksek, yalnızca bu bağlayıcı kullanılırsa. | Resmî belgeye karşı sözleşme testi; doğrulanana kadar ekranda "doğrulanmadı" ve varsayılan kapalı. | Açık |
+| G18 | **Staging yok; worker gerçek ortamda hiç koşmadı; geri yükleme tatbikatı yapılmadı; Helm şablonu üretilmedi.** | #23 açıklaması, `docs/ops/managed-postgres.md` §5. | **Yüksek**, pilot öncesi. | O1: sağlayıcı seçimi (sahip kararı) ve ilk tatbikat. | Sahip kararı bekliyor |
+| G19 | **KVKK ve hukuki gözden geçirme yok.** | §7 karar 4. | **Yüksek**, pilot öncesi. | Sahip kararı. | Sahip kararı bekliyor |
+| G20 | **Gerçek KOBİ verisi yok**; zor durum üreteci vekil. | §13.3. | Yüksek (belirsizlik). | Üreteç + ilk gerçek veride her bulgu teste. Sahip veriyi sağlayana kadar açık kalır. | Sahip kararı bekliyor |
+| G21 | Kök dizinde 15'ten fazla eski plan belgesi. | Doğrulandı. | Düşük. | `docs/arsiv/` altına taşımak, ayrı PR. | Açık |
+
+### 14.5 Kapatma sırası
+
+Her dalgadaki işler birbirinden bağımsız PR'lardır; her biri kırmızı testle başlar, canlı denenir, `verify` yeşil olunca birleşir.
+
+**Dalga 1: para ve güven (hafta 1–2).** Sahip kararı gerektirmez.
+1. **G1** güven kapısını atlayan yazımlar: en yüksek risk, en küçük iş; mimari testi bir daha açık bırakmaz.
+2. **G4** özetin sıralamasız kesilmesi.
+3. **G3** kategori düzeltmesinin deftere ulaşması.
+4. **G2** önce çift sayımı yeniden üret, sonra kimliği birleştir.
+5. **G8** dönem seçimi ve etiketi.
+
+**Dalga 2: doğruluk ve ölçüm (hafta 3–6).**
+6. **G6** toplu havale eşleştirmesi (yanlış otomatik eşleşme 0 sınırıyla).
+7. **G7** vergi tahminlerinin kaynaklı hale gelmesi ve **G15** radarın tamamlanması (O3).
+8. **G10, G11, G12** LLM'li altın küme, maliyet ölçümü ve beklenti/sonuç alanları (E3).
+9. **G9** sohbetin defterden kanıt alması.
+
+**Dalga 3: dayanıklılık ve cila (hafta 7–12).**
+10. **G5** karar günlüğü ve olay günlüğü (E5).
+11. **G13** rol bulguları defterden (E4).
+12. **G16** i18n, **G14** gerçek sektör tablosu (onayla), **G21** belge arşivi.
+
+**Sahip kararı bekleyenler (G18, G19, G20)** ve **G17** bu sıranın dışındadır; engel kod değil karardır. Her biri çözülmeden pilot başlamaz; bu yüzden sahibin önüne açıkça konur.
+
+### 14.6 Ölçüt
+
+Dalga 1 bittiğinde: G1–G4 ve G8 satırları "Kapandı" ve her birinin testi CI'da. Dalga 2 bittiğinde: §13.1'in 2, 4 ve 6 numaralı ölçütleri ölçülmüş. Açık kalan her satırın nedeni (kod, karar ya da veri) yazılı.
+
+## 15. Sıradaki adım
+
+1. **Dalga 1'in G1'i** (§14.5): güven kapısını atlayan yazımlar, kırmızı mimari testiyle.
+2. G4, G3, G2, G8 sırayla.
+3. KAP ve TCMB dosyaları için indirme izni (§13.3); dosya adı, adres ve boyut gösterilerek.
+4. Sahip kararları (G18, G19, G20): barındırma sağlayıcısı, hukuki gözden geçirme, gerçek veri.
+5. Ufuk 1 bittiğinde iş yol haritası (§12).
