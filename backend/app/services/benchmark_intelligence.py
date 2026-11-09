@@ -5,14 +5,10 @@ Sirketin metriklerini sektör ortalamalarıyla karşılaştırır.
 "Sizin ROAS 2.1x, SaaS sektör ortalaması 2.8x — %25 geride" gibi
 benchmark commentary üretir.
 
-Sektör verileri:
-  - Türkiye SaaS (2024 benchmark datası)
-  - Türkiye KOBİ (50-500 çalışan)
-  - E-ticaret Türkiye
-  - Genel hizmet sektörü
-
-DDIA: benchmark verileri "reference data" — nadiren değişir,
-static dict'te tutmak uygundur. Dış API bağımlılığı yok.
+Sektör değerleri DOĞRULANMADI (plan v10 §13.3, E2): aşağıdaki yüzdelikler bir rapora ya da
+ankete dayandırılmış değildir, hiçbir yerde böyle adlandırılmaz ve her sektör için aynı
+(SaaS için yazılmış) değerler kullanılır. Çıktılar bunu söyler (`verified`, `note`); bir
+karar dayanağı sayılmamalıdır. Kaynaklı bir tablo gelince `VERIFIED` doğru olur.
 
 Kullanım:
     svc = BenchmarkIntelligenceService()
@@ -33,8 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 # ── Sektör benchmark veritabanı ───────────────────────────────────────────────
-# Kaynak: Türkiye SaaS raporu 2024, KOSGEB KOBİ benchmarks, sektör anketleri
-# P25/P50/P75 = yüzdelik dilimler
+# P25/P50/P75 = yüzdelik dilimler. Kaynağı doğrulanmadı; bkz. modül açıklaması.
+VERIFIED = False
+UNVERIFIED_NOTE = "Örnek varsayım: kaynağı doğrulanmadı"
 
 BENCHMARKS: dict[str, dict[str, dict[str, float]]] = {
 
@@ -42,97 +39,80 @@ BENCHMARKS: dict[str, dict[str, dict[str, float]]] = {
     "saas_net_margin": {
         "p25": -0.05, "p50": 0.08, "p75": 0.22,
         "label": "Net Kâr Marjı", "unit": "%", "higher_is_better": True,
-        "context": "Türkiye SaaS şirketleri 2024",
     },
     "saas_gross_margin": {
         "p25": 0.55, "p50": 0.68, "p75": 0.80,
         "label": "Brüt Kâr Marjı", "unit": "%", "higher_is_better": True,
-        "context": "Türkiye SaaS şirketleri 2024",
     },
     "saas_revenue_growth": {
         "p25": 0.10, "p50": 0.25, "p75": 0.55,
         "label": "Yıllık Gelir Büyümesi", "unit": "%", "higher_is_better": True,
-        "context": "Türkiye SaaS şirketleri 2024",
     },
     "saas_runway_months": {
         "p25": 6.0, "p50": 12.0, "p75": 24.0,
         "label": "Nakit Ömrü", "unit": "ay", "higher_is_better": True,
-        "context": "Türkiye startup/SaaS 2024",
     },
 
     # ── CMO / Pazarlama ────────────────────────────────────────────────────────
     "saas_roas": {
         "p25": 1.5, "p50": 2.5, "p75": 4.0,
         "label": "Pazarlama ROAS", "unit": "x", "higher_is_better": True,
-        "context": "Türkiye dijital pazarlama 2024",
     },
     "saas_cac_months": {
         "p25": 8, "p50": 12, "p75": 20,
         "label": "CAC Geri Dönüş Süresi", "unit": "ay", "higher_is_better": False,
-        "context": "Türkiye SaaS ortalama CAC payback",
     },
     "saas_monthly_churn": {
         "p25": 0.01, "p50": 0.025, "p75": 0.05,
         "label": "Aylık Churn Oranı", "unit": "%", "higher_is_better": False,
-        "context": "Türkiye B2B SaaS 2024",
     },
     "saas_ltv_cac": {
         "p25": 2.0, "p50": 3.5, "p75": 6.0,
         "label": "LTV/CAC Oranı", "unit": "x", "higher_is_better": True,
-        "context": "Türkiye SaaS 2024",
     },
 
     # ── CTO / Teknoloji ────────────────────────────────────────────────────────
     "saas_tech_spend_pct": {
         "p25": 0.10, "p50": 0.18, "p75": 0.28,
         "label": "Teknoloji Harcaması (Gelirin %)", "unit": "%", "higher_is_better": None,
-        "context": "SaaS şirketleri teknoloji bütçesi",
     },
     "saas_infra_waste_pct": {
         "p25": 0.10, "p50": 0.18, "p75": 0.30,
         "label": "Altyapı İsraf Oranı", "unit": "%", "higher_is_better": False,
-        "context": "Cloud maliyet optimizasyonu benchmark",
     },
     "saas_deploy_freq_weekly": {
         "p25": 1, "p50": 3, "p75": 10,
         "label": "Haftalık Deployment Sıklığı", "unit": "kez", "higher_is_better": True,
-        "context": "SaaS mühendislik olgunluğu",
     },
 
     # ── CHRO / İnsan Kaynakları ────────────────────────────────────────────────
     "turkey_turnover_rate": {
         "p25": 0.12, "p50": 0.18, "p75": 0.28,
         "label": "Yıllık Personel Devir Hızı", "unit": "%", "higher_is_better": False,
-        "context": "Türkiye teknoloji sektörü 2024",
     },
     "turkey_engagement_score": {
         "p25": 55, "p50": 65, "p75": 78,
         "label": "Çalışan Bağlılık Skoru", "unit": "puan", "higher_is_better": True,
-        "context": "Türkiye kurumsal çalışan anketi 2024",
     },
     "turkey_revenue_per_employee": {
         "p25": 400_000, "p50": 750_000, "p75": 1_500_000,
         "label": "Çalışan Başına Yıllık Gelir", "unit": "TRY", "higher_is_better": True,
-        "context": "Türkiye teknoloji şirketleri 2024",
     },
 
     # ── COO / Operasyon ────────────────────────────────────────────────────────
     "saas_sla_compliance": {
         "p25": 0.92, "p50": 0.97, "p75": 0.995,
         "label": "SLA Uyum Oranı", "unit": "%", "higher_is_better": True,
-        "context": "B2B SaaS müşteri hizmetleri",
     },
     "saas_p1_resolution_h": {
         "p25": 2, "p50": 4, "p75": 8,
         "label": "P1 Incident Çözüm Süresi", "unit": "saat", "higher_is_better": False,
-        "context": "SaaS operasyonel olgunluk",
     },
 
     # ── Risk ───────────────────────────────────────────────────────────────────
     "kri_score_healthy": {
         "p25": 1.0, "p50": 2.5, "p75": 4.5,
         "label": "KRI Risk Skoru", "unit": "/10", "higher_is_better": False,
-        "context": "Kurumsal risk yönetimi benchmark",
     },
 }
 
@@ -166,6 +146,8 @@ class BenchmarkReport:
     strengths:    list[str]     # iyi olan metrikler
     gaps:         list[str]     # geride kalınan metrikler
     summary:      str
+    verified:     bool = VERIFIED
+    note:         str = UNVERIFIED_NOTE
 
     @property
     def weaknesses(self) -> list[str]:
@@ -180,6 +162,8 @@ class BenchmarkReport:
             "strengths":     self.strengths,
             "gaps":          self.gaps,
             "summary":       self.summary,
+            "verified":      self.verified,
+            "note":          self.note,
             "items": [
                 {
                     "metric":           i.metric,
@@ -285,7 +269,7 @@ class BenchmarkIntelligenceService:
             gap_to_median   = round(gap, 3),
             unit            = bm.get("unit", ""),
             higher_is_better = higher,
-            context         = bm.get("context", ""),
+            context         = UNVERIFIED_NOTE,
         )
 
     def compare_cfo(
@@ -445,6 +429,8 @@ class BenchmarkIntelligenceService:
 
         if gaps:
             summary += f" Öncelikli gelişim alanları: {', '.join(gaps[:3])}."
+        # The verdict rests on values nobody sourced, so it says so first.
+        summary = "Doğrulanmamış örnek varsayımlara göre: " + summary
 
         return BenchmarkReport(
             sector=sector, company_name=company_name, items=items,
