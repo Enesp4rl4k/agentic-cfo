@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 
 import pytest
 
@@ -76,39 +77,37 @@ async def test_without_the_model_only_rules_run():
     assert fake.model_calls == []
 
 
+class ThreadRecordingClassifier(THPClassifier):
+    """The real rules, noting which threads ran them."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.threads: set[int] = set()
+
+    def classify(self, *args, **kwargs):
+        self.threads.add(threading.get_ident())
+        return super().classify(*args, **kwargs)
+
+
 @pytest.mark.asyncio
-async def test_the_event_loop_keeps_answering_while_a_large_statement_is_booked():
-    """A heartbeat on the loop must not stall behind 6,000 rows of rule matching and booking."""
-    agent = MuhasebeAgent(classifier=THPClassifier(), use_llm_fallback=False, regional_packs=["tr"])
+async def test_a_large_statement_is_classified_off_the_event_loop_thread():
+    """6,000 rows of rule matching must not run on the thread that serves requests.
+
+    This used to be a timing test: a heartbeat on the loop, judged by its longest pause.
+    Under a loaded CI runner, GIL contention with the booking thread made single pauses
+    of 0.5-0.9 s while the loop kept answering, so the bound failed at random (twice, the
+    second time by 0.016 s). What matters is where the work runs, which does not depend
+    on how busy the machine is: rows are classified in a worker thread and the loop only
+    waits on it. Run inline, the rules would execute on the loop's own thread.
+    """
+    classifier = ThreadRecordingClassifier()
+    agent = MuhasebeAgent(classifier=classifier, use_llm_fallback=False, regional_packs=["tr"])
     txs = [_tx(i, "Ocak ofis kirası Levent" if i % 2 else "Personel maaş ödemesi", 100_000 + i)
            for i in range(6000)]
-    gaps: list[float] = []
-    done = asyncio.Event()
 
-    async def heartbeat():
-        loop = asyncio.get_running_loop()
-        last = loop.time()
-        while not done.is_set():
-            await asyncio.sleep(0.01)
-            now = loop.time()
-            gaps.append(now - last)
-            last = now
-
-    loop = asyncio.get_running_loop()
-    hb = asyncio.create_task(heartbeat())
-    started = loop.time()
+    loop_thread = threading.get_ident()
     sonuc = await agent.run("perf", txs)
-    elapsed = loop.time() - started
-    done.set()
-    await hb
+
     assert sonuc.kayit_sayisi == 6000
-    # Rows are classified and booked in a thread; the loop only waits on it.
-    # Before, the loop never ran once until the whole statement was booked —
-    # one gap as long as the whole run. Judged relative to the run, not by a
-    # wall-clock bound: under a loaded full suite, GIL contention with the
-    # booking thread produced single 0.5–0.9 s pauses that failed an absolute
-    # `max(gaps) < 0.5` while the loop kept answering (plan v6 §S6).
-    assert len(gaps) >= 5, "the event loop barely ran while the statement was booked"
-    assert max(gaps) < max(0.5, elapsed / 2), (
-        f"the loop stalled {max(gaps):.2f}s of a {elapsed:.2f}s run"
-    )
+    assert classifier.threads, "the rules never ran"
+    assert loop_thread not in classifier.threads, "the rules ran on the event loop's own thread"
