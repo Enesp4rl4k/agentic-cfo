@@ -22,6 +22,7 @@ from typing import Any
 
 from app.platform.run_gate import inherited_confidence
 from app.services.company_context import get_company_context, save_company_context
+from app.services.context_persist import write_derived_result
 from app.services.semantic.rebuild import rebuild_semantic_snapshot
 
 logger = logging.getLogger(__name__)
@@ -395,17 +396,21 @@ async def _run_risk_from_context(
             company_name=ctx.company_name,
         )
 
-        # Save result back to context
+        # Through the same gate as a risk run by hand (plan v10 G1).
+        await write_derived_result(
+            db, org_id, "risk",
+            {
+                "risk_summary": getattr(result.get("risk_summary"), "__dict__", result.get("risk_summary")),
+                "auto_generated": True,
+                "source_job": job_id,
+            },
+            parent_agent="cfo", job_id=job_id,
+        )
         ctx_fresh = await get_company_context(org_id, db)
-        ctx_fresh.update_agent_result("risk", {
-            "risk_summary": getattr(result.get("risk_summary"), "__dict__", result.get("risk_summary")),
-            "auto_generated": True,
-            "source_job": job_id,
-        })
-        await save_company_context(ctx_fresh, db)
         logger.info("Auto-chain risk pipeline completed for org=%s", org_id)
 
-        # Auto-run consensus on cash_risk / revenue_outlook after CFO+risk available
+        # Auto-run consensus on cash_risk / revenue_outlook after CFO+risk available;
+        # a risk result held for the owner is not available yet.
         await _run_auto_consensus(org_id=org_id, ctx=ctx_fresh, db=db)
 
     except Exception as exc:
@@ -467,13 +472,15 @@ async def _run_audit_from_context(
             org_id=org_id,
         )
 
-        ctx_fresh = await get_company_context(org_id, db)
-        ctx_fresh.update_agent_result("audit", {
-            "audit_summary": getattr(result.get("audit_summary"), "__dict__", result.get("audit_summary")),
-            "auto_generated": True,
-            "source_job": job_id,
-        })
-        await save_company_context(ctx_fresh, db)
+        await write_derived_result(
+            db, org_id, "audit",
+            {
+                "audit_summary": getattr(result.get("audit_summary"), "__dict__", result.get("audit_summary")),
+                "auto_generated": True,
+                "source_job": job_id,
+            },
+            parent_agent="cfo", job_id=job_id,
+        )
         logger.info("Auto-chain audit pipeline completed for org=%s", org_id)
 
     except Exception as exc:
@@ -492,16 +499,18 @@ async def _run_compliance_from_context(
             company_name=ctx.company_name,
         )
 
-        ctx_fresh = await get_company_context(org_id, db)
-        ctx_fresh.update_agent_result("compliance", {
-            "compliance_summary": getattr(
-                result.get("compliance_summary"), "__dict__",
-                result.get("compliance_summary")
-            ),
-            "auto_generated": True,
-            "source_job": job_id,
-        })
-        await save_company_context(ctx_fresh, db)
+        await write_derived_result(
+            db, org_id, "compliance",
+            {
+                "compliance_summary": getattr(
+                    result.get("compliance_summary"), "__dict__",
+                    result.get("compliance_summary")
+                ),
+                "auto_generated": True,
+                "source_job": job_id,
+            },
+            parent_agent="cfo", job_id=job_id,
+        )
         logger.info("Auto-chain compliance pipeline completed for org=%s", org_id)
 
     except Exception as exc:
@@ -568,26 +577,27 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
         state = await node_board_deck(state, config)                   # type: ignore[arg-type]
 
         # Save enriched CEO result to CompanyContext
-        ctx_fresh = await get_company_context(org_id, db)
         agents_used = [
             a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
             if getattr(ctx, f"last_{a}_result", None) is not None
         ]
-        ctx_fresh.update_agent_result("ceo", {
-            "financial_summary":    state.get("financial_summary"),
-            "tech_summary":         state.get("tech_summary"),
-            "marketing_summary":    state.get("marketing_summary"),
-            "ops_summary":          state.get("ops_summary"),
-            "hr_summary":           state.get("hr_summary"),
-            "cross_risks":          state.get("cross_risks") or [],
-            "strategic_priorities": state.get("strategic_priorities") or [],
-            "board_deck":           state.get("board_deck"),
-            "agents_used":          agents_used,
-            "auto_generated":       True,
-            "source_job":           job_id,
-            "min_confidence":       state.get("min_confidence"),
-        })
-        await save_company_context(ctx_fresh, db)
+        await write_derived_result(
+            db, org_id, "ceo",
+            {
+                "financial_summary":    state.get("financial_summary"),
+                "tech_summary":         state.get("tech_summary"),
+                "marketing_summary":    state.get("marketing_summary"),
+                "ops_summary":          state.get("ops_summary"),
+                "hr_summary":           state.get("hr_summary"),
+                "cross_risks":          state.get("cross_risks") or [],
+                "strategic_priorities": state.get("strategic_priorities") or [],
+                "board_deck":           state.get("board_deck"),
+                "agents_used":          agents_used,
+                "auto_generated":       True,
+                "source_job":           job_id,
+            },
+            parent_agent="cfo", job_id=job_id, own_confidence=state.get("min_confidence"),
+        )
         logger.info(
             "Auto-chain CEO synthesis completed for org=%s using agents=%s",
             org_id, agents_used,
