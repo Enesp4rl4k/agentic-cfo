@@ -19,6 +19,7 @@ from app.models.user import User
 from app.services.cash_radar import compute_cash_radar
 from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, ledger_summary
 from app.services.reconciliation import (
+    BY_SUM,
     CONFIRMED,
     PROPOSED,
     REJECTED,
@@ -124,25 +125,36 @@ async def get_proposed_settlements(
         .where(OpenItemMatch.org_id == org_id, OpenItemMatch.status == PROPOSED)
         .order_by(OpenItemMatch.matched_on)
     )).scalars().all()
-    data = []
+    data: list[dict[str, Any]] = []
+    lumps: dict[str, dict[str, Any]] = {}
     for m in matches:
         item = await db.get(OpenItem, m.open_item_id)
         row = await db.get(CanonicalTransaction, m.ledger_row_id)
         if item is None or row is None:
             continue
-        data.append({
+        shown = {
+            "counterparty": item.counterparty,
+            "description": item.description,
+            "amount_cents": item.amount_cents,
+            "paid_cents": item.paid_cents,
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+        }
+        if m.method == BY_SUM and m.ledger_row_id in lumps:
+            # One transfer paying several invoices is one question, not several.
+            lumps[m.ledger_row_id]["items"].append(shown)
+            lumps[m.ledger_row_id]["amount_cents"] += m.amount_cents
+            continue
+        entry = {
             "id": m.id,
             "amount_cents": m.amount_cents,
             "method": m.method,
             "row": _row(row),
-            "item": {
-                "counterparty": item.counterparty,
-                "description": item.description,
-                "amount_cents": item.amount_cents,
-                "paid_cents": item.paid_cents,
-                "due_date": item.due_date.isoformat() if item.due_date else None,
-            },
-        })
+            "item": shown,
+            "items": [shown],
+        }
+        if m.method == BY_SUM:
+            lumps[m.ledger_row_id] = entry
+        data.append(entry)
     return {"data": data, "error": None}
 
 
@@ -175,19 +187,32 @@ async def resolve_settlement(
         raise HTTPException(404, "Kayıt bulunamadı.")
     ensure_tenant(user, org_id=match.org_id)
     org_id = str(match.org_id)   # the commit below expires the row
+    # A lump (one transfer, several invoices) is answered as a whole.
+    group = [match]
+    if match.method == BY_SUM:
+        group = list((await db.execute(
+            select(OpenItemMatch).where(
+                OpenItemMatch.ledger_row_id == match.ledger_row_id,
+                OpenItemMatch.org_id == match.org_id,
+                OpenItemMatch.method == BY_SUM,
+                OpenItemMatch.status == PROPOSED,
+            )
+        )).scalars())
+    members = [(m.id, m.open_item_id, m.amount_cents) for m in group]
     won = await db.execute(
         update(OpenItemMatch)
-        .where(OpenItemMatch.id == match_id, OpenItemMatch.status == PROPOSED)
+        .where(OpenItemMatch.id.in_([m[0] for m in members]), OpenItemMatch.status == PROPOSED)
         .values(status=CONFIRMED if body.action == "confirm" else REJECTED, decided_by=str(user.id))
         .execution_options(synchronize_session=False)
     )
-    if won.rowcount != 1:
+    if won.rowcount != len(members):
         await db.rollback()
         raise HTTPException(409, "Bu öneri karar beklemiyor.")
     if body.action == "confirm":
-        item = await db.get(OpenItem, match.open_item_id)
-        if item is not None:
-            apply_payment(item, match.amount_cents)
+        for _, item_id, amount in members:
+            item = await db.get(OpenItem, item_id)
+            if item is not None:
+                apply_payment(item, amount)
     await db.commit()
     _refresh_view(org_id)
     return {"data": {"id": match_id, "action": body.action}, "error": None}
