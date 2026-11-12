@@ -91,7 +91,8 @@ class ParsedUBLInvoice(BaseModel):
     # YTB* family. The list is open — treat it as a label, never as direction.
     invoice_type: str = "SATIS"
     profile_id: str = "TICARIFATURA"  # TEMELFATURA, TICARIFATURA, EARSIVFATURA
-    issue_date: date
+    # None when the document has no readable date: never a stand-in.
+    issue_date: date | None
     # cac:PaymentTerms. None when the document gives none, or gives one we cannot
     # believe. The note is the document's own words: "%50 peşin, %50 45 gün
     # sonra" means this date does not cover the whole amount.
@@ -175,7 +176,7 @@ class UBLTRInvoiceParser:
         return digits if len(digits) in (10, 11) else ""
 
     @staticmethod
-    def _payment_terms(raw_due: str, note: str, issued: date) -> tuple[date | None, str]:
+    def _payment_terms(raw_due: str, note: str, issued: date | None) -> tuple[date | None, str]:
         """(due date, note) as far as they can be believed.
 
         A due date before the invoice exists is a document error: GİB's own
@@ -188,7 +189,7 @@ class UBLTRInvoiceParser:
             due = date.fromisoformat(raw_due[:10])
         except ValueError:
             return None, f"Okunamayan vade: {raw_due}. {note}".strip()
-        if due < issued:
+        if issued is not None and due < issued:
             return None, f"Belgedeki vade ({raw_due}) fatura tarihinden önce; dikkate alınmadı. {note}".strip()
         return due, note
 
@@ -235,13 +236,16 @@ class UBLTRInvoiceParser:
         inv_no = _find_text(root, "cbc:ID", "N/A")
         inv_type = _find_text(root, "cbc:InvoiceTypeCode", "SATIS").upper()
         profile_id = _find_text(root, "cbc:ProfileID", "TICARIFATURA")
-        date_str = _find_text(root, "cbc:IssueDate", "2024-01-01")
+        date_str = _find_text(root, "cbc:IssueDate", "")
         currency = _find_text(root, "cbc:DocumentCurrencyCode", "TRY")
 
+        # A missing or garbled date used to become 2024-01-01 or today and the
+        # invoice was posted into a period it does not belong to. It is held.
+        issue_date: date | None
         try:
             issue_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            issue_date = date.today()
+        except ValueError:
+            issue_date = None
 
         # 2. Supplier (Satıcı)
         supplier_node = root.find("cac:AccountingSupplierParty/cac:Party", cls.NAMESPACES)
@@ -380,6 +384,10 @@ class UBLTRInvoiceParser:
             profile_id=profile_id,
             inv_no=inv_no,
         )
+
+        if issue_date is None:
+            journal_entries = []
+            posting_note = "fatura tarihi yok ya da okunamadı — kayıt üretilmedi"
 
         due_date, payment_note = cls._payment_terms(
             _find_text(root, "cac:PaymentTerms/cbc:PaymentDueDate"),
