@@ -15,8 +15,9 @@ from app.services.semantic.conflicts import (
     persist_metric_conflicts,
 )
 from app.services.semantic.projectors import (
+    CanonicalTotals,
     merge_metrics,
-    project_from_canonical_rows,
+    project_from_canonical_totals,
     project_from_cfo,
     project_from_chro,
     project_from_cmo,
@@ -57,43 +58,60 @@ async def _org_locale_currency(org_id: str, db: AsyncSession | None) -> tuple[st
     return currency, locale
 
 
+_INFLOW_DIRECTIONS = ("income", "inflow", "credit")
+
+
 async def _load_canonical(
     org_id: str,
     db: AsyncSession | None,
     *,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
-) -> tuple[list[Any], float | None]:
-    if not db:
-        return [], None
-    try:
-        from app.models.canonical_transaction import CanonicalTransaction
+) -> tuple[CanonicalTotals, float | None]:
+    """Total the active canonical rows in the database.
 
-        stmt = select(CanonicalTransaction).where(
-            CanonicalTransaction.org_id == str(org_id),
-            CanonicalTransaction.ledger_status == "active",
-            CanonicalTransaction.basis != "document",
+    Totals are computed by the database over *every* matching row. Fetching rows
+    and cutting them at a limit dropped arbitrary rows on a large ledger (G4).
+    """
+    if not db:
+        return CanonicalTotals(), None
+    try:
+        from sqlalchemy import case, func
+
+        from app.models.canonical_transaction import CanonicalTransaction as CT
+
+        is_inflow = func.lower(func.coalesce(CT.direction, "")).in_(_INFLOW_DIRECTIONS)
+        absolute = func.abs(CT.amount_cents)
+        stmt = select(
+            func.count(CT.id),
+            func.coalesce(func.sum(case((is_inflow, absolute), else_=0)), 0),
+            func.coalesce(func.sum(case((is_inflow, 0), else_=absolute)), 0),
+            func.avg(CT.confidence),
+            func.max(CT.confidence),
+        ).where(
+            CT.org_id == str(org_id),
+            CT.ledger_status == "active",
+            CT.basis != "document",
         )
         if period_start is not None:
-            stmt = stmt.where(CanonicalTransaction.transaction_date >= period_start)
+            stmt = stmt.where(CT.transaction_date >= period_start)
         if period_end is not None:
-            stmt = stmt.where(CanonicalTransaction.transaction_date <= period_end)
-        stmt = stmt.limit(5000)
+            stmt = stmt.where(CT.transaction_date <= period_end)
 
-        result = await db.execute(stmt)
-        rows = list(result.scalars().all())
+        count, inflow, outflow, avg_conf, max_conf = (await db.execute(stmt)).one()
+        totals = CanonicalTotals(
+            count=int(count or 0), inflow_cents=int(inflow), outflow_cents=int(outflow)
+        )
         quality = None
-        confs = [r.confidence for r in rows if r.confidence is not None]
-        if confs:
-            quality = (
-                sum(confs) / (100.0 * len(confs)) if max(confs) > 1 else sum(confs) / len(confs)
-            )
-        elif rows:
+        if avg_conf is not None:
+            avg = float(avg_conf)
+            quality = avg / 100.0 if float(max_conf) > 1 else avg
+        elif totals.count:
             quality = 0.8
-        return rows, quality
+        return totals, quality
     except Exception as exc:
         logger.debug("canonical load failed: %s", exc)
-        return [], None
+        return CanonicalTotals(), None
 
 
 async def _latest_sync_quality(org_id: str, db: AsyncSession | None) -> float | None:
@@ -153,7 +171,7 @@ async def rebuild_semantic_snapshot(
             project_from_risk(ctx.last_risk_result),
         )
 
-        rows, quality = await _load_canonical(
+        canonical, quality = await _load_canonical(
             org_id, db, period_start=p_start, period_end=p_end
         )
         sync_quality = await _latest_sync_quality(org_id, db)
@@ -161,7 +179,7 @@ async def rebuild_semantic_snapshot(
             quality = sync_quality if quality is None else max(quality, sync_quality)
         metrics = merge_metrics(
             metrics,
-            project_from_canonical_rows(rows, currency=currency, quality_score=quality),
+            project_from_canonical_totals(canonical, currency=currency, quality_score=quality),
         )
 
         metric_conflicts = detect_metric_conflicts(metrics)
@@ -203,11 +221,11 @@ async def rebuild_semantic_snapshot(
         evidence = [
             EvidenceRef(source_type="company_context", source_id=org_id, preview="rebuild"),
         ]
-        if rows:
+        if canonical.count:
             evidence.append(
                 EvidenceRef(
                     source_type="canonical_transactions",
-                    preview=f"count={len(rows)}",
+                    preview=f"count={canonical.count}",
                 )
             )
 
