@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import _cache_invalidate, get_current_user
 from app.database import get_db
-from app.models.organization import Organization, OrgInvite
+from app.models.organization import Organization, OrgInvite, OrgMembership
 from app.models.user import User, UserRole
 
 router = APIRouter()
@@ -205,6 +205,11 @@ async def create_org(
         raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
     user_row.org_id = org.id
     user_row.role = UserRole.OWNER
+    from app.services.org_membership import ensure_membership
+
+    await ensure_membership(
+        db, user_id=str(user_row.id), org_id=str(org.id), role=UserRole.OWNER.value
+    )
 
     await db.commit()
     await db.refresh(org)
@@ -449,6 +454,11 @@ async def accept_invite(
     user.org_id = invite.org_id
     user.role = invite.role
     invite.accepted = True
+    from app.services.org_membership import ensure_membership
+
+    await ensure_membership(
+        db, user_id=str(user.id), org_id=str(invite.org_id), role=str(invite.role)
+    )
 
     await db.commit()
     await db.refresh(user)
@@ -473,6 +483,91 @@ async def accept_invite(
         },
         "error": None,
     }
+
+
+class SwitchOrgRequest(BaseModel):
+    org_id: str
+
+
+@router.get("/org/memberships")
+async def list_memberships(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """The organisations the caller may act in, and the one they are acting in."""
+    rows = (
+        await db.execute(
+            select(OrgMembership, Organization)
+            .join(Organization, Organization.id == OrgMembership.org_id)
+            .where(OrgMembership.user_id == str(current_user.id), Organization.is_active.is_(True))
+            .order_by(Organization.name)
+        )
+    ).all()
+    return {
+        "data": {
+            "active_org_id": current_user.org_id,
+            "memberships": [
+                {
+                    "org_id": o.id,
+                    "name": o.name,
+                    "role": m.role,
+                    "active": str(o.id) == str(current_user.org_id),
+                }
+                for m, o in rows
+            ],
+        },
+        "error": None,
+    }
+
+
+@router.post("/org/switch")
+async def switch_org(
+    body: SwitchOrgRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Act in another organisation the caller is a member of.
+
+    The only way `users.org_id` changes to an organisation the user did not
+    create or accept an invitation to. A non-member gets the same 404 as for
+    an organisation that does not exist: whether it exists is somebody else's
+    fact. The role becomes the role of the membership, so an accountant is
+    `smmm` in a client and keeps their own role at home.
+    """
+    from app.services.org_membership import ensure_membership
+
+    user_row = await db.get(User, str(current_user.id))
+    if user_row is None:  # pragma: no cover - the token resolved a moment ago
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
+
+    target = (
+        await db.execute(
+            select(OrgMembership, Organization)
+            .join(Organization, Organization.id == OrgMembership.org_id)
+            .where(
+                OrgMembership.user_id == str(user_row.id),
+                OrgMembership.org_id == body.org_id,
+                Organization.is_active.is_(True),
+            )
+        )
+    ).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Organizasyon bulunamadı.")
+    membership, org = target
+
+    # Leaving an organisation the user was in before memberships existed must
+    # stay reversible: record it before switching away.
+    if user_row.org_id and str(user_row.org_id) != str(org.id):
+        await ensure_membership(
+            db, user_id=str(user_row.id), org_id=str(user_row.org_id), role=str(user_row.role)
+        )
+
+    user_row.org_id = org.id
+    user_row.role = membership.role
+    await db.commit()
+    _cache_invalidate(str(user_row.id))
+    logger.info("Org switch: user=%s -> org=%s role=%s", user_row.email, org.id, membership.role)
+    return {"data": {"org_id": org.id, "name": org.name, "role": membership.role}, "error": None}
 
 
 @router.get("/org/invites")
