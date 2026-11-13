@@ -16,7 +16,7 @@ Plan v10 §4 (O4) & Plan v11 Faz 3:
 
 from __future__ import annotations
 
-import uuid
+import re
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -26,7 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.decision_log import DecisionLog
 from app.services.cash_radar import _fmt, compute_cash_radar
-from app.services.rag.grounding_validator import extract_numeric_claims
+from app.services.rag.grounding_validator import parse_numeric_token
+
+
+class BriefingNeedsAnalysis(Exception):
+    """The organisation has no completed analysis for a decision to belong to."""
 
 
 @dataclass(frozen=True)
@@ -49,8 +53,16 @@ class MondayBriefing:
     sentence_obligation: str
     sentence_action: str
     full_text: str
+    # The text shown is always verified: a candidate the gate rejects is replaced by
+    # the deterministic template, and `fallback_used` says that happened.
     verified: bool = True
     fallback_used: bool = False
+    # Whether the bank balance is a proven figure. Without it the briefing says so
+    # instead of stating a balance.
+    balance_known: bool = True
+    # Whether there is anything to say. A company with no balance and no items gets
+    # no briefing rather than a made-up calm week.
+    has_data: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -66,23 +78,37 @@ def _generate_deterministic_sentences(
     action_title: str,
     action_detail: str,
     action_amount_cents: int,
+    not_included: list[str] | None = None,
 ) -> tuple[str, str, str]:
     """Build the canonical 3-sentence briefing from verified radar facts."""
-    # Sentence 1: Radar Net Change
+    balance_known = starting_cash_cents is not None
+
+    # Sentence 1: Radar Net Change. Without a proven starting balance the radar only
+    # knows the movement, so no balance is stated.
     if net_change_cents > 0:
-        sentence_1 = (
-            f"Bu hafta net nakit pozisyonunuzda {_fmt(net_change_cents)} tutarında net giriş beklenmektedir "
-            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents)})."
-        )
+        move = f"{_fmt(net_change_cents)} tutarında net giriş beklenmektedir"
     elif net_change_cents < 0:
+        move = f"{_fmt(abs(net_change_cents))} tutarında net çıkış beklenmektedir"
+    else:
+        move = None
+    if balance_known and move:
         sentence_1 = (
-            f"Bu hafta net nakit pozisyonunuzda {_fmt(abs(net_change_cents))} tutarında net çıkış beklenmektedir "
+            f"Bu hafta net nakit pozisyonunuzda {move} "
             f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents)})."
         )
-    else:
+    elif balance_known:
         sentence_1 = (
             f"Bu hafta nakit pozisyonunuzda önemli bir net hareket beklenmemektedir "
             f"(mevcut bakiye: {_fmt(end_balance_cents)})."
+        )
+    elif move:
+        sentence_1 = (
+            f"Bu hafta radarda {move}; başlangıç bakiyeniz bilinmiyor, "
+            f"bu yüzden hafta sonu bakiyesi hesaplanamadı."
+        )
+    else:
+        sentence_1 = (
+            "Bu hafta radarda net bir nakit hareketi görünmüyor; başlangıç bakiyeniz bilinmiyor."
         )
 
     # Sentence 2: Approaching Critical Liability
@@ -93,42 +119,62 @@ def _generate_deterministic_sentences(
         )
     else:
         sentence_2 = (
-            "Bu hafta vadesi gelen acil bir vergi veya kritik tedarikçi ödemesi bulunmamaktadır."
+            "Radarda bu hafta vadesi gelen bir vergi veya kritik tedarikçi ödemesi görünmüyor."
         )
 
     # Sentence 3: Single Most Important Action
     if action_amount_cents > 0 and action_title:
         sentence_3 = f"Bu haftanın en önemli tek eylemi: {action_title} ({action_detail})."
+    elif not balance_known:
+        sentence_3 = (
+            "Başlangıç bakiyesi bilinmediği için nakit açığı hesaplanamadı; "
+            "son banka ekstrenizi yükleyin."
+        )
     else:
-        sentence_3 = "Bu hafta için acil bir nakit açığı eylemi gerekmemektedir; operasyonel akış normal seyretmektedir."
+        sentence_3 = "Radarda görünen kalemlerle bu hafta acil bir nakit açığı eylemi gerekmiyor."
+        if not_included:
+            sentence_3 += f" Radara dahil değil: {', '.join(x.lower() for x in not_included)}."
 
     return sentence_1, sentence_2, sentence_3
+
+
+_NUMBER = re.compile(r"\d[\d.,]*\d|\d")
+# Money is written to the lira or to the kuruş; nothing looser counts as the same figure.
+_ROUNDING = 0.5
+
+
+def _date_parts(*days: str | None) -> set[int]:
+    """Year, month and day numbers of the dates the briefing itself states."""
+    parts: set[int] = set()
+    for day in days:
+        if day:
+            parts.update(int(p) for p in re.findall(r"\d+", day))
+    return parts
 
 
 def verify_narrative_numbers(
     narrative: str,
     allowed_cents: set[int],
     *,
-    rel_tol: float = 0.02,
+    allowed_plain: set[int] | None = None,
 ) -> bool:
-    """Anti-hallucination gate: Every numeric claim in narrative must map to a verified factual amount."""
-    claims = extract_numeric_claims(narrative)
-    if not claims:
-        return True
+    """Anti-hallucination gate: every number in the narrative must be a known fact.
 
-    # Build allowed numbers in Lira (decimal)
-    allowed_liras = {cents / 100.0 for cents in allowed_cents if cents is not None}
-    # Also add absolute values
-    allowed_liras.update({abs(l) for l in allowed_liras})
-
-    for claim in claims:
-        # Check if this claim matches any allowed lira figure within tolerance
-        matched = any(
-            abs(claim - allowed) <= max(1.0, allowed * rel_tol) for allowed in allowed_liras
-        )
-        if not matched:
+    A number is a fact when it is one of the verified amounts (to the lira or the
+    kuruş, no looser) or a date part the briefing itself states. Days, counts and
+    percentages count as claims too: nothing here computed them.
+    """
+    allowed_liras = {abs(c) / 100.0 for c in allowed_cents if c is not None}
+    plain = allowed_plain or set()
+    for raw in _NUMBER.findall(narrative or ""):
+        value = parse_numeric_token(raw)
+        if value is None:
             return False
-
+        if value.is_integer() and int(value) in plain:
+            continue
+        if any(abs(value - known) <= _ROUNDING for known in allowed_liras):
+            continue
+        return False
     return True
 
 
@@ -193,6 +239,7 @@ async def assemble_monday_briefing(
         action_title=action_title,
         action_detail=action_detail,
         action_amount_cents=action_amount,
+        not_included=radar.not_included,
     )
     deterministic_full_text = f"{s1} {s2} {s3}"
 
@@ -209,13 +256,26 @@ async def assemble_monday_briefing(
             approaching_amount,
             action_amount,
         }
-        is_grounded = verify_narrative_numbers(candidate_narrative, allowed_amounts)
+        is_grounded = verify_narrative_numbers(
+            candidate_narrative,
+            allowed_amounts,
+            allowed_plain=_date_parts(week_start, week_end, approaching_date),
+        )
         if is_grounded:
             final_text = candidate_narrative.strip()
         else:
-            # Rejection: Fall back to deterministic template!
+            # Rejection: fall back to the deterministic template.
             fallback_used = True
             final_text = deterministic_full_text
+
+    has_data = (
+        starting_cash is not None
+        or any(w.receivables or w.payables for w in radar.weeks)
+        or bool(radar.overdue_receivables)
+        or radar.overdue_payables_cents > 0
+        or radar.undated_receivables_cents > 0
+        or radar.undated_payables_cents > 0
+    )
 
     briefing_id = f"brief_{org_id}_{anchor.strftime('%Y%W')}"
 
@@ -240,6 +300,8 @@ async def assemble_monday_briefing(
         full_text=final_text,
         verified=verified,
         fallback_used=fallback_used,
+        balance_known=starting_cash is not None,
+        has_data=has_data,
     )
 
 
@@ -284,7 +346,35 @@ async def record_briefing_response(
         )
     ).scalar_one_or_none()
 
-    job_id = job.id if job else str(uuid.uuid4())
+    if job is None:
+        raise BriefingNeedsAnalysis(
+            "Bu bülten için kayıt açılamıyor: şirketin tamamlanmış bir analizi yok."
+        )
+    job_id = job.id
+
+    # One decision per briefing: answering again changes the answer, it does not add a row.
+    earlier = (
+        (
+            await db.execute(
+                select(DecisionLog)
+                .where(DecisionLog.org_id == org_id)
+                .order_by(DecisionLog.created_at.desc())
+                .limit(200)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    existing = next(
+        (
+            d
+            for d in earlier
+            if isinstance(d.expected, dict)
+            and d.expected.get("source") == "monday_briefing"
+            and d.expected.get("briefing_id") == briefing.briefing_id
+        ),
+        None,
+    )
 
     expected = {
         "source": "monday_briefing",
@@ -304,6 +394,17 @@ async def record_briefing_response(
     }
 
     decision_status = "open" if response == "deferred" else "closed"
+
+    if existing is not None:
+        # `expected` stays as first snapshotted: what was expected is never rewritten.
+        existing.chosen_option_id = f"briefing_{response}"
+        existing.chosen_option_label = response_labels[response]
+        existing.rationale = note
+        existing.actual = actual
+        existing.status = decision_status
+        existing.outcome_note = note
+        await db.flush()
+        return existing
 
     decision = DecisionLog(
         org_id=org_id,

@@ -237,6 +237,8 @@ async def _dispatch_monday_briefings() -> None:
         for org in orgs:
             try:
                 briefing = await assemble_monday_briefing(db, org.id)
+                if not briefing.has_data:
+                    continue  # nothing known about this company: no briefing, no invented calm
                 # Redis cache
                 try:
                     from app.worker import get_arq_pool

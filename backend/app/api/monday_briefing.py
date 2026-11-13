@@ -18,7 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
-from app.services.monday_briefing import assemble_monday_briefing, record_briefing_response
+from app.services.monday_briefing import (
+    BriefingNeedsAnalysis,
+    assemble_monday_briefing,
+    record_briefing_response,
+)
 
 router = APIRouter()
 
@@ -65,6 +69,7 @@ async def get_monday_briefing(
     summary="Pazartesi bülteni aksiyon yanıtı",
     responses={
         400: {"description": "Kullanıcının organizasyonu yok veya geçersiz tarih."},
+        409: {"description": "Şirketin tamamlanmış bir analizi yok."},
         422: {"description": "Geçersiz yanıt değeri."},
     },
 )
@@ -93,6 +98,8 @@ async def respond_to_monday_briefing(
             note=body.note,
         )
         await db.commit()
+    except BriefingNeedsAnalysis as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
