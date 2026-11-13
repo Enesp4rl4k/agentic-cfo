@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, false
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -109,3 +109,28 @@ class OrgInvite(Base):
     )
 
     organization: Mapped[Organization] = relationship("Organization")
+
+
+class OrgMembership(Base):
+    """A user belongs to an organisation, in a role.
+
+    `users.org_id` is the organisation the user is *acting in*; this table is
+    the organisations they may switch to. See `app/services/org_membership.py`.
+    """
+
+    __tablename__ = "org_memberships"
+    __table_args__ = (UniqueConstraint("user_id", "org_id", name="uq_org_membership_user_org"),)
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
