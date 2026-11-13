@@ -209,6 +209,7 @@ async def smmm_add_client(
         accountant_user_id=str(current_user.id),
         home_org_id=str(current_user.org_id) if current_user.org_id else None,
         home_role=str(current_user.role),
+        vkn=req.vergi_no,
     )
     client = SMMMMusteriKayit(
         muhasebeci_id = m.id,

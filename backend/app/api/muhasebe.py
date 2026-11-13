@@ -405,11 +405,14 @@ async def muhasebe_yevmiye_dokumu(
     # them into every other organisation's jobs.
     await load_owned_job(db, job_id, current_user)
 
-    settings = get_settings()
-    if not settings.gib_vkn:
+    from app.services.org_identity import vkn_of
+
+    vkn = await vkn_of(db, str(current_user.org_id) if current_user.org_id else None)
+    if not vkn:
         raise HTTPException(
             status_code=503,
-            detail="GİB VKN yapılandırılmamış — döküm üretilemez (GIB_VKN).",
+            detail="Bu organizasyonun VKN'si tanımlı değil — döküm üretilemez "
+            "(PATCH /org/me ile vkn girin).",
         )
 
     try:
@@ -428,8 +431,8 @@ async def muhasebe_yevmiye_dokumu(
     package = EDefterGenerator.generate_journal_xml(
         entries=[dict(e) for e in chosen],
         period=period,
-        vkn=settings.gib_vkn,
-        company_title=(org.name if org else "Şirket"),
+        vkn=vkn,
+        company_title=((org.legal_title or org.name) if org else "Şirket"),
     )
     if not package.is_balanced:
         # An unbalanced defter is not something to hand to the tax authority.
@@ -473,11 +476,14 @@ async def _edefter_context(
     # them into every other organisation's jobs.
     await load_owned_job(db, job_id, current_user)
 
-    settings = get_settings()
-    if not settings.gib_vkn:
+    from app.services.org_identity import vkn_of
+
+    vkn = await vkn_of(db, str(current_user.org_id) if current_user.org_id else None)
+    if not vkn:
         raise HTTPException(
             status_code=503,
-            detail="GİB VKN yapılandırılmamış — e-Defter üretilemez (GIB_VKN).",
+            detail="Bu organizasyonun VKN'si tanımlı değil — e-Defter üretilemez "
+            "(PATCH /org/me ile vkn girin).",
         )
 
     try:
@@ -500,12 +506,12 @@ async def _edefter_context(
     brand = get_brand()
 
     owner = LedgerOwner(
-        vkn=settings.gib_vkn,
-        title=(org.name if org else "Şirket"),
+        vkn=vkn,
+        title=((org.legal_title or org.name) if org else "Şirket"),
         # Address, phone and accountant details are left blank rather than
         # filled with something plausible. GİB's format for the producer is
         # VKN##üretici##yazılım##sürüm.
-        software_name=f"{settings.gib_vkn}##{brand.name}##{brand.name} e-Defter##1.0",
+        software_name=f"{vkn}##{brand.name}##{brand.name} e-Defter##1.0",
     )
     return [dict(e) for e in entries], period, owner
 

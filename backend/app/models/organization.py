@@ -54,6 +54,11 @@ class Organization(Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
 
+    # Tax identity. Decides an invoice's direction (we sold / we bought) and
+    # names the e-Defter's owner; see app/services/org_identity.py.
+    vkn: Mapped[str | None] = mapped_column(String(11), nullable=True)
+    legal_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
     max_members: Mapped[int] = mapped_column(default=5, nullable=False)
