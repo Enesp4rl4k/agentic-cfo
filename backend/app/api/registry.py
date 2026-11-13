@@ -47,6 +47,7 @@ _ROUTERS = [
     ("app.api.demo",                "router", "demo"),
     ("app.api.org",                 "router", "org"),
     ("app.api.pilot",               "router", "pilot"),
+    ("app.api.monday_briefing",     "router", "briefing"),  # Pazartesi Bülteni
     ("app.api.context",             "router", "context"),
     ("app.api.semantic",            "router", "semantic"),
     ("app.api.notifications",       "router", "notifications"),
