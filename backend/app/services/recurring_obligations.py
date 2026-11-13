@@ -3,7 +3,13 @@
 Plan v10 §4 (O3) & Plan v11 Faz 2.1:
 Identifies regular operational outflows (rent, payroll, subscriptions, accountant fees)
 from past bank movements (basis="cash").
-Strict Rule: Requires at least 3 distinct calendar months of historical evidence.
+Strict rules (a wrong obligation is a false "you will run short"):
+- at least 3 distinct calendar months of evidence, at an amount that is stable
+  (within `AMOUNT_TOLERANCE` of the recent median): purchases that merely repeat
+  a supplier's name are not obligations;
+- payments that settled an open invoice are left out: the invoice is already an
+  open item, so projecting its payments again would count it twice;
+- an obligation not seen for `STALE_AFTER_MONTHS` is treated as ended.
 Every projection cites its source rows; none invents obligations.
 """
 
@@ -19,8 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
 from app.models.canonical_transaction import CanonicalTransaction
+from app.services.reconciliation import rows_settling_items
 
 RECURRING_MIN_MONTHS = 3
+AMOUNT_TOLERANCE = 0.15
+STABLE_WINDOW = 6          # most recent payments judged for stability
+STALE_AFTER_MONTHS = 2     # missed this many months in a row: assumed ended
 
 _AY_ADLARI = frozenset(
     {
@@ -70,6 +80,24 @@ _NOISE_TERMS = frozenset(
 )
 
 
+def _utc(row: CanonicalTransaction):
+    when = row.transaction_date
+    return when.astimezone(UTC) if when.tzinfo else when
+
+
+def _month_of(row: CanonicalTransaction) -> tuple[int, int]:
+    when = _utc(row)
+    return (when.year, when.month)
+
+
+def _day_of(row: CanonicalTransaction) -> int:
+    return _utc(row).day
+
+
+def _date_of(row: CanonicalTransaction) -> date:
+    return _utc(row).date()
+
+
 def recurrence_key(counterparty: str | None, description: str | None) -> str:
     """Normalize text into a stable recurrence key by removing month names and transaction noise."""
     combined = f"{counterparty or ''} {description or ''}"
@@ -90,6 +118,7 @@ class RecurringObligation:
     day_of_month: int
     observed_months_count: int
     source_row_ids: list[str]
+    last_seen: date | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +157,9 @@ async def detect_recurring_obligations(db: AsyncSession, org_id: str) -> list[Re
     if not rows:
         return []
 
+    settling = await rows_settling_items(db, org_id)
+    rows = [r for r in rows if r.id not in settling]
+
     # Group by recurrence key
     grouped: dict[str, list[CanonicalTransaction]] = defaultdict(list)
     for row in rows:
@@ -137,30 +169,19 @@ async def detect_recurring_obligations(db: AsyncSession, org_id: str) -> list[Re
 
     obligations: list[RecurringObligation] = []
     for key, items in grouped.items():
-        # Check distinct months
-        months = {
-            (row.transaction_date.astimezone(UTC).year, row.transaction_date.astimezone(UTC).month)
-            if row.transaction_date.tzinfo
-            else (row.transaction_date.year, row.transaction_date.month)
-            for row in items
-        }
+        # Judge the most recent payments: a rent that was raised is still a rent.
+        recent = items[-STABLE_WINDOW:]
+        amounts = sorted(r.amount_cents for r in recent)
+        median_amount = amounts[len(amounts) // 2]
+        stable = [
+            r for r in recent if abs(r.amount_cents - median_amount) <= AMOUNT_TOLERANCE * median_amount
+        ]
+        months = {_month_of(r) for r in stable}
         if len(months) < RECURRING_MIN_MONTHS:
             continue
 
-        # Sort amounts to pick median amount
-        amounts = sorted(r.amount_cents for r in items)
-        median_amount = amounts[len(amounts) // 2]
-
-        # Calculate median day of month
-        days = sorted(
-            r.transaction_date.astimezone(UTC).day
-            if r.transaction_date.tzinfo
-            else r.transaction_date.day
-            for r in items
-        )
-        median_day = days[len(days) // 2]
-
-        representative = items[-1]
+        median_day = sorted(_day_of(r) for r in stable)[len(stable) // 2]
+        representative = stable[-1]
         label = representative.description or representative.counterparty or key.title()
 
         obligations.append(
@@ -171,11 +192,16 @@ async def detect_recurring_obligations(db: AsyncSession, org_id: str) -> list[Re
                 amount_cents=median_amount,
                 day_of_month=median_day,
                 observed_months_count=len(months),
-                source_row_ids=[r.id for r in items[-5:]],
+                source_row_ids=[r.id for r in stable[-5:]],
+                last_seen=_date_of(representative),
             )
         )
 
     return obligations
+
+
+def _months_between(earlier: date, later: date) -> int:
+    return (later.year - earlier.year) * 12 + later.month - earlier.month
 
 
 def project_recurring_obligations(
@@ -188,6 +214,8 @@ def project_recurring_obligations(
     projections: list[RecurringProjection] = []
 
     for ob in obligations:
+        if ob.last_seen is not None and _months_between(ob.last_seen, anchor) > STALE_AFTER_MONTHS:
+            continue
         # Check each month overlapping with the horizon
         cur_year = anchor.year
         cur_month = anchor.month

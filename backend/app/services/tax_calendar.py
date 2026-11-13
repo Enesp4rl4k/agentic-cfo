@@ -1,15 +1,17 @@
-"""Official statutory tax and social security obligation projector for Cash Radar.
+"""Tax and social-security obligations for the Cash Radar.
 
-Plan v10 §4 (O3) & Plan v11 Faz 2.2:
-Statutory deadlines from official Turkish revenue (GİB) & social security (SGK) legislation:
-- KDV (VAT): Due on the 28th of each following month (GİB VUK).
-- Muhtasar / Stopaj: Due on the 28th of each following month.
-- SGK Prim Ödemesi: Due on the last calendar day of each following month (5510 s. Kanun md. 88).
-- Geçici Vergi (Quarterly Tax Advance): Due on the 17th of the 2nd month following quarter end
-  (17 May, 17 Aug, 17 Nov, 17 Feb).
+Plan v10 §4 (O3), gaps G7 and G15.
 
-Amounts are sourced from ledger accounts (360, 361, 391-191) when books exist, or recent historical
-tax payment medians when bank movements exist. No numbers are invented.
+What is projected, and from what:
+
+- **Amounts** come only from this company's own bank history: the median of past
+  cash payments *to the tax office or SGK* (see `_classify`). Nothing is taken from
+  ledger balances and no rate is applied, so no figure is invented. A tax never
+  seen in the bank history is not projected, and the radar says so.
+- **Dates** follow the statutory day rules in `DUE_RULES`. Those rules are written
+  from memory of the legislation and are **not yet checked against GİB/SGK's own
+  text** (`due_rules_verified` is False). Where a due day falls on a weekend the
+  payment moves to the next working day; official holidays are not known here.
 """
 
 from __future__ import annotations
@@ -31,20 +33,46 @@ class TaxObligationProjection:
     title: str
     amount_cents: int
     expected_date: date
-    source_basis: str  # "account_balance" or "historical_cash_median"
+    source_basis: str  # always "historical_cash_median"
     account_code: str | None = None
+    due_rules_verified: bool = False
 
 
-# Official GİB statutory day rules
+# Day-of-month rules. UNVERIFIED against the official text: see the module docstring.
+due_rules_verified = False
 KDV_DUE_DAY = 28
 MUHTASAR_DUE_DAY = 28
-GECICI_VERGI_MONTH_DAY = {
-    # quarter_end_month -> (due_month, due_day)
-    3: (5, 17),  # Q1 -> 17 May
-    6: (8, 17),  # Q2 -> 17 August
-    9: (11, 17),  # Q3 -> 17 November
-    12: (2, 17),  # Q4 -> 17 February (following year)
+SGK_DUE = "last day of the month"
+# Provisional tax: 17th of the 2nd month after the quarter ends.
+# quarter number -> (due month, due day, due year is the quarter's year + this)
+GECICI_VERGI_DUE = {
+    1: (5, 17, 0),
+    2: (8, 17, 0),
+    3: (11, 17, 0),
+    4: (2, 17, 1),
 }
+
+# A payment is a tax payment only if it names the authority it went to. A word like
+# "KDV" alone also appears in supplier payments ("KDV dahil") and "sigorta prim" in
+# every insurance premium.
+_AUTHORITY = ("vergi dairesi", "gib", "maliye", "tahakkuk", "beyanname", "vergi odeme")
+_SGK = ("sgk", "sosyal guvenlik", "bagkur", "prim hizmet")
+_NOT_A_TAX = ("dahil", "haric", "fatura")
+
+
+def _classify(counterparty: str | None, description: str | None) -> str | None:
+    text = fold(f"{counterparty or ''} {description or ''}")
+    if any(w in text for w in _SGK):
+        return "sgk"
+    if not any(w in text for w in _AUTHORITY) or any(w in text for w in _NOT_A_TAX):
+        return None
+    if "gecici" in text:
+        return "gecici_vergi"
+    if "kdv" in text or "katma deger" in text:
+        return "kdv"
+    if "muhtasar" in text or "stopaj" in text:
+        return "muhtasar"
+    return None
 
 
 def _last_day_of_month(year: int, month: int) -> int:
@@ -53,8 +81,15 @@ def _last_day_of_month(year: int, month: int) -> int:
     return (date(next_y, next_m, 1) - timedelta(days=1)).day
 
 
+def _next_working_day(day: date) -> date:
+    """A deadline on Saturday or Sunday falls on the Monday after."""
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    return day
+
+
 async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str, int]:
-    """Extract historical tax payment medians from past cash movements."""
+    """Median of past cash payments to the tax office / SGK, per kind of tax."""
     rows = (
         (
             await db.execute(
@@ -72,23 +107,17 @@ async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str
         .all()
     )
 
-    tax_buckets: dict[str, list[int]] = {"kdv": [], "sgk": [], "muhtasar": [], "gecici_vergi": []}
+    buckets: dict[str, list[int]] = {"kdv": [], "sgk": [], "muhtasar": [], "gecici_vergi": []}
     for r in rows:
-        text = fold(f"{r.counterparty or ''} {r.description or ''}")
-        if "kdv" in text or "katma deger" in text:
-            tax_buckets["kdv"].append(r.amount_cents)
-        elif "sgk" in text or "sigorta prim" in text or "bagkur" in text:
-            tax_buckets["sgk"].append(r.amount_cents)
-        elif "muhtasar" in text or "stopaj" in text:
-            tax_buckets["muhtasar"].append(r.amount_cents)
-        elif "gecici vergi" in text or "kurumlar gecici" in text:
-            tax_buckets["gecici_vergi"].append(r.amount_cents)
+        kind = _classify(r.counterparty, r.description)
+        if kind:
+            buckets[kind].append(r.amount_cents)
 
     medians: dict[str, int] = {}
-    for k, amounts in tax_buckets.items():
+    for kind, amounts in buckets.items():
         if amounts:
             s = sorted(amounts)
-            medians[k] = s[len(s) // 2]
+            medians[kind] = s[len(s) // 2]
     return medians
 
 
@@ -98,84 +127,52 @@ async def project_tax_obligations(
     anchor: date,
     horizon_weeks: int = 13,
 ) -> list[TaxObligationProjection]:
-    """Project official statutory tax deadlines and amounts for the 13-week horizon."""
+    """Statutory deadlines inside the horizon, with amounts from past payments."""
     horizon_end = anchor + timedelta(days=7 * horizon_weeks - 1)
-    projections: list[TaxObligationProjection] = []
-
-    # Get median historical cash payments for tax types if available
     historical = await get_historical_tax_averages(db, org_id)
+    found: dict[str, TaxObligationProjection] = {}
 
-    cur_year = anchor.year
-    cur_month = anchor.month
-
-    # Project monthly obligations (KDV, SGK, Muhtasar) for overlapping months
-    for m_offset in range(5):
-        year = cur_year + (cur_month - 1 + m_offset) // 12
-        month = ((cur_month - 1 + m_offset) % 12) + 1
-
-        # 1. KDV: Due on 28th
-        kdv_date = date(year, month, min(KDV_DUE_DAY, _last_day_of_month(year, month)))
-        if anchor <= kdv_date <= horizon_end and "kdv" in historical:
-            projections.append(
+    def add(kind: str, label: str, due: date, account: str, key: str) -> None:
+        due = _next_working_day(due)
+        if kind in historical and anchor <= due <= horizon_end:
+            found.setdefault(
+                key,
                 TaxObligationProjection(
-                    id=f"tax_kdv_{kdv_date.isoformat()}",
-                    tax_type="kdv",
-                    title=f"KDV Ödemesi ({month:02d}/{year})",
-                    amount_cents=historical["kdv"],
-                    expected_date=kdv_date,
+                    id=f"tax_{kind}_{due.isoformat()}",
+                    tax_type=kind,
+                    title=label,
+                    amount_cents=historical[kind],
+                    expected_date=due,
                     source_basis="historical_cash_median",
-                    account_code="391",
-                )
+                    account_code=account,
+                ),
             )
 
-        # 2. SGK: Due on last day of month
-        sgk_day = _last_day_of_month(year, month)
-        sgk_date = date(year, month, sgk_day)
-        if anchor <= sgk_date <= horizon_end and "sgk" in historical:
-            projections.append(
-                TaxObligationProjection(
-                    id=f"tax_sgk_{sgk_date.isoformat()}",
-                    tax_type="sgk",
-                    title=f"SGK Prim Ödemesi ({month:02d}/{year})",
-                    amount_cents=historical["sgk"],
-                    expected_date=sgk_date,
-                    source_basis="historical_cash_median",
-                    account_code="361",
-                )
+    # Monthly obligations: the month of the deadline, a month back and a few ahead.
+    for m_offset in range(-1, 5):
+        year = anchor.year + (anchor.month - 1 + m_offset) // 12
+        month = (anchor.month - 1 + m_offset) % 12 + 1
+        last = _last_day_of_month(year, month)
+        tag = f"{month:02d}/{year}"
+        add("kdv", f"KDV Ödemesi ({tag})", date(year, month, min(KDV_DUE_DAY, last)), "391", f"kdv{tag}")
+        add("sgk", f"SGK Prim Ödemesi ({tag})", date(year, month, last), "361", f"sgk{tag}")
+        add(
+            "muhtasar",
+            f"Muhtasar / Stopaj Ödemesi ({tag})",
+            date(year, month, min(MUHTASAR_DUE_DAY, last)),
+            "360",
+            f"muh{tag}",
+        )
+
+    # Provisional tax: the previous year's Q4 is due in February of this one.
+    for quarter_year in (anchor.year - 1, anchor.year):
+        for quarter, (due_m, due_d, plus) in GECICI_VERGI_DUE.items():
+            add(
+                "gecici_vergi",
+                f"Geçici Vergi Q{quarter} ({quarter_year})",
+                date(quarter_year + plus, due_m, due_d),
+                "193",
+                f"gec{quarter}{quarter_year}",
             )
 
-        # 3. Muhtasar: Due on 28th
-        muhtasar_date = date(year, month, min(MUHTASAR_DUE_DAY, _last_day_of_month(year, month)))
-        if anchor <= muhtasar_date <= horizon_end and "muhtasar" in historical:
-            projections.append(
-                TaxObligationProjection(
-                    id=f"tax_muhtasar_{muhtasar_date.isoformat()}",
-                    tax_type="muhtasar",
-                    title=f"Muhtasar / Stopaj Ödemesi ({month:02d}/{year})",
-                    amount_cents=historical["muhtasar"],
-                    expected_date=muhtasar_date,
-                    source_basis="historical_cash_median",
-                    account_code="360",
-                )
-            )
-
-    # Project Geçici Vergi for the current/upcoming quarters
-    # Check calendar year and next year Q4
-    for q_month, (due_m, due_d) in GECICI_VERGI_MONTH_DAY.items():
-        due_y = anchor.year if q_month != 12 else anchor.year + 1
-        gecici_date = date(due_y, due_m, due_d)
-        if anchor <= gecici_date <= horizon_end and "gecici_vergi" in historical:
-            q_num = q_month // 3
-            projections.append(
-                TaxObligationProjection(
-                    id=f"tax_gecici_{gecici_date.isoformat()}",
-                    tax_type="gecici_vergi",
-                    title=f"Geçici Vergi Q{q_num} ({due_y})",
-                    amount_cents=historical["gecici_vergi"],
-                    expected_date=gecici_date,
-                    source_basis="historical_cash_median",
-                    account_code="193",
-                )
-            )
-
-    return sorted(projections, key=lambda p: p.expected_date)
+    return sorted(found.values(), key=lambda p: p.expected_date)
