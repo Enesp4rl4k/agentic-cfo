@@ -164,10 +164,19 @@ async def resume_agent_run(
     if job is None or not job.file_path:
         raise HTTPException(status_code=400, detail="Kaynak job/dosya bulunamadı.")
 
+    from app.platform.authority_matrix import load_active_rules
+    from app.services.accounting.journal_store import persist_tr_vertical_result
+
     _, result = await resume_run(
         db, run_id, run_tr_vertical,
         job_id=row.job_id, file_path=job.file_path, file_type=job.file_type,
         org_id=row.org_id,
+        authority_rules=await load_active_rules(row.org_id, db),
+    )
+    # A resumed run used to leave no journal and no review rows behind.
+    await persist_tr_vertical_result(
+        db, job_id=str(row.job_id), org_id=row.org_id,
+        user_id=str(current_user.id), result=result,
     )
     return {
         "data": {"run": _run_dict(row), "stage": getattr(result, "stage", None)},
