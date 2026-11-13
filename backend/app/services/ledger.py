@@ -44,6 +44,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.invoice_identity import canonical_invoice_id
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -100,7 +101,6 @@ async def _existing(db: AsyncSession, org_id: str, ids: list[str]) -> dict[str, 
         rows = await db.execute(
             select(CanonicalTransaction).where(
                 CanonicalTransaction.org_id == org_id,
-                CanonicalTransaction.source_type == SOURCE_FINGERPRINT,
                 CanonicalTransaction.source_record_id.in_(ids[i:i + _CHUNK]),
             )
         )
@@ -181,8 +181,10 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             continue
         if tx.document_id:
             # The document's own id beats its content: the same invoice is the
-            # same money whatever the row around it says.
-            usable.append((f"doc:{tx.document_id}", tx))
+            # same money whatever the row around it says, and whichever source
+            # (file, ERP, e-invoice) brought it (G2).
+            doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
+            usable.append((f"doc:{doc_id}", tx))
             continue
         print_ = _fingerprint(org_id, tx)
         seen[print_] += 1
@@ -245,13 +247,14 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
     for tx in txs:
         if not (tx.document_id and tx.counterparty):
             continue
+        doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
         await db.execute(
             insert(OpenItem).values(
                 id=str(uuid.uuid4()),
                 org_id=org_id,
                 direction="receivable" if tx.type == "income" else "payable",
                 instrument="invoice",
-                document_id=tx.document_id,
+                document_id=doc_id,
                 source_job_id=job_id,
                 counterparty=tx.counterparty,
                 description=tx.description,
