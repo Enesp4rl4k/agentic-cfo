@@ -10,7 +10,11 @@ from __future__ import annotations
 import pytest
 
 from app.platform.contracts import EvidenceBundle, EvidenceCitation
-from app.services.rag.grounding_validator import extract_numeric_claims, parse_numeric_token, validate_grounding
+from app.services.rag.grounding_validator import (
+    extract_numeric_claims,
+    parse_numeric_token,
+    validate_grounding,
+)
 
 
 @pytest.mark.parametrize(
