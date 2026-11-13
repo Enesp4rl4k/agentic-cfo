@@ -302,18 +302,30 @@ async def dosyalari_ekle(
     return {"job_id": is_id, "dosyalar": dosyalar}
 
 
+def _fatura_mi(t: dict[str, Any]) -> bool:
+    return bool(t.get("document_id"))
+
+
 def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
-    """Connector transactions as a statement the ingestion reads: signed amounts, ISO dates."""
+    """Connector transactions as a file the ingestion reads: signed amounts, ISO dates.
+
+    An invoice carries three more columns (number, counterparty, due date): without
+    them it is read as a cash movement, not as the document it is.
+    """
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
-    w.writerow(["tarih", "açıklama", "tutar", "tip"])
+    faturali = any(_fatura_mi(t) for t in islemler)
+    w.writerow(["tarih", "açıklama", "tutar", "tip"] + (["fatura no", "cari", "vade"] if faturali else []))
     for t in islemler:
         kurus = t.get("amount_cents")
         tutar = abs(int(kurus)) / 100 if kurus is not None else abs(float(t.get("amount") or 0))
         tip = "income" if str(t.get("type") or t.get("tx_type") or "").lower() in ("income", "gelir") else "expense"
         tarih = t.get("date") or t.get("transaction_date") or ""
         tarih = tarih.isoformat() if hasattr(tarih, "isoformat") else str(tarih)
-        w.writerow([tarih[:10], (t.get("description") or "")[:500], -tutar if tip == "expense" else tutar, tip])
+        satir = [tarih[:10], (t.get("description") or "")[:500], -tutar if tip == "expense" else tutar, tip]
+        if faturali:
+            satir += [t.get("document_id") or "", t.get("counterparty") or "", t.get("due_date") or ""]
+        w.writerow(satir)
     return out.getvalue().encode("utf-8")
 
 
@@ -322,4 +334,8 @@ async def islemleri_ekle(
 ) -> dict[str, Any]:
     """A connector's pull becomes an ordinary analysis the pages can show."""
     ad = f"{kaynak}_{datetime.now(UTC):%Y%m%d_%H%M}.csv"
-    return await dosyalari_ekle(db, sahip, [(ad, islemler_csv(islemler))], {ad: S.BANKA_EKSTRESI})
+    # A pull of invoices is a financial document, read as written; the bank-statement
+    # schema keeps only date, description, amount and type, which is how an invoice
+    # used to lose its number and become cash (G22).
+    tur = FINANSAL_BELGE if any(_fatura_mi(t) for t in islemler) else S.BANKA_EKSTRESI
+    return await dosyalari_ekle(db, sahip, [(ad, islemler_csv(islemler))], {ad: tur})

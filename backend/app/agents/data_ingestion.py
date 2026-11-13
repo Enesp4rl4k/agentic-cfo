@@ -465,6 +465,32 @@ def _kodsuz_yon(r_lower: dict[str, str], amount_cents: int) -> str:
     return "expense" if amount_cents < 0 else "income"
 
 
+_FATURA_NO_KOLONLARI = ("fatura no", "invoice_no", "invoice no", "document_id")
+_CARI_KOLONLARI = ("cari", "counterparty", "musteri tedarikci", "karsi taraf adi")
+_VADE_KOLONLARI = ("vade", "vade tarihi", "due_date", "due date")
+
+
+def _fatura_alanlari(tx: dict[str, Any], r_lower: dict[str, str]) -> None:
+    """An invoice list's number, counterparty and due date, when the row has them.
+
+    The number alone is an identity; the counterparty makes it an open item. A bank
+    statement has neither column, so this never changes how one is read.
+    """
+    no = _ilk(r_lower, *_FATURA_NO_KOLONLARI)
+    if not no:
+        return
+    from app.core.invoice_identity import canonical_invoice_id
+
+    tx["document_id"] = canonical_invoice_id(None, no)
+    cari = _ilk(r_lower, *_CARI_KOLONLARI)
+    if cari:
+        tx["counterparty"] = cari
+        tx["vendor"] = cari
+    vade = _parse_date(_ilk(r_lower, *_VADE_KOLONLARI))
+    if vade:
+        tx["due_date"] = vade.date().isoformat()
+
+
 def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any] | None:
     """One CSV row as a pipeline transaction; None for an empty or skipped row."""
     if not row or not any(row.values()):
@@ -501,6 +527,7 @@ def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any
     tx["type"] = _kodsuz_yon(r_lower, amount_cents)
     tx["amount_cents"] = abs(amount_cents)
     tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx["type"])
+    _fatura_alanlari(tx, r_lower)
     bakiye = _ilk(r_lower, "bakiye", "balance")
     if bakiye:
         tx["balance_cents"] = _isaretli_kurus(bakiye)
