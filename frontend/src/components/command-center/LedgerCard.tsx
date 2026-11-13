@@ -103,11 +103,13 @@ export function LedgerCard() {
                     {s.row.transaction_date} · {fmt(s.amount_cents / 100)}
                   </p>
                   <p>{s.row.description}</p>
-                  <p className="text-muted-foreground">
-                    {copy.settlesInvoice
-                      .replace("{invoice}", s.item.description ?? "")
-                      .replace("{amount}", fmt(s.item.amount_cents / 100))}
-                  </p>
+                  {(s.items?.length ? s.items : [s.item]).map((it, k) => (
+                    <p key={k} className="text-muted-foreground">
+                      {copy.settlesInvoice
+                        .replace("{invoice}", it.description ?? "")
+                        .replace("{amount}", fmt(it.amount_cents / 100))}
+                    </p>
+                  ))}
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <Button size="sm" variant="outline" disabled={settle.isPending}
