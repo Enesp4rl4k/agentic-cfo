@@ -50,14 +50,9 @@ def _ensure_parsers_registered() -> None:
     all_parsers = (
         # Invoice batch first — most specific
         InvoiceBatchParser,
-        # Accounting parsers — more specific markers, lower false-positive risk
-        LogoTigerParser,
-        NetsisParser,
-        MikroParser,
-        ParasutParser,
-        # Single invoice parser — after accounting (avoid false positives)
-        TurkishInvoiceParser,
-        # Bank parsers
+        # Bank parsers before accounting ones: a bank's name is a strong marker,
+        # while the accounting markers ("BORÇ", "ALACAK", "Hesap Hareketleri",
+        # "GİRİŞ") appear on bank statements too and used to claim them.
         AkbankParser,
         EnparaParser,
         GarantiParser,
@@ -65,6 +60,13 @@ def _ensure_parsers_registered() -> None:
         QNBParser,
         YapiKrediParser,
         ZiraatParser,
+        # Accounting parsers
+        LogoTigerParser,
+        NetsisParser,
+        MikroParser,
+        ParasutParser,
+        # Single invoice parser — last (avoid false positives)
+        TurkishInvoiceParser,
     )
 
     for cls in all_parsers:
