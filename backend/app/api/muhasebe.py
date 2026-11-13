@@ -482,8 +482,9 @@ async def muhasebe_yevmiye_dokumu(
     Kaynak, `tr_muhasebe_journal` raporudur: SMMM'nin onayladığı ve paketin
     mühürlediği satırların ta kendisi.
     """
+    from app.services.accounting.approved_journal import yukle as onayli_yukle
     from app.services.gib_edefter import EDefterGenerator
-    from app.services.smmm_defensibility import DefensibilityError, _load_journal
+    from app.services.smmm_defensibility import DefensibilityError
 
     # `owner`/`admin` are roles inside one organisation; this used to let
     # them into every other organisation's jobs.
@@ -497,7 +498,7 @@ async def muhasebe_yevmiye_dokumu(
         )
 
     try:
-        journal = await _load_journal(db, job_id)
+        _journal, onayli = await onayli_yukle(db, job_id)
     except DefensibilityError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -505,7 +506,7 @@ async def muhasebe_yevmiye_dokumu(
     from app.services.edefter_xbrl import EDefterError, ledger_period
 
     try:
-        period, chosen = ledger_period(list(journal.get("yevmiye_kayitlari") or []), donem)
+        period, chosen = ledger_period(list(onayli.entries), donem)
     except EDefterError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -549,8 +550,9 @@ async def _edefter_context(
 ) -> tuple[list[dict], str, LedgerOwner]:
     """Shared preflight for both ledgers, so they cannot describe different books."""
     from app.core.branding import get_brand
+    from app.services.accounting.approved_journal import yukle as onayli_yukle
     from app.services.edefter_xbrl import LedgerOwner
-    from app.services.smmm_defensibility import DefensibilityError, _load_journal
+    from app.services.smmm_defensibility import DefensibilityError
 
     # `owner`/`admin` are roles inside one organisation; this used to let
     # them into every other organisation's jobs.
@@ -564,7 +566,7 @@ async def _edefter_context(
         )
 
     try:
-        journal = await _load_journal(db, job_id)
+        _journal, onayli = await onayli_yukle(db, job_id)
     except DefensibilityError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -577,7 +579,7 @@ async def _edefter_context(
     # The period is the month the entries are in. It used to be read from a
     # `donem` field nothing wrote, falling back to the job's creation month.
     try:
-        period, entries = ledger_period(list(journal.get("yevmiye_kayitlari") or []), donem)
+        period, entries = ledger_period(list(onayli.entries), donem)
     except EDefterError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     brand = get_brand()
@@ -947,56 +949,44 @@ async def mizan_ozet(
     job: AnalysisJob = Depends(owned_job),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """
-    Bir job için onaylanmış muhasebe kayıtlarından mizan özeti.
-    Sadece onaylanmış veya düzeltilmiş kayıtları içerir.
-    """
-    result = await db.execute(
-        select(SMMMOnayKaydi).where(
-            SMMMOnayKaydi.job_id == job_id,
-            SMMMOnayKaydi.durum.in_([OnayDurumu.ONAYLANDI, OnayDurumu.DUZELTILDI]),
-        )
-    )
-    kayitlar = result.scalars().all()
+    """Mizan, e-Defter ile aynı onaylı yevmiyeden.
 
-    if not kayitlar:
+    Otomatik kaydedilenler dahil; düzeltme yalnızca düzeltilen hesabın satırına
+    uygulanır (karşı hesap — banka, kasa — değişmez); reddedilen ve hâlâ onay
+    bekleyen kayıtlar girmez ve `haric_tutulan` altında sayılır.
+    """
+    from app.services.accounting.approved_journal import mizan as mizan_hesapla
+    from app.services.accounting.approved_journal import yukle as onayli_yukle
+    from app.services.smmm_defensibility import DefensibilityError
+
+    try:
+        _journal, onayli = await onayli_yukle(db, job_id)
+    except DefensibilityError:
         return {
             "data": {
-                "job_id":   job_id,
-                "mesaj":    "Onaylanmış muhasebe kaydı bulunamadı.",
-                "mizan":    {},
-                "toplam":   {"borc": 0, "alacak": 0},
+                "job_id": job_id,
+                "mesaj": "Bu iş için muhasebe yevmiyesi bulunamadı.",
+                "mizan": {},
+                "toplam": {"borc": 0, "alacak": 0},
             },
             "error": None,
         }
 
-    # Mizan hesapla
-    mizan: dict[str, dict[str, Any]] = {}
-    for k in kayitlar:
-        kayit_data = k.orijinal_kayit or {}
-        # Düzeltme yapıldıysa hesap kodunu güncelle
-        for satir in kayit_data.get("satirlar", []):
-            kod = k.duzeltilmis_hesap_kodu or satir["hesap_kodu"]
-            adi = k.duzeltilmis_hesap_adi or satir["hesap_adi"]
-            if kod not in mizan:
-                mizan[kod] = {"hesap_adi": adi, "borc": 0, "alacak": 0}
-            mizan[kod]["borc"]   += satir.get("borc", 0)
-            mizan[kod]["alacak"] += satir.get("alacak", 0)
-
-    for h in mizan.values():
-        h["bakiye"] = h["borc"] - h["alacak"]
-
-    toplam_borc   = sum(h["borc"]   for h in mizan.values())
-    toplam_alacak = sum(h["alacak"] for h in mizan.values())
-
+    tablo = mizan_hesapla(onayli.entries)
+    toplam_borc = sum(h["borc"] for h in tablo.values())
+    toplam_alacak = sum(h["alacak"] for h in tablo.values())
     return {
         "data": {
-            "job_id":        job_id,
-            "kayit_sayisi":  len(kayitlar),
-            "mizan":         mizan,
+            "job_id": job_id,
+            "kayit_sayisi": len(onayli.entries),
+            "haric_tutulan": {
+                "reddedildi": sum(1 for v in onayli.excluded.values() if v == "reddedildi"),
+                "bekliyor": sum(1 for v in onayli.excluded.values() if v == "bekliyor"),
+            },
+            "mizan": tablo,
             "toplam": {
-                "borc":    toplam_borc,
-                "alacak":  toplam_alacak,
+                "borc": toplam_borc,
+                "alacak": toplam_alacak,
                 "dengeli": toplam_borc == toplam_alacak,
             },
         },
