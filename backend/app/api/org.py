@@ -108,6 +108,8 @@ class UpdateOrgRequest(BaseModel):
     locale: str | None = Field(default=None, min_length=2, max_length=16)
     regional_packs: list[str] | None = None
     focus_mode: bool | None = None
+    vkn: str | None = Field(default=None, max_length=20)
+    legal_title: str | None = Field(default=None, max_length=200)
 
 
 class InviteRequest(BaseModel):
@@ -132,6 +134,8 @@ def _org_dict(org: Organization) -> dict[str, Any]:
         "logo_url":             org.logo_url,
         "country_code":         getattr(org, "country_code", None) or "US",
         "base_currency":        getattr(org, "base_currency", None) or "USD",
+        "vkn":                 getattr(org, "vkn", None),
+        "legal_title":         getattr(org, "legal_title", None),
         "locale":               getattr(org, "locale", None) or "en-US",
         "regional_packs":       normalize_packs(getattr(org, "regional_packs", None)),
         "focus_mode":           bool(org.focus_mode),
@@ -266,6 +270,20 @@ async def update_org(
         org.regional_packs = normalize_packs(body.regional_packs)
     if body.focus_mode is not None:
         org.focus_mode = body.focus_mode
+    if body.vkn is not None:
+        from app.services.org_identity import normalize, vkn_gecerli
+
+        if body.vkn.strip() == "":
+            org.vkn = None
+        elif not vkn_gecerli(body.vkn):
+            # One wrong digit would turn every invoice's direction around.
+            raise HTTPException(
+                status_code=422, detail="Geçersiz VKN/TCKN (10 ya da 11 hane, sağlama toplamı tutmuyor)."
+            )
+        else:
+            org.vkn = normalize(body.vkn)
+    if body.legal_title is not None:
+        org.legal_title = body.legal_title.strip() or None
     await db.commit()
     await db.refresh(org)
     return {"data": _org_dict(org), "error": None}

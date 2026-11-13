@@ -60,7 +60,7 @@ def _slug(name: str) -> str:
 
 async def create_client_org(
     db: AsyncSession, *, name: str, accountant_user_id: str, home_org_id: str | None,
-    home_role: str,
+    home_role: str, vkn: str | None = None,
 ) -> Organization:
     """A client company as its own organisation, with the accountant as its `smmm`.
 
@@ -68,8 +68,13 @@ async def create_client_org(
     accountant's own organisation is recorded as a membership too, so switching
     to a client can always be undone. The caller commits.
     """
+    from app.services.org_identity import normalize, vkn_gecerli
+
     org = Organization(
         name=name,
+        # A VKN typed in with the client is kept only if it is well formed;
+        # a malformed one is left unset (and invoices held) rather than guessed.
+        vkn=normalize(vkn) if vkn_gecerli(vkn) else None,
         slug=_slug(name),
         country_code="TR",
         base_currency="TRY",
