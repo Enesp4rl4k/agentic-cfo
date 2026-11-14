@@ -43,6 +43,10 @@ describe("visibleNavGroups", () => {
     expect(hrefs(visibleNavGroups(GROUPS, { hasTrPack: false, focusMode: false }))).not.toContain("/smmm");
   });
 
+  it("keeps the Monday briefing in the focus list", () => {
+    expect(FOCUS_HREFS.has("/bulten")).toBe(true);
+  });
+
   it("names no role screen in the focus list", () => {
     for (const href of ["/cto", "/cmo", "/coo", "/chro", "/ceo"]) expect(FOCUS_HREFS.has(href)).toBe(false);
   });

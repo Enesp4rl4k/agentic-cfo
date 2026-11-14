@@ -76,6 +76,27 @@ export type MessageTree = {
     loading: string;
     failed: string;
   };
+  bulten: {
+    title: string;
+    subtitle: string;
+    week: string;
+    loading: string;
+    failed: string;
+    emptyTitle: string;
+    emptyBody: string;
+    connect: string;
+    fallbackNote: string;
+    unknownBalance: string;
+    answerTitle: string;
+    done: string;
+    deferred: string;
+    dismissed: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    radarHint: string;
+    radarLink: string;
+  };
   reviewQueue: {
     title: string;
     body: string;
@@ -2227,6 +2248,27 @@ export const en: MessageTree = {
     connect: "Connect my data",
     loading: "Preparing the cash radar…",
     failed: "The cash radar could not be loaded.",
+  },
+  bulten: {
+    title: "Monday briefing",
+    subtitle: "This week's cash answer: three sentences written from the cash radar's figures.",
+    week: "Week",
+    loading: "Preparing the briefing…",
+    failed: "The briefing could not be loaded.",
+    emptyTitle: "No briefing yet",
+    emptyBody: "No bank balance or open invoice is known for this company. Rather than invent something, no briefing was written.",
+    connect: "Connect my data",
+    fallbackNote: "The text was written from a fixed template; the figures come from the radar.",
+    unknownBalance: "The bank balance is unknown: the briefing states no balance.",
+    answerTitle: "What did you do about this briefing?",
+    done: "Done",
+    deferred: "Later",
+    dismissed: "Not needed",
+    saving: "Saving…",
+    saved: "Your answer was saved.",
+    saveFailed: "The answer could not be saved:",
+    radarHint: "What the radar does not count (rent, tax, cheques and so on) is listed on the Cash Radar page.",
+    radarLink: "Open the Cash Radar",
   },
   reviewQueue: {
     title: "{n} analyses await your approval",
