@@ -78,6 +78,42 @@ def _build_slack_payload(decisions: list[AlertDecision], org_name: str = "") -> 
     return {"blocks": blocks}
 
 
+async def send_plain_email(recipient: str, subject: str, body: str) -> str:
+    """Send one plain-text message and say what happened.
+
+    Returns "sent", "not_configured" (no SMTP credentials) or "failed:<reason>".
+    The outbox records the answer on its row; nothing is skipped in silence.
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not settings.smtp_user or not settings.smtp_password:
+        return "not_configured"
+    try:
+        from email.mime.text import MIMEText
+
+        import aiosmtplib
+    except ImportError:
+        return "failed:aiosmtplib is not installed"
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = settings.notification_from
+    msg["To"] = recipient
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_user,
+            password=settings.smtp_password,
+            start_tls=True,
+            timeout=15,
+        )
+    except Exception as exc:  # the reason is kept on the outbox row
+        return f"failed:{type(exc).__name__}: {exc}"
+    return "sent"
+
+
 def _build_email_body(decisions: list[AlertDecision], org_name: str = "") -> tuple[str, str]:
     """Returns (subject, plain-text body)."""
     actionable = [d for d in decisions if d.is_actionable]

@@ -30,6 +30,7 @@ import app.models.audit_log  # noqa: F401
 import app.models.canonical_eng_signal  # noqa: F401
 import app.models.canonical_transaction  # noqa: F401
 import app.models.cash_radar_snapshot  # noqa: F401
+import app.models.outbox_message  # noqa: F401
 import app.models.category_rule  # noqa: F401
 import app.models.company_context  # noqa: F401
 import app.models.company_semantic_snapshot  # noqa: F401
