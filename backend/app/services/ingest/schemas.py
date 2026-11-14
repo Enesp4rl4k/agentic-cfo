@@ -22,6 +22,7 @@ KATEGORI = "kategori"  # Turkish status/severity words → the English the parse
 EVET_HAYIR = "evet_hayir"
 
 BANKA_EKSTRESI = "bank_statement"
+MIZAN = "trial_balance"
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,17 @@ SEMALAR: tuple[Sema, ...] = (
         A("tip", KATEGORI, "type", "işlem tipi", "işlem türü"),
         A("kategori", METIN, "category"),
     ), en_az_biri=("tutar", "borç", "alacak")),
+
+    # A trial balance: no date column, which is what tells it from a statement.
+    # Recognised and previewed only; it is not booked (services/ingest/mizan.py).
+    Sema(MIZAN, "cfo", "Mizan", (
+        A("hesap kodu", METIN, "hesap kod", "muhasebe kodu", "account code", "hesap plani kodu", zorunlu=True),
+        A("hesap adı", METIN, "hesap adi", "hesap ismi", "hesap tanımı", "account name"),
+        A("borç", SAYI, "borc", "borç toplamı", "borc toplami", "debit"),
+        A("alacak", SAYI, "alacak toplamı", "alacak toplami", "credit"),
+        A("borç bakiye", SAYI, "borç bakiyesi", "borc bakiye", "borc bakiyesi", "debit balance"),
+        A("alacak bakiye", SAYI, "alacak bakiyesi", "alacak bakiye", "credit balance"),
+    ), en_az_biri=("borç", "alacak", "borç bakiye", "alacak bakiye")),
 
     # ── CTO ────────────────────────────────────────────────────────────────
     Sema("cloud_billing", "cto", "Bulut / sunucu faturası", (

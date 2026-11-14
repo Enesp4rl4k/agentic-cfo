@@ -92,6 +92,24 @@ describe("Verilerimi Bağla", () => {
     expect(screen.getByText("Brüt Maaş")).toBeInTheDocument();
   });
 
+  it("shows a mizan as read and checked but not added: no page link, no active job", async () => {
+    const mesaj = "Mizan okundu: 7 hesap, borç 2.250.000,00 ₺ / alacak 2.250.000,00 ₺ (dengeli); deftere işlenmedi";
+    veriEkle.mockResolvedValue({
+      job_id: null,
+      dosyalar: [{ dosya: "mizan.csv", durum: "onizleme", mesaj,
+                   mizan: { hesap_sayisi: 7, dengeli: true, fark_kurus: 0, uyarilar: [] },
+                   tanima: tanima({ tur: "trial_balance", alan: "cfo", etiket: "Mizan", satir_sayisi: 7 }) }],
+    });
+    render(<BaglanPage />);
+    drop([new File(["x"], "mizan.csv")]);
+
+    const kart = within((await screen.findByText("mizan.csv")).closest("li") as HTMLElement);
+    expect(kart.getByText(/deftere işlenmedi/)).toBeInTheDocument();
+    // Nothing was saved, so nothing claims it was: no "go to page", no job made active.
+    expect(screen.queryByRole("link", { name: /Sayfaya git/ })).not.toBeInTheDocument();
+    expect(setActiveCFOJob).not.toHaveBeenCalled();
+  });
+
   it("asks when a file fits two kinds, and re-sends it with the choice", async () => {
     const aday = (tur: string, alan: string, etiket: string) => ({ tur, alan, etiket, eslesen: {}, eksik: [] });
     veriEkle.mockResolvedValueOnce({
