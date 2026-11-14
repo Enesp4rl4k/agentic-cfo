@@ -63,6 +63,15 @@ class TopluOnayRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+async def _require_authority(db: AsyncSession, user: User, kayit: SMMMOnayKaydi) -> None:
+    """403 unless the user's role may decide this entry (services/approval_authority)."""
+    from app.services.approval_authority import check
+
+    v = await check(db, user, kayit)
+    if not v.allowed:
+        raise HTTPException(status_code=403, detail=v.reason)
+
+
 def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
     return {
         "id":                    k.id,
@@ -186,6 +195,7 @@ async def onayla(
     await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await _require_authority(db, current_user, kayit)
 
     kayit.durum            = OnayDurumu.ONAYLANDI
     kayit.onaylayan_user_id = _user_id(current_user)
@@ -215,6 +225,7 @@ async def duzeltle(
     await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await _require_authority(db, current_user, kayit)
 
     kayit.durum                  = OnayDurumu.DUZELTILDI
     kayit.onaylayan_user_id      = _user_id(current_user)
@@ -249,6 +260,7 @@ async def reddet(
     await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await _require_authority(db, current_user, kayit)
 
     kayit.durum            = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = _user_id(current_user)
@@ -297,6 +309,15 @@ async def toplu_onayla(
         and can_access(current_user, org_id=jobs[k.job_id].org_id, user_id=jobs[k.job_id].user_id)
     ]
 
+    from app.services.approval_authority import check
+
+    allowed = []
+    for kayit in kayitlar:
+        if (await check(db, current_user, kayit)).allowed:
+            allowed.append(kayit)
+    yetkisiz = len(kayitlar) - len(allowed)
+    kayitlar = allowed
+
     now = datetime.now(UTC)
     approved_ids = []
     for kayit in kayitlar:
@@ -321,6 +342,9 @@ async def toplu_onayla(
             "onaylandi_ids":   approved_ids,
             "requested":       len(req.kayit_idler),
             "skipped":         len(req.kayit_idler) - len(approved_ids),
+            # Of the skipped, how many this role may not decide (the policy
+            # reserves them for the owner or the accountant).
+            "yetkisiz":        yetkisiz,
         },
         "error": None,
     }
