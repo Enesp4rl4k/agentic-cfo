@@ -63,7 +63,8 @@ async def test_the_same_forecast_is_written_once(client):
         first = await record_forecast(db, org_id, radar, today=TODAY)
         second = await record_forecast(db, org_id, radar, today=TODAY)
         await db.commit()
-    assert first is not None and second is not None
+    assert first is not None
+    assert second is not None
     assert first.id == second.id
     assert await _count(client, org_id) == 1
 
@@ -101,7 +102,9 @@ async def test_a_changed_forecast_is_appended_and_the_old_one_kept(client):
             db, org_id, await compute_cash_radar(db, org_id, anchor_date=TODAY), today=TODAY
         )
         await db.commit()
-    assert before is not None and after is not None and before.id != after.id
+    assert before is not None
+    assert after is not None
+    assert before.id != after.id
     assert await _count(client, org_id) == 2
     assert before.snapshot_json["weeks"][0]["end_balance_cents"] == 50_000_00
     assert after.snapshot_json["weeks"][0]["end_balance_cents"] == 40_000_00
