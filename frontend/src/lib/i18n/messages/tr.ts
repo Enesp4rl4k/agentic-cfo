@@ -229,6 +229,21 @@ export const tr: MessageTree = {
     redirecting: "Yönlendiriliyor…",
     managePortal: "Aboneliği yönet",
   },
+  orgSwitcher: {
+    trigger: "Şirket değiştir",
+    menuLabel: "Çalıştığınız şirket",
+    heading: "Şu an çalıştığınız şirket",
+    pick: "Şirket seç",
+    failed: "Şirket değiştirilemedi.",
+    roles: {
+      smmm: "Mali müşavir",
+      owner: "Sahip",
+      admin: "Yönetici",
+      cfo: "CFO",
+      analyst: "Analist",
+      viewer: "İzleyici",
+    },
+  },
   upload: {
     title: "Finansal veri yükle",
     subtitle: "CSV, XLSX veya PDF — CFO pipeline ile analiz.",

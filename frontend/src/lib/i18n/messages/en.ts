@@ -227,6 +227,14 @@ export type MessageTree = {
     redirecting: string;
     managePortal: string;
   };
+  orgSwitcher: {
+    trigger: string;
+    menuLabel: string;
+    heading: string;
+    pick: string;
+    failed: string;
+    roles: Record<string, string>;
+  };
   upload: {
     title: string;
     subtitle: string;
@@ -2370,6 +2378,21 @@ export const en: MessageTree = {
     selectPlan: "Select plan",
     redirecting: "Redirecting…",
     managePortal: "Manage subscription",
+  },
+  orgSwitcher: {
+    trigger: "Switch company",
+    menuLabel: "Company you are working in",
+    heading: "The company you are working in now",
+    pick: "Select company",
+    failed: "Could not switch company.",
+    roles: {
+      smmm: "Accountant",
+      owner: "Owner",
+      admin: "Admin",
+      cfo: "CFO",
+      analyst: "Analyst",
+      viewer: "Viewer",
+    },
   },
   upload: {
     title: "Upload financial data",
