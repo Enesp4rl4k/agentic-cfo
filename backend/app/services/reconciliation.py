@@ -11,6 +11,9 @@ Automatic only where a person would not hesitate:
 - the counterparty's name is in the description, the amount is exact, and only one
   open item fits.
 
+A lump (one transfer paying several invoices of one customer) is never automatic:
+see `_decide_lump`.
+
 Everything else that could be the same money is a *proposal*: the amount alone,
 several invoices that fit, part of an invoice. A proposal holds the line out of
 profit until a person answers, and a "no" is remembered. A movement that fits
@@ -39,6 +42,11 @@ REJECTED = "rejected"
 BY_NUMBER = "invoice_number"
 BY_NAME = "counterparty_and_amount"
 BY_AMOUNT = "amount_only"
+BY_SUM = "sum_of_open_items"
+
+# A lump is searched among one customer's open items; past this many the search is
+# both slow and too likely to find a coincidence, so no guess is made.
+_MAX_LUMP_CANDIDATES = 15
 
 # A payment a few days before the invoice's date happens; months before does not.
 _EARLIEST = timedelta(days=3)
@@ -111,6 +119,56 @@ def _decide(row: CanonicalTransaction, items: list[OpenItem], refused: set[str])
     return None
 
 
+def _decide_lump(
+    row: CanonicalTransaction, items: list[OpenItem], refused: set[str], reserved: set[str]
+) -> list[_Match]:
+    """Several open items of one counterparty that together are exactly this movement.
+
+    Always a proposal, and only when nothing is left to guess: the counterparty's
+    name is in the description, every item is named and not already waiting on an
+    answer, and exactly one combination adds up. A near miss, two combinations
+    with the same total, or items of different customers give no proposal.
+    """
+    day = _day(row.transaction_date)
+    direction = "receivable" if row.direction == "income" else "payable"
+    by_party: dict[str, list[OpenItem]] = {}
+    for i in items:
+        if (
+            i.currency == row.currency and i.id not in refused and i.id not in reserved
+            and _remaining(i) > 0 and i.direction == direction and i.counterparty
+            and day >= i.issue_date - _EARLIEST
+            and _name_in(i.counterparty, row.description)
+        ):
+            by_party.setdefault(fold(i.counterparty), []).append(i)
+
+    found: list[list[OpenItem]] = []
+    for group in by_party.values():
+        if len(group) < 2 or len(group) > _MAX_LUMP_CANDIDATES:
+            continue
+        found.extend(_subsets_totalling(group, row.amount_cents))
+    if len(found) != 1:
+        return []
+    return [_Match(i, _remaining(i), BY_SUM, PROPOSED) for i in found[0]]
+
+
+def _subsets_totalling(group: list[OpenItem], target: int) -> list[list[OpenItem]]:
+    """Every combination of two or more items whose remaining amounts add to target."""
+    out: list[list[OpenItem]] = []
+
+    def walk(start: int, chosen: list[OpenItem], total: int) -> None:
+        if total == target and len(chosen) >= 2:
+            out.append(list(chosen))
+        if total >= target:
+            return
+        for k in range(start, len(group)):
+            chosen.append(group[k])
+            walk(k + 1, chosen, total + _remaining(group[k]))
+            chosen.pop()
+
+    walk(0, [], 0)
+    return out
+
+
 def _soonest(items: list[OpenItem]) -> OpenItem:
     return min(items, key=lambda i: (i.due_date or date.max, i.issue_date))
 
@@ -135,6 +193,7 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
         .where(OpenItemMatch.org_id == org_id)
     )).all()
     taken = {m.ledger_row_id for m in matches if m.status != REJECTED}
+    reserved = {m.open_item_id for m in matches if m.status == PROPOSED}
     refused: dict[str, set[str]] = {}
     for m in matches:
         if m.status == REJECTED:
@@ -156,6 +215,16 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
             continue
         match = _decide(row, items, refused.get(row.id, set()))
         if match is None:
+            lump = _decide_lump(row, items, refused.get(row.id, set()), reserved)
+            for part in lump:
+                db.add(OpenItemMatch(
+                    org_id=org_id, open_item_id=part.item.id, ledger_row_id=row.id,
+                    amount_cents=part.amount, method=part.method, status=part.status,
+                    matched_on=_day(row.transaction_date),
+                ))
+                reserved.add(part.item.id)
+            if lump:
+                counts["proposed"] += 1
             continue
         db.add(OpenItemMatch(
             org_id=org_id, open_item_id=match.item.id, ledger_row_id=row.id,

@@ -15,7 +15,9 @@ grep -q "async def build_packet" backend/app/services/smmm_defensibility.py && o
 grep -q "async def finalize_packet" backend/app/services/smmm_defensibility.py && ok "finalize_packet" || bad "finalize_packet"
 grep -q "def content_hash" backend/app/services/smmm_defensibility.py && ok "content_hash (tamper seal)" || bad "content_hash"
 grep -q "ai_auto_posted\|human_approved\|human_corrected" backend/app/services/smmm_defensibility.py && ok "per-entry decision source" || bad "decision source"
-grep -q "yevmiye_kayitlari" backend/app/api/muhasebe.py && ok "full journal persisted for packet" || bad "journal not persisted"
+# The journal is saved by services/accounting/journal_store.py (shared by the
+# tr-vertical route and POST /runs/{id}/resume); the route must call it.
+grep -q "yevmiye_kayitlari" backend/app/services/accounting/journal_store.py \n  && grep -q "persist_tr_vertical_result" backend/app/api/muhasebe.py \n  && ok "full journal persisted for packet" || bad "journal not persisted"
 grep -q "to_full_dict" backend/app/agents/accounting/orchestrator.py && ok "MuhasebeSonucu.to_full_dict" || bad "to_full_dict"
 grep -q '"/smmm/defensibility/{job_id}/build"' backend/app/api/smmm_defensibility.py && ok "build endpoint" || bad "build endpoint"
 grep -q '"/smmm/defensibility/{packet_id}/finalize"' backend/app/api/smmm_defensibility.py && ok "finalize endpoint" || bad "finalize endpoint"

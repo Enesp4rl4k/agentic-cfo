@@ -198,8 +198,22 @@ async def smmm_add_client(
             detail=f"Plan limitine ulaşıldı ({m.max_clients} müşteri). Pro plana geçin."
         )
 
+    # The client is an organisation of its own, so its documents, ledger and
+    # reports are not mixed into the accountant's. The accountant reaches it by
+    # switching organisation (POST /org/switch).
+    from app.services.org_membership import create_client_org
+
+    client_org = await create_client_org(
+        db,
+        name=req.firma_adi,
+        accountant_user_id=str(current_user.id),
+        home_org_id=str(current_user.org_id) if current_user.org_id else None,
+        home_role=str(current_user.role),
+        vkn=req.vergi_no,
+    )
     client = SMMMMusteriKayit(
         muhasebeci_id = m.id,
+        client_org_id = client_org.id,
         firma_adi     = req.firma_adi,
         vergi_no      = req.vergi_no,
         sektor        = req.sektor,

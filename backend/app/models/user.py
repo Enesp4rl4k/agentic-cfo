@@ -34,6 +34,10 @@ class UserRole(StrEnum):
     CFO      = "cfo"
     ANALYST  = "analyst"
     VIEWER   = "viewer"
+    # An accountant (mali müşavir) acting in a client's organisation. Gets no
+    # owner/admin/cfo privileges there: billing and member management stay
+    # with the client.
+    SMMM = "smmm"
 
 
 class User(Base):
