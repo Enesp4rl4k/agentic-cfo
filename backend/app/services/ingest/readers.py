@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 
+from app.parsers.invoice.makbuz import EARSIV_NS
+
 logger = logging.getLogger("app.agents.data_ingestion")
 
 
@@ -69,7 +71,8 @@ def _read_csv(file_path: str) -> str:
         return f.read()
 
 
-_EBELGE_MARKERS = ("urn:oasis:names:specification:ubl:schema:xsd:", "http://earsiv.efatura.gov.tr")
+# The e-Arşiv marker is GİB's XML namespace, compared as text; it is not a URL anything connects to.
+_EBELGE_MARKERS = ("urn:oasis:names:specification:ubl:schema:xsd:", EARSIV_NS)
 
 
 _EMBEDDED_XML_LIMIT = 10 * 1024 * 1024   # the upload cap; an attachment cannot exceed its file
