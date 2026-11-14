@@ -6,7 +6,6 @@
  * server wrote them (the page computes nothing), a company with nothing known gets no
  * invented calm, and an answer goes to the server and is confirmed only once it is saved.
  */
-import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -18,23 +17,8 @@ vi.mock("@/lib/api/briefing", () => ({
   respondToMondayBriefing: (...args: unknown[]) => respondToMondayBriefing(...args),
 }));
 
-vi.mock("@/hooks/useOrgSettings", () => ({
-  useOrgSettings: () => ({
-    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
-    loading: false,
-    error: null,
-    refresh: () => {},
-    hasTrPack: true,
-    focusMode: false,
-    baseCurrency: "TRY",
-    locale: "tr-TR",
-  }),
-}));
-
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) =>
-    React.createElement("a", { href, ...rest }, children),
-}));
+vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
 import BultenPage from "@/app/(dashboard)/bulten/page";
 
