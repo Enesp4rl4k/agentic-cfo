@@ -335,8 +335,12 @@ def _read_excel(file_path: str) -> str:
 
 
 def _read_csv(file_path: str) -> str:
-    with open(file_path, encoding="utf-8-sig", newline="") as f:
-        return f.read()
+    # UTF-8 first, then Windows-1254: a Turkish bank or ERP export is very often
+    # the latter, and reading it as UTF-8 only ended in a generic ingestion error.
+    from app.services.ingest.table import metin_coz
+
+    with open(file_path, "rb") as f:
+        return metin_coz(f.read())
 
 
 def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any]]:
