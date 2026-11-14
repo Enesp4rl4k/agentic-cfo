@@ -10,6 +10,7 @@ import { DemoBanner } from "@/components/ui/demo-banner";
 import { OnboardingBanner } from "@/components/ui/onboarding-banner";
 import { SystemStatusWidget } from "@/components/ui/system-status";
 import { NotificationBell } from "@/components/ui/notification-bell";
+import { OrgSwitcher } from "@/components/ui/org-switcher";
 import { ThemeIconToggle } from "@/components/ui/theme-toggle";
 import { CommandPaletteTrigger } from "@/components/ui/command-palette";
 import { DocumentLang } from "@/components/ui/document-lang";
@@ -501,6 +502,7 @@ export default function DashboardLayout({
             </div>
             <ThemeIconToggle />
             <NotificationBell />
+            <OrgSwitcher />
             <UserMenu />
           </div>
         </header>
