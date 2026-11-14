@@ -29,6 +29,10 @@ interface OnayKaydi {
   otomatik_confidence:     number | null;
   otomatik_yontem:         string | null;
   onay_neden:              string | null;
+  /** Whether the signed-in role may decide this entry (null: not told). */
+  karar_verebilir?:        boolean | null;
+  /** Why not, in the server's words. */
+  karar_engeli?:           string | null;
   /** Evidence level, what matched, measured accuracy. Null for older entries. */
   guven?:                  Guven | null;
   duzeltilmis_hesap_kodu:  string | null;
@@ -84,6 +88,19 @@ function fmtDate(d: string | null, dateTag: string): string {
   return new Date(d).toLocaleDateString(dateTag, { day: "2-digit", month: "short", year: "numeric" });
 }
 
+/**
+ * The server's reason when a decision was refused for the role (403) — the
+ * policy reserves the entry for the owner or the accountant, and "failed"
+ * alone leaves a person guessing. Anything else (network, 5xx) gets the
+ * page's own wording.
+ */
+function refusalReason(e: unknown): string | null {
+  if (e instanceof Error && (e as Error & { status?: number }).status === 403 && e.message) {
+    return e.message;
+  }
+  return null;
+}
+
 // ── Düzeltme modal ────────────────────────────────────────────────────────────
 
 function DuzelModal({
@@ -110,8 +127,8 @@ function DuzelModal({
         aciklama:   aciklama || null,
       });
       onSuccess();
-    } catch {
-      setError(d.saveError);
+    } catch (e) {
+      setError(refusalReason(e) ?? d.saveError);
     } finally {
       setLoading(false);
     }
@@ -180,8 +197,8 @@ function RedModal({
     try {
       await apiClient.post(`/smmm/onay/${kayit.id}/reddet`, { neden });
       onSuccess();
-    } catch {
-      setError(r.rejectError);
+    } catch (e) {
+      setError(refusalReason(e) ?? r.rejectError);
     } finally {
       setLoading(false);
     }
@@ -233,20 +250,24 @@ function OnayCard({
   const [showDuzel,   setShowDuzel]   = useState(false);
   const [showReddet,  setShowReddet]  = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleOnayla() {
     setActionLoading(true);
+    setActionError(null);
     try {
       await apiClient.post(`/smmm/onay/${kayit.id}/onayla`, {});
       onRefresh();
-    } catch {
-      // silently fail for now
+    } catch (e) {
+      setActionError(refusalReason(e) ?? actions.approveError);
     } finally {
       setActionLoading(false);
     }
   }
 
   const isBekliyor = kayit.durum === "bekliyor";
+  // The role cannot decide this one: shown, with the reason, but not offered.
+  const engelli = isBekliyor && kayit.karar_verebilir === false;
 
   return (
     <>
@@ -258,7 +279,7 @@ function OnayCard({
         <div className="flex items-start gap-3 p-3">
           {/* Checkbox (only for bekliyor) */}
           {isBekliyor && (
-            <input type="checkbox" checked={selected}
+            <input type="checkbox" checked={selected} disabled={engelli}
               onChange={(e) => onSelect(kayit.id, e.target.checked)}
               className="mt-1 h-3.5 w-3.5 rounded border-border"
               aria-label={card.selectAria.replace("{name}", kayit.tx_description ?? "")}
@@ -294,6 +315,14 @@ function OnayCard({
                 ⚠ {kayit.onay_neden}
               </p>
             )}
+            {engelli && kayit.karar_engeli && (
+              <p className="text-[11px] text-muted-foreground border border-border rounded px-2 py-1">
+                {kayit.karar_engeli}
+              </p>
+            )}
+            {actionError && (
+              <p role="alert" className="text-[11px] text-red-400">{actionError}</p>
+            )}
 
             {/* Expandable details */}
             {kayit.orijinal_kayit && (
@@ -317,7 +346,7 @@ function OnayCard({
             <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={handleOnayla}
-                disabled={actionLoading}
+                disabled={actionLoading || engelli}
                 className="rounded p-1.5 text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
                 title={actions.approve}
                 aria-label={actions.approve}
@@ -326,7 +355,7 @@ function OnayCard({
               </button>
               <button
                 onClick={() => setShowDuzel(true)}
-                disabled={actionLoading}
+                disabled={actionLoading || engelli}
                 className="rounded p-1.5 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50"
                 title={actions.correct}
                 aria-label={actions.correct}
@@ -335,7 +364,7 @@ function OnayCard({
               </button>
               <button
                 onClick={() => setShowReddet(true)}
-                disabled={actionLoading}
+                disabled={actionLoading || engelli}
                 className="rounded p-1.5 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
                 title={actions.reject}
                 aria-label={actions.reject}
@@ -399,7 +428,13 @@ export default function SMMMonayPage() {
 
   function handleSelectAll(checked: boolean) {
     if (checked) {
-      setSelected(new Set(kayitlar.filter((k) => k.durum === "bekliyor").map((k) => k.id)));
+      setSelected(
+        new Set(
+          kayitlar
+            .filter((k) => k.durum === "bekliyor" && k.karar_verebilir !== false)
+            .map((k) => k.id),
+        ),
+      );
     } else {
       setSelected(new Set());
     }
@@ -412,8 +447,8 @@ export default function SMMMonayPage() {
     try {
       await apiClient.post("/smmm/onay/toplu-onayla", { kayit_idler: Array.from(selected) });
       fetchData();
-    } catch {
-      setError(st.bulk.error);
+    } catch (e) {
+      setError(refusalReason(e) ?? st.bulk.error);
     } finally {
       setBulkLoading(false);
     }

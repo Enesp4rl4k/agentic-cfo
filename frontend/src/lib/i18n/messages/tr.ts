@@ -1608,6 +1608,7 @@ export const tr: MessageTree = {
       approve: "Onayla",
       correct: "Düzelt ve Onayla",
       reject: "Reddet",
+      approveError: "Onaylanamadı.",
     },
     empty: {
       allApproved: "Tüm kayıtlar onaylandı — kuyruk boş!",

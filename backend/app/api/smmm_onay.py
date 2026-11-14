@@ -72,7 +72,8 @@ async def _require_authority(db: AsyncSession, user: User, kayit: SMMMOnayKaydi)
         raise HTTPException(status_code=403, detail=v.reason)
 
 
-def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
+def _kayit_to_dict(k: SMMMOnayKaydi, v: Any = None) -> dict[str, Any]:
+    """`v` is the caller's `approval_authority.Verdict` for this row, if known."""
     return {
         "id":                    k.id,
         "job_id":                k.job_id,
@@ -98,6 +99,10 @@ def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
         "onay_notu":             k.onay_notu,
         "created_at":            k.created_at.isoformat(),
         "updated_at":            k.updated_at.isoformat(),
+        # Whether the *caller's* role may decide this entry, and if not why —
+        # the same rule the routes enforce, so the page does not copy it.
+        "karar_verebilir":       None if v is None else v.allowed,
+        "karar_engeli":          (v.reason or None) if v is not None else None,
     }
 
 
@@ -140,13 +145,20 @@ async def get_onay_queue(
     result = await db.execute(query.limit(limit).offset(offset))
     kayitlar = result.scalars().all()
 
+    from app.services.approval_authority import org_has_smmm, verdict
+
+    has_smmm = await org_has_smmm(db, str(org_id) if org_id else None)
+
+    def _verdict_for(k: SMMMOnayKaydi) -> Any:
+        return verdict(str(current_user.role), (k.orijinal_kayit or {}).get("authority"), has_smmm)
+
     return {
         "data": {
             "total":   total,
             "limit":   limit,
             "offset":  offset,
             "durum":   durum,
-            "kayitlar": [_kayit_to_dict(k) for k in kayitlar],
+            "kayitlar": [_kayit_to_dict(k, _verdict_for(k)) for k in kayitlar],
         },
         "error": None,
     }
