@@ -84,7 +84,7 @@ def _adres_yaniti(adres: EmailIngestAddress | None) -> dict[str, Any]:
             "bu adrese iletin.",
             "Her ay elle iletmek istemiyorsanız, e-posta programınızda bu gönderenden gelen postaları "
             "bu adrese otomatik ileten bir kural kurun.",
-            "Excel, CSV ve PDF ekleri okunur; e-postanın metni okunmaz.",
+            "Excel, CSV, PDF ve e-Fatura (XML) ekleri okunur; e-postanın metni okunmaz.",
             "Adresi bilen herkes şirketinize dosya gönderebilir. Başkasıyla paylaşıldıysa 'Adresi yenile' "
             "ile değiştirin; eski adrese gelen posta reddedilir.",
         ],
@@ -245,7 +245,7 @@ async def email_inbound(request: Request, db: AsyncSession = Depends(get_db)) ->
                 "etiket": (d.get("tanima") or {}).get("etiket")})
     if not parsed.attachments:
         sonuclar.append({"dosya": None, "durum": "ek_yok",
-                         "mesaj": "E-postada okunabilir ek yok (Excel, CSV ya da PDF)."})
+                         "mesaj": "E-postada okunabilir ek yok (Excel, CSV, PDF ya da e-Fatura XML)."})
 
     db.add(EmailIngestMessage(
         org_id=adres.org_id, address_id=adres.id, sender=(parsed.sender or "")[:500],

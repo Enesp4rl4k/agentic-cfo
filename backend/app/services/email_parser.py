@@ -52,6 +52,10 @@ ALLOWED_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "text/csv",
     "text/plain",
+    # An e-Fatura / e-Arşiv invoice. It is checked for DTD/ENTITY at the door
+    # (upload_service.validate_xml_payload) before anything parses it.
+    "application/xml",
+    "text/xml",
     "application/octet-stream",   # many email clients use this for CSV
 }
 
@@ -59,7 +63,7 @@ ALLOWED_MIME_TYPES = {
 FINANCIAL_PATTERNS = [
     re.compile(r"(hesap|ekstr|banka|odeme|fatura|rapor|gelir|gider|muhasebe)", re.I),
     re.compile(r"(account|statement|invoice|report|balance|transaction)", re.I),
-    re.compile(r"\.(pdf|xls|xlsx|csv)$", re.I),
+    re.compile(r"\.(pdf|xls|xlsx|csv|xml)$", re.I),
 ]
 
 BANK_SENDER_PATTERNS = {
@@ -201,7 +205,7 @@ class EmailParser:
             # Check MIME type
             if mime_type not in ALLOWED_MIME_TYPES:
                 # Also accept if filename has known extension
-                if not re.search(r"\.(pdf|xls|xlsx|csv)$", filename, re.I):
+                if not re.search(r"\.(pdf|xls|xlsx|csv|xml)$", filename, re.I):
                     logger.debug("Skipping attachment: mime=%s filename=%s", mime_type, filename)
                     continue
 
