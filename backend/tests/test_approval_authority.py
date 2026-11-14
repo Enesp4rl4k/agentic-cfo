@@ -187,3 +187,20 @@ async def test_bulk_approval_only_approves_what_the_role_may_decide(client):
     d = r2.json()["data"]
     assert d["onaylandi_count"] == 0 and d["yetkisiz"] == 1
     assert await _durum(client, row_a) == OnayDurumu.BEKLIYOR
+
+
+@pytest.mark.asyncio
+async def test_the_queue_tells_the_page_what_this_role_may_decide_and_why_not(client):
+    h, _org, row = await _org_with_queue(client, role="analyst", authority=OWNER_REQ)
+    item = (await client.get(f"{P}/queue", headers=h)).json()["data"]["kayitlar"][0]
+    assert item["id"] == row
+    assert item["karar_verebilir"] is False and "rol" in item["karar_engeli"]
+
+    # An admin is a role that decides, just not this entry: the reason names the owner.
+    h3, _org3, _row3 = await _org_with_queue(client, role="admin", authority=OWNER_REQ)
+    adm = (await client.get(f"{P}/queue", headers=h3)).json()["data"]["kayitlar"][0]
+    assert adm["karar_verebilir"] is False and "owner" in adm["karar_engeli"]
+
+    h2, _org2, _row2 = await _org_with_queue(client, role="owner", authority=OWNER_REQ)
+    ok = (await client.get(f"{P}/queue", headers=h2)).json()["data"]["kayitlar"][0]
+    assert ok["karar_verebilir"] is True and ok["karar_engeli"] is None

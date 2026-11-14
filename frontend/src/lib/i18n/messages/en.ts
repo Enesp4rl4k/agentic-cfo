@@ -1519,6 +1519,7 @@ export type MessageTree = {
       approve: string;
       correct: string;
       reject: string;
+      approveError: string;
     };
     empty: {
       allApproved: string;
@@ -3759,6 +3760,7 @@ export const en: MessageTree = {
       approve: "Approve",
       correct: "Correct and approve",
       reject: "Reject",
+      approveError: "Could not approve.",
     },
     empty: {
       allApproved: "All entries approved — the queue is empty!",
