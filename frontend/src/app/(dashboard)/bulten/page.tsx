@@ -17,7 +17,7 @@ const BRIEFING_KEY = ["monday-briefing"];
 
 type Copy = ReturnType<typeof useI18n>["t"]["bulten"];
 
-function Sentences({ briefing, copy }: { briefing: MondayBriefing; copy: Copy }) {
+function Sentences({ briefing, copy }: Readonly<{ briefing: MondayBriefing; copy: Copy }>) {
   return (
     <Card className="space-y-3 p-4">
       <p className="text-xs text-muted-foreground tabular-nums">
@@ -33,7 +33,7 @@ function Sentences({ briefing, copy }: { briefing: MondayBriefing; copy: Copy })
   );
 }
 
-function Answer({ briefing, copy }: { briefing: MondayBriefing; copy: Copy }) {
+function Answer({ briefing, copy }: Readonly<{ briefing: MondayBriefing; copy: Copy }>) {
   const answer = useMutation({
     mutationFn: (response: BriefingResponse) => respondToMondayBriefing(response, briefing.week_start),
   });
