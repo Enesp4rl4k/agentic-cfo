@@ -445,3 +445,17 @@ Her PR bir O/M aşaması ve G numarası yazar, kırmızı testle başlar, `verif
 ### 16.3 Sahip kararları (pilotun kritik yolu)
 
 G18 barındırma sağlayıcısı (staging, geri yükleme tatbikatı), G19 KVKK ve hukuki gözden geçirme, G20 pilot şirketler ve gerçek veri (mali müşavir kanalı; M1 hazır), model API anahtarı (S3), GİB/SGK/KAP/TCMB indirme izni (S2, G14). S1 ve S2 bu kararlar olmadan biter; §1'in ölçütü bu kararlar olmadan tutmaz.
+
+### 16.4 S1 ayrıntısı (PR PR)
+
+- **S1.1 tahmin günlüğü:** #47.
+- **S1.2 bülten ekranı** (frontend): `/bulten` sayfası, odak menüsünde Nakit Radarı'nın altında; üç cümle, hafta aralığı, "radara dahil değil" listesi; Yaptım/Ertele/Gerek yok düğmeleri `POST /briefing/monday/respond`'a gider. Verisi olmayan şirkete sahte bir sakinlik değil, ne bağlanacağı yazılır. Test: vitest (sayılar API'deki gibi, düğme doğru isteği atar, `has_data=false` boş durumu).
+- **S1.3 bülten e-postası:** `_dispatch_monday_briefings` e-posta da gönderir; alıcı sahip, kullanıcı ayarıyla kapatılabilir. `briefing_id` gönderim anahtarıdır, aynı bülten iki kez gitmez. SMTP yoksa sessizce atlanmaz, "gönderilmedi" kaydı düşer ve ekranda görünür. Test: sahte SMTP.
+- **S1.4 G8:** `ledger.company_rows` bir dönem alır (varsayılan son verinin ayıyla biten 12 ay); şirket görünümü, P&L ve Command Center dönem etiketini gösterir.
+- **S1.5 G3:** kategori düzeltmesi aynı `source_record_id`'li defter satırını günceller ve görünümü yeniler. S1.4'ten sonra, aynı dosyalara dokunur.
+- **S1.6 G16:** menü, radar ve bülten metinleri `lib/i18n/messages`'a; layout'ta sabit metin kalırsa test düşer.
+- **G25** master'da yok (zip yalnız commit'siz ağaçta); S1'den çıkarıldı, commit'siz kod alınmaz.
+
+Sıra: S1.2 → S1.3 → S1.4 → S1.5; S1.6 paralel. Çıkış ölçütü: örnek bir şirkette belge → radar → `/bulten` → yanıt → e-posta canlıda uçtan uca.
+
+S1 içindeki sahip kararları: müşaviri olan şirkette e-posta müşavir onayını bekler mi (öneri: e-posta bekler, ekran beklemez; SMMM D5), e-posta gönderen sağlayıcı (G18 ile birlikte), G8 varsayılan dönemi (öneri: son 12 ay).
