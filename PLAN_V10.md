@@ -227,7 +227,7 @@ Bu bölüm, §1'deki pilot hedefinin **mühendislik tarafıdır**: pilotun dayan
 
 ### 13.2 İlkeler: veriyi tasarla, projeyi değil
 
-*Designing Data-Intensive Applications*'dan, bu depoda zaten `DDIA_COMPLIANCE.md` ve plan v5 §V5'te geçen ilkelerin bu plana uyarlanışı. Kural: **bir özellik, hangi veriyi türettiğini, kaynağını ve yeniden üretilebilirliğini yazmadan başlamaz.**
+*Designing Data-Intensive Applications*'dan, bu depoda zaten `docs/arsiv/DDIA_COMPLIANCE.md` ve plan v5 §V5'te geçen ilkelerin bu plana uyarlanışı. Kural: **bir özellik, hangi veriyi türettiğini, kaynağını ve yeniden üretilebilirliğini yazmadan başlamaz.**
 
 1. **Tek doğruluk kaynağı.** Para defterdedir (`canonical_transactions`, `open_items`). Şirket görünümü, radar, özet ve bülten **türetilmiş veridir**; hiçbiri kendi kaynağını saklamaz.
 2. **Türetilmiş veri silinip yeniden üretilebilir.** Her görünüm defterden saf bir fonksiyonla hesaplanır. Test: görünümü sil, yeniden hesapla, rakamlar aynı çıkmalı.
