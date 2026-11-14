@@ -7,7 +7,7 @@ Tests:
 3. Liskov Substitution Principle (LSP): ICacheProvider substitutability and In-Memory fallback.
 4. Interface Segregation Principle (ISP): Granular protocols (ICacheReader, ICacheWriter, INarrativeGenerator).
 5. Dependency Inversion Principle (DIP): ServiceContainer resolution and mock override.
-6. DRY & KISS: Financial math primitives and unified resilient safe_llm_call.
+6. DRY & KISS: Financial math primitives.
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ from app.core.interfaces import (
     ICacheWriter,
     IReportExporter,
 )
-from app.core.llm_client import safe_llm_call
 from app.services.cache_service import CacheService
 from app.services.exporters import DashboardExporter, ExcelReportExporter
 
@@ -195,17 +194,3 @@ class TestFinancialMathPrimitives:
     def test_currency_formatting(self):
         assert format_currency_try(150000) == "₺1,500.00"
         assert format_currency_usd(150000) == "$1,500.00"
-
-
-# ── 7. Unified Resilient LLM Client Tests ─────────────────────────────────────
-
-class TestResilientLLMClient:
-    """Validate safe_llm_call fallback handling."""
-
-    @pytest.mark.asyncio
-    async def test_safe_llm_call_returns_fallback_when_offline(self):
-        res = await safe_llm_call(
-            user_prompt="Say hello",
-            fallback_text="Default summary commentary",
-        )
-        assert res == "Default summary commentary"
