@@ -36,104 +36,19 @@ import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { visibleNavGroups } from "@/lib/nav-focus";
+import { NAV_GROUPS } from "@/lib/nav-items";
 import { useI18n } from "@/hooks/useI18n";
-
-// ── Nav groups ────────────────────────────────────────────────────────────────
-
-const NAV_GROUPS = [
-  {
-    label: "General",
-    items: [
-      { href: "/baslangic",     label: "Başlangıç",      icon: Rocket },
-      { href: "/command-center", label: "Command Center", icon: Activity },
-      { href: "/nakit-radari",  label: "Nakit Radarı",   icon: Waves },
-      { href: "/bulten",         label: "Pazartesi Bülteni", icon: Newspaper },
-      { href: "/kurumsallasma",  label: "Kurumsallaşma",  icon: TrendingUp },
-      { href: "/iliskili-taraf", label: "İlişkili Taraf",  icon: Users },
-      { href: "/pnl",            label: "Dashboard",      icon: LayoutDashboard },
-      { href: "/baglan",         label: "Verilerimi Bağla", icon: Link2 },
-      { href: "/upload",         label: "Upload",         icon: Upload },
-    ],
-  },
-  {
-    label: "Finance",
-    items: [
-      { href: "/pnl",      label: "P&L",       icon: DollarSign },
-      { href: "/cashflow", label: "Cash Flow",  icon: Waves },
-      { href: "/forecast", label: "Forecast",   icon: TrendingUp },
-      { href: "/budget",   label: "Budget",     icon: PieChart },
-      { href: "/tax",      label: "Tax",        icon: Receipt },
-    ],
-  },
-  {
-    label: "Analytics",
-    items: [
-      { href: "/trends",                    label: "Trends",          icon: BarChart2 },
-      { href: "/anomalies",                 label: "Anomalies",       icon: ShieldAlert },
-      { href: "/transactions",              label: "Transactions",    icon: ArrowRightLeft },
-      { href: "/analytics/monte-carlo",     label: "Monte Carlo",     icon: TrendingUp },
-      { href: "/analytics/working-capital", label: "Working Capital", icon: DollarSign },
-      { href: "/analytics/break-even",      label: "Break-Even",      icon: BarChart2 },
-      { href: "/analytics/cohort",          label: "Cohort",          icon: Users },
-    ],
-  },
-  {
-    label: "C-Suite",
-    items: [
-      { href: "/cfo",        label: "CFO View",    icon: DollarSign },
-      { href: "/cto",        label: "CTO View",    icon: Cpu },
-      { href: "/ceo",        label: "CEO View",    icon: Crown },
-      { href: "/cmo",        label: "CMO View",    icon: Megaphone },
-      { href: "/coo",        label: "COO View",    icon: Layers },
-      { href: "/chro",       label: "CHRO View",   icon: Users },
-    ],
-  },
-  {
-    label: "Risk & Compliance",
-    items: [
-      { href: "/risk",         label: "Risk",              icon: Shield },
-      { href: "/risk/cascade", label: "Cascade Sim.",      icon: Zap },
-      { href: "/compliance",   label: "Compliance",        icon: ShieldCheck },
-      { href: "/audit",        label: "Internal Audit",    icon: FileSearch },
-      { href: "/sensitivity",  label: "What-If",           icon: Activity },
-      { href: "/tetikler",     label: "Tetikler",          icon: Filter },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      { href: "/chat",          label: "CFO Chat",        icon: MessageSquare },
-      { href: "/reports",       label: "Reports",         icon: FileText },
-      { href: "/intelligence",  label: "Intelligence",    icon: Activity },
-      { href: "/simulation",    label: "Simulation",      icon: Zap },
-      { href: "/integrations",  label: "Integrations",    icon: Link2 },
-      { href: "/templates",     label: "CSV Templates",   icon: Download },
-    ],
-  },
-  {
-    label: "Portal",
-    items: [
-      { href: "/tr-vertical", label: "TR Autopilot (L3)",        icon: Zap, trPack: true },
-      { href: "/smmm",        label: "Turkey accounting review", icon: Users, trPack: true },
-      { href: "/smmm-onay",   label: "SMMM approvals",           icon: FileCheck, trPack: true },
-      { href: "/billing",     label: "Billing",                  icon: CreditCard },
-      { href: "/settings/alerts", label: "Alerts",               icon: Zap },
-      { href: "/settings/workspace", label: "Workspace", icon: Building2 },
-      { href: "/pilot",       label: "Pilot Program",  icon: Users },
-    ],
-  },
-];
 
 // Flat list for helpers
 const allNavItems = NAV_GROUPS.flatMap((g) => g.items);
 
 const STATUS_CONFIG = {
-  completed:       { icon: CheckCircle, className: "text-emerald-400", label: "Completed" },
-  failed:          { icon: AlertCircle, className: "text-destructive",  label: "Failed" },
-  pending:         { icon: Loader2,     className: "text-primary animate-spin", label: "Pending" },
-  ingesting:       { icon: Loader2,     className: "text-primary animate-spin", label: "Ingesting" },
-  analyzing:       { icon: Loader2,     className: "text-primary animate-spin", label: "Analyzing" },
-  awaiting_review: { icon: Clock,       className: "text-warning", label: "Review" },
+  completed:       { icon: CheckCircle, className: "text-emerald-400" },
+  failed:          { icon: AlertCircle, className: "text-destructive" },
+  pending:         { icon: Loader2,     className: "text-primary animate-spin" },
+  ingesting:       { icon: Loader2,     className: "text-primary animate-spin" },
+  analyzing:       { icon: Loader2,     className: "text-primary animate-spin" },
+  awaiting_review: { icon: Clock,       className: "text-warning" },
 } as const;
 
 // ── User menu ─────────────────────────────────────────────────────────────────
@@ -228,7 +143,7 @@ function UserMenu() {
 
 function JobStatusIcon({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? {
-    icon: Clock, className: "text-muted-foreground", label: status,
+    icon: Clock, className: "text-muted-foreground",
   };
   const Icon = cfg.icon;
   return <Icon className={cn("h-3 w-3 shrink-0", cfg.className)} aria-hidden="true" />;
@@ -249,7 +164,7 @@ function SidebarContent({
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
   const { hasTrPack, focusMode } = useOrgSettings();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   function navHref(href: string) {
     if (jobId && href !== "/upload") return `${href}?job=${jobId}`;
@@ -281,12 +196,12 @@ function SidebarContent({
           return (
           <details key={group.label} className="group/nav mb-1" open={hasCurrentPage || index === 0}>
             <summary className="mx-2 flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground [&::-webkit-details-marker]:hidden">
-              <span>{group.label.toUpperCase()}</span>
+              <span>{t.menu.groups[group.label].toLocaleUpperCase(locale)}</span>
               <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
             </summary>
             <div className="space-y-0.5 px-2 pb-1">
               {group.items.map((navItem) => {
-                const { href, label, icon: Icon } = navItem;
+                const { href, labelKey, icon: Icon } = navItem;
                 const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
                 return (
                   <Link
@@ -321,7 +236,7 @@ function SidebarContent({
                       aria-hidden="true"
                     />
 
-                    <span className="flex-1 truncate">{label}</span>
+                    <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
 
                     {href === "/anomalies" && anomalyCritical > 0 && (
                       <span
@@ -395,6 +310,7 @@ function SidebarContent({
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 
 function Breadcrumb({ pathname }: { pathname: string }) {
+  const { t } = useI18n();
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
   const current = allNavItems.find((item) => item.href === activeBase || item.href === pathname);
   if (!current || pathname === "/") return null;
@@ -402,10 +318,10 @@ function Breadcrumb({ pathname }: { pathname: string }) {
   return (
     <nav aria-label="Breadcrumb" className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
       <Link href="/" className="transition-colors hover:text-foreground">
-        Dashboard
+        {t.menu.items.dashboard}
       </Link>
       <span aria-hidden="true">/</span>
-      <span className="font-medium text-foreground">{current.label}</span>
+      <span className="font-medium text-foreground">{t.menu.items[current.labelKey]}</span>
     </nav>
   );
 }
