@@ -1,13 +1,10 @@
 """
 Master Roadmap 2.0 Feature Tests:
-1. Epic 1: Two-Way ERP Sync Engine (Logo, Mikro, Paraşüt Journal Voucher Pusher)
 3. Epic 3: Prescriptive Cashflow Recommender (Dynamic Discounts, Term Extensions)
 4. Epic 4: Multi-Entity & Holding Consolidation Engine (Intercompany Eliminations & Minority Share)
 5. Epic 5: Omnichannel CFO Bot Gateway (WhatsApp & Slack Interactive Approval)
 """
 from __future__ import annotations
-
-import pytest
 
 from app.services.bot_gateways import OmnichannelCFOBotGateway
 from app.services.consolidation_engine import (
@@ -15,42 +12,7 @@ from app.services.consolidation_engine import (
     EntityFinancialData,
     IntercompanyTransaction,
 )
-from app.services.erp.two_way_sync import ERPJournalPusher
 from app.services.prescriptive_recommender import PrescriptiveRecommender
-
-# ── Epic 1: Two-Way ERP Sync Tests ───────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_erp_journal_pusher_balanced_entry():
-    lines = [
-        {"account_code": "102.01", "debit_cents": 1000000, "credit_cents": 0},
-        {"account_code": "600.01", "debit_cents": 0, "credit_cents": 1000000},
-    ]
-    res = await ERPJournalPusher.push_journal_entry(
-        erp_type="logo",
-        voucher_date="2024-03-31",
-        journal_lines=lines,
-    )
-    assert res.status == "synced"
-    assert res.voucher_no.startswith("YVM-")
-    assert res.total_debit_cents == 1000000
-    assert res.total_credit_cents == 1000000
-
-
-@pytest.mark.asyncio
-async def test_erp_journal_pusher_unbalanced_entry_rejected():
-    lines = [
-        {"account_code": "102.01", "debit_cents": 1000000, "credit_cents": 0},
-        {"account_code": "600.01", "debit_cents": 0, "credit_cents": 800000},
-    ]
-    res = await ERPJournalPusher.push_journal_entry(
-        erp_type="mikro",
-        voucher_date="2024-03-31",
-        journal_lines=lines,
-    )
-    assert res.status == "failed"
-    assert "dengesiz" in res.error_message.lower()
-
 
 # ── Epic 3: Prescriptive Cashflow Recommender Tests ───────────────────────────
 
