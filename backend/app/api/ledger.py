@@ -1,7 +1,7 @@
 """The company ledger: what it holds, and the rows waiting for a person."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -240,7 +240,15 @@ async def get_cash_radar(
             parsed_anchor = date.fromisoformat(anchor_date)
         except ValueError:
             raise HTTPException(400, "Geçersiz tarih biçimi (YYYY-AA-GG bekleniyor).") from None
-    result = await compute_cash_radar(db, _org(user), anchor_date=parsed_anchor)
+    org_id = _org(user)
+    result = await compute_cash_radar(db, org_id, anchor_date=parsed_anchor)
+    # O5: what the owner sees today is kept as today's forecast. A past anchor is
+    # hindsight and record_forecast refuses it.
+    from app.services.radar_forecast_log import knows_something, record_forecast
+
+    if knows_something(result):
+        await record_forecast(db, org_id, result, today=datetime.now(UTC).date())
+        await db.commit()
     return {"data": result.to_dict(), "error": None}
 
 

@@ -9,6 +9,7 @@ from app.models.audit_log import AuditLog
 from app.models.authority_policy import AuthorityPolicy
 from app.models.canonical_eng_signal import CanonicalEngSignal
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.cash_radar_snapshot import CashRadarSnapshot
 from app.models.category_rule import CategoryRule
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
@@ -59,6 +60,7 @@ __all__ = [
     "BreachNotification",
     "CanonicalEngSignal",
     "CanonicalTransaction",
+    "CashRadarSnapshot",
     "CategoryRule",
     "CompanyContextSnapshot",
     "CompanySemanticSnapshotRow",
