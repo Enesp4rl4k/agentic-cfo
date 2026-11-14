@@ -1,5 +1,5 @@
 """
-Email Parser Service — Pasif Intelligence (PLAN.md #2)
+Email Parser Service — Pasif Intelligence (docs/arsiv/PLAN.md #2)
 
 Vizyon: Muhasebe yazılımı her ay PDF/Excel rapor emailler.
 Kullanıcı bu emaili bizim webhook adresine yönlendiriyor.
