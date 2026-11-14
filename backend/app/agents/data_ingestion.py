@@ -639,15 +639,18 @@ def _try_parse_ubl_xml(
             logger.info("UBL belgesi fatura değil, makbuz olarak deneniyor: %s", exc)
             return _try_parse_makbuz(raw_text, own_vkn)
 
-        is_income = inv.direction == "sale"
+        # What it does to our books: the side we are on, except for a return, which
+        # undoes the opposite deal (UBLTRInvoice.economic_direction).
+        is_income = inv.economic_direction == "sale"
         tx_type = "income" if is_income else "expense"
         # "sales" is not in _CATEGORY_MAP; the vocabulary's income term is
         # "revenue". Every other producer uses _guess_category, which can
         # only return a known category — this line was the one that could
         # not, so nothing downstream recognised what it emitted.
         category = "revenue" if is_income else "cogs"
+        # The other party on the document, whichever way the money goes back.
         counterparty = (
-            inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
+            inv.customer.title if inv.direction == "sale" else (inv.supplier.title or "Tedarikçi")
         )
 
         amount_cents = amount_to_cents(
@@ -659,6 +662,11 @@ def _try_parse_ubl_xml(
         # rate, or tax components that do not reach the invoice's own total,
         # also mean we did not understand the document well enough to book it.
         confidence = 0.4 if inv.needs_review else 0.95
+        if inv.is_return:
+            # "The issuer is the one returning" is an assumption (GİB's rule for
+            # iade invoices); a wrong guess reverses the wrong side. So a return is
+            # never posted unattended: below the 0.80 gate, the accountant decides.
+            confidence = min(confidence, 0.7)
         note = f" | Yön: {inv.direction} ({inv.direction_basis})"
         if inv.posting_note:
             note += f" | Kayıt üretilmedi: {inv.posting_note}"
@@ -684,12 +692,18 @@ def _try_parse_ubl_xml(
         )
 
         return [{
-            "amount_cents": abs(amount_cents),
+            # A return keeps its sign, as a correction in the source books does: it
+            # reduces revenue or cost, and the P&L sums it as it stands.
+            "amount_cents": -abs(amount_cents) if inv.is_return else abs(amount_cents),
+            "iade": inv.is_return,
             "kdv_cents": kdv_cents,
             "currency": inv.currency_code or "TRY",
             "type": tx_type,
             "category": category,
-            "description": f"e-Fatura {inv.invoice_number}: {counterparty}",
+            "description": (
+                f"e-Fatura İADE {inv.invoice_number}: {counterparty}" if inv.is_return
+                else f"e-Fatura {inv.invoice_number}: {counterparty}"
+            ),
             "vendor": counterparty if not is_income else None,
             "transaction_date": inv.issue_date.isoformat() if inv.issue_date else None,
             "raw_text": (

@@ -113,11 +113,29 @@ class ParsedUBLInvoice(BaseModel):
 
     # Are we the seller or the buyer? Settled by VKN, never by invoice type.
     direction: InvoiceDirection = "unknown"
+    # An IADE (return) invoice: issued by the party who returns the goods, so it
+    # undoes what it returns instead of being a sale or a purchase of its own.
+    # GİB's rule, and the one assumption separating the two readings; see
+    # `economic_direction`.
+    is_return: bool = False
     # What the direction keyed on, so a reviewer can judge it rather than trust it.
     direction_basis: str = ""
     # Empty when the invoice was posted. Otherwise it says, in the reviewer's
     # language, why no entry was generated.
     posting_note: str = ""
+
+    @property
+    def economic_direction(self) -> InvoiceDirection:
+        """What the invoice does to *our* books.
+
+        `direction` says which side of the document we are on (issuer = "sale").
+        An ordinary invoice does what its side says. A return is issued by the one
+        returning the goods, so the issuer undoes a purchase and the receiver undoes
+        a sale: the opposite of the document side.
+        """
+        if not self.is_return or self.direction == "unknown":
+            return self.direction
+        return "purchase" if self.direction == "sale" else "sale"
 
     @property
     def needs_review(self) -> bool:
@@ -367,12 +385,21 @@ class UBLTRInvoiceParser:
 
         # 7. Which side are we on?
         direction, basis = cls._resolve_direction(own_vkn, supplier, customer)
+        is_return = "IADE" in inv_type
+        if is_return and direction in ("sale", "purchase"):
+            basis += " | iade faturası: düzenleyen taraf malı iade eden sayıldı"
+        # A return books the opposite of the side we are on, and names the other
+        # party as the vendor or customer of the original deal.
+        eco = direction
+        if is_return and direction in ("sale", "purchase"):
+            eco = "purchase" if direction == "sale" else "sale"
 
         # 8. Generate Turkish Uniform Chart of Accounts (TDHP) Journal Entries
         journal_entries, posting_note = cls._generate_tdhp_entries(
-            direction=direction,
-            supplier=supplier,
-            customer=customer,
+            direction=eco,
+            supplier=customer if is_return else supplier,
+            customer=supplier if is_return else customer,
+            reverse=is_return and eco != "unknown",
             tax_exclusive=tax_excl_total or line_ext_total,
             tax_inclusive=tax_incl_total,
             total_kdv=total_kdv,
@@ -416,6 +443,7 @@ class UBLTRInvoiceParser:
             allowance_total=allowance_total,
             suggested_tdhp_entries=journal_entries,
             direction=direction,
+            is_return=is_return,
             direction_basis=basis,
             posting_note=posting_note,
         )
@@ -469,6 +497,7 @@ class UBLTRInvoiceParser:
         currency: str,
         profile_id: str,
         inv_no: str,
+        reverse: bool = False,
     ) -> tuple[list[TDHPJournalEntry], str]:
         """TDHP (Tek Düzen Hesap Planı) double-entry records, or a reason there are none.
 
@@ -549,6 +578,17 @@ class UBLTRInvoiceParser:
             add("320.01", f"Satıcılar - {supplier.title or 'Tedarikçi'}", credit=payable)
             # Tevkif edilen KDV, 2 no'lu beyanname ile sorumlu sıfatıyla ödenir.
             add("360.02", "Ödenecek Vergi ve Fonlar (Tevkifat)", credit=withheld)
+
+        if reverse:
+            # A return: the entry of the deal it undoes, every line the other way round.
+            entries = [
+                e.model_copy(update={
+                    "debit_amount": e.credit_amount,
+                    "credit_amount": e.debit_amount,
+                    "description": f"İade — {e.description}",
+                })
+                for e in entries
+            ]
 
         debit_total = sum((e.debit_amount for e in entries), Decimal("0"))
         credit_total = sum((e.credit_amount for e in entries), Decimal("0"))
