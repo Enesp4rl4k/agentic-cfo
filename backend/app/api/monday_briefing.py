@@ -4,6 +4,10 @@ GET  /api/v1/briefing/monday
      Returns the deterministic 3-sentence briefing grounded in the company's radar.
 POST /api/v1/briefing/monday/respond
      Records the SME owner's decision ("done" | "deferred" | "dismissed") into DecisionLog.
+GET  /api/v1/briefing/monday/deliveries?briefing_id=
+     What happened to the briefing's e-mails (sent, held, failed and why).
+POST /api/v1/briefing/monday/release
+     The company's accountant releases held briefing e-mails.
 """
 
 from __future__ import annotations
@@ -13,11 +17,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.database import get_db
-from app.models.user import User
+from app.models.organization import OrgMembership
+from app.models.user import User, UserRole
+from app.services import briefing_delivery, outbox
 from app.services.monday_briefing import (
     BriefingNeedsAnalysis,
     assemble_monday_briefing,
@@ -112,3 +119,55 @@ async def respond_to_monday_briefing(
         },
         "error": None,
     }
+
+
+class BriefingReleaseRequest(BaseModel):
+    briefing_id: str = Field(..., min_length=1, max_length=100)
+
+
+@router.get(
+    "/briefing/monday/deliveries",
+    summary="Pazartesi bülteni e-posta durumu",
+    responses={400: {"description": "Kullanıcının organizasyonu yok."}},
+)
+async def get_briefing_deliveries(
+    briefing_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Sent, held or failed, and the reason: nothing about the e-mail is hidden."""
+    org_id = _org(user)
+    return {"data": await briefing_delivery.deliveries(db, org_id, briefing_id), "error": None}
+
+
+@router.post(
+    "/briefing/monday/release",
+    summary="Müşavir bülten e-postasını serbest bırakır",
+    responses={
+        400: {"description": "Kullanıcının organizasyonu yok."},
+        403: {"description": "Bu şirketin mali müşaviri değilsiniz."},
+    },
+)
+async def release_briefing(
+    body: BriefingReleaseRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Only the company's accountant releases what was held for them (owner decision K10)."""
+    org_id = _org(user)
+    membership = (
+        await db.execute(
+            select(OrgMembership.id).where(
+                OrgMembership.user_id == user.id,
+                OrgMembership.org_id == org_id,
+                OrgMembership.role == UserRole.SMMM.value,
+            )
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(403, "Bu şirketin mali müşaviri değilsiniz.")
+    released = await outbox.release(
+        db, org_id=org_id, source=briefing_delivery.SOURCE, source_ref=body.briefing_id
+    )
+    await db.commit()
+    return {"data": {"released": released}, "error": None}

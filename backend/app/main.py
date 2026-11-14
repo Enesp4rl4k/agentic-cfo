@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     import app.models.canonical_eng_signal
     import app.models.canonical_transaction
     import app.models.cash_radar_snapshot
+    import app.models.outbox_message
     import app.models.category_rule
     import app.models.company_context
     import app.models.company_semantic_snapshot

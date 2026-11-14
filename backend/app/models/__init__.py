@@ -29,6 +29,7 @@ from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
 from app.models.llm_call_log import LLMCallLog
 from app.models.open_item import OpenItem
+from app.models.outbox_message import OutboxMessage
 from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
 from app.models.pilot import PilotInvite, UserFeedback
@@ -81,6 +82,7 @@ __all__ = [
     "LLMCallLog",
     "OnayDurumu",
     "OpenItem",
+    "OutboxMessage",
     "OpenItemMatch",
     "Organization",
     "PilotInvite",
