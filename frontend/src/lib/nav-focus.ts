@@ -9,6 +9,7 @@ export const FOCUS_HREFS: ReadonlySet<string> = new Set([
   "/baslangic",
   "/command-center",
   "/nakit-radari",
+  "/bulten",
   "/baglan",
   "/upload",
   "/pnl",
