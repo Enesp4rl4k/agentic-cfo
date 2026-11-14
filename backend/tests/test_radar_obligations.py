@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
 
 import pytest_asyncio
 
-from app.core.dates import parse_transaction_date
 from app.core.turkish import contains
-from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item import OpenItem
-from app.models.transaction import Transaction
 from app.services.cash_radar import compute_cash_radar
-from app.services.ledger import append_job
 from tests.api_helpers import bellek_istemcisi, kullanici
+from tests.radar_helpers import statement as _statement
+from tests.radar_helpers import upload as _upload
 
 ANCHOR = date(2025, 2, 1)
 
@@ -23,50 +20,6 @@ ANCHOR = date(2025, 2, 1)
 async def client():
     async with bellek_istemcisi() as c:
         yield c
-
-
-def _statement(day: str, cents: int) -> dict[str, Any]:
-    return {"closing_balance": {"date": day, "balance_cents": cents}}
-
-
-async def _upload(
-    client,
-    org_id: str,
-    *rows: dict[str, Any],
-    meta: dict | None = None,
-    status: JobStatus = JobStatus.COMPLETED,
-) -> str:
-    async with client._maker() as db:
-        job = AnalysisJob(
-            filename="test.csv",
-            file_path="/test.csv",
-            file_type="csv",
-            org_id=org_id,
-            status=status,
-            result_metadata=meta,
-        )
-        db.add(job)
-        await db.flush()
-        for r in rows:
-            when, estimated = parse_transaction_date(r["transaction_date"])
-            db.add(
-                Transaction(
-                    job_id=job.id,
-                    amount_kurus=r["amount_cents"],
-                    currency=r.get("currency", "TRY"),
-                    type=r["type"],
-                    category=r.get("category", "other_expense"),
-                    description=r.get("description"),
-                    transaction_date=when,
-                    date_is_estimated=estimated,
-                    document_id=r.get("document_id"),
-                    due_date=r.get("due_date"),
-                    vendor=r.get("counterparty") or r.get("vendor"),
-                )
-            )
-        await db.commit()
-        await append_job(db, job.id)
-        return job.id
 
 
 async def test_recurring_rent_and_payroll_projected_into_cash_radar(client):
@@ -78,30 +31,17 @@ async def test_recurring_rent_and_payroll_projected_into_cash_radar(client):
     await _upload(
         client,
         org_id,
-        {
-            "amount_cents": 25_000_00,
-            "type": "expense",
-            "category": "rent",
-            "description": "KİRA ÖDEMESİ - MERKEZ OFİS",
-            "counterparty": "Mal Sahibi A.Ş.",
-            "transaction_date": "2024-11-05",
-        },
-        {
-            "amount_cents": 25_000_00,
-            "type": "expense",
-            "category": "rent",
-            "description": "KİRA ÖDEMESİ - MERKEZ OFİS",
-            "counterparty": "Mal Sahibi A.Ş.",
-            "transaction_date": "2024-12-05",
-        },
-        {
-            "amount_cents": 25_000_00,
-            "type": "expense",
-            "category": "rent",
-            "description": "KİRA ÖDEMESİ - MERKEZ OFİS",
-            "counterparty": "Mal Sahibi A.Ş.",
-            "transaction_date": "2025-01-05",
-        },
+        *(
+            {
+                "amount_cents": 25_000_00,
+                "type": "expense",
+                "category": "rent",
+                "description": "KİRA ÖDEMESİ - MERKEZ OFİS",
+                "counterparty": "Mal Sahibi A.Ş.",
+                "transaction_date": day,
+            }
+            for day in ("2024-11-05", "2024-12-05", "2025-01-05")
+        ),
     )
 
     async with client._maker() as db:
