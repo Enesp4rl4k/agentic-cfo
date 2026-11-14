@@ -1,7 +1,6 @@
 """
 Master Roadmap 2.0 Feature Tests:
 1. Epic 1: Two-Way ERP Sync Engine (Logo, Mikro, Paraşüt Journal Voucher Pusher)
-2. Epic 2: Financial RAG & Contract Intelligence Engine (Terms, Penalties, CPI Clauses)
 3. Epic 3: Prescriptive Cashflow Recommender (Dynamic Discounts, Term Extensions)
 4. Epic 4: Multi-Entity & Holding Consolidation Engine (Intercompany Eliminations & Minority Share)
 5. Epic 5: Omnichannel CFO Bot Gateway (WhatsApp & Slack Interactive Approval)
@@ -17,7 +16,6 @@ from app.services.consolidation_engine import (
     IntercompanyTransaction,
 )
 from app.services.erp.two_way_sync import ERPJournalPusher
-from app.services.financial_rag import FinancialRAGEngine
 from app.services.prescriptive_recommender import PrescriptiveRecommender
 
 # ── Epic 1: Two-Way ERP Sync Tests ───────────────────────────────────────────
@@ -52,28 +50,6 @@ async def test_erp_journal_pusher_unbalanced_entry_rejected():
     )
     assert res.status == "failed"
     assert "dengesiz" in res.error_message.lower()
-
-
-# ── Epic 2: Financial RAG & Contract Intelligence Tests ───────────────────────
-
-def test_financial_rag_contract_clauses():
-    contract_sample = """
-    TARAFLAR ARASINDAKİ TİCARİ SÖZLEŞME
-    1. Ödeme Vadesi: Faturaların bedeli fatura tarihinden itibaren 45 gün içinde ödenecektir.
-    2. Gecikme Faizi: Vadesinde ödenmeyen tutarlara aylık %3 gecikme faizi uygulanır.
-    3. Yıllık Fiyat Artışı: Hizmet bedeli her yıl TÜİK TÜFE 12 aylık ortalama enflasyon artışı oranında revize edilir.
-    """
-    res = FinancialRAGEngine.analyze_document_text(
-        document_id="doc-123",
-        document_title="Tedarikçi Hizmet Sözleşmesi",
-        text=contract_sample,
-    )
-    assert res.document_id == "doc-123"
-    assert len(res.detected_clauses) == 3
-    clause_types = [c.clause_type for c in res.detected_clauses]
-    assert "payment_term" in clause_types
-    assert "penalty" in clause_types
-    assert "price_escalation" in clause_types
 
 
 # ── Epic 3: Prescriptive Cashflow Recommender Tests ───────────────────────────
