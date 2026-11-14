@@ -137,7 +137,7 @@ check "e-Müstahsil / e-SMM read, checked against GİB's e-Arşiv schema" \
   test -f backend/app/parsers/invoice/makbuz.py && \
   grep -q "eArsivVeri.xsd" backend/tests/test_makbuz.py && \
   grep -q "earsiv_paket" scripts/fetch_gib_corpus.py && \
-  grep -q "_pdf_embedded_xml" backend/app/agents/data_ingestion.py
+  grep -q "def _pdf_embedded_xml" backend/app/services/ingest/readers.py
 
 check "no unsigned package, no unsigned SOAP call" \
   grep -q "defter imzasız" backend/app/services/edefter_package.py && \
@@ -153,7 +153,8 @@ check "MCP server: API client only, no approval tool" \
 
 check "invoice direction comes from the VKN" \
   grep -q "own_vkn" backend/app/parsers/invoice/ubl_tr.py && \
-  grep -q "own_vkn" backend/app/agents/data_ingestion.py
+  grep -q "own_vkn" backend/app/agents/data_ingestion.py && \
+  grep -q "own_vkn" backend/app/services/ingest/ebelge.py
 
 check "header values survive latin-1" \
   test -f backend/app/core/http_headers.py && \

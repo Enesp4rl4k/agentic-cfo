@@ -26,7 +26,6 @@ MAX_LINES = 600
 _OVERSIZED: frozenset[str] = frozenset(
     {
         "app/agents/ceo/synthesis_agent.py",
-        "app/agents/data_ingestion.py",
         "app/agents/orchestration/auto_chain.py",
         "app/api/ceo.py",
         "app/api/chat.py",
