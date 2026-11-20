@@ -247,6 +247,17 @@ async def duzeltle(
     kayit.duzeltme_aciklama      = req.aciklama
     kayit.updated_at             = datetime.now(UTC)
 
+    # What was corrected is remembered for this organisation (two consistent
+    # corrections make a rule; see services/accounting/ogrenilmis_kural). Only this
+    # route teaches: a bulk approval is not a judgement on each account.
+    if kayit.org_id:
+        from app.services.accounting.ogrenilmis_kural import ogren
+
+        await ogren(
+            db, str(kayit.org_id), kayit.tx_description,
+            (kayit.orijinal_kayit or {}).get("vendor"), req.hesap_kodu, req.hesap_adi,
+        )
+
     await db.commit()
     logger.info(
         "SMMM düzeltme: kayit=%s user=%s yeni_hesap=%s",

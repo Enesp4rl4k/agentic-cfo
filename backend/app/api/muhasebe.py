@@ -58,6 +58,13 @@ from app.services.accounting.journal_store import (
 )
 
 
+async def _kurum_kurallari(db: AsyncSession, org_id: str | None) -> dict[str, Any]:
+    """What this organisation's accountant has corrected before (a suggestion, not a verdict)."""
+    from app.services.accounting.ogrenilmis_kural import kurallari_yukle
+
+    return dict(await kurallari_yukle(db, org_id))
+
+
 async def _guven_gecmisi(db: AsyncSession, org_id: str | None) -> dict[str, tuple[int, int]]:
     """How often this organisation's SMMM agreed with each evidence level.
 
@@ -212,6 +219,7 @@ async def muhasebe_analiz(
         donem=body.donem,
         authority_rules=authority_rules,
         guven_gecmisi=await _guven_gecmisi(db, str(job.org_id) if job.org_id else None),
+        kurum_kurallari=await _kurum_kurallari(db, str(job.org_id) if job.org_id else None),
     )
 
     # SMMM onay kuyruğu — Turkey pack only
