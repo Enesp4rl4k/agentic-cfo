@@ -30,6 +30,8 @@ export interface MondayBriefing {
   balance_known: boolean;
   /** False when nothing is known about the company: there is no briefing to read. */
   has_data: boolean;
+  /** Which briefing this is. An answer carries it back; the server refuses it (409) if the figures have moved. */
+  fingerprint: string;
 }
 
 /** What the owner can answer; the words are the server's own. */
@@ -52,14 +54,20 @@ export async function getMondayBriefing(): Promise<MondayBriefing> {
   return res.data.data;
 }
 
-/** The answer belongs to the briefing of the week it names; answering again replaces it. */
+/**
+ * The answer belongs to the briefing the owner read: its week and its fingerprint.
+ * Answering again replaces it. If the figures changed since it was loaded the server
+ * refuses with 409, and the page reloads the briefing instead of saving.
+ */
 export async function respondToMondayBriefing(
   response: BriefingResponse,
   anchorDate: string,
+  fingerprint: string,
 ): Promise<BriefingAnswer> {
   const res = await apiClient.post<Envelope<BriefingAnswer>>("/briefing/monday/respond", {
     response,
     anchor_date: anchorDate,
+    fingerprint,
   });
   return res.data.data;
 }

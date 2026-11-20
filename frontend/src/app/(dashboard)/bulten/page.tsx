@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Newspaper } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,8 +34,17 @@ function Sentences({ briefing, copy }: Readonly<{ briefing: MondayBriefing; copy
 }
 
 function Answer({ briefing, copy }: Readonly<{ briefing: MondayBriefing; copy: Copy }>) {
+  const queryClient = useQueryClient();
   const answer = useMutation({
-    mutationFn: (response: BriefingResponse) => respondToMondayBriefing(response, briefing.week_start),
+    mutationFn: (response: BriefingResponse) =>
+      respondToMondayBriefing(response, briefing.week_start, briefing.fingerprint),
+    // 409: the briefing changed after it was loaded (or there is no analysis yet).
+    // Load the current one so the owner answers what is true now.
+    onError: (error) => {
+      if ((error as { status?: number }).status === 409) {
+        void queryClient.invalidateQueries({ queryKey: BRIEFING_KEY });
+      }
+    },
   });
   const buttons: [BriefingResponse, string][] = [
     ["done", copy.done],
