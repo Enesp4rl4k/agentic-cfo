@@ -45,6 +45,7 @@ const briefing = (over: Record<string, unknown> = {}) => ({
   fallback_used: false,
   balance_known: true,
   has_data: true,
+  fingerprint: "fp-seen",
   ...over,
 });
 
@@ -104,7 +105,7 @@ describe("Pazartesi bülteni", () => {
     show();
     fireEvent.click(await screen.findByRole("button", { name: "Yaptım" }));
     await waitFor(() => expect(respondToMondayBriefing).toHaveBeenCalledTimes(1));
-    expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-01");
+    expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-01", "fp-seen");
     expect(await screen.findByText(/Yanıtınız kaydedildi/)).toBeTruthy();
   });
 
@@ -118,7 +119,7 @@ describe("Pazartesi bülteni", () => {
     });
     show();
     fireEvent.click(await screen.findByRole("button", { name: "Ertele" }));
-    await waitFor(() => expect(respondToMondayBriefing).toHaveBeenCalledWith("deferred", "2025-02-01"));
+    await waitFor(() => expect(respondToMondayBriefing).toHaveBeenCalledWith("deferred", "2025-02-01", "fp-seen"));
   });
 
   it("does not claim the answer was saved when the server refused it", async () => {
@@ -133,6 +134,18 @@ describe("Pazartesi bülteni", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Gerek yok" }));
     expect(await screen.findByText(/tamamlanmış bir analizi yok/)).toBeTruthy();
     expect(screen.queryByText(/Yanıtınız kaydedildi/)).toBeNull();
+  });
+
+  it("reloads the briefing when it changed after the owner read it", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    respondToMondayBriefing.mockRejectedValue(
+      Object.assign(new Error("Bülten siz gördükten sonra değişti (yeni veri geldi)."), { status: 409 }),
+    );
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Yaptım" }));
+    expect(await screen.findByText(/gördükten sonra değişti/)).toBeTruthy();
+    expect(screen.queryByText(/Yanıtınız kaydedildi/)).toBeNull();
+    await waitFor(() => expect(getMondayBriefing).toHaveBeenCalledTimes(2));
   });
 
   it("says it could not load rather than showing an empty week", async () => {

@@ -26,6 +26,7 @@ from app.models.organization import OrgMembership
 from app.models.user import User, UserRole
 from app.services import briefing_delivery, outbox
 from app.services.monday_briefing import (
+    BriefingChanged,
     BriefingNeedsAnalysis,
     assemble_monday_briefing,
     record_briefing_response,
@@ -45,6 +46,10 @@ class BriefingRespondRequest(BaseModel):
     note: str | None = Field(default=None, description="Ek açıklama veya gerekçe")
     anchor_date: str | None = Field(
         default=None, description="Opsiyonel referans tarihi (YYYY-AA-GG)"
+    )
+    fingerprint: str = Field(
+        ..., min_length=1, max_length=64,
+        description="GET /briefing/monday yanıtındaki `fingerprint`: yanıtlanan bülten.",
     )
 
 
@@ -76,7 +81,7 @@ async def get_monday_briefing(
     summary="Pazartesi bülteni aksiyon yanıtı",
     responses={
         400: {"description": "Kullanıcının organizasyonu yok veya geçersiz tarih."},
-        409: {"description": "Şirketin tamamlanmış bir analizi yok."},
+        409: {"description": "Şirketin tamamlanmış bir analizi yok ya da bülten görüldükten sonra değişti."},
         422: {"description": "Geçersiz yanıt değeri."},
     },
 )
@@ -102,9 +107,12 @@ async def respond_to_monday_briefing(
             user_id=str(user.id),
             briefing=briefing,
             response=body.response,
+            seen_fingerprint=body.fingerprint,
             note=body.note,
         )
         await db.commit()
+    except BriefingChanged as exc:
+        raise HTTPException(409, str(exc)) from exc
     except BriefingNeedsAnalysis as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:

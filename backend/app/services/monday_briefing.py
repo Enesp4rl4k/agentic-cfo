@@ -17,7 +17,7 @@ Plan v10 §4 (O4) & Plan v11 Faz 3:
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -63,9 +63,26 @@ class MondayBriefing:
     # Whether there is anything to say. A company with no balance and no items gets
     # no briefing rather than a made-up calm week.
     has_data: bool = True
+    # A digest of everything above. The owner answers the briefing they saw; the
+    # answer carries this back, and a briefing whose figures moved in between
+    # (a new upload, a settled invoice) is not the one they answered.
+    fingerprint: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def briefing_fingerprint(briefing: MondayBriefing) -> str:
+    import hashlib
+    import json
+
+    shown = {k: v for k, v in asdict(briefing).items() if k != "fingerprint"}
+    payload = json.dumps(shown, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+class BriefingChanged(Exception):
+    """The briefing's figures are not the ones the owner answered."""
 
 
 def _generate_deterministic_sentences(
@@ -279,7 +296,7 @@ async def assemble_monday_briefing(
 
     briefing_id = f"brief_{org_id}_{anchor.strftime('%Y%W')}"
 
-    return MondayBriefing(
+    briefing = MondayBriefing(
         briefing_id=briefing_id,
         org_id=org_id,
         week_start=week_start,
@@ -303,6 +320,7 @@ async def assemble_monday_briefing(
         balance_known=starting_cash is not None,
         has_data=has_data,
     )
+    return replace(briefing, fingerprint=briefing_fingerprint(briefing))
 
 
 async def record_briefing_response(
@@ -312,6 +330,7 @@ async def record_briefing_response(
     user_id: str,
     briefing: MondayBriefing,
     response: str,  # "done" | "deferred" | "dismissed"
+    seen_fingerprint: str,
     note: str | None = None,
 ) -> DecisionLog:
     """Record owner's response to the Monday briefing into the DecisionLog.
@@ -324,6 +343,11 @@ async def record_briefing_response(
     valid_responses = {"done", "deferred", "dismissed"}
     if response not in valid_responses:
         raise ValueError(f"response must be one of {valid_responses}, got: {response}")
+    if seen_fingerprint != briefing.fingerprint:
+        raise BriefingChanged(
+            "Bülten siz gördükten sonra değişti (yeni veri geldi). "
+            "Güncel bülteni okuyup yeniden yanıtlayın."
+        )
 
     response_labels = {
         "done": "Yaptım",
@@ -383,6 +407,9 @@ async def record_briefing_response(
         "action_type": briefing.action_type,
         "expected_amount_cents": briefing.action_amount_cents,
         "approaching_obligation_amount_cents": briefing.approaching_amount_cents,
+        # What the owner was shown when they answered.
+        "fingerprint": briefing.fingerprint,
+        "shown_text": briefing.full_text,
         "briefing_created_at": datetime.now(UTC).isoformat(),
     }
 
