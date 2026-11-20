@@ -247,6 +247,11 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
     for tx in txs:
         if not (tx.document_id and tx.counterparty):
             continue
+        if tx.amount_kurus <= 0:
+            # A return (iade) is signed negative. It would be a negative receivable or
+            # payable; netting it against the invoice it returns is not modelled yet,
+            # so it opens no item (its ledger row still counts, signed).
+            continue
         doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
         await db.execute(
             insert(OpenItem).values(

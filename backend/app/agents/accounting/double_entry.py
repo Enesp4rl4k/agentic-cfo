@@ -386,6 +386,16 @@ class DoubleEntryEngine:
         if stopaj and not _stopaj_ekle(satirlar, ana, stopaj, description):
             stopaj_note = f"kaynaktaki stopaj ({stopaj} kuruş) kayda işlenemedi — doğrulanmalı"
 
+        # A return (iade) undoes the deal it returns: the entry of that deal, every
+        # line the other way round. After the KDV split, which reads the side of the
+        # main line to choose 191 or 391. Only on the explicit mark: a negative amount
+        # alone (an extracted "-500") is an outflow, not a reversal.
+        if transaction.get("iade"):
+            satirlar = [
+                KayitSatiri(s.hesap_kodu, s.hesap_adi, borc=s.alacak, alacak=s.borc, aciklama=s.aciklama)
+                for s in satirlar
+            ]
+
         # ── Trust: measured, and the organisation's own record once it has one ─
         guven_dict: dict[str, Any] = {}
         confidence = thp_result.confidence

@@ -123,6 +123,7 @@ class MuhasebeAgent:
         donem: str | None = None,
         authority_rules: list[dict[str, Any]] | None = None,
         guven_gecmisi: dict[str, tuple[int, int]] | None = None,
+        kurum_kurallari: dict[str, Any] | None = None,
     ) -> MuhasebeSonucu:
         """
         Ana entry point: işlem listesinden tam muhasebe analizi.
@@ -155,7 +156,7 @@ class MuhasebeAgent:
             )
 
         # ── 1. THP Sınıflandırma ──────────────────────────────────────────────
-        thp_sonuclari = await self._siniflandir(transactions)
+        thp_sonuclari = await self._siniflandir(transactions, kurum_kurallari)
 
         # ── 2. Yevmiye Kayıtları ──────────────────────────────────────────────
         # Pure CPU over every row: off the event loop, so a large statement
@@ -220,7 +221,9 @@ class MuhasebeAgent:
 
         return sonuc
 
-    async def _siniflandir(self, transactions: list[dict[str, Any]]) -> list[THPSonucu]:
+    async def _siniflandir(
+        self, transactions: list[dict[str, Any]], kurum_kurallari: dict[str, Any] | None = None
+    ) -> list[THPSonucu]:
         """Classify every row: the rule engine for all, the model only where it found nothing.
 
         The rows used to be classified one at a time on the event loop: the
@@ -231,6 +234,7 @@ class MuhasebeAgent:
         distinct input, since the same input gets the same answer. Each row's
         result is what the one-at-a-time loop would have given it.
         """
+        from app.services.accounting.ogrenilmis_kural import kurum_sonucu
         from app.services.accounting.thp_classifier import kaynak_sonucu
 
         # A row whose source names its account keeps it; the rest are classified.
@@ -250,12 +254,17 @@ class MuhasebeAgent:
             for tx in transactions
         ]
         sonuclar: list[THPSonucu] = await asyncio.to_thread(
-            lambda: [k or self.classifier.classify(**g) for k, g in zip(kaynaktan, girdiler, strict=True)]
+            # The source's own account first, then what this organisation's accountant
+            # has corrected before, then the keyword rules.
+            lambda: [
+                k or (tdhp_okur and kurum_sonucu(tx, kurum_kurallari)) or self.classifier.classify(**g)
+                for k, g, tx in zip(kaynaktan, girdiler, transactions, strict=True)
+            ]
         )
         if not self.use_llm_fallback:
             return sonuclar
 
-        eksik = [i for i, r in enumerate(sonuclar) if getattr(r, "yontem", None) not in ("kural", "kaynak")]
+        eksik = [i for i, r in enumerate(sonuclar) if getattr(r, "yontem", None) not in ("kural", "kaynak", "ogrenilmis")]
         if not eksik:
             return sonuclar
         sinir = asyncio.Semaphore(_LLM_ESZAMANLI)
@@ -337,6 +346,7 @@ async def run_muhasebe_pipeline(
     include_full_journal: bool = False,
     authority_rules: list[dict[str, Any]] | None = None,
     guven_gecmisi: dict[str, tuple[int, int]] | None = None,
+    kurum_kurallari: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Convenience wrapper — auto_chain ve worker entegrasyonu için.
@@ -353,5 +363,6 @@ async def run_muhasebe_pipeline(
         donem=donem,
         authority_rules=authority_rules,
         guven_gecmisi=guven_gecmisi,
+        kurum_kurallari=kurum_kurallari,
     )
     return sonuc.to_full_dict() if include_full_journal else sonuc.to_dict()

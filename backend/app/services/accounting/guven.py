@@ -43,12 +43,18 @@ KURAL = "kural"
 ZAYIF_KURAL = "zayif_kural"
 LLM = "llm"
 VARSAYILAN = "varsayilan"
+OGRENILMIS = "ogrenilmis"
 
 SEVIYELER: dict[str, dict[str, str]] = {
     KAYNAK: {
         "etiket": "Kaynak kayıttaki hesap",
         "aciklama": "Hesabı şirketin kendi muhasebe kaydı belirledi; sistem sınıflandırma yapmadı.",
         "kontrol": "Kaynak kaydın hesabı muhasebecinin kararıdır; tutar ve dönemi kontrol edin.",
+    },
+    OGRENILMIS: {
+        "etiket": "Önceki düzeltmeniz",
+        "aciklama": "Aynı açıklamayı daha önce siz bu hesaba düzelttiniz (en az iki kez, çelişmeden).",
+        "kontrol": "Önerilen hesap sizin kararınız; tutar ve dönemi kontrol edin. Onaylarınız ve düzeltmeleriniz isabetini ölçer.",
     },
     GUCLU_KURAL: {
         "etiket": "Güçlü eşleşme",
@@ -87,6 +93,8 @@ KORPUS_OLCUMU: dict[str, tuple[int, int]] = {
     GUCLU_KURAL: (11, 11),
     KURAL: (26, 29),
     ZAYIF_KURAL: (9, 9),
+    # Only the organisation's own decisions can measure it: no corpus ever could.
+    OGRENILMIS: (0, 0),
     LLM: (0, 0),
     VARSAYILAN: (0, 0),
 }

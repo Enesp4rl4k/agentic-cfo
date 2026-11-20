@@ -44,7 +44,11 @@ const OWNER_ONLY = "Bu kayıt için şirket sahibinin (owner) onayı gerekiyor."
 
 function serve(kayitlar: unknown[]) {
   get.mockImplementation((url: string) =>
-    Promise.resolve({ data: { data: url.includes("/stats") ? stats : { kayitlar } } }),
+    Promise.resolve({
+      data: {
+        data: url.includes("/stats") ? stats : url.includes("/kurallar") ? { kurallar: [] } : { kayitlar },
+      },
+    }),
   );
 }
 
