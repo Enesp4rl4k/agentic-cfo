@@ -300,6 +300,19 @@ export type MessageTree = {
     saveFailed: string;
     radarHint: string;
     radarLink: string;
+    eyebrow: string;
+    statToday: string;
+    statNet: string;
+    statEnd: string;
+    statNext: string;
+    routeTitle: string;
+    routeLink: string;
+    approvalsTitle: string;
+    approvalsBody: string;
+    approvalsLink: string;
+    noApprovals: string;
+    carpe: string;
+    carpeSub: string;
   };
   reviewQueue: {
     title: string;
@@ -2577,7 +2590,7 @@ export const en: MessageTree = {
     connect: "Connect my data",
     loading: "Preparing the cash radar…",
     failed: "The cash radar could not be loaded.",
-    briefingTitle: "Monday Morning Briefing",
+    briefingTitle: "Logbook",
     briefingSubtitle: "Deterministic 3-sentence weekly brief grounded in verified ledger facts.",
     briefingVerified: "Verified by Ledger",
     briefingActionLabel: "Recommended Action",
@@ -2585,7 +2598,7 @@ export const en: MessageTree = {
     briefingBtnDefer: "Defer",
     briefingBtnDismiss: "Dismiss",
     briefingRecorded: "Decision recorded:",
-    briefingLoading: "Preparing Monday briefing…",
+    briefingLoading: "Preparing the logbook…",
     simTitle: "What-If Scenario Simulator",
     simSubtitle: "Calculate cash deficit risk and corridors with 10,000 Monte Carlo iterations.",
     simBtnSimulate: "Simulate Scenario",
@@ -2742,7 +2755,7 @@ export const en: MessageTree = {
       baslangic: "Getting started",
       commandCenter: "Command Center",
       nakitRadari: "Cash route",
-      bulten: "Monday briefing",
+      bulten: "Logbook",
       kurumsallasma: "Institutionalisation",
       iliskiliTaraf: "Related parties",
       dashboard: "Dashboard",
@@ -2788,17 +2801,17 @@ export const en: MessageTree = {
     },
   },
   bulten: {
-    title: "Monday briefing",
+    title: "Logbook",
     subtitle: "This week's cash answer: three sentences written from the cash radar's figures.",
     week: "Week",
-    loading: "Preparing the briefing…",
-    failed: "The briefing could not be loaded.",
-    emptyTitle: "No briefing yet",
-    emptyBody: "No bank balance or open invoice is known for this company. Rather than invent something, no briefing was written.",
+    loading: "Preparing the logbook…",
+    failed: "The logbook could not be loaded.",
+    emptyTitle: "No logbook entry yet",
+    emptyBody: "No bank balance or open invoice is known for this company. Rather than invent something, no entry was written for this week.",
     connect: "Connect my data",
     fallbackNote: "The text was written from a fixed template; the figures come from the radar.",
-    unknownBalance: "The bank balance is unknown: the briefing states no balance.",
-    answerTitle: "What did you do about this briefing?",
+    unknownBalance: "The bank balance is unknown: the logbook states no balance.",
+    answerTitle: "What did you do about this week?",
     done: "Done",
     deferred: "Later",
     dismissed: "Not needed",
@@ -2807,6 +2820,19 @@ export const en: MessageTree = {
     saveFailed: "The answer could not be saved:",
     radarHint: "What the radar does not count (rent, tax, cheques and so on) is listed on the Cash Radar page.",
     radarLink: "Open the Cash Radar",
+    eyebrow: "Monday · {start} – {end} · this week's answer",
+    statToday: "Cash today",
+    statNet: "Net change this week",
+    statEnd: "Cash at week end",
+    statNext: "Next payment",
+    routeTitle: "Cash route",
+    routeLink: "The whole route",
+    approvalsTitle: "Your decision",
+    approvalsBody: "{n} items wait for your decision. Where the system is unsure, it asks you before a figure enters the forecast.",
+    approvalsLink: "Review pending approvals",
+    noApprovals: "No decision is waiting for you right now.",
+    carpe: "Carpe diem.",
+    carpeSub: "Seize the day.",
   },
   reviewQueue: {
     title: "{n} analyses await your approval",

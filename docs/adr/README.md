@@ -8,7 +8,7 @@ Her kayıt tek bir kararı yazar: bağlam, karar, sonuçları, düşünülen alt
 
 | # | Karar | Durum | Kimin | Plan v11 |
 |---|---|---|---|---|
-| [0001](0001-tek-defter-yevmiye-tablolari.md) | Tek defter: çift taraflı yevmiye tabloları | Önerildi | Geliştirici | K1, C3, A1.1–A3.1 |
+| [0001](0001-tek-defter-yevmiye-tablolari.md) | Tek defter: çift taraflı yevmiye tabloları | Kabul edildi (A1.1–A1.2) | Geliştirici | K1, C3, A1.1–A3.1 |
 | [0002](0002-karar-gunlugu-eklemeli.md) | Karar günlüğü eklemeli; tam olay kaynaklama yok | Önerildi | Geliştirici | K2, C4, A1.6–A2.2 |
 | [0003](0003-dis-etkiler-outbox.md) | Dış etkiler outbox'tan, bir kez | Kabul edildi (#56) | Geliştirici | K3, C9, A0.5 |
 | [0004](0004-model-saglayicilari.md) | Model sağlayıcıları gateway arkasında, seçim ölçümle | Önerildi | Sahip | K4, C7 |

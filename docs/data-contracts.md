@@ -19,6 +19,7 @@
 | Şirket görünümü (CFO analizi) | `company_rows` ile aynı satırlar | `post_completion.refresh_company_view` → `run_cfo_pipeline` | Rakamlar evet; anlatı metni yapay zekadan gelir ve aynı olmayabilir | `test_company_view_ledger.py` |
 | Görünüm imzası | Satırların içerik kimliği, günü, tutarı, yönü, kategorisi | `company_view._signature` | Evet (satır kimliklerinden ve sıradan bağımsız) | `test_ledger_rebuild.py` |
 | Nakit radarı | Açık kalemler, ödeme davranışı, kanıtlanmış banka bakiyesi | `services.cash_radar.compute_cash_radar` | Evet, **bugünün tarihi sabit verilirse** (`anchor_date`); verilmezse çıktı güne bağlıdır | `test_cash_radar.py` |
+| Yevmiye tabloları (`journal_entries`, `journal_lines`) | Muhasebe ajanının önerdiği yevmiye (JSON raporla aynı girdi) | `services.accounting.journal_tables.yaz`, `journal_store.persist_journal` içinde, JSON'la aynı işlemde (A1.2 çift yazma) | Evet: iş başına baştan yazılır; kayıt kimliği kaynak işlemden türer (`kararli_kayit_id`). Dengesiz kayıt yazılmaz, ERROR loglanır. Müşavir kararları burada değil, okurken uygulanır (`approved_journal.uygula`). **Okuyucular hâlâ JSON'dan okur** (A1.3'e kadar). | `test_journal_tables.py` (gölge karşılaştırma: kararlar uygulanmış JSON mizanı = tablo mizanı, kuruşuna) |
 
 ## Bilinen boşluk: insan kararları türetilmiş verinin içinde duruyor
 
