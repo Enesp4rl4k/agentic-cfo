@@ -191,6 +191,13 @@ class TurkishInvoiceParser(BankParser):
     bank_id = "turkish_invoice"
     bank_display_name = "Turkish Invoice (GİB / Muhasebe)"
 
+    def __init__(self, own_vkn: str | None = None) -> None:
+        # The organisation's own VKN, which decides whether an invoice is a sale or a
+        # purchase. An explicit value is used as given, including an explicit empty one
+        # (an organisation with none yet: the invoice is held, not read against someone
+        # else's number). Only None ("not told") falls back to the deployment's GIB_VKN.
+        self.own_vkn = own_vkn
+
     @classmethod
     def can_parse(cls, text: str) -> bool:
         """Return True if text looks like a Turkish invoice."""
@@ -236,11 +243,14 @@ class TurkishInvoiceParser(BankParser):
         invoice_type = _detect_invoice_type(text)
 
         own_vkn = ""
-        try:
-            from app.config import get_settings
-            own_vkn = get_settings().gib_vkn
-        except Exception:  # pragma: no cover - parser must work without settings
-            pass
+        if self.own_vkn is not None:
+            own_vkn = self.own_vkn
+        else:
+            try:
+                from app.config import get_settings
+                own_vkn = get_settings().gib_vkn
+            except Exception:  # pragma: no cover - parser must work without settings
+                pass
         tx_type, direction_basis, direction_certain = _resolve_direction(
             fields, invoice_type, own_vkn
         )
@@ -419,7 +429,7 @@ class InvoiceBatchParser(TurkishInvoiceParser):
                 text, flags=re.IGNORECASE
             )
 
-        base_parser = TurkishInvoiceParser()
+        base_parser = TurkishInvoiceParser(own_vkn=self.own_vkn)
         dates_seen = []
         for section in sections:
             section = section.strip()

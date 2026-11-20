@@ -3,8 +3,8 @@
 The owner's rule: a senior executive approves any change to a payment plan. One new table; nothing
 changes for an organisation that never proposes a change, and no column of an existing table is touched.
 
-Revision ID: 053_payment_plan_changes
-Revises: 052_smmm_hesap_kurallari
+Revision ID: 055_payment_plan_changes
+Revises: 054_outbox_messages
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "053_payment_plan_changes"
-down_revision = "052_smmm_hesap_kurallari"
+revision = "055_payment_plan_changes"
+down_revision = "054_outbox_messages"
 branch_labels = None
 depends_on = None
 

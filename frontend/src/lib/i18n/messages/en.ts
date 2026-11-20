@@ -76,6 +76,86 @@ export type MessageTree = {
     loading: string;
     failed: string;
   };
+  menu: {
+    groups: {
+      general: string;
+      finance: string;
+      analytics: string;
+      csuite: string;
+      risk: string;
+      tools: string;
+      portal: string;
+    };
+    items: {
+      baslangic: string;
+      commandCenter: string;
+      nakitRadari: string;
+      bulten: string;
+      kurumsallasma: string;
+      iliskiliTaraf: string;
+      dashboard: string;
+      baglan: string;
+      upload: string;
+      pnl: string;
+      cashflow: string;
+      forecast: string;
+      budget: string;
+      tax: string;
+      trends: string;
+      anomalies: string;
+      transactions: string;
+      monteCarlo: string;
+      workingCapital: string;
+      breakEven: string;
+      cohort: string;
+      cfo: string;
+      cto: string;
+      ceo: string;
+      cmo: string;
+      coo: string;
+      chro: string;
+      risk: string;
+      cascade: string;
+      compliance: string;
+      audit: string;
+      sensitivity: string;
+      tetikler: string;
+      chat: string;
+      reports: string;
+      intelligence: string;
+      simulation: string;
+      integrations: string;
+      templates: string;
+      trVertical: string;
+      smmm: string;
+      smmmOnay: string;
+      billing: string;
+      alerts: string;
+      workspace: string;
+      pilot: string;
+    };
+  };
+  bulten: {
+    title: string;
+    subtitle: string;
+    week: string;
+    loading: string;
+    failed: string;
+    emptyTitle: string;
+    emptyBody: string;
+    connect: string;
+    fallbackNote: string;
+    unknownBalance: string;
+    answerTitle: string;
+    done: string;
+    deferred: string;
+    dismissed: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    radarHint: string;
+    radarLink: string;
+  };
   reviewQueue: {
     title: string;
     body: string;
@@ -2240,6 +2320,86 @@ export const en: MessageTree = {
     connect: "Connect my data",
     loading: "Preparing the cash radar…",
     failed: "The cash radar could not be loaded.",
+  },
+  menu: {
+    groups: {
+      general: "General",
+      finance: "Finance",
+      analytics: "Analytics",
+      csuite: "C-Suite",
+      risk: "Risk & Compliance",
+      tools: "Tools",
+      portal: "Portal",
+    },
+    items: {
+      baslangic: "Getting started",
+      commandCenter: "Command Center",
+      nakitRadari: "Cash Radar",
+      bulten: "Monday briefing",
+      kurumsallasma: "Institutionalisation",
+      iliskiliTaraf: "Related parties",
+      dashboard: "Dashboard",
+      baglan: "Connect my data",
+      upload: "Upload",
+      pnl: "P&L",
+      cashflow: "Cash Flow",
+      forecast: "Forecast",
+      budget: "Budget",
+      tax: "Tax",
+      trends: "Trends",
+      anomalies: "Anomalies",
+      transactions: "Transactions",
+      monteCarlo: "Monte Carlo",
+      workingCapital: "Working Capital",
+      breakEven: "Break-Even",
+      cohort: "Cohort",
+      cfo: "CFO View",
+      cto: "CTO View",
+      ceo: "CEO View",
+      cmo: "CMO View",
+      coo: "COO View",
+      chro: "CHRO View",
+      risk: "Risk",
+      cascade: "Cascade Sim.",
+      compliance: "Compliance",
+      audit: "Internal Audit",
+      sensitivity: "What-If",
+      tetikler: "Triggers",
+      chat: "CFO Chat",
+      reports: "Reports",
+      intelligence: "Intelligence",
+      simulation: "Simulation",
+      integrations: "Integrations",
+      templates: "CSV Templates",
+      trVertical: "TR Autopilot (L3)",
+      smmm: "Turkey accounting review",
+      smmmOnay: "SMMM approvals",
+      billing: "Billing",
+      alerts: "Alerts",
+      workspace: "Workspace",
+      pilot: "Pilot Program",
+    },
+  },
+  bulten: {
+    title: "Monday briefing",
+    subtitle: "This week's cash answer: three sentences written from the cash radar's figures.",
+    week: "Week",
+    loading: "Preparing the briefing…",
+    failed: "The briefing could not be loaded.",
+    emptyTitle: "No briefing yet",
+    emptyBody: "No bank balance or open invoice is known for this company. Rather than invent something, no briefing was written.",
+    connect: "Connect my data",
+    fallbackNote: "The text was written from a fixed template; the figures come from the radar.",
+    unknownBalance: "The bank balance is unknown: the briefing states no balance.",
+    answerTitle: "What did you do about this briefing?",
+    done: "Done",
+    deferred: "Later",
+    dismissed: "Not needed",
+    saving: "Saving…",
+    saved: "Your answer was saved.",
+    saveFailed: "The answer could not be saved:",
+    radarHint: "What the radar does not count (rent, tax, cheques and so on) is listed on the Cash Radar page.",
+    radarLink: "Open the Cash Radar",
   },
   reviewQueue: {
     title: "{n} analyses await your approval",
