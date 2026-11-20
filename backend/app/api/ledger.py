@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import ensure_tenant
 from app.api.auth import get_current_user
+from app.api.contract import Envelope
+from app.api.radar_schema import CashRadarOut
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
@@ -224,7 +226,11 @@ async def get_payment_behaviour(
     return {"data": await payment_behaviour(db, _org(user)), "error": None}
 
 
-@router.get("/ledger/cash-radar", responses={400: {"description": "The user has no organisation or invalid date."}})
+@router.get(
+    "/ledger/cash-radar",
+    response_model=Envelope[CashRadarOut],
+    responses={400: {"description": "The user has no organisation or invalid date."}},
+)
 async def get_cash_radar(
     anchor_date: str | None = None,
     user: User = Depends(get_current_user),

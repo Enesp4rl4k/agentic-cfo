@@ -1,48 +1,17 @@
 import { apiClient } from "@/lib/api/client";
+import type { components } from "@/lib/api/generated/pilot-schema";
 
 // The Monday briefing (backend app/services/monday_briefing.py): three sentences
 // written from the cash radar's facts. The page shows them as written and computes
 // nothing. Amounts are kuruş.
 
-export interface MondayBriefing {
-  briefing_id: string;
-  org_id: string;
-  week_start: string;
-  week_end: string;
-  starting_cash_cents: number | null;
-  net_change_cents: number;
-  end_balance_cents: number;
-  approaching_title: string;
-  approaching_amount_cents: number;
-  approaching_date: string | null;
-  action_type: string;
-  action_title: string;
-  action_detail: string;
-  action_amount_cents: number;
-  sentence_radar: string;
-  sentence_obligation: string;
-  sentence_action: string;
-  full_text: string;
-  /** The shown text always passed the number check; false would mean it did not. */
-  verified: boolean;
-  /** True when a model's wording was rejected and the fixed template was used instead. */
-  fallback_used: boolean;
-  balance_known: boolean;
-  /** False when nothing is known about the company: there is no briefing to read. */
-  has_data: boolean;
-  /** Which briefing this is. An answer carries it back; the server refuses it (409) if the figures have moved. */
-  fingerprint: string;
-}
+/** Generated from the backend's schema; see pilot-schema.ts. */
+export type MondayBriefing = components["schemas"]["MondayBriefing"];
 
 /** What the owner can answer; the words are the server's own. */
 export type BriefingResponse = "done" | "deferred" | "dismissed";
 
-export interface BriefingAnswer {
-  decision_id: string;
-  status: string;
-  chosen_option_label: string;
-  briefing_id: string;
-}
+export type BriefingAnswer = components["schemas"]["BriefingAnswer"];
 
 interface Envelope<T> {
   data: T;
