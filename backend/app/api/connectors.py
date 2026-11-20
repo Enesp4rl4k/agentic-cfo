@@ -1,11 +1,12 @@
 """Connector Platform API (Faz 13).
 
-    GET    /connectors                     — registered connectors + this org's status
-    POST   /connectors/{name}/connect      — store credentials (health-checked first)
-    POST   /connectors/{name}/sync         — pull now; optionally re-run the fed kernel
-    GET    /connectors/{name}/status       — last sync / watermark
-    DELETE /connectors/{name}              — disconnect (keeps canonical rows)
+GET    /connectors                     — registered connectors + this org's status
+POST   /connectors/{name}/connect      — store credentials (health-checked first)
+POST   /connectors/{name}/sync         — pull now; optionally re-run the fed kernel
+GET    /connectors/{name}/status       — last sync / watermark
+DELETE /connectors/{name}              — disconnect (keeps canonical rows)
 """
+
 from __future__ import annotations
 
 import json
@@ -42,13 +43,13 @@ def _known(name: str) -> None:
 
 
 class ConnectRequest(BaseModel):
-    config: dict[str, Any] = Field(default_factory=dict)   # non-secret (owner, repo, …)
-    secret: dict[str, Any] = Field(default_factory=dict)   # token / credentials
+    config: dict[str, Any] = Field(default_factory=dict)  # non-secret (owner, repo, …)
+    secret: dict[str, Any] = Field(default_factory=dict)  # token / credentials
     display_name: str | None = None
 
 
 class SyncRequest(BaseModel):
-    run_kernel: bool = True   # re-run the connector's kernel_role view after sync
+    run_kernel: bool = True  # re-run the connector's kernel_role view after sync
 
 
 @router.get("/connectors")
@@ -68,16 +69,18 @@ async def list_connector_status(
     out = []
     for c in list_connectors():
         row = rows.get(c.name)
-        out.append({
-            "name": c.name,
-            "domain": c.domain,
-            "kernel_role": c.kernel_role,
-            "connected": row is not None and row.status != "disconnected",
-            "status": row.status if row else "not_connected",
-            "last_sync_at": row.last_sync_at.isoformat() if row and row.last_sync_at else None,
-            "last_record_count": row.last_record_count if row else None,
-            "last_error": row.last_error if row else None,
-        })
+        out.append(
+            {
+                "name": c.name,
+                "domain": c.domain,
+                "kernel_role": c.kernel_role,
+                "connected": row is not None and row.status != "disconnected",
+                "status": row.status if row else "not_connected",
+                "last_sync_at": row.last_sync_at.isoformat() if row and row.last_sync_at else None,
+                "last_record_count": row.last_record_count if row else None,
+                "last_error": row.last_error if row else None,
+            }
+        )
     return {"data": {"connectors": out}, "error": None}
 
 
@@ -123,8 +126,12 @@ async def connect_connector(
     await db.commit()
 
     return {
-        "data": {"connector": name, "status": "active", "account": health.account,
-                 "detail": health.detail},
+        "data": {
+            "connector": name,
+            "status": "active",
+            "account": health.account,
+            "detail": health.detail,
+        },
         "error": None,
     }
 

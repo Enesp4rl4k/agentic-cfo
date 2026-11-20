@@ -1,9 +1,10 @@
 """Kurumsallaşma Endeksi API.
 
-    POST /institutionalization/compute  — compute + store a snapshot
-    GET  /institutionalization          — latest snapshot (computes one if none)
-    GET  /institutionalization/history  — score trend
+POST /institutionalization/compute  — compute + store a snapshot
+GET  /institutionalization          — latest snapshot (computes one if none)
+GET  /institutionalization/history  — score trend
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,9 @@ def _row_dict(r: InstitutionalizationSnapshot) -> dict[str, Any]:
     }
 
 
-async def _store(org_id: str, result: dict[str, Any], db: AsyncSession) -> InstitutionalizationSnapshot:
+async def _store(
+    org_id: str, result: dict[str, Any], db: AsyncSession
+) -> InstitutionalizationSnapshot:
     row = InstitutionalizationSnapshot(
         org_id=org_id,
         overall_score=result["overall_score"],
@@ -96,18 +99,25 @@ async def get_history(
 ) -> dict[str, Any]:
     org_id = _org_id(current_user)
     rows = (
-        await db.execute(
-            select(InstitutionalizationSnapshot)
-            .where(InstitutionalizationSnapshot.org_id == org_id)
-            .order_by(desc(InstitutionalizationSnapshot.computed_at))
-            .limit(limit)
+        (
+            await db.execute(
+                select(InstitutionalizationSnapshot)
+                .where(InstitutionalizationSnapshot.org_id == org_id)
+                .order_by(desc(InstitutionalizationSnapshot.computed_at))
+                .limit(limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "data": {
             "points": [
-                {"overall_score": r.overall_score, "grade": r.grade,
-                 "computed_at": r.computed_at.isoformat() if r.computed_at else None}
+                {
+                    "overall_score": r.overall_score,
+                    "grade": r.grade,
+                    "computed_at": r.computed_at.isoformat() if r.computed_at else None,
+                }
                 for r in reversed(rows)
             ]
         },

@@ -13,6 +13,7 @@ Confidence signals:
 - 0.85 → some fields missing but majority parseable
 - 0.60 → low-quality OCR or too many unparseable rows → triggers review gate
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,55 +37,160 @@ logger = logging.getLogger(__name__)
 # Higher priority = wins when multiple categories match.
 _CATEGORY_RULES: list[tuple[str, list[str], int]] = [
     # ── Income ────────────────────────────────────────────────────────────────
-    ("revenue",       ["sales invoice", "payment received", "customer payment",
-                       "invoice issued", "gelir", "satış", "tahsilat",
-                       "sales", "income", "revenue"],                           90),
-    ("other_income",  ["other income", "diğer gelir", "grant", "refund received"], 85),
+    (
+        "revenue",
+        [
+            "sales invoice",
+            "payment received",
+            "customer payment",
+            "invoice issued",
+            "gelir",
+            "satış",
+            "tahsilat",
+            "sales",
+            "income",
+            "revenue",
+        ],
+        90,
+    ),
+    ("other_income", ["other income", "diğer gelir", "grant", "refund received"], 85),
     # ── COGS ──────────────────────────────────────────────────────────────────
-    ("cogs",          ["raw material", "hammadde", "goods purchased",
-                       "product cost", "manufacturing", "inventory",
-                       "mal alımı", "stok alımı"],                              80),
+    (
+        "cogs",
+        [
+            "raw material",
+            "hammadde",
+            "goods purchased",
+            "product cost",
+            "manufacturing",
+            "inventory",
+            "mal alımı",
+            "stok alımı",
+        ],
+        80,
+    ),
     # ── Payroll ───────────────────────────────────────────────────────────────
-    ("salary",        ["salary", "payroll", "maaş", "ücret", "sigorta",
-                       "wages", "employee", "social security",
-                       "sgk", "personel", "staff",
-                       # a bonus or severance is pay: "Yıl Sonu Prim" fell to
-                       # its sales account's default, marketing
-                       "prim", "ikramiye", "kıdem", "bonus"],                   75),
+    (
+        "salary",
+        [
+            "salary",
+            "payroll",
+            "maaş",
+            "ücret",
+            "sigorta",
+            "wages",
+            "employee",
+            "social security",
+            "sgk",
+            "personel",
+            "staff",
+            # a bonus or severance is pay: "Yıl Sonu Prim" fell to
+            # its sales account's default, marketing
+            "prim",
+            "ikramiye",
+            "kıdem",
+            "bonus",
+        ],
+        75,
+    ),
     # ── KDV ── collected for the state and paid over: cash, not profit, for a
     # KDV-registered company. Above "tax", which would put it under EBITDA.
-    ("tax_payment",   ["kdv", "katma değer vergisi", "vat payment", "vat"],     74),
+    ("tax_payment", ["kdv", "katma değer vergisi", "vat payment", "vat"], 74),
     # ── Tax ── (before "loan" to avoid confusing withholding with bank payment)
-    ("tax",           ["stopaj", "kurumlar vergisi", "gelir vergisi",
-                       "withholding", "corporate tax", "income tax",
-                       "tax payment", "vergi"],                                 73),
+    (
+        "tax",
+        [
+            "stopaj",
+            "kurumlar vergisi",
+            "gelir vergisi",
+            "withholding",
+            "corporate tax",
+            "income tax",
+            "tax payment",
+            "vergi",
+        ],
+        73,
+    ),
     # ── Loan / Finance ────────────────────────────────────────────────────────
-    ("loan",          ["kredi ödemesi", "taksit", "loan repayment",
-                       "debt payment", "faiz", "interest payment",
-                       "installment", "loan", "debt", "credit",
-                       "bank loan"],                                             70),
+    (
+        "loan",
+        [
+            "kredi ödemesi",
+            "taksit",
+            "loan repayment",
+            "debt payment",
+            "faiz",
+            "interest payment",
+            "installment",
+            "loan",
+            "debt",
+            "credit",
+            "bank loan",
+        ],
+        70,
+    ),
     # ── Rent ──────────────────────────────────────────────────────────────────
-    ("rent",          ["kira", "office rent", "rent payment",
-                       "lease payment", "rent", "lease"],                       65),
+    ("rent", ["kira", "office rent", "rent payment", "lease payment", "rent", "lease"], 65),
     # ── Utilities ─────────────────────────────────────────────────────────────
     # Not bare "fatura": every bill is a fatura, and "AWS ... Faturası"
     # became a utility, out-ranking "aws".
-    ("utilities",     ["elektrik", "su faturası", "doğalgaz",
-                       "electricity", "water bill", "gas bill",
-                       "internet", "phone", "telecom", "utilities"],           60),
+    (
+        "utilities",
+        [
+            "elektrik",
+            "su faturası",
+            "doğalgaz",
+            "electricity",
+            "water bill",
+            "gas bill",
+            "internet",
+            "phone",
+            "telecom",
+            "utilities",
+        ],
+        60,
+    ),
     # ── Marketing ─────────────────────────────────────────────────────────────
-    ("marketing",     ["google ads", "meta ads", "facebook ads", "reklam",
-                       "advertising", "marketing", "social media",
-                       "campaign", "dijital reklam"],                           55),
+    (
+        "marketing",
+        [
+            "google ads",
+            "meta ads",
+            "facebook ads",
+            "reklam",
+            "advertising",
+            "marketing",
+            "social media",
+            "campaign",
+            "dijital reklam",
+        ],
+        55,
+    ),
     # ── Technology ────────────────────────────────────────────────────────────
-    ("technology",    ["aws", "azure", "google cloud", "digitalocean",
-                       "github", "jira", "figma", "saas",
-                       "software license", "server", "cloud",
-                       "subscription", "license", "yazılım"],                  50),
+    (
+        "technology",
+        [
+            "aws",
+            "azure",
+            "google cloud",
+            "digitalocean",
+            "github",
+            "jira",
+            "figma",
+            "saas",
+            "software license",
+            "server",
+            "cloud",
+            "subscription",
+            "license",
+            "yazılım",
+        ],
+        50,
+    ),
     # ── Other expense fallback ────────────────────────────────────────────────
-    ("other_expense", [],                                                       0),
+    ("other_expense", [], 0),
     # ── Balance-sheet movement; only an account code or a person sets it ─────
-    ("transfer",      [],                                                       0),
+    ("transfer", [], 0),
 ]
 
 # Build a fast lookup: category → (keywords, priority)
@@ -155,7 +261,10 @@ def _detect_currency(raw_text: str) -> str:
     text_upper = raw_text[:2000].upper()  # Only scan the header
 
     # Explicit Turkish lira markers
-    if any(marker in text_upper for marker in ["₺", "TL ", " TL\n", "TRY", "TÜRK LİRASI", "TÜRK LIRASI"]):
+    if any(
+        marker in text_upper
+        for marker in ["₺", "TL ", " TL\n", "TRY", "TÜRK LİRASI", "TÜRK LIRASI"]
+    ):
         return "TRY"
     # Euro markers
     if any(marker in text_upper for marker in ["€", "EUR ", " EUR\n", "EURO"]):
@@ -190,12 +299,12 @@ def _parse_amount(raw: str) -> int | None:
         return None
 
     # Detect format: if both separators present, identify which is decimal
-    has_dot   = "." in s
+    has_dot = "." in s
     has_comma = "," in s
 
     if has_dot and has_comma:
         # Whichever appears last is the decimal separator
-        last_dot   = s.rfind(".")
+        last_dot = s.rfind(".")
         last_comma = s.rfind(",")
         if last_comma > last_dot:
             # European format: 1.000,50 → remove dots, replace comma with dot
@@ -231,8 +340,15 @@ def _is_negative(raw: str) -> bool:
 
 def _parse_date(raw: str) -> datetime | None:
     # Excel date cells arrive as "2024-01-03 00:00:00".
-    formats = ["%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y",
-               "%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S"]
+    formats = [
+        "%d.%m.%Y",
+        "%d/%m/%Y",
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%m/%d/%Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%d.%m.%Y %H:%M:%S",
+    ]
     for fmt in formats:
         try:
             return datetime.strptime(raw.strip(), fmt).replace(tzinfo=UTC)
@@ -241,9 +357,7 @@ def _parse_date(raw: str) -> datetime | None:
     return None
 
 
-async def _extract_transactions_with_llm(
-    raw_text: str, settings
-) -> list[dict[str, Any]]:
+async def _extract_transactions_with_llm(raw_text: str, settings) -> list[dict[str, Any]]:
     """
     Use LLM (DeepSeek / OpenAI compatible) to extract structured transactions.
     Returns list of dicts: date, amount, type, description, vendor, confidence.
@@ -265,14 +379,17 @@ async def _extract_transactions_with_llm(
         '"description": "Electricity bill", "vendor": "City Power Co.", "confidence": 0.95}]'
     )
     import json
+
     try:
-        content = (await complete_text(
-            task="simple_extraction",
-            system_prompt=system,
-            prompt=f"Document text:\n\n{raw_text[:8000]}",
-            temperature=0.0,
-            max_tokens=4096,
-        )).strip()
+        content = (
+            await complete_text(
+                task="simple_extraction",
+                system_prompt=system,
+                prompt=f"Document text:\n\n{raw_text[:8000]}",
+                temperature=0.0,
+                max_tokens=4096,
+            )
+        ).strip()
     except LLMUnavailable:
         return []
     if content.startswith("```"):
@@ -294,6 +411,7 @@ def _read_pdf(file_path: str) -> str:
     """
     try:
         from app.services.ocr_service import extract_text_from_pdf
+
         result = extract_text_from_pdf(file_path)
 
         if result.needs_llm_fallback:
@@ -313,8 +431,11 @@ def _read_pdf(file_path: str) -> str:
 
     except Exception as exc:
         # Graceful fallback to original simple extraction
-        logger.warning("OCR service failed (%s), falling back to basic PDF read: %s", file_path, exc)
+        logger.warning(
+            "OCR service failed (%s), falling back to basic PDF read: %s", file_path, exc
+        )
         import fitz
+
         text_parts: list[str] = []
         with fitz.open(file_path) as doc:
             for page in doc:
@@ -324,6 +445,7 @@ def _read_pdf(file_path: str) -> str:
 
 def _read_excel(file_path: str) -> str:
     from openpyxl import load_workbook
+
     wb = load_workbook(file_path, read_only=True, data_only=True)
     rows: list[str] = []
     for sheet in wb.worksheets:
@@ -344,30 +466,34 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
     transactions = []
     for tx in statement.transactions:
         hesap = tdhp.hesap(tx.account_code)
-        transactions.append({
-            "amount_cents": tx.amount_cents,
-            "currency": tx.currency,
-            "type": tx.tx_type,
-            "category": (
-                _kodlu_kategori(hesap, tx.description) if hesap is not None
-                else _guess_category(tx.description, tx.tx_type)
-            ),
-            "account_code": tx.account_code,
-            "description": tx.description,
-            "vendor": tx.vendor,
-            "transaction_date": tx.date.isoformat() if tx.date else None,
-            "raw_text": (
-                f"{tx.raw_row}\n[yön] {tx.confidence_note}"
-                if tx.confidence_note else tx.raw_row
-            ),
-            # Structured parsers are high-confidence about the *rows*; they are
-            # not automatically right about which way the money went. A parser
-            # that knows better says so, and only then does this cap apply.
-            "confidence": min(0.95, tx.confidence),
-            # Not money moved: the bank's own running total, which proves the
-            # balance the statement closes on (app.services.bank_balance).
-            "balance_cents": tx.balance_cents,
-        })
+        transactions.append(
+            {
+                "amount_cents": tx.amount_cents,
+                "currency": tx.currency,
+                "type": tx.tx_type,
+                "category": (
+                    _kodlu_kategori(hesap, tx.description)
+                    if hesap is not None
+                    else _guess_category(tx.description, tx.tx_type)
+                ),
+                "account_code": tx.account_code,
+                "description": tx.description,
+                "vendor": tx.vendor,
+                "transaction_date": tx.date.isoformat() if tx.date else None,
+                "raw_text": (
+                    f"{tx.raw_row}\n[yön] {tx.confidence_note}"
+                    if tx.confidence_note
+                    else tx.raw_row
+                ),
+                # Structured parsers are high-confidence about the *rows*; they are
+                # not automatically right about which way the money went. A parser
+                # that knows better says so, and only then does this cap apply.
+                "confidence": min(0.95, tx.confidence),
+                # Not money moved: the bank's own running total, which proves the
+                # balance the statement closes on (app.services.bank_balance).
+                "balance_cents": tx.balance_cents,
+            }
+        )
     return transactions
 
 
@@ -375,7 +501,12 @@ _HESAP_KODU_KOLONLARI = ("hesap kodu", "hesap no", "hesap", "account_code", "acc
 
 
 def _hesap_kodlu_satir(
-    hesap: tdhp.Hesap, borc: str, alacak: str, raw_amt: str, raw_desc: str, raw_cat: str,
+    hesap: tdhp.Hesap,
+    borc: str,
+    alacak: str,
+    raw_amt: str,
+    raw_desc: str,
+    raw_cat: str,
 ) -> tuple[str, int, str] | None:
     """(type, signed kuruş, category) of a row whose account the map knows; None to skip it.
 
@@ -439,7 +570,8 @@ def _yukleyenin_kategorisi(raw_cat: str, raw_desc: str, tx_type: str) -> str:
     """
     cat_lower = raw_cat.strip().lower()
     category = (
-        cat_lower if cat_lower in KNOWN_CATEGORIES
+        cat_lower
+        if cat_lower in KNOWN_CATEGORIES
         else _guess_category(raw_desc or raw_cat, tx_type)
     )
     if category == "tax" and _guess_category(raw_desc, tx_type) == "tax_payment":
@@ -515,6 +647,7 @@ def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict
     """
     import csv
     import io
+
     try:
         # Excel sheets are read as tab-separated and Turkish exports often use
         # ";" — the header line says which one this file uses.
@@ -536,7 +669,7 @@ def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict
 
 
 _EBELGE_MARKERS = ("urn:oasis:names:specification:ubl:schema:xsd:", "http://earsiv.efatura.gov.tr")
-_EMBEDDED_XML_LIMIT = 10 * 1024 * 1024   # the upload cap; an attachment cannot exceed its file
+_EMBEDDED_XML_LIMIT = 10 * 1024 * 1024  # the upload cap; an attachment cannot exceed its file
 
 
 def _pdf_embedded_xml(file_path: str) -> list[str]:
@@ -594,9 +727,7 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
         from app.parsers.invoice.ubl_tr import NotAnInvoiceError, UBLTRInvoiceParser
 
         try:
-            inv = UBLTRInvoiceParser.parse_xml(
-                raw_text, own_vkn=get_settings().gib_vkn
-            )
+            inv = UBLTRInvoiceParser.parse_xml(raw_text, own_vkn=get_settings().gib_vkn)
         except NotAnInvoiceError as exc:
             # e-Müstahsil is a UBL CreditNote and e-SMM is e-Arşiv data; both
             # used to stop here as "not an invoice, skipped". e-İrsaliye,
@@ -612,9 +743,7 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
         # only return a known category — this line was the one that could
         # not, so nothing downstream recognised what it emitted.
         category = "revenue" if is_income else "cogs"
-        counterparty = (
-            inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
-        )
+        counterparty = inv.customer.title if is_income else (inv.supplier.title or "Tedarikçi")
 
         amount_cents = amount_to_cents(
             inv.payable_amount or inv.tax_inclusive_total or inv.line_extension_total
@@ -641,35 +770,49 @@ def _try_parse_ubl_xml(raw_text: str) -> list[dict[str, Any]] | None:
             t.tax_category_code == KDV_TAX_CODE for t in inv.tax_subtotals if t.tax_amount
         )
         kdv_cents = (
-            abs(amount_to_cents(sum(
-                (t.tax_amount for t in inv.tax_subtotals if t.tax_category_code == KDV_TAX_CODE),
-                Decimal("0"),
-            )))
+            abs(
+                amount_to_cents(
+                    sum(
+                        (
+                            t.tax_amount
+                            for t in inv.tax_subtotals
+                            if t.tax_category_code == KDV_TAX_CODE
+                        ),
+                        Decimal("0"),
+                    )
+                )
+            )
             if not inv.needs_review and only_kdv and not inv.withholding_tax_amount
             else None
         )
+        stopaj_cents = (
+            abs(amount_to_cents(inv.withholding_tax_amount)) if inv.withholding_tax_amount else None
+        )
 
-        return [{
-            "amount_cents": abs(amount_cents),
-            "kdv_cents": kdv_cents,
-            "currency": inv.currency_code or "TRY",
-            "type": tx_type,
-            "category": category,
-            "description": f"e-Fatura {inv.invoice_number}: {counterparty}",
-            "vendor": counterparty if not is_income else None,
-            "transaction_date": inv.issue_date.isoformat() if inv.issue_date else None,
-            "raw_text": (
-                f"UUID: {inv.invoice_uuid} | No: {inv.invoice_number} "
-                f"| Type: {inv.invoice_type}{note}"
-            ),
-            "confidence": confidence,
-            # A cash plan's raw material. Only when we know which side we are
-            # on: without that nobody can be said to owe anybody.
-            "document_id": None if inv.invoice_uuid == "N/A" else inv.invoice_uuid,
-            "due_date": inv.payment_due_date.isoformat() if inv.payment_due_date else None,
-            "payment_note": inv.payment_note or None,
-            "counterparty": counterparty if inv.direction in ("sale", "purchase") else None,
-        }]
+        return [
+            {
+                "amount_cents": abs(amount_cents),
+                "kdv_cents": kdv_cents,
+                "stopaj_cents": stopaj_cents,
+                "currency": inv.currency_code or "TRY",
+                "type": tx_type,
+                "category": category,
+                "description": f"e-Fatura {inv.invoice_number}: {counterparty}",
+                "vendor": counterparty if not is_income else None,
+                "transaction_date": inv.issue_date.isoformat() if inv.issue_date else None,
+                "raw_text": (
+                    f"UUID: {inv.invoice_uuid} | No: {inv.invoice_number} "
+                    f"| Type: {inv.invoice_type}{note}"
+                ),
+                "confidence": confidence,
+                # A cash plan's raw material. Only when we know which side we are
+                # on: without that nobody can be said to owe anybody.
+                "document_id": None if inv.invoice_uuid == "N/A" else inv.invoice_uuid,
+                "due_date": inv.payment_due_date.isoformat() if inv.payment_due_date else None,
+                "payment_note": inv.payment_note or None,
+                "counterparty": counterparty if inv.direction in ("sale", "purchase") else None,
+            }
+        ]
     except Exception as exc:
         # Was logged at debug. A NameError in this function turned every
         # uploaded e-Fatura into "no transactions" with nothing in the log at
@@ -712,31 +855,35 @@ def _try_parse_makbuz(raw_text: str) -> list[dict[str, Any]] | None:
         who = other.title or other.vkn_tckn or "karşı taraf"
         what = f" — {m.items[0]}" if m.items else ""
         understood = bool(m.suggested_tdhp_entries)
-        return [{
-            # What changes hands. Stopaj is paid to the tax office by the payer,
-            # so it is not part of this movement.
-            "amount_cents": abs(amount_to_cents(m.payable or m.gross)),
-            # The document states both; the journal needs both to book the fee
-            # at its gross and the tax where it belongs. Carried only when the
-            # receipt was understood — otherwise the entry is held, not split.
-            "kdv_cents": abs(amount_to_cents(m.kdv)) if understood else None,
-            "stopaj_cents": abs(amount_to_cents(m.stopaj)) if understood else None,
-            "currency": m.currency or "TRY",
-            "type": "income" if is_income else "expense",
-            "category": category,
-            "description": f"{label} {m.number}: {who}{what}",
-            # e-SMM data carries the professional's VKN but not their name.
-            "vendor": None if is_income else who,
-            "transaction_date": m.issue_date.isoformat() if m.issue_date else None,
-            "raw_text": f"UUID: {m.uuid} | No: {m.number} | Tür: {label}{note}",
-            "confidence": 0.4 if m.needs_review else 0.95,
-        }]
+        return [
+            {
+                # What changes hands. Stopaj is paid to the tax office by the payer,
+                # so it is not part of this movement.
+                "amount_cents": abs(amount_to_cents(m.payable or m.gross)),
+                # The document states both; the journal needs both to book the fee
+                # at its gross and the tax where it belongs. Carried only when the
+                # receipt was understood — otherwise the entry is held, not split.
+                "kdv_cents": abs(amount_to_cents(m.kdv)) if understood else None,
+                "stopaj_cents": abs(amount_to_cents(m.stopaj)) if understood else None,
+                "currency": m.currency or "TRY",
+                "type": "income" if is_income else "expense",
+                "category": category,
+                "description": f"{label} {m.number}: {who}{what}",
+                # e-SMM data carries the professional's VKN but not their name.
+                "vendor": None if is_income else who,
+                "transaction_date": m.issue_date.isoformat() if m.issue_date else None,
+                "raw_text": f"UUID: {m.uuid} | No: {m.number} | Tür: {label}{note}",
+                "confidence": 0.4 if m.needs_review else 0.95,
+            }
+        ]
     except Exception as exc:
         logger.warning("e-Müstahsil/e-SMM ayrıştırılamadı: %s", exc)
         return None
 
 
-def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
+def _tablo_ekstresi(
+    file_path: str, atlanan: list[str] | None = None
+) -> list[dict[str, Any]] | None:
     """The statement table inside a spreadsheet, found under any title rows, as transactions."""
     from app.services.ingest.recognize import standart_csv, tabloyu_sec
     from app.services.ingest.schemas import BANKA_EKSTRESI
@@ -760,32 +907,38 @@ def tur_kategori_celiskisi(txs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     in no revenue line either — it vanished from the statement without a word.
     """
     return [
-        t for t in txs
+        t
+        for t in txs
         if t.get("category") in KNOWN_CATEGORIES
         and not _yonle_uyumlu(str(t.get("category")), str(t.get("type")))
     ]
 
 
 def _csv_sonucu(
-    csv_txs: list[dict[str, Any]], raw_text: str, job_id: Any, atlanan: list[str] | None = None,
+    csv_txs: list[dict[str, Any]],
+    raw_text: str,
+    job_id: Any,
+    atlanan: list[str] | None = None,
 ) -> SkillResult:
     # Confidence must reflect data quality: rows with an unparseable
     # date or a zero amount are only partially usable. A file where
     # most dates failed to parse should NOT sail through the gate.
     # (A correction posted to an account carries a negative amount.)
     well_formed = sum(
-        1 for tx in csv_txs
-        if tx.get("transaction_date") and tx.get("amount_cents", 0) != 0
+        1 for tx in csv_txs if tx.get("transaction_date") and tx.get("amount_cents", 0) != 0
     )
     ratio = well_formed / len(csv_txs)
     overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
     # What a person has to look at: income-statement accounts the map does not
     # know (read by their words), rows whose category contradicts their
     # direction, and transfer/closing postings that were left out.
-    tanimsiz = sorted({
-        str(t["account_code"]) for t in csv_txs
-        if t.get("account_code") and tdhp.hesap(t["account_code"]) is None
-    })
+    tanimsiz = sorted(
+        {
+            str(t["account_code"])
+            for t in csv_txs
+            if t.get("account_code") and tdhp.hesap(t["account_code"]) is None
+        }
+    )
     celisen = tur_kategori_celiskisi(csv_txs)
     notlar = [f"{well_formed} well-formed, confidence={overall_confidence:.2f}"]
     if tanimsiz:
@@ -796,7 +949,9 @@ def _csv_sonucu(
         notlar.append(f"{len(atlanan)} transfer/closing postings not read")
     logger.info(
         "job=%s — deterministic CSV parser: %d transactions (%s)",
-        job_id, len(csv_txs), "; ".join(notlar),
+        job_id,
+        len(csv_txs),
+        "; ".join(notlar),
     )
     return SkillResult(
         ok=True,
@@ -821,28 +976,39 @@ def _yevmiye_sonucu(raw_text: str) -> SkillResult:
         sonuc = yevmiye_oku(raw_text.encode("utf-8"))
     except NotAJournal as exc:
         return SkillResult(
-            ok=False, needs_review=True, confidence=0.0,
+            ok=False,
+            needs_review=True,
+            confidence=0.0,
             detail=f"e-Defter belgesi yevmiye değil ({exc.tur}); gelir tablosu için yevmiye defteri gerekir.",
         )
-    ozet = (f"e-Defter yevmiye: {sonuc.kayit_sayisi} kayıt, {len(sonuc.islemler)} gelir tablosu "
-            f"satırı (tahakkuk esası); {sonuc.atlanan_kayit} yansıtma/kapanış kaydı atlandı.")
+    ozet = (
+        f"e-Defter yevmiye: {sonuc.kayit_sayisi} kayıt, {len(sonuc.islemler)} gelir tablosu "
+        f"satırı (tahakkuk esası); {sonuc.atlanan_kayit} yansıtma/kapanış kaydı atlandı."
+    )
     if not sonuc.islemler:
-        return SkillResult(ok=False, needs_review=True, confidence=0.0,
-                           detail=ozet + " Gelir ya da gider hesabına kayıt yok.")
+        return SkillResult(
+            ok=False,
+            needs_review=True,
+            confidence=0.0,
+            detail=ozet + " Gelir ya da gider hesabına kayıt yok.",
+        )
     tanimsiz = sonuc.tanimsiz_hesaplar
     return SkillResult(
         ok=True,
         patch={"raw_text": raw_text[:_EN_FAZLA_METIN], "transactions": sonuc.islemler},
         confidence=0.95 if not tanimsiz else 0.6,
         needs_review=bool(tanimsiz),
-        detail=ozet + (f" Tanınmayan gelir tablosu hesapları: {', '.join(tanimsiz)} — "
-                       "bu kayıtlar okunmadı, lütfen kontrol edin." if tanimsiz else ""),
+        detail=ozet
+        + (
+            f" Tanınmayan gelir tablosu hesapları: {', '.join(tanimsiz)} — "
+            "bu kayıtlar okunmadı, lütfen kontrol edin."
+            if tanimsiz
+            else ""
+        ),
     )
 
 
-async def run_data_ingestion(
-    state: CFOState, config: AgentRunConfig
-) -> SkillResult:
+async def run_data_ingestion(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """
     Data Ingestion Skill.
     done_when: state['transactions'] is a non-empty list.
@@ -865,7 +1031,10 @@ async def run_data_ingestion(
         )
 
     sonuc = await _belgeyi_al(
-        state.get("file_path", ""), state.get("file_type", ""), state, config,
+        state.get("file_path", ""),
+        state.get("file_type", ""),
+        state,
+        config,
     )
     ekler = list(state.get("ek_belgeler") or [])
     if not ekler:
@@ -893,13 +1062,19 @@ async def run_data_ingestion(
             guven = min(guven, 0.5)
 
     if not islemler:
-        return SkillResult(ok=False, needs_review=True, confidence=0.0,
-                           detail=f"{len(ekler) + 1} belgenin hiçbirinden işlem çıkarılamadı. "
-                                  + " | ".join(detaylar))
+        return SkillResult(
+            ok=False,
+            needs_review=True,
+            confidence=0.0,
+            detail=f"{len(ekler) + 1} belgenin hiçbirinden işlem çıkarılamadı. "
+            + " | ".join(detaylar),
+        )
     return SkillResult(
         ok=True,
-        patch={"raw_text": _BELGE_ARASI.join(t for t in metinler if t)[:_EN_FAZLA_METIN],
-               "transactions": islemler},
+        patch={
+            "raw_text": _BELGE_ARASI.join(t for t in metinler if t)[:_EN_FAZLA_METIN],
+            "transactions": islemler,
+        },
         confidence=guven,
         needs_review=inceleme,
         detail=f"{len(ekler) + 1} belge, {len(islemler)} işlem. " + " | ".join(detaylar),
@@ -930,7 +1105,13 @@ async def _belgeyi_al(
     # Reading and parsing are synchronous CPU and disk work over the whole
     # file. They run in a thread: on the event loop a large statement stopped
     # the API answering anyone else until it was read.
-    readers = {"pdf": _read_pdf, "xlsx": _read_excel, "xls": _read_excel, "csv": _read_csv, "xml": _read_xml}
+    readers = {
+        "pdf": _read_pdf,
+        "xlsx": _read_excel,
+        "xls": _read_excel,
+        "csv": _read_csv,
+        "xml": _read_xml,
+    }
     try:
         if file_type not in readers:
             return SkillResult(ok=False, detail=f"Unsupported file type: {file_type}", halt=True)
@@ -978,7 +1159,9 @@ async def _belgeyi_al(
                 ubl_confidence = min(float(t.get("confidence", 0.8)) for t in ubl_txs)
                 logger.info(
                     "job=%s — UBL-TR XML parser parsed %d invoice transactions (conf=%.2f)",
-                    state.get("job_id"), len(ubl_txs), ubl_confidence,
+                    state.get("job_id"),
+                    len(ubl_txs),
+                    ubl_confidence,
                 )
                 return SkillResult(
                     ok=True,
@@ -1008,15 +1191,17 @@ async def _belgeyi_al(
         if detected_bank is not None:
             logger.info(
                 "job=%s — using bank parser: %s",
-                state.get("job_id"), detected_bank.bank_display_name,
+                state.get("job_id"),
+                detected_bank.bank_display_name,
             )
-            statement: ParsedStatement = await asyncio.to_thread(detected_bank().parse, raw_text, file_path)
+            statement: ParsedStatement = await asyncio.to_thread(
+                detected_bank().parse, raw_text, file_path
+            )
             transactions = _statement_to_transactions(statement)
 
             if transactions:
                 parseable = sum(
-                    1 for tx in transactions
-                    if tx["amount_cents"] != 0 and tx["transaction_date"]
+                    1 for tx in transactions if tx["amount_cents"] != 0 and tx["transaction_date"]
                 )
                 overall_confidence = 0.95 if parseable / len(transactions) >= 0.8 else 0.75
                 # A well-formed row booked on the wrong side is still wrong, so
@@ -1032,7 +1217,8 @@ async def _belgeyi_al(
                 if statement.parse_warnings:
                     logger.warning(
                         "job=%s — parser warnings: %s",
-                        state.get("job_id"), statement.parse_warnings,
+                        state.get("job_id"),
+                        statement.parse_warnings,
                     )
                 return SkillResult(
                     ok=True,
@@ -1042,14 +1228,18 @@ async def _belgeyi_al(
                     detail=detail,
                 )
         # ── Strategy 1.5: Generic CSV parser (deterministic, fast, no LLM) ─
-        if file_type in ("csv", "xlsx", "xls") or any(d in raw_text[:500] for d in (",", ";", "\t")):
+        if file_type in ("csv", "xlsx", "xls") or any(
+            d in raw_text[:500] for d in (",", ";", "\t")
+        ):
             atlanan = []
             csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text, atlanan)
             if csv_txs:
                 return _csv_sonucu(csv_txs, raw_text, state.get("job_id"), atlanan)
 
         # ── Strategy 2: LLM fallback ───────────────────────────────────────
-        logger.info("job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id"))
+        logger.info(
+            "job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id")
+        )
         raw_transactions = await _extract_transactions_with_llm(raw_text, settings)
 
         if not raw_transactions:
@@ -1064,7 +1254,8 @@ async def _belgeyi_al(
         detected_currency = _detect_currency(raw_text)
         logger.info(
             "job=%s — detected currency: %s (LLM fallback path)",
-            state.get("job_id"), detected_currency,
+            state.get("job_id"),
+            detected_currency,
         )
 
         transactions = []
@@ -1079,22 +1270,23 @@ async def _belgeyi_al(
             # Use per-transaction currency if LLM provided one, else fall back to detected
             tx_currency = t.get("currency") or detected_currency
 
-            transactions.append({
-                "amount_cents": amount_cents or 0,
-                "currency": tx_currency,
-                "type": t.get("type", "expense"),
-                "category": _guess_category(t.get("description", ""), t.get("type", "expense")),
-                "description": t.get("description", ""),
-                "vendor": t.get("vendor"),
-                "transaction_date": parsed_date.isoformat() if parsed_date else None,
-                "raw_text": str(t),
-                "confidence": conf,
-            })
+            transactions.append(
+                {
+                    "amount_cents": amount_cents or 0,
+                    "currency": tx_currency,
+                    "type": t.get("type", "expense"),
+                    "category": _guess_category(t.get("description", ""), t.get("type", "expense")),
+                    "description": t.get("description", ""),
+                    "vendor": t.get("vendor"),
+                    "transaction_date": parsed_date.isoformat() if parsed_date else None,
+                    "raw_text": str(t),
+                    "confidence": conf,
+                }
+            )
 
         overall_confidence = min(confidences) if confidences else 0.5
         parseable = sum(
-            1 for tx in transactions
-            if tx["amount_cents"] > 0 and tx["transaction_date"]
+            1 for tx in transactions if tx["amount_cents"] > 0 and tx["transaction_date"]
         )
         parse_ratio = parseable / len(transactions) if transactions else 0
 

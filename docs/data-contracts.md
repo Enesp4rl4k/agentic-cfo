@@ -20,6 +20,12 @@
 | Görünüm imzası | Satırların içerik kimliği, günü, tutarı, yönü, kategorisi | `company_view._signature` | Evet (satır kimliklerinden ve sıradan bağımsız) | `test_ledger_rebuild.py` |
 | Nakit radarı | Açık kalemler, ödeme davranışı, kanıtlanmış banka bakiyesi | `services.cash_radar.compute_cash_radar` | Evet, **bugünün tarihi sabit verilirse** (`anchor_date`); verilmezse çıktı güne bağlıdır | `test_cash_radar.py` |
 
+### Tahmin ölçümü ve kayıt sözleşmesi
+
+Canlı nakit radarı isteği, üretilen haftalık projeksiyonu içerik özetiyle `cash_radar_snapshots` tablosuna yazar. Aynı girdi aynı gün içinde tekrar gelirse tek kayıt kalır; değişen projeksiyon yeni, değiştirilemez bir kayıt oluşturur. Açık kalemlerden geçmişe dönük radar hesaplanmaz: ödeme, tahsilat ve eşleşme kararları sonradan değişmiş olabilir. Backtest yalnız hedef tarihte bitecek kaydı ve aynı gün tarihli kanıtlı banka kapanışını karşılaştırır; iki kanıtın biri yoksa doğruluk oranı göstermez.
+
+Karar metrikleri yalnızca `cash_radar` ve `monday_briefing` kaynaklı, `actual.owner_response` alanında açıkça `done`, `deferred` veya `dismissed` yanıtı bulunan önerileri yanıtlanmış sayar. Benimsenme ve ret oranlarının paydası yanıtlanan önerilerdir; yanıt oranı toplam önerileri kullanır. Kabul edilen eylemlerin tutarı beklenen tutardır, gerçekleşmiş finansal etki değildir.
+
 ## Bilinen boşluk: insan kararları türetilmiş verinin içinde duruyor
 
 Mükerrer kararı defter satırının, eşleşme kararı eşleşme kaydının içinde saklanıyor; ikisi de türetilmiş tablolarda. Defteri silip belgelerden yeniden okumak rakamları verir (`test_ledger_rebuild.py`), ama **verilmiş kararları geri getirmez**: "ayrı ödeme" denmiş bir satır yeniden olası mükerrer olarak gelir, reddedilmiş bir eşleşme yeniden önerilir.

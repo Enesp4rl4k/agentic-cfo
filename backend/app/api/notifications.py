@@ -11,6 +11,7 @@ PUT    /notifications/preferences         → Update org notification preference
 
 POST   /notifications/test-slack          → Send a test Slack message
 """
+
 from __future__ import annotations
 
 import json
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _require_org(user: User) -> str:
     if not user.org_id:
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
@@ -44,46 +46,47 @@ def _require_org(user: User) -> str:
 
 def _notif_dict(n: InAppNotification) -> dict[str, Any]:
     return {
-        "id":             n.id,
-        "level":          n.level,
-        "domain":         n.domain,
-        "message":        n.message,
-        "source":         n.source,
-        "job_id":         n.job_id,
-        "action":         n.action,
+        "id": n.id,
+        "level": n.level,
+        "domain": n.domain,
+        "message": n.message,
+        "source": n.source,
+        "job_id": n.job_id,
+        "action": n.action,
         "priority_score": n.priority_score,
-        "is_read":        n.is_read,
-        "read_at":        n.read_at.isoformat() if n.read_at else None,
-        "created_at":     n.created_at.isoformat(),
+        "is_read": n.is_read,
+        "read_at": n.read_at.isoformat() if n.read_at else None,
+        "created_at": n.created_at.isoformat(),
     }
 
 
 def _pref_dict(p: AlertPreference) -> dict[str, Any]:
     return {
-        "org_id":               p.org_id,
-        "channels":             json.loads(p.channels) if p.channels else ["dashboard"],
-        "min_severity":         p.min_severity,
-        "slack_webhook_url":    p.slack_webhook_url,
-        "slack_channel":        p.slack_channel,
-        "email_recipients":     json.loads(p.email_recipients) if p.email_recipients else [],
-        "whatsapp_number":      getattr(p, "whatsapp_number", None),
+        "org_id": p.org_id,
+        "channels": json.loads(p.channels) if p.channels else ["dashboard"],
+        "min_severity": p.min_severity,
+        "slack_webhook_url": p.slack_webhook_url,
+        "slack_channel": p.slack_channel,
+        "email_recipients": json.loads(p.email_recipients) if p.email_recipients else [],
+        "whatsapp_number": getattr(p, "whatsapp_number", None),
         "daily_digest_enabled": p.daily_digest_enabled,
-        "digest_hour_utc":      p.digest_hour_utc,
-        "quiet_hours_start":    p.quiet_hours_start,
-        "quiet_hours_end":      p.quiet_hours_end,
-        "escalation_only":      p.escalation_only,
-        "updated_at":           p.updated_at.isoformat(),
+        "digest_hour_utc": p.digest_hour_utc,
+        "quiet_hours_start": p.quiet_hours_start,
+        "quiet_hours_end": p.quiet_hours_end,
+        "escalation_only": p.escalation_only,
+        "updated_at": p.updated_at.isoformat(),
     }
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class UpdatePreferencesRequest(BaseModel):
-    channels: list[str] | None = None           # ["email", "slack", "whatsapp", "dashboard"]
-    min_severity: str | None = None              # "info" | "warning" | "critical"
+    channels: list[str] | None = None  # ["email", "slack", "whatsapp", "dashboard"]
+    min_severity: str | None = None  # "info" | "warning" | "critical"
     slack_webhook_url: str | None = None
     slack_channel: str | None = None
-    whatsapp_number: str | None = None          # "+905551234567" — country code required
+    whatsapp_number: str | None = None  # "+905551234567" — country code required
     email_recipients: list[str] | None = None
     daily_digest_enabled: bool | None = None
     digest_hour_utc: int | None = None
@@ -93,6 +96,7 @@ class UpdatePreferencesRequest(BaseModel):
 
 
 # ── Notification endpoints ────────────────────────────────────────────────────
+
 
 @router.get("/notifications")
 async def list_notifications(
@@ -117,8 +121,10 @@ async def list_notifications(
 
     # Unread count
     unread_result = await db.execute(
-        select(InAppNotification)
-        .where(InAppNotification.org_id == org_id, InAppNotification.is_read == False)  # noqa: E712
+        select(InAppNotification).where(
+            InAppNotification.org_id == org_id,
+            InAppNotification.is_read.is_(False),
+        )
     )
     unread_count = len(unread_result.scalars().all())
 
@@ -192,6 +198,7 @@ async def delete_notification(
 
 # ── Preference endpoints ──────────────────────────────────────────────────────
 
+
 @router.get("/notifications/preferences")
 async def get_preferences(
     current_user: User = Depends(get_current_user),
@@ -200,9 +207,7 @@ async def get_preferences(
     """Get notification preferences for the current org."""
     org_id = _require_org(current_user)
 
-    result = await db.execute(
-        select(AlertPreference).where(AlertPreference.org_id == org_id)
-    )
+    result = await db.execute(select(AlertPreference).where(AlertPreference.org_id == org_id))
     pref = result.scalar_one_or_none()
 
     if not pref:
@@ -237,9 +242,7 @@ async def update_preferences(
     """Create or update notification preferences for the current org."""
     org_id = _require_org(current_user)
 
-    result = await db.execute(
-        select(AlertPreference).where(AlertPreference.org_id == org_id)
-    )
+    result = await db.execute(select(AlertPreference).where(AlertPreference.org_id == org_id))
     pref = result.scalar_one_or_none()
 
     if not pref:
@@ -262,8 +265,12 @@ async def update_preferences(
     if body.whatsapp_number is not None:
         # Basic phone number sanity check — must start with + and contain only digits
         num = body.whatsapp_number.strip()
-        if num and (not num.startswith("+") or not num[1:].replace(" ", "").replace("-", "").isdigit()):
-            raise HTTPException(400, detail="whatsapp_number must include country code, e.g. +905551234567")
+        if num and (
+            not num.startswith("+") or not num[1:].replace(" ", "").replace("-", "").isdigit()
+        ):
+            raise HTTPException(
+                400, detail="whatsapp_number must include country code, e.g. +905551234567"
+            )
         pref.whatsapp_number = num or None  # type: ignore[attr-defined]
     if body.daily_digest_enabled is not None:
         pref.daily_digest_enabled = body.daily_digest_enabled
@@ -285,6 +292,7 @@ async def update_preferences(
 
 # ── Test endpoint ─────────────────────────────────────────────────────────────
 
+
 @router.post("/notifications/test-slack")
 async def test_slack(
     current_user: User = Depends(get_current_user),
@@ -293,14 +301,13 @@ async def test_slack(
     """Send a test Slack message to verify webhook configuration."""
     org_id = _require_org(current_user)
 
-    result = await db.execute(
-        select(AlertPreference).where(AlertPreference.org_id == org_id)
-    )
+    result = await db.execute(select(AlertPreference).where(AlertPreference.org_id == org_id))
     pref = result.scalar_one_or_none()
 
     webhook_url = pref.slack_webhook_url if pref else None
     if not webhook_url:
         from app.config import get_settings
+
         webhook_url = get_settings().slack_webhook_url or None
 
     if not webhook_url:
@@ -308,6 +315,7 @@ async def test_slack(
 
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 webhook_url,

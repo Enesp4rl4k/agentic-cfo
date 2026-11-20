@@ -4,6 +4,7 @@ Adapter over `app.services.github_connector.GitHubConnector` (the raw REST
 client). Emits one `CanonicalRow` per commit / pull request / issue, keyed by a
 stable `source_record_id` so re-syncs upsert instead of duplicating.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -19,7 +20,6 @@ from app.connectors.base import (
     ConnectorPayload,
     Watermark,
 )
-from app.connectors.registry import register
 
 # When a connection has never synced, look back this far on the first pull.
 _FIRST_SYNC_LOOKBACK_DAYS = 30
@@ -36,7 +36,6 @@ def _iso_to_dt(value: str | None) -> datetime | None:
         return None
 
 
-@register
 class GitHubConnector(Connector):
     name: ClassVar[str] = "github"
     domain: ClassVar[str] = "engineering"
@@ -126,9 +125,7 @@ class GitHubConnector(Connector):
             created = _iso_to_dt(pr.created_at)
             merged = _iso_to_dt(pr.merged_at)
             cycle_h = (
-                int((merged - created).total_seconds() // 3600)
-                if created and merged
-                else None
+                int((merged - created).total_seconds() // 3600) if created and merged else None
             )
             rows.append(
                 CanonicalRow(

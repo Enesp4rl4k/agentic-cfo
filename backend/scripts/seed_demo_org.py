@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,19 +21,21 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.database import AsyncSessionLocal, engine, Base
-from app.models.organization import Organization
-from app.models.user import User
-from app.models.company_context import CompanyContextSnapshot
-from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
-from app.models.sync_run import SyncRun
+from app.database import AsyncSessionLocal
+from app.models.agent_conflict import AgentConflict  # noqa: F401
 from app.models.canonical_transaction import CanonicalTransaction
-from app.models.agent_conflict import AgentConflict
+from app.models.company_context import CompanyContextSnapshot  # noqa: F401
+from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow  # noqa: F401
+from app.models.organization import Organization
+from app.models.sync_run import SyncRun  # noqa: F401
+
+# Imported for their side effect: registering mappers so relationships resolve.
+from app.models.user import User  # noqa: F401
 from app.services.company_context import CompanyContext, save_company_context
 from app.services.semantic.rebuild import rebuild_semantic_snapshot
 
 DEMO_ORG_ID = "demo-org-contradiction-001"
-PERIOD_KEY = datetime.now(timezone.utc).strftime("%Y-%m")
+PERIOD_KEY = datetime.now(UTC).strftime("%Y-%m")
 
 
 async def seed() -> None:
@@ -106,7 +108,7 @@ async def seed() -> None:
         print("[+] Seeded CompanyContext (CFO runway 3.0 mo vs CMO 4.0x ROAS)")
 
         # Add canonical transactions
-        tx_date = datetime.now(timezone.utc)
+        tx_date = datetime.now(UTC)
         db.add(
             CanonicalTransaction(
                 org_id=DEMO_ORG_ID,
@@ -145,11 +147,11 @@ async def seed() -> None:
         )
         await db.commit()
 
-        print(f"[✓] Demo Org seeded successfully!")
+        print("[✓] Demo Org seeded successfully!")
         print(f"    - Org ID: {DEMO_ORG_ID}")
         print(f"    - Period: {snapshot.period.key if snapshot else 'N/A'}")
         print(f"    - Metrics Count: {len(snapshot.metrics) if snapshot else 0}")
-        print(f"    - Conflicts: CFO Revenue ($16k) vs Inflow ($10k) detected.")
+        print("    - Conflicts: CFO Revenue ($16k) vs Inflow ($10k) detected.")
 
 
 if __name__ == "__main__":

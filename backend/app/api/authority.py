@@ -1,10 +1,11 @@
 """Yetki Matrisi API — the org's Delegation-of-Authority policy.
 
-    GET  /authority/policy            — active policy (or the engine default)
-    PUT  /authority/policy            — replace rules → new version, activates it (owner/admin)
-    POST /authority/evaluate          — dry-run a request against the active policy
-    GET  /authority/policy/versions   — version history (audit trail)
+GET  /authority/policy            — active policy (or the engine default)
+PUT  /authority/policy            — replace rules → new version, activates it (owner/admin)
+POST /authority/evaluate          — dry-run a request against the active policy
+GET  /authority/policy/versions   — version history (audit trail)
 """
+
 from __future__ import annotations
 
 import logging
@@ -153,18 +154,25 @@ async def list_versions(
 ) -> dict[str, Any]:
     org_id = _org_id(current_user)
     rows = (
-        await db.execute(
-            select(AuthorityPolicy)
-            .where(AuthorityPolicy.org_id == org_id)
-            .order_by(AuthorityPolicy.version.desc())
+        (
+            await db.execute(
+                select(AuthorityPolicy)
+                .where(AuthorityPolicy.org_id == org_id)
+                .order_by(AuthorityPolicy.version.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "data": {
             "versions": [
                 {
-                    "id": r.id, "version": r.version, "active": r.active,
-                    "note": r.note, "rule_count": len(r.rules or []),
+                    "id": r.id,
+                    "version": r.version,
+                    "active": r.active,
+                    "note": r.note,
+                    "rule_count": len(r.rules or []),
                     "created_by": r.created_by_user_id,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                 }

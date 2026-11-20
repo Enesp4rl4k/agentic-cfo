@@ -10,6 +10,7 @@ Responsibilities:
 The HTTP layer (upload.py router) calls these functions and handles
 FastAPI-specific concerns (UploadFile, HTTPException, Depends).
 """
+
 from __future__ import annotations
 
 import os
@@ -27,13 +28,15 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 
 # extension → magic bytes (empty bytes = no magic check, e.g. CSV)
 ALLOWED_EXTENSIONS: dict[str, bytes] = {
-    "csv":  b"",
+    "csv": b"",
     "xlsx": b"PK\x03\x04",
-    "xls":  b"\xd0\xcf\x11\xe0",
-    "pdf":  b"%PDF",
+    "xls": b"\xd0\xcf\x11\xe0",
+    "pdf": b"%PDF",
     # e-Fatura / e-Arşiv, the document a Turkish company actually holds. No
     # fixed signature, so the check is in validate_xml_payload below.
-    "xml":  b"",
+    "xml": b"",
+    # e-Fatura / e-Arşiv batch zip package from GİB Portal, Sovos, Paraşüt etc.
+    "zip": b"PK\x03\x04",
 }
 
 _CHUNK_SIZE = 64 * 1024  # 64 KB read chunks
@@ -60,9 +63,7 @@ def validate_extension(ext: str) -> None:
         )
     if ext not in ALLOWED_EXTENSIONS:
         allowed = sorted(ALLOWED_EXTENSIONS)
-        raise FileValidationError(
-            f"Desteklenmeyen dosya türü '.{ext}'. İzin verilenler: {allowed}"
-        )
+        raise FileValidationError(f"Desteklenmeyen dosya türü '.{ext}'. İzin verilenler: {allowed}")
 
 
 def validate_magic_bytes(ext: str, header: bytes) -> None:
@@ -79,8 +80,7 @@ def validate_magic_bytes(ext: str, header: bytes) -> None:
         return  # CSV — no magic bytes to check
     if header[: len(expected)] != expected:
         raise FileValidationError(
-            "Dosya içeriği uzantısıyla eşleşmiyor. "
-            "Dosya geçersiz veya bozuk olabilir."
+            "Dosya içeriği uzantısıyla eşleşmiyor. Dosya geçersiz veya bozuk olabilir."
         )
 
 
@@ -99,6 +99,7 @@ def validate_xml_payload(data: bytes) -> None:
 
 
 # ── Persistence (PERF-1: streaming write) ─────────────────────────────────────
+
 
 @dataclass
 class UploadResult:

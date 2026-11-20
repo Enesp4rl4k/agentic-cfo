@@ -63,6 +63,10 @@ def parse_numeric_token(raw: str) -> float | None:
     elif "," in token:
         parts = token.split(",")
         token = token.replace(",", ".") if len(parts[-1]) <= 2 else token.replace(",", "")
+    elif "." in token:
+        parts = token.split(".")
+        if len(parts) == 2 and len(parts[-1]) == 3:
+            token = token.replace(".", "")
     try:
         return float(token)
     except ValueError:

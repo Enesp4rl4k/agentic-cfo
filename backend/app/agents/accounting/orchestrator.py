@@ -15,6 +15,7 @@ Bu agent CFO pipeline'ından bağımsız çalışabilir
 ama aynı zamanda auto_chain ile entegre çalışır:
   CFO analizi biter → muhasebe agent tetiklenir → kayıtlar oluşur → SMMM onaylar
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Sonuç yapısı ─────────────────────────────────────────────────────────────
+
 
 @dataclass
 class MuhasebeSonucu:
@@ -68,19 +70,19 @@ class MuhasebeSonucu:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "job_id":                self.job_id,
-            "islem_sayisi":          self.islem_sayisi,
-            "kayit_sayisi":          self.kayit_sayisi,
-            "onay_bekleyen":         self.onay_bekleyen,
-            "dengeli":               self.dengeli,
-            "denge_hatalari":        self.denge_hatalari,
-            "mizan":                 self.mizan,
-            "thp_dagilim":           self.thp_dagilim,
-            "ortalama_confidence":   round(self.ortalama_confidence, 3),
+            "job_id": self.job_id,
+            "islem_sayisi": self.islem_sayisi,
+            "kayit_sayisi": self.kayit_sayisi,
+            "onay_bekleyen": self.onay_bekleyen,
+            "dengeli": self.dengeli,
+            "denge_hatalari": self.denge_hatalari,
+            "mizan": self.mizan,
+            "thp_dagilim": self.thp_dagilim,
+            "ortalama_confidence": round(self.ortalama_confidence, 3),
             "dusuk_confidence_sayisi": self.dusuk_confidence_sayisi,
-            "onay_kuyrugu":          self.onay_kuyrugu,
-            "tamamlanma_zamani":     self.tamamlanma_zamani,
-            "hata":                  self.hata,
+            "onay_kuyrugu": self.onay_kuyrugu,
+            "tamamlanma_zamani": self.tamamlanma_zamani,
+            "hata": self.hata,
         }
 
     def to_full_dict(self) -> dict[str, Any]:
@@ -90,6 +92,7 @@ class MuhasebeSonucu:
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
+
 
 class MuhasebeAgent:
     """
@@ -140,7 +143,9 @@ class MuhasebeAgent:
         """
         logger.info(
             "MuhasebeAgent: job=%s transactions=%d company=%s",
-            job_id, len(transactions), company_name or "N/A",
+            job_id,
+            len(transactions),
+            company_name or "N/A",
         )
 
         if not transactions:
@@ -162,8 +167,10 @@ class MuhasebeAgent:
         # does not stop the API answering everyone else while it is booked.
         kayitlar: list[YevmiyeKaydi] = await asyncio.to_thread(
             self.engine.create_entries_batch,
-            transactions, thp_sonuclari,
-            authority_rules=authority_rules, guven_gecmisi=guven_gecmisi,
+            transactions,
+            thp_sonuclari,
+            authority_rules=authority_rules,
+            guven_gecmisi=guven_gecmisi,
         )
 
         # ── 3. Denge kontrolü ─────────────────────────────────────────────────
@@ -190,8 +197,14 @@ class MuhasebeAgent:
             {
                 **kayit.to_dict(),
                 "tx_description": transactions[i].get("description", ""),
-                "tx_amount_try": abs(int(transactions[i].get("amount_kurus") or
-                                        transactions[i].get("amount_cents") or 0)) / 100,
+                "tx_amount_try": abs(
+                    int(
+                        transactions[i].get("amount_kurus")
+                        or transactions[i].get("amount_cents")
+                        or 0
+                    )
+                )
+                / 100,
             }
             for i, kayit in enumerate(kayitlar)
             if kayit.onay_gerekli
@@ -215,7 +228,11 @@ class MuhasebeAgent:
 
         logger.info(
             "MuhasebeAgent tamamlandı: job=%s kayıt=%d onay_bekleyen=%d dengeli=%s conf=%.2f",
-            job_id, len(kayitlar), onay_bekleyen, dengeli, ort_confidence,
+            job_id,
+            len(kayitlar),
+            onay_bekleyen,
+            dengeli,
+            ort_confidence,
         )
 
         return sonuc
@@ -237,8 +254,7 @@ class MuhasebeAgent:
         # The codes are Tekdüzen Hesap Planı codes: only a TR chart reads them.
         tdhp_okur = not self.regional_packs or "tr" in self.regional_packs
         kaynaktan = [
-            kaynak_sonucu(tx.get("account_code")) if tdhp_okur else None
-            for tx in transactions
+            kaynak_sonucu(tx.get("account_code")) if tdhp_okur else None for tx in transactions
         ]
         girdiler = [
             {
@@ -250,12 +266,18 @@ class MuhasebeAgent:
             for tx in transactions
         ]
         sonuclar: list[THPSonucu] = await asyncio.to_thread(
-            lambda: [k or self.classifier.classify(**g) for k, g in zip(kaynaktan, girdiler, strict=True)]
+            lambda: [
+                k or self.classifier.classify(**g) for k, g in zip(kaynaktan, girdiler, strict=True)
+            ]
         )
         if not self.use_llm_fallback:
             return sonuclar
 
-        eksik = [i for i, r in enumerate(sonuclar) if getattr(r, "yontem", None) not in ("kural", "kaynak")]
+        eksik = [
+            i
+            for i, r in enumerate(sonuclar)
+            if getattr(r, "yontem", None) not in ("kural", "kaynak")
+        ]
         if not eksik:
             return sonuclar
         sinir = asyncio.Semaphore(_LLM_ESZAMANLI)
@@ -264,7 +286,13 @@ class MuhasebeAgent:
             async with sinir:
                 return await self.classifier.async_classify(**g)
 
-        anahtar = lambda g: (g["description"], g["amount_kurus"], g["transaction_type"], g["vendor"])  # noqa: E731
+        def anahtar(g: dict[str, Any]) -> tuple[Any, ...]:
+            return (
+                g["description"],
+                g["amount_kurus"],
+                g["transaction_type"],
+                g["vendor"],
+            )
         tekil: dict[tuple[Any, ...], asyncio.Task[THPSonucu]] = {}
         for i in eksik:
             k = anahtar(girdiler[i])
@@ -285,6 +313,7 @@ class MuhasebeAgent:
         Test veya hızlı batch işleme için.
         """
         import asyncio
+
         # Geçici olarak LLM fallback'i kapat
         orig = self.use_llm_fallback
         self.use_llm_fallback = False

@@ -1,4 +1,5 @@
 """İlişkili taraf sicili — matching and the authority rule it finally feeds."""
+
 from __future__ import annotations
 
 import pytest
@@ -32,6 +33,7 @@ def _party(name: str, *, tax_id: str | None = None, rel: str = "aile") -> Relate
 
 # ── Normalisation ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -54,8 +56,13 @@ def test_legal_forms_and_casing_collapse_to_one_name(raw: str, expected: str) ->
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [("1234567890", "1234567890"), ("12.345.678.901", "12345678901"),
-     ("123", ""), (None, ""), ("abc", "")],
+    [
+        ("1234567890", "1234567890"),
+        ("12.345.678.901", "12345678901"),
+        ("123", ""),
+        (None, ""),
+        ("abc", ""),
+    ],
 )
 def test_only_vkn_and_tckn_lengths_count_as_identifiers(raw, expected) -> None:
     assert normalize_tax_id(raw) == expected
@@ -63,11 +70,10 @@ def test_only_vkn_and_tckn_lengths_count_as_identifiers(raw, expected) -> None:
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 
+
 def test_matches_on_tax_id_even_when_the_name_differs() -> None:
     parties = [_party("Demir İnşaat A.Ş.", tax_id="1234567890")]
-    match = match_transaction(
-        {"vendor": "DMR YAPI", "tax_id": "1234567890"}, parties
-    )
+    match = match_transaction({"vendor": "DMR YAPI", "tax_id": "1234567890"}, parties)
     assert match is not None
     assert match.matched_on == "tax_id"
 
@@ -84,7 +90,7 @@ def test_matches_a_party_named_only_in_the_description() -> None:
 
 
 def test_short_names_do_not_match_on_containment() -> None:
-    """"Ata" must not flag "Atasehir kirasi" — a false positive costs the owner
+    """ "Ata" must not flag "Atasehir kirasi" — a false positive costs the owner
     an approval, but a register nobody trusts gets switched off."""
     parties = [_party("Ata")]
     assert match_transaction({"description": "Atasehir kirasi odemesi"}, parties) is None
@@ -116,6 +122,7 @@ def test_annotate_sets_the_flag_and_records_the_evidence() -> None:
 
 
 # ── The rule this exists to feed ──────────────────────────────────────────────
+
 
 def test_flagged_transaction_now_reaches_the_owner() -> None:
     """The delegation matrix has always had a related-party rule; nothing ever
@@ -156,6 +163,7 @@ def test_same_entry_without_the_flag_is_auto_approved() -> None:
 # it — and nobody lists their own related parties from memory. These cover the
 # ranking rule the suggestion endpoint applies.
 
+
 def test_suggestion_normalisation_dedupes_spellings() -> None:
     """The same counterparty spelled three ways is one suggestion.
 
@@ -187,7 +195,7 @@ def test_recurrence_is_counted_after_normalising_not_before() -> None:
         ("Ozturk Holding A.S.", 1, 25_000_00),
         ("OZTURK HOLDING ANONIM SIRKETI", 1, 25_000_00),
         ("Migros", 2, 1_750_00),
-        ("Acme Ltd", 1, 150_000_00),   # genuinely a one-off
+        ("Acme Ltd", 1, 150_000_00),  # genuinely a one-off
     ]
     out = group_counterparties(rows, known=set())
 

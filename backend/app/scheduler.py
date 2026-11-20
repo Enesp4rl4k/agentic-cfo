@@ -7,6 +7,7 @@ Görevler:
 
 FastAPI lifespan'ında başlatılır, uygulama kapanışında durdurulur.
 """
+
 from __future__ import annotations
 
 import functools
@@ -65,9 +66,7 @@ def _exclusive(
                 mark_unavailable(exc)
                 acquired = True  # broker down → run locally, as it always did
             if not acquired:
-                logger.debug(
-                    "Scheduler job %s skipped — held by another process", name
-                )
+                logger.debug("Scheduler job %s skipped — held by another process", name)
                 return
         await fn()
 
@@ -124,20 +123,19 @@ async def _scan_recent_jobs() -> None:
         for job in jobs:
             # Skip if already has anomalies from today
             count_result = await db.execute(
-                select(func.count()).select_from(Anomaly).where(
+                select(func.count())
+                .select_from(Anomaly)
+                .where(
                     Anomaly.job_id == job.id,
-                    Anomaly.created_at >= datetime.now(UTC).replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    ),
+                    Anomaly.created_at
+                    >= datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0),
                 )
             )
             if (count_result.scalar() or 0) > 0:
                 continue
 
             # Load transactions
-            tx_result = await db.execute(
-                select(Transaction).where(Transaction.job_id == job.id)
-            )
+            tx_result = await db.execute(select(Transaction).where(Transaction.job_id == job.id))
             txs = tx_result.scalars().all()
             if not txs:
                 continue
@@ -150,7 +148,9 @@ async def _scan_recent_jobs() -> None:
                     "category": tx.category,
                     "description": tx.description,
                     "vendor": tx.vendor,
-                    "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+                    "transaction_date": tx.transaction_date.isoformat()
+                    if tx.transaction_date
+                    else None,
                 }
                 for tx in txs
             ]
@@ -177,43 +177,107 @@ async def _scan_recent_jobs() -> None:
 
             if anomalies:
                 for a in anomalies:
-                    db.add(Anomaly(
-                        job_id=job.id,
-                        anomaly_type=a["anomaly_type"],
-                        severity=a["severity"],
-                        title=a["title"],
-                        description=a["description"],
-                        transaction_ids=a.get("transaction_ids"),
-                        evidence=a.get("evidence"),
-                        confidence=a.get("confidence"),
-                    ))
+                    db.add(
+                        Anomaly(
+                            job_id=job.id,
+                            anomaly_type=a["anomaly_type"],
+                            severity=a["severity"],
+                            title=a["title"],
+                            description=a["description"],
+                            transaction_ids=a.get("transaction_ids"),
+                            evidence=a.get("evidence"),
+                            confidence=a.get("confidence"),
+                        )
+                    )
                 await db.commit()
-                logger.info(
-                    "Scheduler: job=%s — persisted %d anomalies", job.id, len(anomalies)
-                )
+                logger.info("Scheduler: job=%s — persisted %d anomalies", job.id, len(anomalies))
                 if job.org_id:
                     # P4: anomaly.detected — non-fatal, a trigger never fails the scan.
                     try:
                         from app.services.triggers.sources import emit_anomaly_detected
 
-                        await emit_anomaly_detected(
-                            db, job_id=str(job.id), org_id=str(job.org_id)
-                        )
+                        await emit_anomaly_detected(db, job_id=str(job.id), org_id=str(job.org_id))
                     except Exception as exc:
                         await db.rollback()
                         logger.warning(
                             "Scheduler: anomaly trigger failed job=%s (non-fatal): %s",
-                            job.id, exc,
+                            job.id,
+                            exc,
                         )
             else:
                 logger.debug("Scheduler: job=%s — no anomalies found", job.id)
 
 
+def monday_briefing_key(org_id: str) -> str:
+    """Redis key for one organisation's deterministic Monday morning briefing."""
+    return f"monday_briefing:{org_id}"
+
+
+async def _dispatch_monday_briefings() -> None:
+    """Plan v10 §O4: Monday Morning Briefing dispatch.
+
+    Every Monday at 07:00 UTC:
+    1. Assembles deterministic 3-sentence briefing from radar facts.
+    2. Stores in Redis cache with 7-day TTL.
+    3. Emits InAppNotification to the organization.
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from app.database import engine, get_session_factory
+    from app.models.in_app_notification import InAppNotification
+    from app.models.organization import Organization
+    from app.services.monday_briefing import assemble_monday_briefing
+
+    logger.info("Scheduler: starting Monday morning briefing dispatch")
+    async with get_session_factory(engine())() as db:
+        orgs = (await db.execute(select(Organization))).scalars().all()
+        for org in orgs:
+            try:
+                briefing = await assemble_monday_briefing(db, org.id)
+                # Redis cache
+                try:
+                    from app.worker import get_arq_pool
+
+                    pool = await get_arq_pool()
+                    await pool.set(
+                        monday_briefing_key(org.id), json.dumps(briefing.to_dict()), ex=7 * 86400
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "Could not cache monday briefing in Redis for org %s: %s", org.id, exc
+                    )
+
+                # In-app notification
+                notif = InAppNotification(
+                    org_id=org.id,
+                    level="info",
+                    domain="cfo",
+                    source="monday_briefing",
+                    message=f"{briefing.sentence_radar} {briefing.sentence_action}",
+                    action="route",
+                    priority_score=0.8,
+                )
+                db.add(notif)
+            except Exception as err:
+                logger.warning("Failed to generate Monday briefing for org %s: %s", org.id, err)
+
+        await db.commit()
+    logger.info("Scheduler: Monday morning briefing dispatch completed")
+
+
 async def _weekly_summary() -> None:
     """
-    Haftalık görev: Anomali özeti logla.
-    Gelecek fazda: e-posta ile CFO'ya gönder.
+    Haftalık görev: Pazartesi bülteni dağıtımı ve anomali özeti (Plan v10 §O4).
     """
+    # 1. Monday morning briefing dispatch
+    try:
+        await _dispatch_monday_briefings()
+    except Exception as exc:
+        logger.error("Error during Monday briefing dispatch: %s", exc)
+
+    # 2. Anomaly summary
     from sqlalchemy import func, select
 
     from app.database import engine, get_session_factory
@@ -223,9 +287,9 @@ async def _weekly_summary() -> None:
 
     async with get_session_factory(engine())() as db:
         result = await db.execute(
-            select(Anomaly.severity, func.count().label("n")).where(
-                Anomaly.created_at >= cutoff
-            ).group_by(Anomaly.severity)
+            select(Anomaly.severity, func.count().label("n"))
+            .where(Anomaly.created_at >= cutoff)
+            .group_by(Anomaly.severity)
         )
         rows = result.all()
         summary = {row.severity: row.n for row in rows}
@@ -264,16 +328,20 @@ async def _generate_morning_brief(org_id: str | None = None) -> None:
     cutoff = datetime.now(UTC) - timedelta(hours=24)
     async with get_session_factory(engine())() as db:
         org_ids = (
-            await db.execute(
-                select(AnalysisJob.org_id)
-                .where(
-                    AnalysisJob.status == JobStatus.COMPLETED,
-                    AnalysisJob.completed_at >= cutoff,
-                    AnalysisJob.org_id.is_not(None),
+            (
+                await db.execute(
+                    select(AnalysisJob.org_id)
+                    .where(
+                        AnalysisJob.status == JobStatus.COMPLETED,
+                        AnalysisJob.completed_at >= cutoff,
+                        AnalysisJob.org_id.is_not(None),
+                    )
+                    .distinct()
                 )
-                .distinct()
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     for oid in org_ids:
         try:
             await _generate_morning_brief_for_org(str(oid))
@@ -341,19 +409,27 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
             ts = job.completed_at or datetime.now(UTC)
 
             for a in (d.get("cashflow") or {}).get("alerts") or []:
-                all_raw_alerts.append(RawAlert(
-                    level=a.get("level", "warning"),
-                    message=a.get("message", ""),
-                    domain="cfo", source="cashflow",
-                    job_id=job.id, timestamp=ts,
-                ))
+                all_raw_alerts.append(
+                    RawAlert(
+                        level=a.get("level", "warning"),
+                        message=a.get("message", ""),
+                        domain="cfo",
+                        source="cashflow",
+                        job_id=job.id,
+                        timestamp=ts,
+                    )
+                )
             for a in (d.get("forecast") or {}).get("alerts") or []:
-                all_raw_alerts.append(RawAlert(
-                    level=a.get("level", "warning"),
-                    message=a.get("message", ""),
-                    domain="cfo", source="forecast",
-                    job_id=job.id, timestamp=ts,
-                ))
+                all_raw_alerts.append(
+                    RawAlert(
+                        level=a.get("level", "warning"),
+                        message=a.get("message", ""),
+                        domain="cfo",
+                        source="forecast",
+                        job_id=job.id,
+                        timestamp=ts,
+                    )
+                )
 
             if d.get("pnl"):
                 all_pnl.append(d["pnl"])
@@ -369,8 +445,7 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
 
         # Build summary context for LLM
         avg_net_margin = (
-            sum(p.get("net_margin", 0) for p in all_pnl) / len(all_pnl)
-            if all_pnl else 0
+            sum(p.get("net_margin", 0) for p in all_pnl) / len(all_pnl) if all_pnl else 0
         )
         total_revenue = sum(p.get("revenue", 0) for p in all_pnl)
         net_cash_changes = [cf.get("net_change", 0) for cf in all_cashflow]
@@ -385,17 +460,19 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
         try:
             from app.platform.model_gateway import complete_text
 
-            critical_msgs = "\n".join(
-                f"• {a['message']}" for a in digest["critical"][:3]
-            ) or "Kritik uyarı yok."
+            critical_msgs = (
+                "\n".join(f"• {a['message']}" for a in digest["critical"][:3])
+                or "Kritik uyarı yok."
+            )
 
-            high_msgs = "\n".join(
-                f"• {a['message']}" for a in digest["high"][:3]
-            ) or "Yüksek öncelikli uyarı yok."
+            high_msgs = (
+                "\n".join(f"• {a['message']}" for a in digest["high"][:3])
+                or "Yüksek öncelikli uyarı yok."
+            )
 
             context = (
                 f"Son 24 saatte tamamlanan analiz sayısı: {len(jobs)}\n"
-                f"Ortalama net kâr marjı: %{avg_net_margin*100:.1f}\n"
+                f"Ortalama net kâr marjı: %{avg_net_margin * 100:.1f}\n"
                 f"Toplam ciro: {total_revenue:,.0f} TL\n"
                 f"Ortalama nakit değişimi: {avg_cash_change:,.0f} TL\n"
                 f"Nakit ömrü (baz senaryo): {runway or 'bilinmiyor'} ay\n\n"
@@ -403,25 +480,27 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
                 f"Yüksek öncelikli uyarılar:\n{high_msgs}"
             )
 
-            brief_text = (await complete_text(
-                task="short_narrative",
-                system_prompt=(
-                    "Sen deneyimli bir CEO danışmanısın. "
-                    "Sabah brifingini Türkçe yaz. Yapı:\n"
-                    "• Manşet (1 cümle — bugünün en kritik durumu)\n"
-                    "• Finansal özet (2-3 cümle)\n"
-                    "• Kritik riskler (madde madde, varsa)\n"
-                    "• Bugün yapılması gereken en önemli 3 eylem\n"
-                    "Sade, doğrudan, KOBİ yöneticisinin anlayacağı dilde."
-                ),
-                prompt=f"Veri:\n{context}",
-                max_tokens=700,
-            )).strip()
+            brief_text = (
+                await complete_text(
+                    task="short_narrative",
+                    system_prompt=(
+                        "Sen deneyimli bir CEO danışmanısın. "
+                        "Sabah brifingini Türkçe yaz. Yapı:\n"
+                        "• Manşet (1 cümle — bugünün en kritik durumu)\n"
+                        "• Finansal özet (2-3 cümle)\n"
+                        "• Kritik riskler (madde madde, varsa)\n"
+                        "• Bugün yapılması gereken en önemli 3 eylem\n"
+                        "Sade, doğrudan, KOBİ yöneticisinin anlayacağı dilde."
+                    ),
+                    prompt=f"Veri:\n{context}",
+                    max_tokens=700,
+                )
+            ).strip()
         except Exception as exc:
             logger.warning("Morning brief LLM failed: %s", exc)
             brief_text = (
                 f"Özet: {len(jobs)} analiz tamamlandı. "
-                f"Net kâr marjı: %{avg_net_margin*100:.1f}. "
+                f"Net kâr marjı: %{avg_net_margin * 100:.1f}. "
                 f"Kritik uyarı: {len(digest['critical'])}. "
                 f"Nakit ömrü: {runway or 'bilinmiyor'} ay."
             )
@@ -441,6 +520,7 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
         # Store in Redis with 25h TTL (survives until next brief)
         try:
             from app.worker import get_arq_pool
+
             pool = await get_arq_pool()
             await pool.set(morning_brief_key(org_id), json.dumps(brief), ex=90000)
             logger.info("Scheduler: morning brief generated and stored in Redis")
@@ -488,9 +568,7 @@ async def _nightly_intelligence_run() -> None:
                     notification_svc=notification_svc,
                 )
             except Exception as exc:
-                logger.error(
-                    "Nightly run failed for org=%s: %s", org.id, exc, exc_info=True
-                )
+                logger.error("Nightly run failed for org=%s: %s", org.id, exc, exc_info=True)
 
         logger.info("Scheduler: nightly intelligence run completed for %d orgs", len(orgs))
 
@@ -542,31 +620,37 @@ async def _process_org_nightly(org, db, cutoff, notification_svc) -> None:
         # Extract CFO alerts from all dashboard sections
         for section in ("cashflow", "forecast", "pnl", "budget"):
             for a in (d.get(section) or {}).get("alerts") or []:
-                all_raw_alerts.append(RawAlert(
-                    level=a.get("level", "warning"),
-                    message=a.get("message", ""),
-                    domain="cfo",
-                    source=section,
-                    job_id=job.id,
-                    timestamp=ts,
-                    org_id=str(org.id),
-                ))
+                all_raw_alerts.append(
+                    RawAlert(
+                        level=a.get("level", "warning"),
+                        message=a.get("message", ""),
+                        domain="cfo",
+                        source=section,
+                        job_id=job.id,
+                        timestamp=ts,
+                        org_id=str(org.id),
+                    )
+                )
 
         # Extract anomaly-based alerts
         for anomaly in (d.get("anomalies") or {}).get("items") or []:
             severity = anomaly.get("severity", "medium")
-            level = "critical" if severity == "critical" else (
-                "error" if severity == "high" else "warning"
+            level = (
+                "critical"
+                if severity == "critical"
+                else ("error" if severity == "high" else "warning")
             )
-            all_raw_alerts.append(RawAlert(
-                level=level,
-                message=anomaly.get("title", anomaly.get("description", "")),
-                domain="cfo",
-                source="anomaly",
-                job_id=job.id,
-                timestamp=ts,
-                org_id=str(org.id),
-            ))
+            all_raw_alerts.append(
+                RawAlert(
+                    level=level,
+                    message=anomaly.get("title", anomaly.get("description", "")),
+                    domain="cfo",
+                    source="anomaly",
+                    job_id=job.id,
+                    timestamp=ts,
+                    org_id=str(org.id),
+                )
+            )
 
     if not all_raw_alerts:
         logger.debug("Nightly: org=%s — no alerts extracted", org.id)
@@ -583,7 +667,9 @@ async def _process_org_nightly(org, db, cutoff, notification_svc) -> None:
 
     logger.info(
         "Nightly: org=%s — delivering %d/%d alerts",
-        org.id, len(actionable), len(decisions),
+        org.id,
+        len(actionable),
+        len(decisions),
     )
 
     # Deliver via NotificationService
@@ -617,8 +703,8 @@ async def _daily_active_org_analysis() -> None:
 
     logger.info("Scheduler: starting daily active-org analysis run")
     now = datetime.now(UTC)
-    cutoff_recent = now - timedelta(hours=24)    # skip if already ran today
-    cutoff_active = now - timedelta(days=30)     # only orgs active in last 30d
+    cutoff_recent = now - timedelta(hours=24)  # skip if already ran today
+    cutoff_active = now - timedelta(days=30)  # only orgs active in last 30d
 
     async with get_session_factory(engine())() as db:
         # Find orgs that have uploaded data recently
@@ -643,11 +729,13 @@ async def _daily_active_org_analysis() -> None:
             try:
                 # Check if a completed job exists in last 24h for this org
                 recent_result = await db.execute(
-                    select(AnalysisJob.id).where(
+                    select(AnalysisJob.id)
+                    .where(
                         AnalysisJob.org_id == org_id,
                         AnalysisJob.status == JobStatus.COMPLETED,
                         AnalysisJob.completed_at >= cutoff_recent,
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
                 if recent_result.scalar_one_or_none():
                     skipped += 1
@@ -671,6 +759,7 @@ async def _daily_active_org_analysis() -> None:
 
                 # Create a new analysis job pointing to the same file
                 import uuid as _uuid
+
                 new_job = AnalysisJob(
                     id=str(_uuid.uuid4()),
                     status=JobStatus.PENDING,
@@ -684,23 +773,25 @@ async def _daily_active_org_analysis() -> None:
                 await db.flush()  # get the new_job.id
 
                 from app.worker import enqueue_analysis
+
                 await enqueue_analysis(new_job.id)
                 queued += 1
 
                 logger.info(
                     "Scheduler: daily run — enqueued job=%s for org=%s",
-                    new_job.id, org_id,
+                    new_job.id,
+                    org_id,
                 )
 
             except Exception as exc:
-                logger.error(
-                    "Scheduler: daily run failed for org=%s: %s", org_id, exc
-                )
+                logger.error("Scheduler: daily run failed for org=%s: %s", org_id, exc)
 
         await db.commit()
         logger.info(
             "Scheduler: daily run complete — queued=%d skipped=%d total_orgs=%d",
-            queued, skipped, len(active_org_ids),
+            queued,
+            skipped,
+            len(active_org_ids),
         )
 
 
@@ -727,16 +818,20 @@ async def _purge_expired_guests(db: Any, *, ttl_hours: int) -> int:
 
     cutoff = datetime.now(UTC) - timedelta(hours=ttl_hours)
     orgs = (
-        await db.execute(
-            select(Organization).where(
-                Organization.created_at < cutoff,
-                or_(
-                    Organization.slug.like("demo-%"),
-                    Organization.description == GUEST_DESCRIPTION,
-                ),
+        (
+            await db.execute(
+                select(Organization).where(
+                    Organization.created_at < cutoff,
+                    or_(
+                        Organization.slug.like("demo-%"),
+                        Organization.description == GUEST_DESCRIPTION,
+                    ),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     purged = 0
     for org in orgs:
@@ -809,9 +904,7 @@ def get_scheduler() -> AsyncIOScheduler:
 
         # Nightly at 02:00 UTC — full intelligence run + notifications
         _scheduler.add_job(
-            _exclusive(
-                _nightly_intelligence_run, "nightly_intelligence_run", ttl=3600
-            ),
+            _exclusive(_nightly_intelligence_run, "nightly_intelligence_run", ttl=3600),
             CronTrigger(hour=2, minute=0),
             id="nightly_intelligence_run",
             replace_existing=True,
@@ -830,7 +923,7 @@ def get_scheduler() -> AsyncIOScheduler:
         # PROACTIVE: Every hour — KRI scan + alert dispatch
         _scheduler.add_job(
             _exclusive(_hourly_proactive_kri_scan, "hourly_proactive_kri_scan"),
-            CronTrigger(minute=15),   # Her saatin 15. dakikasında
+            CronTrigger(minute=15),  # Her saatin 15. dakikasında
             id="hourly_proactive_kri_scan",
             replace_existing=True,
             max_instances=1,
@@ -849,7 +942,7 @@ def get_scheduler() -> AsyncIOScheduler:
         # DQ-5: Hourly — check and run due SyncSchedules (ERP/OB/eFatura)
         _scheduler.add_job(
             _exclusive(_run_scheduled_syncs, "scheduled_data_syncs"),
-            CronTrigger(minute=45),   # Her saatin 45. dakikasında
+            CronTrigger(minute=45),  # Her saatin 45. dakikasında
             id="scheduled_data_syncs",
             replace_existing=True,
         )
@@ -920,13 +1013,15 @@ async def _hourly_proactive_kri_scan() -> None:
     try:
         from app.agents.orchestration.proactive_alerts import get_proactive_orchestrator
         from app.database import engine, get_session_factory
+
         async with get_session_factory(engine())() as db:
             orchestrator = get_proactive_orchestrator(db=db)
-            result       = await orchestrator.run_scheduled_scan()
+            result = await orchestrator.run_scheduled_scan()
             if result.get("total_alerts", 0) > 0:
                 logger.info(
                     "Proactive KRI scan: orgs=%d alerts=%d",
-                    result.get("scanned", 0), result.get("total_alerts", 0),
+                    result.get("scanned", 0),
+                    result.get("total_alerts", 0),
                 )
     except Exception as exc:
         logger.error("Hourly proactive scan hatasi: %s", exc)
@@ -942,9 +1037,7 @@ async def _trigger_schedule_tick() -> None:
             outcomes = await emit_schedule_tick(db)
         fired = sum(1 for o in outcomes if o.status == "fired")
         if outcomes:
-            logger.info(
-                "Trigger schedule tick: %d evaluated, %d fired", len(outcomes), fired
-            )
+            logger.info("Trigger schedule tick: %d evaluated, %d fired", len(outcomes), fired)
     except Exception as exc:
         logger.error("Trigger schedule tick error: %s", exc)
 
@@ -971,6 +1064,7 @@ async def _daily_erp_sync() -> None:
     try:
         from app.agents.orchestration.erp_sync_runner import run_scheduled_erp_sync
         from app.database import engine, get_session_factory
+
         async with get_session_factory(engine())() as db:
             result = await run_scheduled_erp_sync(db=db)
             logger.info("Daily ERP sync: synced=%d", result.get("synced", 0))
@@ -988,6 +1082,7 @@ async def _run_scheduled_syncs() -> None:
         from app.config import get_settings
         from app.database import engine, get_session_factory
         from app.services.scheduled_sync import run_due_syncs
+
         settings = get_settings()
         async with get_session_factory(engine())() as db:
             results = await run_due_syncs(db=db, settings=settings)

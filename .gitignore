@@ -67,4 +67,6 @@ backend/tests/fixtures/gib_corpus/
 # One-off probe/inspection scripts (underscore prefix) — local only, never committed;
 # anything worth keeping gets a real name and a test.
 backend/scripts/_*.py
-.claude/settings.local.json
+.claude/
+.mcp.json
+graphify-out/

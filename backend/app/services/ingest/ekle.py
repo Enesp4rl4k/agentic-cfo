@@ -5,6 +5,7 @@ file (staff list, campaign report, risk register) is attached to the analysis
 started alongside it, or to the organisation's latest. A file that needs a
 person's choice is reported as such and not saved.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +15,7 @@ import io
 import logging
 import os
 import uuid
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -49,7 +51,7 @@ from app.services.usage_meter import UsageLimitExceeded, check_upload_limit, rec
 logger = logging.getLogger(__name__)
 
 _MAX_DOSYA = 10
-_UZANTILAR = {"csv", "xlsx", "xls", "pdf", "txt", "xml"}
+_UZANTILAR = {"csv", "xlsx", "xls", "pdf", "txt", "xml", "zip"}
 
 EKLENDI = "eklendi"
 SECIM_GEREKLI = "secim_gerekli"
@@ -64,8 +66,10 @@ def _uzanti(ad: str) -> str:
 
 
 def secilebilir_turler() -> list[dict[str, str]]:
-    return [*({"tur": s.tur, "alan": s.alan, "etiket": s.etiket} for s in S.SEMALAR),
-            {"tur": GIT_LOG, "alan": "cto", "etiket": "Kod geçmişi (git log)"}]
+    return [
+        *({"tur": s.tur, "alan": s.alan, "etiket": s.etiket} for s in S.SEMALAR),
+        {"tur": GIT_LOG, "alan": "cto", "etiket": "Kod geçmişi (git log)"},
+    ]
 
 
 def _dosya_yaz(dizin: str, ad: str, veri: bytes) -> str:
@@ -80,6 +84,7 @@ def _dosya_yaz(dizin: str, ad: str, veri: bytes) -> str:
 @dataclass(frozen=True)
 class Sahip:
     """Who the files are added for: the uploader, or an organisation's mail address."""
+
     org_id: str | None
     user_id: str | None
 
@@ -89,7 +94,11 @@ class Sahip:
 
 
 async def _finansal_ekle(
-    veri: bytes, dosya_adi: str, tanima: Tanima, sahip: Sahip, db: AsyncSession,
+    veri: bytes,
+    dosya_adi: str,
+    tanima: Tanima,
+    sahip: Sahip,
+    db: AsyncSession,
 ) -> dict[str, Any]:
     """A financial file becomes an analysis job, exactly as the upload page makes one."""
     uzanti = _uzanti(dosya_adi)
@@ -112,11 +121,18 @@ async def _finansal_ekle(
     job_id = str(uuid.uuid4())
     settings = get_settings()
     yol = await asyncio.to_thread(
-        _dosya_yaz, os.path.join(settings.storage_local_path, "uploads", job_id), f"document.{uzanti}", veri)
+        _dosya_yaz,
+        os.path.join(settings.storage_local_path, "uploads", job_id),
+        f"document.{uzanti}",
+        veri,
+    )
     job = await create_analysis_job(
-        result=UploadResult(job_id=job_id, file_path=yol, ext=uzanti, size_bytes=len(veri),
-                            original_name=dosya_adi),
-        user_id=sahip.user_id, org_id=sahip.org_id, db=db,
+        result=UploadResult(
+            job_id=job_id, file_path=yol, ext=uzanti, size_bytes=len(veri), original_name=dosya_adi
+        ),
+        user_id=sahip.user_id,
+        org_id=sahip.org_id,
+        db=db,
     )
     if sahip.org_id:
         await record_usage_event(sahip.org_id, "upload", db=db)
@@ -138,12 +154,18 @@ async def _analizi_baslat(job_id: str) -> tuple[str, str]:
     except Exception:
         logger.exception("Analysis enqueue failed for job=%s", job_id)
         dispatch = "failed"
-    return dispatch, ("Analiz başlatıldı." if dispatch in ("queued", "inline") else
-                      "Dosya kaydedildi; analiz başlatılamadı, Yükle sayfasından tekrar deneyin.")
+    return dispatch, (
+        "Analiz başlatıldı."
+        if dispatch in ("queued", "inline")
+        else "Dosya kaydedildi; analiz başlatılamadı, Yükle sayfasından tekrar deneyin."
+    )
 
 
 async def _ek_belge_ekle(
-    veri: bytes, dosya_adi: str, job: AnalysisJob, db: AsyncSession,
+    veri: bytes,
+    dosya_adi: str,
+    job: AnalysisJob,
+    db: AsyncSession,
 ) -> dict[str, Any]:
     """Another financial document for an analysis that already exists."""
     source_id = str(uuid.uuid4())
@@ -151,27 +173,49 @@ async def _ek_belge_ekle(
     yol = await asyncio.to_thread(
         _dosya_yaz,
         os.path.join(get_settings().storage_local_path, "uploads", job.id, "belgeler"),
-        f"{source_id[:8]}.{uzanti}", veri,
+        f"{source_id[:8]}.{uzanti}",
+        veri,
     )
-    db.add(DataSource(id=source_id, job_id=job.id, domain=DataSourceDomain.CFO,
-                      source_type=DataSourceType.FINANCIAL_DOCUMENT,
-                      filename=dosya_adi, file_path=yol, file_size_bytes=len(veri)))
+    db.add(
+        DataSource(
+            id=source_id,
+            job_id=job.id,
+            domain=DataSourceDomain.CFO,
+            source_type=DataSourceType.FINANCIAL_DOCUMENT,
+            filename=dosya_adi,
+            file_path=yol,
+            file_size_bytes=len(veri),
+        )
+    )
     await db.commit()
-    return {"durum": EKLENDI, "job_id": job.id, "source_id": source_id,
-            "mesaj": "Aynı analize eklendi."}
+    return {
+        "durum": EKLENDI,
+        "job_id": job.id,
+        "source_id": source_id,
+        "mesaj": "Aynı analize eklendi.",
+    }
 
 
 async def _son_is(db: AsyncSession, sahip: Sahip) -> AnalysisJob | None:
     if not sahip.org_id:
         return None
-    return (await db.execute(
-        select(AnalysisJob).where(AnalysisJob.org_id == sahip.org_id)
-        .order_by(desc(AnalysisJob.created_at)).limit(1)
-    )).scalar_one_or_none()
+    return (
+        await db.execute(
+            select(AnalysisJob)
+            .where(AnalysisJob.org_id == sahip.org_id)
+            .order_by(desc(AnalysisJob.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
 
 async def _alan_ekle(
-    veri: bytes, dosya_adi: str, tur: str, alan: str, job: AnalysisJob, db: AsyncSession,
+    veri: bytes,
+    dosya_adi: str,
+    tur: str,
+    alan: str,
+    job: AnalysisJob,
+    db: AsyncSession,
 ) -> dict[str, Any]:
     source_id = str(uuid.uuid4())
     uzanti = _uzanti(dosya_adi) or "csv"
@@ -179,13 +223,27 @@ async def _alan_ekle(
     yol = await asyncio.to_thread(
         _dosya_yaz,
         os.path.join(settings.storage_local_path, "uploads", job.id, "datasources", alan),
-        f"{tur}_{source_id[:8]}.{uzanti}", veri,
+        f"{tur}_{source_id[:8]}.{uzanti}",
+        veri,
     )
-    db.add(DataSource(id=source_id, job_id=job.id, domain=alan, source_type=tur,
-                      filename=dosya_adi, file_path=yol, file_size_bytes=len(veri)))
+    db.add(
+        DataSource(
+            id=source_id,
+            job_id=job.id,
+            domain=alan,
+            source_type=tur,
+            filename=dosya_adi,
+            file_path=yol,
+            file_size_bytes=len(veri),
+        )
+    )
     await db.commit()
-    return {"durum": EKLENDI, "job_id": job.id, "source_id": source_id,
-            "mesaj": f"{S.SEMA_BY_TUR[tur].etiket if tur in S.SEMA_BY_TUR else 'Kod geçmişi'} eklendi."}
+    return {
+        "durum": EKLENDI,
+        "job_id": job.id,
+        "source_id": source_id,
+        "mesaj": f"{S.SEMA_BY_TUR[tur].etiket if tur in S.SEMA_BY_TUR else 'Kod geçmişi'} eklendi.",
+    }
 
 
 def _tur_bilgisi(tur: str) -> tuple[str, str] | None:
@@ -207,14 +265,37 @@ async def dosyalari_ekle(
     """Recognise each file and put it where it belongs. Shared by the page and the mail inbox."""
     secim = secim or {}
     max_bytes = get_settings().max_upload_size_mb * 1024 * 1024
+
+    expanded_gelen: list[tuple[str, bytes]] = []
+    for ad, veri in gelen:
+        if _uzanti(ad) == "zip":
+            try:
+                with zipfile.ZipFile(io.BytesIO(veri), "r") as zf:
+                    for info in zf.infolist():
+                        if info.is_dir() or info.filename.startswith("__MACOSX"):
+                            continue
+                        base_name = os.path.basename(info.filename)
+                        if _uzanti(base_name) in {"xml", "csv", "xlsx", "pdf", "txt"}:
+                            expanded_gelen.append((base_name, zf.read(info.filename)))
+            except Exception as exc:
+                logger.warning("ZIP dosyası açılamadı %s: %s", ad, exc)
+                expanded_gelen.append((ad, veri))
+        else:
+            expanded_gelen.append((ad, veri))
+    gelen = expanded_gelen
+
     okunan: list[tuple[str, bytes, Tanima, dict[str, Any]]] = []
     for ad, veri in gelen:
         sonuc: dict[str, Any] = {"dosya": ad}
         if _uzanti(ad) not in _UZANTILAR:
-            sonuc.update(durum=REDDEDILDI,
-                         mesaj="Bu dosya türü desteklenmiyor. Excel, CSV, PDF ya da e-Fatura XML yükleyin.")
+            sonuc.update(
+                durum=REDDEDILDI,
+                mesaj="Bu dosya türü desteklenmiyor. Excel, CSV, PDF ya da e-Fatura XML yükleyin.",
+            )
         elif len(veri) > max_bytes:
-            sonuc.update(durum=REDDEDILDI, mesaj=f"Dosya {get_settings().max_upload_size_mb} MB'tan büyük.")
+            sonuc.update(
+                durum=REDDEDILDI, mesaj=f"Dosya {get_settings().max_upload_size_mb} MB'tan büyük."
+            )
         elif _uzanti(ad) == "xml":
             # Checked at the door, before anything parses it.
             try:
@@ -227,7 +308,9 @@ async def dosyalari_ekle(
                 neden = edefter_ret_nedeni(veri)
                 if neden is not None:
                     sonuc.update(durum=REDDEDILDI, mesaj=neden)
-        tanima = await asyncio.to_thread(tani, veri, ad) if "durum" not in sonuc else Tanima(TANINMADI)
+        tanima = (
+            await asyncio.to_thread(tani, veri, ad) if "durum" not in sonuc else Tanima(TANINMADI)
+        )
         secilen = secim.get(ad)
         if "durum" not in sonuc and secilen:
             bilgi = _tur_bilgisi(secilen)
@@ -258,8 +341,10 @@ async def dosyalari_ekle(
         elif tanima.alan == "cfo":
             imza = hashlib.sha256(veri).hexdigest()
             if imza in gorulen:
-                sonuc.update(durum=MUKERRER,
-                             mesaj="Bu dosya bu gönderimde bir kez daha var; bir kez eklendi.")
+                sonuc.update(
+                    durum=MUKERRER,
+                    mesaj="Bu dosya bu gönderimde bir kez daha var; bir kez eklendi.",
+                )
             else:
                 gorulen.add(imza)
                 if hedef_finansal is None:
@@ -272,11 +357,17 @@ async def dosyalari_ekle(
                     sonuc.update(await _ek_belge_ekle(veri, ad, hedef_finansal, db))
         else:
             if hedef is None:
-                hedef = (await db.get(AnalysisJob, yeni_is) if yeni_is else istenen) or await _son_is(db, sahip)
+                hedef = (
+                    await db.get(AnalysisJob, yeni_is) if yeni_is else istenen
+                ) or await _son_is(db, sahip)
             if hedef is None:
-                sonuc.update(durum=FINANSAL_DOSYA_GEREKLI, mesaj=(
-                    "Bu dosyanın eklenebilmesi için önce bir banka ekstresi ya da muhasebe dosyası "
-                    "ekleyin; iki dosyayı birlikte de bırakabilirsiniz."))
+                sonuc.update(
+                    durum=FINANSAL_DOSYA_GEREKLI,
+                    mesaj=(
+                        "Bu dosyanın eklenebilmesi için önce bir banka ekstresi ya da muhasebe dosyası "
+                        "ekleyin; iki dosyayı birlikte de bırakabilirsiniz."
+                    ),
+                )
             else:
                 try:
                     sonuc.update(await _alan_ekle(veri, ad, tanima.tur, tanima.alan, hedef, db))
@@ -287,18 +378,26 @@ async def dosyalari_ekle(
         dosyalar.append(sonuc)
 
     # One start for the whole request, once every document is attached.
-    if hedef_finansal is not None and any(d.get("durum") == EKLENDI and d.get("sayfa") == "/cfo"
-                                          for d in dosyalar):
+    if hedef_finansal is not None and any(
+        d.get("durum") == EKLENDI and d.get("sayfa") == "/cfo" for d in dosyalar
+    ):
         dispatch, mesaj = await _analizi_baslat(hedef_finansal.id)
-        belge_sayisi = sum(1 for d in dosyalar if d.get("durum") == EKLENDI and d.get("sayfa") == "/cfo")
+        belge_sayisi = sum(
+            1 for d in dosyalar if d.get("durum") == EKLENDI and d.get("sayfa") == "/cfo"
+        )
         for d in dosyalar:
             if d.get("durum") == EKLENDI and d.get("sayfa") == "/cfo":
                 d["dispatch"] = dispatch
-                d["mesaj"] = (mesaj if belge_sayisi == 1 else
-                              f"{belge_sayisi} belge tek analizde birleştirildi. {mesaj}")
+                d["mesaj"] = (
+                    mesaj
+                    if belge_sayisi == 1
+                    else f"{belge_sayisi} belge tek analizde birleştirildi. {mesaj}"
+                )
     # The analysis this request belongs to: the one its financial documents
     # opened or were added to, else the job the domain files attached to.
-    is_id = yeni_is or (hedef_finansal.id if hedef_finansal else None) or (hedef.id if hedef else None)
+    is_id = (
+        yeni_is or (hedef_finansal.id if hedef_finansal else None) or (hedef.id if hedef else None)
+    )
     return {"job_id": is_id, "dosyalar": dosyalar}
 
 
@@ -310,15 +409,29 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
     for t in islemler:
         kurus = t.get("amount_cents")
         tutar = abs(int(kurus)) / 100 if kurus is not None else abs(float(t.get("amount") or 0))
-        tip = "income" if str(t.get("type") or t.get("tx_type") or "").lower() in ("income", "gelir") else "expense"
+        tip = (
+            "income"
+            if str(t.get("type") or t.get("tx_type") or "").lower() in ("income", "gelir")
+            else "expense"
+        )
         tarih = t.get("date") or t.get("transaction_date") or ""
         tarih = tarih.isoformat() if hasattr(tarih, "isoformat") else str(tarih)
-        w.writerow([tarih[:10], (t.get("description") or "")[:500], -tutar if tip == "expense" else tutar, tip])
+        w.writerow(
+            [
+                tarih[:10],
+                (t.get("description") or "")[:500],
+                -tutar if tip == "expense" else tutar,
+                tip,
+            ]
+        )
     return out.getvalue().encode("utf-8")
 
 
 async def islemleri_ekle(
-    db: AsyncSession, sahip: Sahip, islemler: list[dict[str, Any]], kaynak: str,
+    db: AsyncSession,
+    sahip: Sahip,
+    islemler: list[dict[str, Any]],
+    kaynak: str,
 ) -> dict[str, Any]:
     """A connector's pull becomes an ordinary analysis the pages can show."""
     ad = f"{kaynak}_{datetime.now(UTC):%Y%m%d_%H%M}.csv"

@@ -28,8 +28,6 @@ Usage:
 """
 
 import random
-import time
-from typing import Any
 
 from locust import HttpUser, TaskSet, between, task
 

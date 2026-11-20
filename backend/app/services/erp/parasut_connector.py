@@ -25,6 +25,7 @@ Paraşüt's API contract (company-scoped v4 URLs, JSON:API `attributes`, the
 exercised against a real Paraşüt account here; the parsing is defensive and a
 failure is reported, never silently empty.
 """
+
 from __future__ import annotations
 
 import base64
@@ -41,6 +42,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.core.invoice_identity import canonical_invoice_id
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,7 @@ def redirect_uri() -> str:
 
 
 # ── Secrets ─────────────────────────────────────────────────────────────────
+
 
 def _sifrele(plaintext: str) -> str:
     from app.connectors.crypto import encrypt_secret
@@ -109,6 +112,7 @@ def _config_yaz(integration: Any, cfg: dict[str, Any]) -> None:
 
 # ── State ───────────────────────────────────────────────────────────────────
 
+
 def _imza(payload: str) -> str:
     key = get_settings().secret_key.encode("utf-8")
     return hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:40]
@@ -135,6 +139,7 @@ def state_dogrula(state: str, now: float | None = None) -> tuple[str, str, str]:
 
 # ── Paraşüt's JSON:API ─────────────────────────────────────────────────────
 
+
 def _attr(item: dict[str, Any], *names: str) -> Any:
     attrs = item.get("attributes") if isinstance(item.get("attributes"), dict) else item
     for n in names:
@@ -149,7 +154,9 @@ def firmalar_from_me(body: dict[str, Any]) -> list[dict[str, str]]:
     out = []
     for item in body.get("included") or []:
         if isinstance(item, dict) and item.get("type") == "companies" and item.get("id"):
-            out.append({"id": str(item["id"]), "ad": str(_attr(item, "name", "legal_name") or item["id"])})
+            out.append(
+                {"id": str(item["id"]), "ad": str(_attr(item, "name", "legal_name") or item["id"])}
+            )
     return out
 
 
@@ -164,10 +171,17 @@ def islem_from_fatura(item: dict[str, Any], tip: str) -> dict[str, Any] | None:
     if not kurus or not tarih:
         return None
     no = _attr(item, "invoice_no", "invoice_number", "invoice_id")
-    aciklama = _attr(item, "description") or ("Satış faturası" if tip == "income" else "Gider faturası")
+    aciklama = _attr(item, "description") or (
+        "Satış faturası" if tip == "income" else "Gider faturası"
+    )
+    doc_id = canonical_invoice_id(None, str(no) if no else None, aciklama)
     return {
-        "date": str(tarih)[:10], "amount_cents": kurus, "type": tip,
-        "description": f"{aciklama}{f' #{no}' if no else ''}"[:500], "source_id": str(item.get("id") or ""),
+        "date": str(tarih)[:10],
+        "amount_cents": kurus,
+        "type": tip,
+        "description": f"{aciklama}{f' #{no}' if no else ''}"[:500],
+        "document_id": doc_id,
+        "source_id": str(item.get("id") or ""),
     }
 
 
@@ -182,7 +196,9 @@ class ParasutConnector:
         async with httpx.AsyncClient(timeout=30, transport=_transport) as c:
             return await c.post(url, data=data)
 
-    async def _get(self, url: str, token: str, params: dict[str, Any] | None = None) -> httpx.Response:
+    async def _get(
+        self, url: str, token: str, params: dict[str, Any] | None = None
+    ) -> httpx.Response:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         if self._http is not None:
             return await self._http.get(url, headers=headers, params=params)
@@ -194,9 +210,13 @@ class ParasutConnector:
 
         from app.models.erp_integration import ERPIntegration
 
-        return (await self.db.execute(
-            select(ERPIntegration).where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut")
-        )).scalar_one_or_none()
+        return (
+            await self.db.execute(
+                select(ERPIntegration).where(
+                    ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut"
+                )
+            )
+        ).scalar_one_or_none()
 
     async def baslat(self, org_id: str, user_id: str) -> str:
         """The Paraşüt login URL for this organisation; stores the state it must come back with."""
@@ -206,12 +226,16 @@ class ParasutConnector:
 
         integration = await self._entegrasyon(org_id)
         if integration is None:
-            integration = ERPIntegration(org_id=org_id, provider="parasut", display_name="Paraşüt", status=BEKLIYOR)
+            integration = ERPIntegration(
+                org_id=org_id, provider="parasut", display_name="Paraşüt", status=BEKLIYOR
+            )
             self.db.add(integration)
         nonce = secrets.token_urlsafe(16).replace(".", "_")
         cfg = _config(integration)
         # A legacy per-organisation application is dropped: the platform's is used.
-        cfg = {k: v for k, v in cfg.items() if k not in ("client_id", "client_secret", "redirect_uri")}
+        cfg = {
+            k: v for k, v in cfg.items() if k not in ("client_id", "client_secret", "redirect_uri")
+        }
         cfg["oauth_nonce"] = nonce
         _config_yaz(integration, cfg)
         if integration.status != AKTIF:
@@ -234,17 +258,26 @@ class ParasutConnector:
         cfg = _config(integration)
         if not cfg.get("oauth_nonce") or not hmac.compare_digest(str(cfg["oauth_nonce"]), nonce):
             raise ValueError("geçersiz ya da kullanılmış state")
-        cfg.pop("oauth_nonce")        # used once
+        cfg.pop("oauth_nonce")  # used once
         _config_yaz(integration, cfg)
         await self.db.commit()
 
         s = get_settings()
-        resp = await self._post(PARASUT_TOKEN_URL, {
-            "grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri(),
-            "client_id": s.parasut_client_id, "client_secret": s.parasut_client_secret,
-        })
+        resp = await self._post(
+            PARASUT_TOKEN_URL,
+            {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri(),
+                "client_id": s.parasut_client_id,
+                "client_secret": s.parasut_client_secret,
+            },
+        )
         if resp.status_code >= 400:
-            integration.status, integration.last_error = BEKLIYOR, f"Paraşüt girişi tamamlanamadı ({resp.status_code})."
+            integration.status, integration.last_error = (
+                BEKLIYOR,
+                f"Paraşüt girişi tamamlanamadı ({resp.status_code}).",
+            )
             await self.db.commit()
             raise ValueError(integration.last_error)
         token = resp.json()
@@ -253,7 +286,10 @@ class ParasutConnector:
         firmalar = await self._firmalar(str(token["access_token"]))
         cfg = _config(integration)
         if len(firmalar) == 1:
-            cfg["company_id"], integration.display_name = firmalar[0]["id"], f"Paraşüt · {firmalar[0]['ad']}"
+            cfg["company_id"], integration.display_name = (
+                firmalar[0]["id"],
+                f"Paraşüt · {firmalar[0]['ad']}",
+            )
             integration.status = AKTIF
         else:
             # Several companies, or none listed: the person says which.
@@ -279,11 +315,17 @@ class ParasutConnector:
         integration.access_token_enc = _sifrele(str(token["access_token"]))
         if token.get("refresh_token"):
             integration.refresh_token_enc = _sifrele(str(token["refresh_token"]))
-        integration.token_expires_at = datetime.now(UTC) + timedelta(seconds=int(token.get("expires_in") or 7200))
+        integration.token_expires_at = datetime.now(UTC) + timedelta(
+            seconds=int(token.get("expires_in") or 7200)
+        )
 
     @staticmethod
     def secilecek_firmalar(integration: Any) -> list[dict[str, str]]:
-        return list(_config(integration).get("firmalar") or []) if integration.status == FIRMA_SECIMI else []
+        return (
+            list(_config(integration).get("firmalar") or [])
+            if integration.status == FIRMA_SECIMI
+            else []
+        )
 
     async def firma_sec(self, integration: Any, company_id: str) -> None:
         cfg = _config(integration)
@@ -308,10 +350,15 @@ class ParasutConnector:
             integration.status = "expired"
             await self.db.commit()
             raise ValueError("Paraşüt oturumu sona erdi; yeniden bağlanın.")
-        resp = await self._post(PARASUT_TOKEN_URL, {
-            "grant_type": "refresh_token", "refresh_token": refresh,
-            "client_id": s.parasut_client_id, "client_secret": s.parasut_client_secret,
-        })
+        resp = await self._post(
+            PARASUT_TOKEN_URL,
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": s.parasut_client_id,
+                "client_secret": s.parasut_client_secret,
+            },
+        )
         if resp.status_code >= 400:
             integration.status = "expired"
             await self.db.commit()
@@ -329,8 +376,13 @@ class ParasutConnector:
         if integration.status != AKTIF or not company_id:
             raise ValueError("Paraşüt bağlantısı tamamlanmamış.")
         basla = time.time()
-        log = ERPSyncLog(integration_id=integration.id, org_id=integration.org_id, provider="parasut",
-                         status="running", started_at=datetime.now(UTC))
+        log = ERPSyncLog(
+            integration_id=integration.id,
+            org_id=integration.org_id,
+            provider="parasut",
+            status="running",
+            started_at=datetime.now(UTC),
+        )
         self.db.add(log)
         await self.db.commit()
         try:
@@ -342,12 +394,19 @@ class ParasutConnector:
             for yol, tip in (("sales_invoices", "income"), ("purchase_bills", "expense")):
                 sayfa = 1
                 while sayfa <= 200:
-                    resp = await self._get(f"{PARASUT_API_BASE}/{company_id}/{yol}", token,
-                                           {"sort": "-issue_date", "page[size]": 25, "page[number]": sayfa})
+                    resp = await self._get(
+                        f"{PARASUT_API_BASE}/{company_id}/{yol}",
+                        token,
+                        {"sort": "-issue_date", "page[size]": 25, "page[number]": sayfa},
+                    )
                     if resp.status_code >= 400:
                         raise ValueError(f"Paraşüt {yol} isteği başarısız ({resp.status_code}).")
                     data = resp.json().get("data") or []
-                    okunan = [t for t in (islem_from_fatura(d, tip) for d in data if isinstance(d, dict)) if t]
+                    okunan = [
+                        t
+                        for t in (islem_from_fatura(d, tip) for d in data if isinstance(d, dict))
+                        if t
+                    ]
                     islemler += [t for t in okunan if t["date"] >= ilk]
                     if len(data) < 25 or any(t["date"] < ilk for t in okunan):
                         break
@@ -375,13 +434,18 @@ class ParasutConnector:
 
 # ── Pull and analyse (manual and scheduled) ─────────────────────────────────
 
+
 def islemler_ozeti(islemler: list[dict[str, Any]]) -> str:
     """A fingerprint of a pull: the same invoices give the same value."""
-    kanonik = sorted((t["date"], t["type"], t["amount_cents"], t.get("source_id", "")) for t in islemler)
+    kanonik = sorted(
+        (t["date"], t["type"], t["amount_cents"], t.get("source_id", "")) for t in islemler
+    )
     return hashlib.sha256(json.dumps(kanonik).encode()).hexdigest()
 
 
-async def parasut_al(db: Any, integration: Any, sahip: Any, http: httpx.AsyncClient | None = None) -> dict[str, Any]:
+async def parasut_al(
+    db: Any, integration: Any, sahip: Any, http: httpx.AsyncClient | None = None
+) -> dict[str, Any]:
     """Pull the invoices; open an analysis only when they changed since the last one.
 
     The same 90 days pulled every day used to become a new analysis every day:
@@ -393,18 +457,30 @@ async def parasut_al(db: Any, integration: Any, sahip: Any, http: httpx.AsyncCli
 
     islemler = await ParasutConnector(db, http).islemleri_cek(integration)
     if not islemler:
-        return {"durum": "fatura_yok", "sync_count": 0, "job_id": None,
-                "mesaj": "Son 90 günde fatura bulunamadı."}
+        return {
+            "durum": "fatura_yok",
+            "sync_count": 0,
+            "job_id": None,
+            "mesaj": "Son 90 günde fatura bulunamadı.",
+        }
     ozet = islemler_ozeti(islemler)
     cfg = _config(integration)
     if cfg.get("son_ozet") == ozet:
-        return {"durum": "degisiklik_yok", "sync_count": len(islemler), "job_id": cfg.get("son_is"),
-                "mesaj": "Son alımdan bu yana yeni ya da değişen fatura yok; son analiz güncel."}
+        return {
+            "durum": "degisiklik_yok",
+            "sync_count": len(islemler),
+            "job_id": cfg.get("son_is"),
+            "mesaj": "Son alımdan bu yana yeni ya da değişen fatura yok; son analiz güncel.",
+        }
     out = await islemleri_ekle(db, sahip, islemler, "parasut")
     if out.get("job_id"):
         cfg = _config(integration)
         cfg["son_ozet"], cfg["son_is"] = ozet, out["job_id"]
         _config_yaz(integration, cfg)
         await db.commit()
-    return {"durum": "analiz_baslatildi", "sync_count": len(islemler), "job_id": out.get("job_id"),
-            "dosyalar": out.get("dosyalar", [])}
+    return {
+        "durum": "analiz_baslatildi",
+        "sync_count": len(islemler),
+        "job_id": out.get("job_id"),
+        "dosyalar": out.get("dosyalar", []),
+    }

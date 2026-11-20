@@ -12,14 +12,15 @@ GET  /api/v1/pilot/feedback          — admin: list all feedback
 GET  /api/v1/pilot/feedback/summary  — admin: NPS + rating aggregates
 GET  /api/v1/pilot/status            — public: pilot program status (slots used/total)
 """
+
 from __future__ import annotations
 
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,7 @@ INVITE_EXPIRE_DAYS = 30
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
 
 class GenerateInviteRequest(BaseModel):
     email: str | None = None
@@ -67,21 +69,24 @@ def _require_admin(user: User) -> User:
 
 # ── Pilot status (public) ────────────────────────────────────────────────────
 
+
 @router.get("/pilot/status")
-async def pilot_status(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
+async def pilot_status(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> dict[str, Any]:
     """Return current pilot program status — public endpoint."""
     settings = get_settings()
     max_users = getattr(settings, "pilot_max_users", PILOT_MAX_USERS)
 
     # Count active users (non-admin)
-    result = await db.execute(
-        select(func.count()).select_from(User).where(User.is_active)
-    )
+    result = await db.execute(select(func.count()).select_from(User).where(User.is_active))
     total_users = result.scalar() or 0
 
     # Count unused invites
     inv_result = await db.execute(
-        select(func.count()).select_from(PilotInvite).where(
+        select(func.count())
+        .select_from(PilotInvite)
+        .where(
             # `not Column` and `Column is None` are evaluated by Python, not
             # SQL: the first raises on SQLAlchemy's __bool__, the second is
             # always False. Neither ever reached the database.
@@ -108,6 +113,7 @@ async def pilot_status(db: AsyncSession = Depends(get_db), current_user: User = 
 
 
 # ── Invite management (admin) ─────────────────────────────────────────────────
+
 
 @router.post("/pilot/invite/generate", status_code=201)
 async def generate_invites(
@@ -144,15 +150,16 @@ async def validate_invite(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Public: check if an invite code is valid."""
-    result = await db.execute(
-        select(PilotInvite).where(PilotInvite.code == code)
-    )
+    result = await db.execute(select(PilotInvite).where(PilotInvite.code == code))
     invite = result.scalar_one_or_none()
 
     if not invite:
         return {"data": {"valid": False, "reason": "Geçersiz davet kodu."}, "error": None}
     if invite.used:
-        return {"data": {"valid": False, "reason": "Bu davet kodu zaten kullanılmış."}, "error": None}
+        return {
+            "data": {"valid": False, "reason": "Bu davet kodu zaten kullanılmış."},
+            "error": None,
+        }
     if invite.expires_at and invite.expires_at < datetime.now(UTC):
         return {"data": {"valid": False, "reason": "Davet kodunun süresi dolmuş."}, "error": None}
 
@@ -175,16 +182,14 @@ async def use_invite(
 ) -> dict[str, Any]:
     """Mark an invite as used after successful registration."""
     result = await db.execute(
-        select(PilotInvite).where(
-            PilotInvite.code == code, PilotInvite.used.is_(False)
-        )
+        select(PilotInvite).where(PilotInvite.code == code, PilotInvite.used.is_(False))
     )
     invite = result.scalar_one_or_none()
     if not invite:
         raise HTTPException(400, detail="Geçersiz veya kullanılmış davet kodu.")
 
     invite.used = True
-    invite.used_by_user_id = current_user.id   # was a query parameter: burn any invite for anyone
+    invite.used_by_user_id = current_user.id  # was a query parameter: burn any invite for anyone
     invite.used_at = datetime.now(UTC)
     await db.commit()
     return {"data": {"used": True}, "error": None}
@@ -197,9 +202,7 @@ async def list_invites(
 ) -> dict[str, Any]:
     """Admin: list all invite codes with usage info."""
     _require_admin(current_user)
-    result = await db.execute(
-        select(PilotInvite).order_by(PilotInvite.created_at.desc())
-    )
+    result = await db.execute(select(PilotInvite).order_by(PilotInvite.created_at.desc()))
     invites = result.scalars().all()
     return {
         "data": [
@@ -240,6 +243,7 @@ async def revoke_invite(
 
 # ── Feedback ──────────────────────────────────────────────────────────────────
 
+
 @router.post("/pilot/feedback", status_code=201)
 async def submit_feedback(
     body: FeedbackRequest,
@@ -269,7 +273,9 @@ async def submit_feedback(
 
     logger.info(
         "Feedback submitted: id=%s nps=%s rating=%s",
-        fb.id, body.nps_score, body.analysis_rating,
+        fb.id,
+        body.nps_score,
+        body.analysis_rating,
     )
 
     return {"data": {"feedback_id": fb.id}, "error": None}
@@ -285,10 +291,7 @@ async def list_feedback(
     """Admin: list all feedback entries."""
     _require_admin(current_user)
     result = await db.execute(
-        select(UserFeedback)
-        .order_by(UserFeedback.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+        select(UserFeedback).order_by(UserFeedback.created_at.desc()).limit(limit).offset(offset)
     )
     entries = result.scalars().all()
 
@@ -352,8 +355,8 @@ async def feedback_summary(
 
     # NPS calculation
     nps_scores = [f.nps_score for f in all_fb if f.nps_score is not None]
-    promoters  = sum(1 for s in nps_scores if s >= 9)
-    passives   = sum(1 for s in nps_scores if 7 <= s <= 8)
+    promoters = sum(1 for s in nps_scores if s >= 9)
+    passives = sum(1 for s in nps_scores if 7 <= s <= 8)
     detractors = sum(1 for s in nps_scores if s <= 6)
     nps = round(((promoters - detractors) / len(nps_scores)) * 100) if nps_scores else None
 
@@ -372,14 +375,53 @@ async def feedback_summary(
             "promoters": promoters,
             "passives": passives,
             "detractors": detractors,
-            "top_benefits": [
-                f.biggest_benefit for f in all_fb
-                if f.biggest_benefit
-            ][:10],
-            "top_gaps": [
-                f.biggest_gap for f in all_fb
-                if f.biggest_gap
-            ][:10],
+            "top_benefits": [f.biggest_benefit for f in all_fb if f.biggest_benefit][:10],
+            "top_gaps": [f.biggest_gap for f in all_fb if f.biggest_gap][:10],
         },
         "error": None,
     }
+
+
+# ── Pilot Backtesting & Decision Metrics (Plan v11 Faz 4) ───────────────────────
+
+
+@router.get("/pilot/radar-backtest", summary="Radar tahmin sapması (backtesting)")
+async def get_radar_backtesting(
+    anchor_date: str | None = None,
+    lookback_weeks: int = Query(default=4, ge=1, le=13),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Compare a 4-week radar projection with actual realized bank movements."""
+    if not current_user.org_id:
+        raise HTTPException(400, "Kullanıcının organizasyonu yok.")
+    parsed_anchor: date | None = None
+    if anchor_date:
+        try:
+            parsed_anchor = date.fromisoformat(anchor_date)
+        except ValueError:
+            raise HTTPException(400, "Geçersiz tarih biçimi (YYYY-AA-GG bekleniyor).") from None
+
+    from app.services.pilot_metrics import compute_radar_backtesting
+
+    res = await compute_radar_backtesting(
+        db,
+        str(current_user.org_id),
+        anchor_date=parsed_anchor,
+        lookback_weeks=lookback_weeks,
+    )
+    return {"data": res.to_dict(), "error": None}
+
+
+@router.get("/pilot/decision-metrics", summary="Karar defteri öneri başarı oranı")
+async def get_decision_success_metrics(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Measure owner adoption/correction rates on radar and briefing recommendations."""
+    if not current_user.org_id:
+        raise HTTPException(400, "Kullanıcının organizasyonu yok.")
+    from app.services.pilot_metrics import compute_decision_success_metrics
+
+    res = await compute_decision_success_metrics(db, str(current_user.org_id))
+    return {"data": res.to_dict(), "error": None}

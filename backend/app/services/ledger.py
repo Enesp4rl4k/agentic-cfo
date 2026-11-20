@@ -28,6 +28,7 @@ pays no document. Cash is what moved through the bank.
 held joins when it is approved, and a broken file never reaches the record.
 Rows with no readable date stay out too: their period is unknown.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,6 +45,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.invoice_identity import canonical_invoice_id
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -65,7 +67,7 @@ DOCUMENT = "document"
 CASH = "cash"
 
 _CHUNK = 500
-DUPLICATE_WINDOW_DAYS = 3    # as the anomaly agent's duplicate check
+DUPLICATE_WINDOW_DAYS = 3  # as the anomaly agent's duplicate check
 
 
 def _words(text: str | None) -> str:
@@ -84,24 +86,27 @@ def _basis(tx: Transaction) -> str:
 
 
 def _fingerprint(org_id: str, tx: Transaction) -> str:
-    material = "|".join((
-        org_id,
-        day_of(tx.transaction_date).isoformat(),
-        str(tx.amount_kurus),
-        tx.type,
-        _words(tx.description or tx.vendor),
-    ))
+    material = "|".join(
+        (
+            org_id,
+            day_of(tx.transaction_date).isoformat(),
+            str(tx.amount_kurus),
+            tx.type,
+            _words(tx.description or tx.vendor),
+        )
+    )
     return hashlib.sha256(material.encode()).hexdigest()
 
 
-async def _existing(db: AsyncSession, org_id: str, ids: list[str]) -> dict[str, CanonicalTransaction]:
+async def _existing(
+    db: AsyncSession, org_id: str, ids: list[str]
+) -> dict[str, CanonicalTransaction]:
     found: dict[str, CanonicalTransaction] = {}
     for i in range(0, len(ids), _CHUNK):
         rows = await db.execute(
             select(CanonicalTransaction).where(
                 CanonicalTransaction.org_id == org_id,
-                CanonicalTransaction.source_type == SOURCE_FINGERPRINT,
-                CanonicalTransaction.source_record_id.in_(ids[i:i + _CHUNK]),
+                CanonicalTransaction.source_record_id.in_(ids[i : i + _CHUNK]),
             )
         )
         found.update({r.source_record_id: r for r in rows.scalars()})
@@ -124,8 +129,10 @@ async def _others_by_money(
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
-            CanonicalTransaction.transaction_date >= datetime.combine(min(days) - window, time.min, UTC),
-            CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
+            CanonicalTransaction.transaction_date
+            >= datetime.combine(min(days) - window, time.min, UTC),
+            CanonicalTransaction.transaction_date
+            <= datetime.combine(max(days) + window, time.max, UTC),
         )
     )
     found: dict[tuple[int, str, str], list[tuple[date, str]]] = defaultdict(list)
@@ -152,24 +159,39 @@ async def _insert_ignoring_races(db: AsyncSession, values: dict[str, Any]) -> in
     """Insert one row; a concurrent append of the same identity is not an error."""
     insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
     result = await db.execute(
-        insert(CanonicalTransaction).values(**values).on_conflict_do_nothing(
-            index_elements=["org_id", "source_type", "source_record_id"]
-        )
+        insert(CanonicalTransaction)
+        .values(**values)
+        .on_conflict_do_nothing(index_elements=["org_id", "source_type", "source_record_id"])
     )
     return int(result.rowcount or 0)
 
 
 async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     """Append a completed analysis to its company's ledger. Idempotent; commits."""
-    counts = {"new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0}
+    counts = {
+        "new": 0,
+        "already": 0,
+        "possible_duplicate": 0,
+        "no_date": 0,
+        "settled": 0,
+        "proposed": 0,
+    }
     job = await db.get(AnalysisJob, job_id)
     if job is None or not job.org_id or job.status != JobStatus.COMPLETED:
         return counts
     org_id = str(job.org_id)
 
-    txs = (await db.execute(
-        select(Transaction).where(Transaction.job_id == job_id).order_by(Transaction.transaction_date)
-    )).scalars().all()
+    txs = (
+        (
+            await db.execute(
+                select(Transaction)
+                .where(Transaction.job_id == job_id)
+                .order_by(Transaction.transaction_date)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     usable: list[tuple[str, Transaction]] = []
     seen: Counter[str] = Counter()
@@ -180,9 +202,10 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         if not tx.amount_kurus:
             continue
         if tx.document_id:
-            # The document's own id beats its content: the same invoice is the
-            # same money whatever the row around it says.
-            usable.append((f"doc:{tx.document_id}", tx))
+            # The canonical document ID (invoice number) beats raw content:
+            # identical invoice from file or ERP shares identity, avoiding double-counting (G2).
+            doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
+            usable.append((f"doc:{doc_id}", tx))
             continue
         print_ = _fingerprint(org_id, tx)
         seen[print_] += 1
@@ -193,7 +216,10 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
 
     existing = await _existing(db, org_id, [rid for rid, _ in usable])
     others = await _others_by_money(
-        db, org_id, job_id, [day_of(tx.transaction_date) for _, tx in usable],
+        db,
+        org_id,
+        job_id,
+        [day_of(tx.transaction_date) for _, tx in usable],
     )
 
     for record_id, tx in usable:
@@ -206,24 +232,29 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             counts["already"] += 1
             continue
         duplicate_of = _repeats(others, tx)
-        written = await _insert_ignoring_races(db, {
-            "org_id": org_id,
-            "source_type": SOURCE_FINGERPRINT,
-            "source_record_id": record_id,
-            "source_job_id": job_id,
-            "transaction_date": tx.transaction_date,
-            "amount_cents": tx.amount_kurus,
-            "currency": tx.currency,
-            "direction": tx.type,
-            "category": tx.category,
-            "account_code": tx.account_code,
-            "counterparty": tx.vendor,
-            "description": tx.description,
-            "confidence": round(float(tx.confidence) * 100) if tx.confidence is not None else None,
-            "ledger_status": POSSIBLE_DUPLICATE if duplicate_of else ACTIVE,
-            "basis": _basis(tx),
-            "duplicate_of": duplicate_of,
-        })
+        written = await _insert_ignoring_races(
+            db,
+            {
+                "org_id": org_id,
+                "source_type": SOURCE_FINGERPRINT,
+                "source_record_id": record_id,
+                "source_job_id": job_id,
+                "transaction_date": tx.transaction_date,
+                "amount_cents": tx.amount_kurus,
+                "currency": tx.currency,
+                "direction": tx.type,
+                "category": tx.category,
+                "account_code": tx.account_code,
+                "counterparty": tx.vendor,
+                "description": tx.description,
+                "confidence": round(float(tx.confidence) * 100)
+                if tx.confidence is not None
+                else None,
+                "ledger_status": POSSIBLE_DUPLICATE if duplicate_of else ACTIVE,
+                "basis": _basis(tx),
+                "duplicate_of": duplicate_of,
+            },
+        )
         if not written:
             counts["already"] += 1
         elif duplicate_of:
@@ -245,13 +276,15 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
     for tx in txs:
         if not (tx.document_id and tx.counterparty):
             continue
+        doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
         await db.execute(
-            insert(OpenItem).values(
+            insert(OpenItem)
+            .values(
                 id=str(uuid.uuid4()),
                 org_id=org_id,
                 direction="receivable" if tx.type == "income" else "payable",
                 instrument="invoice",
-                document_id=tx.document_id,
+                document_id=doc_id,
                 source_job_id=job_id,
                 counterparty=tx.counterparty,
                 description=tx.description,
@@ -263,7 +296,8 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
                 payment_note=tx.payment_note,
                 status="open",
                 created_at=datetime.now(UTC),
-            ).on_conflict_do_nothing(index_elements=["org_id", "document_id"])
+            )
+            .on_conflict_do_nothing(index_elements=["org_id", "document_id"])
         )
 
 
@@ -271,8 +305,12 @@ async def _open_items_summary(db: AsyncSession, org_id: str) -> dict[str, int]:
     """What is outstanding, in TRY. Other currencies are counted, never converted."""
     totals = {"receivable_cents": 0, "payable_cents": 0, "no_due_date": 0, "other_currency": 0}
     rows = await db.execute(
-        select(OpenItem.direction, OpenItem.amount_cents - OpenItem.paid_cents, OpenItem.currency, OpenItem.due_date)
-        .where(OpenItem.org_id == org_id, OpenItem.status == "open")
+        select(
+            OpenItem.direction,
+            OpenItem.amount_cents - OpenItem.paid_cents,
+            OpenItem.currency,
+            OpenItem.due_date,
+        ).where(OpenItem.org_id == org_id, OpenItem.status == "open")
     )
     for direction, amount, currency, due in rows:
         if due is None:
@@ -292,26 +330,39 @@ async def _record(db: AsyncSession, job: AnalysisJob, counts: dict[str, int]) ->
 
 async def backfill(db: AsyncSession) -> dict[str, int]:
     """Append every completed analysis, oldest first. Safe to run again."""
-    ids = (await db.execute(
-        select(AnalysisJob.id)
-        .where(AnalysisJob.status == JobStatus.COMPLETED, AnalysisJob.org_id.is_not(None))
-        .order_by(AnalysisJob.created_at)
-    )).scalars().all()
+    ids = (
+        (
+            await db.execute(
+                select(AnalysisJob.id)
+                .where(AnalysisJob.status == JobStatus.COMPLETED, AnalysisJob.org_id.is_not(None))
+                .order_by(AnalysisJob.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
     totals: Counter[str] = Counter()
     for job_id in ids:
         totals.update(await append_job(db, job_id))
-    return {"jobs": len(ids), "new": totals["new"], "already": totals["already"],
-            "possible_duplicate": totals["possible_duplicate"], "no_date": totals["no_date"]}
+    return {
+        "jobs": len(ids),
+        "new": totals["new"],
+        "already": totals["already"],
+        "possible_duplicate": totals["possible_duplicate"],
+        "no_date": totals["no_date"],
+    }
 
 
 async def _last_upload(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
     """What the newest analysis added: the answer to "did my file count?"."""
-    jobs = (await db.execute(
-        select(AnalysisJob)
-        .where(AnalysisJob.org_id == org_id, AnalysisJob.status == JobStatus.COMPLETED)
-        .order_by(AnalysisJob.created_at.desc())
-        .limit(20)
-    )).scalars()
+    jobs = (
+        await db.execute(
+            select(AnalysisJob)
+            .where(AnalysisJob.org_id == org_id, AnalysisJob.status == JobStatus.COMPLETED)
+            .order_by(AnalysisJob.created_at.desc())
+            .limit(20)
+        )
+    ).scalars()
     for job in jobs:
         added = (job.result_metadata or {}).get("ledger")
         if added:
@@ -323,11 +374,11 @@ async def _last_upload(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
 class CompanyRows:
     """What the ledger counts: profit and cash are different views of one money."""
 
-    profit: list[Any]       # book rows, or documents plus cash that pays no document
-    cash: list[Any]         # bank movements, or postings where there is no statement
+    profit: list[Any]  # book rows, or documents plus cash that pays no document
+    cash: list[Any]  # bank movements, or postings where there is no statement
     possible_duplicates: int
-    months: list[str]       # every month a counted row falls in
-    rows: int               # rows the ledger counts, in either view or neither
+    months: list[str]  # every month a counted row falls in
+    rows: int  # rows the ledger counts, in either view or neither
 
 
 def month_of(when: datetime) -> str:
@@ -338,32 +389,37 @@ async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
     """The one reading of the ledger; the summary and the company view both use it."""
     from app.services.reconciliation import rows_settling_items
 
-    rows = (await db.execute(
-        select(
-            CanonicalTransaction.id,
-            CanonicalTransaction.source_record_id,
-            CanonicalTransaction.transaction_date,
-            CanonicalTransaction.amount_cents,
-            CanonicalTransaction.currency,
-            CanonicalTransaction.direction,
-            CanonicalTransaction.category,
-            CanonicalTransaction.account_code,
-            CanonicalTransaction.counterparty,
-            CanonicalTransaction.description,
-            CanonicalTransaction.ledger_status,
-            CanonicalTransaction.basis,
-        ).where(
-            CanonicalTransaction.org_id == org_id,
-            CanonicalTransaction.ledger_status != EXCLUDED,
-        ).order_by(CanonicalTransaction.transaction_date, CanonicalTransaction.id)
-    )).all()
+    rows = (
+        await db.execute(
+            select(
+                CanonicalTransaction.id,
+                CanonicalTransaction.source_record_id,
+                CanonicalTransaction.transaction_date,
+                CanonicalTransaction.amount_cents,
+                CanonicalTransaction.currency,
+                CanonicalTransaction.direction,
+                CanonicalTransaction.category,
+                CanonicalTransaction.account_code,
+                CanonicalTransaction.counterparty,
+                CanonicalTransaction.description,
+                CanonicalTransaction.ledger_status,
+                CanonicalTransaction.basis,
+            )
+            .where(
+                CanonicalTransaction.org_id == org_id,
+                CanonicalTransaction.ledger_status != EXCLUDED,
+            )
+            .order_by(CanonicalTransaction.transaction_date, CanonicalTransaction.id)
+        )
+    ).all()
     settling = await rows_settling_items(db, org_id)
     counted = [r for r in rows if r.ledger_status != POSSIBLE_DUPLICATE]
     book_months = {month_of(r.transaction_date) for r in counted if r.basis == BOOK}
     cash_months = {month_of(r.transaction_date) for r in counted if r.basis == CASH}
     return CompanyRows(
         profit=[
-            r for r in counted
+            r
+            for r in counted
             # The books already say what their month earned, and a settling line
             # is an invoice already counted, arriving.
             if (r.basis == BOOK or month_of(r.transaction_date) not in book_months)
@@ -371,8 +427,10 @@ async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
         ],
         # A posting list with no bank statement beside it is the best view of cash.
         cash=[
-            r for r in counted
-            if r.basis == CASH or (r.basis == BOOK and month_of(r.transaction_date) not in cash_months)
+            r
+            for r in counted
+            if r.basis == CASH
+            or (r.basis == BOOK and month_of(r.transaction_date) not in cash_months)
         ],
         possible_duplicates=len(rows) - len(counted),
         months=sorted({month_of(r.transaction_date) for r in counted}),
@@ -395,8 +453,10 @@ async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
         "revenue_cents": sum(r.amount_cents for r in earned if r.direction == "income"),
         "expense_cents": sum(r.amount_cents for r in earned if r.direction != "income"),
         "possible_duplicates": view.possible_duplicates,
-        "period": {"start": view.months[0] if view.months else None,
-                   "end": view.months[-1] if view.months else None,
-                   "months": len(view.months)},
+        "period": {
+            "start": view.months[0] if view.months else None,
+            "end": view.months[-1] if view.months else None,
+            "months": len(view.months),
+        },
         "months": [{"month": m, **months[m]} for m in view.months],
     }

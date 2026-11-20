@@ -14,6 +14,7 @@ vendor every month. These tests pin the loop closed:
   finished analysis can be recomputed — unless its SMMM packet is sealed,
 - every ingest seam (pipeline, scheduled sync) applies the rules.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -62,7 +63,7 @@ def test_vendor_rule_wins_over_keyword_rule():
 
 
 def test_a_vendor_rule_does_not_match_a_partial_name():
-    """"Turkcell İletişim" must not swallow every line that merely says Turkcell."""
+    """ "Turkcell İletişim" must not swallow every line that merely says Turkcell."""
     assert match_rule([TURKCELL], vendor=None, description="TURKCELL FATURA") is None
 
 
@@ -104,15 +105,17 @@ async def ortam(monkeypatch, tmp_path):
 async def _rule(db, org_id: str, *, vendor: str, category: str, always: bool = True):
     from app.models.category_rule import CategoryRule
 
-    rule = CategoryRule(org_id=org_id, vendor_match=vendor, category=category,
-                        apply_always=always, hit_count=1)
+    rule = CategoryRule(
+        org_id=org_id, vendor_match=vendor, category=category, apply_always=always, hit_count=1
+    )
     db.add(rule)
     await db.commit()
     return rule
 
 
-async def _job(db, org_id: str, tmp_path: Path, *, status: str = "completed",
-               rows: list[tuple[str, str]] = ()) -> str:
+async def _job(
+    db, org_id: str, tmp_path: Path, *, status: str = "completed", rows: list[tuple[str, str]] = ()
+) -> str:
     from datetime import UTC, datetime
 
     from app.models.analysis_job import AnalysisJob
@@ -120,15 +123,24 @@ async def _job(db, org_id: str, tmp_path: Path, *, status: str = "completed",
 
     f = tmp_path / f"ekstre-{len(list(tmp_path.iterdir()))}.csv"
     f.write_text("tarih,aciklama,tutar\n2026-08-01,Tahsilat,1000\n", encoding="utf-8")
-    job = AnalysisJob(filename=f.name, file_path=str(f), file_type="csv",
-                      org_id=org_id, status=status)
+    job = AnalysisJob(
+        filename=f.name, file_path=str(f), file_type="csv", org_id=org_id, status=status
+    )
     db.add(job)
     await db.flush()
     for vendor, category in rows:
-        db.add(Transaction(job_id=job.id, amount_kurus=10_000, currency="TRY",
-                           type="expense", category=category, vendor=vendor,
-                           description=f"{vendor} fatura",
-                           transaction_date=datetime(2026, 8, 1, tzinfo=UTC)))
+        db.add(
+            Transaction(
+                job_id=job.id,
+                amount_kurus=10_000,
+                currency="TRY",
+                type="expense",
+                category=category,
+                vendor=vendor,
+                description=f"{vendor} fatura",
+                transaction_date=datetime(2026, 8, 1, tzinfo=UTC),
+            )
+        )
     await db.commit()
     return job.id
 
@@ -159,10 +171,17 @@ async def test_ingestion_node_applies_rules_before_downstream(monkeypatch):
         detail = "ok"
         confidence = 0.95
         needs_review = False
-        patch = {"transactions": [
-            {"category": "other_expense", "vendor": None,
-             "description": "TURKCELL ILETISIM FATURA", "amount_cents": 100, "type": "expense"},
-        ]}
+        patch = {
+            "transactions": [
+                {
+                    "category": "other_expense",
+                    "vendor": None,
+                    "description": "TURKCELL ILETISIM FATURA",
+                    "amount_cents": 100,
+                    "type": "expense",
+                },
+            ]
+        }
 
     async def sahte(state, cfg):
         return _Sonuc()
@@ -196,14 +215,23 @@ async def test_worker_passes_org_and_rules_and_records_source_and_hits(ortam, mo
     async def sahte(**kw: Any) -> dict[str, Any]:
         alinan.append(kw)
         return {
-            "transactions": [{"amount_cents": 50_00, "type": "expense",
-                              "category": "utilities", "category_source": USER_RULE,
-                              "vendor": "Turkcell", "description": "Turkcell fatura",
-                              "transaction_date": "2026-08-01"}],
+            "transactions": [
+                {
+                    "amount_cents": 50_00,
+                    "type": "expense",
+                    "category": "utilities",
+                    "category_source": USER_RULE,
+                    "vendor": "Turkcell",
+                    "description": "Turkcell fatura",
+                    "transaction_date": "2026-08-01",
+                }
+            ],
             "dashboard_json": {"pnl": {"revenue": 0}},
-            "anomalies": [], "logs": [],
+            "anomalies": [],
+            "logs": [],
             "category_rule_hits": {rule_id: 1},
-            "awaiting_review": False, "min_confidence": 0.95,
+            "awaiting_review": False,
+            "min_confidence": 0.95,
         }
 
     monkeypatch.setattr("app.agents.orchestrator.run_cfo_pipeline", sahte)
@@ -213,7 +241,9 @@ async def test_worker_passes_org_and_rules_and_records_source_and_hits(ortam, mo
     assert alinan[0]["org_id"] == org_id  # was never passed before §F0
     assert [r["vendor"] for r in alinan[0]["category_rules"]] == ["Turkcell"]
     async with client._maker() as db:
-        tx = (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).scalar_one()
+        tx = (
+            await db.execute(select(Transaction).where(Transaction.job_id == job_id))
+        ).scalar_one()
         assert tx.category == "utilities"
         assert tx.category_source == USER_RULE
         assert (await db.get(CategoryRule, rule_id)).hit_count == 2
@@ -226,17 +256,25 @@ async def test_standing_correction_reports_the_analyses_it_changes(ortam):
     client, tmp_path = ortam
     headers, org_id, _ = await kullanici(client, "duzelt@example.com")
     async with client._maker() as db:
-        job_a = await _job(db, org_id, tmp_path, rows=[("Turkcell", "other_expense"),
-                                                      ("Turkcell", "other_expense")])
+        job_a = await _job(
+            db,
+            org_id,
+            tmp_path,
+            rows=[("Turkcell", "other_expense"), ("Turkcell", "other_expense")],
+        )
         job_b = await _job(db, org_id, tmp_path, rows=[("TURKCELL", "other_expense")])
         job_c = await _job(db, org_id, tmp_path, rows=[("Migros", "other_expense")])
         from app.models.transaction import Transaction
-        tx_id = (await db.execute(
-            select(Transaction.id).where(Transaction.job_id == job_a).limit(1)
-        )).scalar_one()
 
-    res = await client.patch(f"/api/v1/transactions/{tx_id}/category", headers=headers,
-                             json={"category": "utilities", "apply_always": True})
+        tx_id = (
+            await db.execute(select(Transaction.id).where(Transaction.job_id == job_a).limit(1))
+        ).scalar_one()
+
+    res = await client.patch(
+        f"/api/v1/transactions/{tx_id}/category",
+        headers=headers,
+        json={"category": "utilities", "apply_always": True},
+    )
     assert res.status_code == 200, res.text
     data = res.json()["data"]
     assert set(data["affected_job_ids"]) == {job_a, job_b}
@@ -244,6 +282,7 @@ async def test_standing_correction_reports_the_analyses_it_changes(ortam):
 
     async with client._maker() as db:
         from app.models.transaction import Transaction
+
         edited = await db.get(Transaction, tx_id)
         assert edited.category == "utilities"
         assert edited.category_source == "user_edit"
@@ -256,12 +295,16 @@ async def test_one_off_correction_changes_nothing_else(ortam):
         job_a = await _job(db, org_id, tmp_path, rows=[("Turkcell", "other_expense")])
         await _job(db, org_id, tmp_path, rows=[("Turkcell", "other_expense")])
         from app.models.transaction import Transaction
-        tx_id = (await db.execute(
-            select(Transaction.id).where(Transaction.job_id == job_a)
-        )).scalar_one()
 
-    res = await client.patch(f"/api/v1/transactions/{tx_id}/category", headers=headers,
-                             json={"category": "utilities", "apply_always": False})
+        tx_id = (
+            await db.execute(select(Transaction.id).where(Transaction.job_id == job_a))
+        ).scalar_one()
+
+    res = await client.patch(
+        f"/api/v1/transactions/{tx_id}/category",
+        headers=headers,
+        json={"category": "utilities", "apply_always": False},
+    )
     assert res.json()["data"]["affected_job_ids"] == []
     async with client._maker() as db:
         assert await load_rules(org_id, db) == []
@@ -343,7 +386,7 @@ def test_every_ingest_seam_applies_user_rules():
     assert "org_id=org_id_str" in worker
 
     orchestrator = (root / "agents" / "orchestrator.py").read_text(encoding="utf-8")
-    assert "apply_rules(patch[\"transactions\"]" in orchestrator
+    assert 'apply_rules(patch["transactions"]' in orchestrator
 
     sync = (root / "services" / "scheduled_sync.py").read_text(encoding="utf-8")
     apply_at = sync.index("apply_rules(")

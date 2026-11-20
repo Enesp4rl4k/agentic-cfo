@@ -40,6 +40,7 @@ except ValueError as _sec_err:
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -60,6 +61,7 @@ async def lifespan(app: FastAPI):
     import app.models.authority_policy
     import app.models.canonical_eng_signal
     import app.models.canonical_transaction
+    import app.models.cash_radar_snapshot
     import app.models.category_rule
     import app.models.company_context
     import app.models.company_semantic_snapshot
@@ -146,9 +148,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
-        "Authorization", "Content-Type", "X-API-Key",
-        "X-Audit-Reason", "X-Requested-With",
-        "Accept", "Accept-Language", "Cache-Control",
+        "Authorization",
+        "Content-Type",
+        "X-API-Key",
+        "X-Audit-Reason",
+        "X-Requested-With",
+        "Accept",
+        "Accept-Language",
+        "Cache-Control",
     ],
     # A browser hands JavaScript only the CORS-safelisted response headers
     # unless the server names the others here. Everything the client is meant
@@ -157,20 +164,30 @@ app.add_middleware(
     # tests/test_cors_exposed_headers.py, which keeps the two in step.
     expose_headers=[
         # Rate limiting: without these a 429 cannot tell the client when to retry.
-        "X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After", "X-RateLimit-Reset",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "Retry-After",
+        "X-RateLimit-Reset",
         # Downloads. The server names files deliberately — GİB's e-Defter
         # convention among them — and without this the browser cannot see the
         # name, so every download in the app fell back to a filename the client
         # guessed.
         "Content-Disposition",
         # e-Defter: what was produced, and the fact that it cannot be filed.
-        "X-EDefter-Entry-Count", "X-EDefter-Line-Count", "X-EDefter-SHA256",
-        "X-EDefter-Filable", "X-EDefter-Unfilable-Code",
+        "X-EDefter-Entry-Count",
+        "X-EDefter-Line-Count",
+        "X-EDefter-SHA256",
+        "X-EDefter-Filable",
+        "X-EDefter-Unfilable-Code",
         # Berat preview: which defter it was derived from, and what it says.
-        "X-EDefter-Berat-Of", "X-EDefter-Berat-Unique-ID", "X-EDefter-Berat-Size-MiB",
+        "X-EDefter-Berat-Of",
+        "X-EDefter-Berat-Unique-ID",
+        "X-EDefter-Berat-Size-MiB",
         "X-EDefter-KDV-Unverified",
         # Journal listing — deliberately not an e-Defter, and it says so.
-        "X-Yevmiye-Entry-Count", "X-Yevmiye-SHA256", "X-Not-A-GIB-Filing",
+        "X-Yevmiye-Entry-Count",
+        "X-Yevmiye-SHA256",
+        "X-Not-A-GIB-Filing",
         # Board deck size, so the UI can show it before opening the file.
         "X-PDF-Size-KB",
     ],

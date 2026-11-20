@@ -15,42 +15,42 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import app.models.agent_conflict
+import app.models.agent_job
+import app.models.agent_run
+import app.models.alert_preference
+import app.models.analysis_job
+import app.models.anomaly
+import app.models.audit_log
+import app.models.authority_policy
+import app.models.canonical_eng_signal
+import app.models.canonical_transaction
+import app.models.cash_radar_snapshot
+import app.models.category_rule
+import app.models.company_context
+import app.models.company_semantic_snapshot
+import app.models.connector_connection
+import app.models.data_source
+import app.models.defensibility_packet
+import app.models.erp_integration
+import app.models.in_app_notification
+import app.models.institutionalization_snapshot
+import app.models.llm_call_log
+import app.models.organization
+import app.models.pilot
+import app.models.rag_chunk
+import app.models.report
+import app.models.smmm_onay
+import app.models.smmm_portal
+import app.models.sync_run
+import app.models.transaction
+import app.models.trigger
+import app.models.user  # noqa: F401
 from alembic import context
+from app.config import get_settings
 
 # ── Import all models so Alembic can detect schema changes ────────────────────
-from app.database import Base  # noqa: F401
-import app.models.agent_conflict  # noqa: F401
-import app.models.agent_job  # noqa: F401
-import app.models.alert_preference  # noqa: F401
-import app.models.agent_run  # noqa: F401
-import app.models.analysis_job  # noqa: F401
-import app.models.authority_policy  # noqa: F401
-import app.models.anomaly  # noqa: F401
-import app.models.audit_log  # noqa: F401
-import app.models.canonical_eng_signal  # noqa: F401
-import app.models.canonical_transaction  # noqa: F401
-import app.models.category_rule  # noqa: F401
-import app.models.company_context  # noqa: F401
-import app.models.company_semantic_snapshot  # noqa: F401
-import app.models.connector_connection  # noqa: F401
-import app.models.data_source  # noqa: F401
-import app.models.defensibility_packet  # noqa: F401
-import app.models.erp_integration  # noqa: F401
-import app.models.in_app_notification  # noqa: F401
-import app.models.institutionalization_snapshot  # noqa: F401
-import app.models.llm_call_log  # noqa: F401
-import app.models.organization  # noqa: F401
-import app.models.pilot  # noqa: F401
-import app.models.rag_chunk  # noqa: F401
-import app.models.report  # noqa: F401
-import app.models.smmm_onay  # noqa: F401
-import app.models.smmm_portal  # noqa: F401
-import app.models.sync_run  # noqa: F401
-import app.models.transaction  # noqa: F401
-import app.models.trigger  # noqa: F401
-import app.models.user  # noqa: F401
-
-from app.config import get_settings
+from app.database import Base
 
 # Alembic Config object — gives access to .ini values
 config = context.config

@@ -15,6 +15,7 @@ Pipeline:
 All nodes are non-fatal: missing data → skip gracefully.
 At least one data source required to produce a meaningful summary.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
+
 def _append_log(state: CTOState, log: CTOStepLog) -> dict[str, Any]:
     existing = list(state.get("logs") or [])
     existing.append(log)
@@ -55,11 +57,13 @@ def _run_config(config: dict) -> CTORunConfig:
 
 # ── Node builders ──────────────────────────────────────────────────────────────
 
+
 async def node_infra(state: CTOState, config: dict) -> CTOState:
     result = await run_infra_agent(state, _run_config(config))
-    patch = _append_log(state, CTOStepLog(
-        step="infra", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CTOStepLog(step="infra", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -68,9 +72,12 @@ async def node_infra(state: CTOState, config: dict) -> CTOState:
 
 async def node_tech_debt(state: CTOState, config: dict) -> CTOState:
     result = await run_tech_debt_agent(state, _run_config(config))
-    patch = _append_log(state, CTOStepLog(
-        step="tech_debt", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CTOStepLog(
+            step="tech_debt", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -79,9 +86,12 @@ async def node_tech_debt(state: CTOState, config: dict) -> CTOState:
 
 async def node_incidents(state: CTOState, config: dict) -> CTOState:
     result = await run_incident_agent(state, _run_config(config))
-    patch = _append_log(state, CTOStepLog(
-        step="incidents", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CTOStepLog(
+            step="incidents", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -90,9 +100,12 @@ async def node_incidents(state: CTOState, config: dict) -> CTOState:
 
 async def node_velocity(state: CTOState, config: dict) -> CTOState:
     result = await run_velocity_agent(state, _run_config(config))
-    patch = _append_log(state, CTOStepLog(
-        step="velocity", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CTOStepLog(
+            step="velocity", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -105,10 +118,11 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
     holistic tech health score and top-risk list.
     """
     from app.platform.model_gateway import complete_text
-    infra     = state.get("infra") or {}
+
+    infra = state.get("infra") or {}
     tech_debt = state.get("tech_debt") or {}
     incidents = state.get("incidents") or {}
-    velocity  = state.get("velocity") or {}
+    velocity = state.get("velocity") or {}
 
     # ── Component health scores (0-10, higher = worse) ────────────────────────
     scores: dict[str, float] = {}
@@ -118,22 +132,31 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
         mom = infra.get("mom_change_pct") or 0
         waste_pct = (
             infra["waste_estimate_cents"] / infra["total_cost_cents"] * 100
-            if infra.get("total_cost_cents") else 0
+            if infra.get("total_cost_cents")
+            else 0
         )
         infra_score = min(10.0, (max(0, mom) / 10) + (waste_pct / 5))
         scores["infra"] = round(infra_score, 1)
         for alert in infra.get("alerts") or []:
             if alert["level"] in ("critical", "warning"):
-                top_risks.append({"domain": "Infrastructure", "severity": alert["level"], "message": alert["message"]})
+                top_risks.append(
+                    {
+                        "domain": "Infrastructure",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     if tech_debt:
         scores["tech_debt"] = tech_debt.get("debt_score", 0)
         if tech_debt.get("debt_score", 0) >= 6:
-            top_risks.append({
-                "domain": "Tech Debt",
-                "severity": "high" if tech_debt["debt_score"] >= 7 else "medium",
-                "message": f"Debt score {tech_debt['debt_score']:.1f}/10 — {len(tech_debt.get('hotspot_files',[]))} hotspot files detected",
-            })
+            top_risks.append(
+                {
+                    "domain": "Tech Debt",
+                    "severity": "high" if tech_debt["debt_score"] >= 7 else "medium",
+                    "message": f"Debt score {tech_debt['debt_score']:.1f}/10 — {len(tech_debt.get('hotspot_files', []))} hotspot files detected",
+                }
+            )
 
     if incidents:
         mttr = incidents.get("mttr_hours") or 0
@@ -142,52 +165,72 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
         scores["incidents"] = round(incident_score, 1)
         for alert in incidents.get("alerts") or []:
             if alert["level"] in ("critical", "warning"):
-                top_risks.append({"domain": "Reliability", "severity": alert["level"], "message": alert["message"]})
+                top_risks.append(
+                    {
+                        "domain": "Reliability",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     if velocity:
         pred = velocity.get("predictability_score", 1.0)
-        trend_penalty = {"down": 3.0, "flat": 1.0, "up": 0.0}.get(velocity.get("velocity_trend", "flat"), 1.0)
+        trend_penalty = {"down": 3.0, "flat": 1.0, "up": 0.0}.get(
+            velocity.get("velocity_trend", "flat"), 1.0
+        )
         velocity_score = min(10.0, (1 - pred) * 5 + trend_penalty)
         scores["velocity"] = round(velocity_score, 1)
         for alert in velocity.get("alerts") or []:
             if alert["level"] in ("critical", "warning"):
-                top_risks.append({"domain": "Engineering Velocity", "severity": alert["level"], "message": alert["message"]})
+                top_risks.append(
+                    {
+                        "domain": "Engineering Velocity",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # 0-10, higher = worse. None when no component parsed — 0.0 read as
     # "optimal" (plan v6 §S0).
-    overall_health: float | None = (
-        round(sum(scores.values()) / len(scores), 1) if scores else None
-    )
+    overall_health: float | None = round(sum(scores.values()) / len(scores), 1) if scores else None
     top_risks.sort(key=lambda r: 0 if r["severity"] == "critical" else 1)
 
     # ── Quick wins (Türkçe) ───────────────────────────────────────────────────
     quick_wins: list[dict[str, str]] = []
     if infra.get("waste_estimate_cents", 0) > 0:
-        quick_wins.append({
-            "action": "Non-production bulut ortamlarını rightsize et",
-            "estimated_impact": f"Aylık {infra['waste_estimate_cents']/100:,.0f} ₺ tasarruf",
-            "effort": "düşük",
-        })
+        quick_wins.append(
+            {
+                "action": "Non-production bulut ortamlarını rightsize et",
+                "estimated_impact": f"Aylık {infra['waste_estimate_cents'] / 100:,.0f} ₺ tasarruf",
+                "effort": "düşük",
+            }
+        )
     if tech_debt.get("refactor_priorities"):
         priority = tech_debt["refactor_priorities"][0]
-        quick_wins.append({
-            "action": f"Hotspot refactoring: {priority['area']}",
-            "estimated_impact": "Bu bileşen için değişiklik başarısızlık oranını azalt",
-            "effort": f"~{priority.get('estimated_days', 3)} gün",
-        })
+        quick_wins.append(
+            {
+                "action": f"Hotspot refactoring: {priority['area']}",
+                "estimated_impact": "Bu bileşen için değişiklik başarısızlık oranını azalt",
+                "effort": f"~{priority.get('estimated_days', 3)} gün",
+            }
+        )
     if incidents.get("trend") == "degrading":
-        quick_wins.append({
-            "action": "En sık olay yaşanan 3 servis için post-mortem yap",
-            "estimated_impact": "Olay sıklığını %20-30 azalt",
-            "effort": "orta",
-        })
+        quick_wins.append(
+            {
+                "action": "En sık olay yaşanan 3 servis için post-mortem yap",
+                "estimated_impact": "Olay sıklığını %20-30 azalt",
+                "effort": "orta",
+            }
+        )
 
     # ── LLM narrative (Türkçe + actionable) ──────────────────────────────────
     try:
-        risks_text = "\n".join(
-            f"- [{r['severity'].upper()}] {r['domain']}: {r['message']}"
-            for r in top_risks[:5]
-        ) or "Kritik risk tespit edilmedi."
+        risks_text = (
+            "\n".join(
+                f"- [{r['severity'].upper()}] {r['domain']}: {r['message']}" for r in top_risks[:5]
+            )
+            or "Kritik risk tespit edilmedi."
+        )
         scores_text = " | ".join(f"{k}: {v}/10" for k, v in scores.items())
 
         # S2-1: Cross-domain context (CFO + CHRO) enrichment for CTO narrative
@@ -199,7 +242,11 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
             runway = cfo_sum["runway_months"]
             cross_context_lines.append(
                 f"Nakit Ömrü (CFO): {runway:.1f} ay"
-                + (" — KRİTİK: Teknik borç yatırımlarını ertelemek gerekebilir" if runway < 6 else "")
+                + (
+                    " — KRİTİK: Teknik borç yatırımlarını ertelemek gerekebilir"
+                    if runway < 6
+                    else ""
+                )
             )
         if cfo_sum.get("critical_anomalies"):
             cross_context_lines.append(
@@ -209,7 +256,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
             turnover = chro_sum["turnover_rate"]
             if turnover > 0.15:
                 cross_context_lines.append(
-                    f"İşten Ayrılma Oranı (CHRO): %{turnover*100:.0f} — mühendis kadrosu riski"
+                    f"İşten Ayrılma Oranı (CHRO): %{turnover * 100:.0f} — mühendis kadrosu riski"
                 )
         if chro_sum.get("headcount_change") is not None:
             cross_context_lines.append(
@@ -217,29 +264,33 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
             )
 
         cross_context_block = (
-            "\n\nÇapraz Domain Bağlamı (CFO/CHRO):\n" + "\n".join(f"- {l}" for l in cross_context_lines)
-            if cross_context_lines else ""
+            "\n\nÇapraz Domain Bağlamı (CFO/CHRO):\n"
+            + "\n".join(f"- {l}" for l in cross_context_lines)
+            if cross_context_lines
+            else ""
         )
 
-        narrative = (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir CTO'sun. Aşağıdaki teknoloji sağlık verilerini analiz et ve "
-                "Türkçe olarak kısa bir yönetici özeti yaz. "
-                "Yanıt şu yapıda olsun:\n"
-                "1. Genel teknoloji sağlık durumunun 1-2 cümlelik değerlendirmesi (skor odaklı)\n"
-                "2. En kritik 1-2 risk (altyapı, teknik borç veya olay)\n"
-                "3. CFO/CHRO bağlamını göz önüne alarak yapılması gereken 2-3 somut eylem\n"
-                "Teknik jargonu azalt, CEO'nun anlayacağı dilde yaz."
-            ),
-            prompt=(
-                f"Genel Teknoloji Risk Skoru (0 iyi, 10 kötü): {_score_text(overall_health)}\n"
-                f"Bileşen Skorları: {scores_text}\n\n"
-                f"Önemli Riskler:\n{risks_text}"
-                f"{cross_context_block}"
-            ),
-            max_tokens=800,
-        )).strip()
+        narrative = (
+            await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir CTO'sun. Aşağıdaki teknoloji sağlık verilerini analiz et ve "
+                    "Türkçe olarak kısa bir yönetici özeti yaz. "
+                    "Yanıt şu yapıda olsun:\n"
+                    "1. Genel teknoloji sağlık durumunun 1-2 cümlelik değerlendirmesi (skor odaklı)\n"
+                    "2. En kritik 1-2 risk (altyapı, teknik borç veya olay)\n"
+                    "3. CFO/CHRO bağlamını göz önüne alarak yapılması gereken 2-3 somut eylem\n"
+                    "Teknik jargonu azalt, CEO'nun anlayacağı dilde yaz."
+                ),
+                prompt=(
+                    f"Genel Teknoloji Risk Skoru (0 iyi, 10 kötü): {_score_text(overall_health)}\n"
+                    f"Bileşen Skorları: {scores_text}\n\n"
+                    f"Önemli Riskler:\n{risks_text}"
+                    f"{cross_context_block}"
+                ),
+                max_tokens=800,
+            )
+        ).strip()
     except Exception as exc:
         logger.warning("CTO summary narrative failed: %s", exc)
         narrative = (
@@ -255,29 +306,37 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
         "narrative": narrative,
     }
 
-    patch = _append_log(state, CTOStepLog(
-        step="cto_summary", ok=True,
-        detail=f"Health score: {_score_text(overall_health)}, risks: {len(top_risks)}, quick wins: {len(quick_wins)}",
-        confidence=0.90,
-    ))
+    patch = _append_log(
+        state,
+        CTOStepLog(
+            step="cto_summary",
+            ok=True,
+            detail=f"Health score: {_score_text(overall_health)}, risks: {len(top_risks)}, quick wins: {len(quick_wins)}",
+            confidence=0.90,
+        ),
+    )
     patch["cto_summary"] = summary
     return {**state, **patch}  # type: ignore[return-value]
 
 
 async def node_hold_for_review(state: CTOState, config: dict) -> CTOState:
-    patch = _append_log(state, CTOStepLog(
-        step="review_gate",
-        ok=True,
-        detail=(
-            f"Held for review — confidence={state.get('min_confidence', 0):.2f}, "
-            f"awaiting_review={state.get('awaiting_review')}"
+    patch = _append_log(
+        state,
+        CTOStepLog(
+            step="review_gate",
+            ok=True,
+            detail=(
+                f"Held for review — confidence={state.get('min_confidence', 0):.2f}, "
+                f"awaiting_review={state.get('awaiting_review')}"
+            ),
         ),
-    ))
+    )
     patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
 
 # ── Routing ────────────────────────────────────────────────────────────────────
+
 
 def route_after_velocity(state: CTOState) -> str:
     """After all data agents, check if review is needed before summary."""
@@ -292,21 +351,22 @@ def route_after_velocity(state: CTOState) -> str:
 
 # ── Graph assembly ─────────────────────────────────────────────────────────────
 
+
 def build_cto_graph() -> StateGraph:
     graph = StateGraph(CTOState)
 
-    graph.add_node("infra_agent",     node_infra)
-    graph.add_node("debt_agent",      node_tech_debt)
+    graph.add_node("infra_agent", node_infra)
+    graph.add_node("debt_agent", node_tech_debt)
     graph.add_node("incidents_agent", node_incidents)
-    graph.add_node("velocity_agent",  node_velocity)
-    graph.add_node("summary_agent",   node_cto_summary)
-    graph.add_node("hold_agent",      node_hold_for_review)
+    graph.add_node("velocity_agent", node_velocity)
+    graph.add_node("summary_agent", node_cto_summary)
+    graph.add_node("hold_agent", node_hold_for_review)
 
     graph.set_entry_point("infra_agent")
 
     # All data agents are non-fatal → linear pipeline
-    graph.add_edge("infra_agent",     "debt_agent")
-    graph.add_edge("debt_agent",      "incidents_agent")
+    graph.add_edge("infra_agent", "debt_agent")
+    graph.add_edge("debt_agent", "incidents_agent")
     graph.add_edge("incidents_agent", "velocity_agent")
 
     # After velocity → review gate OR summary
@@ -315,12 +375,12 @@ def build_cto_graph() -> StateGraph:
         route_after_velocity,
         {
             CTO_ROUTE_SUMMARY: "summary_agent",
-            CTO_ROUTE_HOLD:    "hold_agent",
+            CTO_ROUTE_HOLD: "hold_agent",
         },
     )
 
     graph.add_edge("summary_agent", END)
-    graph.add_edge("hold_agent",    END)
+    graph.add_edge("hold_agent", END)
 
     return graph
 
@@ -330,6 +390,7 @@ cto_graph = build_cto_graph().compile()
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
+
 
 async def run_cto_pipeline(
     job_id: str,
@@ -341,8 +402,8 @@ async def run_cto_pipeline(
     run_config: CTORunConfig | None = None,
     # S2-1: Cross-domain context
     org_id: str | None = None,
-    cfo_context: dict | None = None,    # CFO cashflow, runway
-    chro_context: dict | None = None,   # Headcount, attrition
+    cfo_context: dict | None = None,  # CFO cashflow, runway
+    chro_context: dict | None = None,  # Headcount, attrition
 ) -> CTOState:
     """
     Run the full CTO analysis pipeline.
@@ -362,6 +423,7 @@ async def run_cto_pipeline(
     if org_id and not enriched_cfo:
         try:
             from app.services.agent_context_bridge import enrich_state
+
             bridge_result = await enrich_state("cto", {}, org_id=org_id)
             enriched_cfo = bridge_result.get("__cfo_summary")
             enriched_chro = bridge_result.get("__chro_summary")
@@ -382,7 +444,7 @@ async def run_cto_pipeline(
         "halted": False,
         "error": None,
         # S2-1: Cross-domain context (injected into summary LLM prompt)
-        "__cfo_summary":  enriched_cfo,
+        "__cfo_summary": enriched_cfo,
         "__chro_summary": enriched_chro,
     }
 
@@ -401,5 +463,5 @@ async def run_cto_pipeline(
 
 
 def _score_text(score: float | None) -> str:
-    """"3.5/10", or "ölçülmedi" when no component parsed (plan v6 §S0)."""
+    """ "3.5/10", or "ölçülmedi" when no component parsed (plan v6 §S0)."""
     return "ölçülmedi" if score is None else f"{score}/10"

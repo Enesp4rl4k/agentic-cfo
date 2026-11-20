@@ -1,7 +1,8 @@
 """The company ledger: what it holds, and the rows waiting for a person."""
+
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -63,22 +64,35 @@ async def get_summary(
     return {"data": await ledger_summary(db, _org(user)), "error": None}
 
 
-@router.get("/ledger/possible-duplicates", responses={400: {"description": "The user has no organisation."}})
+@router.get(
+    "/ledger/possible-duplicates", responses={400: {"description": "The user has no organisation."}}
+)
 async def get_possible_duplicates(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Rows that may repeat money already in the ledger, with what they may repeat."""
     org_id = _org(user)
-    rows = (await db.execute(
-        select(CanonicalTransaction)
-        .where(CanonicalTransaction.org_id == org_id, CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE)
-        .order_by(CanonicalTransaction.transaction_date)
-    )).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(CanonicalTransaction)
+                .where(
+                    CanonicalTransaction.org_id == org_id,
+                    CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE,
+                )
+                .order_by(CanonicalTransaction.transaction_date)
+            )
+        )
+        .scalars()
+        .all()
+    )
     data = []
     for row in rows:
         match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
-        data.append({**_row(row), "matches": [_row(match)] if match and match.org_id == org_id else []})
+        data.append(
+            {**_row(row), "matches": [_row(match)] if match and match.org_id == org_id else []}
+        )
     return {"data": data, "error": None}
 
 
@@ -88,11 +102,13 @@ async def get_open_items(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """What this company is owed and owes, soonest due first; undated last."""
-    rows = (await db.execute(
-        select(OpenItem)
-        .where(OpenItem.org_id == _org(user), OpenItem.status == "open")
-        .order_by(OpenItem.due_date.is_(None), OpenItem.due_date, OpenItem.issue_date)
-    )).scalars()
+    rows = (
+        await db.execute(
+            select(OpenItem)
+            .where(OpenItem.org_id == _org(user), OpenItem.status == "open")
+            .order_by(OpenItem.due_date.is_(None), OpenItem.due_date, OpenItem.issue_date)
+        )
+    ).scalars()
     return {
         "data": [
             {
@@ -112,37 +128,48 @@ async def get_open_items(
     }
 
 
-@router.get("/ledger/settlements/proposed", responses={400: {"description": "The user has no organisation."}})
+@router.get(
+    "/ledger/settlements/proposed",
+    responses={400: {"description": "The user has no organisation."}},
+)
 async def get_proposed_settlements(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Bank movements that may pay an invoice, waiting for a person."""
     org_id = _org(user)
-    matches = (await db.execute(
-        select(OpenItemMatch)
-        .where(OpenItemMatch.org_id == org_id, OpenItemMatch.status == PROPOSED)
-        .order_by(OpenItemMatch.matched_on)
-    )).scalars().all()
+    matches = (
+        (
+            await db.execute(
+                select(OpenItemMatch)
+                .where(OpenItemMatch.org_id == org_id, OpenItemMatch.status == PROPOSED)
+                .order_by(OpenItemMatch.matched_on)
+            )
+        )
+        .scalars()
+        .all()
+    )
     data = []
     for m in matches:
         item = await db.get(OpenItem, m.open_item_id)
         row = await db.get(CanonicalTransaction, m.ledger_row_id)
         if item is None or row is None:
             continue
-        data.append({
-            "id": m.id,
-            "amount_cents": m.amount_cents,
-            "method": m.method,
-            "row": _row(row),
-            "item": {
-                "counterparty": item.counterparty,
-                "description": item.description,
-                "amount_cents": item.amount_cents,
-                "paid_cents": item.paid_cents,
-                "due_date": item.due_date.isoformat() if item.due_date else None,
-            },
-        })
+        data.append(
+            {
+                "id": m.id,
+                "amount_cents": m.amount_cents,
+                "method": m.method,
+                "row": _row(row),
+                "item": {
+                    "counterparty": item.counterparty,
+                    "description": item.description,
+                    "amount_cents": item.amount_cents,
+                    "paid_cents": item.paid_cents,
+                    "due_date": item.due_date.isoformat() if item.due_date else None,
+                },
+            }
+        )
     return {"data": data, "error": None}
 
 
@@ -174,7 +201,7 @@ async def resolve_settlement(
     if match is None:
         raise HTTPException(404, "Kayıt bulunamadı.")
     ensure_tenant(user, org_id=match.org_id)
-    org_id = str(match.org_id)   # the commit below expires the row
+    org_id = str(match.org_id)  # the commit below expires the row
     won = await db.execute(
         update(OpenItemMatch)
         .where(OpenItemMatch.id == match_id, OpenItemMatch.status == PROPOSED)
@@ -193,7 +220,9 @@ async def resolve_settlement(
     return {"data": {"id": match_id, "action": body.action}, "error": None}
 
 
-@router.get("/ledger/payment-behaviour", responses={400: {"description": "The user has no organisation."}})
+@router.get(
+    "/ledger/payment-behaviour", responses={400: {"description": "The user has no organisation."}}
+)
 async def get_payment_behaviour(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -202,7 +231,10 @@ async def get_payment_behaviour(
     return {"data": await payment_behaviour(db, _org(user)), "error": None}
 
 
-@router.get("/ledger/cash-radar", responses={400: {"description": "The user has no organisation or invalid date."}})
+@router.get(
+    "/ledger/cash-radar",
+    responses={400: {"description": "The user has no organisation or invalid date."}},
+)
 async def get_cash_radar(
     anchor_date: str | None = None,
     user: User = Depends(get_current_user),
@@ -215,7 +247,15 @@ async def get_cash_radar(
             parsed_anchor = date.fromisoformat(anchor_date)
         except ValueError:
             raise HTTPException(400, "Geçersiz tarih biçimi (YYYY-AA-GG bekleniyor).") from None
-    result = await compute_cash_radar(db, _org(user), anchor_date=parsed_anchor)
+    org_id = _org(user)
+    result = await compute_cash_radar(db, org_id, anchor_date=parsed_anchor)
+    # The live response is also an immutable observation used by future backtests.
+    # Explicit historical radar requests are never recorded as if they were known then.
+    if parsed_anchor is None or parsed_anchor == datetime.now(UTC).date():
+        from app.services.cash_radar_snapshots import record_cash_radar_snapshot
+
+        await record_cash_radar_snapshot(db, org_id, result)
+        await db.commit()
     return {"data": result.to_dict(), "error": None}
 
 
@@ -242,10 +282,13 @@ async def resolve_possible_duplicate(
     if row is None:
         raise HTTPException(404, "Kayıt bulunamadı.")
     ensure_tenant(user, org_id=row.org_id)
-    org_id = str(row.org_id)   # the commit below expires the row
+    org_id = str(row.org_id)  # the commit below expires the row
     won = await db.execute(
         update(CanonicalTransaction)
-        .where(CanonicalTransaction.id == row_id, CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE)
+        .where(
+            CanonicalTransaction.id == row_id,
+            CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE,
+        )
         .values(ledger_status=ACTIVE if body.action == "keep" else EXCLUDED)
         .execution_options(synchronize_session=False)
     )

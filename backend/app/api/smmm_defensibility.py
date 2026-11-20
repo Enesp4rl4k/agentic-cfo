@@ -1,11 +1,12 @@
 """SMMM Defensibility Packet API (differentiator #4).
 
-    POST /smmm/defensibility/{job_id}/build       — (re)generate a draft packet
-    GET  /smmm/defensibility                       — list packets for the org
-    GET  /smmm/defensibility/{packet_id}           — one packet (full payload)
-    POST /smmm/defensibility/{packet_id}/finalize  — freeze + seal with the SMMM's statement
-    GET  /smmm/defensibility/{packet_id}/export    — human-readable document (PDF/text)
+POST /smmm/defensibility/{job_id}/build       — (re)generate a draft packet
+GET  /smmm/defensibility                       — list packets for the org
+GET  /smmm/defensibility/{packet_id}           — one packet (full payload)
+POST /smmm/defensibility/{packet_id}/finalize  — freeze + seal with the SMMM's statement
+GET  /smmm/defensibility/{packet_id}/export    — human-readable document (PDF/text)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -68,7 +69,9 @@ async def build_defensibility_packet(
     org_id = _org_id(current_user)
     try:
         packet = await build_packet(
-            db=db, job_id=job_id, org_id=org_id,
+            db=db,
+            job_id=job_id,
+            org_id=org_id,
             period=period or (job.created_at.strftime("%Y-%m") if job.created_at else None),
         )
     except DefensibilityError as exc:
@@ -86,7 +89,11 @@ async def list_defensibility_packets(
     stmt = select(DefensibilityPacket).where(DefensibilityPacket.org_id == org_id)
     if period:
         stmt = stmt.where(DefensibilityPacket.period == period)
-    rows = (await db.execute(stmt.order_by(desc(DefensibilityPacket.created_at)).limit(100))).scalars().all()
+    rows = (
+        (await db.execute(stmt.order_by(desc(DefensibilityPacket.created_at)).limit(100)))
+        .scalars()
+        .all()
+    )
     return {"data": {"packets": [_packet_brief(p) for p in rows]}, "error": None}
 
 
@@ -108,8 +115,11 @@ async def get_defensibility_packet(
 ) -> dict[str, Any]:
     packet = await _load_owned(packet_id, current_user, db)
     return {
-        "data": {**_packet_brief(packet), "payload": packet.payload,
-                 "smmm_statement": packet.smmm_statement},
+        "data": {
+            **_packet_brief(packet),
+            "payload": packet.payload,
+            "smmm_statement": packet.smmm_statement,
+        },
         "error": None,
     }
 
@@ -124,7 +134,9 @@ async def finalize_defensibility_packet(
     packet = await _load_owned(packet_id, current_user, db)
     try:
         packet = await finalize_packet(
-            db=db, packet_id=packet.id, user_id=str(current_user.id),
+            db=db,
+            packet_id=packet.id,
+            user_id=str(current_user.id),
             statement=body.statement,
         )
     except DefensibilityError as exc:

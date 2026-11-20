@@ -3,6 +3,7 @@ GİB (Gelir İdaresi Başkanlığı) e-Fatura / e-Arşiv UBL-TR 2.1 XML Parser.
 Parses official Turkish Electronic Invoices (UBL-TR standard), extracts tax breakdowns (KDV, Tevkifat, Stopaj),
 parties (VKN/TCKN), monetary totals, and suggests Turkish Uniform Chart of Accounts (TDHP) journal entries.
 """
+
 from __future__ import annotations
 
 import re
@@ -78,7 +79,7 @@ class InvoiceLineItem(BaseModel):
 class TDHPJournalEntry(BaseModel):
     account_code: str
     account_name: str
-    debit_amount: Decimal = Decimal("0.0")   # Borç
+    debit_amount: Decimal = Decimal("0.0")  # Borç
     credit_amount: Decimal = Decimal("0.0")  # Alacak
     description: str
 
@@ -105,9 +106,9 @@ class ParsedUBLInvoice(BaseModel):
     line_extension_total: Decimal = Decimal("0.0")  # Mal/Hizmet Toplamı (Matrah)
     tax_exclusive_total: Decimal = Decimal("0.0")
     tax_inclusive_total: Decimal = Decimal("0.0")
-    allowance_total: Decimal = Decimal("0.0")        # İskonto Toplamı
-    payable_amount: Decimal = Decimal("0.0")         # Ödenecek Tutar
-    withholding_tax_amount: Decimal = Decimal("0.0") # Tevkifat Tutarı
+    allowance_total: Decimal = Decimal("0.0")  # İskonto Toplamı
+    payable_amount: Decimal = Decimal("0.0")  # Ödenecek Tutar
+    withholding_tax_amount: Decimal = Decimal("0.0")  # Tevkifat Tutarı
     suggested_tdhp_entries: list[TDHPJournalEntry] = Field(default_factory=list)
 
     # Are we the seller or the buyer? Settled by VKN, never by invoice type.
@@ -149,9 +150,7 @@ class UBLTRInvoiceParser:
         not something to decide the direction of a ledger with.
         """
         fallback = ""
-        for node in party_node.findall(
-            "cac:PartyIdentification/cbc:ID", cls.NAMESPACES
-        ):
+        for node in party_node.findall("cac:PartyIdentification/cbc:ID", cls.NAMESPACES):
             value = (node.text or "").strip()
             if not value:
                 continue
@@ -189,13 +188,14 @@ class UBLTRInvoiceParser:
         except ValueError:
             return None, f"Okunamayan vade: {raw_due}. {note}".strip()
         if due < issued:
-            return None, f"Belgedeki vade ({raw_due}) fatura tarihinden önce; dikkate alınmadı. {note}".strip()
+            return (
+                None,
+                f"Belgedeki vade ({raw_due}) fatura tarihinden önce; dikkate alınmadı. {note}".strip(),
+            )
         return due, note
 
     @classmethod
-    def parse_xml(
-        cls, xml_content: str | bytes, *, own_vkn: str = ""
-    ) -> ParsedUBLInvoice:
+    def parse_xml(cls, xml_content: str | bytes, *, own_vkn: str = "") -> ParsedUBLInvoice:
         """Parse a UBL-TR invoice.
 
         `own_vkn` is the VKN of the organisation whose books these are. Without
@@ -280,9 +280,7 @@ class UBLTRInvoiceParser:
             payable_amount = _to_decimal(_find_text(monetary_node, "cbc:PayableAmount"))
             # İskonto. Declared on the model since the beginning and never read,
             # so it was always 0,00 whatever the invoice said.
-            allowance_total = _to_decimal(
-                _find_text(monetary_node, "cbc:AllowanceTotalAmount")
-            )
+            allowance_total = _to_decimal(_find_text(monetary_node, "cbc:AllowanceTotalAmount"))
 
         # 5. Tax Subtotals — identified by TaxTypeCode, not by display name.
         #
@@ -302,9 +300,7 @@ class UBLTRInvoiceParser:
                     tax_category_code=_find_text(
                         t_sub, "cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode"
                     ),
-                    tax_category_name=_find_text(
-                        t_sub, "cac:TaxCategory/cac:TaxScheme/cbc:Name"
-                    ),
+                    tax_category_name=_find_text(t_sub, "cac:TaxCategory/cac:TaxScheme/cbc:Name"),
                 )
             )
 
@@ -381,9 +377,15 @@ class UBLTRInvoiceParser:
             inv_no=inv_no,
         )
 
+        raw_due = _find_text(root, "cac:PaymentTerms/cbc:PaymentDueDate") or _find_text(
+            root, "cac:PaymentMeans/cbc:PaymentDueDate"
+        )
+        raw_note = _find_text(root, "cac:PaymentTerms/cbc:Note") or _find_text(
+            root, "cac:PaymentMeans/cbc:InstructionNote"
+        )
         due_date, payment_note = cls._payment_terms(
-            _find_text(root, "cac:PaymentTerms/cbc:PaymentDueDate"),
-            _find_text(root, "cac:PaymentTerms/cbc:Note"),
+            raw_due,
+            raw_note,
             issue_date,
         )
 
@@ -491,8 +493,7 @@ class UBLTRInvoiceParser:
             # figure into a TRY ledger is the exact error the integer-kuruş rule
             # exists to prevent, and it is invisible afterwards.
             return [], (
-                f"fatura {currency} cinsinden ve kur bilgisi yok — "
-                "TRY deftere kursuz işlenemez"
+                f"fatura {currency} cinsinden ve kur bilgisi yok — TRY deftere kursuz işlenemez"
             )
 
         # Özel matrah and the like: KDV is declared but already inside the price,
@@ -504,8 +505,13 @@ class UBLTRInvoiceParser:
         entries: list[TDHPJournalEntry] = []
         desc = f"Fatura No: {inv_no} - {supplier.title or customer.title}"
 
-        def add(code: str, name: str, *, debit: Decimal = Decimal("0.0"),
-                credit: Decimal = Decimal("0.0")) -> None:
+        def add(
+            code: str,
+            name: str,
+            *,
+            debit: Decimal = Decimal("0.0"),
+            credit: Decimal = Decimal("0.0"),
+        ) -> None:
             if debit == 0 and credit == 0:
                 return
             entries.append(

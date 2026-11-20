@@ -1,6 +1,7 @@
 """Connector registry — the same shrink-only, decorator-registered pattern as
 `app.services.regional.packs`.
 """
+
 from __future__ import annotations
 
 from app.connectors.base import Connector
@@ -9,7 +10,7 @@ _CONNECTORS: dict[str, Connector] = {}
 
 
 def register(connector: type[Connector]) -> type[Connector]:
-    """Class decorator: instantiate and register under `connector.name`."""
+    """Class decorator or registration helper: instantiate and register under `connector.name`."""
     instance = connector()  # type: ignore[call-arg]
     if instance.name in _CONNECTORS:
         raise ValueError(f"connector '{instance.name}' already registered")
@@ -33,9 +34,15 @@ def has_connector(name: str) -> bool:
 
 
 def _load_builtin() -> None:
-    """Import adapter modules so their @register decorators run. Import-time
-    side effect kept explicit and cheap."""
-    from app.connectors import github  # noqa: F401
+    """Register built-in adapter modules. Kept explicit so adapters do not need
+    to import registry back, avoiding circular import dependencies."""
+    from app.connectors.github import GitHubConnector
+    from app.connectors.open_banking import OpenBankingConnectorAdapter
+    from app.connectors.parasut import ParasutConnectorAdapter
+
+    register(GitHubConnector)
+    register(ParasutConnectorAdapter)
+    register(OpenBankingConnectorAdapter)
 
 
 _load_builtin()

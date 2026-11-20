@@ -1,10 +1,11 @@
 """Agent run ledger API (Faz 14).
 
-    GET  /runs                 — recent runs for the caller's org (filter by status/pipeline)
-    GET  /runs/slo             — latency / cost / success-rate rollup per pipeline
-    GET  /runs/{run_id}        — one run
-    POST /runs/{run_id}/resume — re-drive a failed/interrupted run (tr_vertical)
+GET  /runs                 — recent runs for the caller's org (filter by status/pipeline)
+GET  /runs/slo             — latency / cost / success-rate rollup per pipeline
+GET  /runs/{run_id}        — one run
+POST /runs/{run_id}/resume — re-drive a failed/interrupted run (tr_vertical)
 """
+
 from __future__ import annotations
 
 import logging
@@ -77,19 +78,28 @@ async def runs_slo(
     org_id = _org_id(current_user)
     since = datetime.now(UTC) - timedelta(days=days)
     rows = (
-        await db.execute(
-            select(AgentRun).where(
-                AgentRun.org_id == org_id, AgentRun.started_at >= since
+        (
+            await db.execute(
+                select(AgentRun).where(AgentRun.org_id == org_id, AgentRun.started_at >= since)
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     by_pipeline: dict[str, dict[str, Any]] = {}
     for r in rows:
         b = by_pipeline.setdefault(
             r.pipeline,
-            {"runs": 0, "completed": 0, "failed": 0, "awaiting_review": 0,
-             "halted": 0, "_lat": [], "cost_usd": 0.0},
+            {
+                "runs": 0,
+                "completed": 0,
+                "failed": 0,
+                "awaiting_review": 0,
+                "halted": 0,
+                "_lat": [],
+                "cost_usd": 0.0,
+            },
         )
         b["runs"] += 1
         if r.status in b:
@@ -152,9 +162,7 @@ async def resume_agent_run(
     if row.status == "completed":
         raise HTTPException(status_code=409, detail="Run zaten tamamlanmış.")
     if row.pipeline != "tr_vertical":
-        raise HTTPException(
-            status_code=400, detail=f"'{row.pipeline}' resume desteklenmiyor."
-        )
+        raise HTTPException(status_code=400, detail=f"'{row.pipeline}' resume desteklenmiyor.")
 
     from app.agents.run_ledger import resume_run
     from app.agents.tr_vertical import run_tr_vertical
@@ -165,8 +173,12 @@ async def resume_agent_run(
         raise HTTPException(status_code=400, detail="Kaynak job/dosya bulunamadı.")
 
     _, result = await resume_run(
-        db, run_id, run_tr_vertical,
-        job_id=row.job_id, file_path=job.file_path, file_type=job.file_type,
+        db,
+        run_id,
+        run_tr_vertical,
+        job_id=row.job_id,
+        file_path=job.file_path,
+        file_type=job.file_type,
         org_id=row.org_id,
     )
     return {
