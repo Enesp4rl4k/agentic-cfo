@@ -428,6 +428,14 @@ export const tr: MessageTree = {
     redirecting: "Yönlendiriliyor…",
     managePortal: "Aboneliği yönet",
   },
+  smmmCalendar: {
+    title: "Yaklaşan son günler",
+    subtitle: "Tüm müşterilerin önümüzdeki 45 gündeki yasal son günleri, en yakından. Tutar yalnızca o müşteri bu vergiyi daha önce bankadan ödediyse görünür.",
+    unverified: "Tarihler yasal gün kurallarından hesaplandı; resmî GİB/SGK metniyle henüz doğrulanmadı. Resmî tatiller hesaba katılmıyor.",
+    empty: "Önümüzdeki 45 günde son gün yok ya da henüz müşteri yok.",
+    noHistory: "Geçmiş ödeme yok",
+    loadError: "Son günler yüklenemedi.",
+  },
   learnedRules: {
     title: "Ajanın sizden öğrendikleri",
     subtitle: "Aynı açıklamayı aynı hesaba düzelttikleriniz. İki tutarlı düzeltme kural olur; kural yalnızca hesabı önerir, kayıt yine sizi bekler.",

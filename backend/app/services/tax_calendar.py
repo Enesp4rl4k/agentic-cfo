@@ -121,35 +121,34 @@ async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str
     return medians
 
 
-async def project_tax_obligations(
-    db: AsyncSession,
-    org_id: str,
-    anchor: date,
-    horizon_weeks: int = 13,
-) -> list[TaxObligationProjection]:
-    """Statutory deadlines inside the horizon, with amounts from past payments."""
-    horizon_end = anchor + timedelta(days=7 * horizon_weeks - 1)
-    historical = await get_historical_tax_averages(db, org_id)
-    found: dict[str, TaxObligationProjection] = {}
+@dataclass(frozen=True)
+class StatutoryDeadline:
+    """One statutory deadline: what it is and the day it falls on (weekend-shifted)."""
+
+    kind: str
+    label: str
+    due: date
+    account_code: str
+    key: str
+
+
+def statutory_deadlines(anchor: date, horizon_end: date) -> list[StatutoryDeadline]:
+    """The statutory deadlines between `anchor` and `horizon_end`, nearest first.
+
+    Pure: no company, no amounts. The day rules are the module's (UNVERIFIED against
+    the official text). Shared by the Cash Radar (which keeps only the taxes a company
+    has paid) and the accountant's calendar (which shows them for every client).
+    """
+    found: dict[str, StatutoryDeadline] = {}
 
     def add(kind: str, label: str, due: date, account: str, key: str) -> None:
         due = _next_working_day(due)
-        if kind in historical and anchor <= due <= horizon_end:
-            found.setdefault(
-                key,
-                TaxObligationProjection(
-                    id=f"tax_{kind}_{due.isoformat()}",
-                    tax_type=kind,
-                    title=label,
-                    amount_cents=historical[kind],
-                    expected_date=due,
-                    source_basis="historical_cash_median",
-                    account_code=account,
-                ),
-            )
+        if anchor <= due <= horizon_end:
+            found.setdefault(key, StatutoryDeadline(kind, label, due, account, key))
 
     # Monthly obligations: the month of the deadline, a month back and a few ahead.
-    for m_offset in range(-1, 5):
+    months_ahead = (horizon_end.year - anchor.year) * 12 + (horizon_end.month - anchor.month) + 2
+    for m_offset in range(-1, max(5, months_ahead)):
         year = anchor.year + (anchor.month - 1 + m_offset) // 12
         month = (anchor.month - 1 + m_offset) % 12 + 1
         last = _last_day_of_month(year, month)
@@ -165,7 +164,7 @@ async def project_tax_obligations(
         )
 
     # Provisional tax: the previous year's Q4 is due in February of this one.
-    for quarter_year in (anchor.year - 1, anchor.year):
+    for quarter_year in range(anchor.year - 1, horizon_end.year + 1):
         for quarter, (due_m, due_d, plus) in GECICI_VERGI_DUE.items():
             add(
                 "gecici_vergi",
@@ -175,4 +174,28 @@ async def project_tax_obligations(
                 f"gec{quarter}{quarter_year}",
             )
 
-    return sorted(found.values(), key=lambda p: p.expected_date)
+    return sorted(found.values(), key=lambda d: (d.due, d.kind))
+
+
+async def project_tax_obligations(
+    db: AsyncSession,
+    org_id: str,
+    anchor: date,
+    horizon_weeks: int = 13,
+) -> list[TaxObligationProjection]:
+    """Statutory deadlines inside the horizon, with amounts from past payments."""
+    horizon_end = anchor + timedelta(days=7 * horizon_weeks - 1)
+    historical = await get_historical_tax_averages(db, org_id)
+    return [
+        TaxObligationProjection(
+            id=f"tax_{d.kind}_{d.due.isoformat()}",
+            tax_type=d.kind,
+            title=d.label,
+            amount_cents=historical[d.kind],
+            expected_date=d.due,
+            source_basis="historical_cash_median",
+            account_code=d.account_code,
+        )
+        for d in statutory_deadlines(anchor, horizon_end)
+        if d.kind in historical
+    ]
