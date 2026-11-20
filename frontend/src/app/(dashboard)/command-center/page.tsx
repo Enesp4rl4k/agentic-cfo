@@ -22,6 +22,7 @@ import { DecisionBriefPanel } from "@/components/ui/decision-brief-panel";
 import { getDecisionBrief, getSemanticHistory, getLiveDataStatus, getSemanticMe, rebuildSemantic, approveDecisionBrief, type DecisionBrief, type SemanticPeriodSummary, type LiveDataStatus } from "@/lib/api/semantic";
 import { ConflictCard } from "@/components/command-center/ConflictCard";
 import { LedgerCard } from "@/components/command-center/LedgerCard";
+import { CSuiteLedgerCard } from "@/components/command-center/CSuiteLedgerCard";
 import { ReviewQueueCard } from "@/components/command-center/ReviewQueueCard";
 import { AgentRunLedger } from "@/components/ops/AgentRunLedger";
 import { DecisionLogPanel } from "@/components/ui/decision-log-panel";
@@ -207,7 +208,7 @@ function QuickWinCard({ win }: { win: QuickWinItem }) {
         </span>
       </div>
       <p className="mb-1 text-xs text-muted-foreground">{win.estimated_impact}</p>
-      <p className="text-xs text-muted-foreground/70">Owner: {win.owner}</p>
+      <p className="text-xs text-muted-foreground">Owner: {win.owner}</p>
     </div>
   );
 }
@@ -443,7 +444,7 @@ function PipelineNodeCard({
   const stateClass = isActive
     ? "border-primary/50 bg-primary/5"
     : hasResult
-    ? "border-emerald-500/30 bg-emerald-950/20"
+    ? "border-emerald-500/30 bg-emerald-500/10"
     : "border-border bg-card opacity-60";
 
   const iconClass = isActive
@@ -465,16 +466,16 @@ function PipelineNodeCard({
       </div>
       <span className="text-[10px] font-semibold leading-tight">{node.label}</span>
       {isActive && (
-        <span className="flex items-center gap-0.5 text-[9px] text-primary">
+        <span className="flex items-center gap-0.5 text-[10px] text-primary">
           <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
           {t.commandCenter.nodeRunning}
         </span>
       )}
       {hasResult && !isActive && updatedAt && (
-        <span className="text-[9px] text-muted-foreground">{relativeTime(updatedAt, t)}</span>
+        <span className="text-[10px] text-muted-foreground">{relativeTime(updatedAt, t)}</span>
       )}
       {!hasResult && !isActive && (
-        <span className="text-[9px] text-muted-foreground">{t.commandCenter.nodeWaiting}</span>
+        <span className="text-[10px] text-muted-foreground">{t.commandCenter.nodeWaiting}</span>
       )}
     </div>
   );
@@ -506,7 +507,7 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
           <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
           <h2 className="text-sm font-semibold">Auto-Chain Pipeline</h2>
           {totalActive > 0 && (
-            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-[color:var(--tc-ember-text)]">
               <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
               {t.commandCenter.pipelineRunning.replace("{n}", String(totalActive))}
             </span>
@@ -891,6 +892,7 @@ export default function CommandCenterPage() {
       {/* Cross-agent conflict surface */}
       <ReviewQueueCard />
       <LedgerCard />
+      <CSuiteLedgerCard />
       <ConflictCard />
 
       {/* Agent grid — collapsed when semantic brief is primary */}
@@ -965,7 +967,7 @@ export default function CommandCenterPage() {
           <div className="mb-4 flex items-center gap-2">
             <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
             <h2 className="text-sm font-semibold">Quick Wins — Actionable Now</h2>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-[color:var(--tc-ember-text)]">
               {quickWins.length}
             </span>
           </div>

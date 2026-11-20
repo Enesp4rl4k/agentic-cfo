@@ -145,7 +145,7 @@ function SensitivityHeatmap({ result }: { result: MatrixResult }) {
               <th className="px-2 py-1.5 text-left text-muted-foreground font-normal border-b border-r border-border">
                 <span className="text-[10px]">{result.row_label.slice(0, 12)}…</span>
                 <br />
-                <span className="text-[9px] opacity-60">↓ / {result.col_label.slice(0, 12)}… →</span>
+                <span className="text-[10px] opacity-60">↓ / {result.col_label.slice(0, 12)}… →</span>
               </th>
               {result.col_values.map((cv) => (
                 <th
@@ -528,7 +528,7 @@ export default function SensitivityPage() {
           <p className="text-sm text-muted-foreground">
             {s.info.body.replace("{run}", s.run)}
           </p>
-          <div className="mt-3 flex flex-wrap justify-center gap-3 text-xs text-muted-foreground/70">
+          <div className="mt-3 flex flex-wrap justify-center gap-3 text-xs text-muted-foreground">
             <span>• {s.info.ex1}</span>
             <span>• {s.info.ex2}</span>
             <span>• {s.info.ex3}</span>

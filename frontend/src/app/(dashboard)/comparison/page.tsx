@@ -390,7 +390,7 @@ export default function ComparisonPage() {
                         yAxisId="left"
                         dataKey="revenue"
                         name={chart.revenue.replace("{currency}", symbol)}
-                        fill="oklch(0.79 0.115 83)"
+                        fill="var(--tc-ember)"
                         radius={[4, 4, 0, 0]}
                       />
                       <Line
@@ -398,7 +398,7 @@ export default function ComparisonPage() {
                         type="monotone"
                         dataKey="margin"
                         name={chart.margin}
-                        stroke="oklch(0.58 0.14 145)"
+                        stroke="var(--success)"
                         strokeWidth={2}
                       />
                     </BarChart>

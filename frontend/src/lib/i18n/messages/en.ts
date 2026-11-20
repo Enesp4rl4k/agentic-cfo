@@ -75,6 +75,84 @@ export type MessageTree = {
     connect: string;
     loading: string;
     failed: string;
+    briefingTitle: string;
+    briefingSubtitle: string;
+    briefingVerified: string;
+    briefingActionLabel: string;
+    briefingBtnDone: string;
+    briefingBtnDefer: string;
+    briefingBtnDismiss: string;
+    briefingRecorded: string;
+    briefingLoading: string;
+    simTitle: string;
+    simSubtitle: string;
+    simBtnSimulate: string;
+    simBtnReset: string;
+    simDeficitRisk: string;
+    simVar95: string;
+    simHireLabel: string;
+    simShockLabel: string;
+    simDeferLabel: string;
+    simCapexLabel: string;
+    simCorridor: string;
+    simHide: string;
+    simEdit: string;
+    simHeadcountUnit: string;
+    simNetSalaryLabel: string;
+    simDeferHint: string;
+    simCapexHint: string;
+    simCalculating: string;
+    simVolume: string;
+    simIterationsUnit: string;
+    simInsightsTitle: string;
+    simWeekSuffix: string;
+    simBaseBalance: string;
+    simP10: string;
+    simP50: string;
+    simP90: string;
+    simDeficitRiskShort: string;
+    grpToggleIndividual: string;
+    grpToggleConsolidated: string;
+    grpTitle: string;
+    grpSubtitle: string;
+    grpEliminatedTotal: string;
+    grpStartingCash: string;
+    grpEliminationsTitle: string;
+    grpGrossIn: string;
+    grpGrossOut: string;
+    grpEliminated: string;
+    grpNetIn: string;
+    grpNetOut: string;
+    grpReason: string;
+    grpCompanyCount: string;
+    grpColCompany: string;
+    grpColParty: string;
+    grpColAmount: string;
+    curveTitle: string;
+    curveUnit: string;
+    curveMovementUnit: string;
+    curveAria: string;
+    curveAriaFlat: string;
+    curveZero: string;
+    lowestCash: string;
+    lowestMovement: string;
+    periodEnd: string;
+    weekDetailEyebrow: string;
+    weekDetailTitle: string;
+    weekDetailPayments: string;
+    weekDetailCollections: string;
+    weekDetailEmpty: string;
+    weekDetailItem: string;
+    weekDetailLate: string;
+    weekPick: string;
+    openSources: string;
+    roadmapNote: string;
+  };
+  ooda: {
+    label: string;
+    eyebrow: string;
+    motto: string;
+    steps: { letter: string; verb: string; title: string; href: string }[];
   };
   reviewQueue: {
     title: string;
@@ -760,6 +838,16 @@ export type MessageTree = {
     };
     uploadFailed: string;
     linkedPages: string;
+    eyebrow: string;
+    recent: {
+      title: string;
+      empty: string;
+      failed: string;
+      colFile: string;
+      colStatus: string;
+      colArrived: string;
+      statuses: { [key: string]: string };
+    };
     help: {
       title: string;
       body: string;
@@ -1937,6 +2025,54 @@ export type MessageTree = {
       heading: string;
       body: string;
     };
+    radarBacktest: {
+      heading: string;
+      subheading: string;
+      projected: string;
+      actual: string;
+      variance: string;
+      variancePct: string;
+      accuracyTier: string;
+      noActual: string;
+      noForecastSnapshot: string;
+      tierHigh: string;
+      tierModerate: string;
+      tierLow: string;
+      tierNoActual: string;
+      tierNoForecastSnapshot: string;
+      tierZeroActual: string;
+    };
+    decisionMetrics: {
+      heading: string;
+      subheading: string;
+      totalRecommendations: string;
+      adoptionRate: string;
+      correctionRate: string;
+      responseRate: string;
+      totalImpact: string;
+      adopted: string;
+      deferred: string;
+      dismissed: string;
+      open: string;
+      unresponded: string;
+    };
+  };
+  csuiteLedger: {
+    title: string;
+    subtitle: string;
+    chroTitle: string;
+    chroRatio: string;
+    cooTitle: string;
+    cooTop1: string;
+    cooTop3: string;
+    ctoTitle: string;
+    ctoShare: string;
+    riskLow: string;
+    riskMedium: string;
+    riskHigh: string;
+    trendUp: string;
+    trendStable: string;
+    trendDown: string;
   };
   settingsAlerts: {
     title: string;
@@ -2141,12 +2277,53 @@ export type MessageTree = {
     created: string;
     deleted: string;
   };
+  /** Brand landing (`/`). Design source: DESIGN.md → Brand layer. */
+  brandLanding: {
+    skip: string;
+    homeLabel: string;
+    navLabel: string;
+    nav: { product: string; how: string; trust: string; faq: string; login: string };
+    hero: {
+      eyebrow: string;
+      titleBefore: string;
+      titleEm: string;
+      titleAfter: string;
+      tagline: string;
+      lead: string;
+      primary: string;
+      secondary: string;
+      sources: string[];
+      sceneLabel: string;
+    };
+    product: { eyebrow: string; title: string; lead: string; tablistLabel: string };
+    tabs: Record<
+      "cevap" | "rota" | "onay" | "rapor",
+      { label: string; path: string; title: string; body: string; bullets: string[] }
+    >;
+    panels: {
+      answer: {
+        date: string; before: string; em: string; after: string; suffix: string;
+        today: string; collections: string; payments: string; lowest: string;
+        pending: string; read: string;
+      };
+      route: { eyebrow: string; aria: string; title: string; salaries: string; suppliers: string; fixed: string };
+      approval: { eyebrow: string; title: string; rest: string; note: string; a: string; aDue: string; b: string; bDue: string };
+      report: { paper: string; archive: string; r1: string; r2: string; r3: string; file: string };
+    };
+    how: { eyebrow: string; title: string; hermes: string };
+    steps: { n: string; title: string; body: string }[];
+    trust: { titleBefore: string; titleEm: string; titleAfter: string };
+    pillars: { title: string; body: string }[];
+    faq: { title: string; items: { q: string; a: string }[] };
+    close: { title: string; note: string; cta: string; demo: string };
+    footer: { sample: string; carpe: string; carpeSub: string };
+  };
 };
 
 export const en: MessageTree = {
   product: {
     name: brand.name,
-    tagline: "Your entire C-Suite, powered by AI — globally.",
+    tagline: "A company's cash route, drawn from your own documents.",
   },
   nav: {
     general: "General",
@@ -2166,9 +2343,9 @@ export const en: MessageTree = {
     real: "Real",
     realHint: "Measured from a connected source or parsed file",
     estimated: "Estimated",
-    estimatedHint: "Extrapolated from history — not a measurement",
+    estimatedHint: "Projected forward from your history",
     benchmark: "Benchmark",
-    benchmarkHint: "Sector assumption / fixed reference — not company data",
+    benchmarkHint: "Sector reference used for comparison",
   },
   ledger: {
     title: "Company ledger",
@@ -2194,7 +2371,7 @@ export const en: MessageTree = {
     startingCash: "Starting cash",
     asOf: "Statement date",
     unknownCash: "Bank balance unknown",
-    unknownCashBody: "Upload a bank statement with a balance column. Until then the radar shows movement only and claims no cash gap.",
+    unknownCashBody: "Upload a bank statement with a balance column; once the balance is in, the radar also calculates the cash gap. Until then it shows movements.",
     noGap: "The balance does not go below zero within 13 weeks.",
     gapTitle: "Cash gap",
     gapWeek: "Starts in week",
@@ -2218,10 +2395,93 @@ export const en: MessageTree = {
     connect: "Connect my data",
     loading: "Preparing the cash radar…",
     failed: "The cash radar could not be loaded.",
+    briefingTitle: "Monday Morning Briefing",
+    briefingSubtitle: "Deterministic 3-sentence weekly brief grounded in verified ledger facts.",
+    briefingVerified: "Verified by Ledger",
+    briefingActionLabel: "Recommended Action",
+    briefingBtnDone: "Done",
+    briefingBtnDefer: "Defer",
+    briefingBtnDismiss: "Dismiss",
+    briefingRecorded: "Decision recorded:",
+    briefingLoading: "Preparing Monday briefing…",
+    simTitle: "What-If Scenario Simulator",
+    simSubtitle: "Calculate cash deficit risk and corridors with 10,000 Monte Carlo iterations.",
+    simBtnSimulate: "Simulate Scenario",
+    simBtnReset: "Reset",
+    simDeficitRisk: "Cash Deficit Risk",
+    simVar95: "Value at Risk (95% VaR)",
+    simHireLabel: "New Headcount Hire",
+    simShockLabel: "Revenue Change (%)",
+    simDeferLabel: "Defer Payable (₺)",
+    simCapexLabel: "Capex Investment (₺)",
+    simCorridor: "Simulated Cash Corridor (P10 – P50 – P90)",
+    simHide: "Hide",
+    simEdit: "Edit Scenario",
+    simHeadcountUnit: "people",
+    simNetSalaryLabel: "Net Salary",
+    simDeferHint: "Deferred from week 1 to week 6",
+    simCapexHint: "Added to week 3",
+    simCalculating: "Calculating…",
+    simVolume: "Simulation Volume",
+    simIterationsUnit: "iterations",
+    simInsightsTitle: "Simulation Insights",
+    simWeekSuffix: "Week",
+    simBaseBalance: "Base Balance",
+    simP10: "P10 (Pessimistic)",
+    simP50: "P50 (Median)",
+    simP90: "P90 (Optimistic)",
+    simDeficitRiskShort: "Deficit Risk",
+    grpToggleIndividual: "Individual Entity",
+    grpToggleConsolidated: "Consolidated Group View",
+    grpTitle: "Consolidated Group Cash Radar",
+    grpSubtitle: "Calculated with intercompany transfers, loans, and receivables eliminated to prevent double-counting.",
+    grpEliminatedTotal: "Eliminated Intercompany Volume",
+    grpStartingCash: "Total Consolidated Cash",
+    grpEliminationsTitle: "Eliminated Intercompany Items",
+    grpGrossIn: "Gross Inflow",
+    grpGrossOut: "Gross Outflow",
+    grpEliminated: "Eliminated",
+    grpNetIn: "Net Inflow",
+    grpNetOut: "Net Outflow",
+    grpReason: "Elimination Reason",
+    grpCompanyCount: "Company Count",
+    grpColCompany: "Entity",
+    grpColParty: "Party",
+    grpColAmount: "Amount",
+    curveTitle: "Cash curve",
+    curveUnit: "Weekly close",
+    curveMovementUnit: "Weekly accumulated movement",
+    curveAria: "Cash curve. Lowest point in week {week}: {amount}.",
+    curveAriaFlat: "Cash curve; it stays at or above zero every week.",
+    curveZero: "Zero line",
+    lowestCash: "Lowest cash",
+    lowestMovement: "Lowest accumulated movement",
+    periodEnd: "End of period",
+    weekDetailEyebrow: "Week {week} · {start} – {end}",
+    weekDetailTitle: "What makes up this week",
+    weekDetailPayments: "Payments",
+    weekDetailCollections: "Collections",
+    weekDetailEmpty: "No recorded movement for this week.",
+    weekDetailItem: "Unnamed item",
+    weekDetailLate: "overdue",
+    weekPick: "Show week {week}",
+    openSources: "Open the source documents",
+    roadmapNote: "The route is always computed from the latest uploaded documents.",
+  },
+  ooda: {
+    label: "Weekly loop",
+    eyebrow: "OBSERVE · ORIENT · DECIDE · ACT",
+    motto: "Observe, orient, decide, act. Then again.",
+    steps: [
+      { letter: "I", verb: "OBSERVE", title: "Documents", href: "/baglan" },
+      { letter: "II", verb: "ORIENT", title: "Cash route", href: "/nakit-radari" },
+      { letter: "III", verb: "DECIDE", title: "Pending approvals", href: "/smmm-onay" },
+      { letter: "IV", verb: "ACT", title: "Reports", href: "/reports" },
+    ],
   },
   reviewQueue: {
     title: "{n} analyses await your approval",
-    body: "These results did not pass the confidence gate. Until approved they stay out of the company view and the automatic chain does not run.",
+    body: "You have the final say on these results: they are below the confidence threshold and await your approval. Once approved they are written to the company view and the next analyses start.",
     approve: "Approve",
     reject: "Reject",
     ownerOnly: "That did not go through. Only the company owner can make this decision.",
@@ -2389,7 +2649,7 @@ export const en: MessageTree = {
       analyzing: "Analyzing…",
       hint: "Drag a CSV file here or click",
       sources: "Logo Tiger · Parasut · Akbank · Garanti · GIB e-Invoice XML · Generic CSV/Excel",
-      limits: "Max 10 MB · .csv, .xlsx, .xls, .pdf, .xml",
+      limits: "Max 10 MB · .csv, .xlsx, .pdf, .xml",
     },
     error: {
       processFailed: "The file could not be processed",
@@ -2955,7 +3215,7 @@ export const en: MessageTree = {
       aria: "Drop a file or choose one",
       reading: "Reading files…",
       hint: "Drop files here, or click to choose",
-      formats: "Excel (.xlsx), CSV or PDF · you can drop several at once · up to 10 files",
+      formats: "Excel (.xlsx), CSV, PDF, e-Invoice / e-Archive XML · you can drop several files together · up to 10 files. Save old .xls files as .xlsx first.",
     },
     uploadFailed: "The files could not be sent.",
     linkedPages: "Data added to:",
@@ -2992,6 +3252,23 @@ export const en: MessageTree = {
         finansal_dosya_gerekli: "statement needed first",
         ek_yok: "no attachment",
       },
+    },
+    eyebrow: "Everything the route is fed by",
+    recent: {
+      "title": "Recent uploads",
+      "empty": "No documents yet. Drop your first file above.",
+      "failed": "Recent uploads could not be read.",
+      "colFile": "Document",
+      "colStatus": "Status",
+      "colArrived": "Arrived",
+      "statuses": {
+        "pending": "Queued",
+        "ingesting": "Being read",
+        "analyzing": "Being calculated",
+        "awaiting_review": "Awaiting approval",
+        "completed": "In the route",
+        "failed": "Could not be read"
+      }
     },
   },
   chat: {
@@ -4139,9 +4416,9 @@ export const en: MessageTree = {
       connectFirst: "Connect a data source first.",
       approvalTitle: "The analysis is waiting for your approval",
       confidenceLow:
-        "The system was not sure about some lines, so it will not use the result without asking you.",
+        "On some lines we leave the final say to you; the result is used after your approval.",
       confidenceWith:
-        "The system's confidence in this analysis is {pct}%. Since the threshold is 80%, it will not use the result without asking you.",
+        "This analysis has a confidence score of {pct}%. Results below 80% are used with your approval.",
       viewResults: "Let me see the results first",
       approveAndFinish: "Approve and finish",
       confirmTitle: "Do you approve this analysis?",
@@ -4217,6 +4494,54 @@ export const en: MessageTree = {
       heading: "Pilot program has not started",
       body: "Create an invite code above and share it.",
     },
+    radarBacktest: {
+      heading: "4-Week Radar Backtesting",
+      subheading: "Forecast accuracy requires a stored historical radar forecast and a proven realized balance",
+      projected: "Projected Balance",
+      actual: "Actual Proven Balance",
+      variance: "Variance",
+      variancePct: "Variance %",
+      accuracyTier: "Accuracy Tier",
+      noActual: "No actual ledger entries available yet for target date",
+      noForecastSnapshot: "No stored forecast",
+      tierHigh: "High Accuracy (≤ 10% variance)",
+      tierModerate: "Moderate Accuracy (10-25% variance)",
+      tierLow: "Low Accuracy (> 25% variance)",
+      tierNoActual: "No Actual Data",
+      tierNoForecastSnapshot: "No Forecast Snapshot",
+      tierZeroActual: "Percentage Undefined at Zero Balance",
+    },
+    decisionMetrics: {
+      heading: "Decision Log & Recommendation Adoption",
+      subheading: "Responses to cash recommendations; realized financial impact requires separate measurement",
+      totalRecommendations: "Total Recommendations",
+      adoptionRate: "Adoption Rate",
+      correctionRate: "Dismissal Rate",
+      responseRate: "Response Rate",
+      totalImpact: "Expected Amount of Adopted Actions",
+      adopted: "Adopted",
+      deferred: "Deferred",
+      dismissed: "Dismissed",
+      open: "Open",
+      unresponded: "Unanswered",
+    },
+  },
+  csuiteLedger: {
+    title: "C-Suite Ledger Intelligence",
+    subtitle: "Executive insights derived directly from proven ledger transactions without manual CSV uploads",
+    chroTitle: "CHRO · Payroll & Workforce",
+    chroRatio: "Payroll / Revenue",
+    cooTitle: "COO · Supplier Concentration",
+    cooTop1: "Top 1 Supplier",
+    cooTop3: "Top 3 Suppliers",
+    ctoTitle: "CTO · Cloud & SaaS Footprint",
+    ctoShare: "Tech / Total Spend",
+    riskLow: "Low Concentration Risk",
+    riskMedium: "Medium Risk",
+    riskHigh: "High Dependency Risk",
+    trendUp: "Increasing",
+    trendStable: "Stable",
+    trendDown: "Decreasing",
   },
   settingsAlerts: {
     title: "Alert settings",
@@ -4427,5 +4752,141 @@ export const en: MessageTree = {
     updated: "“{name}” updated.",
     created: "“{name}” created.",
     deleted: "“{name}” deleted.",
+  },
+  brandLanding: {
+    skip: "Skip to content",
+    homeLabel: "home",
+    navLabel: "Main menu",
+    nav: { product: "Product", how: "How it works", trust: "Trust", faq: "FAQ", login: "Log in" },
+    hero: {
+      eyebrow: "Every Monday 08:00 · from your own documents",
+      titleBefore: "A company's ",
+      titleEm: "cash route",
+      titleAfter: ", drawn from your own documents",
+      tagline: "See your route before the storm.",
+      lead:
+        "Your e-invoices, bank movements and payment plan turn into one answer every Monday: " +
+        "where your cash tightens over the next three months, and why. Every figure traces back to the document behind it.",
+      primary: "Show my cash",
+      secondary: "Take the tour",
+      sources: ["e-Invoice / e-Archive XML", "Bank statement", "Excel · CSV · PDF", "Paraşüt"],
+      sceneLabel:
+        "An Aegean ship with an orange sail swelled by the wind rides and heels over the waves of a storm; " +
+        "on a distant rock on the horizon stands a tiny statue of Athena.",
+    },
+    product: {
+      eyebrow: "Product · in four screens",
+      title: "What do you see on Monday morning?",
+      lead: "These four screens are the heart of the app. Click the tabs to tour them.",
+      tablistLabel: "Product screens",
+    },
+    tabs: {
+      cevap: {
+        label: "Monday answer",
+        path: "app / monday",
+        title: "The week's answer in one sentence",
+        body: "The opening screen is not a dashboard but an answer: when and by how much your cash tightens. Four figures back that sentence.",
+        bullets: ["Refreshes every Monday at 08:00", "The same sentence arrives by email"],
+      },
+      rota: {
+        label: "Cash route",
+        path: "app / route",
+        title: "The week-by-week cash route",
+        body: "Each week's closing cash. Tap a week to open the collections and payments behind it, with their source documents.",
+        bullets: ["Defer a payment and watch the curve change", "Scenarios leave the base forecast untouched"],
+      },
+      onay: {
+        label: "Approval",
+        path: "app / pending-approvals",
+        title: "When it isn't sure, it asks you",
+        body: "If a bank movement fits more than one invoice, it leaves the choice to you. Once you approve, that item joins the route.",
+        bullets: ["It stops below 80% confidence", "Every approval is logged"],
+      },
+      rapor: {
+        label: "Report",
+        path: "app / reports",
+        title: "The sealed weekly report",
+        body: "A one-page PDF you can send to partners, the bank or your accountant. The seal shows the figures passed a separate check step.",
+        bullets: ["Week-by-week table and curve", "Past reports stay in the archive"],
+      },
+    },
+    panels: {
+      answer: {
+        date: "Monday, 9 November",
+        before: "Your cash goes ",
+        em: "negative in week 6",
+        after: " (14–20 December) by ",
+        suffix: ".",
+        today: "Cash today",
+        collections: "Collections, next 3 months",
+        payments: "Payments, next 3 months",
+        lowest: "Lowest cash",
+        pending: "2 items await your approval",
+        read: "214 documents read",
+      },
+      route: {
+        eyebrow: "Week-by-week route · thousand ₺",
+        aria: "Cash curve, lowest in week 6:",
+        title: "W6 · 14–20 Dec · payments",
+        salaries: "Salaries",
+        suppliers: "Supplier invoices · 4 e-invoices",
+        fixed: "Loan instalment · card · rent",
+      },
+      approval: {
+        eyebrow: "Awaiting approval · 1 / 2",
+        title: "Incoming transfer",
+        rest: " · 12 November · Account ···4410",
+        note: "This amount fits two open invoices. Confidence 64%; below 80%, so your choice is needed.",
+        a: "Invoice A",
+        aDue: " · due 10 November",
+        b: "Invoice B",
+        bDue: " · due 15 November",
+      },
+      report: {
+        paper: "Weekly cash report",
+        archive: "Reports",
+        r1: "2026-46 · 9 November",
+        r2: "2026-45 · 2 November",
+        r3: "2026-44 · 26 October",
+        file: "PDF",
+      },
+    },
+    how: {
+      eyebrow: "How it works",
+      title: "Five stops from document to answer",
+      hermes: "Hermes's job: documents come in, the answer goes out.",
+    },
+    steps: [
+      { n: "01 · Source", title: "Drop your documents", body: "e-Invoice XML, bank statement, Excel, CSV, PDF. Connect Paraşüt or forward invoices to your inbox address." },
+      { n: "02 · Matching", title: "Each movement finds its invoice", body: "Every bank movement is tied to an invoice, every invoice to a due date. Anything that can't be tied stays visible." },
+      { n: "03 · Forecast", title: "The next three months are drawn", body: "Due dates, recurring payments and past collection habits settle into weeks." },
+      { n: "04 · Check", title: "A second eye counts", body: "Every result is recounted in a check step independent of the one that produced it. Anything still unclear comes to you for approval." },
+      { n: "05 · Answer", title: "The Monday report", body: "One sentence, one curve, a sealed PDF. Every week at the same hour." },
+    ],
+    trust: {
+      titleBefore: "Behind every figure you see ",
+      titleEm: "stands a document",
+      titleAfter: ".",
+    },
+    pillars: [
+      { title: "Every figure has a source", body: "Click any amount in the route and the invoice or bank movement behind it opens." },
+      { title: "Every result is counted twice", body: "The step that produces a figure and the step that verifies it are separate." },
+      { title: "You have the final say", body: "Below 80% confidence the report waits for your approval. Every run and approval is logged." },
+    ],
+    faq: {
+      title: "Frequently asked",
+      items: [
+        { q: "Does it replace my accountant?", a: "No. Accounting records the past; this looks at the months ahead. You can share the report with your accountant." },
+        { q: "Which files does it read?", a: "PDF, XLSX, CSV, TXT and e-Invoice / e-Archive XML, up to 10 MB per file. Save old .xls files as .xlsx before uploading." },
+        { q: "What does it do when it isn't sure?", a: "It stops and asks you. Below 80% confidence the item stays out of the route and the report isn't sealed; your choice and its date are logged." },
+      ],
+    },
+    close: {
+      title: "Have your first route ready by next Monday.",
+      note: "Start with e-Invoice XML, a bank statement, Excel or PDF.",
+      cta: "Show my cash",
+      demo: "Try the demo",
+    },
+    footer: { sample: "Figures on screen are samples", carpe: "Carpe diem.", carpeSub: "SEIZE THE DAY" },
   },
 };

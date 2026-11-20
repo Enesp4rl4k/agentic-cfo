@@ -116,3 +116,44 @@ export async function getCashRadar(): Promise<CashRadar> {
   const res = await apiClient.get<Envelope<CashRadar>>("/ledger/cash-radar");
   return res.data.data;
 }
+
+export interface MondayBriefing {
+  briefing_id: string;
+  org_id: string;
+  week_start: string;
+  week_end: string;
+  starting_cash_cents: number | null;
+  net_change_cents: number;
+  end_balance_cents: number;
+  approaching_title: string;
+  approaching_amount_cents: number;
+  approaching_date: string | null;
+  action_type: string;
+  action_title: string;
+  action_detail: string;
+  action_amount_cents: number;
+  sentence_radar: string;
+  sentence_obligation: string;
+  sentence_action: string;
+  full_text: string;
+  verified: boolean;
+  fallback_used: boolean;
+}
+
+export async function getMondayBriefing(anchorDate?: string): Promise<MondayBriefing> {
+  const params = anchorDate ? { anchor_date: anchorDate } : undefined;
+  const res = await apiClient.get<Envelope<MondayBriefing>>("/briefing/monday", { params });
+  return res.data.data;
+}
+
+export async function respondToBriefing(
+  response: "done" | "deferred" | "dismissed",
+  note?: string,
+  anchorDate?: string,
+): Promise<{ decision_id: string; status: string; chosen_option_label: string; briefing_id: string }> {
+  const res = await apiClient.post<Envelope<{ decision_id: string; status: string; chosen_option_label: string; briefing_id: string }>>(
+    "/briefing/monday/respond",
+    { response, note, anchor_date: anchorDate },
+  );
+  return res.data.data;
+}

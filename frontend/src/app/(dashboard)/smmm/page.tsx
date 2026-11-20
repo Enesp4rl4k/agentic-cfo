@@ -303,7 +303,7 @@ function ClientRow({
       </td>
       <td className="py-3 px-3 text-xs text-muted-foreground">
         <span className="capitalize">{client.sektor ?? "—"}</span>
-        {client.buyukluk && <span className="ml-1 text-muted-foreground/60">· {client.buyukluk}</span>}
+        {client.buyukluk && <span className="ml-1 text-muted-foreground">· {client.buyukluk}</span>}
       </td>
       <td className="py-3 px-3 text-xs text-muted-foreground">
         {client.il ? (

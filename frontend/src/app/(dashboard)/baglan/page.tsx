@@ -12,8 +12,12 @@ import { useI18n } from "@/hooks/useI18n";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { veriEkle, veriTurleri, type DosyaSonucu, type TurSecenegi } from "@/lib/api/veri";
 import { EpostaKutusu } from "@/components/veri/EpostaKutusu";
+import { RecentUploads } from "@/components/veri/RecentUploads";
+import { OodaFooter } from "@/components/brand-app/OodaFooter";
 
-const KABUL = ".xlsx,.csv,.pdf,.txt,.xls";
+// What the server reads. .xls is left out on purpose: the door cannot read it and says how to
+// re-save it; e-Fatura XML and the GİB batch zip were missing and are the documents a company holds.
+const KABUL = ".xlsx,.csv,.pdf,.txt,.xml,.zip";
 
 /**
  * Verilerimi bağla.
@@ -80,10 +84,11 @@ export default function BaglanPage() {
   }, [turler]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{baglan.title}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
+      <div className="flex flex-col gap-1.5">
+        <span className="tc-eyebrow text-muted-foreground">{baglan.eyebrow}</span>
+        <h1 className="tc-display m-0 text-4xl leading-[1.05] sm:text-[44px]">{baglan.title}</h1>
+        <p className="m-0 max-w-2xl text-sm text-muted-foreground">
           {baglan.subtitle}
         </p>
       </div>
@@ -136,7 +141,7 @@ export default function BaglanPage() {
           </div>
 
           {hata && (
-            <p role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            <p role="alert" className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
               {hata}
             </p>
           )}
@@ -194,6 +199,9 @@ export default function BaglanPage() {
           </Card>
         </aside>
       </div>
+
+      <RecentUploads version={eklenen.length} />
+      <OodaFooter current={0} />
     </div>
   );
 }
@@ -213,11 +221,11 @@ function DosyaKarti({
   const baglan = t.baglan;
   const { durum, tanima } = sonuc;
   const ikon =
-    durum === "eklendi" ? <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
-    : durum === "secim_gerekli" ? <HelpCircle className="h-5 w-5 text-amber-400" aria-hidden="true" />
-    : durum === "reddedildi" ? <XCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+    durum === "eklendi" ? <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
+    : durum === "secim_gerekli" ? <HelpCircle className="h-5 w-5 text-warning" aria-hidden="true" />
+    : durum === "reddedildi" ? <XCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
     : durum === "mukerrer" ? <Copy className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-    : <AlertCircle className="h-5 w-5 text-amber-400" aria-hidden="true" />;
+    : <AlertCircle className="h-5 w-5 text-warning" aria-hidden="true" />;
   const aday = tanima.adaylar[0];
   // Choices: the candidates when recognition was torn, every kind when it found none.
   const secenekler = durum === "secim_gerekli" ? tanima.adaylar : durum === "taninmadi" ? turler : [];
@@ -259,7 +267,7 @@ function DosyaKarti({
             <button
               type="button"
               onClick={() => setAcik((v) => !v)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              className="flex min-h-[44px] items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               aria-expanded={acik}
             >
               <ChevronDown className={cn("h-3 w-3 transition-transform", acik && "rotate-180")} aria-hidden="true" />
@@ -282,7 +290,7 @@ function DosyaKarti({
               id={`tur-${sonuc.dosya}`}
               value={secilen}
               onChange={(e) => setSecilen(e.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+              className="min-h-[44px] rounded-md border border-border bg-card px-2 py-1 text-xs"
             >
               <option value="">{baglan.choose}</option>
               {secenekler.map((t) => (
@@ -291,7 +299,7 @@ function DosyaKarti({
                 </option>
               ))}
             </select>
-            <Button size="sm" variant="outline" disabled={!secilen || mesgul} onClick={() => onSec(secilen)}>
+            <Button size="sm" variant="outline" className="min-h-[44px]" disabled={!secilen || mesgul} onClick={() => onSec(secilen)}>
               {baglan.addAsThisType}
             </Button>
           </div>

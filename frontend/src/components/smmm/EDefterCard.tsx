@@ -161,7 +161,7 @@ export function EDefterCard({ jobId }: { jobId: string }) {
               <span>
                 <span className={s.done ? "" : "text-muted-foreground"}>{s.label}</span>
                 {s.detail && (
-                  <span className="block text-[11px] text-muted-foreground/80">{s.detail}</span>
+                  <span className="block text-[11px] text-muted-foreground">{s.detail}</span>
                 )}
               </span>
             </li>

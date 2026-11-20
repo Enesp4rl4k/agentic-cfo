@@ -24,6 +24,8 @@ import { downloadReport } from "@/lib/api/cfo";
 import { fetchWithAuth } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/useI18n";
+import { PageHead } from "@/components/brand-app/PageHead";
+import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import type { MessageTree } from "@/lib/i18n";
 import type { ReportMeta } from "@/types";
 
@@ -368,13 +370,8 @@ export default function ReportsPage() {
   const rep = t.reports;
 
   return (
-    <div className="p-5">
-      <div className="mb-5">
-        <h1 className="text-lg font-semibold tracking-tight">{rep.title}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {rep.subtitle}
-        </p>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-8">
+      <PageHead step={3} title={rep.title} subtitle={rep.subtitle} />
 
       {!jobId && (
         <div
@@ -423,6 +420,7 @@ export default function ReportsPage() {
           )}
         </>
       )}
+      <OodaFooter current={3} />
     </div>
   );
 }

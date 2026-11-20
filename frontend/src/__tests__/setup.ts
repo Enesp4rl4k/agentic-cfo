@@ -11,6 +11,20 @@ vi.mock("next/navigation", () => ({
   usePathname:     () => "/",
 }));
 
+// ── Mock next/font/google ──────────────────────────────────────────────────────
+// The font loaders are compiled away by Next's own plugin; under vitest they are not
+// functions. Every face resolves to an empty class and variable name.
+vi.mock("next/font/google", () => {
+  const face = () => ({ className: "", variable: "", style: {} });
+  return {
+    Inter: face,
+    Cinzel: face,
+    Cormorant_Garamond: face,
+    IBM_Plex_Mono: face,
+    IBM_Plex_Sans: face,
+  };
+});
+
 // ── Mock next-auth/react ───────────────────────────────────────────────────────
 vi.mock("next-auth/react", () => ({
   signIn:     vi.fn(),

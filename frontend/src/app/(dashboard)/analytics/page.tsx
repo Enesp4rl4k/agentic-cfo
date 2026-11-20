@@ -224,7 +224,7 @@ function BenchmarkCard({ data, loading }: { data: BenchmarkData | null; loading:
           {/* 1.3: the P25/P50/P75 markers are sector assumptions — labelled
               where they appear so they never pass as company measurements. */}
           <ProvenanceBadge dataSource="benchmark" />
-          <span className="text-[10px] text-muted-foreground/60">
+          <span className="text-[10px] text-muted-foreground">
             {t.analytics.benchmark.percentiles}
           </span>
         </div>

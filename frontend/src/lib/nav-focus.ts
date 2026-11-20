@@ -14,6 +14,9 @@ export const FOCUS_HREFS: ReadonlySet<string> = new Set([
   "/pnl",
   "/cashflow",
   "/settings/workspace",
+  // The weekly loop closes with approval and the report (DESIGN.md: Observe, Orient, Decide, Act).
+  "/smmm-onay",
+  "/reports",
 ]);
 
 type NavItem = { href: string; trPack?: boolean };

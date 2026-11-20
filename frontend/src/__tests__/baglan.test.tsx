@@ -26,6 +26,9 @@ vi.mock("@/lib/api/veri", () => ({
   ]),
 }));
 
+const listJobs = vi.fn();
+vi.mock("@/lib/api/cfo", () => ({ listJobs: (...args: unknown[]) => listJobs(...args) }));
+
 const setActiveCFOJob = vi.fn();
 vi.mock("@/store/companyContext", () => ({
   useCompanyContextStore: () => ({ setActiveCFOJob }),
@@ -65,6 +68,8 @@ describe("Verilerimi Bağla", () => {
   beforeEach(() => {
     veriEkle.mockReset();
     setActiveCFOJob.mockReset();
+    listJobs.mockReset();
+    listJobs.mockResolvedValue([]);
   });
 
   it("shows what each file was recognised as and links the page it feeds", async () => {
@@ -140,5 +145,49 @@ describe("Verilerimi Bağla", () => {
     render(<BaglanPage />);
     drop([new File(["x"], "eski.xls")]);
     expect(await screen.findByText(/eski Excel biçimi/)).toBeInTheDocument();
+  });
+
+  it("lets the picker choose the documents a company holds, and not the one it cannot read", () => {
+    const { container } = render(<BaglanPage />);
+    const accept = (container.querySelector("input[type=file]") as HTMLInputElement).accept.split(",");
+    expect(accept).toEqual(expect.arrayContaining([".xml", ".xlsx", ".csv", ".pdf"]));
+    expect(accept).not.toContain(".xls");
+  });
+
+  it("lists the latest uploads with the stage each reached, newest first", async () => {
+    listJobs.mockResolvedValue([
+      { job_id: "a", status: "completed", filename: "bordro_aralik.xlsx", created_at: "2026-11-12T09:00:00Z", completed_at: null },
+      { job_id: "b", status: "awaiting_review", filename: "ekstre_kasim.csv", created_at: "2026-11-14T09:00:00Z", completed_at: null },
+      { job_id: "c", status: "failed", filename: "bozuk.pdf", created_at: "2026-11-10T09:00:00Z", completed_at: null },
+    ]);
+    render(<BaglanPage />);
+    const table = within(await screen.findByRole("table"));
+    const rows = table.getAllByRole("row").slice(1).map((r) => r.textContent ?? "");
+    expect(rows[0]).toContain("ekstre_kasim.csv");
+    expect(rows[0]).toContain("Onay bekliyor");
+    expect(rows[1]).toContain("bordro_aralik.xlsx");
+    expect(rows[1]).toContain("Rotada");
+    expect(rows[2]).toContain("Okunamadı");
+  });
+
+  it("says so when nothing was uploaded yet, and when the list cannot be read", async () => {
+    render(<BaglanPage />);
+    expect(await screen.findByText(/Henüz yüklenmiş belge yok/)).toBeInTheDocument();
+  });
+
+  it("does not claim an empty list when the list failed to load", async () => {
+    listJobs.mockRejectedValue(new Error("down"));
+    render(<BaglanPage />);
+    expect(await screen.findByText("Son yüklemeler okunamadı.")).toBeInTheDocument();
+    expect(screen.queryByText(/Henüz yüklenmiş belge yok/)).not.toBeInTheDocument();
+  });
+
+  it("ends with the weekly loop, this being the first step", async () => {
+    render(<BaglanPage />);
+    const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
+    expect(loop.querySelector("[aria-current='page']")?.textContent).toContain("OBSERVE");
+    expect(within(loop).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
+      "/nakit-radari", "/smmm-onay", "/reports",
+    ]);
   });
 });

@@ -100,7 +100,7 @@ export default function CohortPage() {
             <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground">Örnek Veri</p>
               <p className="text-xs text-muted-foreground">{SAMPLE_COHORTS.length} kohort, Oca–Haz 2024</p>
-              <p className="text-[10px] text-muted-foreground/70">
+              <p className="text-[10px] text-muted-foreground">
                 Gerçek veri için CSV formatında cohort verisi entegrasyonu ileride eklenecek.
               </p>
             </div>

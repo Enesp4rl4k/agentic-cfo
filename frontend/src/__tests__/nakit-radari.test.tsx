@@ -12,7 +12,14 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const getCashRadar = vi.fn();
-vi.mock("@/lib/api/ledger", () => ({ getCashRadar: (...args: unknown[]) => getCashRadar(...args) }));
+const getMondayBriefing = vi.fn().mockResolvedValue(null);
+const respondToBriefing = vi.fn().mockResolvedValue({ decision_id: "dec1", chosen_option_label: "Yaptım" });
+
+vi.mock("@/lib/api/ledger", () => ({
+  getCashRadar: (...args: unknown[]) => getCashRadar(...args),
+  getMondayBriefing: (...args: unknown[]) => getMondayBriefing(...args),
+  respondToBriefing: (...args: unknown[]) => respondToBriefing(...args),
+}));
 
 vi.mock("@/hooks/useOrgSettings", () => ({
   useOrgSettings: () => ({
@@ -149,5 +156,26 @@ describe("Nakit Radarı", () => {
     getCashRadar.mockRejectedValue(new Error("boom"));
     show();
     expect(await screen.findByText("Nakit radarı yüklenemedi.")).toBeTruthy();
+  });
+
+  it("renders the Monday Morning Briefing when available", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    getMondayBriefing.mockResolvedValue({
+      briefing_id: "brief_123",
+      org_id: "org1",
+      full_text: "Bu hafta net nakit pozisyonunuzda 50.000 TL net giriş beklenmektedir.",
+      action_title: "Tahsilat Takibi",
+      action_detail: "Demir Çelik A.Ş. ödemesi",
+      action_amount_cents: 50000_00,
+      verified: true,
+      fallback_used: false,
+    });
+    show();
+    expect(await screen.findByText("Pazartesi Sabah Bülteni")).toBeTruthy();
+    expect(screen.getByText("Defterle Doğrulandı")).toBeTruthy();
+    expect(screen.getByText(/Bu hafta net nakit pozisyonunuzda/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Yaptım" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ertele" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Gerek Yok" })).toBeTruthy();
   });
 });

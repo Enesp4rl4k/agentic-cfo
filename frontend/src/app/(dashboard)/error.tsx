@@ -160,14 +160,14 @@ export default function DashboardError({ error, reset }: ErrorPageProps) {
 
         {/* Agent-specific hint */}
         {agentMeta && (
-          <p className="mb-4 text-xs text-muted-foreground/70 leading-relaxed max-w-xs mx-auto">
+          <p className="mb-4 text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
             {agentMeta.hint}
           </p>
         )}
 
         {/* Error digest (always shown) */}
         {error.digest && (
-          <p className="mb-4 font-mono text-[10px] text-muted-foreground/50">
+          <p className="mb-4 font-mono text-[10px] text-muted-foreground">
             ref: {error.digest}
           </p>
         )}
@@ -231,7 +231,7 @@ export default function DashboardError({ error, reset }: ErrorPageProps) {
 
         {/* Network error helper */}
         {errorCategory === "network" && (
-          <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/60">
+          <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <Wifi className="h-3 w-3" aria-hidden="true" />
             <span>
               Backend servisi:{" "}

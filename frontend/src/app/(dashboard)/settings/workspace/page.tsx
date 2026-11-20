@@ -28,6 +28,8 @@ import {
 } from "@/hooks/useNotifications";
 import { rebuildSemantic } from "@/lib/api/semantic";
 import { useI18n } from "@/hooks/useI18n";
+import { PageHead } from "@/components/brand-app/PageHead";
+import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import type { MessageTree } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -697,13 +699,8 @@ export default function WorkspaceSettingsPage() {
   const isAdmin = session?.user.role === "owner" || session?.user.role === "admin";
 
   return (
-    <div className="space-y-6 p-5 max-w-2xl">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">{ws.title}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {ws.subtitle}
-        </p>
-      </div>
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
+      <PageHead title={ws.title} subtitle={ws.subtitle} />
 
       {/* Loading */}
       {loading && (

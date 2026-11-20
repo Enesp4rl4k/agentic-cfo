@@ -170,7 +170,7 @@ function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
             type="monotone"
             dataKey="runway"
             name={kpi.cashRunway}
-            stroke="oklch(0.79 0.115 83)"
+            stroke="var(--tc-ember)"
             strokeWidth={2}
             dot={false}
           />
@@ -179,7 +179,7 @@ function KRIHistoryChart({ data }: { data: KRIHistory[] }) {
             type="monotone"
             dataKey="margin"
             name={kpi.margin}
-            stroke="oklch(0.58 0.14 145)"
+            stroke="var(--success)"
             strokeWidth={2}
             dot={false}
           />

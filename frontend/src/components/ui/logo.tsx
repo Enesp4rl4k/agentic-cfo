@@ -1,7 +1,8 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { SailMark } from "@/components/brand-landing/SailMark";
 import { brand } from "@/lib/branding";
+import { cn } from "@/lib/utils";
 
 interface LogoProps {
   size?: "sm" | "md" | "lg" | "xl";
@@ -10,149 +11,34 @@ interface LogoProps {
 }
 
 const SIZE_MAP = {
-  sm: { icon: 20, text: "text-sm",  gap: "gap-1.5" },
-  md: { icon: 28, text: "text-base", gap: "gap-2"   },
-  lg: { icon: 36, text: "text-xl",  gap: "gap-2.5" },
-  xl: { icon: 48, text: "text-2xl", gap: "gap-3"   },
+  sm: { icon: 22, text: "text-[15px]", gap: "gap-2" },
+  md: { icon: 30, text: "text-[19px]", gap: "gap-2.5" },
+  lg: { icon: 38, text: "text-2xl", gap: "gap-3" },
+  xl: { icon: 52, text: "text-3xl", gap: "gap-3.5" },
 };
 
 /**
- * Logo mark — a stylized "C" with a neural spark inside.
- * The outer arc represents the "C" letterform; the inner dots represent
- * AI nodes / executive decision points.
+ * The product mark: the sail of logo v4 and the name in Cinzel capitals
+ * (DESIGN.md → Logo). The sail is the small cut below 32 px, where the mast
+ * and yard carry the T. Both draw in the surrounding text colour, so the mark
+ * follows the sidebar's ink panel, the top bar and the footer without props.
+ *
+ * The name is a Latin proper name, upper-cased by the Latin rule (TIPHYS, no dotted İ).
  */
-function LogoMark({ size }: { size: number }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s / 2;
-  const r  = s * 0.42;
-
-  return (
-    <svg
-      width={s}
-      height={s}
-      viewBox={`0 0 ${s} ${s}`}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      {/* Glow background */}
-      <circle cx={cx} cy={cy} r={r + 2} fill="url(#brandGlow)" opacity={0.15} />
-
-      {/* "C" arc — 220° sweep (gap on right) */}
-      <path
-        d={`
-          M ${cx + r * Math.cos(Math.PI * 0.17)} ${cy + r * Math.sin(Math.PI * 0.17)}
-          A ${r} ${r} 0 1 0
-            ${cx + r * Math.cos(-Math.PI * 0.17)} ${cy + r * Math.sin(-Math.PI * 0.17)}
-        `}
-        stroke="url(#brandGradient)"
-        strokeWidth={s * 0.095}
-        strokeLinecap="round"
-        fill="none"
-      />
-
-      {/* Center AI node */}
-      <circle cx={cx} cy={cy} r={s * 0.075} fill="url(#brandGradient)" />
-
-      {/* Orbital dots — 3 nodes representing CFO, CEO, COO */}
-      {[0, 120, 240].map((deg, i) => {
-        const angle = (deg - 90) * (Math.PI / 180);
-        const nr = r * 0.52;
-        return (
-          <circle
-            key={i}
-            cx={cx + nr * Math.cos(angle)}
-            cy={cy + nr * Math.sin(angle)}
-            r={s * 0.045}
-            fill="url(#brandGradient)"
-            opacity={0.8}
-          />
-        );
-      })}
-
-      {/* Connection lines from center to orbital dots */}
-      {[0, 120, 240].map((deg, i) => {
-        const angle = (deg - 90) * (Math.PI / 180);
-        const nr = r * 0.52;
-        return (
-          <line
-            key={`l${i}`}
-            x1={cx}
-            y1={cy}
-            x2={cx + nr * Math.cos(angle)}
-            y2={cy + nr * Math.sin(angle)}
-            stroke="url(#brandGradient)"
-            strokeWidth={s * 0.025}
-            opacity={0.45}
-          />
-        );
-      })}
-
-      {/* Gradient definitions */}
-      <defs>
-        <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stopColor="var(--primary)" />
-          <stop offset="100%" stopColor="var(--chart-secondary)" />
-        </linearGradient>
-        <radialGradient id="brandGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor="var(--primary)" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="var(--primary)" stopOpacity="0"   />
-        </radialGradient>
-      </defs>
-    </svg>
-  );
-}
-
 export function Logo({ size = "md", variant = "full", className }: LogoProps) {
   const cfg = SIZE_MAP[size];
+  const word = brand.name.toLocaleUpperCase("en-US");
+  const mark = <SailMark size={cfg.icon} small={cfg.icon < 32} />;
+  const name = (
+    <span className={cn("font-cinzel font-bold leading-none tracking-[0.14em]", cfg.text)}>{word}</span>
+  );
 
-  if (variant === "icon") {
-    return (
-      <span className={cn("inline-flex items-center", className)}>
-        <LogoMark size={cfg.icon} />
-      </span>
-    );
-  }
-
-  if (variant === "wordmark") {
-    return (
-      <span className={cn("inline-flex items-center font-bold tracking-tight", cfg.text, className)}>
-        <Wordmark />
-      </span>
-    );
-  }
-
-  // Full: icon + wordmark
+  if (variant === "icon") return <span className={cn("inline-flex items-center", className)}>{mark}</span>;
+  if (variant === "wordmark") return <span className={cn("inline-flex items-center", className)}>{name}</span>;
   return (
     <span className={cn("inline-flex items-center", cfg.gap, className)}>
-      <LogoMark size={cfg.icon} />
-      <span className={cn("font-bold tracking-tight leading-none", cfg.text)}>
-        <Wordmark />
-      </span>
+      {mark}
+      {name}
     </span>
   );
 }
-
-/**
- * The name, split so the last word carries the plain treatment and everything
- * before it takes the gradient. Reads from `brand` rather than hard-coding, so
- * the logo does not become the one place still showing the old name — this
- * wordmark said "Agentic OS" while the footer said something else entirely.
- */
-function Wordmark() {
-  const words = brand.name.trim().split(/\s+/);
-  const tail = words.length > 1 ? words.pop()! : "";
-  const head = words.join(" ");
-
-  return (
-    <>
-      <span className="font-semibold text-foreground tracking-tight">
-        {head}
-      </span>
-      {tail && <span className="ml-1.5 font-mono text-xs uppercase px-1.5 py-0.5 rounded bg-muted text-foreground border border-border">{tail}</span>}
-    </>
-  );
-}
-
-export default Logo;

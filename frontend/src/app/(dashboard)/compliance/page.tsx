@@ -346,7 +346,7 @@ export default function CompliancePage() {
           ].map(({ id, label, value, setter, hint }) => (
             <div key={id} className="space-y-1">
               <label htmlFor={id} className="text-xs font-medium text-muted-foreground">{label}</label>
-              <p className="text-[10px] text-muted-foreground/70">{hint}</p>
+              <p className="text-[10px] text-muted-foreground">{hint}</p>
               <textarea
                 id={id}
                 className="h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-none"

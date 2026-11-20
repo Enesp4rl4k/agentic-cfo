@@ -103,18 +103,18 @@ function SuccessFallback({ size }: { size: number }) {
       fill="none"
       aria-hidden="true"
     >
-      <circle cx="24" cy="24" r="20" fill="oklch(0.58 0.18 145 / 0.15)" />
+      <circle cx="24" cy="24" r="20" fill="color-mix(in srgb, var(--success) 15%, transparent)" />
       <circle
         cx="24"
         cy="24"
         r="20"
-        stroke="oklch(0.58 0.18 145)"
+        stroke="var(--success)"
         strokeWidth="2"
         strokeOpacity="0.6"
       />
       <path
         d="M15 24l7 7 11-13"
-        stroke="oklch(0.58 0.18 145)"
+        stroke="var(--success)"
         strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -137,18 +137,18 @@ function ErrorFallback({ size }: { size: number }) {
       fill="none"
       aria-hidden="true"
     >
-      <circle cx="24" cy="24" r="20" fill="oklch(0.58 0.22 25 / 0.15)" />
+      <circle cx="24" cy="24" r="20" fill="color-mix(in srgb, var(--destructive) 15%, transparent)" />
       <circle
         cx="24"
         cy="24"
         r="20"
-        stroke="oklch(0.58 0.22 25)"
+        stroke="var(--destructive)"
         strokeWidth="2"
         strokeOpacity="0.6"
       />
       <path
         d="M17 17l14 14M31 17L17 31"
-        stroke="oklch(0.58 0.22 25)"
+        stroke="var(--destructive)"
         strokeWidth="2.5"
         strokeLinecap="round"
       />

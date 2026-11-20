@@ -71,7 +71,7 @@ function detectCrossInsights(
       id: "talent-cash-cascade",
       severity: "critical",
       title: "Yetenek-Nakit Kaskadı",
-      description: `Nakit ${runwayMonths.toFixed(1)} aylık runway, %${(attritionRate*100).toFixed(0)} attrition ve düşük mühendislik hızı aynı anda gerçekleşiyor. Bu üçlü kombinasyon şirket için kritik tehlike işareti.`,
+      description: `Nakit ${runwayMonths.toFixed(1)} aylık runway, %${(attritionRate*100).toFixed(0)} attrition ve düşük mühendislik hızı aynı anda gerçekleşiyor. Üçünün bir arada olması öncelikli ele alınması gereken bir durum.`,
       domains: ["CFO", "CHRO", "CTO"],
       recommendation: "Önce nakit sağlamlaştır (maliyet dondurma), sonra kilit çalışanları tut (retention paketi), ardından hız kurtarma sprinleri başlat.",
       chatPrompt: "Nakit sıkışması, yüksek attrition ve düşük mühendislik hızı aynı anda yaşanıyor. Hangi önlemi önce almalıyım?",
@@ -248,7 +248,7 @@ export function CrossAgentIntelligence({
         <p className="text-sm text-muted-foreground">
           Cross-domain korelasyon tespit edilmedi.
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground/60">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Daha fazla agent analizi tamamlandıkça burada görünür.
         </p>
       </div>

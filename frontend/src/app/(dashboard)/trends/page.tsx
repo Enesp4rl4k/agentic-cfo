@@ -61,18 +61,18 @@ interface MultiPeriodData {
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.21 0.018 70)",
-    border: "1px solid oklch(0.32 0.019 68)",
+    background: "var(--card)",
+    border: "1px solid var(--border)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.94 0.012 85)",
+    color: "var(--foreground)",
     padding: "8px 12px",
   },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
-  axisLine: { stroke: "oklch(0.32 0.019 68)" },
+  tick: { fontSize: 11, fill: "var(--muted-foreground)" },
+  axisLine: { stroke: "var(--border)" },
   tickLine: false as const,
 };
 
@@ -197,7 +197,7 @@ function TrendChart({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
         <XAxis dataKey="month" {...axisStyle} />
         <YAxis
           {...axisStyle}
@@ -207,11 +207,11 @@ function TrendChart({ monthly }: { monthly: MultiPeriodData["monthly_summary"] }
           {...tooltipStyle}
           formatter={(v: number, name: string) => [fmt(v), name]}
         />
-        <Legend wrapperStyle={{ fontSize: "11px", color: "oklch(0.72 0.017 78)" }} />
-        <ReferenceLine y={0} stroke="oklch(0.40 0.02 70)" strokeWidth={1} />
-        <Line type="monotone" dataKey="revenue" name={chart.revenue} stroke="oklch(0.58 0.18 145)" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="expenses" name={chart.expense} stroke="oklch(0.58 0.22 25)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-        <Line type="monotone" dataKey="net" name={chart.net} stroke="oklch(0.79 0.115 83)" strokeWidth={2} dot={false} />
+        <Legend wrapperStyle={{ fontSize: "11px", color: "var(--muted-foreground)" }} />
+        <ReferenceLine y={0} stroke="var(--tc-line-strong)" strokeWidth={1} />
+        <Line type="monotone" dataKey="revenue" name={chart.revenue} stroke="var(--success)" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="expenses" name={chart.expense} stroke="var(--destructive)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+        <Line type="monotone" dataKey="net" name={chart.net} stroke="var(--tc-ember)" strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );
