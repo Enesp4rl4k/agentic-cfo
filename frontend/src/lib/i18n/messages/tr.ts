@@ -229,6 +229,19 @@ export const tr: MessageTree = {
     redirecting: "Yönlendiriliyor…",
     managePortal: "Aboneliği yönet",
   },
+  learnedRules: {
+    title: "Ajanın sizden öğrendikleri",
+    subtitle: "Aynı açıklamayı aynı hesaba düzelttikleriniz. İki tutarlı düzeltme kural olur; kural yalnızca hesabı önerir, kayıt yine sizi bekler.",
+    empty: "Henüz öğrenilen bir şey yok. Aynı açıklamayı aynı hesaba iki kez düzelttiğinizde burada görünür.",
+    inForce: "Yürürlükte",
+    notYet: "Henüz kural değil",
+    times: "{count} düzeltme",
+    delete: "Kaldır",
+    deleteAria: "{name} kuralını kaldır",
+    confirm: "Bu öğrenilmiş kural kaldırılsın mı? Ajan bu açıklamayı yine olağan kurallarıyla sınıflandırır.",
+    loadError: "Öğrenilmiş kurallar yüklenemedi.",
+    deleteError: "Kural kaldırılamadı.",
+  },
   orgSwitcher: {
     trigger: "Şirket değiştir",
     menuLabel: "Çalıştığınız şirket",
@@ -1608,6 +1621,7 @@ export const tr: MessageTree = {
       approve: "Onayla",
       correct: "Düzelt ve Onayla",
       reject: "Reddet",
+      approveError: "Onaylanamadı.",
     },
     empty: {
       allApproved: "Tüm kayıtlar onaylandı — kuyruk boş!",

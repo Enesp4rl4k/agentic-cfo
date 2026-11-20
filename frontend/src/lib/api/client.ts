@@ -47,7 +47,10 @@ apiClient.interceptors.response.use(
       error.response?.data?.error ??
       error.message ??
       "Unknown error";
-    return Promise.reject(new Error(message));
+    // Still an Error, but it keeps the status: a caller that must tell "not
+    // allowed" (403, with a reason worth showing) from "could not reach the
+    // server" can.
+    return Promise.reject(Object.assign(new Error(message), { status }));
   }
 );
 

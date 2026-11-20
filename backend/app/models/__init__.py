@@ -36,6 +36,7 @@ from app.models.proactive_alert import ProactiveAlert
 from app.models.rag_chunk import RagChunk
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.report import Report, ReportFormat, ReportType
+from app.models.smmm_hesap_kurali import SMMMHesapKurali
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 from app.models.sync_run import SyncRun
@@ -90,6 +91,7 @@ __all__ = [
     "Report",
     "ReportFormat",
     "ReportType",
+    "SMMMHesapKurali",
     "SMMMMuhasebeci",
     "SMMMMusteriKayit",
     "SMMMOnayKaydi",

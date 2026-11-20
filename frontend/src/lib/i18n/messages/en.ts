@@ -227,6 +227,19 @@ export type MessageTree = {
     redirecting: string;
     managePortal: string;
   };
+  learnedRules: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    inForce: string;
+    notYet: string;
+    times: string;
+    delete: string;
+    deleteAria: string;
+    confirm: string;
+    loadError: string;
+    deleteError: string;
+  };
   orgSwitcher: {
     trigger: string;
     menuLabel: string;
@@ -1519,6 +1532,7 @@ export type MessageTree = {
       approve: string;
       correct: string;
       reject: string;
+      approveError: string;
     };
     empty: {
       allApproved: string;
@@ -2378,6 +2392,19 @@ export const en: MessageTree = {
     selectPlan: "Select plan",
     redirecting: "Redirecting…",
     managePortal: "Manage subscription",
+  },
+  learnedRules: {
+    title: "What the agent learned from you",
+    subtitle: "Accounts you corrected the same description to. Two consistent corrections make a rule; a rule only suggests the account, the entry still waits for you.",
+    empty: "Nothing learned yet. When you correct the same description to the same account twice, it appears here.",
+    inForce: "In force",
+    notYet: "Not yet a rule",
+    times: "{count} corrections",
+    delete: "Remove",
+    deleteAria: "Remove the rule for {name}",
+    confirm: "Remove this learned rule? The agent will classify this description by its usual rules again.",
+    loadError: "Learned rules could not be loaded.",
+    deleteError: "The rule could not be removed.",
   },
   orgSwitcher: {
     trigger: "Switch company",
@@ -3759,6 +3786,7 @@ export const en: MessageTree = {
       approve: "Approve",
       correct: "Correct and approve",
       reject: "Reject",
+      approveError: "Could not approve.",
     },
     empty: {
       allApproved: "All entries approved — the queue is empty!",

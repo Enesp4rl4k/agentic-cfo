@@ -52,6 +52,7 @@ _MAX_DOSYA = 10
 _UZANTILAR = {"csv", "xlsx", "xls", "pdf", "txt", "xml"}
 
 EKLENDI = "eklendi"
+ONIZLEME = "onizleme"
 SECIM_GEREKLI = "secim_gerekli"
 TANINMADI = "taninmadi"
 REDDEDILDI = "reddedildi"
@@ -125,6 +126,18 @@ async def _finansal_ekle(
     # attached (see dosyalari_ekle). Starting it here meant three invoices
     # dropped together ran three analyses, each with its own review to clear.
     return {"durum": EKLENDI, "job_id": job.id, "mesaj": "Eklendi."}
+
+
+async def _mizan_onizle(veri: bytes, dosya_adi: str) -> dict[str, Any]:
+    from app.services.ingest.mizan import mizan_oku, ozet_metni
+
+    tablo = await asyncio.to_thread(tabloyu_sec, veri, dosya_adi, S.MIZAN)
+    if tablo is None:
+        return {"durum": REDDEDILDI, "mesaj": "Mizan tablosu dosyada bulunamadı."}
+    ozet = await asyncio.to_thread(mizan_oku, tablo)
+    if not ozet.hesaplar:
+        return {"durum": REDDEDILDI, "mesaj": "Dosyada okunabilir hesap satırı yok."}
+    return {"durum": ONIZLEME, "mesaj": ozet_metni(ozet), "mizan": ozet.to_dict()}
 
 
 async def _analizi_baslat(job_id: str) -> tuple[str, str]:
@@ -255,6 +268,10 @@ async def dosyalari_ekle(
             sonuc.update(durum=SECIM_GEREKLI, mesaj=tanima.ozet)
         elif tanima.durum != KESIN or not tanima.tur or not tanima.alan:
             sonuc.update(durum=TANINMADI, mesaj=tanima.ozet)
+        elif tanima.tur == S.MIZAN:
+            # Read and checked, shown back, and not saved: a mizan is a snapshot of
+            # balances (see services/ingest/mizan.py), and no analysis starts from it.
+            sonuc.update(await _mizan_onizle(veri, ad))
         elif tanima.alan == "cfo":
             imza = hashlib.sha256(veri).hexdigest()
             if imza in gorulen:
