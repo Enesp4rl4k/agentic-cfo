@@ -116,7 +116,8 @@
 /* Buttons: one pair. Step on hover, press on click. */
 .btn, .btnGhost {
   display: inline-flex; align-items: center; justify-content: center;
-  min-height: 48px; padding: 0 22px; border-radius: 6px; font-weight: 600; text-decoration: none;
+  min-height: 48px; padding: 0 22px; border-radius: 6px; text-decoration: none;
+  /* `font` resets the weight, so the weight comes after it. */
   cursor: pointer; font: inherit; font-weight: 600;
 }
 .btn { background: var(--btn); color: #f2ebdd !important; border: 0; }

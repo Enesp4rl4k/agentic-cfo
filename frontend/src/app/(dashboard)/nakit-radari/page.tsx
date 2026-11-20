@@ -330,7 +330,7 @@ function isEmpty(radar: CashRadar): boolean {
 function defaultWeek(radar: CashRadar): number | null {
   if (radar.shortfall) return radar.shortfall.week;
   if (radar.weeks.length === 0) return null;
-  return radar.weeks.reduce((low, w) => (w.end_balance_cents < low.end_balance_cents ? w : low)).week;
+  return radar.weeks.reduce((low, w) => (w.end_balance_cents < low.end_balance_cents ? w : low), radar.weeks[0]).week;
 }
 
 function Headline({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt }) {
