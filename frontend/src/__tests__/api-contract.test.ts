@@ -10,6 +10,11 @@ import { render } from "../../scripts/gen-api-types.mjs";
 describe("generated API types", () => {
   it("match the committed backend schema", async () => {
     const committed = readFileSync(new URL("../lib/api/generated/pilot-schema.ts", import.meta.url), "utf-8");
-    expect(committed).toBe(await render());
+    // Line endings are the checkout's business (core.autocrlf), not the schema's.
+    expect(committed.replace(/
+/g, "
+")).toBe((await render()).replace(/
+/g, "
+"));
   });
 });
