@@ -295,7 +295,7 @@ function DropZone({
       <input
         ref={inputRef}
         type="file"
-        accept=".csv,.xlsx,.xls,.pdf,.xml,.txt,.tsv"
+        accept=".csv,.xlsx,.pdf,.xml"
         className="sr-only"
         onChange={(e) => {
           const file = e.target.files?.[0];

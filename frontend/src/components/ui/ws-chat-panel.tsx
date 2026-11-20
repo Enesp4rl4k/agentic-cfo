@@ -145,7 +145,7 @@ export function WSChatPanel({ jobId, className }: WSChatPanelProps) {
               <Zap className="h-6 w-6 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-sm font-medium">C-Suite AI Asistanı</p>
+              <p className="text-sm font-medium">AI Asistanı</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Token seviyesinde gerçek zamanlı yanıt streaming
               </p>

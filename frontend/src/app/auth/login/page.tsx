@@ -5,7 +5,8 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { APP_HOME } from "@/lib/routes";
 import { GuestDemoButton } from "@/components/demo/GuestDemoButton";
-import { DecisionAtlas } from "@/components/auth/DecisionAtlas";
+import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
+import { Logo } from "@/components/ui/logo";
 import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,7 @@ import { brand } from "@/lib/branding";
 const FEATURES = [
   { icon: Zap,       text: "5 dakikada ilk CFO analiziniz" },
   { icon: BarChart3, text: "12 AI ajan — CFO, CEO, CTO ve daha fazlası" },
-  { icon: Shield,    text: "KVKK & SOC2 uyumlu, SSL şifreli" },
+  { icon: Shield,    text: "Her rakam, kendi belgesine kadar izlenir" },
 ];
 
 // ── SSO providers ─────────────────────────────────────────────────────────────
@@ -90,77 +91,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen">
 
       {/* ── Left: brand panel ──────────────────────────────────────────────── */}
-      <div
-        className="relative hidden w-[42%] flex-col justify-between overflow-hidden p-10 lg:flex"
-        style={{
-          background:
-            "linear-gradient(145deg, oklch(0.15 0.016 70) 0%, oklch(0.12 0.014 66) 100%)",
-        }}
-      >
-        {/* Glow */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 30% 20%, oklch(0.74 0.13 82 / 0.15) 0%, transparent 70%)",
-          }}
-        />
-
-        {/* Logo */}
-        <div className="relative z-10">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-foreground">
-            <span
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-black text-white"
-              style={{ background: "linear-gradient(135deg, oklch(0.74 0.13 82), oklch(0.64 0.11 55))" }}
-              aria-hidden="true"
-            >
-              C
-            </span>
-            <span>{brand.name}</span>
-          </Link>
-        </div>
-
-        {/* Center copy */}
-        <div className="relative z-10 space-y-6">
-          <div className="max-h-[42vh] max-w-md">
-            <DecisionAtlas />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold leading-tight text-foreground">
-              Tüm C-Suite kararları,
-              <br />
-              <span className="text-brass-400">yapay zeka ile</span>
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Muhasebe verinizi yükleyin, 5 dakikada kurumsal içgörüler alın.
-            </p>
-          </div>
-
-          <ul className="space-y-3">
-            {FEATURES.map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-center gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15">
-                  <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
-                </div>
-                <span className="text-sm text-foreground/80">{text}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Bottom trust */}
-        <div className="relative z-10 flex flex-wrap gap-2">
-          {["KVKK", "SOC2", "SSL", "GDPR"].map((badge) => (
-            <span
-              key={badge}
-              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/50"
-            >
-              {badge}
-            </span>
-          ))}
-        </div>
-      </div>
+      <AuthBrandPanel items={FEATURES} />
 
       {/* ── Right: login form ───────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-12 sm:px-8">
@@ -170,15 +101,7 @@ export default function LoginPage() {
           <div className="mb-8 text-center lg:text-left">
             {/* Mobile logo */}
             <div className="mb-6 flex justify-center lg:hidden">
-              <Link href="/">
-                <span
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black text-white"
-                  style={{ background: "linear-gradient(135deg, oklch(0.74 0.13 82), oklch(0.64 0.11 55))" }}
-                  aria-hidden="true"
-                >
-                  C
-                </span>
-              </Link>
+              <Link href="/" className="rounded-md text-foreground"><Logo size="lg" /></Link>
             </div>
             <h1 className="text-2xl font-bold tracking-tight">Tekrar Hoş Geldiniz</h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -239,7 +162,7 @@ export default function LoginPage() {
                 placeholder="siz@sirket.com"
                 className={cn(
                   "h-10 w-full rounded-lg border border-border bg-muted/30 px-3.5 text-sm",
-                  "placeholder:text-muted-foreground/60",
+                  "placeholder:text-muted-foreground",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent",
                   "transition-colors"
                 )}
@@ -270,7 +193,7 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   className={cn(
                     "h-10 w-full rounded-lg border border-border bg-muted/30 px-3.5 pr-10 text-sm",
-                    "placeholder:text-muted-foreground/60",
+                    "placeholder:text-muted-foreground",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent",
                     "transition-colors"
                   )}

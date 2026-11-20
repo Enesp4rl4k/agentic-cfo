@@ -13,10 +13,16 @@
  * Mirrors `backend/app/core/branding.py`. Both default to no domain on purpose.
  */
 
-const env = (key: string): string => (process.env[key] ?? "").trim();
+/**
+ * Each variable is read by its full name, never through a computed key: Next inlines
+ * `NEXT_PUBLIC_*` into the browser bundle only for static references. A dynamic read made the
+ * override work on the server and fall back to the default in the browser, so the name changed
+ * in the page title but not in the logo, and the two disagreed at hydration.
+ */
+const clean = (value: string | undefined): string => (value ?? "").trim();
 
-const NAME = env("NEXT_PUBLIC_BRAND_NAME") || "C-Suite";
-const DOMAIN = env("NEXT_PUBLIC_BRAND_DOMAIN").toLowerCase();
+const NAME = clean(process.env.NEXT_PUBLIC_BRAND_NAME) || "Tiphys";
+const DOMAIN = clean(process.env.NEXT_PUBLIC_BRAND_DOMAIN).toLowerCase();
 
 const address = (local: string): string | null =>
   DOMAIN ? `${local}@${DOMAIN}` : null;
@@ -27,10 +33,10 @@ export const brand = {
   /** False when no domain is set — callers must not render a contact link. */
   hasDomain: Boolean(DOMAIN),
   legalName: `${NAME} Platform`,
-  appUrl: env("NEXT_PUBLIC_BRAND_APP_URL") || null,
-  contactEmail: env("NEXT_PUBLIC_BRAND_CONTACT_EMAIL") || address("hello"),
-  twitterUrl: env("NEXT_PUBLIC_BRAND_TWITTER_URL") || null,
-  linkedinUrl: env("NEXT_PUBLIC_BRAND_LINKEDIN_URL") || null,
+  appUrl: clean(process.env.NEXT_PUBLIC_BRAND_APP_URL) || null,
+  contactEmail: clean(process.env.NEXT_PUBLIC_BRAND_CONTACT_EMAIL) || address("hello"),
+  twitterUrl: clean(process.env.NEXT_PUBLIC_BRAND_TWITTER_URL) || null,
+  linkedinUrl: clean(process.env.NEXT_PUBLIC_BRAND_LINKEDIN_URL) || null,
 } as const;
 
 /** `mailto:` href, or null when there is no address to link to. */

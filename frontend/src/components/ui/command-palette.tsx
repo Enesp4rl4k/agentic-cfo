@@ -367,7 +367,7 @@ export function CommandPaletteTrigger({ className }: { className?: string }) {
     >
       <Search className="h-3 w-3" />
       <span>Ara veya git…</span>
-      <kbd className="ml-1 rounded border border-border px-1.5 py-0.5 text-[9px]">⌘K</kbd>
+      <kbd className="ml-1 rounded border border-border px-1.5 py-0.5 text-[10px]">⌘K</kbd>
     </button>
   );
 }

@@ -124,7 +124,7 @@ export default function WorkingCapitalPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium">{m.ad}</p>
                       <p className="text-xs text-muted-foreground">{m.aciklama}</p>
-                      <p className="mt-1 font-mono text-[11px] text-muted-foreground/80">{m.formul}</p>
+                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">{m.formul}</p>
                     </div>
                     <p className="text-xl font-semibold tabular-nums">{gun(m)}</p>
                   </div>

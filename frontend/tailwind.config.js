@@ -1,4 +1,44 @@
 /** @type {import('tailwindcss').Config} */
+const colors = require("tailwindcss/colors");
+const plugin = require("tailwindcss/plugin");
+
+/**
+ * Tunç Çağı colour plumbing (DESIGN.md).
+ *
+ * 1. Semantic tokens (`bg-primary`, `border-border`…) point at CSS variables that hold whole
+ *    colours. Tailwind 3 cannot put an opacity on such a value, so `bg-primary/5` produced no
+ *    CSS at all. `alpha()` builds the colour with color-mix when an opacity is asked for.
+ * 2. Status hues written straight into pages (`text-emerald-400`, `bg-red-950`…) were chosen for
+ *    a dark-only app. Each hue is a variable scale: dark mode keeps Tailwind's own values, light
+ *    mode swaps the pale text steps and the dark tints with their opposites (400 reads as 800,
+ *    950 as 50) and darkens the middle steps one notch, so the same class stays legible on cream
+ *    without touching the ~1500 places that use them.
+ */
+const alpha = (name) => ({ opacityValue }) =>
+  opacityValue === undefined
+    ? `var(${name})`
+    : `color-mix(in srgb, var(${name}) calc(${opacityValue} * 100%), transparent)`;
+
+const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+const HUES = ["emerald", "red", "amber", "orange", "yellow", "blue", "stone"];
+
+const channels = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
+};
+const hueScale = (hue) =>
+  Object.fromEntries(STEPS.map((step) => [step, `rgb(var(--c-${hue}-${step}) / <alpha-value>)`]));
+// Light mode: the pale steps that carry text on ink (50-400) and the dark tinted surfaces
+// (800-950) swap sides, and the middle steps move one notch darker so text and white-on-colour
+// fills keep 4.5:1 on cream.
+const LIGHT_SOURCE = { 50: 950, 100: 950, 200: 900, 300: 900, 400: 800, 500: 600, 600: 700, 700: 800, 800: 200, 900: 100, 950: 50 };
+const hueVars = (light) =>
+  Object.fromEntries(
+    HUES.flatMap((hue) =>
+      STEPS.map((step) => [`--c-${hue}-${step}`, channels(colors[hue][light ? LIGHT_SOURCE[step] : step])]),
+    ),
+  );
+
 module.exports = {
   darkMode: ["class"],
   content: [
@@ -10,106 +50,72 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        border:      "var(--border)",
-        input:       "var(--input)",
-        ring:        "var(--ring)",
-        background:  "var(--background)",
-        foreground:  "var(--foreground)",
+        border:      alpha("--border"),
+        input:       alpha("--input"),
+        ring:        alpha("--ring"),
+        background:  alpha("--background"),
+        foreground:  alpha("--foreground"),
         primary: {
-          DEFAULT:    "var(--primary)",
-          foreground: "var(--primary-foreground)",
+          DEFAULT:    alpha("--primary"),
+          foreground: alpha("--primary-foreground"),
         },
         secondary: {
-          DEFAULT:    "var(--secondary)",
-          foreground: "var(--secondary-foreground)",
+          DEFAULT:    alpha("--secondary"),
+          foreground: alpha("--secondary-foreground"),
         },
         muted: {
-          DEFAULT:    "var(--muted)",
-          foreground: "var(--muted-foreground)",
+          DEFAULT:    alpha("--muted"),
+          foreground: alpha("--muted-foreground"),
         },
         accent: {
-          DEFAULT:    "var(--muted)",
-          foreground: "var(--muted-foreground)",
+          DEFAULT:    alpha("--muted"),
+          foreground: alpha("--muted-foreground"),
         },
         destructive: {
-          DEFAULT:    "var(--destructive)",
-          foreground: "var(--destructive-foreground)",
+          DEFAULT:    alpha("--destructive"),
+          foreground: alpha("--destructive-foreground"),
         },
         card: {
-          DEFAULT:    "var(--card)",
-          foreground: "var(--card-foreground)",
+          DEFAULT:    alpha("--card"),
+          foreground: alpha("--card-foreground"),
         },
         success: {
-          DEFAULT:    "var(--success)",
-          foreground: "var(--success-foreground)",
+          DEFAULT:    alpha("--success"),
+          foreground: alpha("--success-foreground"),
         },
         warning: {
-          DEFAULT:    "var(--warning)",
-          foreground: "var(--warning-foreground)",
+          DEFAULT:    alpha("--warning"),
+          foreground: alpha("--warning-foreground"),
         },
 
-        // ── Atlas map palette ──────────────────────────────────────────────
-        // Cartographer's accents for the Karar Atlası world: brass (landmark),
-        // copper (terrain edge), clay (settlement), sage (vegetation),
-        // mapblue (water), parchment (paper). Dark 950 steps are tinted badge
-        // surfaces; 400/300 steps carry text on ink.
-        brass: {
-          950: "oklch(0.27 0.045 82)",
-          700: "oklch(0.58 0.10 80)",
-          600: "oklch(0.65 0.11 81)",
-          500: "oklch(0.72 0.115 81)",
-          400: "oklch(0.79 0.115 83)",
-          300: "oklch(0.86 0.10 85)",
-        },
-        copper: {
-          950: "oklch(0.27 0.05 50)",
-          700: "oklch(0.55 0.12 48)",
-          600: "oklch(0.61 0.125 49)",
-          500: "oklch(0.67 0.13 50)",
-          400: "oklch(0.75 0.12 53)",
-          300: "oklch(0.83 0.10 56)",
-        },
-        clay: {
-          950: "oklch(0.27 0.05 30)",
-          700: "oklch(0.55 0.12 30)",
-          600: "oklch(0.62 0.13 31)",
-          500: "oklch(0.68 0.13 30)",
-          400: "oklch(0.76 0.12 32)",
-          300: "oklch(0.84 0.09 35)",
-        },
-        sage: {
-          950: "oklch(0.26 0.04 148)",
-          700: "oklch(0.55 0.08 148)",
-          600: "oklch(0.63 0.085 149)",
-          500: "oklch(0.72 0.085 148)",
-          400: "oklch(0.80 0.08 147)",
-          300: "oklch(0.87 0.07 146)",
-        },
-        mapblue: {
-          950: "oklch(0.26 0.045 242)",
-          700: "oklch(0.54 0.09 244)",
-          600: "oklch(0.60 0.09 243)",
-          500: "oklch(0.66 0.09 242)",
-          400: "oklch(0.74 0.085 241)",
-          300: "oklch(0.83 0.07 240)",
-        },
-        parchment: {
-          950: "oklch(0.27 0.02 85)",
-          700: "oklch(0.58 0.025 80)",
-          600: "oklch(0.67 0.026 79)",
-          500: "oklch(0.74 0.028 80)",
-          400: "oklch(0.86 0.02 84)",
-          300: "oklch(0.93 0.015 86)",
-        },
+        // Status hues, mirrored in light mode (see the plumbing note above).
+        emerald: hueScale("emerald"),
+        red: hueScale("red"),
+        amber: hueScale("amber"),
+        orange: hueScale("orange"),
+        yellow: hueScale("yellow"),
+        blue: hueScale("blue"),
+
+        // The old Karar Atlası accents, kept as names so no page breaks, now drawn from the
+        // brand's scales: brass and copper are ember (orange), clay is red, sage is green,
+        // mapblue is blue, parchment is the warm neutral.
+        brass: hueScale("orange"),
+        copper: hueScale("orange"),
+        clay: hueScale("red"),
+        sage: hueScale("emerald"),
+        mapblue: hueScale("blue"),
+        parchment: hueScale("stone"),
       },
       borderRadius: {
-        lg: "var(--radius)",
+        lg: alpha("--radius"),
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        sans: ["var(--tc-font-body)", "system-ui", "sans-serif"],
+        display: ["var(--tc-font-display)", "Georgia", "serif"],
+        cinzel: ["var(--tc-font-cinzel)", "serif"],
+        mono: ["var(--tc-font-mono)", "ui-monospace", "monospace"],
       },
 
       // ── Impeccable-style animation timing ──────────────────────────────────
@@ -276,5 +282,10 @@ module.exports = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [
+    require("tailwindcss-animate"),
+    plugin(({ addBase }) => {
+      addBase({ ":root": hueVars(true), ".dark": hueVars(false) });
+    }),
+  ],
 };

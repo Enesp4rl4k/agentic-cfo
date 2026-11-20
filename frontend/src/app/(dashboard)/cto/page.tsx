@@ -234,7 +234,7 @@ function CTOInputForm({
           <Label htmlFor={`cto-${key}`}>{t.roleDashboards.cto.body.inputFields[labelKey]}</Label>
           <textarea
             id={`cto-${key}`}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             rows={4}
             placeholder={placeholder}
             value={values[key]}

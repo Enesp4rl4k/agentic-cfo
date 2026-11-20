@@ -284,7 +284,7 @@ export default function MonteCarloPage() {
                 </h3>
                 <SamplePathsChart paths={result.sample_paths} months={parseInt(form.months)} />
                 <p className="text-xs text-muted-foreground">
-                  Her çizgi farklı bir rastgele senaryo. Kırmızı çizgi = iflas sınırı (₺0).
+                  Her çizgi farklı bir rastgele senaryo. Kırmızı çizgi = kasanın sıfırlandığı nokta (₺0).
                 </p>
               </Card>
 

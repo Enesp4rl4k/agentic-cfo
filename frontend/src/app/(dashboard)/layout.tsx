@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { Logo } from "@/components/ui/logo";
+import { brand } from "@/lib/branding";
 import { DemoBanner } from "@/components/ui/demo-banner";
 import { OnboardingBanner } from "@/components/ui/onboarding-banner";
 import { SystemStatusWidget } from "@/components/ui/system-status";
@@ -39,7 +40,7 @@ import { useI18n } from "@/hooks/useI18n";
 const allNavItems = NAV_GROUPS.flatMap((g) => g.items);
 
 const STATUS_CONFIG = {
-  completed:       { icon: CheckCircle, className: "text-emerald-400" },
+  completed:       { icon: CheckCircle, className: "text-success" },
   failed:          { icon: AlertCircle, className: "text-destructive" },
   pending:         { icon: Loader2,     className: "text-primary animate-spin" },
   ingesting:       { icon: Loader2,     className: "text-primary animate-spin" },
@@ -71,7 +72,7 @@ function UserMenu() {
         aria-expanded={open}
         aria-label="Kullanıcı menüsü"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary ring-1 ring-primary/20">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-foreground ring-1 ring-primary/20">
           {initials}
         </span>
         <span className="hidden max-w-[90px] truncate text-xs text-foreground/80 sm:block">
@@ -87,7 +88,7 @@ function UserMenu() {
             {/* User info */}
             <div className="border-b border-border px-3 py-3">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-foreground">
                   {initials}
                 </span>
                 <div className="min-w-0">
@@ -174,8 +175,8 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Sidebar header */}
-      <div className="flex h-16 shrink-0 items-center border-b border-border px-4">
-        <Link href="/" className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${t.product.name} — ana sayfa`}>
+      <div className="flex h-16 shrink-0 items-center px-5">
+        <Link href="/" className="rounded-md text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${t.product.name} — ana sayfa`}>
           <Logo size="md" />
         </Link>
       </div>
@@ -191,7 +192,7 @@ function SidebarContent({
 
           return (
           <details key={group.label} className="group/nav mb-1" open={hasCurrentPage || index === 0}>
-            <summary className="mx-2 flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <summary className="tc-eyebrow mx-2 flex min-h-[36px] cursor-pointer list-none items-center justify-between rounded-md px-2 text-[10px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
               <span>{t.menu.groups[group.label].toLocaleUpperCase(locale)}</span>
               <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
             </summary>
@@ -205,30 +206,17 @@ function SidebarContent({
                     href={navHref(href)}
                     onClick={onNavigate}
                     className={cn(
-                      "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm",
+                      "group relative flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-[14.5px]",
                       "transition-[color,background-color] duration-150 ease-out",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       isActive
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                        ? "bg-foreground font-semibold text-background"
+                        : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                     aria-current={isActive ? "page" : undefined}
                   >
-                    {/* Active indicator */}
-                    <span
-                      className={cn(
-                        "absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-r bg-primary transition-[height,opacity] duration-200",
-                        isActive ? "h-5 opacity-100" : "h-0 opacity-0"
-                      )}
-                      aria-hidden="true"
-                    />
-
                     <Icon
-                      className={cn(
-                        "h-4 w-4 shrink-0 transition-transform duration-150",
-                        "group-hover:scale-105",
-                        isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                      )}
+                      className="h-4 w-4 shrink-0 text-current opacity-90"
                       aria-hidden="true"
                     />
 
@@ -253,7 +241,7 @@ function SidebarContent({
         {/* Recent analyses */}
         {jobs && jobs.length > 0 && (
           <div className="mb-2 mt-4 px-2">
-            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+            <p className="tc-eyebrow mb-1 px-3 text-[10px] text-muted-foreground">
               Son Analizler
             </p>
             <div className="space-y-0.5">
@@ -267,14 +255,14 @@ function SidebarContent({
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      isActive ? "bg-primary/10" : "hover:bg-muted/60"
+                      isActive ? "bg-muted" : "hover:bg-muted"
                     )}
                     title={job.filename}
                   >
                     <JobStatusIcon status={job.status} />
                     <span className={cn(
                       "flex-1 truncate text-xs",
-                      isActive ? "font-medium text-primary" : "text-muted-foreground"
+                      isActive ? "font-medium text-foreground" : "text-muted-foreground"
                     )}>
                       {job.filename}
                     </span>
@@ -290,11 +278,11 @@ function SidebarContent({
       <div className="shrink-0 border-t border-border p-3">
         <Link
           href="/billing"
-          className="flex items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 transition-colors hover:border-primary/30 hover:bg-primary/8"
+          className="flex min-h-[44px] items-center gap-2.5 rounded-lg border border-border px-3 py-2 transition-colors hover:bg-muted"
         >
           <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary">Planı yükselt</p>
+            <p className="text-xs font-semibold text-foreground">Planı yükselt</p>
             <p className="text-[10px] text-muted-foreground">Tüm yönetim görünümleri</p>
           </div>
         </Link>
@@ -340,7 +328,7 @@ export default function DashboardLayout({
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden w-64 shrink-0 border-r border-border bg-card lg:flex lg:flex-col"
+        className="dark hidden w-64 shrink-0 border-r border-border bg-background text-foreground lg:flex lg:flex-col"
         aria-label="Sidebar navigation"
       >
         <SidebarContent pathname={pathname} jobId={jobId} />
@@ -358,7 +346,7 @@ export default function DashboardLayout({
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-card",
+          "dark fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-background text-foreground",
           "transition-transform duration-200 ease-out lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
@@ -427,7 +415,7 @@ export default function DashboardLayout({
 
         {/* Global overlays */}
         <CommandPalette />
-        <AgentChatPanel agentFilter="all" agentLabel="C-Suite AI" />
+        <AgentChatPanel agentFilter="all" agentLabel={`${brand.name} AI`} />
       </div>
     </div>
   );

@@ -248,7 +248,7 @@ export function AgentCsvInput({
                 <p className="text-sm text-muted-foreground">
                   {isDragOver ? t.csvInput.dropHintActive : t.csvInput.dropHint}
                 </p>
-                <p className="text-[10px] text-muted-foreground/60">
+                <p className="text-[10px] text-muted-foreground">
                   {accept.replace(/\./g, "").toUpperCase()} · {t.csvInput.maxFile}
                 </p>
               </div>
@@ -270,7 +270,7 @@ export function AgentCsvInput({
             className={cn(
               "w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs",
               "focus:outline-none focus:ring-1 focus:ring-ring",
-              "resize-y placeholder:text-muted-foreground/50 disabled:opacity-50"
+              "resize-y placeholder:text-muted-foreground disabled:opacity-50"
             )}
           />
           <button

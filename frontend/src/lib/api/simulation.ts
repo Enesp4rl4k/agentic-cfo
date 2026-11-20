@@ -1,6 +1,6 @@
 import { apiClient } from "@/lib/api/client";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Cascade Simulator & Multi-Domain Counterfactual Types ─────────────────────
 
 export type TriggerType =
   | "cash_crisis"
@@ -203,4 +203,59 @@ export async function getMultidomainActions(): Promise<{
 }> {
   const res = await apiClient.get("/multidomain-cf/actions");
   return res.data as Awaited<ReturnType<typeof getMultidomainActions>>;
+}
+
+// ── Plan v12 Faz 3: Nakit Radarı What-If Monte Carlo Simülasyonu ───────────────
+
+interface Envelope<T> {
+  data: T;
+  error: string | null;
+}
+
+export interface ScenarioItem {
+  scenario_type: "hire_headcount" | "defer_payable" | "revenue_shock" | "capex_investment";
+  headcount?: number;
+  net_monthly_salary_cents?: number;
+  start_week?: number;
+  amount_cents?: number;
+  from_week?: number;
+  to_week?: number;
+  percentage_change?: number;
+  delay_days?: number;
+  target_week?: number;
+}
+
+export interface SimulatedWeek {
+  week: number;
+  baseline_cents: number;
+  p10_cents: number;
+  p50_cents: number;
+  p90_cents: number;
+  deficit_prob_pct: number;
+}
+
+export interface MonteCarloResult {
+  iterations: number;
+  cash_deficit_probability_pct: number;
+  var_95_cents: number;
+  expected_lowest_balance_cents: number;
+  weeks: SimulatedWeek[];
+  insights: string[];
+}
+
+export interface SimulationResponse {
+  starting_cash_cents: number | null;
+  simulated: MonteCarloResult;
+  scenarios: ScenarioItem[];
+}
+
+export async function simulateWhatIf(
+  scenarios: ScenarioItem[],
+  iterations = 5000
+): Promise<SimulationResponse> {
+  const res = await apiClient.post<Envelope<SimulationResponse>>("/simulation/what-if", {
+    scenarios,
+    iterations,
+  });
+  return res.data.data;
 }

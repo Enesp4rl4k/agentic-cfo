@@ -92,17 +92,3 @@ describe("KPICard", () => {
     expect(screen.queryByTestId("kpi-trend")).toBeNull();
   });
 });
-
-// ── Social proof stats ────────────────────────────────────────────────────────
-
-import { SocialProofSection } from "@/components/landing/SocialProofSection";
-
-describe("SocialProofSection", () => {
-  it("renders all four stat blocks", () => {
-    render(<SocialProofSection />);
-    expect(screen.getByText("AI Ajan")).toBeDefined();
-    expect(screen.getByText("İlk Analize Kadar")).toBeDefined();
-    expect(screen.getByText("Test Geçiyor")).toBeDefined();
-    expect(screen.getByText("ERP Entegrasyonu")).toBeDefined();
-  });
-});

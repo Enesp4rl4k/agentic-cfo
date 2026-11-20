@@ -76,7 +76,7 @@ export function GuvenRozeti({ guven, compact = false }: { guven: Guven | null | 
           {yeterli
             ? "otomatik onay için yeterli"
             : `otomatik onay için %${Math.round(OTOMATIK_ESIK * 100)} gerekir`}
-          <span className="block text-muted-foreground/80">{guven.kontrol}</span>
+          <span className="block text-muted-foreground">{guven.kontrol}</span>
         </p>
       )}
     </div>
