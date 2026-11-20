@@ -20,7 +20,7 @@ grep -q '"/institutionalization/history"' backend/app/api/institutionalization.p
 grep -q "app.api.institutionalization" backend/app/api/registry.py && ok "router registered" || bad "router not registered"
 test -f frontend/src/lib/api/institutionalization.ts && ok "frontend api lib" || bad "frontend lib"
 test -f "frontend/src/app/(dashboard)/kurumsallasma/page.tsx" && ok "/kurumsallasma page" || bad "page"
-grep -q '"/kurumsallasma"' "frontend/src/app/(dashboard)/layout.tsx" && ok "nav entry" || bad "nav entry"
+grep -q '"/kurumsallasma"' "frontend/src/lib/nav-items.ts" && ok "nav entry" || bad "nav entry"
 
 ( cd backend && python -c "
 import asyncio
