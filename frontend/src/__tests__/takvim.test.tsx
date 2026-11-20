@@ -17,6 +17,18 @@ import type { CashRadar } from "@/lib/api/ledger";
 const getCashRadar = vi.fn();
 vi.mock("@/lib/api/ledger", () => ({ getCashRadar: (...a: unknown[]) => getCashRadar(...a) }));
 
+const listPlanChanges = vi.fn();
+const decidePlanChange = vi.fn();
+const withdrawPlanChange = vi.fn();
+const proposePlanChange = vi.fn();
+vi.mock("@/lib/api/planChanges", () => ({
+  listPlanChanges: (...a: unknown[]) => listPlanChanges(...a),
+  decidePlanChange: (...a: unknown[]) => decidePlanChange(...a),
+  withdrawPlanChange: (...a: unknown[]) => withdrawPlanChange(...a),
+  proposePlanChange: (...a: unknown[]) => proposePlanChange(...a),
+  planChangeError: (e: unknown) => (e as { detail?: string })?.detail ?? null,
+}));
+
 vi.mock("@/hooks/useOrgSettings", () => ({
   useOrgSettings: () => ({
     org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
@@ -107,6 +119,10 @@ function show() {
 // Braces: a function returned from beforeEach is run as its teardown.
 beforeEach(() => {
   getCashRadar.mockReset();
+  listPlanChanges.mockReset();
+  listPlanChanges.mockResolvedValue({ changes: [], canDecide: false });
+  proposePlanChange.mockReset();
+  decidePlanChange.mockReset();
 });
 
 describe("Ödeme takvimi", () => {
@@ -161,5 +177,43 @@ describe("Ödeme takvimi", () => {
     show();
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     expect(loop.querySelector("[aria-current='page']")?.textContent).toContain("ORIENT");
+  });
+});
+
+describe("Ödeme takvimi: from scenario to a proposal", () => {
+  it("sends a moved payment for approval with the date a whole number of weeks later", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    proposePlanChange.mockResolvedValue({ id: "c1" });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" }));
+    // the radar expects the payment on 2026-12-01; one week later
+    expect(proposePlanChange).toHaveBeenCalledWith("p1", "2026-12-08");
+    expect(decidePlanChange).not.toHaveBeenCalled();
+    expect(await screen.findByText(/onaya gönderildi/)).toBeInTheDocument();
+  });
+
+  it("changes the plan at once for someone who may decide", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    listPlanChanges.mockResolvedValue({ changes: [], canDecide: true });
+    proposePlanChange.mockResolvedValue({ id: "c1" });
+    decidePlanChange.mockResolvedValue({ id: "c1" });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Planı değiştir" }));
+    expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve");
+    expect(await screen.findByText("Ödeme planı değişti.")).toBeInTheDocument();
+  });
+
+  it("shows the server's own sentence when it refuses", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    proposePlanChange.mockRejectedValue({ detail: "Bu ödeme için karar bekleyen bir öneri zaten var." });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" }));
+    expect(await screen.findByText("Bu ödeme için karar bekleyen bir öneri zaten var.")).toBeInTheDocument();
   });
 });

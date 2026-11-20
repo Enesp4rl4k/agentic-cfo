@@ -23,6 +23,18 @@ vi.mock("@/lib/api/ledger", () => ({
   resolveDuplicate: (...a: unknown[]) => resolveDuplicate(...a),
 }));
 
+const listPlanChanges = vi.fn();
+const decidePlanChange = vi.fn();
+const withdrawPlanChange = vi.fn();
+const proposePlanChange = vi.fn();
+vi.mock("@/lib/api/planChanges", () => ({
+  listPlanChanges: (...a: unknown[]) => listPlanChanges(...a),
+  decidePlanChange: (...a: unknown[]) => decidePlanChange(...a),
+  withdrawPlanChange: (...a: unknown[]) => withdrawPlanChange(...a),
+  proposePlanChange: (...a: unknown[]) => proposePlanChange(...a),
+  planChangeError: (e: unknown) => (e as { detail?: string })?.detail ?? null,
+}));
+
 vi.mock("@/hooks/useOrgSettings", () => ({
   useOrgSettings: () => ({
     org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
@@ -69,6 +81,8 @@ function show() {
 
 beforeEach(() => {
   for (const fn of [getProposedSettlements, getPossibleDuplicates, resolveSettlement, resolveDuplicate]) fn.mockReset();
+  listPlanChanges.mockReset();
+  listPlanChanges.mockResolvedValue({ changes: [], canDecide: false });
   resolveSettlement.mockResolvedValue(undefined);
   resolveDuplicate.mockResolvedValue(undefined);
 });
@@ -138,5 +152,42 @@ describe("Onay bekleyenler", () => {
     show();
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     expect(loop.querySelector("[aria-current='page']")?.textContent).toContain("DECIDE");
+  });
+});
+
+describe("Onay bekleyenler: payment plan change proposals", () => {
+  const proposal = {
+    id: "c1", open_item_id: "p1", counterparty: "Ana Tedarikçi", description: null, amount_cents: 120_000_00,
+    from_date: "2026-12-01", to_date: "2026-12-29", status: "pending", requested_by: "1",
+    requested_at: "2026-11-20T10:00:00Z", request_note: "tedarikçi anlaştı", decided_by: null, decided_at: null, decision_note: null,
+  };
+
+  it("lets an owner or admin approve or reject, with an optional reason", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({ changes: [proposal], canDecide: true });
+    decidePlanChange.mockResolvedValue({});
+    const user = userEvent.setup();
+    show();
+    expect(await screen.findByText(/2026-12-01 → 2026-12-29/)).toBeInTheDocument();
+    expect(screen.getByText(/tedarikçi anlaştı/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Gerekçe (isteğe bağlı)"), "kredi vadesi");
+    await user.click(screen.getByRole("button", { name: "Reddet" }));
+    await waitFor(() => expect(decidePlanChange).toHaveBeenCalledWith("c1", "reject", "kredi vadesi"));
+    await user.click(screen.getByRole("button", { name: "Onayla" }));
+    await waitFor(() => expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve", "kredi vadesi"));
+  });
+
+  it("shows anyone else that the decision belongs to an owner or admin, and lets the proposer withdraw", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({ changes: [proposal], canDecide: false });
+    withdrawPlanChange.mockResolvedValue({});
+    const user = userEvent.setup();
+    show();
+    expect(await screen.findByText(/sahip ya da yönetici onaylayabilir/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Geri çek" }));
+    await waitFor(() => expect(withdrawPlanChange).toHaveBeenCalledWith("c1"));
   });
 });

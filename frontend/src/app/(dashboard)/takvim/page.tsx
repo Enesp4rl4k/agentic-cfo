@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
-import { clampWeek, payables, runScenario, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
+import { clampWeek, payables, runScenario, shiftDate, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { getCashRadar } from "@/lib/api/ledger";
+import { decidePlanChange, listPlanChanges, planChangeError, proposePlanChange } from "@/lib/api/planChanges";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,8 +27,38 @@ export default function TakvimPage() {
   const fmt = useCurrencyFormat();
   const [moves, setMoves] = useState<Moves>({});
   const [over, setOver] = useState<number | null>(null);
+  const [sentMessage, setSentMessage] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: radar, isLoading, isError } = useQuery({ queryKey: ["cash-radar"], queryFn: getCashRadar });
+
+  const { data: pending } = useQuery({ queryKey: ["plan-changes", "pending"], queryFn: () => listPlanChanges("pending") });
+  const canDecide = Boolean(pending?.canDecide);
+
+  // A payment moved in the scenario becomes a proposal. Someone who may decide holds the authority
+  // themselves, so their proposal is approved at once; everyone else's waits in the approvals.
+  const send = useMutation({
+    mutationFn: async ({ id, toDate }: { id: string; toDate: string }) => {
+      const change = await proposePlanChange(id, toDate);
+      if (canDecide) await decidePlanChange(change.id, "approve");
+      return change;
+    },
+    onSuccess: (_change, { id }) => {
+      setSendError(null);
+      setSentMessage(canDecide ? copy.applied : copy.sent);
+      setMoves((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      for (const key of [["cash-radar"], ["plan-changes", "pending"]]) queryClient.invalidateQueries({ queryKey: key });
+    },
+    onError: (error) => {
+      setSentMessage(null);
+      setSendError(planChangeError(error) ?? copy.sendFailed);
+    },
+  });
 
   const items = radar ? payables(radar) : [];
   const result = radar ? runScenario(radar, moves) : null;
@@ -167,6 +198,37 @@ export default function TakvimPage() {
               );
             })}
           </ol>
+
+          {items.some((i) => moves[i.id] !== undefined) && (
+            <section aria-label={copy.moved.replace("{n}", String(movedCount))} className="space-y-2">
+              <ul className="space-y-2">
+                {items
+                  .filter((i) => moves[i.id] !== undefined)
+                  .map((i) => {
+                    const toDate = shiftDate(i.expectedDate, moves[i.id] - i.week);
+                    const name = i.name ?? weekCopy.weekDetailItem;
+                    return (
+                      <li key={i.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+                        <span className="text-sm">
+                          <span className="font-medium">{name}</span>{" "}
+                          <span className="tc-mono text-muted-foreground">{fmt(i.amountCents / 100)} · {copy.toDate.replace("{date}", toDate)}</span>
+                        </span>
+                        <Button
+                          className="min-h-[44px]"
+                          disabled={send.isPending}
+                          onClick={() => send.mutate({ id: i.id, toDate })}
+                          aria-label={`${name}: ${canDecide ? copy.apply : copy.send}`}
+                        >
+                          {canDecide ? copy.apply : copy.send}
+                        </Button>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          )}
+          {sentMessage && <p role="status" className="m-0 text-sm text-success">{sentMessage}</p>}
+          {sendError && <p role="alert" className="m-0 text-sm text-destructive">{sendError}</p>}
 
           <Link href="/nakit-radari" className="inline-flex min-h-[44px] items-center text-sm font-medium text-primary underline-offset-4 hover:underline">
             {copy.toRoute}

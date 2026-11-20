@@ -76,6 +76,8 @@ export interface RadarItem {
   expected_date: string;
   delay_days: number;
   is_overdue: boolean;
+  /** An approved plan change moved this payment off its document date. */
+  rescheduled?: boolean;
 }
 
 export interface RadarWeek {
