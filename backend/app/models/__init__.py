@@ -9,6 +9,7 @@ from app.models.audit_log import AuditLog
 from app.models.authority_policy import AuthorityPolicy
 from app.models.canonical_eng_signal import CanonicalEngSignal
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.cash_radar_snapshot import CashRadarSnapshot
 from app.models.category_rule import CategoryRule
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
@@ -35,6 +36,7 @@ from app.models.proactive_alert import ProactiveAlert
 from app.models.rag_chunk import RagChunk
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.report import Report, ReportFormat, ReportType
+from app.models.smmm_hesap_kurali import SMMMHesapKurali
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 from app.models.sync_run import SyncRun
@@ -59,6 +61,7 @@ __all__ = [
     "BreachNotification",
     "CanonicalEngSignal",
     "CanonicalTransaction",
+    "CashRadarSnapshot",
     "CategoryRule",
     "CompanyContextSnapshot",
     "CompanySemanticSnapshotRow",
@@ -88,6 +91,7 @@ __all__ = [
     "Report",
     "ReportFormat",
     "ReportType",
+    "SMMMHesapKurali",
     "SMMMMuhasebeci",
     "SMMMMusteriKayit",
     "SMMMOnayKaydi",

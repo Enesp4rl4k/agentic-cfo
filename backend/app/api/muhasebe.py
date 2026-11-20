@@ -36,7 +36,6 @@ if TYPE_CHECKING:
 from app.api.access import load_owned_job, owned_job
 from app.core.http_headers import content_disposition
 from app.models.report import Report, ReportFormat
-from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
 from app.models.user import User
 
@@ -56,38 +55,13 @@ from app.services.accounting.journal_store import (
 from app.services.accounting.journal_store import (
     persist_tr_vertical_result,
 )
-
-
-async def _guven_gecmisi(db: AsyncSession, org_id: str | None) -> dict[str, tuple[int, int]]:
-    """How often this organisation's SMMM agreed with each evidence level.
-
-    Approved means the account was right, corrected means it was wrong. Read
-    from the decisions already recorded; nothing is stored twice.
-    """
-    from app.services.accounting.guven import gecmisten_olc
-
-    if not org_id:
-        return {}
-    rows = (
-        await db.execute(
-            select(SMMMOnayKaydi.orijinal_kayit, SMMMOnayKaydi.durum)
-            .where(
-                SMMMOnayKaydi.org_id == org_id,
-                SMMMOnayKaydi.durum.in_([OnayDurumu.ONAYLANDI, OnayDurumu.DUZELTILDI]),
-            )
-            .order_by(desc(SMMMOnayKaydi.updated_at))
-            .limit(5000)
-        )
-    ).all()
-    return gecmisten_olc([
-        (
-            ((kayit or {}).get("guven") or {}).get("seviye"),
-            str(durum),
-            (kayit or {}).get("karar_turu") == "toplu",
-        )
-        for kayit, durum in rows
-    ])
-
+from app.services.accounting.org_context import (
+    guven_gecmisi as _guven_gecmisi,
+)
+from app.services.accounting.org_context import (
+    kurum_kurallari as _kurum_kurallari,
+)
+from app.services.accounting.org_context import yukle as org_context_yukle
 
 # ── Pydantic şemaları ─────────────────────────────────────────────────────────
 
@@ -212,6 +186,7 @@ async def muhasebe_analiz(
         donem=body.donem,
         authority_rules=authority_rules,
         guven_gecmisi=await _guven_gecmisi(db, str(job.org_id) if job.org_id else None),
+        kurum_kurallari=await _kurum_kurallari(db, str(job.org_id) if job.org_id else None),
     )
 
     # SMMM onay kuyruğu — Turkey pack only
@@ -283,6 +258,7 @@ async def muhasebe_tr_vertical(
             period=body.donem,
             company_name=body.company_name,
             authority_rules=authority_rules,
+            **await org_context_yukle(db, str(job.org_id) if job.org_id else None),
         )
         _run.node(result.stage)
         if any(e for e in result.errors):
@@ -742,6 +718,55 @@ async def muhasebe_edefter_durum(
 # Onay kuyrugu (liste / onayla / duzelt / reddet) yalnizca `/smmm/onay/*` altinda.
 # Buradaki kopyalar "bekliyor mu?" kontrolu olmadan karari ezebiliyordu ve hicbir
 # ekran cagirmiyordu.
+
+
+@router.get("/muhasebe/{job_id}/uzlastirma")
+async def pnl_uzlastirma(
+    job_id: str,
+    job: AnalysisJob = Depends(owned_job),
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """CFO K/Z'si ile onaylı yevmiye aynı işlemleri ne kadar tutarlı gösteriyor.
+
+    Kalem kalem bir ölçüm, geçti/kaldı değil: KDV ayrıştırması fark sayılmaz,
+    onaylı yevmiyede olmayan kayıtlar kendi satırında görünür, kalan fark kuruşu
+    kuruşuna yazılır ve farkın olası kaynağı olan (bilanço hesabına yazılmış)
+    kayıtlar yanında listelenir. Hiçbir rakamı değiştirmez, hiçbir şeyi engellemez.
+    """
+    from sqlalchemy import desc
+
+    from app.models.report import Report, ReportFormat, ReportType
+    from app.services.accounting.approved_journal import yukle as onayli_yukle
+    from app.services.accounting.pnl_reconciliation import uzlastir
+    from app.services.smmm_defensibility import DefensibilityError
+
+    # The dashboard by type: the journal is also a JSON report, and is saved later.
+    dash = (
+        await db.execute(
+            select(Report)
+            .where(
+                Report.job_id == job_id,
+                Report.report_type == ReportType.FULL,
+                Report.report_format == ReportFormat.JSON,
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    pnl = ((dash.data if dash is not None else None) or {}).get("pnl")
+    if not pnl:
+        raise HTTPException(status_code=404, detail="Bu iş için K/Z sonucu bulunamadı.")
+    try:
+        journal, onayli = await onayli_yukle(db, job_id)
+    except DefensibilityError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    disarida = [
+        e for e in (journal.get("yevmiye_kayitlari") or [])
+        if str(e.get("kayit_id") or "") in onayli.excluded
+    ]
+    return {"data": {"job_id": job_id, **uzlastir(pnl, onayli.entries, disarida)}, "error": None}
 
 
 @router.get("/muhasebe/mizan/{job_id}")
