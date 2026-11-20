@@ -29,7 +29,7 @@ grep -q "db.get(Organization" backend/app/api/deps_regional.py && ok "require_tr
 test -f "frontend/src/app/(dashboard)/tr-vertical/page.tsx" && ok "tr-vertical page exists" || bad "tr-vertical page"
 test -f frontend/src/lib/api/muhasebe.ts && ok "muhasebe.ts api lib exists" || bad "muhasebe.ts"
 grep -q "runTrVertical" frontend/src/lib/api/muhasebe.ts && ok "runTrVertical client" || bad "runTrVertical client"
-grep -q '"/tr-vertical"' "frontend/src/app/(dashboard)/layout.tsx" && ok "nav entry wired" || bad "nav entry"
+grep -q '"/tr-vertical"' "frontend/src/lib/nav-items.ts" && ok "nav entry wired" || bad "nav entry"
 
 # ── Eval corpus present ────────────────────────────────────────────────────
 test -f backend/tests/test_eval_tr_corpus.py && ok "eval corpus test present" || bad "eval corpus test"
