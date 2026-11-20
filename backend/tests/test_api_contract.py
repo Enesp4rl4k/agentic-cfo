@@ -29,9 +29,7 @@ def _writer():
 
 def test_the_committed_schema_is_current() -> None:
     # Line endings are the checkout's business (core.autocrlf), not the schema's.
-    committed = COMMITTED.read_text(encoding="utf-8").replace("
-", "
-")
+    committed = COMMITTED.read_text(encoding="utf-8").replace("\r\n", "\n")
     assert committed == _writer().render(), (
         "pilot-openapi.json is stale — run `cd backend && python ../scripts/api_contract.py` "
         "and `cd frontend && npm run gen:api`, and commit both files"

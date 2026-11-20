@@ -11,10 +11,7 @@ describe("generated API types", () => {
   it("match the committed backend schema", async () => {
     const committed = readFileSync(new URL("../lib/api/generated/pilot-schema.ts", import.meta.url), "utf-8");
     // Line endings are the checkout's business (core.autocrlf), not the schema's.
-    expect(committed.replace(/
-/g, "
-")).toBe((await render()).replace(/
-/g, "
-"));
+    const lf = (text: string) => text.replace(/\r\n/g, "\n");
+    expect(lf(committed)).toBe(lf(await render()));
   });
 });
