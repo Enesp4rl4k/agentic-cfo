@@ -106,43 +106,53 @@ async def status_for_clients(
     if not client_ids:
         return empty
 
-    # How many jobs each client has, and which is the newest.
-    counts = dict(
-        (
+    # A client's work is whatever carries its label (the old "upload for a client"
+    # form) OR sits in the client's own organisation (what an accountant creates after
+    # switching into the client, M1). Only the first was read, so every client that is an
+    # organisation showed "veri_yok" forever, with work and approvals sitting in it.
+    from app.models.smmm_portal import SMMMMusteriKayit
+
+    org_of = {
+        str(cid): str(org)
+        for cid, org in (
             await db.execute(
-                select(AnalysisJob.smmm_client_id, func.count())
-                .where(AnalysisJob.smmm_client_id.in_(client_ids))
-                .group_by(AnalysisJob.smmm_client_id)
+                select(SMMMMusteriKayit.id, SMMMMusteriKayit.client_org_id).where(
+                    SMMMMusteriKayit.id.in_(client_ids),
+                    SMMMMusteriKayit.client_org_id.isnot(None),
+                )
             )
         ).all()
-    )
+    }
+    client_of_org = {org: cid for cid, org in org_of.items()}
 
-    latest_rows = (
-        await db.execute(
-            select(AnalysisJob)
-            .where(AnalysisJob.smmm_client_id.in_(client_ids))
-            .order_by(AnalysisJob.smmm_client_id, desc(AnalysisJob.created_at))
-        )
+    where = AnalysisJob.smmm_client_id.in_(client_ids)
+    if client_of_org:
+        where = where | AnalysisJob.org_id.in_(list(client_of_org))
+    rows = (
+        await db.execute(select(AnalysisJob).where(where).order_by(desc(AnalysisJob.created_at)))
     ).scalars().all()
-    latest: dict[str, AnalysisJob] = {}
-    for job in latest_rows:
-        key = str(job.smmm_client_id)
-        if key not in latest:      # ordered newest-first per client
-            latest[key] = job
 
-    job_to_client = {str(j.id): str(j.smmm_client_id) for j in latest.values()}
-    job_ids = list(job_to_client)
+    jobs_of: dict[str, list[AnalysisJob]] = {}
+    for job in rows:  # newest first; a job is one job however many ways it is linked
+        cid = str(job.smmm_client_id) if job.smmm_client_id else client_of_org.get(str(job.org_id))
+        if cid in empty:
+            jobs_of.setdefault(cid, []).append(job)
+    counts = {cid: len(js) for cid, js in jobs_of.items()}
+    latest = {cid: js[0] for cid, js in jobs_of.items()}
 
-    pending: dict[str, int] = {}
+    all_job_ids = [str(j.id) for js in jobs_of.values() for j in js]
+    latest_ids = [str(j.id) for j in latest.values()]
+
+    pending_by_job: dict[str, int] = {}
     sealed: set[str] = set()
-    if job_ids:
-        pending = {
+    if all_job_ids:
+        pending_by_job = {
             str(job_id): int(n)
             for job_id, n in (
                 await db.execute(
                     select(SMMMOnayKaydi.job_id, func.count())
                     .where(
-                        SMMMOnayKaydi.job_id.in_(job_ids),
+                        SMMMOnayKaydi.job_id.in_(all_job_ids),
                         SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
                     )
                     .group_by(SMMMOnayKaydi.job_id)
@@ -154,12 +164,17 @@ async def status_for_clients(
             for (job_id,) in (
                 await db.execute(
                     select(DefensibilityPacket.job_id).where(
-                        DefensibilityPacket.job_id.in_(job_ids),
+                        DefensibilityPacket.job_id.in_(latest_ids),
                         DefensibilityPacket.status == "finalized",
                     )
                 )
             ).all()
         }
+    # Waiting for the accountant is waiting on *any* of the client's jobs, not only the
+    # newest: an older upload's open entries do not stop being open.
+    pending = {
+        cid: sum(pending_by_job.get(str(j.id), 0) for j in js) for cid, js in jobs_of.items()
+    }
 
     for cid, job in latest.items():
         empty[cid] = ClientStatus(
@@ -168,7 +183,7 @@ async def status_for_clients(
             last_job_id=str(job.id),
             last_job_status=str(job.status),
             last_analysis_at=job.completed_at or job.created_at,
-            pending_review=pending.get(str(job.id), 0),
+            pending_review=pending.get(cid, 0),
             packet_sealed=str(job.id) in sealed,
         )
     return empty
