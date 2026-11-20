@@ -1,21 +1,9 @@
 import { apiClient } from "@/lib/api/client";
+import type { components } from "@/lib/api/generated/pilot-schema";
 
 /** Where an organisation stands on its first steps — facts, read from its data. */
-export interface BaslangicDurumu {
-  firma: { var: boolean; ad: string | null };
-  veri: { analiz_sayisi: number; parasut_bagli: boolean };
-  son_analiz: {
-    id: string;
-    durum: string;
-    onay_bekliyor: boolean;
-    guven: number | null;
-    dosya: string;
-    hata: string | null;
-    olusturma: string | null;
-  } | null;
-  tamamlanan_analiz: number;
-  otomatik: { eposta: boolean; parasut_otomatik: boolean };
-}
+/** Generated from the backend's schema; see pilot-schema.ts. */
+export type BaslangicDurumu = components["schemas"]["Baslangic"];
 
 export async function baslangicDurumu(): Promise<BaslangicDurumu> {
   const res = await apiClient.get<{ data: BaslangicDurumu; error: string | null }>("/baslangic");

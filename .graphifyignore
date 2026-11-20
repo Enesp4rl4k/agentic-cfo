@@ -1,0 +1,15 @@
+# Graphify ignore patterns
+.claude/
+graphify-out/
+node_modules/
+.next/
+dist/
+.venv/
+venv/
+data/
+uploads/
+enterprise-knowledge-integrator/
+post-agentic-ai/
+knowledge_integrator/
+*.db
+*.sqlite

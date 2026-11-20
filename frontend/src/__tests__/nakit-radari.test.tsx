@@ -8,17 +8,17 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const getCashRadar = vi.fn();
 const getMondayBriefing = vi.fn().mockResolvedValue(null);
-const respondToBriefing = vi.fn().mockResolvedValue({ decision_id: "dec1", chosen_option_label: "Yaptım" });
+const respondToMondayBriefing = vi.fn().mockResolvedValue({ decision_id: "dec1", chosen_option_label: "Yaptım" });
 
 vi.mock("@/lib/api/ledger", () => ({
   getCashRadar: (...args: unknown[]) => getCashRadar(...args),
   getMondayBriefing: (...args: unknown[]) => getMondayBriefing(...args),
-  respondToBriefing: (...args: unknown[]) => respondToBriefing(...args),
+  respondToMondayBriefing: (...args: unknown[]) => respondToMondayBriefing(...args),
 }));
 
 vi.mock("@/hooks/useOrgSettings", () => ({
@@ -169,6 +169,8 @@ describe("Nakit Radarı", () => {
       action_amount_cents: 50000_00,
       verified: true,
       fallback_used: false,
+      week_start: "2025-02-03",
+      fingerprint: "fp-radar",
     });
     show();
     expect(await screen.findByText("Pazartesi Sabah Bülteni")).toBeTruthy();
@@ -177,5 +179,21 @@ describe("Nakit Radarı", () => {
     expect(screen.getByRole("button", { name: "Yaptım" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ertele" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Gerek Yok" })).toBeTruthy();
+  });
+
+  it("answers the briefing it shows, fingerprint and all", async () => {
+    // A second, hand-written client here sent no fingerprint after the backend
+    // began to require one, and every answer from this page was refused (422).
+    getCashRadar.mockResolvedValue(radar());
+    getMondayBriefing.mockResolvedValue({
+      briefing_id: "brief_123", org_id: "org1", full_text: "Metin.", action_title: "Tahsilat Takibi",
+      action_detail: "", action_amount_cents: 0, verified: true, fallback_used: false,
+      week_start: "2025-02-03", fingerprint: "fp-radar",
+    });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Yaptım" }));
+    await waitFor(() =>
+      expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-03", "fp-radar"),
+    );
   });
 });
