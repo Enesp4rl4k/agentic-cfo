@@ -270,6 +270,18 @@ async def _dispatch_monday_briefings() -> None:
     logger.info("Scheduler: Monday morning briefing dispatch completed")
 
 
+async def _record_radar_forecasts() -> None:
+    """Plan v10 O5: write today's radar for every company, so that in four weeks
+    there is a forecast, made before the fact, to grade against the bank."""
+    from app.database import engine, get_session_factory
+    from app.services.radar_forecast_log import record_daily_forecasts
+
+    async with get_session_factory(engine())() as db:
+        written = await record_daily_forecasts(db, today=datetime.now(UTC).date())
+        await db.commit()
+    logger.info("Scheduler: radar forecast log wrote %d forecasts", written)
+
+
 async def _weekly_summary() -> None:
     """
     Haftalık görev: Anomali özeti logla.
@@ -942,6 +954,15 @@ def get_scheduler() -> AsyncIOScheduler:
         )
 
         # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
+        # O5: daily, before the Monday briefing (07:00) - the forecast log.
+        _scheduler.add_job(
+            _exclusive(_record_radar_forecasts, "radar_forecast_log"),
+            CronTrigger(hour=5, minute=30),
+            id="radar_forecast_log",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         _scheduler.add_job(
             _exclusive(_nightly_usage_prune, "nightly_usage_prune"),
             CronTrigger(hour=3, minute=0),
