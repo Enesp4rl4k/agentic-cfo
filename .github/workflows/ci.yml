@@ -103,6 +103,12 @@ jobs:
         working-directory: frontend
         run: npm ci --prefer-offline
 
+      # The staging stack (docker-compose.prod.yml + backup/restore scripts)
+      # is otherwise only exercised on the VPS. shellcheck and docker are both
+      # preinstalled on ubuntu-latest.
+      - name: Staging stack — shellcheck + compose config
+        run: bash scripts/check-prod-compose.sh
+
       - name: Run consolidation proof gate
         env:
           # The suite runs on SQLite (per-test in-memory databases). This job
