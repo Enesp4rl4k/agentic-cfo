@@ -158,7 +158,7 @@ describe("Nakit Radarı", () => {
     expect(await screen.findByText("Nakit radarı yüklenemedi.")).toBeTruthy();
   });
 
-  it("renders the Monday Morning Briefing when available", async () => {
+  it("renders the logbook (Seyir Defteri) when available", async () => {
     getCashRadar.mockResolvedValue(radar());
     getMondayBriefing.mockResolvedValue({
       briefing_id: "brief_123",
@@ -171,7 +171,7 @@ describe("Nakit Radarı", () => {
       fallback_used: false,
     });
     show();
-    expect(await screen.findByText("Pazartesi Sabah Bülteni")).toBeTruthy();
+    expect(await screen.findByText("Seyir Defteri")).toBeTruthy();
     expect(screen.getByText("Defterle Doğrulandı")).toBeTruthy();
     expect(screen.getByText(/Bu hafta net nakit pozisyonunuzda/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Yaptım" })).toBeTruthy();
