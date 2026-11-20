@@ -20,7 +20,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -45,6 +45,9 @@ class SMMMOnayKaydi(Base):
     SMMM onaylar, düzeltir veya reddeder.
     """
     __tablename__ = "smmm_onay_kayitlari"
+    # One decision per entry. With ids derived from the transaction, a second row for the
+    # same entry could only be a duplicate that makes the accountant decide twice.
+    __table_args__ = (UniqueConstraint("job_id", "kayit_id", name="uq_smmm_onay_job_kayit"),)
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())

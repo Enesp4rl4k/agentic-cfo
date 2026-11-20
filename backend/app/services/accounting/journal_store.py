@@ -71,21 +71,39 @@ async def enqueue_review(
 ) -> int:
     """Write the review records for entries policy reserved for a human.
 
-    A re-run of the pipeline produces a new journal with new entry ids, so the
-    rows still waiting from the previous run point at entries that no longer
-    exist. They are replaced, not left to pile up as duplicates in the queue.
-    Decided rows (approved / corrected / rejected) are history and stay.
+    An entry's id is derived from its transaction (`orchestrator._kayit_kimlikleri`),
+    so a re-run of the same file gives the same ids. What that allows:
+    * an entry already decided (approved / corrected / rejected) keeps its decision
+      and is not queued again: the accountant is not asked twice;
+    * an entry still pending keeps its row;
+    * a pending row whose entry the re-run no longer produces is removed (the row it
+      belonged to is gone), and an entry the re-run adds is queued.
+    A decided row whose entry no longer exists stays as history.
     """
     if "tr" not in packs:
         return 0
-    await db.execute(
-        delete(SMMMOnayKaydi).where(
+    gelen = {str(i["kayit_id"]) for i in items}
+    mevcut = {
+        r.kayit_id
+        for r in (
+            await db.execute(select(SMMMOnayKaydi).where(SMMMOnayKaydi.job_id == job_id))
+        ).scalars()
+    }
+    if gelen:
+        stale = delete(SMMMOnayKaydi).where(
             SMMMOnayKaydi.job_id == job_id,
             SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
+            SMMMOnayKaydi.kayit_id.notin_(gelen),
         )
-    )
+    else:
+        stale = delete(SMMMOnayKaydi).where(
+            SMMMOnayKaydi.job_id == job_id, SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR
+        )
+    await db.execute(stale)
     added = 0
     for onay_item in items:
+        if str(onay_item["kayit_id"]) in mevcut:
+            continue  # decided or still pending from an earlier run of the same file
         db.add(
             SMMMOnayKaydi(
                 job_id=job_id,

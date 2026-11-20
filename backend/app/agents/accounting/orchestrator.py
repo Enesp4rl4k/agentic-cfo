@@ -167,6 +167,12 @@ class MuhasebeAgent:
             authority_rules=authority_rules, guven_gecmisi=guven_gecmisi,
         )
 
+        # An entry's id comes from the transaction behind it, not from chance: the same
+        # file gives the same ids, so a decision the accountant made survives a re-run.
+        for kayit, tx, kimlik in zip(kayitlar, transactions, _kayit_kimlikleri(job_id, transactions), strict=True):
+            del tx
+            kayit.kayit_id = kimlik
+
         # ── 3. Denge kontrolü ─────────────────────────────────────────────────
         dengeli, denge_hatalari = DoubleEntryEngine.verify_balance(kayitlar)
         if not dengeli:
@@ -304,6 +310,29 @@ class MuhasebeAgent:
         finally:
             self.use_llm_fallback = orig
             loop.close()
+
+
+def _kayit_kimlikleri(job_id: str, transactions: list[dict[str, Any]]) -> list[str]:
+    """One stable id per transaction: derived from the job and what the row says.
+
+    Rows that are identical (two parcels sent to the same address on one day) are told
+    apart by their order, which a re-run of the same file keeps. A row whose content
+    changed gets a new id, and so a new decision: right, because it is a different
+    entry. The database row id is not used: it is not the same across runs.
+    """
+    import uuid
+    from collections import Counter
+
+    gorulen: Counter[str] = Counter()
+    out: list[str] = []
+    for tx in transactions:
+        icerik = "|".join(str(tx.get(k) or "") for k in (
+            "transaction_date", "amount_kurus", "amount_cents", "type", "description", "vendor",
+            "document_id", "account_code",
+        ))
+        gorulen[icerik] += 1
+        out.append(str(uuid.uuid5(uuid.NAMESPACE_OID, f"yevmiye|{job_id}|{icerik}|{gorulen[icerik]}")))
+    return out
 
 
 # Model calls for rows the rules could not place, at once. Enough to turn
