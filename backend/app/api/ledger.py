@@ -23,8 +23,8 @@ from app.services.reconciliation import (
     CONFIRMED,
     PROPOSED,
     REJECTED,
-    apply_payment,
     payment_behaviour,
+    settle_from_matches,
 )
 
 router = APIRouter()
@@ -209,10 +209,7 @@ async def resolve_settlement(
         await db.rollback()
         raise HTTPException(409, "Bu öneri karar beklemiyor.")
     if body.action == "confirm":
-        for _, item_id, amount in members:
-            item = await db.get(OpenItem, item_id)
-            if item is not None:
-                apply_payment(item, amount)
+        await settle_from_matches(db, [item_id for _, item_id, _ in members])
     await db.commit()
     _refresh_view(org_id)
     return {"data": {"id": match_id, "action": body.action}, "error": None}
