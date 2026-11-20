@@ -141,7 +141,9 @@ async def ogrenilmis_kural_sil(
         raise HTTPException(status_code=403, detail="Bu rol öğrenilmiş kuralı silemez.")
     await db.delete(kural)
     await db.commit()
-    logger.info("Öğrenilmiş kural silindi: id=%s user=%s", kural_id, _user_id(current_user))
+    # The id came from the URL: no CR/LF into the log line (log injection).
+    temiz_id = str(kural_id).replace("\r", "").replace("\n", "")
+    logger.info("Öğrenilmiş kural silindi: id=%s user=%s", temiz_id, _user_id(current_user))
     return {"data": {"silindi": True, "id": kural_id}, "error": None}
 
 
