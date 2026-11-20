@@ -3,8 +3,8 @@
 Plan v11 C9 / A0.5; first consumer is the Monday briefing e-mail (v10 S1.3).
 A new table; nothing existing changes.
 
-Revision ID: 053_outbox_messages
-Revises: 052_cash_radar_snapshots
+Revision ID: 054_outbox_messages
+Revises: 053_cash_radar_snapshots
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "053_outbox_messages"
-down_revision = "052_cash_radar_snapshots"
+revision = "054_outbox_messages"
+down_revision = "053_cash_radar_snapshots"
 branch_labels = None
 depends_on = None
 
