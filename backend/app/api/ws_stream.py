@@ -11,8 +11,11 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
+
+from app.api import ws_auth
+from app.api.access import can_access
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,40 +41,38 @@ async def _stream_llm_tokens(
         raise
 
 
+async def _owns_job(job_id: str, user: Any) -> bool:
+    from app.database import session_factory
+    from app.models.analysis_job import AnalysisJob
+
+    try:
+        async with session_factory()() as db:
+            job = await db.get(AnalysisJob, job_id)
+    except Exception as exc:
+        logger.warning("Chat job ownership check failed: %s", exc)
+        return False
+    return job is not None and can_access(user, org_id=job.org_id, user_id=job.user_id)
+
+
 async def _build_chat_prompt(
     question: str,
     job_id: str | None,
     org_id: str | None,
+    user: Any,
 ) -> tuple[str, str, Any | None]:
-    """Returns (system_prompt, user_prompt, GroundedChatPack|None)."""
-    context_lines: list[str] = []
+    """Returns (system_prompt, user_prompt, GroundedChatPack|None).
 
-    if job_id:
-        try:
-            from app.database import session_factory
-            from app.models.analysis_job import AnalysisJob
+    `org_id` is the caller's own organisation, never one the client named; a
+    `job_id` that is not the caller's is treated as absent.
+    """
+    # A job the caller does not own is treated as absent, before anything
+    # reads it. (A block here used to put the job's P&L into the prompt from
+    # `job.result`; AnalysisJob has no such attribute, so it raised, was
+    # swallowed, and never added a figure. Grounding below is the real path.)
+    if job_id and not await _owns_job(job_id, user):
+        job_id = None
 
-            async with session_factory()() as db:
-                job = await db.get(AnalysisJob, job_id)
-                if job and job.result:
-                    result = job.result
-                    pnl = result.get("pnl", {})
-                    if pnl:
-                        rev = pnl.get("revenue", 0) / 100
-                        gm = pnl.get("gross_margin", 0) * 100
-                        nm = pnl.get("net_margin", 0) * 100
-                        context_lines.append(
-                            f"Finansal Özet: Gelir ₺{rev:,.0f}, Brüt Marj %{gm:.1f}, Net Marj %{nm:.1f}"
-                        )
-                    cf = result.get("cashflow", {})
-                    if cf:
-                        runway = cf.get("runway_months")
-                        if runway:
-                            context_lines.append(f"Nakit Pisti: {runway:.1f} ay")
-        except Exception as exc:
-            logger.debug("Could not load job context: %s", exc)
-
-    context_block = "\n".join(context_lines) if context_lines else "Genel finansal analiz modu."
+    context_block = "Genel finansal analiz modu."
 
     base_system = (
         "Sen bir C-Suite düzeyinde Türk iş danışmanı ve CFO asistanısın. "
@@ -102,7 +103,18 @@ async def _build_chat_prompt(
 
 
 @router.websocket("/ws/chat")
-async def websocket_chat(websocket: WebSocket) -> None:
+async def websocket_chat(
+    websocket: WebSocket,
+    token: str | None = Query(None),
+) -> None:
+    # The socket used to take no token and to ground its answer in whatever
+    # job and organisation the client named: another company's figures, on
+    # our model bill. Signed-in callers only, and only their own data.
+    user = await ws_auth.websocket_caller(token)
+    if user is None:
+        await websocket.close(code=ws_auth.REFUSED)
+        return
+    own_org_id = str(user.org_id) if user.org_id else None
     await websocket.accept()
     logger.info("WebSocket chat connection opened")
 
@@ -133,7 +145,6 @@ async def websocket_chat(websocket: WebSocket) -> None:
             if msg_type == "chat":
                 question = msg.get("question", "").strip()
                 job_id = msg.get("job_id") or None
-                org_id = msg.get("org_id") or None
 
                 if not question:
                     await _send(websocket, {"type": "error", "message": "Soru boş olamaz"})
@@ -159,7 +170,7 @@ async def websocket_chat(websocket: WebSocket) -> None:
 
                 try:
                     system_prompt, user_prompt, grounded_pack = await _build_chat_prompt(
-                        question, job_id, org_id
+                        question, job_id, own_org_id, user
                     )
                 except Exception as exc:
                     logger.warning("Context build failed: %s", exc)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import type { ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -59,6 +60,11 @@ function buildWsUrl(path: string): string {
  * never buffer the full response before rendering.
  */
 export function useWSChat(options: UseWSChatOptions = {}) {
+  // The socket refuses a connection without an access token (a browser
+  // cannot set an Authorization header on a WebSocket, so it rides in the URL).
+  const { data: session } = useSession();
+  const token = (session as { accessToken?: string } | null)?.accessToken;
+
   const wsRef     = useRef<WebSocket | null>(null);
   const pingRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
@@ -99,8 +105,10 @@ export function useWSChat(options: UseWSChatOptions = {}) {
   const connect = useCallback((): Promise<WebSocket> => {
     return new Promise((resolve, reject) => {
       cleanup();
-      const url = options.url ?? buildWsUrl("/api/v1/ws/chat");
-      if (!url) { reject(new Error("No WS URL")); return; }
+      const base = options.url ?? buildWsUrl("/api/v1/ws/chat");
+      if (!base) { reject(new Error("No WS URL")); return; }
+      if (!token) { reject(new Error("Oturum bulunamadı")); return; }
+      const url = `${base}${base.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 
       setStatus("connecting");
       const ws = new WebSocket(url);
@@ -138,7 +146,7 @@ export function useWSChat(options: UseWSChatOptions = {}) {
         if (pingRef.current) clearInterval(pingRef.current);
       };
     });
-  }, [cleanup, options.url]);
+  }, [cleanup, options.url, token]);
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
