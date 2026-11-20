@@ -161,7 +161,7 @@ function AlertPreferencesPanel() {
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
       <div className="flex items-center gap-2">
         <Bell className="h-4 w-4 text-primary" aria-hidden="true" />
-        <h2 className="text-sm font-semibold">{ws.alerts.title}</h2>
+        <h2 className="tc-display text-[22px] leading-tight">{ws.alerts.title}</h2>
       </div>
 
       <form onSubmit={handleSave} className="space-y-4">
@@ -402,7 +402,7 @@ function LocaleSettingsPanel({
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
       <div>
-        <h2 className="text-sm font-semibold">{ws.locale.title}</h2>
+        <h2 className="tc-display text-[22px] leading-tight">{ws.locale.title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {ws.locale.subtitle}
         </p>
@@ -554,7 +554,7 @@ function SemanticModelPanel({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium">{ws.semantic.title}</h2>
+      <h2 className="tc-display text-[22px] leading-tight">{ws.semantic.title}</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         {ws.semantic.subtitle}
       </p>
@@ -763,7 +763,7 @@ export default function WorkspaceSettingsPage() {
       {loaded && !error && (
         <div className="rounded-lg border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="flex items-center gap-2 text-sm font-medium">
+            <h2 className="flex items-center gap-2 tc-display text-[22px] leading-tight">
               <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               {ws.members.title.replace("{count}", String(members.length))}
             </h2>
@@ -800,7 +800,7 @@ export default function WorkspaceSettingsPage() {
       {/* Invite */}
       {isAdmin && loaded && !error && (
         <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
+          <h2 className="mb-3 flex items-center gap-2 tc-display text-[22px] leading-tight">
             <UserPlus className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             {ws.invite.title}
           </h2>
@@ -855,7 +855,7 @@ export default function WorkspaceSettingsPage() {
       {isAdmin && invites.length > 0 && (
         <div className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">{ws.pendingInvites.title.replace("{count}", String(invites.length))}</h2>
+            <h2 className="tc-display text-[22px] leading-tight">{ws.pendingInvites.title.replace("{count}", String(invites.length))}</h2>
           </div>
           <div className="divide-y divide-border/50">
             {invites.map((inv) => (

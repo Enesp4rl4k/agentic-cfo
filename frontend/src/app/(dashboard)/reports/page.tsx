@@ -25,6 +25,7 @@ import { fetchWithAuth } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/useI18n";
 import { PageHead } from "@/components/brand-app/PageHead";
+import { ForecastScorecard } from "@/components/radar/ForecastScorecard";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import type { MessageTree } from "@/lib/i18n";
 import type { ReportMeta } from "@/types";
@@ -372,6 +373,7 @@ export default function ReportsPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-8">
       <PageHead step={3} title={rep.title} subtitle={rep.subtitle} />
+      <ForecastScorecard />
 
       {!jobId && (
         <div

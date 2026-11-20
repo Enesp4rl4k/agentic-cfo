@@ -150,6 +150,25 @@ export type MessageTree = {
     answerClear: string;
     roadmapNote: string;
   };
+  takvim: {
+    title: string;
+    subtitle: string;
+    needBalance: string;
+    connect: string;
+    noPayables: string;
+    weekLabel: string;
+    closing: string;
+    earlier: string;
+    later: string;
+    reset: string;
+    lowestBase: string;
+    lowestScenario: string;
+    difference: string;
+    moved: string;
+    dragHint: string;
+    toRoute: string;
+    failed: string;
+  };
   onay: {
     title: string;
     subtitle: string;
@@ -1393,6 +1412,11 @@ export type MessageTree = {
     error: string;
     loadError: string;
     noJob: string;
+    scorecard: {
+      title: string;
+      intro: string;
+      failed: string;
+    };
     jsonOnly: string;
     generated: string;
     generatedPlural: string;
@@ -2483,6 +2507,25 @@ export const en: MessageTree = {
     answerGap: "Your cash goes negative in week {week} ({start} – {end}). The lowest point is {amount}.",
     answerClear: "Your cash does not go negative in the weeks ahead.",
     roadmapNote: "The route is always computed from the latest uploaded documents.",
+  },
+  takvim: {
+    title: "Payment calendar",
+    subtitle: "Move a payment to another week and see how your cash changes. This is a scenario: it does not change your real payment plan or the base forecast.",
+    needBalance: "A scenario needs a proven bank balance. Upload a statement with a balance column.",
+    connect: "Connect documents",
+    noPayables: "No payments this week",
+    weekLabel: "Week {n}",
+    closing: "Closing",
+    earlier: "{name}: bring forward one week",
+    later: "{name}: delay one week",
+    reset: "Reset the scenario",
+    lowestBase: "Lowest cash in the base forecast",
+    lowestScenario: "Lowest cash in the scenario",
+    difference: "Difference",
+    moved: "{n} payments moved",
+    dragHint: "Drag a payment to another week, or shift it one week with the buttons.",
+    toRoute: "Back to the cash route",
+    failed: "The payment calendar could not be read.",
   },
   onay: {
     title: "Pending approvals",
@@ -3810,6 +3853,11 @@ export const en: MessageTree = {
     error: "Failed to load",
     loadError: "Failed to load reports. The analysis may still be running.",
     noJob: "No analysis selected. Open a dashboard with a job ID to see its reports.",
+    scorecard: {
+      title: "Forecast scorecard",
+      intro: "The radar's earlier saved forecast is compared with the balance the ledger actually shows. If the gap grows, you see it here.",
+      failed: "The forecast scorecard could not be read.",
+    },
     jsonOnly: "JSON only",
     generated: "{count} report generated",
     generatedPlural: "{count} reports generated",

@@ -26,7 +26,7 @@ const CommandPalette = dynamic(
 );
 import {
   LayoutDashboard, Upload, FileText, TrendingUp, DollarSign,
-  Menu, X, Clock, CheckCircle, AlertCircle, Loader2,
+  Menu, X, Clock, CalendarDays, CheckCircle, AlertCircle, Loader2,
   ArrowRightLeft, Waves, ShieldAlert, MessageSquare, Receipt,
   PieChart, BarChart2, Cpu, Crown, Megaphone, Layers, ShieldCheck,
   Users, Shield, FileSearch, FileCheck, Activity, Download,
@@ -47,6 +47,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/baglan",            label: "Belgeler",         icon: Link2 },
       { href: "/nakit-radari",      label: "Nakit rotası",     icon: Waves },
+      { href: "/takvim",            label: "Ödeme takvimi",    icon: CalendarDays },
       { href: "/onay",              label: "Onay bekleyenler", icon: FileCheck },
       { href: "/reports",           label: "Raporlar",         icon: FileText },
       { href: "/settings/workspace", label: "Ayarlar",         icon: Building2 },

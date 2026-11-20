@@ -156,10 +156,19 @@ screen of its own, only a card inside the Command Center. The accountant's queue
 different thing, stays in the Portal group and is not a step of the loop. The Nakit Radarı opens with
 the Monday answer as one sentence, drawn from the real radar and silent without a proven balance.
 
+**Raporlar, Ayarlar, Ödeme takvimi.** Raporlar opens with the forecast scorecard (the radar's saved
+forecast against the ledger's proven balance, the backend's own tier; it names the missing piece and
+shows no figure when one is missing). Ayarlar's sections take the display headings. `/takvim` is a
+scenario over the radar: a payable moves a week at a time (buttons, or drag), the weeks it skipped
+close higher or lower, receivables are never touched, nothing is written and it needs a proven
+balance (`components/calendar/scenario.ts` is pure and tested). The accepted rule: a scenario never
+changes the real payment plan or the base forecast.
+
 **Still to do.**
-- The artboards' deeper layouts for Raporlar (sealed PDF preview and archive) and Ayarlar; they wear
-  the brand but keep their old composition. A payment calendar (a new feature with its own backend,
-  not a restyle).
+- Making a moved payment real (a "Plana al" that writes the new due date) needs its own backend and
+  an owner decision about who may change a payable's date.
+- Raporlar' sealed weekly PDF preview and recipient list need a weekly-report entity the API does
+  not expose yet; the page still lists generated report files.
 - The backend default `brand_name` is still "C-Suite" (`backend/app/config.py`): it prints in PDFs and
   in the e-Defter software name sent to GİB, so changing it is an owner decision with its tests.
 - Role pages keep their own decision priorities: restyle them in focused passes, not as CFO copies.
