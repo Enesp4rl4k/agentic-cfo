@@ -166,12 +166,14 @@ async def resume_agent_run(
 
     from app.platform.authority_matrix import load_active_rules
     from app.services.accounting.journal_store import persist_tr_vertical_result
+    from app.services.accounting.org_context import yukle as org_context_yukle
 
     _, result = await resume_run(
         db, run_id, run_tr_vertical,
         job_id=row.job_id, file_path=job.file_path, file_type=job.file_type,
         org_id=row.org_id,
         authority_rules=await load_active_rules(row.org_id, db),
+        **await org_context_yukle(db, row.org_id),
     )
     # A resumed run used to leave no journal and no review rows behind.
     await persist_tr_vertical_result(
