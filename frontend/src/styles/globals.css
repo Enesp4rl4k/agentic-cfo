@@ -4,59 +4,53 @@
 
 @layer base {
   :root {
-    /* ── C-Suite · Karar Atlası ────────────────────────────────────────────
-       Cartographer's desk: warm ink surfaces, parchment type. Brass marks
-       navigation, focus and deliberate action; semantic colors stay reserved
-       for financial state.
+    /* ── Tunç Çağı ─────────────────────────────────────────────────────────
+       One system for the whole product (DESIGN.md → Brand layer). Light is the
+       cream page; `.dark` below is the warm ink. Ember (burnt orange) marks
+       actions and focus; green, amber and red keep their financial meaning.
+       Contrast pairs are recorded in DESIGN.md.
     ─────────────────────────────────────────────────────────────────────── */
+    --brand-name:    "Tiphys";
 
-    /* Brand anchor */
-    --brand-name:    "Agentic CFO";
-    --brand-hue:     82;
+    --background:    #f2ebdd;
+    --foreground:    #1a1a1f;
 
-    /* Surfaces — warm ink, not blue-black */
-    --background:    oklch(0.15 0.016 70);
-    --foreground:    oklch(0.95 0.014 85);
+    --card:          #fbf7ee;
+    --card-foreground: #1a1a1f;
 
-    --card:          oklch(0.19 0.017 70);
-    --card-foreground: oklch(0.95 0.014 85);
+    --muted:         #e8dfcc;
+    --muted-foreground: #5c574e;
 
-    --muted:         oklch(0.235 0.017 70);
-    --muted-foreground: oklch(0.72 0.017 78);
+    --border:        #d6ccb7;
+    --input:         #fbf7ee;
 
-    --border:        oklch(0.31 0.019 68);
-    --input:         oklch(0.22 0.017 70);
+    --primary:       #a3440f;
+    --primary-foreground: #f2ebdd;
+    --chart-primary: #1a1a1f;
+    --chart-secondary: #c2561c;
 
-    /* Atlas brass — reserved for navigation, focus and primary actions */
-    --primary:       oklch(0.79 0.115 83);
-    --primary-foreground: oklch(0.16 0.032 82);
-    --chart-primary: oklch(0.79 0.115 83);
-    --chart-secondary: oklch(0.74 0.085 241);
+    --brand-gradient-from: #c2561c;
+    --brand-gradient-to:   #a3440f;
 
-    --brand-gradient-from: oklch(0.79 0.115 83);
-    --brand-gradient-to:   oklch(0.66 0.13 53);
+    --secondary:     #e8dfcc;
+    --secondary-foreground: #1a1a1f;
 
-    /* Secondary / Subdued controls */
-    --secondary:     oklch(0.25 0.017 70);
-    --secondary-foreground: oklch(0.91 0.015 85);
+    --success:       #2a6e42;
+    --success-foreground: #f2ebdd;
+    --warning:       #855800;
+    --warning-foreground: #f2ebdd;
+    --destructive:   #9e1f2e;
+    --destructive-foreground: #f2ebdd;
 
-    /* Semantic Financial Colors (Color speaks ONLY in the numbers) */
-    --success:       oklch(0.74 0.14 150);
-    --success-foreground: oklch(0.14 0.025 150);
+    --ring:          #c2561c;
 
-    /* Warning sits at orange (hue 60), clearly apart from brass gold (83) */
-    --warning:       oklch(0.78 0.14 60);
-    --warning-foreground: oklch(0.17 0.035 55);
-
-    --destructive:   oklch(0.68 0.18 24);
-    --destructive-foreground: oklch(0.99 0 0);
-
-    /* Focus ring */
-    --ring:          oklch(0.79 0.115 83);
-
-    /* Compact, deliberate geometry */
     --radius:        0.5rem;
 
+    /* Brand helpers */
+    --tc-ember:      #c2561c;
+    --tc-ember-text: #a3440f;
+    --tc-line-strong: #b8ac93;
+    --tc-zone:       rgb(158 31 46 / 0.07);
     /* ── Motion ─────────────────────────────────────────────────────────── */
     --duration-instant: 80ms;
     --duration-fast:    150ms;
@@ -72,9 +66,54 @@
     /* ── Shimmer gradient ─────────────────────────────────────────────────── */
     --shimmer-gradient: linear-gradient(
       90deg,
-      oklch(0.235 0.017 70 / 0) 0%,
-      oklch(0.34 0.022 68 / 0.75) 50%,
-      oklch(0.235 0.017 70 / 0) 100%
+      rgb(255 255 255 / 0) 0%,
+      rgb(255 255 255 / 0.55) 50%,
+      rgb(255 255 255 / 0) 100%
+    );
+  }
+
+  .dark {
+    --background:    #1a1a1f;
+    --foreground:    #f2ebdd;
+
+    --card:          #24242a;
+    --card-foreground: #f2ebdd;
+
+    --muted:         #2a2a31;
+    --muted-foreground: #a9a396;
+
+    --border:        #34343b;
+    --input:         #24242a;
+
+    --primary:       #e0733a;
+    --primary-foreground: #1a1a1f;
+    --chart-primary: #f2ebdd;
+    --chart-secondary: #e0733a;
+
+    --brand-gradient-from: #e0733a;
+    --brand-gradient-to:   #c2561c;
+
+    --secondary:     #24242a;
+    --secondary-foreground: #f2ebdd;
+
+    --success:       #62c58a;
+    --success-foreground: #1a1a1f;
+    --warning:       #e0b04a;
+    --warning-foreground: #1a1a1f;
+    --destructive:   #ff7a85;
+    --destructive-foreground: #1a1a1f;
+
+    --ring:          #e0733a;
+
+    --tc-ember:      #e0733a;
+    --tc-ember-text: #ea8a58;
+    --tc-line-strong: #4a4a52;
+    --tc-zone:       rgb(255 122 133 / 0.09);
+    --shimmer-gradient: linear-gradient(
+      90deg,
+      rgb(255 255 255 / 0) 0%,
+      rgb(255 255 255 / 0.07) 50%,
+      rgb(255 255 255 / 0) 100%
     );
   }
 }
@@ -151,8 +190,8 @@
   }
   .hover-lift:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 26px oklch(0.06 0.02 70 / 0.45);
-    border-color: oklch(0.48 0.055 82);
+    box-shadow: 0 10px 26px rgb(26 26 31 / 0.22);
+    border-color: var(--tc-line-strong);
   }
   .hover-lift:active {
     transform: translateY(0px);
@@ -171,7 +210,7 @@
   }
   .nav-hover:hover {
     color: var(--foreground);
-    background-color: oklch(0.26 0.018 70);
+    background-color: var(--muted);
   }
 
   /* Icon hover — subtle scale */
@@ -185,7 +224,7 @@
   /* ── 3. Shimmer skeleton ─────────────────────────────────────────────── */
 
   .skeleton {
-    background: oklch(0.235 0.017 70);
+    background: var(--muted);
     background-image: var(--shimmer-gradient);
     background-size: 200% 100%;
     animation: shimmer 1.8s linear infinite;
@@ -259,10 +298,10 @@
   /* ── 7. Glass morphism card ──────────────────────────────────────────── */
 
   .glass {
-    background: oklch(0.19 0.017 70 / 0.92);
+    background: color-mix(in srgb, var(--card) 92%, transparent);
     backdrop-filter: blur(12px) saturate(1.2);
     -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    border: 1px solid oklch(0.34 0.02 68 / 0.72);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   }
 
   /* ── 8. Progress bar fill animation ─────────────────────────────────── */
@@ -358,19 +397,19 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.34 0.02 68);
+  background: var(--border);
   border-radius: 9999px;
   transition: background var(--duration-fast) var(--ease-out-quart);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.52 0.05 82);
+  background: var(--tc-line-strong);
 }
 
 /* ── Selection color ─────────────────────────────────────────────────────── */
 ::selection {
-  background: oklch(0.55 0.10 82 / 0.55);
-  color: oklch(0.98 0.01 85);
+  background: color-mix(in srgb, var(--tc-ember) 38%, transparent);
+  color: var(--foreground);
 }
 
 /* ── Keyframes (referenced in utilities above) ───────────────────────────── */
@@ -403,60 +442,21 @@
   50%       { background-position: 100% 50%; }
 }
 
-/* ── Login decision atlas (components/auth/DecisionAtlas.tsx) ─────────────
-   Base routes are always visible; the lit layer draws in phase order on a
-   9 s cycle. Paused offscreen/hidden; static and fully drawn under reduced
-   motion. */
-.decision-atlas .atlas-terrain path { stroke: oklch(0.58 0.025 80 / 0.16); stroke-width: 1; }
-.decision-atlas .atlas-route-base { stroke: oklch(0.58 0.025 80 / 0.35); stroke-width: 1.2; }
-.decision-atlas .atlas-route-lit {
-  stroke: oklch(0.79 0.115 83); stroke-width: 1.6; stroke-linecap: round;
-  stroke-dasharray: 1; stroke-dashoffset: 1;
-  animation: atlas-draw 9s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-.decision-atlas .atlas-packet {
-  stroke: oklch(0.83 0.07 240); stroke-width: 3; stroke-linecap: round;
-  stroke-dasharray: 0.03 1; stroke-dashoffset: 1.03;
-  animation: atlas-packet 9s linear infinite;
-}
-.decision-atlas [data-phase="1"] .atlas-route-lit { animation-delay: 1.4s; }
-.decision-atlas [data-phase="2"] .atlas-route-lit { animation-delay: 2.6s; }
-.decision-atlas .atlas-dot { fill: oklch(0.74 0.085 241); }
-.decision-atlas .atlas-node--agent .atlas-dot { fill: oklch(0.86 0.02 84); }
-.decision-atlas .atlas-node--verifier .atlas-dot { fill: oklch(0.80 0.08 147); }
-.decision-atlas .atlas-ring { fill: none; stroke: oklch(0.79 0.115 83 / 0.5); stroke-width: 1; opacity: 0;
-  transform-box: fill-box; transform-origin: center; animation: atlas-ring 9s ease-out infinite 1.2s; }
-.decision-atlas .atlas-node--verifier .atlas-ring { stroke: oklch(0.80 0.08 147 / 0.6); animation-delay: 2.4s; }
-.decision-atlas .atlas-marker { fill: oklch(0.79 0.115 83); }
-.decision-atlas .atlas-halo { fill: oklch(0.79 0.115 83 / 0.12); transform-box: fill-box; transform-origin: center;
-  animation: atlas-ring 9s ease-out infinite 3.4s; }
-.decision-atlas .atlas-compass { fill: none; stroke: oklch(0.79 0.115 83 / 0.45); stroke-width: 1; stroke-dasharray: 2 4;
-  transform-box: fill-box; transform-origin: center; animation: atlas-spin 40s linear infinite; }
-.decision-atlas .atlas-label { fill: oklch(0.74 0.028 80); font-size: 11px; font-weight: 500; }
-.decision-atlas .atlas-node--decision .atlas-label { fill: oklch(0.86 0.10 85); font-weight: 600; }
-/* (0,2,1) outranks every animated rule above, which tops out at (0,2,0) for the
-   animation shorthand; the (0,3,0) phase rules only set a delay. */
-.decision-atlas[data-paused] svg * { animation-play-state: paused; }
-
-@keyframes atlas-draw {
-  0% { stroke-dashoffset: 1; opacity: 1; }
-  25%, 82% { stroke-dashoffset: 0; opacity: 1; }
-  95%, 100% { stroke-dashoffset: 0; opacity: 0; }
-}
-@keyframes atlas-packet {
-  0% { stroke-dashoffset: 1.03; opacity: 1; }
-  20% { stroke-dashoffset: 0; opacity: 1; }
-  21%, 100% { stroke-dashoffset: 0; opacity: 0; }
-}
-@keyframes atlas-ring {
-  0%, 10% { opacity: 0; transform: scale(0.6); }
-  18% { opacity: 1; transform: scale(1); }
-  40%, 100% { opacity: 0; transform: scale(1.35); }
-}
-@keyframes atlas-spin { to { transform: rotate(360deg); } }
-
-@media (prefers-reduced-motion: reduce) {
-  .decision-atlas svg [class] { animation: none; }
-  .decision-atlas .atlas-route-lit { stroke-dashoffset: 0; opacity: 0.85; }
-  .decision-atlas .atlas-packet, .decision-atlas .atlas-ring { opacity: 0; }
+/* ── Tunç Çağı type helpers ────────────────────────────────────────────────
+   The faces load once in the root layout (lib/brand-fonts.ts). Page titles are
+   Cormorant, eyebrows are Cinzel capitals, figures are Plex Mono.
+─────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  body {
+    font-family: var(--tc-font-body), system-ui, sans-serif;
+  }
+  h1 {
+    font-family: var(--tc-font-display), Georgia, serif;
+    font-weight: 600;
+    font-variant-numeric: lining-nums;
+    text-wrap: balance;
+  }
+  .tc-display { font-family: var(--tc-font-display), Georgia, serif; font-weight: 600; font-variant-numeric: lining-nums; text-wrap: balance; }
+  .tc-eyebrow { font-family: var(--tc-font-cinzel), serif; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; }
+  .tc-mono { font-family: var(--tc-font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 }

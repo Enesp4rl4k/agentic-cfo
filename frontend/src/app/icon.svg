@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <style>
+    .ink { fill: #1A1A1F; stroke: #1A1A1F; }
+    @media (prefers-color-scheme: dark) { .ink { fill: #F2EBDD; stroke: #F2EBDD; } }
+  </style>
+  <line class="ink" x1="100" y1="10" x2="100" y2="188" stroke-width="20"/>
+  <path d="M30 52 L170 45 Q190 96 160 148 C148 152 138 176 122 178 C102 180 74 148 42 142 Q30 94 30 52 Z" fill="#C2561C"/>
+  <path class="ink" d="M18 51 L182 40" stroke-width="19"/>
+</svg>

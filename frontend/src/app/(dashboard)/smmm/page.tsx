@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/hooks/useI18n";
+import { SmmmTakvim } from "@/components/smmm/SmmmTakvim";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -303,7 +304,7 @@ function ClientRow({
       </td>
       <td className="py-3 px-3 text-xs text-muted-foreground">
         <span className="capitalize">{client.sektor ?? "—"}</span>
-        {client.buyukluk && <span className="ml-1 text-muted-foreground/60">· {client.buyukluk}</span>}
+        {client.buyukluk && <span className="ml-1 text-muted-foreground">· {client.buyukluk}</span>}
       </td>
       <td className="py-3 px-3 text-xs text-muted-foreground">
         {client.il ? (
@@ -614,6 +615,8 @@ export default function SMMMMuhasebecPage() {
           </div>
         )}
       </Card>
+
+      <SmmmTakvim />
 
       {/* Modals */}
       {showAddClient && (

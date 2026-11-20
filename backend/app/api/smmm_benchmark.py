@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -169,6 +169,30 @@ async def smmm_list_clients(
         ],
         "count":   len(clients),
     }
+
+
+@router.get("/smmm/takvim")
+async def smmm_takvim(
+    gun: int = Query(45, ge=1, le=120, description="Bugünden itibaren kaç gün"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Tüm müşterilerin yaklaşan yasal son günleri, en yakından.
+
+    Tarih kuralları resmi metinle henüz doğrulanmadı (`kurallar_dogrulandi`); tutar
+    yalnızca o müşterinin kendi bankadan yaptığı ödemelerden gelir, yoksa boştur.
+    """
+    from datetime import UTC, datetime
+
+    from app.models.smmm_portal import SMMMMuhasebeci
+    from app.services.smmm_takvim import musteri_takvimi
+
+    m = (
+        await db.execute(select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == _get_user_id(current_user)))
+    ).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
+    return {"data": await musteri_takvimi(db, m.id, datetime.now(UTC).date(), gun), "error": None}
 
 
 @router.post("/smmm/clients")

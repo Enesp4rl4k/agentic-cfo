@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { PageHead } from "@/components/brand-app/PageHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
@@ -462,23 +463,22 @@ export default function SMMMonayPage() {
   return (
     <main className="mx-auto max-w-screen-xl space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <FileText className="h-6 w-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold">{st.title}</h1>
-            <p className="text-sm text-muted-foreground">{st.subtitle}</p>
+      <PageHead
+        title={st.title}
+        subtitle={st.subtitle}
+        aside={
+          <div className="flex items-center gap-3">
+            {bekleyenSayisi > 0 && (
+              <span className="rounded-full border border-orange-500/30 bg-orange-500/15 px-2.5 py-0.5 text-sm font-bold text-orange-400">
+                {st.pendingBadge.replace("{count}", String(bekleyenSayisi))}
+              </span>
+            )}
+            <Button variant="outline" size="sm" className="min-h-[44px] min-w-[44px]" onClick={fetchData} disabled={loading} aria-label={st.refresh}>
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </Button>
           </div>
-          {bekleyenSayisi > 0 && (
-            <span className="rounded-full bg-orange-500/15 border border-orange-500/20 px-2.5 py-0.5 text-sm font-bold text-orange-400">
-              {st.pendingBadge.replace("{count}", String(bekleyenSayisi))}
-            </span>
-          )}
-        </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} aria-label={st.refresh}>
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-        </Button>
-      </div>
+        }
+      />
 
       {/* Stats row */}
       {stats && (

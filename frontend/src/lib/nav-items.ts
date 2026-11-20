@@ -4,7 +4,7 @@
  * `label` on a group is its stable id; focus mode (lib/nav-focus) filters by href.
  */
 import {
-  Activity, ArrowRightLeft, BarChart2, Building2, Cpu, CreditCard, Crown, DollarSign, Download, FileCheck, FileSearch, FileText, Filter, Layers, LayoutDashboard, Link2, Megaphone, MessageSquare, Newspaper, PieChart, Receipt, Rocket, Shield, ShieldAlert, ShieldCheck, TrendingUp, Upload, Users, Waves, Zap,
+  Activity, ArrowRightLeft, BarChart2, Building2, CalendarDays, Cpu, CreditCard, Crown, DollarSign, Download, FileCheck, FileSearch, FileText, Filter, Layers, LayoutDashboard, Link2, Megaphone, MessageSquare, Newspaper, PieChart, Receipt, Rocket, Shield, ShieldAlert, ShieldCheck, TrendingUp, Upload, Users, Waves, Zap,
 } from "lucide-react";
 import type { MessageTree } from "@/lib/i18n";
 
@@ -16,16 +16,26 @@ export const NAV_GROUPS: {
   items: { href: string; labelKey: MenuItemKey; icon: typeof Rocket; trPack?: boolean }[];
 }[] = [
   {
+    // The weekly loop in the order it is lived: documents, route, decision, report (#64).
+    label: "hafta",
+    items: [
+      { href: "/baglan", labelKey: "baglan", icon: Link2 },
+      { href: "/nakit-radari", labelKey: "nakitRadari", icon: Waves },
+      { href: "/takvim", labelKey: "takvim", icon: CalendarDays },
+      { href: "/onay", labelKey: "onay", icon: FileCheck },
+      { href: "/reports", labelKey: "reports", icon: FileText },
+      { href: "/settings/workspace", labelKey: "workspace", icon: Building2 },
+    ],
+  },
+  {
     label: "general",
     items: [
       { href: "/baslangic", labelKey: "baslangic",      icon: Rocket },
       { href: "/command-center", labelKey: "commandCenter", icon: Activity },
-      { href: "/nakit-radari", labelKey: "nakitRadari",   icon: Waves },
       { href: "/bulten", labelKey: "bulten", icon: Newspaper },
       { href: "/kurumsallasma", labelKey: "kurumsallasma",  icon: TrendingUp },
       { href: "/iliskili-taraf", labelKey: "iliskiliTaraf",  icon: Users },
       { href: "/pnl", labelKey: "dashboard",      icon: LayoutDashboard },
-      { href: "/baglan", labelKey: "baglan", icon: Link2 },
       { href: "/upload", labelKey: "upload",         icon: Upload },
     ],
   },
@@ -77,7 +87,6 @@ export const NAV_GROUPS: {
     label: "tools",
     items: [
       { href: "/chat", labelKey: "chat",        icon: MessageSquare },
-      { href: "/reports", labelKey: "reports",         icon: FileText },
       { href: "/intelligence", labelKey: "intelligence",    icon: Activity },
       { href: "/simulation", labelKey: "simulation",      icon: Zap },
       { href: "/integrations", labelKey: "integrations",    icon: Link2 },
@@ -92,7 +101,6 @@ export const NAV_GROUPS: {
       { href: "/smmm-onay", labelKey: "smmmOnay",           icon: FileCheck, trPack: true },
       { href: "/billing", labelKey: "billing",                  icon: CreditCard },
       { href: "/settings/alerts", labelKey: "alerts",               icon: Zap },
-      { href: "/settings/workspace", labelKey: "workspace", icon: Building2 },
       { href: "/pilot", labelKey: "pilot",  icon: Users },
     ],
   },

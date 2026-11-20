@@ -45,7 +45,7 @@ export default function GlobalError({ error, reset }: ErrorPageProps) {
 
         {/* Error reference */}
         {error.digest && (
-          <p className="mt-3 mb-5 font-mono text-[10px] text-muted-foreground/50">
+          <p className="mt-3 mb-5 font-mono text-[10px] text-muted-foreground">
             ref: {error.digest}
           </p>
         )}

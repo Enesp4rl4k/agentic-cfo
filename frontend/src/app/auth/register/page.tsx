@@ -9,18 +9,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { brand } from "@/lib/branding";
+import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
+import { Logo } from "@/components/ui/logo";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type Step = "account" | "workspace";
-
-// ── Brand panel testimonial ───────────────────────────────────────────────────
-const TESTIMONIAL = {
-  quote: `${brand.name} sayesinde aylık CFO raporumuzu artık 5 dakikada alıyoruz. Muhasebecimizle toplantı saatlerimiz %60 azaldı.`,
-  author: "Mehmet K.",
-  role: "Kurucu & CEO, B2B SaaS Girişimi",
-};
 
 const BRAND_FEATURES = [
   { icon: TrendingUp, text: "12 AI ajan paralel çalışır"  },
@@ -106,96 +100,7 @@ export default function RegisterPage() {
     <div className="flex min-h-screen">
 
       {/* ── Left: brand panel ──────────────────────────────────────────────── */}
-      <div
-        className="relative hidden w-[42%] flex-col justify-between overflow-hidden p-10 lg:flex"
-        style={{
-          background:
-            "linear-gradient(145deg, oklch(0.15 0.016 70) 0%, oklch(0.12 0.014 66) 100%)",
-        }}
-      >
-        {/* Glow */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 70% 80%, oklch(0.64 0.11 55 / 0.12) 0%, transparent 70%)",
-          }}
-        />
-
-        {/* Logo */}
-        <div className="relative z-10">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-foreground">
-            <span
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-black text-white"
-              style={{ background: "linear-gradient(135deg, oklch(0.74 0.13 82), oklch(0.64 0.11 55))" }}
-              aria-hidden="true"
-            >
-              C
-            </span>
-            <span>{brand.name}</span>
-          </Link>
-        </div>
-
-        {/* Center content */}
-        <div className="relative z-10 space-y-8">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">
-              KOBİ&apos;ler için
-              <br />
-              <span
-                style={{
-                  background: "linear-gradient(135deg, oklch(0.81 0.12 84), oklch(0.68 0.12 58))",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
-              >
-                yapay zeka CFO
-              </span>
-            </h2>
-          </div>
-
-          <ul className="space-y-3">
-            {BRAND_FEATURES.map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-center gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15">
-                  <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
-                </div>
-                <span className="text-sm text-foreground/80">{text}</span>
-              </li>
-            ))}
-          </ul>
-
-          {/* Testimonial */}
-          <div className="rounded-xl border border-white/8 bg-white/4 p-4">
-            <p className="text-sm italic text-foreground/70 leading-relaxed">
-              &ldquo;{TESTIMONIAL.quote}&rdquo;
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
-                {TESTIMONIAL.author[0]}
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-foreground">{TESTIMONIAL.author}</p>
-                <p className="text-[11px] text-muted-foreground">{TESTIMONIAL.role}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom */}
-        <div className="relative z-10 flex flex-wrap gap-2">
-          {["KVKK", "SOC2", "SSL", "GDPR"].map((badge) => (
-            <span
-              key={badge}
-              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/50"
-            >
-              {badge}
-            </span>
-          ))}
-        </div>
-      </div>
+      <AuthBrandPanel items={BRAND_FEATURES} />
 
       {/* ── Right: register form ────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-12 sm:px-8">
@@ -203,15 +108,7 @@ export default function RegisterPage() {
 
           {/* Mobile logo */}
           <div className="mb-6 flex justify-center lg:hidden">
-            <Link href="/">
-              <span
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black text-white"
-                style={{ background: "linear-gradient(135deg, oklch(0.74 0.13 82), oklch(0.64 0.11 55))" }}
-                aria-hidden="true"
-              >
-                C
-              </span>
-            </Link>
+            <Link href="/" className="rounded-md text-foreground"><Logo size="lg" /></Link>
           </div>
 
           {/* Header */}
@@ -280,7 +177,7 @@ export default function RegisterPage() {
                   placeholder="Ahmet Yılmaz"
                   className={cn(
                     "h-10 w-full rounded-lg border border-border bg-muted/30 px-3.5 text-sm",
-                    "placeholder:text-muted-foreground/60",
+                    "placeholder:text-muted-foreground",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent",
                     "transition-colors"
                   )}
@@ -301,7 +198,7 @@ export default function RegisterPage() {
                   placeholder="siz@sirket.com"
                   className={cn(
                     "h-10 w-full rounded-lg border border-border bg-muted/30 px-3.5 text-sm",
-                    "placeholder:text-muted-foreground/60",
+                    "placeholder:text-muted-foreground",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent",
                     "transition-colors"
                   )}
@@ -323,7 +220,7 @@ export default function RegisterPage() {
                     placeholder="En az 8 karakter"
                     className={cn(
                       "h-10 w-full rounded-lg border border-border bg-muted/30 px-3.5 pr-10 text-sm",
-                      "placeholder:text-muted-foreground/60",
+                      "placeholder:text-muted-foreground",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent",
                       "transition-colors"
                     )}
@@ -378,7 +275,7 @@ export default function RegisterPage() {
                     placeholder="Acme Yazılım A.Ş."
                     className={cn(
                       "h-10 w-full rounded-lg border border-border bg-muted/30 pl-10 pr-3.5 text-sm",
-                      "placeholder:text-muted-foreground/60",
+                      "placeholder:text-muted-foreground",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent",
                       "transition-colors"
                     )}

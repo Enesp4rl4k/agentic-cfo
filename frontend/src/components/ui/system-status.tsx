@@ -190,7 +190,7 @@ export function SystemStatusWidget({
       </div>
 
       {/* Footer */}
-      <p className="mt-3 text-[10px] text-muted-foreground/60">
+      <p className="mt-3 text-[10px] text-muted-foreground">
         Her 30 saniyede bir güncellenir
       </p>
     </div>

@@ -93,8 +93,8 @@ describe("Başlangıç", () => {
                     dosya: "ekstre.csv", hata: null, olusturma: null },
     }));
     renderPage();
-    expect(await screen.findByText(/güveni %62/)).toBeInTheDocument();
-    expect(screen.getByText(/Eşik %80/)).toBeInTheDocument();
+    expect(await screen.findByText(/güven puanı %62/)).toBeInTheDocument();
+    expect(screen.getByText(/%80'in altındaki/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Önce sonuçlara bakayım/ })).toHaveAttribute("href", "/pnl?job=job-1");
   });
 

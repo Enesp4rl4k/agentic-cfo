@@ -81,6 +81,33 @@ export async function finalizeDefensibilityPacket(
   return res.data.data;
 }
 
+// ── Every client's upcoming deadlines ──────────────────────────────────────
+
+export interface SmmmTakvimKalemi {
+  tarih: string;
+  tur: string;
+  baslik: string;
+  musteri_id: string;
+  firma_adi: string;
+  client_org_id: string | null;
+  /** Only from that client's own past payments; null when it has none. */
+  tutar_kurus: number | null;
+  gecmiste_odeme_var: boolean;
+}
+
+export interface SmmmTakvim {
+  baslangic: string;
+  bitis: string;
+  kalemler: SmmmTakvimKalemi[];
+  /** The day rules are not yet checked against GİB/SGK's own text while false. */
+  kurallar_dogrulandi: boolean;
+}
+
+export async function getSmmmTakvim(gun = 45): Promise<SmmmTakvim> {
+  const res = await apiClient.get<{ data: SmmmTakvim }>("/smmm/takvim", { params: { gun } });
+  return res.data.data;
+}
+
 // ── What the agent learned from this company's accountant ───────────────────
 
 export interface OgrenilmisKural {

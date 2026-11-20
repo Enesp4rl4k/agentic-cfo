@@ -286,7 +286,7 @@ export function NLQueryPanel({
             className={cn(
               "w-full resize-none rounded-lg border border-border bg-card",
               "px-4 py-3 pr-12 text-sm text-foreground",
-              "placeholder:text-muted-foreground/50",
+              "placeholder:text-muted-foreground",
               "focus:outline-none focus:ring-2 focus:ring-primary",
               "disabled:opacity-50"
             )}

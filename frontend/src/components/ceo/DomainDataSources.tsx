@@ -130,8 +130,8 @@ export function DomainDataSources() {
         <div className="text-sm font-medium">C-Suite veri kaynakları</div>
         <p className="mt-1 text-xs text-muted-foreground">
           Bir alan için dosya yüklenmediğinde o rolün ajanı finansallardan ve
-          sektör ortalamalarından türetir — dürüstçe etiketlenir ama yine de
-          tahmindir. Dosya yükleyin, ajan gerçek veriyi okusun.
+          sektör ortalamalarından türetir ve bunu etiketiyle gösterir. Dosya
+          yüklediğinizde ajan doğrudan sizin verinizi okur.
         </p>
       </div>
 

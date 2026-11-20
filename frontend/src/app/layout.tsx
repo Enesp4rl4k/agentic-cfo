@@ -1,17 +1,24 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { cookies, headers } from "next/headers";
 import { Providers } from "@/app/providers";
-import { brand } from "@/lib/branding";
+import { brandFontVars } from "@/lib/brand-fonts";
+import { brand, STORAGE_PREFIX } from "@/lib/branding";
 import { detectInitialLocale, LOCALE_COOKIE_KEY, type AppLocale } from "@/lib/i18n";
 import "@/styles/globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+/**
+ * Runs before first paint so a dark-theme visitor never sees a light flash, on every page.
+ * Same rule as ThemeProvider: the saved choice wins, otherwise the system's.
+ */
+const THEME_SCRIPT =
+  `try{var t=localStorage.getItem("${STORAGE_PREFIX}_theme")||"system";` +
+  `var d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);` +
+  `document.documentElement.classList.toggle("dark",d)}catch(e){}`;
 
 export const metadata: Metadata = {
   title: brand.name,
   description:
-    "Çok rollü C-Suite zekası ve gerekçelendirilmiş yapay zeka ile yönetim işletim sistemi.",
+    "Şirketlerin nakit rotası, kendi belgelerinden çizilir. Her rakam, onu doğuran belgeye kadar izlenir.",
 };
 
 /**
@@ -40,7 +47,8 @@ export default function RootLayout({
   const initialLocale = resolveInitialLocale();
   return (
     <html lang={initialLocale} suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans`}>
+      <body className={`${brandFontVars} font-sans`}>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <Providers initialLocale={initialLocale}>{children}</Providers>
       </body>
     </html>

@@ -216,7 +216,7 @@ export function EvidenceChainPanel({ anomaly, className }: EvidenceChainPanelPro
               {/* Anomaly type as first step */}
               <div className="flex items-start gap-2 text-xs">
                 <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/15">
-                  <span className="text-[9px] font-bold text-primary">1</span>
+                  <span className="text-[10px] font-bold text-primary">1</span>
                 </div>
                 <div>
                   <p className="font-medium">Tespit Tipi</p>
@@ -228,7 +228,7 @@ export function EvidenceChainPanel({ anomaly, className }: EvidenceChainPanelPro
               {otherFields.map((field, i) => (
                 <div key={field.key} className="flex items-start gap-2 text-xs">
                   <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <span className="text-[9px] font-bold text-muted-foreground">{i + 2}</span>
+                    <span className="text-[10px] font-bold text-muted-foreground">{i + 2}</span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1">
