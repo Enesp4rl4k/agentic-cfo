@@ -10,6 +10,8 @@ export type EklemeDurumu =
   | "taninmadi"
   | "reddedildi"
   | "finansal_dosya_gerekli"
+  /** Read and checked, shown back, and not saved (a trial balance: it is a snapshot, not movements). */
+  | "onizleme"
   /** The same file appeared twice in one submission; it was added once. */
   | "mukerrer";
 
@@ -47,6 +49,13 @@ export interface DosyaSonucu {
   source_id?: string;
   /** The page this file feeds, e.g. "/chro". */
   sayfa?: string;
+  /** For a trial balance preview: what was read (amounts in kuruş). */
+  mizan?: {
+    hesap_sayisi: number;
+    dengeli: boolean | null;
+    fark_kurus: number;
+    uyarilar: string[];
+  };
 }
 
 interface Envelope<T> {
