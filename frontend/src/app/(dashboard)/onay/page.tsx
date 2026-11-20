@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
+import { OneTapQueue, type OneTapDecision } from "@/components/approvals/OneTapQueue";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import {
@@ -43,6 +45,9 @@ export default function OnayPage() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const { data: session } = useSession();
   const me = session?.user?.id ?? null;
+  // `?tek=1` opens the one-tap queue straight away: the link a notification or an e-mail carries.
+  const searchParams = useSearchParams();
+  const [oneTap, setOneTap] = useState(searchParams?.get("tek") === "1");
 
   const settlements = useQuery({ queryKey: SETTLEMENTS_KEY, queryFn: getProposedSettlements });
   const duplicates = useQuery({ queryKey: DUPLICATES_KEY, queryFn: getPossibleDuplicates });
@@ -85,6 +90,54 @@ export default function OnayPage() {
   const nothing = !loading && !failed && settlementRows.length === 0 && duplicateRows.length === 0 && planRows.length === 0;
   const waiting = settlementRows.length + duplicateRows.length + planRows.length;
 
+  // The same decisions as the lists, one card each. A plan change is offered only to someone who may
+  // decide it; anyone else's stays in the list where they can see it waits.
+  const decisions: OneTapDecision[] = [
+    ...settlementRows.map((s) => ({
+      key: `s-${s.id}`,
+      kind: copy.kindSettlement,
+      title: `${s.row.description ?? copy.noCounterparty} → ${s.item.counterparty ?? s.item.description ?? copy.noCounterparty}`,
+      amount: fmt(s.row.amount_cents / 100),
+      meta: `${day(s.row.transaction_date)}${s.item.due_date ? ` · ${copy.dueOn.replace("{date}", day(s.item.due_date))}` : ""}`,
+      options: [
+        { label: ledger.settleYes, run: () => resolveSettlement(s.id, "confirm").then(refreshed) },
+        { label: ledger.settleNo, run: () => resolveSettlement(s.id, "reject").then(refreshed) },
+      ],
+    })),
+    ...duplicateRows.map((row) => ({
+      key: `d-${row.id}`,
+      kind: copy.kindDuplicate,
+      title: row.description ?? copy.noCounterparty,
+      amount: fmt(row.amount_cents / 100),
+      meta: day(row.transaction_date),
+      options: [
+        { label: ledger.exclude, run: () => resolveDuplicate(row.id, "exclude").then(refreshed) },
+        { label: ledger.keep, run: () => resolveDuplicate(row.id, "keep").then(refreshed) },
+      ],
+    })),
+    ...(canDecide
+      ? planRows.map((change) => ({
+          key: `p-${change.id}`,
+          kind: copy.kindPlan,
+          title: change.counterparty ?? change.description ?? copy.noCounterparty,
+          amount: change.amount_cents !== null ? fmt(change.amount_cents / 100) : "",
+          meta: copy.planMove.replace("{from}", change.from_date).replace("{to}", change.to_date),
+          options: [
+            { label: copy.planApprove, run: () => decidePlanChange(change.id, "approve").then(refreshed) },
+            { label: copy.planReject, run: () => decidePlanChange(change.id, "reject").then(refreshed) },
+          ],
+        }))
+      : []),
+  ];
+
+  if (oneTap && !loading && !failed) {
+    return (
+      <div className="mx-auto max-w-5xl p-4 sm:p-8">
+        <OneTapQueue decisions={decisions} onClose={() => setOneTap(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-8">
       <PageHead
@@ -103,6 +156,11 @@ export default function OnayPage() {
       {failed && <p role="alert" className="text-sm text-destructive">{copy.failed}</p>}
       {actionFailed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}
       {nothing && <p className="text-sm text-muted-foreground">{copy.empty}</p>}
+      {decisions.length > 0 && (
+        <Button className="min-h-[48px] w-full sm:w-auto" onClick={() => setOneTap(true)}>
+          {copy.oneTapStart}
+        </Button>
+      )}
 
       {settlementRows.length > 0 && (
         <section aria-label={ledger.settlementsTitle.replace("{n}", String(settlementRows.length))} className="space-y-3">
