@@ -60,6 +60,15 @@ async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, 
         )
 
 
+def _kurus(onay_item: dict[str, Any]) -> int | None:
+    """The amount in kuruş; a queue item from before 058 carries lira."""
+    if onay_item.get("tx_amount_kurus") is not None:
+        return int(onay_item["tx_amount_kurus"])
+    if onay_item.get("tx_amount_try") is not None:
+        return round(float(onay_item["tx_amount_try"]) * 100)
+    return None
+
+
 async def enqueue_review(
     db: AsyncSession,
     *,
@@ -109,7 +118,8 @@ async def enqueue_review(
                 otomatik_confidence=onay_item.get("confidence"),
                 onay_neden=onay_item.get("onay_neden"),
                 tx_description=onay_item.get("tx_description"),
-                tx_amount_try=onay_item.get("tx_amount_try"),
+                tx_amount_kurus=_kurus(onay_item),
+                tx_amount_try=(_kurus(onay_item) / 100) if _kurus(onay_item) is not None else None,
             )
         )
         added += 1

@@ -191,8 +191,9 @@ class MuhasebeAgent:
             {
                 **kayit.to_dict(),
                 "tx_description": transactions[i].get("description", ""),
-                "tx_amount_try": abs(int(transactions[i].get("amount_kurus") or
-                                        transactions[i].get("amount_cents") or 0)) / 100,
+                # Kuruş, as every amount (it was lira as a float here).
+                "tx_amount_kurus": abs(int(transactions[i].get("amount_kurus") or
+                                          transactions[i].get("amount_cents") or 0)),
             }
             for i, kayit in enumerate(kayitlar)
             if kayit.onay_gerekli
