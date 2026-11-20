@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -43,6 +44,12 @@ class CanonicalTransaction(Base):
         # indexes left it scanning (migration 039 creates it too, so old
         # databases and fresh create_all ones agree).
         Index("ix_canonical_transactions_org_date", "org_id", "transaction_date"),
+        # Migration 059. A misspelt status would leave a row in no total at all.
+        CheckConstraint(
+            "ledger_status IN ('active', 'possible_duplicate', 'excluded')",
+            name="ck_canonical_tx_ledger_status",
+        ),
+        CheckConstraint("basis IN ('book', 'document', 'cash')", name="ck_canonical_tx_basis"),
     )
 
     id: Mapped[str] = mapped_column(

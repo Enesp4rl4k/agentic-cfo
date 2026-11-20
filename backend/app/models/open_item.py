@@ -10,7 +10,16 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -25,6 +34,10 @@ class OpenItem(Base):
     __table_args__ = (
         UniqueConstraint("org_id", "document_id", name="uq_open_items_org_document"),
         Index("ix_open_items_org_status_due", "org_id", "status", "due_date"),
+        # Migration 059. The values the code writes, enforced by the database.
+        CheckConstraint("direction IN ('receivable', 'payable')", name="ck_open_items_direction"),
+        CheckConstraint("status IN ('open', 'settled')", name="ck_open_items_status"),
+        CheckConstraint("amount_cents >= 0 AND paid_cents >= 0", name="ck_open_items_amounts"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
