@@ -63,6 +63,11 @@ def parse_numeric_token(raw: str) -> float | None:
     elif "," in token:
         parts = token.split(",")
         token = token.replace(",", ".") if len(parts[-1]) <= 2 else token.replace(",", "")
+    elif "." in token:
+        # "50.000" is fifty thousand in a Turkish amount; "3.5" and "0.25" are decimals.
+        parts = token.split(".")
+        if len(parts) == 2 and len(parts[-1]) == 3 and parts[0] != "0":
+            token = token.replace(".", "")
     try:
         return float(token)
     except ValueError:

@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getSession, signOut } from "next-auth/react";
+import { REFRESH_FAILED } from "@/lib/authRefresh";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -10,16 +11,24 @@ export const apiClient = axios.create({
 });
 
 // ── Request: attach NextAuth access_token ─────────────────────────────────────
+function sessionExpired(): never {
+  void signOut({ redirect: false })
+    .catch(() => null)
+    .finally(() => {
+      window.location.href = "/auth/login?reason=session_expired";
+    });
+  throw new Error("Session expired. Please log in again.");
+}
+
 apiClient.interceptors.request.use(async (config) => {
-  try {
-    const session = await getSession();
-    const token = (session as any)?.accessToken as string | undefined;
-    if (token) {
-      config.headers = config.headers ?? {};
-      config.headers["Authorization"] = `Bearer ${token}`;
-    }
-  } catch {
-    // getSession can fail in SSR — silently skip
+  const session = await getSession().catch(() => null); // can fail in SSR
+  // The refresh token could not be traded for a new access token: sending the
+  // old one would only earn a 401.
+  if (session?.error === REFRESH_FAILED && typeof window !== "undefined") sessionExpired();
+  const token = session?.accessToken;
+  if (token) {
+    config.headers = config.headers ?? {};
+    config.headers["Authorization"] = `Bearer ${token}`;
   }
   return config;
 });
@@ -47,7 +56,10 @@ apiClient.interceptors.response.use(
       error.response?.data?.error ??
       error.message ??
       "Unknown error";
-    return Promise.reject(new Error(message));
+    // Still an Error, but it keeps the status: a caller that must tell "not
+    // allowed" (403, with a reason worth showing) from "could not reach the
+    // server" can.
+    return Promise.reject(Object.assign(new Error(message), { status }));
   }
 );
 
@@ -79,7 +91,7 @@ export async function fetchWithAuth(
   init: RequestInit = {}
 ): Promise<Response> {
   const session = await getSession().catch(() => null);
-  const token = (session as any)?.accessToken as string | undefined;
+  const token = session?.accessToken;
 
   const headers = new Headers(init.headers as HeadersInit | undefined);
   if (token) {

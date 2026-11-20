@@ -360,12 +360,16 @@ async def retrieve_dual_evidence(
         source_type="semantic_snapshot",
         top_k=top_k_per_source,
     )
-    merged = tx.merge(semantic, top_k=top_k_per_source * 2)
-    if not merged.citations and (tx.found or semantic.found):
+    from app.services.rag.ledger_evidence import retrieve_ledger_evidence
+
+    # The ledger holds every upload; the job-scoped chunks only the active one (G9).
+    ledger = await retrieve_ledger_evidence(db=db, org_id=org_id, query=query, top_k=top_k_per_source)
+    merged = tx.merge(semantic, top_k=top_k_per_source * 2).merge(ledger, top_k=top_k_per_source * 3)
+    if not merged.citations and (tx.found or semantic.found or ledger.found):
         merged = EvidenceBundle(
             query=query,
             org_id=org_id,
-            citations=(tx.citations + semantic.citations)[: top_k_per_source * 2],
+            citations=(tx.citations + semantic.citations + ledger.citations)[: top_k_per_source * 3],
             job_scope="org_wide",
             retriever_version=merged.retriever_version,
         )

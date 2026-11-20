@@ -81,6 +81,29 @@ export async function finalizeDefensibilityPacket(
   return res.data.data;
 }
 
+// ── What the agent learned from this company's accountant ───────────────────
+
+export interface OgrenilmisKural {
+  id: string;
+  /** The recurring description, normalised (what changes monthly removed). */
+  anahtar: string;
+  hesap_kodu: string;
+  hesap_adi: string | null;
+  /** How many times the accountant corrected it to this account. */
+  onay_sayisi: number;
+  /** In force: enough corrections and no rival account of similar weight. */
+  aktif: boolean;
+}
+
+export async function getOgrenilmisKurallar(): Promise<OgrenilmisKural[]> {
+  const res = await apiClient.get<{ data: { kurallar: OgrenilmisKural[] } }>("/smmm/kurallar");
+  return res.data.data.kurallar ?? [];
+}
+
+export async function deleteOgrenilmisKural(id: string): Promise<void> {
+  await apiClient.delete(`/smmm/kurallar/${id}`);
+}
+
 export async function exportDefensibilityPacket(packetId: string): Promise<Blob> {
   const res = await apiClient.get(`/smmm/defensibility/${packetId}/export`, {
     responseType: "blob",

@@ -1,6 +1,7 @@
 """Deterministic projectors: agent blobs / canonical txs → MetricPoint[]."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -231,25 +232,27 @@ def project_from_risk(
     return out
 
 
-def project_from_canonical_rows(
-    rows: list[Any],
+@dataclass(frozen=True)
+class CanonicalTotals:
+    """Sums over the active canonical ledger rows, computed by the database."""
+
+    count: int = 0
+    inflow_cents: int = 0
+    outflow_cents: int = 0
+
+
+def project_from_canonical_totals(
+    totals: CanonicalTotals,
     *,
     currency: str = "USD",
     quality_score: float | None = None,
 ) -> list[MetricPoint]:
-    """Aggregate CanonicalTransaction-like objects (amount_cents, direction)."""
-    inflow = 0
-    outflow = 0
-    for r in rows:
-        amt = int(getattr(r, "amount_cents", 0) or 0)
-        direction = str(getattr(r, "direction", "") or "").lower()
-        if direction in {"income", "inflow", "credit"}:
-            inflow += abs(amt)
-        else:
-            outflow += abs(amt)
-    refs = [EvidenceRef(source_type="canonical_transactions", preview=f"n={len(rows)}")]
+    """Metrics from canonical totals (database-side sums over every active row)."""
+    inflow = totals.inflow_cents
+    outflow = totals.outflow_cents
+    refs = [EvidenceRef(source_type="canonical_transactions", preview=f"n={totals.count}")]
     out: list[MetricPoint] = []
-    if rows:
+    if totals.count:
         for p in (
             _point(
                 "finance.canonical_inflow",

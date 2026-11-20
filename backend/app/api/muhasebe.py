@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -23,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_user, require_role
+from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.config import get_settings
 from app.database import get_db
@@ -37,7 +36,6 @@ if TYPE_CHECKING:
 from app.api.access import load_owned_job, owned_job
 from app.core.http_headers import content_disposition
 from app.models.report import Report, ReportFormat
-from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
 from app.models.user import User
 
@@ -46,112 +44,24 @@ logger = logging.getLogger(__name__)
 
 _MUHASEBE_JOURNAL_REPORT = "tr_muhasebe_journal"
 
-
-async def _org_packs(db: AsyncSession, org_id: str | None) -> list[str]:
-    if not org_id:
-        return []
-    from app.services.regional.packs import normalize_packs
-
-    org = await db.get(Organization, str(org_id))
-    return normalize_packs(getattr(org, "regional_packs", None)) if org else []
-
-
-async def _enqueue_smmm_review(
-    db: AsyncSession,
-    *,
-    job_id: str,
-    org_id: str | None,
-    user_id: str,
-    items: list[dict[str, Any]],
-    packs: list[str],
-) -> int:
-    """Write the review records for entries policy reserved for a human.
-
-    Shared by both journal-producing routes. It was inline in one of them, and
-    the other simply did not do it — the same shape as the two upload paths,
-    where a second entry point copied part of the first.
-    """
-    if "tr" not in packs:
-        return 0
-    added = 0
-    for onay_item in items:
-        db.add(SMMMOnayKaydi(
-            job_id=job_id,
-            org_id=org_id,
-            created_by_user_id=user_id,
-            kayit_id=onay_item["kayit_id"],
-            orijinal_kayit=onay_item,
-            durum=OnayDurumu.BEKLIYOR,
-            otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
-            otomatik_confidence=onay_item.get("confidence"),
-            onay_neden=onay_item.get("onay_neden"),
-            tx_description=onay_item.get("tx_description"),
-            tx_amount_try=onay_item.get("tx_amount_try"),
-        ))
-        added += 1
-    return added
-
-
-async def _guven_gecmisi(db: AsyncSession, org_id: str | None) -> dict[str, tuple[int, int]]:
-    """How often this organisation's SMMM agreed with each evidence level.
-
-    Approved means the account was right, corrected means it was wrong. Read
-    from the decisions already recorded; nothing is stored twice.
-    """
-    from app.services.accounting.guven import gecmisten_olc
-
-    if not org_id:
-        return {}
-    rows = (
-        await db.execute(
-            select(SMMMOnayKaydi.orijinal_kayit, SMMMOnayKaydi.durum)
-            .where(
-                SMMMOnayKaydi.org_id == org_id,
-                SMMMOnayKaydi.durum.in_([OnayDurumu.ONAYLANDI, OnayDurumu.DUZELTILDI]),
-            )
-            .order_by(desc(SMMMOnayKaydi.updated_at))
-            .limit(5000)
-        )
-    ).all()
-    return gecmisten_olc([
-        (
-            ((kayit or {}).get("guven") or {}).get("seviye"),
-            str(durum),
-            (kayit or {}).get("karar_turu") == "toplu",
-        )
-        for kayit, durum in rows
-    ])
-
-
-async def _persist_muhasebe_journal(
-    db: AsyncSession, job_id: str, full_result: dict[str, Any]
-) -> None:
-    """Upsert the full THP journal for a job as a JSON Report — the durable
-    source the defensibility packet itemises from."""
-    existing = (
-        await db.execute(
-            select(Report)
-            .where(
-                Report.job_id == job_id,
-                Report.report_type == _MUHASEBE_JOURNAL_REPORT,
-                Report.report_format == ReportFormat.JSON,
-            )
-            .order_by(desc(Report.created_at))
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if existing:
-        existing.data = full_result
-    else:
-        db.add(
-            Report(
-                job_id=job_id,
-                report_type=_MUHASEBE_JOURNAL_REPORT,
-                report_format=ReportFormat.JSON,
-                data=full_result,
-            )
-        )
-
+# The persistence helpers live in the service, so `POST /runs/{id}/resume` can
+# save a re-driven run the same way. Old names kept for the callers below.
+from app.services.accounting.journal_store import (
+    enqueue_review as _enqueue_smmm_review,
+)
+from app.services.accounting.journal_store import (
+    persist_journal as _persist_muhasebe_journal,
+)
+from app.services.accounting.journal_store import (
+    persist_tr_vertical_result,
+)
+from app.services.accounting.org_context import (
+    guven_gecmisi as _guven_gecmisi,
+)
+from app.services.accounting.org_context import (
+    kurum_kurallari as _kurum_kurallari,
+)
+from app.services.accounting.org_context import yukle as org_context_yukle
 
 # ── Pydantic şemaları ─────────────────────────────────────────────────────────
 
@@ -276,6 +186,7 @@ async def muhasebe_analiz(
         donem=body.donem,
         authority_rules=authority_rules,
         guven_gecmisi=await _guven_gecmisi(db, str(job.org_id) if job.org_id else None),
+        kurum_kurallari=await _kurum_kurallari(db, str(job.org_id) if job.org_id else None),
     )
 
     # SMMM onay kuyruğu — Turkey pack only
@@ -347,6 +258,7 @@ async def muhasebe_tr_vertical(
             period=body.donem,
             company_name=body.company_name,
             authority_rules=authority_rules,
+            **await org_context_yukle(db, str(job.org_id) if job.org_id else None),
         )
         _run.node(result.stage)
         if any(e for e in result.errors):
@@ -364,35 +276,14 @@ async def muhasebe_tr_vertical(
             "min_confidence": (result.cfo or {}).get("min_confidence"),
         }
 
-    # Persist the full THP journal for the defensibility packet.
-    if result.accounting is not None:
-        await _persist_muhasebe_journal(
-            db,
-            body.job_id,
-            {**result.accounting, "yevmiye_kayitlari": result.accounting_journal or []},
-        )
-
-        # Queue the entries the authority matrix held back. The autopilot may
-        # auto-post what policy lets it auto-post; it does not get to discard
-        # what policy reserved for a human. This path produced the journal and
-        # the sealable packet but never wrote a single review record, so the
-        # related-party escalations, the low-confidence holds and the
-        # owner-approval rules all evaporated — and /smmm-onay, the only place
-        # a human reviews anything, stayed empty no matter what was uploaded.
-        onay_eklendi = await _enqueue_smmm_review(
-            db,
-            job_id=body.job_id,
-            org_id=str(job.org_id) if job.org_id else None,
-            user_id=current_user.id,
-            items=(result.accounting.get("onay_kuyrugu") or []),
-            packs=await _org_packs(db, job.org_id),
-        )
-        await db.commit()
-        if onay_eklendi:
-            logger.info(
-                "tr-vertical: %d kayıt SMMM onayına düştü (job=%s)",
-                onay_eklendi, body.job_id,
-            )
+    # Persist the journal and queue what policy reserved for a human.
+    await persist_tr_vertical_result(
+        db,
+        job_id=body.job_id,
+        org_id=str(job.org_id) if job.org_id else None,
+        user_id=current_user.id,
+        result=result,
+    )
 
     # Record the generated board deck so it can be fetched later (GET below).
     if result.board_deck_pdf_path:
@@ -490,11 +381,14 @@ async def muhasebe_yevmiye_dokumu(
     # them into every other organisation's jobs.
     await load_owned_job(db, job_id, current_user)
 
-    settings = get_settings()
-    if not settings.gib_vkn:
+    from app.services.org_identity import vkn_of
+
+    vkn = await vkn_of(db, str(current_user.org_id) if current_user.org_id else None)
+    if not vkn:
         raise HTTPException(
             status_code=503,
-            detail="GİB VKN yapılandırılmamış — döküm üretilemez (GIB_VKN).",
+            detail="Bu organizasyonun VKN'si tanımlı değil — döküm üretilemez "
+            "(PATCH /org/me ile vkn girin).",
         )
 
     try:
@@ -513,8 +407,8 @@ async def muhasebe_yevmiye_dokumu(
     package = EDefterGenerator.generate_journal_xml(
         entries=[dict(e) for e in chosen],
         period=period,
-        vkn=settings.gib_vkn,
-        company_title=(org.name if org else "Şirket"),
+        vkn=vkn,
+        company_title=((org.legal_title or org.name) if org else "Şirket"),
     )
     if not package.is_balanced:
         # An unbalanced defter is not something to hand to the tax authority.
@@ -558,11 +452,14 @@ async def _edefter_context(
     # them into every other organisation's jobs.
     await load_owned_job(db, job_id, current_user)
 
-    settings = get_settings()
-    if not settings.gib_vkn:
+    from app.services.org_identity import vkn_of
+
+    vkn = await vkn_of(db, str(current_user.org_id) if current_user.org_id else None)
+    if not vkn:
         raise HTTPException(
             status_code=503,
-            detail="GİB VKN yapılandırılmamış — e-Defter üretilemez (GIB_VKN).",
+            detail="Bu organizasyonun VKN'si tanımlı değil — e-Defter üretilemez "
+            "(PATCH /org/me ile vkn girin).",
         )
 
     try:
@@ -585,12 +482,12 @@ async def _edefter_context(
     brand = get_brand()
 
     owner = LedgerOwner(
-        vkn=settings.gib_vkn,
-        title=(org.name if org else "Şirket"),
+        vkn=vkn,
+        title=((org.legal_title or org.name) if org else "Şirket"),
         # Address, phone and accountant details are left blank rather than
         # filled with something plausible. GİB's format for the producer is
         # VKN##üretici##yazılım##sürüm.
-        software_name=f"{settings.gib_vkn}##{brand.name}##{brand.name} e-Defter##1.0",
+        software_name=f"{vkn}##{brand.name}##{brand.name} e-Defter##1.0",
     )
     return [dict(e) for e in entries], period, owner
 
@@ -818,129 +715,58 @@ async def muhasebe_edefter_durum(
     }
 
 
-@router.get("/muhasebe/onay-kuyrugu")
-async def onay_kuyrugu_listele(
+# Onay kuyrugu (liste / onayla / duzelt / reddet) yalnizca `/smmm/onay/*` altinda.
+# Buradaki kopyalar "bekliyor mu?" kontrolu olmadan karari ezebiliyordu ve hicbir
+# ekran cagirmiyordu.
+
+
+@router.get("/muhasebe/{job_id}/uzlastirma")
+async def pnl_uzlastirma(
+    job_id: str,
+    job: AnalysisJob = Depends(owned_job),
     current_user: User = Depends(require_tr_pack),
     db: AsyncSession = Depends(get_db),
-    durum: str = "bekliyor",
 ) -> dict[str, Any]:
-    """SMMM onay bekleyen kayıtları listele (Turkey pack)."""
-    query = select(SMMMOnayKaydi).where(
-        SMMMOnayKaydi.durum == durum,
-    )
-    if current_user.org_id:
-        query = query.where(SMMMOnayKaydi.org_id == str(current_user.org_id))
+    """CFO K/Z'si ile onaylı yevmiye aynı işlemleri ne kadar tutarlı gösteriyor.
 
-    result = await db.execute(query.order_by(SMMMOnayKaydi.created_at.desc()).limit(100))
-    kayitlar = result.scalars().all()
+    Kalem kalem bir ölçüm, geçti/kaldı değil: KDV ayrıştırması fark sayılmaz,
+    onaylı yevmiyede olmayan kayıtlar kendi satırında görünür, kalan fark kuruşu
+    kuruşuna yazılır ve farkın olası kaynağı olan (bilanço hesabına yazılmış)
+    kayıtlar yanında listelenir. Hiçbir rakamı değiştirmez, hiçbir şeyi engellemez.
+    """
+    from sqlalchemy import desc
 
-    return {
-        "data": [
-            {
-                "id":                   k.id,
-                "job_id":               k.job_id,
-                "kayit_id":             k.kayit_id,
-                "durum":                k.durum,
-                "tx_description":       k.tx_description,
-                "tx_amount_try":        float(k.tx_amount_try) if k.tx_amount_try else None,
-                "otomatik_hesap_kodu":  k.otomatik_hesap_kodu,
-                "otomatik_confidence":  float(k.otomatik_confidence) if k.otomatik_confidence else None,
-                "onay_neden":           k.onay_neden,
-                "created_at":          k.created_at.isoformat(),
-            }
-            for k in kayitlar
-        ],
-        "error": None,
-    }
+    from app.models.report import Report, ReportFormat, ReportType
+    from app.services.accounting.approved_journal import yukle as onayli_yukle
+    from app.services.accounting.pnl_reconciliation import uzlastir
+    from app.services.smmm_defensibility import DefensibilityError
 
+    # The dashboard by type: the journal is also a JSON report, and is saved later.
+    dash = (
+        await db.execute(
+            select(Report)
+            .where(
+                Report.job_id == job_id,
+                Report.report_type == ReportType.FULL,
+                Report.report_format == ReportFormat.JSON,
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    pnl = ((dash.data if dash is not None else None) or {}).get("pnl")
+    if not pnl:
+        raise HTTPException(status_code=404, detail="Bu iş için K/Z sonucu bulunamadı.")
+    try:
+        journal, onayli = await onayli_yukle(db, job_id)
+    except DefensibilityError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-@router.post("/muhasebe/onayla/{onay_id}")
-async def onayla(
-    onay_id: str,
-    body: OnayRequest,
-    current_user: User = Depends(require_tr_pack),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role("admin", "owner", "cfo")),
-) -> dict[str, Any]:
-    """SMMM: Kaydı onayla (Turkey pack)."""
-    kayit = await db.get(SMMMOnayKaydi, onay_id)
-    if not kayit:
-        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
-    # The record was loaded by id and changed; whose it was went unasked.
-    await load_owned_job(db, kayit.job_id, current_user)
-    if kayit.durum != OnayDurumu.BEKLIYOR:
-        raise HTTPException(status_code=409, detail=f"Kayıt zaten '{kayit.durum}' durumunda.")
-
-    kayit.durum = OnayDurumu.ONAYLANDI
-    kayit.onaylayan_user_id = current_user.id
-    kayit.onay_zamani = datetime.now(UTC)
-    kayit.onay_notu = body.onay_notu
-    await db.commit()
-
-    logger.info("SMMM onay: id=%s user=%s", onay_id, current_user.email)
-    return {"data": {"onaylandi": True, "kayit_id": onay_id}, "error": None}
-
-
-@router.post("/muhasebe/duzelt/{onay_id}")
-async def duzelt(
-    onay_id: str,
-    body: DuzeltiRequest,
-    current_user: User = Depends(require_tr_pack),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role("admin", "owner", "cfo")),
-) -> dict[str, Any]:
-    """SMMM: Hesap kodunu düzelt ve onayla (Turkey pack)."""
-    kayit = await db.get(SMMMOnayKaydi, onay_id)
-    if not kayit:
-        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
-    # The record was loaded by id and changed; whose it was went unasked.
-    await load_owned_job(db, kayit.job_id, current_user)
-
-    kayit.durum = OnayDurumu.DUZELTILDI
-    kayit.onaylayan_user_id = current_user.id
-    kayit.onay_zamani = datetime.now(UTC)
-    kayit.duzeltilmis_hesap_kodu = body.yeni_hesap_kodu
-    kayit.duzeltilmis_hesap_adi = body.yeni_hesap_adi
-    kayit.duzeltme_aciklama = body.duzeltme_aciklama
-    await db.commit()
-
-    logger.info(
-        "SMMM düzeltme: id=%s %s→%s user=%s",
-        onay_id, kayit.otomatik_hesap_kodu, body.yeni_hesap_kodu, current_user.email,
-    )
-    return {
-        "data": {
-            "duzeltildi":        True,
-            "eski_hesap_kodu":   kayit.otomatik_hesap_kodu,
-            "yeni_hesap_kodu":   body.yeni_hesap_kodu,
-        },
-        "error": None,
-    }
-
-
-@router.post("/muhasebe/reddet/{onay_id}")
-async def reddet(
-    onay_id: str,
-    body: ReddetRequest,
-    current_user: User = Depends(require_tr_pack),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role("admin", "owner", "cfo")),
-) -> dict[str, Any]:
-    """SMMM: Kaydı reddet (Turkey pack)."""
-    kayit = await db.get(SMMMOnayKaydi, onay_id)
-    if not kayit:
-        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı.")
-    # The record was loaded by id and changed; whose it was went unasked.
-    await load_owned_job(db, kayit.job_id, current_user)
-
-    kayit.durum = OnayDurumu.REDDEDILDI
-    kayit.onaylayan_user_id = current_user.id
-    kayit.onay_zamani = datetime.now(UTC)
-    kayit.onay_notu = body.red_neden
-    await db.commit()
-
-    logger.info("SMMM red: id=%s user=%s neden=%s", onay_id, current_user.email, body.red_neden)
-    return {"data": {"reddedildi": True, "kayit_id": onay_id}, "error": None}
+    disarida = [
+        e for e in (journal.get("yevmiye_kayitlari") or [])
+        if str(e.get("kayit_id") or "") in onayli.excluded
+    ]
+    return {"data": {"job_id": job_id, **uzlastir(pnl, onayli.entries, disarida)}, "error": None}
 
 
 @router.get("/muhasebe/mizan/{job_id}")

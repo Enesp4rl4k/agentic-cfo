@@ -24,6 +24,59 @@ from typing import Any
 
 from app.services.accounting.thp_classifier import THP_HESAPLARI, THPSonucu
 
+# Fixed namespace for journal entry ids. Changing it orphans every SMMM
+# decision ever recorded, so it never changes.
+_KAYIT_NS = uuid.UUID("6f1d3c2e-4b7a-5e9f-8a21-0c5d7e3b9f10")
+
+
+def _gun(value: Any) -> str | None:
+    """The calendar day, whatever shape the date arrived in.
+
+    The in-memory pipeline passes a string, a row read back from the database a
+    datetime; both name the same day and must give the same id.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    text = str(value).strip()
+    try:
+        return datetime.fromisoformat(text).date().isoformat()
+    except ValueError:
+        return text
+
+
+def _kaynak_parmak_izi(tx: dict[str, Any]) -> str:
+    """What identifies a source transaction across re-runs.
+
+    Not `Transaction.id`: re-analysing a job deletes and re-inserts its
+    transactions with fresh ids. The content does not change.
+    """
+    amount = tx.get("amount_kurus", tx.get("amount_cents"))
+    parts = (
+        _gun(tx.get("transaction_date")),
+        abs(int(amount)) if amount is not None else None,
+        tx.get("type"),
+        tx.get("description"),
+        tx.get("vendor"),
+        tx.get("document_id"),
+        tx.get("counterparty"),
+    )
+    return "|".join("" if p is None else str(p) for p in parts)
+
+
+def kararli_kayit_id(tx: dict[str, Any], sira: int = 0) -> str:
+    """A journal entry id that is the same every time the same transaction is journalled.
+
+    The id was a fresh uuid4 per run. The accountant's decisions
+    (`SMMMOnayKaydi.kayit_id`) point at it, so every re-run left each approval
+    pointing at an entry that no longer existed: approved entries silently
+    dropped out of the e-Defter and went back into the review queue.
+    `sira` separates identical transactions in the same file (two equal
+    payments on one day): the n-th occurrence gets n.
+    """
+    return str(uuid.uuid5(_KAYIT_NS, f"{_kaynak_parmak_izi(tx)}#{sira}"))
+
 logger = logging.getLogger(__name__)
 
 
@@ -241,6 +294,7 @@ class DoubleEntryEngine:
         *,
         authority_rules: list[dict[str, Any]] | None = None,
         guven_gecmisi: dict[str, tuple[int, int]] | None = None,
+        kayit_id: str | None = None,
     ) -> YevmiyeKaydi:
         """
         Tek bir işlem için yevmiye kaydı oluştur.
@@ -386,6 +440,16 @@ class DoubleEntryEngine:
         if stopaj and not _stopaj_ekle(satirlar, ana, stopaj, description):
             stopaj_note = f"kaynaktaki stopaj ({stopaj} kuruş) kayda işlenemedi — doğrulanmalı"
 
+        # A return (iade) undoes the deal it returns: the entry of that deal, every
+        # line the other way round. After the KDV split, which reads the side of the
+        # main line to choose 191 or 391. Only on the explicit mark: a negative amount
+        # alone (an extracted "-500") is an outflow, not a reversal.
+        if transaction.get("iade"):
+            satirlar = [
+                KayitSatiri(s.hesap_kodu, s.hesap_adi, borc=s.alacak, alacak=s.borc, aciklama=s.aciklama)
+                for s in satirlar
+            ]
+
         # ── Trust: measured, and the organisation's own record once it has one ─
         guven_dict: dict[str, Any] = {}
         confidence = thp_result.confidence
@@ -437,6 +501,7 @@ class DoubleEntryEngine:
         rationale = "; ".join(notes)
 
         kayit = YevmiyeKaydi(
+            kayit_id=kayit_id or kararli_kayit_id(transaction),
             tarih=tx_date,
             tarih_kaynagi=tarih_kaynagi,
             kdv_durumu=kdv_durumu,
@@ -468,10 +533,21 @@ class DoubleEntryEngine:
         guven_gecmisi: dict[str, tuple[int, int]] | None = None,
     ) -> list[YevmiyeKaydi]:
         """Toplu yevmiye kaydı oluştur."""
-        return [
-            self.create_entry(tx, thp, authority_rules=authority_rules, guven_gecmisi=guven_gecmisi)
-            for tx, thp in zip(transactions, thp_results, strict=False)
-        ]
+        gorulen: dict[str, int] = {}
+        out: list[YevmiyeKaydi] = []
+        for tx, thp in zip(transactions, thp_results, strict=False):
+            iz = _kaynak_parmak_izi(tx)
+            sira = gorulen.get(iz, 0)
+            gorulen[iz] = sira + 1
+            out.append(
+                self.create_entry(
+                    tx, thp,
+                    authority_rules=authority_rules,
+                    guven_gecmisi=guven_gecmisi,
+                    kayit_id=kararli_kayit_id(tx, sira),
+                )
+            )
+        return out
 
     @staticmethod
     def verify_balance(entries: list[YevmiyeKaydi]) -> tuple[bool, list[str]]:

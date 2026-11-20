@@ -4,7 +4,7 @@ import warnings
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ── Known-insecure default values (SEC-7) ─────────────────────────────────────
@@ -229,7 +229,11 @@ class Settings(BaseSettings):
     # dropping it. Keeps the upload -> analysis path working on a laptop with no
     # broker. Never a substitute for the worker in production: the job dies with
     # the request process and there is no retry.
-    allow_inline_job_fallback: bool = True
+    # Unset, it follows the database: on with SQLite (a laptop), off with
+    # Postgres. It used to default to on everywhere, so a staging or production
+    # API with a Redis blip ran analyses in-process, unretried, and said so only
+    # in a log line. Turning it on with Postgres is refused at startup.
+    allow_inline_job_fallback: bool | None = None
     # Confidence gate: min lowest-skill confidence to auto-proceed without a
     # human. Below this the run holds for review. Env-tunable per deployment.
     agent_auto_proceed_min_confidence: float = 0.80
@@ -345,6 +349,12 @@ class Settings(BaseSettings):
         """JWT signing secret — alias for backend_secret_key."""
         return self.backend_secret_key
 
+    @model_validator(mode="after")
+    def _inline_fallback_follows_the_database(self) -> Settings:
+        if self.allow_inline_job_fallback is None:
+            self.allow_inline_job_fallback = self.use_sqlite
+        return self
+
     def validate_production_security(self) -> None:
         """
         Raise ValueError if security-critical settings are insecure.
@@ -364,6 +374,13 @@ class Settings(BaseSettings):
             issues.append(
                 "FIELD_ENCRYPTION_ENABLED=true but FIELD_ENCRYPTION_KEY is empty. "
                 'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            )
+
+        if self.allow_inline_job_fallback and not self.use_sqlite:
+            issues.append(
+                "ALLOW_INLINE_JOB_FALLBACK=true with Postgres: an analysis would run "
+                "inside the API process when Redis is unreachable, with no retry and "
+                "lost on restart. Leave it unset; the worker owns analyses."
             )
 
         if not self.use_sqlite and issues:

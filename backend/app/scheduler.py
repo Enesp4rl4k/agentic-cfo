@@ -209,11 +209,107 @@ async def _scan_recent_jobs() -> None:
                 logger.debug("Scheduler: job=%s — no anomalies found", job.id)
 
 
+def monday_briefing_key(org_id: str) -> str:
+    """Redis key for one organisation's deterministic Monday morning briefing."""
+    return f"monday_briefing:{org_id}"
+
+
+async def _dispatch_monday_briefings() -> None:
+    """Plan v10 §O4: Monday Morning Briefing dispatch.
+
+    Every Monday at 07:00 UTC:
+    1. Assembles deterministic 3-sentence briefing from radar facts.
+    2. Stores in Redis cache with 7-day TTL.
+    3. Emits InAppNotification to the organization.
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from app.database import engine, get_session_factory
+    from app.models.in_app_notification import InAppNotification
+    from app.models.organization import Organization
+    from app.services.briefing_delivery import enqueue_briefing_emails
+    from app.services.monday_briefing import assemble_monday_briefing
+    from app.services.outbox import deliver_pending
+
+    logger.info("Scheduler: starting Monday morning briefing dispatch")
+    async with get_session_factory(engine())() as db:
+        orgs = (await db.execute(select(Organization))).scalars().all()
+        for org in orgs:
+            try:
+                briefing = await assemble_monday_briefing(db, org.id)
+                if not briefing.has_data:
+                    continue  # nothing known about this company: no briefing, no invented calm
+                # E-mail goes through the outbox: once per recipient, held for an accountant.
+                await enqueue_briefing_emails(db, org.id, briefing)
+                # Redis cache
+                try:
+                    from app.worker import get_arq_pool
+
+                    pool = await get_arq_pool()
+                    await pool.set(
+                        monday_briefing_key(org.id), json.dumps(briefing.to_dict()), ex=7 * 86400
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "Could not cache monday briefing in Redis for org %s: %s", org.id, exc
+                    )
+
+                # In-app notification
+                notif = InAppNotification(
+                    org_id=org.id,
+                    level="info",
+                    domain="cfo",
+                    source="monday_briefing",
+                    message=f"{briefing.sentence_radar} {briefing.sentence_action}",
+                    action="route",
+                    priority_score=0.8,
+                )
+                db.add(notif)
+            except Exception as err:
+                logger.warning("Failed to generate Monday briefing for org %s: %s", org.id, err)
+
+        await db.commit()
+        await deliver_pending(db)
+        await db.commit()
+    logger.info("Scheduler: Monday morning briefing dispatch completed")
+
+
+async def _deliver_outbox() -> None:
+    """Plan v11 C9: send what is pending (retries, released messages); record each outcome."""
+    from app.database import engine, get_session_factory
+    from app.services.outbox import deliver_pending
+
+    async with get_session_factory(engine())() as db:
+        await deliver_pending(db)
+        await db.commit()
+
+
+async def _record_radar_forecasts() -> None:
+    """Plan v10 O5: write today's radar for every company, so that in four weeks
+    there is a forecast, made before the fact, to grade against the bank."""
+    from app.database import engine, get_session_factory
+    from app.services.radar_forecast_log import record_daily_forecasts
+
+    async with get_session_factory(engine())() as db:
+        written = await record_daily_forecasts(db, today=datetime.now(UTC).date())
+        await db.commit()
+    logger.info("Scheduler: radar forecast log wrote %d forecasts", written)
+
+
 async def _weekly_summary() -> None:
     """
     Haftalık görev: Anomali özeti logla.
     Gelecek fazda: e-posta ile CFO'ya gönder.
     """
+    # 1. Monday morning briefing dispatch
+    try:
+        await _dispatch_monday_briefings()
+    except Exception as exc:
+        logger.error("Error during Monday briefing dispatch: %s", exc)
+
+    # 2. Anomaly summary
     from sqlalchemy import func, select
 
     from app.database import engine, get_session_factory
@@ -874,6 +970,24 @@ def get_scheduler() -> AsyncIOScheduler:
         )
 
         # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
+        # C9: every 5 minutes - the outbox sends pending messages and records each outcome.
+        _scheduler.add_job(
+            _exclusive(_deliver_outbox, "outbox_delivery", ttl=240),
+            CronTrigger(minute="*/5"),
+            id="outbox_delivery",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # O5: daily, before the Monday briefing (07:00) - the forecast log.
+        _scheduler.add_job(
+            _exclusive(_record_radar_forecasts, "radar_forecast_log"),
+            CronTrigger(hour=5, minute=30),
+            id="radar_forecast_log",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         _scheduler.add_job(
             _exclusive(_nightly_usage_prune, "nightly_usage_prune"),
             CronTrigger(hour=3, minute=0),

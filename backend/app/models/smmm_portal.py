@@ -95,6 +95,7 @@ class SMMMMusteriKayit(Base):
         return {
             "id":               self.id,
             "muhasebeci_id":    self.muhasebeci_id,
+            "client_org_id":    self.client_org_id,
             "firma_adi":        self.firma_adi,
             "vergi_no":         self.vergi_no,
             "sektor":           self.sektor,

@@ -153,7 +153,7 @@ async def devami_baslat(job_id: str) -> str:
 
 
 async def yarim_kalanlari_bul(db: Any, now: datetime | None = None) -> list[str]:
-    """Approved jobs whose continuation is still 'bekliyor' past the grace period."""
+    """Completed jobs (approved or not) whose continuation is still owed past the grace period."""
     from sqlalchemy import select
 
     from app.models.analysis_job import AnalysisJob, JobStatus
@@ -172,7 +172,10 @@ async def yarim_kalanlari_bul(db: Any, now: datetime | None = None) -> list[str]
         review = (meta or {}).get("review") or {}
         durum = review.get("devam")
         # Owed and never started, or started by a run that died mid-way.
-        if (durum == BEKLIYOR and _eski_mi(review.get("approved_at"), now)) or (
+        # `approved_at` for an approval, `devam_istendi` for a run that
+        # completed without one (the worker writes it with the completion).
+        istendi = review.get("approved_at") or review.get("devam_istendi")
+        if (durum == BEKLIYOR and _eski_mi(istendi, now)) or (
             durum == CALISIYOR and _eski_mi(review.get("devam_basladi"), now)
         ):
             yarim.append(str(job_id))

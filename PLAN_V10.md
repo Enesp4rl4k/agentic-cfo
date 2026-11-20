@@ -227,7 +227,7 @@ Bu bölüm, §1'deki pilot hedefinin **mühendislik tarafıdır**: pilotun dayan
 
 ### 13.2 İlkeler: veriyi tasarla, projeyi değil
 
-*Designing Data-Intensive Applications*'dan, bu depoda zaten `DDIA_COMPLIANCE.md` ve plan v5 §V5'te geçen ilkelerin bu plana uyarlanışı. Kural: **bir özellik, hangi veriyi türettiğini, kaynağını ve yeniden üretilebilirliğini yazmadan başlamaz.**
+*Designing Data-Intensive Applications*'dan, bu depoda zaten `docs/arsiv/DDIA_COMPLIANCE.md` ve plan v5 §V5'te geçen ilkelerin bu plana uyarlanışı. Kural: **bir özellik, hangi veriyi türettiğini, kaynağını ve yeniden üretilebilirliğini yazmadan başlamaz.**
 
 1. **Tek doğruluk kaynağı.** Para defterdedir (`canonical_transactions`, `open_items`). Şirket görünümü, radar, özet ve bülten **türetilmiş veridir**; hiçbiri kendi kaynağını saklamaz.
 2. **Türetilmiş veri silinip yeniden üretilebilir.** Her görünüm defterden saf bir fonksiyonla hesaplanır. Test: görünümü sil, yeniden hesapla, rakamlar aynı çıkmalı.
@@ -329,14 +329,14 @@ Bu oturumda ve önceki turlarda kayda geçen açıklıkların tek listesi. Her s
 | # | Açıklık | Kanıt | Risk | Kapatma | Durum |
 |---|---|---|---|---|---|
 | G1 | Bazı yazımlar **güven kapısını atlıyor**: Risk, Denetim, Uyum ve CEO sonuçları şirket bağlamına doğrudan yazılıyor; CTO senkronu da. CLAUDE.md'ye göre kapı yük taşıyıcıdır. | Doğrulandı: `agents/orchestration/auto_chain.py:400,471,496,576`, `api/ceo.py:603`, `services/scheduled_sync.py:646` `update_agent_result` çağırıyor; yalnız `post_completion.py` ve `context_persist.py` kapıdan geçiyor. | **Yüksek.** Sahip onayı olmadan bağlama giren bir sonuç Command Center'a ve (O4) bültene beslenir. | Tek yazım noktası: tüm çağrılar `persist_agent_completion` üzerinden. Mimari testi `update_agent_result` çağıran her yeri tarar; yeni bir çağrı eklenemez. | **Kapandı** (`write_derived_result`; `test_derived_results_gate.py`). Kalan doğrudan yazarlar listelenmiş ve gerekçeli: CTO senkronu bir bağlayıcı katmanı (API'den okunan commit sayısı, model yok). |
-| G2 | **Bağlayıcı senkronu kendi kimliğiyle yazıyor**; aynı fatura hem dosyadan hem Paraşüt/ERP senkronundan gelirse iki kez sayılabilir. | Doğrulandı: `services/data_sync/accounting/importers.py` kendi `source_type`'ıyla yazıyor; defterin kimliği belge UUID'si ya da içerik parmak izi. Çift sayımın gerçekten olduğu **henüz yeniden üretilmedi**. | **Yüksek.** Paraşüt tek tıkla bağlantısı pilot yolunda. | Önce çift sayımı yeniden üreten test; sonra senkron kimliğini ortak kimlik sözleşmesine (§13, `data-contracts.md`) bağlamak. | Açık |
+| G2 | **Bağlayıcı senkronu kendi kimliğiyle yazıyor**; aynı fatura hem dosyadan hem Paraşüt/ERP senkronundan gelirse iki kez sayılabilir. | Doğrulandı: `services/data_sync/accounting/importers.py` kendi `source_type`'ıyla yazıyor; defterin kimliği belge UUID'si ya da içerik parmak izi. Çift sayımın gerçekten olduğu **henüz yeniden üretilmedi**. | **Yüksek.** Paraşüt tek tıkla bağlantısı pilot yolunda. | Önce çift sayımı yeniden üreten test; sonra senkron kimliğini ortak kimlik sözleşmesine (§13, `data-contracts.md`) bağlamak. | **Kısmen kapandı**: defter, belgeyi hangi kaynağın yazdığına bakmadan tanıyor (`ledger._existing` artık `source_type` süzmüyor; `core/invoice_identity.py`; `test_invoice_identity_review.py`, `test_cross_source_idempotency_faz1.py`). Paraşüt çekimi de belge kimliği taşıyor (G22). |
 | G3 | **El ile kategori düzeltmesi deftere ulaşmıyor.** | Doğrulandı: `api/corrections.py` yalnız `Transaction`'ı değiştiriyor; defter satırı bir sonraki yeniden okumada güncelleniyor. | Orta. Düzeltme yapılan şirketin kâr rakamı eski kategoriyle kalır. | Düzeltme, aynı kimlikli defter satırını da günceller ve görünümü yeniler. | Açık |
-| G4 | Anlamsal özet **5.000 satırda sıralamasız kesiliyor**. | Doğrulandı: `services/semantic/rebuild.py:81` `limit(5000)`, `order_by` yok. | Orta. Büyük defterde rastgele satırlar düşer; "canlı giriş" yanlış çıkar ve sahte çelişki uyarısı doğurabilir. | Satır çekmek yerine veritabanında toplama; 6.000 satırlık test. | Açık |
+| G4 | Anlamsal özet **5.000 satırda sıralamasız kesiliyor**. | Doğrulandı: `services/semantic/rebuild.py:81` `limit(5000)`, `order_by` yok. | Orta. Büyük defterde rastgele satırlar düşer; "canlı giriş" yanlış çıkar ve sahte çelişki uyarısı doğurabilir. | Satır çekmek yerine veritabanında toplama; 6.000 satırlık test. | **Kapandı** (`_load_canonical` toplamı veritabanında alır; `test_semantic_canonical_totals.py`). |
 | G5 | **Mükerrer ve eşleşme kararları türetilmiş tabloların içinde.** | Doğrulandı: `docs/data-contracts.md` ("Bilinen boşluk"). | Orta. Defter silinip kurulursa kararlar kaybolur. | Eklemeli, silinmez karar günlüğü (E5); o zamana kadar defter tabloları elle silinmez. | Açık |
-| G6 | **Bir ödeme birden çok faturayı kapatamıyor.** | Doğrulandı: `services/reconciliation.py` başlığı "birkaç fatura uyuyorsa", "faturanın bir kısmı" durumlarını öneri yapıyor; toplu havale yok. | Orta. KOBİ'lerde toplu havale yaygın; satır "kendi parası" gibi sayılabilir. | Toplamı birkaç açık kalemin toplamına tam eşit olan hareket için öneri; her kalem tanımlı olmalı. Yanlış otomatik eşleşme 0 kalır (§13.1 #2). | Açık |
-| G7 | **Vergi tahminleri sabit oranlı.** | Doğrulandı: `services/regional/tax.py` KDV %20, stopaj "tahmini" %20. | **Yüksek**, O3'te vergi takvimi radara girecek. Yanlış tutar yanlış açık demek. | Tahmin etiketi; oranlar GİB kaynağından sürümlü veri; tutarlar defterdeki hesap kodlarından (191/391, 360). Kaynağı gösterilemeyen oran eklenmez. | Açık |
+| G6 | **Bir ödeme birden çok faturayı kapatamıyor.** | Doğrulandı: `services/reconciliation.py` başlığı "birkaç fatura uyuyorsa", "faturanın bir kısmı" durumlarını öneri yapıyor; toplu havale yok. | Orta. KOBİ'lerde toplu havale yaygın; satır "kendi parası" gibi sayılabilir. | Toplamı birkaç açık kalemin toplamına tam eşit olan hareket için öneri; her kalem tanımlı olmalı. Yanlış otomatik eşleşme 0 kalır (§13.1 #2). | **Kapandı** (`_decide_lump`: yalnız öneri, aynı karşı taraf + ad açıklamada + tek çözüm; `test_batch_payment_reconciliation.py`). |
+| G7 | **Vergi tahminleri sabit oranlı.** | Doğrulandı: `services/regional/tax.py` KDV %20, stopaj "tahmini" %20. | **Yüksek**, O3'te vergi takvimi radara girecek. Yanlış tutar yanlış açık demek. | Tahmin etiketi; oranlar GİB kaynağından sürümlü veri; tutarlar defterdeki hesap kodlarından (191/391, 360). Kaynağı gösterilemeyen oran eklenmez. | **Kısmen kapandı**: radar vergi tutarlarını oran uygulayarak değil, şirketin kendi banka geçmişindeki vergi dairesi/SGK ödemelerinin medyanından alıyor (`tax_calendar.py`). `regional/tax.py` ve `/org/me/tax-rates` hâlâ sabit oranlı ve kaynaksız; vade günleri (`DUE_RULES`) GİB/SGK metnine karşı **doğrulanmadı**. |
 | G8 | **Şirket görünümü bütün dönemleri topluyor**, ekranda dönem görünmüyor. | Önceki turda canlı görüldü (13 ay toplam); `post_completion.py` `company_rows` hepsini okuyor. | Orta, pilot yıllar boyu veri yükleyecek. | Görünüm bir dönem seçer (varsayılan son 12 ay) ve ekranda dönem etiketi gösterir. | Açık |
-| G9 | **Sohbetin kanıtı son yüklemenin satırlarıyla sınırlı.** | Doğrulandı: `services/chat_grounding.py` etkin CFO `job_id`'sine bağlı. | Orta. Sohbet, defterde olan bir paradan habersiz kalabilir. | Defter tabanlı kanıt. | Açık |
+| G9 | **Sohbetin kanıtı son yüklemenin satırlarıyla sınırlı.** | Doğrulandı: `services/chat_grounding.py` etkin CFO `job_id`'sine bağlı. | Orta. Sohbet, defterde olan bir paradan habersiz kalabilir. | Defter tabanlı kanıt. | **Kapandı** (`rag/ledger_evidence.py`: defterin etkin satırlarından kanıt; `test_chat_ledger_evidence.py`). Sohbet çipleri henüz `evidence_ledger_count`'u göstermiyor. |
 
 ### 14.2 Yapay zeka ve ölçüm
 
@@ -352,7 +352,7 @@ Bu oturumda ve önceki turlarda kayda geçen açıklıkların tek listesi. Her s
 
 | # | Açıklık | Kanıt | Risk | Kapatma | Durum |
 |---|---|---|---|---|---|
-| G15 | Radar **kira/maaş, vergi/SGK, çek/senet** içermiyor. | Doğrulandı: `cash_radar.NOT_INCLUDED` ve ekranda "Radara dahil değil". | **Yüksek.** Radar iyimser kalabilir; bu yüzden ekranda açıkça yazıyor. | O3. | Açık |
+| G15 | Radar **kira/maaş, vergi/SGK, çek/senet** içermiyor. | Doğrulandı: `cash_radar.NOT_INCLUDED` ve ekranda "Radara dahil değil". | **Yüksek.** Radar iyimser kalabilir; bu yüzden ekranda açıkça yazıyor. | O3. | **Kısmen kapandı** (`recurring_obligations.py`, `tax_calendar.py`; testler `test_radar_obligations*.py`): düzenli ödemeler, vergi/SGK ve çek/senet radara giriyor; ekranda bunları ayıran bir gösterim ve vade günlerinin doğrulanması açık. |
 | G16 | Radar metinleri sunucudan **Türkçe sabit**, menüde **İngilizce etiketler** var. | Doğrulandı: `layout.tsx` ("Cash Flow", "Upload"), radar eylem başlıkları. | Orta, pilotun ilk izlenimi. | Etiketler ve eylem metinleri i18n'e. | Açık |
 
 ### 14.4 Dış bağlantılar ve operasyon
@@ -364,6 +364,10 @@ Bu oturumda ve önceki turlarda kayda geçen açıklıkların tek listesi. Her s
 | G19 | **KVKK ve hukuki gözden geçirme yok.** | §7 karar 4. | **Yüksek**, pilot öncesi. | Sahip kararı. | Sahip kararı bekliyor |
 | G20 | **Gerçek KOBİ verisi yok**; zor durum üreteci vekil. | §13.3. | Yüksek (belirsizlik). | Üreteç + ilk gerçek veride her bulgu teste. Sahip veriyi sağlayana kadar açık kalır. | Sahip kararı bekliyor |
 | G21 | Kök dizinde 15'ten fazla eski plan belgesi. | Doğrulandı. | Düşük. | `docs/arsiv/` altına taşımak, ayrı PR. | Açık |
+| G22 | **Paraşüt çekimi fatura olarak değil, nakit hareketi olarak yazılıyor.** Belge no, karşı taraf ve vade düşüyor; gerçek banka tahsilatı gelince aynı satış iki kez sayılır. | Doğrulandı (kodda): `services/ingest/ekle.py` `islemler_csv` yalnız `tarih, açıklama, tutar, tip` yazıyor ve `islemleri_ekle` bunu `BANKA_EKSTRESI` şemasıyla içeri alıyor; `ParsedTransaction` belge no/karşı taraf/vade alanı taşımıyor; `ledger._basis` belge no yoksa `cash` diyor. Çift sayımın uçtan uca yeniden üretimi yapılmadı. | **Yüksek.** Paraşüt tek tıkla bağlantısı pilot yolunda. | Çekimi bir fatura listesi şemasıyla (belge no, karşı taraf, vade) içeri almak: `document` tabanı ve açık kalem; önce çift sayımı yeniden üreten test. | **Kapandı** (uçtan uca: sync → `run_data_ingestion` → defter → banka tahsilatı; `test_parasut_invoice_identity.py`, tahsilat gelince gelir bir kez). Çekim artık `FINANSAL_BELGE` olarak giriyor, fatura no/cari/vade sütunlarını taşıyor. Paraşüt'ün `include=contact`, `due_date`, `invoice_no` alanları sözleşmeye göre **doğrulanmadı** (G17); müşteri adı okunamayan fatura açık kalem olmaz ve yanıtta uyarı çıkar. |
+| G23 | **Serbest biçimli fatura numarası karşı taraflar arasında tekil değil.** İki tedarikçi "A-1" numarasıyla fatura keserse ikincisi sessizce düşer. | Doğrulandı: `test_invoice_identity_review.py::test_two_suppliers_using_the_same_short_number_are_two_documents` (`xfail(strict)`); defter anahtarı `doc:{no}` ve `open_items(org_id, document_id)` benzersiz indeksi ihraççı içermiyor. Önceden de vardı; G2 kimlik birleştirmesi görünürlüğünü artırıyor. | Orta-yüksek. Küçük firmaların elle kestiği "2024-01" gibi numaralar yaygın. | GİB 16 hane ve UUID dışındaki numaralara karşı tarafı anahtara katmak (açık kalem indeksi dahil); göç gerekir. | Açık |
+| G24 | **Bağlayıcı platformundaki `parasut` ve `open_banking` adaptörleri finans defterine ulaşmıyor; `open_banking` sahte.** | Doğrulandı: `connectors/runner.py` satırları `canonical_eng_signals`'a yazıyor (yalnız `eng_signals.py` okuyor, `signal_type` commit/PR/olay); `open_banking` yalnız `config["mock_transactions"]` okuyor ve token metni varsa "oturum aktif" diyor; `parasut` adaptörü sağlık denetiminde API'ye gitmeden "bağlantı aktif" diyor, filigranı başarısız uç noktada da ilerletiyor ve yalnız ilk 25 kaydı çekiyor. Adaptörler ana klasörde commit'siz duruyor, bu PR'a alınmadı. | Orta. Kaydedilirse "başarılı, 0 kayıt" gösterir. | Adaptörleri kaydetmeden önce gerçek bir tüketici ve doğrulanmış sözleşme (G17). | Açık |
+| G25 | **ZIP açma, yükleme yasasını (CLAUDE.md #9) aşıyor.** | Doğrulandı: ana klasördeki commit'siz `ekle.py` değişikliği `zip` uzantısını izinli yapıp içindekileri açıyor; izinli uzantılar `{pdf, xlsx, csv, txt, xml}`, açılan boyut sınırı ve `xml_safety` yok. | Yüksek (zip bombası), commit'siz. | Eklenmeden önce uzantı, toplam açılmış boyut ve iç dosya sayısı sınırı, her xml `xml_safety`'den geçmeli. | Açık |
 
 ### 14.5 Kapatma sırası
 
@@ -400,3 +404,58 @@ Dalga 1 bittiğinde: G1–G4 ve G8 satırları "Kapandı" ve her birinin testi C
 3. KAP ve TCMB dosyaları için indirme izni (§13.3); dosya adı, adres ve boyut gösterilerek.
 4. Sahip kararları (G18, G19, G20): barındırma sağlayıcısı, hukuki gözden geçirme, gerçek veri.
 5. Ufuk 1 bittiğinde iş yol haritası (§12).
+
+## 16. Geliştirme planı: S1–S4 (2026-11-14)
+
+*#31–#45 birleştikten sonra yazıldı. §15'in 1. ve 2. maddeleri büyük ölçüde tamamlandı (G1, G4, G6, G9, G22 kapandı; G2, G7, G15 kısmen kapandı). M0 ve M1'in çoğu master'da. Bu bölüm §15'in yerine geçer.*
+
+### 16.1 Bugün nerede
+
+- **Akış:** belge → defter → Nakit Radarı ekranı ve O4 bülten API'si master'da. **Bültenin ekranı ve e-postası yok**; patron pazartesi cevabını bugün göremiyor.
+- **O5:** tahmin kaydı yok. Dört hafta sonra notlanacak bir tahmin, ancak bugünden yazılmaya başlarsa vardır; bu yüzden S1'in ilk işi.
+- **Ana klasör:** eski bir dalda yüzlerce dosya commit'siz duruyor (çoğu biçimlendirme; bir kısmı master'a başka dallardan girmiş; içinde G24 adaptörleri ve G25 zip kodu var). Yeni iş master'dan açılan ayrı worktree'lerde yapılır; commit'siz koddan yalnız gözden geçirilen parça alınır.
+
+### 16.2 Sprintler (her biri yaklaşık 2 hafta)
+
+Her PR bir O/M aşaması ve G numarası yazar, kırmızı testle başlar, `verify` yeşil olunca birleşir.
+
+**S1: pazartesi cevabı patrona ulaşsın**
+1. **Radar tahmin günlüğü** (O5 temeli): her gün ve radar her açıldığında o günün radarı değişmez olarak yazılır; geçmiş bir güne kurulan radar "sonradan bilgi"dir ve yazılmaz.
+2. **Bülten ekranı ve e-postası** (O4): onaylanmamış hiçbir şey bültene girmez.
+3. **G8** dönem seçimi (varsayılan son 12 ay) ve ekranda dönem etiketi.
+4. **G3** kategori düzeltmesi aynı kimlikli defter satırına ulaşır.
+5. **G16** menü ve radar metinleri Türkçe/i18n.
+6. **G25** zip: ya sınırlarla (uzantı, toplam açılmış boyut, dosya sayısı, her xml `xml_safety`) ya hiç.
+
+**S2: sayıların doğruluğu**
+- **G23** karşı taraf fatura anahtarına girer (göç gerekir).
+- **G7** `DUE_RULES` vade günleri GİB/SGK metnine karşı doğrulanır (indirme izniyle).
+- **G17/G24** Paraşüt sözleşme testi; doğrulanana kadar "doğrulanmadı" ve varsayılan kapalı; `open_banking` kaydedilmez.
+- **M2** mizan ayrıştırıcısı.
+
+**S3: ölçüm**
+- **O5** 4 haftalık tahmin hatasının notlanması ve ekranda gösterimi (S1'in günlüğünden).
+- **G10–G12 (E3)** LLM'li altın küme (uydurma sayı 0), koşu başına maliyet, karar beklenti/sonuç alanları. Model anahtarı gerekir.
+
+**S4: mali müşavir operasyonu**
+- **M3** muhasebe ve CFO tek defterde; mizan ile P&L mutabakatı.
+- **M4** müşteri portföyü, müşteriler arası vergi takvimi, dönem kilidi.
+- **G5** silinmez karar günlüğü.
+
+### 16.3 Sahip kararları (pilotun kritik yolu)
+
+G18 barındırma sağlayıcısı (staging, geri yükleme tatbikatı), G19 KVKK ve hukuki gözden geçirme, G20 pilot şirketler ve gerçek veri (mali müşavir kanalı; M1 hazır), model API anahtarı (S3), GİB/SGK/KAP/TCMB indirme izni (S2, G14). S1 ve S2 bu kararlar olmadan biter; §1'in ölçütü bu kararlar olmadan tutmaz.
+
+### 16.4 S1 ayrıntısı (PR PR)
+
+- **S1.1 tahmin günlüğü:** #47.
+- **S1.2 bülten ekranı** (frontend): `/bulten` sayfası, odak menüsünde Nakit Radarı'nın altında; üç cümle, hafta aralığı, "radara dahil değil" listesi; Yaptım/Ertele/Gerek yok düğmeleri `POST /briefing/monday/respond`'a gider. Verisi olmayan şirkete sahte bir sakinlik değil, ne bağlanacağı yazılır. Test: vitest (sayılar API'deki gibi, düğme doğru isteği atar, `has_data=false` boş durumu).
+- **S1.3 bülten e-postası:** `_dispatch_monday_briefings` e-posta da gönderir; alıcı sahip, kullanıcı ayarıyla kapatılabilir. `briefing_id` gönderim anahtarıdır, aynı bülten iki kez gitmez. SMTP yoksa sessizce atlanmaz, "gönderilmedi" kaydı düşer ve ekranda görünür. Test: sahte SMTP.
+- **S1.4 G8:** `ledger.company_rows` bir dönem alır (varsayılan son verinin ayıyla biten 12 ay); şirket görünümü, P&L ve Command Center dönem etiketini gösterir.
+- **S1.5 G3:** kategori düzeltmesi aynı `source_record_id`'li defter satırını günceller ve görünümü yeniler. S1.4'ten sonra, aynı dosyalara dokunur.
+- **S1.6 G16:** menü, radar ve bülten metinleri `lib/i18n/messages`'a; layout'ta sabit metin kalırsa test düşer.
+- **G25** master'da yok (zip yalnız commit'siz ağaçta); S1'den çıkarıldı, commit'siz kod alınmaz.
+
+Sıra: S1.2 → S1.3 → S1.4 → S1.5; S1.6 paralel. Çıkış ölçütü: örnek bir şirkette belge → radar → `/bulten` → yanıt → e-posta canlıda uçtan uca.
+
+S1 içindeki sahip kararları: müşaviri olan şirkette e-posta müşavir onayını bekler mi (öneri: e-posta bekler, ekran beklemez; SMMM D5), e-posta gönderen sağlayıcı (G18 ile birlikte), G8 varsayılan dönemi (öneri: son 12 ay).

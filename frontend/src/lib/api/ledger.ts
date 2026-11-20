@@ -42,11 +42,20 @@ export async function resolveDuplicate(rowId: string, action: "keep" | "exclude"
   await apiClient.post(`/ledger/rows/${rowId}/resolve`, { action });
 }
 
+export interface SettlementItem {
+  counterparty: string | null;
+  description: string | null;
+  amount_cents: number;
+  due_date: string | null;
+}
+
 export interface ProposedSettlement {
   id: string;
   amount_cents: number;
   row: LedgerRow;
-  item: { counterparty: string | null; description: string | null; amount_cents: number; due_date: string | null };
+  item: SettlementItem;
+  /** One transfer may pay several invoices of one customer; the answer covers all of them. */
+  items: SettlementItem[];
 }
 
 export async function getProposedSettlements(): Promise<ProposedSettlement[]> {

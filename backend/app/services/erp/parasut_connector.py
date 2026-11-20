@@ -153,8 +153,36 @@ def firmalar_from_me(body: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
-def islem_from_fatura(item: dict[str, Any], tip: str) -> dict[str, Any] | None:
-    """A sales invoice (income) or purchase bill (expense) as a transaction; None when it carries no amount or date."""
+def kisiler_from_included(body: dict[str, Any]) -> dict[str, str]:
+    """Contact id -> name from a list response's JSON:API `included` (`include=contact`)."""
+    out: dict[str, str] = {}
+    for item in body.get("included") or []:
+        if isinstance(item, dict) and item.get("type") == "contacts" and item.get("id"):
+            name = _attr(item, "name", "title", "short_name")
+            if name:
+                out[str(item["id"])] = str(name)
+    return out
+
+
+def _contact_id(item: dict[str, Any]) -> str | None:
+    rel = (item.get("relationships") or {}).get("contact") or {}
+    data = rel.get("data") if isinstance(rel, dict) else None
+    return str(data["id"]) if isinstance(data, dict) and data.get("id") else None
+
+
+def islem_from_fatura(
+    item: dict[str, Any], tip: str, kisiler: dict[str, str] | None = None
+) -> dict[str, Any] | None:
+    """A sales invoice (income) or purchase bill (expense) as a transaction; None when it carries no amount or date.
+
+    It keeps what makes it an *invoice*: its number, its counterparty and its due
+    date. Without them it is written as cash, and the bank receipt weeks later
+    counts the same sale a second time (G22). The counterparty is read from the
+    attributes, else from the related contact in `kisiler`; when neither names it
+    the row has a number but no counterparty, and the pull says so.
+    """
+    from app.core.invoice_identity import canonical_invoice_id
+
     tutar = _attr(item, "gross_total", "net_total", "total_in_currency", "amount")
     tarih = _attr(item, "issue_date", "issued_date", "date")
     try:
@@ -165,9 +193,16 @@ def islem_from_fatura(item: dict[str, Any], tip: str) -> dict[str, Any] | None:
         return None
     no = _attr(item, "invoice_no", "invoice_number", "invoice_id")
     aciklama = _attr(item, "description") or ("Satış faturası" if tip == "income" else "Gider faturası")
+    vade = _attr(item, "due_date", "payment_date")
+    cari = _attr(item, "contact_name", "customer_name", "supplier_name") or (kisiler or {}).get(
+        _contact_id(item) or ""
+    )
     return {
         "date": str(tarih)[:10], "amount_cents": kurus, "type": tip,
         "description": f"{aciklama}{f' #{no}' if no else ''}"[:500], "source_id": str(item.get("id") or ""),
+        "document_id": canonical_invoice_id(None, str(no)) if no else None,
+        "counterparty": str(cari) if cari else None,
+        "due_date": str(vade)[:10] if vade else None,
     }
 
 
@@ -343,11 +378,14 @@ class ParasutConnector:
                 sayfa = 1
                 while sayfa <= 200:
                     resp = await self._get(f"{PARASUT_API_BASE}/{company_id}/{yol}", token,
-                                           {"sort": "-issue_date", "page[size]": 25, "page[number]": sayfa})
+                                           {"sort": "-issue_date", "page[size]": 25, "page[number]": sayfa,
+                                            "include": "contact"})
                     if resp.status_code >= 400:
                         raise ValueError(f"Paraşüt {yol} isteği başarısız ({resp.status_code}).")
-                    data = resp.json().get("data") or []
-                    okunan = [t for t in (islem_from_fatura(d, tip) for d in data if isinstance(d, dict)) if t]
+                    body = resp.json()
+                    data = body.get("data") or []
+                    kisiler = kisiler_from_included(body)
+                    okunan = [t for t in (islem_from_fatura(d, tip, kisiler) for d in data if isinstance(d, dict)) if t]
                     islemler += [t for t in okunan if t["date"] >= ilk]
                     if len(data) < 25 or any(t["date"] < ilk for t in okunan):
                         break
@@ -377,7 +415,11 @@ class ParasutConnector:
 
 def islemler_ozeti(islemler: list[dict[str, Any]]) -> str:
     """A fingerprint of a pull: the same invoices give the same value."""
-    kanonik = sorted((t["date"], t["type"], t["amount_cents"], t.get("source_id", "")) for t in islemler)
+    kanonik = sorted(
+        (t["date"], t["type"], t["amount_cents"], t.get("source_id", ""), t.get("document_id") or "",
+         t.get("counterparty") or "", t.get("due_date") or "")
+        for t in islemler
+    )
     return hashlib.sha256(json.dumps(kanonik).encode()).hexdigest()
 
 
@@ -406,5 +448,12 @@ async def parasut_al(db: Any, integration: Any, sahip: Any, http: httpx.AsyncCli
         cfg["son_ozet"], cfg["son_is"] = ozet, out["job_id"]
         _config_yaz(integration, cfg)
         await db.commit()
-    return {"durum": "analiz_baslatildi", "sync_count": len(islemler), "job_id": out.get("job_id"),
-            "dosyalar": out.get("dosyalar", [])}
+    karsi_tarafsiz = sum(1 for t in islemler if t.get("document_id") and not t.get("counterparty"))
+    sonuc = {"durum": "analiz_baslatildi", "sync_count": len(islemler), "job_id": out.get("job_id"),
+             "dosyalar": out.get("dosyalar", [])}
+    if karsi_tarafsiz:
+        sonuc["uyari"] = (
+            f"{karsi_tarafsiz} faturanın müşteri/tedarikçi adı okunamadı; bu faturalar açık kalem olarak "
+            "izlenemez ve banka tahsilatıyla çift sayılabilir."
+        )
+    return sonuc

@@ -24,12 +24,14 @@ class GroundedChatPack:
     semantic_values: dict[str, Any]
     evidence_bundle: EvidenceBundle | None = None
     grounding_flags: list[str] | None = None
+    evidence_ledger_count: int = 0
 
     def to_meta(self) -> dict[str, Any]:
         return {
             "evidence_found": self.evidence_found,
             "evidence_tx_count": self.evidence_tx_count,
             "evidence_semantic_count": self.evidence_semantic_count,
+            "evidence_ledger_count": self.evidence_ledger_count,
             "evidence_retriever_version": self.retriever_version,
         }
 
@@ -70,6 +72,8 @@ async def prepare_grounded_chat(
     semantic_sources = [
         c for c in evidence_bundle.citations if c.source_type == "semantic_snapshot"
     ]
+
+    ledger_sources = [c for c in evidence_bundle.citations if c.source_type == "ledger_row"]
 
     if not evidence_found:
         if locale.lower().startswith("tr"):
@@ -118,6 +122,7 @@ async def prepare_grounded_chat(
         evidence_found=evidence_found,
         evidence_tx_count=len(tx_sources),
         evidence_semantic_count=len(semantic_sources),
+        evidence_ledger_count=len(ledger_sources),
         retriever_version=evidence_bundle.retriever_version,
         semantic_values=semantic_values,
         evidence_bundle=evidence_bundle,

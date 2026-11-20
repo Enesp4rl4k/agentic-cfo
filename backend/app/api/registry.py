@@ -47,6 +47,7 @@ _ROUTERS = [
     ("app.api.demo",                "router", "demo"),
     ("app.api.org",                 "router", "org"),
     ("app.api.pilot",               "router", "pilot"),
+    ("app.api.monday_briefing",     "router", "briefing"),  # Pazartesi Bülteni
     ("app.api.context",             "router", "context"),
     ("app.api.semantic",            "router", "semantic"),
     ("app.api.notifications",       "router", "notifications"),
@@ -91,6 +92,7 @@ _ROUTERS = [
     ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
     ("app.api.data_freshness",          "router", "data-freshness"),                # Org-level "as of" — shared with packet + OKR
     ("app.api.ledger",                  "router", "ledger"),                        # Plan v9 K1: company ledger
+    ("app.api.plan_changes",            "router", "plan-changes"),                  # Payment plan changes: propose, a senior executive decides
     ("app.api.decisions",               "router", "decisions"),                     # Karar Defteri: record → expected → outcome
     ("app.api.macro",                   "router", "macro"),                         # TCMB EVDS & Macro Stress Testing
     ("app.api.triggers",                "router", "triggers"),                      # Tetikleyici Motoru CRUD + audit (P4-4)

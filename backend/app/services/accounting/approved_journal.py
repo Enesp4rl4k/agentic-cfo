@@ -41,13 +41,53 @@ def _durum(onay: Any) -> str:
     return str(getattr(onay, "durum", None) or "")
 
 
+def onay_indeksi(onaylar: Iterable[Any]) -> dict[str, list[Any]]:
+    """Every decision row, grouped by the entry it is about."""
+    out: dict[str, list[Any]] = {}
+    for o in onaylar:
+        out.setdefault(str(o.kayit_id), []).append(o)
+    return out
+
+
+def _zaman(onay: Any) -> Any:
+    from datetime import UTC, datetime
+
+    for attr in ("onay_zamani", "updated_at", "created_at"):
+        value = getattr(onay, attr, None)
+        if value is not None:
+            return value if value.tzinfo else value.replace(tzinfo=UTC)
+    return datetime.min.replace(tzinfo=UTC)
+
+
+def gecerli_onay(satirlar: Iterable[Any], entry: dict[str, Any]) -> Any | None:
+    """The decision that applies to `entry` now, if any.
+
+    Entry ids are stable across re-runs, so one entry can collect several rows
+    over time. A decision was made about the account the agent proposed then
+    (`otomatik_hesap_kodu`); if this run proposes a different account, that
+    decision is about something else and does not carry over: the entry goes
+    back to the accountant. Among the rows that do apply, a decision beats a
+    pending row and the latest decision wins.
+    """
+    oneri = entry.get("thp_hesap_kodu")
+    uygun = [
+        o for o in satirlar
+        if not getattr(o, "otomatik_hesap_kodu", None) or not oneri
+        or str(o.otomatik_hesap_kodu) == str(oneri)
+    ]
+    if not uygun:
+        return None
+    karar = [o for o in uygun if _durum(o) != OnayDurumu.BEKLIYOR.value]
+    return max(karar or uygun, key=_zaman)
+
+
 def uygula(entries: Iterable[dict[str, Any]], onaylar: Iterable[Any]) -> ApprovedJournal:
     """Apply the accountant's decisions to the proposed entries.
 
     `onaylar` are `SMMMOnayKaydi`-shaped (kayit_id, durum, otomatik_hesap_kodu,
     duzeltilmis_hesap_kodu, duzeltilmis_hesap_adi). Input is not mutated.
     """
-    by_kayit = {str(o.kayit_id): o for o in onaylar}
+    by_kayit = onay_indeksi(onaylar)
     out = ApprovedJournal()
     for raw in entries:
         entry = deepcopy(raw)
@@ -55,7 +95,7 @@ def uygula(entries: Iterable[dict[str, Any]], onaylar: Iterable[Any]) -> Approve
         if not entry.get("onay_gerekli"):
             out.entries.append(entry)
             continue
-        onay = by_kayit.get(kayit_id)
+        onay = gecerli_onay(by_kayit.get(kayit_id, []), entry)
         durum = _durum(onay) if onay is not None else OnayDurumu.BEKLIYOR.value
         if durum == OnayDurumu.ONAYLANDI.value:
             out.entries.append(entry)

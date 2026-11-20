@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import can_access, load_owned_job, owned_job
+from app.api.access import NOT_FOUND, can_access, ensure_tenant, load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
@@ -63,7 +63,17 @@ class TopluOnayRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
+async def _require_authority(db: AsyncSession, user: User, kayit: SMMMOnayKaydi) -> None:
+    """403 unless the user's role may decide this entry (services/approval_authority)."""
+    from app.services.approval_authority import check
+
+    v = await check(db, user, kayit)
+    if not v.allowed:
+        raise HTTPException(status_code=403, detail=v.reason)
+
+
+def _kayit_to_dict(k: SMMMOnayKaydi, v: Any = None) -> dict[str, Any]:
+    """`v` is the caller's `approval_authority.Verdict` for this row, if known."""
     return {
         "id":                    k.id,
         "job_id":                k.job_id,
@@ -89,10 +99,53 @@ def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
         "onay_notu":             k.onay_notu,
         "created_at":            k.created_at.isoformat(),
         "updated_at":            k.updated_at.isoformat(),
+        # Whether the *caller's* role may decide this entry, and if not why —
+        # the same rule the routes enforce, so the page does not copy it.
+        "karar_verebilir":       None if v is None else v.allowed,
+        "karar_engeli":          (v.reason or None) if v is not None else None,
     }
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/smmm/kurallar")
+async def ogrenilmis_kurallar(
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Ajanın bu şirketin muhasebecisinden öğrendikleri ve hangisinin yürürlükte olduğu."""
+    from app.services.accounting.ogrenilmis_kural import satirlari_listele
+
+    org_id = str(current_user.org_id) if current_user.org_id else None
+    return {"data": {"kurallar": await satirlari_listele(db, org_id)}, "error": None}
+
+
+@router.delete("/smmm/kurallar/{kural_id}")
+async def ogrenilmis_kural_sil(
+    kural_id:     str,
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Öğrenilmiş bir kuralı geri al. Kayıt karar verebilen bir rol gerektirir.
+
+    Başka şirketin kuralı, olmayan bir kuralla aynı 404'ü verir.
+    """
+    from app.models.smmm_hesap_kurali import SMMMHesapKurali
+    from app.services.approval_authority import karar_verebilir_rol
+
+    kural = await db.get(SMMMHesapKurali, kural_id)
+    if kural is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    ensure_tenant(current_user, org_id=kural.org_id)
+    if not karar_verebilir_rol(str(current_user.role)):
+        raise HTTPException(status_code=403, detail="Bu rol öğrenilmiş kuralı silemez.")
+    await db.delete(kural)
+    await db.commit()
+    # The id came from the URL: no CR/LF into the log line (log injection).
+    temiz_id = str(kural_id).replace("\r", "").replace("\n", "")
+    logger.info("Öğrenilmiş kural silindi: id=%s user=%s", temiz_id, _user_id(current_user))
+    return {"data": {"silindi": True, "id": kural_id}, "error": None}
+
 
 @router.get("/smmm/onay/queue")
 async def get_onay_queue(
@@ -131,13 +184,20 @@ async def get_onay_queue(
     result = await db.execute(query.limit(limit).offset(offset))
     kayitlar = result.scalars().all()
 
+    from app.services.approval_authority import org_has_smmm, verdict
+
+    has_smmm = await org_has_smmm(db, str(org_id) if org_id else None)
+
+    def _verdict_for(k: SMMMOnayKaydi) -> Any:
+        return verdict(str(current_user.role), (k.orijinal_kayit or {}).get("authority"), has_smmm)
+
     return {
         "data": {
             "total":   total,
             "limit":   limit,
             "offset":  offset,
             "durum":   durum,
-            "kayitlar": [_kayit_to_dict(k) for k in kayitlar],
+            "kayitlar": [_kayit_to_dict(k, _verdict_for(k)) for k in kayitlar],
         },
         "error": None,
     }
@@ -186,6 +246,7 @@ async def onayla(
     await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await _require_authority(db, current_user, kayit)
 
     kayit.durum            = OnayDurumu.ONAYLANDI
     kayit.onaylayan_user_id = _user_id(current_user)
@@ -215,6 +276,7 @@ async def duzeltle(
     await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await _require_authority(db, current_user, kayit)
 
     kayit.durum                  = OnayDurumu.DUZELTILDI
     kayit.onaylayan_user_id      = _user_id(current_user)
@@ -223,6 +285,17 @@ async def duzeltle(
     kayit.duzeltilmis_hesap_adi  = req.hesap_adi
     kayit.duzeltme_aciklama      = req.aciklama
     kayit.updated_at             = datetime.now(UTC)
+
+    # What was corrected is remembered for this organisation (two consistent
+    # corrections make a rule; see services/accounting/ogrenilmis_kural). Only this
+    # route teaches: a bulk approval is not a judgement on each account.
+    if kayit.org_id:
+        from app.services.accounting.ogrenilmis_kural import ogren
+
+        await ogren(
+            db, str(kayit.org_id), kayit.tx_description,
+            (kayit.orijinal_kayit or {}).get("vendor"), req.hesap_kodu, req.hesap_adi,
+        )
 
     await db.commit()
     logger.info(
@@ -249,6 +322,7 @@ async def reddet(
     await load_owned_job(db, kayit.job_id, current_user)
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await _require_authority(db, current_user, kayit)
 
     kayit.durum            = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = _user_id(current_user)
@@ -297,6 +371,15 @@ async def toplu_onayla(
         and can_access(current_user, org_id=jobs[k.job_id].org_id, user_id=jobs[k.job_id].user_id)
     ]
 
+    from app.services.approval_authority import check
+
+    allowed = []
+    for kayit in kayitlar:
+        if (await check(db, current_user, kayit)).allowed:
+            allowed.append(kayit)
+    yetkisiz = len(kayitlar) - len(allowed)
+    kayitlar = allowed
+
     now = datetime.now(UTC)
     approved_ids = []
     for kayit in kayitlar:
@@ -321,6 +404,9 @@ async def toplu_onayla(
             "onaylandi_ids":   approved_ids,
             "requested":       len(req.kayit_idler),
             "skipped":         len(req.kayit_idler) - len(approved_ids),
+            # Of the skipped, how many this role may not decide (the policy
+            # reserves them for the owner or the accountant).
+            "yetkisiz":        yetkisiz,
         },
         "error": None,
     }

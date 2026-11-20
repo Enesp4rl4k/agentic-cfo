@@ -283,7 +283,6 @@ async def test_another_organisation_gets_404_for_reads_and_writes(client) -> Non
         ("GET", f"/api/v1/smmm/onay/queue/{ids['job']}", None),
         ("POST", f"/api/v1/smmm/onay/{ids['onay']}/onayla", {}),
         ("POST", f"/api/v1/smmm/onay/{ids['onay']}/reddet", {"neden": "x"}),
-        ("POST", f"/api/v1/muhasebe/onayla/{ids['onay']}", {}),
         ("POST", f"/api/v1/stream/{ids['job']}/ticket", None),
         ("POST", "/api/v1/query", {"query": "nakit", "job_id": ids["job"]}),
     ]
