@@ -36,7 +36,6 @@ if TYPE_CHECKING:
 from app.api.access import load_owned_job, owned_job
 from app.core.http_headers import content_disposition
 from app.models.report import Report, ReportFormat
-from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
 from app.models.user import User
 
@@ -56,45 +55,13 @@ from app.services.accounting.journal_store import (
 from app.services.accounting.journal_store import (
     persist_tr_vertical_result,
 )
-
-
-async def _kurum_kurallari(db: AsyncSession, org_id: str | None) -> dict[str, Any]:
-    """What this organisation's accountant has corrected before (a suggestion, not a verdict)."""
-    from app.services.accounting.ogrenilmis_kural import kurallari_yukle
-
-    return dict(await kurallari_yukle(db, org_id))
-
-
-async def _guven_gecmisi(db: AsyncSession, org_id: str | None) -> dict[str, tuple[int, int]]:
-    """How often this organisation's SMMM agreed with each evidence level.
-
-    Approved means the account was right, corrected means it was wrong. Read
-    from the decisions already recorded; nothing is stored twice.
-    """
-    from app.services.accounting.guven import gecmisten_olc
-
-    if not org_id:
-        return {}
-    rows = (
-        await db.execute(
-            select(SMMMOnayKaydi.orijinal_kayit, SMMMOnayKaydi.durum)
-            .where(
-                SMMMOnayKaydi.org_id == org_id,
-                SMMMOnayKaydi.durum.in_([OnayDurumu.ONAYLANDI, OnayDurumu.DUZELTILDI]),
-            )
-            .order_by(desc(SMMMOnayKaydi.updated_at))
-            .limit(5000)
-        )
-    ).all()
-    return gecmisten_olc([
-        (
-            ((kayit or {}).get("guven") or {}).get("seviye"),
-            str(durum),
-            (kayit or {}).get("karar_turu") == "toplu",
-        )
-        for kayit, durum in rows
-    ])
-
+from app.services.accounting.org_context import (
+    guven_gecmisi as _guven_gecmisi,
+)
+from app.services.accounting.org_context import (
+    kurum_kurallari as _kurum_kurallari,
+)
+from app.services.accounting.org_context import yukle as org_context_yukle
 
 # ── Pydantic şemaları ─────────────────────────────────────────────────────────
 
@@ -291,6 +258,7 @@ async def muhasebe_tr_vertical(
             period=body.donem,
             company_name=body.company_name,
             authority_rules=authority_rules,
+            **await org_context_yukle(db, str(job.org_id) if job.org_id else None),
         )
         _run.node(result.stage)
         if any(e for e in result.errors):
