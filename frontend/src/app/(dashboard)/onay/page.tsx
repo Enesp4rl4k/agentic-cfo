@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
@@ -16,11 +17,13 @@ import {
   type LedgerRow,
   type ProposedSettlement,
 } from "@/lib/api/ledger";
+import { decidePlanChange, listPlanChanges, withdrawPlanChange } from "@/lib/api/planChanges";
 
 const SETTLEMENTS_KEY = ["ledger-settlements"];
 const DUPLICATES_KEY = ["ledger-duplicates"];
 const SUMMARY_KEY = ["ledger-summary"];
 const RADAR_KEY = ["cash-radar"];
+const PLAN_KEY = ["plan-changes", "pending"];
 
 const day = (iso: string) => iso.slice(0, 10);
 
@@ -37,13 +40,17 @@ export default function OnayPage() {
   const fmt = useCurrencyFormat();
   const queryClient = useQueryClient();
   const [actionFailed, setActionFailed] = useState(false);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const { data: session } = useSession();
+  const me = session?.user?.id ?? null;
 
   const settlements = useQuery({ queryKey: SETTLEMENTS_KEY, queryFn: getProposedSettlements });
   const duplicates = useQuery({ queryKey: DUPLICATES_KEY, queryFn: getPossibleDuplicates });
+  const plans = useQuery({ queryKey: PLAN_KEY, queryFn: () => listPlanChanges("pending") });
 
   const refreshed = () => {
     setActionFailed(false);
-    for (const key of [SETTLEMENTS_KEY, DUPLICATES_KEY, SUMMARY_KEY, RADAR_KEY]) {
+    for (const key of [SETTLEMENTS_KEY, DUPLICATES_KEY, SUMMARY_KEY, RADAR_KEY, PLAN_KEY]) {
       queryClient.invalidateQueries({ queryKey: key });
     }
   };
@@ -58,12 +65,25 @@ export default function OnayPage() {
     onError: () => setActionFailed(true),
   });
 
-  const loading = settlements.isLoading || duplicates.isLoading;
-  const failed = settlements.isError || duplicates.isError;
+  const planDecision = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "approve" | "reject" }) => decidePlanChange(id, action, reasons[id]),
+    onSuccess: refreshed,
+    onError: () => setActionFailed(true),
+  });
+  const planWithdraw = useMutation({
+    mutationFn: (id: string) => withdrawPlanChange(id),
+    onSuccess: refreshed,
+    onError: () => setActionFailed(true),
+  });
+
+  const loading = settlements.isLoading || duplicates.isLoading || plans.isLoading;
+  const failed = settlements.isError || duplicates.isError || plans.isError;
   const settlementRows: ProposedSettlement[] = settlements.data ?? [];
   const duplicateRows: LedgerRow[] = duplicates.data ?? [];
-  const nothing = !loading && !failed && settlementRows.length === 0 && duplicateRows.length === 0;
-  const waiting = settlementRows.length + duplicateRows.length;
+  const planRows = plans.data?.changes ?? [];
+  const canDecide = Boolean(plans.data?.canDecide);
+  const nothing = !loading && !failed && settlementRows.length === 0 && duplicateRows.length === 0 && planRows.length === 0;
+  const waiting = settlementRows.length + duplicateRows.length + planRows.length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-8">
@@ -171,6 +191,71 @@ export default function OnayPage() {
                       {ledger.exclude}
                     </Button>
                   </div>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {planRows.length > 0 && (
+        <section aria-label={copy.planTitle} className="space-y-3">
+          <h2 className="tc-display m-0 text-[26px] leading-[1.1]">{copy.planTitle}</h2>
+          <p className="m-0 text-sm text-muted-foreground">{copy.planHint}</p>
+          <ul className="space-y-3">
+            {planRows.map((change) => (
+              <li key={change.id}>
+                <Card className="space-y-3 p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">{change.counterparty ?? change.description ?? copy.noCounterparty}</p>
+                    <p className="tc-mono text-sm text-muted-foreground">
+                      {change.amount_cents !== null ? `${fmt(change.amount_cents / 100)} · ` : ""}
+                      {copy.planMove.replace("{from}", change.from_date).replace("{to}", change.to_date)}
+                    </p>
+                    {change.request_note && (
+                      <p className="m-0 text-xs text-muted-foreground">{copy.planBy.replace("{note}", change.request_note)}</p>
+                    )}
+                  </div>
+                  {canDecide ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        aria-label={copy.planReason}
+                        placeholder={copy.planReason}
+                        value={reasons[change.id] ?? ""}
+                        onChange={(e) => setReasons((r) => ({ ...r, [change.id]: e.target.value }))}
+                        className="min-h-[44px] min-w-[200px] flex-1 rounded-md border border-border bg-card px-3 text-sm"
+                      />
+                      <Button
+                        className="min-h-[44px]"
+                        disabled={planDecision.isPending}
+                        onClick={() => planDecision.mutate({ id: change.id, action: "approve" })}
+                      >
+                        {copy.planApprove}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="min-h-[44px]"
+                        disabled={planDecision.isPending}
+                        onClick={() => planDecision.mutate({ id: change.id, action: "reject" })}
+                      >
+                        {copy.planReject}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="m-0 text-sm text-muted-foreground">{copy.planWaiting}</p>
+                      {me !== null && change.requested_by === me && (
+                        <Button
+                          variant="outline"
+                          className="min-h-[44px]"
+                          disabled={planWithdraw.isPending}
+                          onClick={() => planWithdraw.mutate(change.id)}
+                        >
+                          {copy.planWithdraw}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </Card>
               </li>
             ))}

@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { planChangeSpies } from "./dashboard-mocks";
 
 const getProposedSettlements = vi.fn();
 const getPossibleDuplicates = vi.fn();
@@ -23,23 +24,12 @@ vi.mock("@/lib/api/ledger", () => ({
   resolveDuplicate: (...a: unknown[]) => resolveDuplicate(...a),
 }));
 
-vi.mock("@/hooks/useOrgSettings", () => ({
-  useOrgSettings: () => ({
-    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
-    loading: false,
-    error: null,
-    refresh: () => {},
-    hasTrPack: true,
-    focusMode: false,
-    baseCurrency: "TRY",
-    locale: "tr-TR",
-  }),
-}));
+vi.mock("@/lib/api/planChanges", async () => (await import("./dashboard-mocks")).planChangesModule);
+const { listPlanChanges, decidePlanChange, withdrawPlanChange, proposePlanChange } = planChangeSpies;
 
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) =>
-    React.createElement("a", { href, ...rest }, children),
-}));
+vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
+
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
 import OnayPage from "@/app/(dashboard)/onay/page";
 
@@ -69,6 +59,8 @@ function show() {
 
 beforeEach(() => {
   for (const fn of [getProposedSettlements, getPossibleDuplicates, resolveSettlement, resolveDuplicate]) fn.mockReset();
+  listPlanChanges.mockReset();
+  listPlanChanges.mockResolvedValue({ changes: [], canDecide: false });
   resolveSettlement.mockResolvedValue(undefined);
   resolveDuplicate.mockResolvedValue(undefined);
 });
@@ -138,5 +130,42 @@ describe("Onay bekleyenler", () => {
     show();
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     expect(loop.querySelector("[aria-current='page']")?.textContent).toContain("DECIDE");
+  });
+});
+
+describe("Onay bekleyenler: payment plan change proposals", () => {
+  const proposal = {
+    id: "c1", open_item_id: "p1", counterparty: "Ana Tedarikçi", description: null, amount_cents: 120_000_00,
+    from_date: "2026-12-01", to_date: "2026-12-29", status: "pending", requested_by: "1",
+    requested_at: "2026-11-20T10:00:00Z", request_note: "tedarikçi anlaştı", decided_by: null, decided_at: null, decision_note: null,
+  };
+
+  it("lets an owner or admin approve or reject, with an optional reason", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({ changes: [proposal], canDecide: true });
+    decidePlanChange.mockResolvedValue({});
+    const user = userEvent.setup();
+    show();
+    expect(await screen.findByText(/2026-12-01 → 2026-12-29/)).toBeInTheDocument();
+    expect(screen.getByText(/tedarikçi anlaştı/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Gerekçe (isteğe bağlı)"), "kredi vadesi");
+    await user.click(screen.getByRole("button", { name: "Reddet" }));
+    await waitFor(() => expect(decidePlanChange).toHaveBeenCalledWith("c1", "reject", "kredi vadesi"));
+    await user.click(screen.getByRole("button", { name: "Onayla" }));
+    await waitFor(() => expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve", "kredi vadesi"));
+  });
+
+  it("shows anyone else that the decision belongs to an owner or admin, and lets the proposer withdraw", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({ changes: [proposal], canDecide: false });
+    withdrawPlanChange.mockResolvedValue({});
+    const user = userEvent.setup();
+    show();
+    expect(await screen.findByText(/sahip ya da yönetici onaylayabilir/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Geri çek" }));
+    await waitFor(() => expect(withdrawPlanChange).toHaveBeenCalledWith("c1"));
   });
 });

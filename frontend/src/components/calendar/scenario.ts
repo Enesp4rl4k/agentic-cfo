@@ -18,11 +18,19 @@ export interface PayableRef {
   week: number;
   amountCents: number;
   name: string | null;
+  /** The date the radar expects the payment on today (ISO). */
+  expectedDate: string;
 }
 
 export function payables(radar: CashRadar): PayableRef[] {
   return radar.weeks.flatMap((w) =>
-    w.payables.map((p) => ({ id: p.id, week: w.week, amountCents: p.amount_cents, name: p.counterparty ?? p.description })),
+    w.payables.map((p) => ({
+      id: p.id,
+      week: w.week,
+      amountCents: p.amount_cents,
+      name: p.counterparty ?? p.description,
+      expectedDate: p.expected_date,
+    })),
   );
 }
 
@@ -55,4 +63,11 @@ export function runScenario(radar: CashRadar, moves: Moves): Scenario | null {
     return adjusted;
   });
   return { base, scenario, lowBase: Math.min(...base), lowScenario: Math.min(...scenario) };
+}
+
+/** `iso` (YYYY-MM-DD) moved by whole weeks, in UTC so a daylight-saving change cannot shift the day. */
+export function shiftDate(iso: string, weeks: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const moved = new Date(Date.UTC(y, m - 1, d + weeks * 7));
+  return moved.toISOString().slice(0, 10);
 }

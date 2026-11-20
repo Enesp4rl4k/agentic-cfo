@@ -168,6 +168,13 @@ export type MessageTree = {
     dragHint: string;
     toRoute: string;
     failed: string;
+    send: string;
+    apply: string;
+    sent: string;
+    applied: string;
+    sendNote: string;
+    sendFailed: string;
+    toDate: string;
   };
   onay: {
     title: string;
@@ -180,6 +187,15 @@ export type MessageTree = {
     noCounterparty: string;
     duplicateHint: string;
     actionFailed: string;
+    planTitle: string;
+    planHint: string;
+    planMove: string;
+    planBy: string;
+    planApprove: string;
+    planReject: string;
+    planWithdraw: string;
+    planReason: string;
+    planWaiting: string;
   };
   ooda: {
     label: string;
@@ -2639,6 +2655,13 @@ export const en: MessageTree = {
     dragHint: "Drag a payment to another week, or shift it one week with the buttons.",
     toRoute: "Back to the cash route",
     failed: "The payment calendar could not be read.",
+    send: "Send for approval",
+    apply: "Change the plan",
+    sent: "The proposal was sent for approval. Until it is approved the route uses the old date.",
+    applied: "The payment plan was changed.",
+    sendNote: "Reason (optional)",
+    sendFailed: "The proposal could not be sent.",
+    toDate: "New date: {date}",
   },
   onay: {
     title: "Pending approvals",
@@ -2651,6 +2674,15 @@ export const en: MessageTree = {
     noCounterparty: "No counterparty",
     duplicateHint: "This record looks like one uploaded earlier. If it is the same payment it stays out of the totals.",
     actionFailed: "Your decision could not be saved. Try again.",
+    planTitle: "Payment plan change proposals",
+    planHint: "A payment date changes only if an owner or an admin approves. Until then the route is calculated with the old date.",
+    planMove: "{from} → {to}",
+    planBy: "Proposer's note: {note}",
+    planApprove: "Approve",
+    planReject: "Reject",
+    planWithdraw: "Withdraw",
+    planReason: "Reason (optional)",
+    planWaiting: "Awaiting a decision: an owner or an admin can approve.",
   },
   ooda: {
     label: "Weekly loop",

@@ -1,39 +1,42 @@
 # Payment plan changes need a senior executive's approval
 
-Decision (owner, 2026-11-20): nobody changes another person's payment plan alone. Moving a payable's
-date needs approval from a senior executive ("üst yönetici").
-
-Today `/takvim` is a scenario only: moves live in the page, nothing is written. This note is the design
-for making a moved payment real under that rule. It is **not built yet**.
+Decision (owner, 2026-11-20): nobody changes a payment plan alone. Moving a payable's date needs
+approval from a senior executive, and the senior executives are **the owner and the people assigned
+the admin role**.
 
 ## The rule
 
-- Any member of the organisation may **propose** a date change for a payable.
-- Only the organisation's **owner or an admin** may **approve** it. The proposer never approves their
-  own proposal, even when they hold the role (a second person signs).
+- A member with write access (owner, admin, CFO, analyst) may **propose** a new date for a payable.
+  A viewer may not.
+- Only an **owner or an admin** may **decide**. An owner or admin who proposes holds that authority
+  themselves, so they may decide their own proposal: a company with one owner would otherwise never be
+  able to move a payment. Everyone else's proposal waits for someone with the role.
 - Until it is approved nothing changes: the radar, the base forecast and the reports keep the date the
-  documents gave. A rejected proposal changes nothing and keeps its reason.
-- Every proposal, approval and rejection is written with who, when and why. No silent change.
+  documents gave. A rejected or withdrawn proposal changes nothing and keeps its reason.
+- Only the person who proposed may withdraw, and only while it waits. A decision is made once.
+- One open proposal per payment. Only payables with a due date and money still owed can be moved,
+  to a date from today to one year ahead. Receivables are never moved: their date is not ours to set.
+- Every proposal and decision is the row itself: who, when, for which date, and why.
 
-## Shape
+## What is built (backend, `app/api/plan_changes.py`, `app/services/payment_plan.py`)
 
-- Model `PaymentPlanChange`: `id` (UUID), `org_id`, `open_item_id`, `from_date`, `to_date`,
-  `requested_by`, `requested_at`, `status` (`pending | approved | rejected | withdrawn`), `decided_by`,
-  `decided_at`, `reason`. Dates are UTC; no amount is stored, the open item holds it.
-- Alembic migration for the table (CLAUDE.md rule 7). It adds a table, drops nothing.
-- Approval applies the new date to the open item as an *override* beside the document's own due date,
-  so the original stays visible and a rejection or withdrawal restores it.
-- Endpoints under `/ledger/plan-changes` (propose, list, approve, reject, withdraw), every one scoped to
-  the caller's organisation through `app/api/access.py`; approve and reject check the role and that the
-  approver is not the proposer. Test the role matrix route by route.
-- UI: `/takvim` gets "Onaya gönder" per moved payment; the owner or admin sees the proposals as a third
-  list in `/onay` (the same screen as match approvals), with the old and the new date and the radar's
-  lowest cash before and after.
+- Table `payment_plan_changes` (migration 053): organisation, open item, from and to date, status,
+  requester and time and note, decider and time and note. No amount is stored; the open item holds it.
+- An approved change tells the radar when the payment is expected (`RadarItem.expected_date`, with
+  `rescheduled: true`); the document's own `due_date` on the open item is never overwritten.
+- `POST /ledger/plan-changes`, `GET /ledger/plan-changes?status=`, `POST …/{id}/approve | reject |
+  withdraw`. Every route is scoped to the caller's organisation: another organisation's proposal is a
+  404. `tests/test_payment_plan_changes.py` walks the role matrix and the organisation boundary.
+
+## What is built (frontend)
+
+- `/takvim`: a payment moved in the scenario becomes "Onaya gönder"; for an owner or admin the same
+  button is "Planı değiştir" (propose and approve in one step). The server's own refusal sentence is
+  shown as it is.
+- `/onay`: a third list, the proposals waiting. An owner or admin approves or rejects with an optional
+  reason; anyone else sees that the decision belongs to an owner or admin, and the proposer may
+  withdraw.
 
 ## Needs a human review (CLAUDE.md DISPATCH)
 
-The role check is access logic under `backend/app/api/`. It must be reviewed by a person before it ships.
-
-## Open question
-
-Which roles count as "üst yönetici": owner only, or owner and admin?
+The role checks are access logic under `backend/app/`. A person must review them before they ship.
