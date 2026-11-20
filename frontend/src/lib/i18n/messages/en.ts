@@ -307,6 +307,14 @@ export type MessageTree = {
     redirecting: string;
     managePortal: string;
   };
+  smmmCalendar: {
+    title: string;
+    subtitle: string;
+    unverified: string;
+    empty: string;
+    noHistory: string;
+    loadError: string;
+  };
   learnedRules: {
     title: string;
     subtitle: string;
@@ -2552,6 +2560,14 @@ export const en: MessageTree = {
     selectPlan: "Select plan",
     redirecting: "Redirecting…",
     managePortal: "Manage subscription",
+  },
+  smmmCalendar: {
+    title: "Upcoming deadlines",
+    subtitle: "Statutory deadlines of every client for the next 45 days, nearest first. An amount appears only when that client has paid the tax from its bank before.",
+    unverified: "Dates are computed from the statutory day rules, which have not yet been checked against the official GİB/SGK text. Official holidays are not taken into account.",
+    empty: "No deadlines in the next 45 days, or no clients yet.",
+    noHistory: "No past payment",
+    loadError: "The deadlines could not be loaded.",
   },
   learnedRules: {
     title: "What the agent learned from you",
