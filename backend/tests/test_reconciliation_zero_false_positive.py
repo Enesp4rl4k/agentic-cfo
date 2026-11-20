@@ -17,15 +17,11 @@ from typing import Any
 import pytest_asyncio
 from sqlalchemy import select
 
-from app.core.dates import parse_transaction_date
-from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item_match import OpenItemMatch
-from app.models.transaction import Transaction
-from app.services.ledger import append_job
 from app.services.reconciliation import CONFIRMED, PROPOSED, reconcile_org
 from tests.api_helpers import bellek_istemcisi, kullanici
-from tests.fixtures.stress_corpus import generate_stress_corpus
+from tests.fixtures.stress_corpus import generate_stress_corpus, ingest_rows
 
 
 @pytest_asyncio.fixture
@@ -37,36 +33,7 @@ async def client():
 async def _upload(
     client, org_id: str, rows: list[dict[str, Any]], filename: str = "stress.csv"
 ) -> dict[str, int]:
-    async with client._maker() as db:
-        job = AnalysisJob(
-            filename=filename,
-            file_path=f"/{filename}",
-            file_type="csv",
-            org_id=org_id,
-            status=JobStatus.COMPLETED,
-        )
-        db.add(job)
-        await db.flush()
-        for r in rows:
-            when, estimated = parse_transaction_date(r["transaction_date"])
-            db.add(
-                Transaction(
-                    job_id=job.id,
-                    amount_kurus=r["amount_cents"],
-                    currency=r.get("currency", "TRY"),
-                    type=r["type"],
-                    category=r["category"],
-                    description=r.get("description"),
-                    transaction_date=when,
-                    date_is_estimated=estimated,
-                    document_id=r.get("document_id"),
-                    due_date=r.get("due_date"),
-                    counterparty=r.get("counterparty"),
-                    account_code=r.get("account_code"),
-                )
-            )
-        await db.commit()
-        return await append_job(db, job.id)
+    return await ingest_rows(client, org_id, rows, filename=filename)
 
 
 async def test_zero_false_positive_reconciliation_on_stress_corpus(client):
