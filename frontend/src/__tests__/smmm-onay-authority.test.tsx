@@ -32,7 +32,7 @@ import SMMMonayPage from "@/app/(dashboard)/smmm-onay/page";
 
 const row = (id: string, over: Record<string, unknown> = {}) => ({
   id, job_id: "j1", kayit_id: id, durum: "bekliyor",
-  tx_description: `islem ${id}`, tx_amount_try: 100, tx_tarih: "2026-01-05T00:00:00Z",
+  tx_description: `islem ${id}`, tx_amount_kurus: 10_000, tx_tarih: "2026-01-05T00:00:00Z",
   otomatik_hesap_kodu: "770", otomatik_confidence: 0.5, otomatik_yontem: "kural",
   onay_neden: null, duzeltilmis_hesap_kodu: null, duzeltilmis_hesap_adi: null,
   onaylayan_user_id: null, onay_zamani: null, onay_notu: null, orijinal_kayit: null,

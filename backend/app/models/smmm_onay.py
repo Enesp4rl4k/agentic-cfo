@@ -20,7 +20,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -91,6 +91,9 @@ class SMMMOnayKaydi(Base):
 
     # İşlem bilgileri (hızlı görüntüleme için)
     tx_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Kuruş, like every amount (migration 058). `tx_amount_try` is the old lira
+    # column: still written for the shadow period, read by nothing, dropped later.
+    tx_amount_kurus: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     tx_amount_try: Mapped[float | None] = mapped_column(Numeric(15, 2), nullable=True)
     tx_tarih: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

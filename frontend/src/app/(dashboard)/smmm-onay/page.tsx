@@ -25,7 +25,8 @@ interface OnayKaydi {
   kayit_id:                string;
   durum:                   "bekliyor" | "onaylandi" | "duzeltildi" | "reddedildi";
   tx_description:          string | null;
-  tx_amount_try:           number | null;
+  /** Kuruş, like every amount. */
+  tx_amount_kurus:         number | null;
   tx_tarih:                string | null;
   otomatik_hesap_kodu:     string | null;
   otomatik_confidence:     number | null;
@@ -79,10 +80,10 @@ function DurumBadge({ durum, status }: { durum: string; status: Record<string, s
   );
 }
 
-/** `tx_amount_try` arrives in lira (backend divides kuruş by 100). */
-function fmtAmount(v: number | null, fmt: (value: number) => string): string {
-  if (v === null) return "—";
-  return fmt(v);
+/** `tx_amount_kurus` is kuruş; `fmt` takes lira. A zero is shown, not hidden. */
+function fmtAmount(kurus: number | null, fmt: (value: number) => string): string {
+  if (kurus === null) return "—";
+  return fmt(kurus / 100);
 }
 
 function fmtDate(d: string | null, dateTag: string): string {
@@ -142,7 +143,7 @@ function DuzelModal({
         <h3 className="font-semibold">{d.title}</h3>
         <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2">
           <p className="truncate">{kayit.tx_description ?? "—"}</p>
-          <p className="font-mono mt-0.5">{fmtAmount(kayit.tx_amount_try, fmt)}</p>
+          <p className="font-mono mt-0.5">{fmtAmount(kayit.tx_amount_kurus, fmt)}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1">
@@ -296,7 +297,7 @@ function OnayCard({
             </div>
 
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <span className="font-mono font-semibold text-foreground">{fmtAmount(kayit.tx_amount_try, fmt)}</span>
+              <span className="font-mono font-semibold text-foreground">{fmtAmount(kayit.tx_amount_kurus, fmt)}</span>
               <span>{fmtDate(kayit.tx_tarih, dateTag)}</span>
               {kayit.otomatik_hesap_kodu && (
                 <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
