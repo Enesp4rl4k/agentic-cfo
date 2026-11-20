@@ -11,41 +11,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { planChangeSpies } from "./dashboard-mocks";
 import { clampWeek, payables, runScenario } from "@/components/calendar/scenario";
 import type { CashRadar } from "@/lib/api/ledger";
 
 const getCashRadar = vi.fn();
 vi.mock("@/lib/api/ledger", () => ({ getCashRadar: (...a: unknown[]) => getCashRadar(...a) }));
 
-const listPlanChanges = vi.fn();
-const decidePlanChange = vi.fn();
-const withdrawPlanChange = vi.fn();
-const proposePlanChange = vi.fn();
-vi.mock("@/lib/api/planChanges", () => ({
-  listPlanChanges: (...a: unknown[]) => listPlanChanges(...a),
-  decidePlanChange: (...a: unknown[]) => decidePlanChange(...a),
-  withdrawPlanChange: (...a: unknown[]) => withdrawPlanChange(...a),
-  proposePlanChange: (...a: unknown[]) => proposePlanChange(...a),
-  planChangeError: (e: unknown) => (e as { detail?: string })?.detail ?? null,
-}));
+vi.mock("@/lib/api/planChanges", async () => (await import("./dashboard-mocks")).planChangesModule);
+const { listPlanChanges, decidePlanChange, withdrawPlanChange, proposePlanChange } = planChangeSpies;
 
-vi.mock("@/hooks/useOrgSettings", () => ({
-  useOrgSettings: () => ({
-    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
-    loading: false,
-    error: null,
-    refresh: () => {},
-    hasTrPack: true,
-    focusMode: false,
-    baseCurrency: "TRY",
-    locale: "tr-TR",
-  }),
-}));
+vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) =>
-    React.createElement("a", { href, ...rest }, children),
-}));
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
 import TakvimPage from "@/app/(dashboard)/takvim/page";
 
@@ -180,14 +158,19 @@ describe("Ödeme takvimi", () => {
   });
 });
 
+/** Move Ana Tedarikçi's payment a week later, then press the page's send button (its name differs by role). */
+async function moveAndSend(user: ReturnType<typeof userEvent.setup>, sendLabel: string) {
+  await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+  await user.click(await screen.findByRole("button", { name: `Ana Tedarikçi: ${sendLabel}` }));
+}
+
 describe("Ödeme takvimi: from scenario to a proposal", () => {
   it("sends a moved payment for approval with the date a whole number of weeks later", async () => {
     getCashRadar.mockResolvedValue(radar());
     proposePlanChange.mockResolvedValue({ id: "c1" });
     const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
-    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" }));
+    await moveAndSend(user, "Onaya gönder");
     // the radar expects the payment on 2026-12-01; one week later
     expect(proposePlanChange).toHaveBeenCalledWith("p1", "2026-12-08");
     expect(decidePlanChange).not.toHaveBeenCalled();
@@ -201,8 +184,7 @@ describe("Ödeme takvimi: from scenario to a proposal", () => {
     decidePlanChange.mockResolvedValue({ id: "c1" });
     const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
-    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Planı değiştir" }));
+    await moveAndSend(user, "Planı değiştir");
     expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve");
     expect(await screen.findByText("Ödeme planı değişti.")).toBeInTheDocument();
   });
@@ -212,8 +194,7 @@ describe("Ödeme takvimi: from scenario to a proposal", () => {
     proposePlanChange.mockRejectedValue({ detail: "Bu ödeme için karar bekleyen bir öneri zaten var." });
     const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
-    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" }));
+    await moveAndSend(user, "Onaya gönder");
     expect(await screen.findByText("Bu ödeme için karar bekleyen bir öneri zaten var.")).toBeInTheDocument();
   });
 });
