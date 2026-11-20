@@ -71,10 +71,12 @@ async def enqueue_review(
 ) -> int:
     """Write the review records for entries policy reserved for a human.
 
-    A re-run of the pipeline produces a new journal with new entry ids, so the
-    rows still waiting from the previous run point at entries that no longer
-    exist. They are replaced, not left to pile up as duplicates in the queue.
-    Decided rows (approved / corrected / rejected) are history and stay.
+    Entry ids are stable across re-runs (`double_entry.kararli_kayit_id`). Rows
+    still waiting from the previous run are replaced, not left to pile up.
+    Decided rows (approved / corrected / rejected) are history and stay; an
+    entry whose decision still applies — same entry, same proposed account —
+    is not queued again. One whose proposed account changed is: the old
+    decision was about a different classification.
     """
     if "tr" not in packs:
         return 0
@@ -84,8 +86,17 @@ async def enqueue_review(
             SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
         )
     )
+    from app.services.accounting.approved_journal import gecerli_onay, onay_indeksi
+
+    kararlar = onay_indeksi(
+        (
+            await db.execute(select(SMMMOnayKaydi).where(SMMMOnayKaydi.job_id == job_id))
+        ).scalars().all()
+    )
     added = 0
     for onay_item in items:
+        if gecerli_onay(kararlar.get(str(onay_item["kayit_id"]), []), onay_item) is not None:
+            continue
         db.add(
             SMMMOnayKaydi(
                 job_id=job_id,
