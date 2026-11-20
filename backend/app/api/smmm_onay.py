@@ -109,6 +109,65 @@ def _kayit_to_dict(k: SMMMOnayKaydi, v: Any = None) -> dict[str, Any]:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+class DonemKilitRequest(BaseModel):
+    donem: str = Field(..., description="Kapatılacak dönem, YYYY-AA (ör. 2026-01)")
+
+
+@router.get("/smmm/donem-kilitleri")
+async def donem_kilitleri(
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Bu şirketin kapatılmış dönemleri, en yeniden."""
+    from app.models.donem_kilidi import DonemKilidi
+
+    if not current_user.org_id:
+        return {"data": {"donemler": []}, "error": None}
+    rows = (
+        await db.execute(
+            select(DonemKilidi)
+            .where(DonemKilidi.org_id == str(current_user.org_id))
+            .order_by(DonemKilidi.donem.desc())
+        )
+    ).scalars().all()
+    return {
+        "data": {"donemler": [
+            {"donem": r.donem, "kilitleyen_user_id": r.kilitleyen_user_id,
+             "kilitlendi": r.created_at.isoformat() if r.created_at else None}
+            for r in rows
+        ]},
+        "error": None,
+    }
+
+
+@router.post("/smmm/donem-kilitleri")
+async def donem_kapat(
+    req:          DonemKilitRequest,
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Dönemi kapat: o ayın defter satırları bundan sonra değişmez.
+
+    O aya ait sonradan gelen bir kayıt, ilk açık aya düzeltme olarak yazılır ve hangi
+    kapalı döneme ait olduğu saklanır. Karar verebilen bir rol gerektirir.
+    """
+    from app.services.approval_authority import karar_verebilir_rol
+    from app.services.donem_kilidi import DonemHatasi, kilitle
+
+    if not karar_verebilir_rol(str(current_user.role)):
+        raise HTTPException(status_code=403, detail="Bu rol dönem kapatamaz.")
+    if not current_user.org_id:
+        raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
+    try:
+        kilit = await kilitle(db, str(current_user.org_id), req.donem, _user_id(current_user))
+    except DonemHatasi as exc:
+        kod = 409 if "zaten" in str(exc) else 422
+        raise HTTPException(status_code=kod, detail=str(exc)) from exc
+    await db.commit()
+    return {"data": {"donem": kilit.donem, "kilitleyen_user_id": kilit.kilitleyen_user_id},
+            "error": None}
+
+
 @router.get("/smmm/kurallar")
 async def ogrenilmis_kurallar(
     current_user: User = Depends(get_current_user),

@@ -46,7 +46,7 @@ function serve(kayitlar: unknown[]) {
   get.mockImplementation((url: string) =>
     Promise.resolve({
       data: {
-        data: url.includes("/stats") ? stats : url.includes("/kurallar") ? { kurallar: [] } : { kayitlar },
+        data: url.includes("/stats") ? stats : url.includes("/kurallar") ? { kurallar: [] } : url.includes("/donem-kilitleri") ? { donemler: [] } : { kayitlar },
       },
     }),
   );
