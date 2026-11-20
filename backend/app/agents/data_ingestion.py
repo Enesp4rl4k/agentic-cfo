@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.core import tdhp
 from app.core.turkish import fold
 from app.parsers.base import ParsedStatement
+from app.parsers.invoice import TurkishInvoiceParser
 from app.parsers.registry import ParserRegistry
 
 logger = logging.getLogger(__name__)
@@ -1066,7 +1067,14 @@ async def _belgeyi_al(
                 "job=%s — using bank parser: %s",
                 state.get("job_id"), detected_bank.bank_display_name,
             )
-            statement: ParsedStatement = await asyncio.to_thread(detected_bank().parse, raw_text, file_path)
+            parser = detected_bank()
+            if issubclass(detected_bank, TurkishInvoiceParser):
+                # A PDF/OCR invoice is read against this organisation's own VKN, as the
+                # UBL path is, not the deployment's one.
+                from app.services.org_identity import own_vkn as org_vkn
+
+                parser = detected_bank(own_vkn=await org_vkn(state.get("org_id")))
+            statement: ParsedStatement = await asyncio.to_thread(parser.parse, raw_text, file_path)
             transactions = _statement_to_transactions(statement)
 
             if transactions:
