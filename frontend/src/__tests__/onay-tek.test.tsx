@@ -7,28 +7,14 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const getProposedSettlements = vi.fn();
-const getPossibleDuplicates = vi.fn();
-const resolveSettlement = vi.fn();
-const resolveDuplicate = vi.fn();
-vi.mock("@/lib/api/ledger", () => ({
-  getProposedSettlements: (...a: unknown[]) => getProposedSettlements(...a),
-  getPossibleDuplicates: (...a: unknown[]) => getPossibleDuplicates(...a),
-  resolveSettlement: (...a: unknown[]) => resolveSettlement(...a),
-  resolveDuplicate: (...a: unknown[]) => resolveDuplicate(...a),
-}));
+vi.mock("@/lib/api/ledger", async () => (await import("./dashboard-mocks")).ledgerModule);
+const { getProposedSettlements, getPossibleDuplicates, resolveSettlement, resolveDuplicate } = ledgerSpies;
 
-const listPlanChanges = vi.fn();
-const decidePlanChange = vi.fn();
-vi.mock("@/lib/api/planChanges", () => ({
-  listPlanChanges: (...a: unknown[]) => listPlanChanges(...a),
-  decidePlanChange: (...a: unknown[]) => decidePlanChange(...a),
-  withdrawPlanChange: vi.fn(),
-}));
+vi.mock("@/lib/api/planChanges", async () => (await import("./dashboard-mocks")).planChangesModule);
+const { listPlanChanges, decidePlanChange } = planChangeSpies;
 
 let tekParam: string | null = null;
 vi.mock("next/navigation", () => ({
@@ -37,32 +23,13 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/onay",
 }));
 
-vi.mock("@/hooks/useOrgSettings", () => ({
-  useOrgSettings: () => ({
-    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
-    loading: false,
-    error: null,
-    refresh: () => {},
-    hasTrPack: true,
-    focusMode: false,
-    baseCurrency: "TRY",
-    locale: "tr-TR",
-  }),
-}));
+vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) =>
-    React.createElement("a", { href, ...rest }, children),
-}));
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
 import OnayPage from "@/app/(dashboard)/onay/page";
+import { ledgerSpies, planChangeSpies, renderWithQuery, settlementFixture as settlement } from "./dashboard-mocks";
 
-const settlement = {
-  id: "m1",
-  amount_cents: 42_800_00,
-  row: { id: "r1", transaction_date: "2026-11-12T00:00:00", amount_cents: 42_800_00, direction: "in", description: "Gelen havale 4410" },
-  item: { counterparty: "Yıldız Tekstil", description: "Fatura A", amount_cents: 42_800_00, due_date: "2026-11-10" },
-};
 const duplicate = { id: "d1", transaction_date: "2026-11-02T00:00:00", amount_cents: 18_600_00, direction: "out", description: "Kira Kasım" };
 const proposal = {
   id: "c1", open_item_id: "p1", counterparty: "Ana Tedarikçi", description: null, amount_cents: 120_000_00,
@@ -70,14 +37,7 @@ const proposal = {
   requested_at: "2026-11-20T10:00:00Z", request_note: null, decided_by: null, decided_at: null, decision_note: null,
 };
 
-function show() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <OnayPage />
-    </QueryClientProvider>,
-  );
-}
+const show = () => renderWithQuery(<OnayPage />);
 
 // Braces: a function returned from beforeEach is run as its teardown.
 beforeEach(() => {

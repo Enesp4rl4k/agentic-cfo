@@ -9,20 +9,10 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { planChangeSpies } from "./dashboard-mocks";
+import { ledgerSpies, planChangeSpies, renderWithQuery, settlementFixture as settlement } from "./dashboard-mocks";
 
-const getProposedSettlements = vi.fn();
-const getPossibleDuplicates = vi.fn();
-const resolveSettlement = vi.fn();
-const resolveDuplicate = vi.fn();
-
-vi.mock("@/lib/api/ledger", () => ({
-  getProposedSettlements: (...a: unknown[]) => getProposedSettlements(...a),
-  getPossibleDuplicates: (...a: unknown[]) => getPossibleDuplicates(...a),
-  resolveSettlement: (...a: unknown[]) => resolveSettlement(...a),
-  resolveDuplicate: (...a: unknown[]) => resolveDuplicate(...a),
-}));
+vi.mock("@/lib/api/ledger", async () => (await import("./dashboard-mocks")).ledgerModule);
+const { getProposedSettlements, getPossibleDuplicates, resolveSettlement, resolveDuplicate } = ledgerSpies;
 
 vi.mock("@/lib/api/planChanges", async () => (await import("./dashboard-mocks")).planChangesModule);
 const { listPlanChanges, decidePlanChange, withdrawPlanChange, proposePlanChange } = planChangeSpies;
@@ -33,12 +23,6 @@ vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkMod
 
 import OnayPage from "@/app/(dashboard)/onay/page";
 
-const settlement = {
-  id: "m1",
-  amount_cents: 42_800_00,
-  row: { id: "r1", transaction_date: "2026-11-12T00:00:00", amount_cents: 42_800_00, direction: "in", description: "Gelen havale 4410" },
-  item: { counterparty: "Yıldız Tekstil", description: "Fatura A", amount_cents: 42_800_00, due_date: "2026-11-10" },
-};
 const duplicate = {
   id: "d1",
   transaction_date: "2026-11-02T00:00:00",
@@ -48,14 +32,7 @@ const duplicate = {
   matches: [{ id: "x", transaction_date: "2026-11-01", amount_cents: 18_600_00, direction: "out", description: "Kira Kasım (ekstre)" }],
 };
 
-function show() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <OnayPage />
-    </QueryClientProvider>,
-  );
-}
+const show = () => renderWithQuery(<OnayPage />);
 
 beforeEach(() => {
   for (const fn of [getProposedSettlements, getPossibleDuplicates, resolveSettlement, resolveDuplicate]) fn.mockReset();
