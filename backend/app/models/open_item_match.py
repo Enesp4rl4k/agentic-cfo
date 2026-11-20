@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Date, DateTime, Index, Integer, String
+from sqlalchemy import BigInteger, Date, DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -29,7 +29,7 @@ class OpenItemMatch(Base):
     org_id: Mapped[str] = mapped_column(String(36), nullable=False)
     open_item_id: Mapped[str] = mapped_column(String(36), nullable=False)
     ledger_row_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     method: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)    # confirmed | proposed | rejected
     matched_on: Mapped[date] = mapped_column(Date, nullable=False)     # the day the money moved

@@ -31,6 +31,8 @@ from app.models.llm_call_log import LLMCallLog
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
+from app.models.outbox_message import OutboxMessage
+from app.models.payment_plan_change import PaymentPlanChange
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.proactive_alert import ProactiveAlert
 from app.models.rag_chunk import RagChunk
@@ -84,6 +86,8 @@ __all__ = [
     "OpenItem",
     "OpenItemMatch",
     "Organization",
+    "OutboxMessage",
+    "PaymentPlanChange",
     "PilotInvite",
     "ProactiveAlert",
     "RagChunk",

@@ -229,7 +229,9 @@ async def _dispatch_monday_briefings() -> None:
     from app.database import engine, get_session_factory
     from app.models.in_app_notification import InAppNotification
     from app.models.organization import Organization
+    from app.services.briefing_delivery import enqueue_briefing_emails
     from app.services.monday_briefing import assemble_monday_briefing
+    from app.services.outbox import deliver_pending
 
     logger.info("Scheduler: starting Monday morning briefing dispatch")
     async with get_session_factory(engine())() as db:
@@ -239,6 +241,8 @@ async def _dispatch_monday_briefings() -> None:
                 briefing = await assemble_monday_briefing(db, org.id)
                 if not briefing.has_data:
                     continue  # nothing known about this company: no briefing, no invented calm
+                # E-mail goes through the outbox: once per recipient, held for an accountant.
+                await enqueue_briefing_emails(db, org.id, briefing)
                 # Redis cache
                 try:
                     from app.worker import get_arq_pool
@@ -267,7 +271,19 @@ async def _dispatch_monday_briefings() -> None:
                 logger.warning("Failed to generate Monday briefing for org %s: %s", org.id, err)
 
         await db.commit()
+        await deliver_pending(db)
+        await db.commit()
     logger.info("Scheduler: Monday morning briefing dispatch completed")
+
+
+async def _deliver_outbox() -> None:
+    """Plan v11 C9: send what is pending (retries, released messages); record each outcome."""
+    from app.database import engine, get_session_factory
+    from app.services.outbox import deliver_pending
+
+    async with get_session_factory(engine())() as db:
+        await deliver_pending(db)
+        await db.commit()
 
 
 async def _record_radar_forecasts() -> None:
@@ -954,6 +970,15 @@ def get_scheduler() -> AsyncIOScheduler:
         )
 
         # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
+        # C9: every 5 minutes - the outbox sends pending messages and records each outcome.
+        _scheduler.add_job(
+            _exclusive(_deliver_outbox, "outbox_delivery", ttl=240),
+            CronTrigger(minute="*/5"),
+            id="outbox_delivery",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         # O5: daily, before the Monday briefing (07:00) - the forecast log.
         _scheduler.add_job(
             _exclusive(_record_radar_forecasts, "radar_forecast_log"),
