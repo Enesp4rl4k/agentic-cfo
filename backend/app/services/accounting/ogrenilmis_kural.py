@@ -112,6 +112,38 @@ async def ogren(
     return True
 
 
+def _gecerli(lider_sayisi: int, rakip_sayisi: int) -> bool:
+    """Whether a key's leading account is a rule: enough corrections, a clear lead."""
+    return lider_sayisi >= ESIK and lider_sayisi >= USTUNLUK * rakip_sayisi
+
+
+async def satirlari_listele(db: AsyncSession, org_id: str | None) -> list[dict[str, object]]:
+    """Everything learned for the organisation, and whether each is in force.
+
+    For the accountant's screen: a key corrected once is listed too (not yet a
+    rule), and a key with two contrary accounts shows neither in force.
+    """
+    if not org_id:
+        return []
+    satirlar = (
+        await db.execute(select(SMMMHesapKurali).where(SMMMHesapKurali.org_id == str(org_id)))
+    ).scalars().all()
+    by_key: dict[str, list[SMMMHesapKurali]] = {}
+    for s in satirlar:
+        by_key.setdefault(s.anahtar, []).append(s)
+    out: list[dict[str, object]] = []
+    for anahtar, hepsi in sorted(by_key.items()):
+        hepsi.sort(key=lambda s: -s.onay_sayisi)
+        for i, s in enumerate(hepsi):
+            rakip = hepsi[1].onay_sayisi if i == 0 and len(hepsi) > 1 else (hepsi[0].onay_sayisi if i else 0)
+            out.append({
+                "id": s.id, "anahtar": anahtar, "hesap_kodu": s.hesap_kodu,
+                "hesap_adi": s.hesap_adi, "onay_sayisi": s.onay_sayisi,
+                "aktif": i == 0 and _gecerli(s.onay_sayisi, rakip),
+            })
+    return out
+
+
 async def kurallari_yukle(db: AsyncSession, org_id: str | None) -> dict[str, KurumKurali]:
     """The organisation's active rules: key → rule."""
     if not org_id:
@@ -127,7 +159,7 @@ async def kurallari_yukle(db: AsyncSession, org_id: str | None) -> dict[str, Kur
         hepsi.sort(key=lambda s: -s.onay_sayisi)
         lider = hepsi[0]
         rakip = hepsi[1].onay_sayisi if len(hepsi) > 1 else 0
-        if lider.onay_sayisi >= ESIK and lider.onay_sayisi >= USTUNLUK * rakip:
+        if _gecerli(lider.onay_sayisi, rakip):
             out[anahtar] = KurumKurali(anahtar, lider.hesap_kodu, lider.hesap_adi, lider.onay_sayisi)
     return out
 

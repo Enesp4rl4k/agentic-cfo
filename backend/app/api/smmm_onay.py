@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import can_access, load_owned_job, owned_job
+from app.api.access import NOT_FOUND, can_access, ensure_tenant, load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
@@ -107,6 +107,45 @@ def _kayit_to_dict(k: SMMMOnayKaydi, v: Any = None) -> dict[str, Any]:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/smmm/kurallar")
+async def ogrenilmis_kurallar(
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Ajanın bu şirketin muhasebecisinden öğrendikleri ve hangisinin yürürlükte olduğu."""
+    from app.services.accounting.ogrenilmis_kural import satirlari_listele
+
+    org_id = str(current_user.org_id) if current_user.org_id else None
+    return {"data": {"kurallar": await satirlari_listele(db, org_id)}, "error": None}
+
+
+@router.delete("/smmm/kurallar/{kural_id}")
+async def ogrenilmis_kural_sil(
+    kural_id:     str,
+    current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Öğrenilmiş bir kuralı geri al. Kayıt karar verebilen bir rol gerektirir.
+
+    Başka şirketin kuralı, olmayan bir kuralla aynı 404'ü verir.
+    """
+    from app.models.smmm_hesap_kurali import SMMMHesapKurali
+    from app.services.approval_authority import karar_verebilir_rol
+
+    kural = await db.get(SMMMHesapKurali, kural_id)
+    if kural is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    ensure_tenant(current_user, org_id=kural.org_id)
+    if not karar_verebilir_rol(str(current_user.role)):
+        raise HTTPException(status_code=403, detail="Bu rol öğrenilmiş kuralı silemez.")
+    await db.delete(kural)
+    await db.commit()
+    # The id came from the URL: no CR/LF into the log line (log injection).
+    temiz_id = str(kural_id).replace("\r", "").replace("\n", "")
+    logger.info("Öğrenilmiş kural silindi: id=%s user=%s", temiz_id, _user_id(current_user))
+    return {"data": {"silindi": True, "id": kural_id}, "error": None}
+
 
 @router.get("/smmm/onay/queue")
 async def get_onay_queue(

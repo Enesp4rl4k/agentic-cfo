@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
+import { OgrenilmisKurallar } from "@/components/smmm/OgrenilmisKurallar";
 import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 
@@ -577,6 +578,8 @@ export default function SMMMonayPage() {
           ))}
         </div>
       )}
+
+      <OgrenilmisKurallar />
     </main>
   );
 }
