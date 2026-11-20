@@ -150,10 +150,15 @@ landing components and the login atlas were deleted.
 eyebrow, Cormorant title) and Onay and Raporlar close with the loop strip. The product name defaults
 to Tiphys in the frontend; the tagline and metadata say what the product does.
 
+**Onay is `/onay`.** The loop's third step is the ledger's pending approvals (a bank movement that may
+close an invoice, a record that looks already uploaded), built on the existing ledger API; it had no
+screen of its own, only a card inside the Command Center. The accountant's queue (`/smmm-onay`) is a
+different thing, stays in the Portal group and is not a step of the loop. The Nakit Radarı opens with
+the Monday answer as one sentence, drawn from the real radar and silent without a proven balance.
+
 **Still to do.**
-- The artboards' deeper layouts for Onay (match cards with the two candidate invoices side by side),
-  Raporlar (sealed PDF preview and archive) and Ayarlar; they wear the brand but keep their old
-  composition. The Monday answer screen and a payment calendar (a new feature with its own backend,
+- The artboards' deeper layouts for Raporlar (sealed PDF preview and archive) and Ayarlar; they wear
+  the brand but keep their old composition. A payment calendar (a new feature with its own backend,
   not a restyle).
 - The backend default `brand_name` is still "C-Suite" (`backend/app/config.py`): it prints in PDFs and
   in the e-Defter software name sent to GİB, so changing it is an owner decision with its tests.

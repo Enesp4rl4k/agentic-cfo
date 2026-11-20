@@ -47,7 +47,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/baglan",            label: "Belgeler",         icon: Link2 },
       { href: "/nakit-radari",      label: "Nakit rotası",     icon: Waves },
-      { href: "/smmm-onay",         label: "Onay bekleyenler", icon: FileCheck, trPack: true },
+      { href: "/onay",              label: "Onay bekleyenler", icon: FileCheck },
       { href: "/reports",           label: "Raporlar",         icon: FileText },
       { href: "/settings/workspace", label: "Ayarlar",         icon: Building2 },
     ],
@@ -122,6 +122,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/tr-vertical", label: "TR Autopilot (L3)",        icon: Zap, trPack: true },
       { href: "/smmm",        label: "Turkey accounting review", icon: Users, trPack: true },
+      { href: "/smmm-onay",   label: "SMMM approvals",           icon: FileCheck, trPack: true },
       { href: "/billing",     label: "Billing",                  icon: CreditCard },
       { href: "/settings/alerts", label: "Alerts",               icon: Zap },
       { href: "/pilot",       label: "Pilot Program",  icon: Users },

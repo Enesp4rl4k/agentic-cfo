@@ -21,6 +21,7 @@ import { ConsolidatedRadarView } from "@/components/consolidation/ConsolidatedRa
 import { getConsolidatedRadar } from "@/lib/api/consolidation";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
+import { RadarAnswer } from "@/components/radar/RadarAnswer";
 import { WeekDetail } from "@/components/radar/WeekDetail";
 
 const RADAR_KEY = ["cash-radar"];
@@ -417,6 +418,7 @@ export default function NakitRadariPage() {
 
         {viewMode === "individual" && radar && (
           <>
+            {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} />}
             <MondayBriefingSection copy={copy} />
             <StartingCash radar={radar} copy={copy} fmt={fmt} />
             {isEmpty(radar) ? (

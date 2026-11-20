@@ -187,7 +187,7 @@ describe("Verilerimi Bağla", () => {
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     expect(loop.querySelector("[aria-current='page']")?.textContent).toContain("OBSERVE");
     expect(within(loop).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
-      "/nakit-radari", "/smmm-onay", "/reports",
+      "/nakit-radari", "/onay", "/reports",
     ]);
   });
 });

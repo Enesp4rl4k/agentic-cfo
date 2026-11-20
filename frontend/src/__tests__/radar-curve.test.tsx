@@ -187,7 +187,37 @@ describe("Nakit Radarı: the branded route", () => {
     show();
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     const links = within(loop).getAllByRole("link");
-    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/baglan", "/smmm-onay", "/reports"]);
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/baglan", "/onay", "/reports"]);
     expect(loop.querySelector("[aria-current='page']")?.textContent).toContain("ORIENT");
+  });
+});
+
+describe("Nakit Radarı: the Monday answer in one sentence", () => {
+  const weeks = [week(1, 100_000), week(2, 40_000), week(3, -70_000, { outflow_cents: 1 }), week(4, -10_000)];
+
+  it("says where the route goes negative and how low it gets", async () => {
+    getCashRadar.mockResolvedValue(
+      radar(weeks, {
+        shortfall: { week: 3, week_start: "2026-12-03", week_end: "2026-12-09", shortfall_cents: 70_000 * 100, driver: "x", actions: [] },
+      }),
+    );
+    show();
+    const sentence = await screen.findByText(/Kasan 3\. haftada eksiye düşüyor/);
+    expect(sentence.textContent).toContain("2026-12-03 – 2026-12-09");
+    expect(sentence.textContent).toMatch(/En düşük nokta .*70\.000/);
+  });
+
+  it("says the route stays above zero only when a balance was proven", async () => {
+    getCashRadar.mockResolvedValue(radar([week(1, 100_000, { inflow_cents: 1 }), week(2, 120_000)]));
+    show();
+    expect(await screen.findByText("Önümüzdeki haftalarda kasan eksiye düşmüyor.")).toBeTruthy();
+  });
+
+  it("claims nothing without a starting balance", async () => {
+    const moving = weeks.map((w) => ({ ...w, outflow_cents: 1_00 }));
+    getCashRadar.mockResolvedValue(radar(moving, { starting_cash_cents: null, starting_cash_as_of: null }));
+    show();
+    await screen.findByText("En düşük birikmiş hareket");
+    expect(screen.queryByText(/eksiye düşüyor|eksiye düşmüyor/)).toBeNull();
   });
 });

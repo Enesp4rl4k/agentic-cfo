@@ -15,7 +15,7 @@ export const FOCUS_HREFS: ReadonlySet<string> = new Set([
   "/cashflow",
   "/settings/workspace",
   // The weekly loop closes with approval and the report (DESIGN.md: Observe, Orient, Decide, Act).
-  "/smmm-onay",
+  "/onay",
   "/reports",
 ]);
 

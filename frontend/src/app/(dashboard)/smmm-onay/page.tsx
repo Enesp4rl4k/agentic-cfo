@@ -10,7 +10,6 @@ import {
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { PageHead } from "@/components/brand-app/PageHead";
-import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
@@ -428,7 +427,6 @@ export default function SMMMonayPage() {
     <main className="mx-auto max-w-screen-xl space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <PageHead
-        step={2}
         title={st.title}
         subtitle={st.subtitle}
         aside={
@@ -544,7 +542,6 @@ export default function SMMMonayPage() {
           ))}
         </div>
       )}
-      <OodaFooter current={2} />
     </main>
   );
 }

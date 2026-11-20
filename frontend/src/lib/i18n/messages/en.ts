@@ -146,7 +146,21 @@ export type MessageTree = {
     weekDetailLate: string;
     weekPick: string;
     openSources: string;
+    answerGap: string;
+    answerClear: string;
     roadmapNote: string;
+  };
+  onay: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    failed: string;
+    movement: string;
+    candidate: string;
+    dueOn: string;
+    noCounterparty: string;
+    duplicateHint: string;
+    actionFailed: string;
   };
   ooda: {
     label: string;
@@ -2466,7 +2480,21 @@ export const en: MessageTree = {
     weekDetailLate: "overdue",
     weekPick: "Show week {week}",
     openSources: "Open the source documents",
+    answerGap: "Your cash goes negative in week {week} ({start} – {end}). The lowest point is {amount}.",
+    answerClear: "Your cash does not go negative in the weeks ahead.",
     roadmapNote: "The route is always computed from the latest uploaded documents.",
+  },
+  onay: {
+    title: "Pending approvals",
+    subtitle: "The system does not guess an item it is unsure of; it leaves the choice to you. Until you approve, that item stays out of the route.",
+    empty: "No match or possible duplicate is waiting for your decision right now.",
+    failed: "Pending approvals could not be read.",
+    movement: "Bank movement",
+    candidate: "Invoice it may close",
+    dueOn: "due {date}",
+    noCounterparty: "No counterparty",
+    duplicateHint: "This record looks like one uploaded earlier. If it is the same payment it stays out of the totals.",
+    actionFailed: "Your decision could not be saved. Try again.",
   },
   ooda: {
     label: "Weekly loop",
@@ -2475,7 +2503,7 @@ export const en: MessageTree = {
     steps: [
       { letter: "I", verb: "OBSERVE", title: "Documents", href: "/baglan" },
       { letter: "II", verb: "ORIENT", title: "Cash route", href: "/nakit-radari" },
-      { letter: "III", verb: "DECIDE", title: "Pending approvals", href: "/smmm-onay" },
+      { letter: "III", verb: "DECIDE", title: "Pending approvals", href: "/onay" },
       { letter: "IV", verb: "ACT", title: "Reports", href: "/reports" },
     ],
   },
