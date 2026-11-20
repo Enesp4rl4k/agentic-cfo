@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Index, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -26,6 +26,9 @@ class OpenItemMatch(Base):
         # One record per bank row and invoice: a second pass cannot add the
         # same payment again (migration 057).
         UniqueConstraint("ledger_row_id", "open_item_id", name="uq_open_item_matches_row_item"),
+        # Migration 059.
+        CheckConstraint("status IN ('confirmed', 'proposed', 'rejected')", name="ck_open_item_matches_status"),
+        CheckConstraint("amount_cents > 0", name="ck_open_item_matches_amount"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
