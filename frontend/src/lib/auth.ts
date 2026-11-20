@@ -8,6 +8,7 @@
  */
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { freshToken } from "@/lib/authRefresh";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -99,25 +100,30 @@ export const authOptions: NextAuthOptions = {
      */
     async jwt({ token, user }) {
       if (user) {
-        token.userId      = user.id;
-        token.role        = (user as any).role;
-        token.orgId       = (user as any).orgId;
-        token.accessToken = (user as any).accessToken;
-        token.refreshToken = (user as any).refreshToken;
+        token.userId       = user.id;
+        token.role         = user.role;
+        token.orgId        = user.orgId;
+        token.accessToken  = user.accessToken;
+        token.refreshToken = user.refreshToken;
+        return token;
       }
-      return token;
+      // Every getSession() passes here: trade the refresh token for a new
+      // access token shortly before the 30-minute one expires.
+      return freshToken(token, { apiBase: API_BASE });
     },
 
     /**
      * Expose needed fields to the client via useSession().
      */
     async session({ session, token }) {
-      const s = session as any;
-      s.user = s.user ?? {};
-      s.user.id           = token.userId;
-      s.user.role         = token.role;
-      s.user.orgId        = token.orgId ?? null;
-      s.accessToken       = token.accessToken;
+      session.user = {
+        ...session.user,
+        id:    token.userId,
+        role:  token.role,
+        orgId: token.orgId ?? null,
+      };
+      session.accessToken = token.accessToken;
+      session.error       = token.error;
       return session;
     },
   },

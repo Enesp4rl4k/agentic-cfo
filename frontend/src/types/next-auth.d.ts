@@ -8,6 +8,8 @@ import "next-auth/jwt";
 declare module "next-auth" {
   interface Session {
     accessToken: string;
+    /** Set when the access token could not be refreshed; the client signs out. */
+    error?: string;
     user: {
       id:     string;
       email:  string;
@@ -36,5 +38,6 @@ declare module "next-auth/jwt" {
     orgId:        string | null;
     accessToken:  string;
     refreshToken: string;
+    error?:       string;
   }
 }
