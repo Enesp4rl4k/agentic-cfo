@@ -404,3 +404,58 @@ Dalga 1 bittiğinde: G1–G4 ve G8 satırları "Kapandı" ve her birinin testi C
 3. KAP ve TCMB dosyaları için indirme izni (§13.3); dosya adı, adres ve boyut gösterilerek.
 4. Sahip kararları (G18, G19, G20): barındırma sağlayıcısı, hukuki gözden geçirme, gerçek veri.
 5. Ufuk 1 bittiğinde iş yol haritası (§12).
+
+## 16. Geliştirme planı: S1–S4 (2026-11-14)
+
+*#31–#45 birleştikten sonra yazıldı. §15'in 1. ve 2. maddeleri büyük ölçüde tamamlandı (G1, G4, G6, G9, G22 kapandı; G2, G7, G15 kısmen kapandı). M0 ve M1'in çoğu master'da. Bu bölüm §15'in yerine geçer.*
+
+### 16.1 Bugün nerede
+
+- **Akış:** belge → defter → Nakit Radarı ekranı ve O4 bülten API'si master'da. **Bültenin ekranı ve e-postası yok**; patron pazartesi cevabını bugün göremiyor.
+- **O5:** tahmin kaydı yok. Dört hafta sonra notlanacak bir tahmin, ancak bugünden yazılmaya başlarsa vardır; bu yüzden S1'in ilk işi.
+- **Ana klasör:** eski bir dalda yüzlerce dosya commit'siz duruyor (çoğu biçimlendirme; bir kısmı master'a başka dallardan girmiş; içinde G24 adaptörleri ve G25 zip kodu var). Yeni iş master'dan açılan ayrı worktree'lerde yapılır; commit'siz koddan yalnız gözden geçirilen parça alınır.
+
+### 16.2 Sprintler (her biri yaklaşık 2 hafta)
+
+Her PR bir O/M aşaması ve G numarası yazar, kırmızı testle başlar, `verify` yeşil olunca birleşir.
+
+**S1: pazartesi cevabı patrona ulaşsın**
+1. **Radar tahmin günlüğü** (O5 temeli): her gün ve radar her açıldığında o günün radarı değişmez olarak yazılır; geçmiş bir güne kurulan radar "sonradan bilgi"dir ve yazılmaz.
+2. **Bülten ekranı ve e-postası** (O4): onaylanmamış hiçbir şey bültene girmez.
+3. **G8** dönem seçimi (varsayılan son 12 ay) ve ekranda dönem etiketi.
+4. **G3** kategori düzeltmesi aynı kimlikli defter satırına ulaşır.
+5. **G16** menü ve radar metinleri Türkçe/i18n.
+6. **G25** zip: ya sınırlarla (uzantı, toplam açılmış boyut, dosya sayısı, her xml `xml_safety`) ya hiç.
+
+**S2: sayıların doğruluğu**
+- **G23** karşı taraf fatura anahtarına girer (göç gerekir).
+- **G7** `DUE_RULES` vade günleri GİB/SGK metnine karşı doğrulanır (indirme izniyle).
+- **G17/G24** Paraşüt sözleşme testi; doğrulanana kadar "doğrulanmadı" ve varsayılan kapalı; `open_banking` kaydedilmez.
+- **M2** mizan ayrıştırıcısı.
+
+**S3: ölçüm**
+- **O5** 4 haftalık tahmin hatasının notlanması ve ekranda gösterimi (S1'in günlüğünden).
+- **G10–G12 (E3)** LLM'li altın küme (uydurma sayı 0), koşu başına maliyet, karar beklenti/sonuç alanları. Model anahtarı gerekir.
+
+**S4: mali müşavir operasyonu**
+- **M3** muhasebe ve CFO tek defterde; mizan ile P&L mutabakatı.
+- **M4** müşteri portföyü, müşteriler arası vergi takvimi, dönem kilidi.
+- **G5** silinmez karar günlüğü.
+
+### 16.3 Sahip kararları (pilotun kritik yolu)
+
+G18 barındırma sağlayıcısı (staging, geri yükleme tatbikatı), G19 KVKK ve hukuki gözden geçirme, G20 pilot şirketler ve gerçek veri (mali müşavir kanalı; M1 hazır), model API anahtarı (S3), GİB/SGK/KAP/TCMB indirme izni (S2, G14). S1 ve S2 bu kararlar olmadan biter; §1'in ölçütü bu kararlar olmadan tutmaz.
+
+### 16.4 S1 ayrıntısı (PR PR)
+
+- **S1.1 tahmin günlüğü:** #47.
+- **S1.2 bülten ekranı** (frontend): `/bulten` sayfası, odak menüsünde Nakit Radarı'nın altında; üç cümle, hafta aralığı, "radara dahil değil" listesi; Yaptım/Ertele/Gerek yok düğmeleri `POST /briefing/monday/respond`'a gider. Verisi olmayan şirkete sahte bir sakinlik değil, ne bağlanacağı yazılır. Test: vitest (sayılar API'deki gibi, düğme doğru isteği atar, `has_data=false` boş durumu).
+- **S1.3 bülten e-postası:** `_dispatch_monday_briefings` e-posta da gönderir; alıcı sahip, kullanıcı ayarıyla kapatılabilir. `briefing_id` gönderim anahtarıdır, aynı bülten iki kez gitmez. SMTP yoksa sessizce atlanmaz, "gönderilmedi" kaydı düşer ve ekranda görünür. Test: sahte SMTP.
+- **S1.4 G8:** `ledger.company_rows` bir dönem alır (varsayılan son verinin ayıyla biten 12 ay); şirket görünümü, P&L ve Command Center dönem etiketini gösterir.
+- **S1.5 G3:** kategori düzeltmesi aynı `source_record_id`'li defter satırını günceller ve görünümü yeniler. S1.4'ten sonra, aynı dosyalara dokunur.
+- **S1.6 G16:** menü, radar ve bülten metinleri `lib/i18n/messages`'a; layout'ta sabit metin kalırsa test düşer.
+- **G25** master'da yok (zip yalnız commit'siz ağaçta); S1'den çıkarıldı, commit'siz kod alınmaz.
+
+Sıra: S1.2 → S1.3 → S1.4 → S1.5; S1.6 paralel. Çıkış ölçütü: örnek bir şirkette belge → radar → `/bulten` → yanıt → e-posta canlıda uçtan uca.
+
+S1 içindeki sahip kararları: müşaviri olan şirkette e-posta müşavir onayını bekler mi (öneri: e-posta bekler, ekran beklemez; SMMM D5), e-posta gönderen sağlayıcı (G18 ile birlikte), G8 varsayılan dönemi (öneri: son 12 ay).
