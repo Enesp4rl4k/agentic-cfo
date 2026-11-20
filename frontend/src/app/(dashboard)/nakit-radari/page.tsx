@@ -11,7 +11,7 @@ import { useOrgSettings } from "@/hooks/useOrgSettings";
 import {
   getCashRadar,
   getMondayBriefing,
-  respondToBriefing,
+  respondToMondayBriefing,
   type CashRadar,
   type RadarWeek,
 } from "@/lib/api/ledger";
@@ -38,7 +38,11 @@ function MondayBriefingSection({ copy }: { copy: Copy }) {
   });
 
   const respondMutation = useMutation({
-    mutationFn: (resp: "done" | "deferred" | "dismissed") => respondToBriefing(resp),
+    // The answer carries the briefing it is about: its week and fingerprint.
+    mutationFn: (resp: "done" | "deferred" | "dismissed") => {
+      if (!briefing) throw new Error("briefing not loaded");
+      return respondToMondayBriefing(resp, briefing.week_start, briefing.fingerprint);
+    },
     onSuccess: (data) => {
       setRecordedDecision(data.chosen_option_label);
     },

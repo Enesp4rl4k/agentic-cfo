@@ -20,7 +20,16 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -44,6 +53,15 @@ class SMMMOnayKaydi(Base):
     Her kayıt bir yevmiye kaydına karşılık gelir.
     SMMM onaylar, düzeltir veya reddeder.
     """
+
+    __table_args__ = (
+        # Migration 059. approved_journal.uygula files only what it recognises;
+        # an unknown state would silently count as pending forever.
+        CheckConstraint(
+            "durum IN ('bekliyor', 'onaylandi', 'duzeltildi', 'reddedildi')",
+            name="ck_smmm_onay_durum",
+        ),
+    )
     __tablename__ = "smmm_onay_kayitlari"
 
     id: Mapped[str] = mapped_column(

@@ -15,10 +15,12 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.api.contract import Envelope
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.email_ingest import EmailIngestAddress
@@ -29,7 +31,40 @@ from app.models.user import User
 router = APIRouter()
 
 
-@router.get("/baslangic")
+class Firma(BaseModel):
+    var: bool
+    ad: str | None
+
+
+class Veri(BaseModel):
+    analiz_sayisi: int
+    parasut_bagli: bool
+
+
+class SonAnaliz(BaseModel):
+    id: str
+    durum: str
+    onay_bekliyor: bool
+    guven: float | None
+    dosya: str
+    hata: str | None
+    olusturma: str | None
+
+
+class Otomatik(BaseModel):
+    eposta: bool
+    parasut_otomatik: bool
+
+
+class Baslangic(BaseModel):
+    firma: Firma
+    veri: Veri
+    son_analiz: SonAnaliz | None
+    tamamlanan_analiz: int
+    otomatik: Otomatik
+
+
+@router.get("/baslangic", response_model=Envelope[Baslangic])
 async def baslangic(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

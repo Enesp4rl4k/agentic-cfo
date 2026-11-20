@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { planChangeSpies } from "./dashboard-mocks";
 
 const getProposedSettlements = vi.fn();
 const getPossibleDuplicates = vi.fn();
@@ -23,35 +24,12 @@ vi.mock("@/lib/api/ledger", () => ({
   resolveDuplicate: (...a: unknown[]) => resolveDuplicate(...a),
 }));
 
-const listPlanChanges = vi.fn();
-const decidePlanChange = vi.fn();
-const withdrawPlanChange = vi.fn();
-const proposePlanChange = vi.fn();
-vi.mock("@/lib/api/planChanges", () => ({
-  listPlanChanges: (...a: unknown[]) => listPlanChanges(...a),
-  decidePlanChange: (...a: unknown[]) => decidePlanChange(...a),
-  withdrawPlanChange: (...a: unknown[]) => withdrawPlanChange(...a),
-  proposePlanChange: (...a: unknown[]) => proposePlanChange(...a),
-  planChangeError: (e: unknown) => (e as { detail?: string })?.detail ?? null,
-}));
+vi.mock("@/lib/api/planChanges", async () => (await import("./dashboard-mocks")).planChangesModule);
+const { listPlanChanges, decidePlanChange, withdrawPlanChange, proposePlanChange } = planChangeSpies;
 
-vi.mock("@/hooks/useOrgSettings", () => ({
-  useOrgSettings: () => ({
-    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
-    loading: false,
-    error: null,
-    refresh: () => {},
-    hasTrPack: true,
-    focusMode: false,
-    baseCurrency: "TRY",
-    locale: "tr-TR",
-  }),
-}));
+vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) =>
-    React.createElement("a", { href, ...rest }, children),
-}));
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
 import OnayPage from "@/app/(dashboard)/onay/page";
 

@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.api.contract import Envelope
 from app.database import get_db
 from app.models.organization import OrgMembership
 from app.models.user import User, UserRole
@@ -28,6 +29,7 @@ from app.services import briefing_delivery, outbox
 from app.services.monday_briefing import (
     BriefingChanged,
     BriefingNeedsAnalysis,
+    MondayBriefing,
     assemble_monday_briefing,
     record_briefing_response,
 )
@@ -53,8 +55,16 @@ class BriefingRespondRequest(BaseModel):
     )
 
 
+class BriefingAnswer(BaseModel):
+    decision_id: str
+    status: str
+    chosen_option_label: str
+    briefing_id: str
+
+
 @router.get(
     "/briefing/monday",
+    response_model=Envelope[MondayBriefing],
     summary="Pazartesi sabah bülteni",
     responses={400: {"description": "Kullanıcının organizasyonu yok veya geçersiz tarih."}},
 )
@@ -78,6 +88,7 @@ async def get_monday_briefing(
 
 @router.post(
     "/briefing/monday/respond",
+    response_model=Envelope[BriefingAnswer],
     summary="Pazartesi bülteni aksiyon yanıtı",
     responses={
         400: {"description": "Kullanıcının organizasyonu yok veya geçersiz tarih."},
