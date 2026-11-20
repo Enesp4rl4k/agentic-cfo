@@ -752,6 +752,55 @@ async def muhasebe_edefter_durum(
 # ekran cagirmiyordu.
 
 
+@router.get("/muhasebe/{job_id}/uzlastirma")
+async def pnl_uzlastirma(
+    job_id: str,
+    job: AnalysisJob = Depends(owned_job),
+    current_user: User = Depends(require_tr_pack),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """CFO K/Z'si ile onaylı yevmiye aynı işlemleri ne kadar tutarlı gösteriyor.
+
+    Kalem kalem bir ölçüm, geçti/kaldı değil: KDV ayrıştırması fark sayılmaz,
+    onaylı yevmiyede olmayan kayıtlar kendi satırında görünür, kalan fark kuruşu
+    kuruşuna yazılır ve farkın olası kaynağı olan (bilanço hesabına yazılmış)
+    kayıtlar yanında listelenir. Hiçbir rakamı değiştirmez, hiçbir şeyi engellemez.
+    """
+    from sqlalchemy import desc
+
+    from app.models.report import Report, ReportFormat, ReportType
+    from app.services.accounting.approved_journal import yukle as onayli_yukle
+    from app.services.accounting.pnl_reconciliation import uzlastir
+    from app.services.smmm_defensibility import DefensibilityError
+
+    # The dashboard by type: the journal is also a JSON report, and is saved later.
+    dash = (
+        await db.execute(
+            select(Report)
+            .where(
+                Report.job_id == job_id,
+                Report.report_type == ReportType.FULL,
+                Report.report_format == ReportFormat.JSON,
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    pnl = ((dash.data if dash is not None else None) or {}).get("pnl")
+    if not pnl:
+        raise HTTPException(status_code=404, detail="Bu iş için K/Z sonucu bulunamadı.")
+    try:
+        journal, onayli = await onayli_yukle(db, job_id)
+    except DefensibilityError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    disarida = [
+        e for e in (journal.get("yevmiye_kayitlari") or [])
+        if str(e.get("kayit_id") or "") in onayli.excluded
+    ]
+    return {"data": {"job_id": job_id, **uzlastir(pnl, onayli.entries, disarida)}, "error": None}
+
+
 @router.get("/muhasebe/mizan/{job_id}")
 async def mizan_ozet(
     job_id: str,
