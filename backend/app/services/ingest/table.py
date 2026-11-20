@@ -44,7 +44,12 @@ def anahtar(baslik: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _metin_coz(veri: bytes) -> str:
+def metin_coz(veri: bytes) -> str:
+    """Text of a file as written: UTF-8 (with or without BOM), else Windows-1254, else Latin-1.
+
+    Turkish bank and ERP exports are very often Windows-1254; every door that reads a
+    CSV or text file as text goes through this one, so they cannot disagree.
+    """
     for enc in ("utf-8-sig", "cp1254"):
         try:
             return veri.decode(enc)
@@ -93,7 +98,7 @@ def satirlari_oku(veri: bytes, uzanti: str) -> list[tuple[str | None, list[list[
         finally:
             wb.close()
     if uzanti in ("csv", "txt"):
-        metin = _metin_coz(veri)
+        metin = metin_coz(veri)
         reader = csv.reader(io.StringIO(metin), delimiter=_ayirici(metin))
         return [(None, [list(r) for r in reader])]
     raise OkunamayanDosya(f".{uzanti} bir tablo dosyası değil.")

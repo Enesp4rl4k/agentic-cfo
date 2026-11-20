@@ -3,8 +3,8 @@
 Plan v10 O5. Grading the 4-week forecast needs the forecast made 4 weeks ago, not a
 recomputation with today's knowledge. A new table; nothing existing changes.
 
-Revision ID: 052_cash_radar_snapshots
-Revises: 051_org_vkn
+Revision ID: 053_cash_radar_snapshots
+Revises: 052_smmm_hesap_kurallari
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "052_cash_radar_snapshots"
-down_revision = "051_org_vkn"
+revision = "053_cash_radar_snapshots"
+down_revision = "052_smmm_hesap_kurallari"
 branch_labels = None
 depends_on = None
 

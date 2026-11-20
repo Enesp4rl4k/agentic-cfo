@@ -76,6 +76,27 @@ export type MessageTree = {
     loading: string;
     failed: string;
   };
+  bulten: {
+    title: string;
+    subtitle: string;
+    week: string;
+    loading: string;
+    failed: string;
+    emptyTitle: string;
+    emptyBody: string;
+    connect: string;
+    fallbackNote: string;
+    unknownBalance: string;
+    answerTitle: string;
+    done: string;
+    deferred: string;
+    dismissed: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    radarHint: string;
+    radarLink: string;
+  };
   reviewQueue: {
     title: string;
     body: string;
@@ -226,6 +247,19 @@ export type MessageTree = {
     selectPlan: string;
     redirecting: string;
     managePortal: string;
+  };
+  learnedRules: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    inForce: string;
+    notYet: string;
+    times: string;
+    delete: string;
+    deleteAria: string;
+    confirm: string;
+    loadError: string;
+    deleteError: string;
   };
   orgSwitcher: {
     trigger: string;
@@ -1519,6 +1553,7 @@ export type MessageTree = {
       approve: string;
       correct: string;
       reject: string;
+      approveError: string;
     };
     empty: {
       allApproved: string;
@@ -2227,6 +2262,27 @@ export const en: MessageTree = {
     loading: "Preparing the cash radar…",
     failed: "The cash radar could not be loaded.",
   },
+  bulten: {
+    title: "Monday briefing",
+    subtitle: "This week's cash answer: three sentences written from the cash radar's figures.",
+    week: "Week",
+    loading: "Preparing the briefing…",
+    failed: "The briefing could not be loaded.",
+    emptyTitle: "No briefing yet",
+    emptyBody: "No bank balance or open invoice is known for this company. Rather than invent something, no briefing was written.",
+    connect: "Connect my data",
+    fallbackNote: "The text was written from a fixed template; the figures come from the radar.",
+    unknownBalance: "The bank balance is unknown: the briefing states no balance.",
+    answerTitle: "What did you do about this briefing?",
+    done: "Done",
+    deferred: "Later",
+    dismissed: "Not needed",
+    saving: "Saving…",
+    saved: "Your answer was saved.",
+    saveFailed: "The answer could not be saved:",
+    radarHint: "What the radar does not count (rent, tax, cheques and so on) is listed on the Cash Radar page.",
+    radarLink: "Open the Cash Radar",
+  },
   reviewQueue: {
     title: "{n} analyses await your approval",
     body: "These results did not pass the confidence gate. Until approved they stay out of the company view and the automatic chain does not run.",
@@ -2378,6 +2434,19 @@ export const en: MessageTree = {
     selectPlan: "Select plan",
     redirecting: "Redirecting…",
     managePortal: "Manage subscription",
+  },
+  learnedRules: {
+    title: "What the agent learned from you",
+    subtitle: "Accounts you corrected the same description to. Two consistent corrections make a rule; a rule only suggests the account, the entry still waits for you.",
+    empty: "Nothing learned yet. When you correct the same description to the same account twice, it appears here.",
+    inForce: "In force",
+    notYet: "Not yet a rule",
+    times: "{count} corrections",
+    delete: "Remove",
+    deleteAria: "Remove the rule for {name}",
+    confirm: "Remove this learned rule? The agent will classify this description by its usual rules again.",
+    loadError: "Learned rules could not be loaded.",
+    deleteError: "The rule could not be removed.",
   },
   orgSwitcher: {
     trigger: "Switch company",
@@ -3759,6 +3828,7 @@ export const en: MessageTree = {
       approve: "Approve",
       correct: "Correct and approve",
       reject: "Reject",
+      approveError: "Could not approve.",
     },
     empty: {
       allApproved: "All entries approved — the queue is empty!",

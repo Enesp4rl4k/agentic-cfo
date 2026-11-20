@@ -41,6 +41,15 @@ class Verdict:
     reason: str = ""
 
 
+def karar_verebilir_rol(user_role: str) -> bool:
+    """Whether this role is one that decides held entries at all (not viewer / analyst).
+
+    The same line `verdict` draws first, for actions that are the accountant's judgement
+    but not about one entry (taking back a rule the agent learned).
+    """
+    return str(user_role) not in _NEVER
+
+
 def verdict(user_role: str, authority: dict[str, Any] | None, org_has_smmm: bool) -> Verdict:
     """Pure: may a user with `user_role` decide an entry with this `authority`?"""
     role = str(user_role)
