@@ -110,7 +110,7 @@ alembic_in_image() {
 expected_rev="$(tr -d '[:space:]' < "$B/alembic_version.txt")"
 current_out="$(alembic_in_image current 2>&1)" || { echo "$current_out" >&2; fail "alembic current errored"; }
 heads_out="$(alembic_in_image heads 2>&1)" || { echo "$heads_out" >&2; fail "alembic heads errored"; }
-echo "$current_out" | sed 's/^/  alembic current: /'
+while IFS= read -r l; do echo "  alembic current: $l"; done <<<"$current_out"
 if [[ -z "$expected_rev" ]]; then
   fail "backup recorded no alembic revision"
 elif ! grep -q "$expected_rev" <<<"$current_out"; then

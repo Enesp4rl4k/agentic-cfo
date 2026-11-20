@@ -61,7 +61,7 @@ Komutlar sunucuda, `deploy` kullanıcısıyla. Sahibin dizüstünde yapılacakla
    ```
 5. **`.env`'i doldurun** (dosyanın sonundaki "Staging" bölümü + mevcut anahtarlar):
    - `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL`
-   - `POSTGRES_PASSWORD`, `REDIS_PASSWORD` → `openssl rand -hex 24`
+   - `POSTGRES_PASSWORD` → `openssl rand -hex 24` (Redis'in parolası yok: yalnız backend konteynerlerinin girebildiği `internal` ağda)
    - `BACKEND_SECRET_KEY`, `NEXTAUTH_SECRET` → `openssl rand -base64 32`
    - `NEXTAUTH_URL=https://<APP_DOMAIN>`, `BRAND_DOMAIN`, `PILOT_*`, `OPENAI_API_KEY`/`LLM_*`, `SMTP_*`
    - `OPEN_BANKING_SANDBOX`, `GIB_SANDBOX`: staging'de `true` kalır.
