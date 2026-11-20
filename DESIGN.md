@@ -148,7 +148,7 @@ landing components and the login atlas were deleted.
 
 **Also done.** Onay, Raporlar and Ayarlar share the page head (`PageHead`: the loop step as the
 eyebrow, Cormorant title) and Onay and Raporlar close with the loop strip. The product name defaults
-to Tiphys in the frontend; the tagline and metadata say what the product does.
+to Tiphys in the frontend and in the backend (`brand_name`; the owner decided the name on 2026-11-20); the tagline and metadata say what the product does.
 
 **Onay is `/onay`.** The loop's third step is the ledger's pending approvals (a bank movement that may
 close an invoice, a record that looks already uploaded), built on the existing ledger API; it had no
@@ -165,10 +165,9 @@ balance (`components/calendar/scenario.ts` is pure and tested). The accepted rul
 changes the real payment plan or the base forecast.
 
 **Still to do.**
-- Making a moved payment real (a "Plana al" that writes the new due date) needs its own backend and
-  an owner decision about who may change a payable's date.
+- Making a moved payment real: the owner's rule is that a senior executive approves any change to a
+  payment plan. The design is in `docs/payment-plan-approval.md` (not built; it needs a migration and a
+  reviewed role check).
 - Raporlar' sealed weekly PDF preview and recipient list need a weekly-report entity the API does
   not expose yet; the page still lists generated report files.
-- The backend default `brand_name` is still "C-Suite" (`backend/app/config.py`): it prints in PDFs and
-  in the e-Defter software name sent to GİB, so changing it is an owner decision with its tests.
 - Role pages keep their own decision priorities: restyle them in focused passes, not as CFO copies.
