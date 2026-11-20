@@ -25,12 +25,8 @@ const CommandPalette = dynamic(
   { ssr: false }
 );
 import {
-  LayoutDashboard, Upload, FileText, TrendingUp, DollarSign,
-  Menu, X, Clock, CheckCircle, AlertCircle, Loader2,
-  ArrowRightLeft, Newspaper, Waves, ShieldAlert, MessageSquare, Receipt,
-  PieChart, BarChart2, Cpu, Crown, Megaphone, Layers, ShieldCheck,
-  Users, Shield, FileSearch, FileCheck, Activity, Download,
-  LogOut, Building2, ChevronDown, Zap, Link2, CreditCard, Rocket, Filter,
+  Menu, X, Clock, CheckCircle, AlertCircle, Loader2, LogOut, Building2,
+  ChevronDown, Zap, CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
