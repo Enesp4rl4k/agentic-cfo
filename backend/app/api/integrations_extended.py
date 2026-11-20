@@ -38,7 +38,7 @@ class OpenBankingConnectRequest(BaseModel):
 
 
 class EcommerceSyncRequest(BaseModel):
-    channel:    str  = Field(..., description="shopify|trendyol|hepsiburada")
+    channel:    str  = Field(..., description="shopify|trendyol")
     from_date:  str
     to_date:    str
     # Channel-specific credentials
