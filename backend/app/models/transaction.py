@@ -3,7 +3,16 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -48,7 +57,7 @@ class Transaction(Base):
         String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
     # All amounts stored in kuruş (smallest unit) as integer
-    amount_kurus: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_kurus: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="TRY", nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # income | expense
     category: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -66,8 +75,8 @@ class Transaction(Base):
     # them — an e-Fatura, e-Müstahsil or e-SMM. Null when the source said
     # nothing (a bank line), which is different from zero (stated exempt): the
     # journal splits a stated amount and holds an unstated one for review.
-    kdv_kurus: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    stopaj_kurus: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kdv_kurus: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    stopaj_kurus: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
     # Where `category` came from: "user_rule" when one of the organisation's

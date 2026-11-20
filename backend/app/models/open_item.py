@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Date, DateTime, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Date, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -35,8 +35,8 @@ class OpenItem(Base):
     source_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     counterparty: Mapped[str | None] = mapped_column(String(300), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    paid_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    paid_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="TRY")
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
