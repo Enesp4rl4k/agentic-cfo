@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 
+from app.core.turkish import fold
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 # Paraşüt işlem tipi → tx_type mapping
@@ -66,20 +68,37 @@ class ParasutParser(BankParser):
     bank_id = "parasut"
     bank_display_name = "Paraşüt"
 
+    # The brand: a Paraşüt export says so.
     _MARKERS = [
         "Paraşüt", "PARAŞÜT", "parasut", "PARASUT",
         "parasut.com", "app.parasut.com",
-        "İşlem Tarihi", "Islem Tarihi",
-        # Paraşüt column headers
-        "Fatura No", "Müşteri/Tedarikçi", "Musteri/Tedarikci",
-        "Hesap Adı", "KDV Tutarı",
     ]
+    # Its column headers. Only a *delimited header row* counts, never the words in
+    # prose: "Fatura No" is printed on nearly every invoice, and used as a bare marker
+    # it sent ordinary PDF invoices here, where they yielded no rows and fell through
+    # to LLM extraction (see tests/test_pdf_invoice_detection.py).
+    # Compared folded (lower-case, Turkish letters stripped): `.upper()` on "İşlem Tarihi"
+    # gives "İŞLEM TARIHI", not the string one would type.
+    _KOLONLAR = frozenset({
+        "islem tarihi", "fatura no", "musteri/tedarikci", "hesap adi", "kdv tutari",
+    })
+
+    @classmethod
+    def _baslik_satiri_var(cls, text: str) -> bool:
+        """A line of at least three delimited cells, one of them a Paraşüt column name."""
+        for satir in text.splitlines()[:40]:
+            hucreler = re.split(r"[;,\t]", satir)
+            if len(hucreler) >= 3 and any(fold(h.strip()) in cls._KOLONLAR for h in hucreler):
+                return True
+        return False
 
     @classmethod
     def can_parse(cls, text: str) -> bool:
         text_check = text[:2000]  # Check first 2KB only for speed
         text_upper = text_check.upper()
-        return any(m.upper() in text_upper for m in cls._MARKERS)
+        if any(m.upper() in text_upper for m in cls._MARKERS):
+            return True
+        return cls._baslik_satiri_var(text_check)
 
     def parse(self, text: str, file_path: str = "") -> ParsedStatement:
         # Strip UTF-8 BOM if present

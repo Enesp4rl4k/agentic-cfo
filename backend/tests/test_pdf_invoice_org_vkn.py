@@ -86,12 +86,6 @@ async def test_ingestion_reads_a_pdf_invoice_against_the_organisations_vkn(tmp_p
     monkeypatch.setattr(data_ingestion, "_read_pdf", lambda _p: INVOICE)
     monkeypatch.setattr(data_ingestion, "_pdf_embedded_xml", lambda _p: [])
     monkeypatch.setattr(get_settings(), "gib_vkn", SELLER)  # the deployment says seller
-    # What is tested is the wiring, not detection: the registry currently sends this very
-    # text to the Paraşüt parser (its "Fatura No" marker is on nearly every invoice), a
-    # separate finding. Detection is fixed here so the invoice parser is the one running.
-    monkeypatch.setattr(
-        "app.agents.data_ingestion.ParserRegistry.detect", lambda _t: TurkishInvoiceParser
-    )
 
     async def org_is_the_buyer(_org_id):
         return BUYER
