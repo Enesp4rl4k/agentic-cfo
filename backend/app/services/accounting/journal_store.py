@@ -34,7 +34,9 @@ async def org_packs(db: AsyncSession, org_id: str | None) -> list[str]:
 
 async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, Any]) -> None:
     """Upsert the full THP journal for a job as a JSON Report — the durable
-    source the defensibility packet and the e-Defter itemise from."""
+    source the defensibility packet and the e-Defter itemise from — and write the
+    same entries to `journal_entries` / `journal_lines` (A1.2 dual write; the JSON
+    stays what outputs read until the shadow comparison has held)."""
     existing = (
         await db.execute(
             select(Report)
@@ -58,6 +60,9 @@ async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, 
                 data=full_result,
             )
         )
+    from app.services.accounting.journal_tables import yaz
+
+    await yaz(db, job_id, full_result.get("yevmiye_kayitlari") or [])
 
 
 def _kurus(onay_item: dict[str, Any]) -> int | None:

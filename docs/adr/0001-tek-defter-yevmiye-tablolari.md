@@ -1,6 +1,6 @@
 # 0001 · Tek defter: çift taraflı yevmiye tabloları
 
-- **Durum:** Önerildi (2026-11-19)
+- **Durum:** Kabul edildi; A1.1 (şema, migration 060) ve A1.2 (çift yazma) uygulandı (2026-11-21). A1.3 (okumaların tabloya geçişi) gölge karşılaştırma bir süre yeşil kaldıktan sonra.
 - **Kimin:** Geliştirici
 - **Plan v11:** K1, C3; adımlar A1.1 (şema), A1.2 (çift yazma), A1.3 (okuma geçişi), A3.1 (CFO defteri yevmiyeden)
 
