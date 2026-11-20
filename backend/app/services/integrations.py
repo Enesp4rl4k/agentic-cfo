@@ -2,7 +2,7 @@
 Harici Entegrasyon Servisleri — Alan 4
 
 INT-2: Open Banking (BKM Express / BDDK)
-INT-4: E-ticaret kanalları (Shopify, Trendyol, Hepsiburada)
+INT-4: E-ticaret kanalları (Shopify, Trendyol)
 INT-5: Google Sheets iki yönlü sync
 INT-6: Webhook outbound (Slack, Teams, email)
 
@@ -218,26 +218,6 @@ class TrendyolConnector:
                     "order_id":      str(o.get("id")),
                 })
         return result
-
-
-class HepsiburadaConnector:
-    """Hepsiburada Merchant API — satıcı siparişleri."""
-
-    def __init__(self, username: str, password: str) -> None:
-        self.base  = "https://listing-external.hepsiburada.com"
-        self.auth  = httpx.BasicAuth(username, password)
-
-    async def get_orders(self, from_date: str, to_date: str) -> list[dict]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{self.base}/listings/merchantid",
-                auth=self.auth,
-                headers={"Accept": "application/json"},
-            )
-            if resp.status_code != 200:
-                return []
-            # Simplified — full order endpoint varies by version
-            return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
