@@ -15,6 +15,7 @@ auto-approves: `approval_required` is surfaced for the UI / caller to hold on.
 Every other C-suite role stays at its current depth (see
 `app.platform.policies.PLATFORM_DEPTH`); only this vertical is L3.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +34,7 @@ TR_VERTICAL_DEPTH_LEVEL = 3
 @dataclass
 class TRVerticalResult:
     job_id: str
-    stage: str                         # ingest | cfo | accounting | board_deck | done
+    stage: str  # ingest | cfo | accounting | board_deck | done
     approval_required: bool = False
     approval_reasons: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -216,9 +217,7 @@ async def run_tr_vertical(
             res.approval_reasons.append("yevmiye dengesiz (double-entry imbalance)")
         if acc.get("onay_bekleyen", 0):
             res.approval_required = True
-            res.approval_reasons.append(
-                f"{acc['onay_bekleyen']} yevmiye kaydı onay bekliyor"
-            )
+            res.approval_reasons.append(f"{acc['onay_bekleyen']} yevmiye kaydı onay bekliyor")
     except Exception as exc:  # accounting failure must not lose the CFO result
         logger.exception("TR vertical: accounting stage failed for job=%s", job_id)
         res.errors.append(f"accounting stage error: {exc}")
@@ -230,7 +229,9 @@ async def run_tr_vertical(
             from app.services.board_deck_pdf import BoardDeckPDFBuilder
 
             deck = _board_deck_from(company, donem, cfo_state, res.accounting)
-            res.board_deck_pdf_bytes = await asyncio.to_thread(BoardDeckPDFBuilder().build_pdf, deck)
+            res.board_deck_pdf_bytes = await asyncio.to_thread(
+                BoardDeckPDFBuilder().build_pdf, deck
+            )
 
             # Persist to disk so the API can hand it back on a later GET
             # (same pattern as report_agent.py writing the xlsx report).
@@ -251,6 +252,9 @@ async def run_tr_vertical(
     res.stage = "done"
     logger.info(
         "TR vertical done: job=%s approval_required=%s reasons=%s errors=%d",
-        job_id, res.approval_required, res.approval_reasons, len(res.errors),
+        job_id,
+        res.approval_required,
+        res.approval_reasons,
+        len(res.errors),
     )
     return res

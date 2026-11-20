@@ -1,6 +1,7 @@
 """
 Unit tests for TCMB macroeconomic indicators and stress testing API (/api/v1/macro).
 """
+
 import pytest
 
 from tests.api_helpers import bellek_istemcisi, kullanici
@@ -44,7 +45,9 @@ async def test_simulate_without_cfo_analysis_returns_no_result():
         assert res.status_code == 200, res.text
         data = res.json()["data"]
         assert data["current_macro"]["data_source"] in {
-            "tcmb_api", "redis_cache", "static_fallback",
+            "tcmb_api",
+            "redis_cache",
+            "static_fallback",
         }
         assert data["shock_inputs"]["eur_shock_pct"] == 20.0
         assert data["simulation_result"] is None
@@ -59,12 +62,18 @@ async def test_simulate_uses_the_orgs_own_cfo_result():
         headers, org_id, _ = await kullanici(client, "simulate2@test.com")
         async with client._maker() as db:  # type: ignore[attr-defined]
             ctx = await get_company_context(org_id, db)
-            ctx.update_agent_result("cfo", {
-                "pnl": {"revenue": 1_200_000.0, "total_opex": 600_000.0,
-                        "net_income": -120_000.0},
-                "cashflow": {"monthly_series": [{}] * 12},
-                "forecast": {"scenarios": {"base": {"runway_months": 8}}},
-            })
+            ctx.update_agent_result(
+                "cfo",
+                {
+                    "pnl": {
+                        "revenue": 1_200_000.0,
+                        "total_opex": 600_000.0,
+                        "net_income": -120_000.0,
+                    },
+                    "cashflow": {"monthly_series": [{}] * 12},
+                    "forecast": {"scenarios": {"base": {"runway_months": 8}}},
+                },
+            )
             await save_company_context(ctx, db)
 
         res = await client.post("/api/v1/macro/simulate", headers=headers, json=SHOCK)

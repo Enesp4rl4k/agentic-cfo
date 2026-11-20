@@ -13,6 +13,7 @@ These tests verify:
 4. Error handling: bad input → SkillResult(ok=False)
 5. Agent outputs satisfy required field contracts
 """
+
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -47,6 +48,7 @@ def _stub_langchain():
     if not hasattr(msgs, "AIMessage"):
         msgs.AIMessage = MagicMock  # type: ignore
 
+
 _stub_langchain()
 
 from app.agents.cashflow_agent import _classify_cashflow, run_cashflow
@@ -62,6 +64,7 @@ from tests.fixtures.llm_mock import (
 )
 
 # ── Pure computation integration ──────────────────────────────────────────────
+
 
 class TestPureComputationChain:
     """
@@ -81,9 +84,7 @@ class TestPureComputationChain:
 
     def test_pnl_revenue_equals_sum_of_income(self):
         txs = make_sample_transactions(30)
-        expected_revenue = sum(
-            t["amount_cents"] for t in txs if t["type"] == "income"
-        )
+        expected_revenue = sum(t["amount_cents"] for t in txs if t["type"] == "income")
         pnl = _compute_pnl(txs)
         assert pnl["revenue"] == expected_revenue
 
@@ -151,6 +152,7 @@ class TestPureComputationChain:
 
 
 # ── Async agent integration with LLM mock ────────────────────────────────────
+
 
 class TestAgentIntegrationWithMock:
     """
@@ -321,6 +323,7 @@ class TestAgentIntegrationWithMock:
 
 # ── Pipeline state threading ──────────────────────────────────────────────────
 
+
 class TestStateThreading:
     """
     Verify that state patches from one agent can be consumed by the next.
@@ -335,8 +338,7 @@ class TestStateThreading:
 
         pnl_narrative = MagicMock()
         pnl_narrative.to_text.return_value = (
-            "Güçlü gelir büyümesi ve yüksek marjlar gözlemlendi bu dönemde. "
-            "Net kârlılık iyileşti."
+            "Güçlü gelir büyümesi ve yüksek marjlar gözlemlendi bu dönemde. Net kârlılık iyileşti."
         )
         forecast_narrative = MagicMock()
         forecast_narrative.to_text.return_value = (

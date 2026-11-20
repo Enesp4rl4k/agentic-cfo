@@ -168,7 +168,7 @@ class EmbeddingRagRetriever:
             SELECT job_id, chunk_index, source_type, chunk_text,
                    1 - (embedding <=> CAST(:embedding AS vector)) AS score
             FROM rag_chunks
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
         """

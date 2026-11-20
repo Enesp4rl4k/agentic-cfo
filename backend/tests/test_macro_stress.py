@@ -1,4 +1,5 @@
 """Pure stress-test model: units, EUR independence, and no invented baseline."""
+
 from __future__ import annotations
 
 from app.services.macro_stress import (
@@ -12,9 +13,9 @@ from app.services.macro_stress import (
 # A 12-month dashboard: lira period totals, as report_agent persists them.
 CFO_12M = {
     "pnl": {
-        "revenue": 1_200_000.0,      # ₺100k / month
-        "total_opex": 600_000.0,     # ₺50k / month
-        "net_income": -120_000.0,    # ₺-10k / month
+        "revenue": 1_200_000.0,  # ₺100k / month
+        "total_opex": 600_000.0,  # ₺50k / month
+        "net_income": -120_000.0,  # ₺-10k / month
     },
     "cashflow": {"monthly_series": [{}] * 12},
     "forecast": {"scenarios": {"base": {"runway_months": 8}}},
@@ -35,9 +36,9 @@ def _base(**kw) -> StressBaseline:
 def test_baseline_turns_lira_period_totals_into_monthly_kurus():
     b = baseline_from_cfo(CFO_12M)
     assert b is not None
-    assert b.monthly_revenue_kurus == 10_000_000   # ₺100k
-    assert b.monthly_opex_kurus == 5_000_000       # ₺50k
-    assert b.monthly_net_kurus == -1_000_000       # ₺-10k
+    assert b.monthly_revenue_kurus == 10_000_000  # ₺100k
+    assert b.monthly_opex_kurus == 5_000_000  # ₺50k
+    assert b.monthly_net_kurus == -1_000_000  # ₺-10k
     assert b.months_observed == 12
     assert b.runway_months == 8.0
 

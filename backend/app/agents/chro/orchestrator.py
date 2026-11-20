@@ -85,7 +85,9 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
         chro_score += 1.0
 
     # Early departure penalty
-    early_rate = hc.get("early_departure_rate", 0) if not att else att.get("early_departure_rate", 0)
+    early_rate = (
+        hc.get("early_departure_rate", 0) if not att else att.get("early_departure_rate", 0)
+    )
     chro_score += early_rate * 4.0
 
     # Salary compression penalty
@@ -120,54 +122,66 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
 
     top_risks = []
     for alert in critical_alerts[:3]:
-        top_risks.append({
-            "title": alert["message"][:50],
-            "severity": "critical",
-            "description": alert["message"],
-        })
+        top_risks.append(
+            {
+                "title": alert["message"][:50],
+                "severity": "critical",
+                "description": alert["message"],
+            }
+        )
     for alert in warning_alerts[:2]:
-        top_risks.append({
-            "title": alert["message"][:50],
-            "severity": "warning",
-            "description": alert["message"],
-        })
+        top_risks.append(
+            {
+                "title": alert["message"][:50],
+                "severity": "warning",
+                "description": alert["message"],
+            }
+        )
 
     # Quick wins (Türkçe)
     quick_wins = []
     if hc.get("total_headcount", 0) > 0 and att.get("replaced_rate", 0) < 0.5:
-        quick_wins.append({
-            "action": "Açık pozisyonlar için işe alım sürecini hızlandır",
-            "effort": "orta",
-            "impact": f"Yerini doldurmada gecikmeyi {int(att.get('recent_departures_count', 0) * 0.3)} pozisyon azalt",
-        })
+        quick_wins.append(
+            {
+                "action": "Açık pozisyonlar için işe alım sürecini hızlandır",
+                "effort": "orta",
+                "impact": f"Yerini doldurmada gecikmeyi {int(att.get('recent_departures_count', 0) * 0.3)} pozisyon azalt",
+            }
+        )
 
     if comp.get("below_market_count", 0) > 0:
-        quick_wins.append({
-            "action": "Piyasanın altında kalan pozisyonlar için ücret düzenlemesi yap",
-            "effort": "orta",
-            "impact": f"Risk altındaki {comp.get('below_market_count', 0)} çalışanın tutunmasını iyileştir",
-        })
+        quick_wins.append(
+            {
+                "action": "Piyasanın altında kalan pozisyonlar için ücret düzenlemesi yap",
+                "effort": "orta",
+                "impact": f"Risk altındaki {comp.get('below_market_count', 0)} çalışanın tutunmasını iyileştir",
+            }
+        )
 
     if early_rate > 0.15:
-        quick_wins.append({
-            "action": "İşe alış (onboarding) programını geliştir",
-            "effort": "düşük",
-            "impact": f"Erken ayrılmaları %30 azalt (~{int(early_rate * hc.get('total_headcount', 0) * 0.3)} FTE tasarruf)",
-        })
+        quick_wins.append(
+            {
+                "action": "İşe alış (onboarding) programını geliştir",
+                "effort": "düşük",
+                "impact": f"Erken ayrılmaları %30 azalt (~{int(early_rate * hc.get('total_headcount', 0) * 0.3)} FTE tasarruf)",
+            }
+        )
 
     if equity_pen < 0.50:
-        quick_wins.append({
-            "action": "Hisse senedi katılım programını genişlet",
-            "effort": "düşük",
-            "impact": "Geniş çalışan kitlesinde tutunma ve bağlılığı artır",
-        })
+        quick_wins.append(
+            {
+                "action": "Hisse senedi katılım programını genişlet",
+                "effort": "düşük",
+                "impact": "Geniş çalışan kitlesinde tutunma ve bağlılığı artır",
+            }
+        )
 
     # Narrative — LLM ile Türkçe özet
     total_comp_millions = comp.get("total_annual_comp", 0) / 100 / 1_000_000
     narrative = (
         f"Organizasyonda {hc.get('total_headcount', 0)} çalışan var, ortalama kıdem {hc.get('avg_tenure_years', 0):.1f} yıl. "
-        f"Yıllık ücret taahhüdü: {total_comp_millions:.1f}M ₺, %{comp.get('equity_penetration', 0)*100:.0f} hisse katılımı. "
-        f"{'Dikkat: %' + str(int(early_rate*100)) + ' erken ayrılma oranı tespit edildi. ' if early_rate > 0.10 else ''}"
+        f"Yıllık ücret taahhüdü: {total_comp_millions:.1f}M ₺, %{comp.get('equity_penetration', 0) * 100:.0f} hisse katılımı. "
+        f"{'Dikkat: %' + str(int(early_rate * 100)) + ' erken ayrılma oranı tespit edildi. ' if early_rate > 0.10 else ''}"
         f"{str(len(top_risks)) + ' önemli İK riski mevcut.' if top_risks else 'Kritik İK riski tespit edilmedi.'}"
     )
 
@@ -175,35 +189,38 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
     try:
         from app.platform.model_gateway import complete_text
 
-        risks_text = "\n".join(
-            f"- [{r['severity'].upper()}] {r['description']}"
-            for r in top_risks[:4]
-        ) or "Kritik risk tespit edilmedi."
+        risks_text = (
+            "\n".join(f"- [{r['severity'].upper()}] {r['description']}" for r in top_risks[:4])
+            or "Kritik risk tespit edilmedi."
+        )
 
-        narrative = (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir CHRO'sun. İnsan kaynakları sağlık verilerini analiz et ve "
-                "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
-                "Yanıt şu yapıda olsun:\n"
-                "1. Organizasyonel sağlığın 1-2 cümlelik değerlendirmesi (başkanlık ve ayrılma odaklı)\n"
-                "2. En kritik 1-2 İK riski (yüksek ayrılma, piyasa altı ücret, organizasyonel darboğaz)\n"
-                "3. İK ekibinin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
-                "People-first bakış açısıyla pratik öneriler ekle."
-            ),
-            prompt=(
-                f"Toplam Çalışan: {hc.get('total_headcount', 0)}\n"
-                f"Ortalama Kıdem: {hc.get('avg_tenure_years', 0):.1f} yıl\n"
-                f"Erken Ayrılma Oranı: %{early_rate*100:.0f}\n"
-                f"Piyasa Altı Ücret Sayısı: {comp.get('below_market_count', 0)}\n"
-                f"Hisse Katılımı: %{comp.get('equity_penetration', 0)*100:.0f}\n"
-                f"Ücret Sıkışması Riski: {'var' if compression_risks > 0 else 'yok'}\n\n"
-                f"Önemli Riskler:\n{risks_text}"
-            ),
-            max_tokens=700,
-        )).strip()
+        narrative = (
+            await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir CHRO'sun. İnsan kaynakları sağlık verilerini analiz et ve "
+                    "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
+                    "Yanıt şu yapıda olsun:\n"
+                    "1. Organizasyonel sağlığın 1-2 cümlelik değerlendirmesi (başkanlık ve ayrılma odaklı)\n"
+                    "2. En kritik 1-2 İK riski (yüksek ayrılma, piyasa altı ücret, organizasyonel darboğaz)\n"
+                    "3. İK ekibinin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
+                    "People-first bakış açısıyla pratik öneriler ekle."
+                ),
+                prompt=(
+                    f"Toplam Çalışan: {hc.get('total_headcount', 0)}\n"
+                    f"Ortalama Kıdem: {hc.get('avg_tenure_years', 0):.1f} yıl\n"
+                    f"Erken Ayrılma Oranı: %{early_rate * 100:.0f}\n"
+                    f"Piyasa Altı Ücret Sayısı: {comp.get('below_market_count', 0)}\n"
+                    f"Hisse Katılımı: %{comp.get('equity_penetration', 0) * 100:.0f}\n"
+                    f"Ücret Sıkışması Riski: {'var' if compression_risks > 0 else 'yok'}\n\n"
+                    f"Önemli Riskler:\n{risks_text}"
+                ),
+                max_tokens=700,
+            )
+        ).strip()
     except Exception as exc:
         import logging
+
         logging.getLogger(__name__).warning("CHRO narrative LLM failed: %s", exc)
 
     summary = {
@@ -217,7 +234,8 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
         "component_scores": {
             "headcount_org_health": 10.0 - (1.0 if hc.get("org_structure_risk") else 0),
             "attrition_health": 10.0 - (early_rate * 4.0),
-            "compensation_market_alignment": 10.0 - ((comp.get("below_market_count", 0) / total_emp) * 2.0 if total_emp > 0 else 0),
+            "compensation_market_alignment": 10.0
+            - ((comp.get("below_market_count", 0) / total_emp) * 2.0 if total_emp > 0 else 0),
         },
     }
 
@@ -266,7 +284,7 @@ async def run_chro_pipeline(
     company_name: str | None = None,
     analysis_period: str | None = None,
     settings: Any = None,
-    org_id: str | None = None,   # S2-2: cross-domain context
+    org_id: str | None = None,  # S2-2: cross-domain context
 ) -> dict[str, Any]:
     """
     Run complete CHRO pipeline.
@@ -291,6 +309,7 @@ async def run_chro_pipeline(
     if org_id:
         try:
             from app.services.cross_context_enricher import enrich_initial_state
+
             base = await enrich_initial_state("chro", base, org_id=org_id)  # type: ignore[assignment]
         except Exception:
             pass  # non-fatal

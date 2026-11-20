@@ -7,6 +7,7 @@ thing the register exists to prevent and which nobody notices until an audit or
 a sale. So matching errs toward flagging, and every match records *why* it
 matched so a human can dismiss it with the evidence in front of them.
 """
+
 from __future__ import annotations
 
 import re
@@ -23,9 +24,24 @@ from app.models.related_party import RelatedParty
 # and "Demir Anonim Şirketi" are the same counterparty. Stripping them stops a
 # register entry from missing a statement line that spells the form differently.
 _LEGAL_SUFFIXES = (
-    "anonim sirketi", "limited sirketi", "kollektif sirketi",
-    "a s", "as", "ltd sti", "ltd", "sti", "san tic", "sanayi ve ticaret",
-    "sanayi", "ticaret", "insaat", "holding", "gmbh", "inc", "llc", "co",
+    "anonim sirketi",
+    "limited sirketi",
+    "kollektif sirketi",
+    "a s",
+    "as",
+    "ltd sti",
+    "ltd",
+    "sti",
+    "san tic",
+    "sanayi ve ticaret",
+    "sanayi",
+    "ticaret",
+    "insaat",
+    "holding",
+    "gmbh",
+    "inc",
+    "llc",
+    "co",
 )
 
 _TR_MAP = str.maketrans("ıİğĞüÜşŞöÖçÇ", "iIgGuUsSoOcC")
@@ -109,12 +125,12 @@ def match_transaction(
     if not parties:
         return None
 
-    vendor_norm = normalize_name(
-        transaction.get("vendor") or transaction.get("counterparty")
-    )
+    vendor_norm = normalize_name(transaction.get("vendor") or transaction.get("counterparty"))
     desc_norm = normalize_name(transaction.get("description"))
     tx_tax_id = normalize_tax_id(
-        transaction.get("tax_id") or transaction.get("vkn") or transaction.get("counterparty_tax_id")
+        transaction.get("tax_id")
+        or transaction.get("vkn")
+        or transaction.get("counterparty_tax_id")
     )
 
     for party in parties:
@@ -191,15 +207,18 @@ def group_counterparties(
         normalized = normalize_name(vendor)
         if not normalized or normalized in known:
             continue
-        entry = grouped.setdefault(normalized, {
-            # Longest spelling wins: it carries the most information for someone
-            # deciding whether they recognise the counterparty.
-            "vendor": vendor,
-            "normalized_name": normalized,
-            "transaction_count": 0,
-            "total_kurus": 0,
-            "spellings": 0,
-        })
+        entry = grouped.setdefault(
+            normalized,
+            {
+                # Longest spelling wins: it carries the most information for someone
+                # deciding whether they recognise the counterparty.
+                "vendor": vendor,
+                "normalized_name": normalized,
+                "transaction_count": 0,
+                "total_kurus": 0,
+                "spellings": 0,
+            },
+        )
         if len(vendor) > len(str(entry["vendor"])):
             entry["vendor"] = vendor
         entry["transaction_count"] += int(tx_count or 0)

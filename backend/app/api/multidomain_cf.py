@@ -6,6 +6,7 @@ POST /multidomain-cf/marketing    -- Pazarlama yatirimi
 POST /multidomain-cf/tech         -- Teknoloji yatirimi
 GET  /multidomain-cf/actions      -- Desteklenen aksiyon listesi
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Request schemalar ─────────────────────────────────────────────────────────
+
 
 class HeadcountMDRequest(BaseModel):
     delta: int = Field(..., description="Pozitif = ise al, negatif = cikar")
@@ -56,6 +58,7 @@ class TechInvestMDRequest(BaseModel):
 
 
 # ── Context loader ─────────────────────────────────────────────────────────────
+
 
 async def _load_ctx(
     job_id: str | None,
@@ -121,6 +124,7 @@ async def _load_ctx(
 
     if job_id:
         from app.models.report import Report, ReportFormat
+
         stmt = (
             select(Report)
             .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
@@ -134,6 +138,7 @@ async def _load_ctx(
         if raw:
             try:
                 import json
+
                 data = json.loads(raw) if isinstance(raw, str) else raw
                 return {
                     "pnl": data.get("pnl") or {},
@@ -177,6 +182,7 @@ def _cf_engine_kwargs(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Endpoint'ler ───────────────────────────────────────────────────────────────
+
 
 @router.post("/multidomain-cf/headcount")
 async def multidomain_headcount(
@@ -298,42 +304,95 @@ async def list_actions(
     return {
         "actions": [
             {
-                "type":        "headcount_change",
-                "label":       "Personel Degisimi",
-                "endpoint":    "/multidomain-cf/headcount",
+                "type": "headcount_change",
+                "label": "Personel Degisimi",
+                "endpoint": "/multidomain-cf/headcount",
                 "description": "Ise alim veya kadro azaltiminin CFO+CHRO+CTO+CMO uzerindeki birlesik etkisi",
-                "domains":     ["cfo", "chro", "cto", "cmo"],
+                "domains": ["cfo", "chro", "cto", "cmo"],
                 "params": [
-                    {"name": "delta",                   "type": "int",    "label": "Kisi (+ise al/-cikar)"},
-                    {"name": "avg_monthly_salary_try",  "type": "float",  "label": "Ortalama Maas (TRY/ay)", "optional": True},
-                    {"name": "role_type",               "type": "select", "label": "Rol Tipi", "options": ["engineer", "sales", "ops", "general"]},
-                    {"name": "onboarding_months",       "type": "int",    "label": "Onboarding Suresi (ay)", "default": 2},
-                    {"name": "horizon_months",          "type": "int",    "label": "Analiz Ufku (ay)",       "default": 12},
+                    {"name": "delta", "type": "int", "label": "Kisi (+ise al/-cikar)"},
+                    {
+                        "name": "avg_monthly_salary_try",
+                        "type": "float",
+                        "label": "Ortalama Maas (TRY/ay)",
+                        "optional": True,
+                    },
+                    {
+                        "name": "role_type",
+                        "type": "select",
+                        "label": "Rol Tipi",
+                        "options": ["engineer", "sales", "ops", "general"],
+                    },
+                    {
+                        "name": "onboarding_months",
+                        "type": "int",
+                        "label": "Onboarding Suresi (ay)",
+                        "default": 2,
+                    },
+                    {
+                        "name": "horizon_months",
+                        "type": "int",
+                        "label": "Analiz Ufku (ay)",
+                        "default": 12,
+                    },
                 ],
             },
             {
-                "type":        "marketing_investment",
-                "label":       "Pazarlama Yatirimi",
-                "endpoint":    "/multidomain-cf/marketing",
+                "type": "marketing_investment",
+                "label": "Pazarlama Yatirimi",
+                "endpoint": "/multidomain-cf/marketing",
                 "description": "Pazarlama butcesi artisinin CFO+CMO+COO uzerindeki birlesik etkisi",
-                "domains":     ["cfo", "cmo", "coo"],
+                "domains": ["cfo", "cmo", "coo"],
                 "params": [
-                    {"name": "monthly_increase_try", "type": "float", "label": "Aylik Ek Butce (TRY)"},
-                    {"name": "expected_roas",        "type": "float", "label": "Hedef ROAS",          "default": 2.5},
-                    {"name": "horizon_months",       "type": "int",   "label": "Analiz Ufku (ay)",    "default": 12},
+                    {
+                        "name": "monthly_increase_try",
+                        "type": "float",
+                        "label": "Aylik Ek Butce (TRY)",
+                    },
+                    {
+                        "name": "expected_roas",
+                        "type": "float",
+                        "label": "Hedef ROAS",
+                        "default": 2.5,
+                    },
+                    {
+                        "name": "horizon_months",
+                        "type": "int",
+                        "label": "Analiz Ufku (ay)",
+                        "default": 12,
+                    },
                 ],
             },
             {
-                "type":        "tech_investment",
-                "label":       "Teknoloji Yatirimi",
-                "endpoint":    "/multidomain-cf/tech",
+                "type": "tech_investment",
+                "label": "Teknoloji Yatirimi",
+                "endpoint": "/multidomain-cf/tech",
                 "description": "Teknoloji/altyapi yatiriminin CFO+CTO+COO uzerindeki birlesik etkisi",
-                "domains":     ["cfo", "cto", "coo"],
+                "domains": ["cfo", "cto", "coo"],
                 "params": [
-                    {"name": "one_time_invest_try",      "type": "float", "label": "One-time Yatirim (TRY)"},
-                    {"name": "monthly_ops_increase_try", "type": "float", "label": "Aylik Ops Artisi (TRY)", "default": 0},
-                    {"name": "velocity_gain_pct",        "type": "float", "label": "Beklenen Velocity Artisi (0-1)", "default": 0.15},
-                    {"name": "horizon_months",           "type": "int",   "label": "Analiz Ufku (ay)",              "default": 12},
+                    {
+                        "name": "one_time_invest_try",
+                        "type": "float",
+                        "label": "One-time Yatirim (TRY)",
+                    },
+                    {
+                        "name": "monthly_ops_increase_try",
+                        "type": "float",
+                        "label": "Aylik Ops Artisi (TRY)",
+                        "default": 0,
+                    },
+                    {
+                        "name": "velocity_gain_pct",
+                        "type": "float",
+                        "label": "Beklenen Velocity Artisi (0-1)",
+                        "default": 0.15,
+                    },
+                    {
+                        "name": "horizon_months",
+                        "type": "int",
+                        "label": "Analiz Ufku (ay)",
+                        "default": 12,
+                    },
                 ],
             },
         ]

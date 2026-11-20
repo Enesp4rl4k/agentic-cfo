@@ -54,6 +54,7 @@ COHORT_CSV = """cohort,users,retention_30d,retention_90d,ltv,cac
 # CAMPAIGN AGENT TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_campaign_parse_returns_list():
     rows = _parse_campaign_csv(CAMPAIGN_CSV)
     assert isinstance(rows, list)
@@ -154,6 +155,7 @@ def test_campaign_empty_csv():
 # FUNNEL AGENT TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_funnel_stage_normalization():
     assert _normalize_stage("Won") == "won"
     assert _normalize_stage("closed won") == "won"
@@ -227,6 +229,7 @@ def test_funnel_empty():
 # COHORT AGENT TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_cohort_parse_returns_list():
     rows = _parse_cohort_csv(COHORT_CSV)
     assert isinstance(rows, list)
@@ -289,7 +292,7 @@ def test_cohort_alerts_good_ltv_cac_no_critical():
     # to test that good LTV:CAC doesn't trigger a unit economics alert.
     metrics = {
         "ltv_cac_ratio": 8.0,
-        "churn_rate": 0.03,       # 3% monthly churn -> no churn alert
+        "churn_rate": 0.03,  # 3% monthly churn -> no churn alert
         "avg_retention_30d": 0.97,
         "retention_trend": "stable",
         "avg_ltv_cents": 120_000,
@@ -339,6 +342,7 @@ def test_cohort_empty():
 # ═══════════════════════════════════════════════════════════════════════════════
 # CEO SYNTHESIS — CMO CROSS-RISK TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def test_cmo_cross_risk_negative_unit_econ():
     fin = {"cash_runway_months": 8, "revenue_cents": 500_000_00}

@@ -100,16 +100,18 @@ def _parse_attrition_csv(csv_text: str) -> list[dict[str, Any]]:
                 replaced_str = str(row.get(replaced_col)).strip().lower()
                 replaced = replaced_str in ["yes", "true", "1", "replaced", "backfilled"]
 
-            rows.append({
-                "name": name,
-                "level": level,
-                "department": dept,
-                "departure_date": departure_date,
-                "departure_type": departure_type,
-                "tenure_months": tenure_months,
-                "reason": reason,
-                "replaced": replaced,
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "level": level,
+                    "department": dept,
+                    "departure_date": departure_date,
+                    "departure_type": departure_type,
+                    "tenure_months": tenure_months,
+                    "reason": reason,
+                    "replaced": replaced,
+                }
+            )
         except Exception:
             pass
 
@@ -151,7 +153,8 @@ def _compute_attrition_metrics(departures: list[dict[str, Any]]) -> dict[str, An
     # Involuntary departures — either the `departure_type` column (documented
     # dropzone format) or the free-text reason says so.
     involuntary = [
-        d for d in departures
+        d
+        for d in departures
         if d.get("departure_type") in INVOLUNTARY_MARKERS or d["reason"] in INVOLUNTARY_MARKERS
     ]
     involuntary_rate = len(involuntary) / total_departures if total_departures > 0 else 0
@@ -183,32 +186,40 @@ def _build_attrition_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
     # High early departure rate
     if metrics.get("early_departure_rate", 0) > 0.20:
-        alerts.append({
-            "level": "critical",
-            "message": f"High early departures: {metrics['early_departure_rate']*100:.0f}% leave within 6 months — investigate onboarding"
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": f"High early departures: {metrics['early_departure_rate'] * 100:.0f}% leave within 6 months — investigate onboarding",
+            }
+        )
 
     # Unbalanced replacement coverage
     if metrics.get("replaced_rate", 0) < 0.5 and metrics.get("total_departures", 0) > 5:
-        alerts.append({
-            "level": "warning",
-            "message": f"Only {metrics['replaced_rate']*100:.0f}% of departures replaced — hiring gap detected"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"Only {metrics['replaced_rate'] * 100:.0f}% of departures replaced — hiring gap detected",
+            }
+        )
 
     # High involuntary departures
     if metrics.get("involuntary_rate", 0) > 0.15:
-        alerts.append({
-            "level": "warning",
-            "message": f"High involuntary departures: {metrics['involuntary_rate']*100:.0f}% — review management & culture"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"High involuntary departures: {metrics['involuntary_rate'] * 100:.0f}% — review management & culture",
+            }
+        )
 
     # High attrition cost
     cost = metrics.get("estimated_replacement_cost", 0)
     if cost > 1_000_000 * 100:  # > 1,000,000 lira
-        alerts.append({
-            "level": "warning",
-            "message": f"Estimated replacement cost: {format_currency_try(cost)} — consider retention programs"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"Estimated replacement cost: {format_currency_try(cost)} — consider retention programs",
+            }
+        )
 
     return alerts
 
@@ -230,36 +241,35 @@ async def _generate_attrition_narrative(
         )
         if survival_result.get("high_risk_cohorts"):
             top = survival_result["high_risk_cohorts"][0]
-            survival_context += (
-                f", en riskli grup: '{top['department']}' / '{top['level']}'"
-            )
+            survival_context += f", en riskli grup: '{top['department']}' / '{top['level']}'"
 
-    total       = metrics.get("total_departures", 0)
-    tenure      = metrics.get("avg_tenure_months", 0)
-    early_rate  = metrics.get("early_departure_rate", 0)
+    total = metrics.get("total_departures", 0)
+    tenure = metrics.get("avg_tenure_months", 0)
+    early_rate = metrics.get("early_departure_rate", 0)
     involuntary = metrics.get("involuntary_departures_count", 0)
 
     try:
         from app.platform.model_gateway import complete_text
 
-        return (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir CHRO'sun. İşten ayrılma verilerini ve survival analizini "
-                "inceleyerek Türkçe kısa, eyleme dönüştürülebilir bir özet yaz.\n"
-                "Yapı:\n"
-                "1. Attrition durumunun 1-2 cümlelik özeti\n"
-                "2. En kritik grup/dönem\n"
-                "3. İK ekibinin hemen yapması gereken 2-3 somut eylem\n"
-                "Rakamları Türkçe birimlerle kullan."
-            ),
-            prompt=(
-                f"Toplam ayrılma: {total} | Ort. kıdem: {tenure:.0f} ay | "
-                f"Erken ayrılma: %{early_rate*100:.0f}"
-                + survival_context
-            ),
-            max_tokens=600,
-        )).strip()
+        return (
+            await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir CHRO'sun. İşten ayrılma verilerini ve survival analizini "
+                    "inceleyerek Türkçe kısa, eyleme dönüştürülebilir bir özet yaz.\n"
+                    "Yapı:\n"
+                    "1. Attrition durumunun 1-2 cümlelik özeti\n"
+                    "2. En kritik grup/dönem\n"
+                    "3. İK ekibinin hemen yapması gereken 2-3 somut eylem\n"
+                    "Rakamları Türkçe birimlerle kullan."
+                ),
+                prompt=(
+                    f"Toplam ayrılma: {total} | Ort. kıdem: {tenure:.0f} ay | "
+                    f"Erken ayrılma: %{early_rate * 100:.0f}" + survival_context
+                ),
+                max_tokens=600,
+            )
+        ).strip()
     except Exception:
         pass
 
@@ -269,14 +279,10 @@ async def _generate_attrition_narrative(
     ]
 
     if early_rate > 0:
-        narrative_lines.append(
-            f"Erken ayrılma (<6 ay): ayrılmaların %{early_rate*100:.0f}'i."
-        )
+        narrative_lines.append(f"Erken ayrılma (<6 ay): ayrılmaların %{early_rate * 100:.0f}'i.")
 
     if involuntary > 0:
-        narrative_lines.append(
-            f"Involuntary departures: {involuntary} terminations/layoffs."
-        )
+        narrative_lines.append(f"Involuntary departures: {involuntary} terminations/layoffs.")
 
     return " ".join(narrative_lines)
 
@@ -297,7 +303,7 @@ async def run_attrition_agent(state: CHROState, config: dict) -> dict[str, Any]:
         csv_text = state.get("attrition_csv") or ""
         rows = _parse_attrition_csv(csv_text)
         metrics = _compute_attrition_metrics(rows)
-        alerts  = _build_attrition_alerts(metrics)
+        alerts = _build_attrition_alerts(metrics)
 
         # ── Survival analysis ─────────────────────────────────────────────────
         survival_result: dict[str, Any] | None = None
@@ -325,8 +331,8 @@ async def run_attrition_agent(state: CHROState, config: dict) -> dict[str, Any]:
 
         result["attrition"] = {
             **metrics,
-            "alerts":           alerts,
-            "narrative":        narrative,
+            "alerts": alerts,
+            "narrative": narrative,
             "survival_analysis": survival_result,
         }
 

@@ -2,6 +2,7 @@
 Tests for ReflectionAgent — reflection engineering layer.
 Pure tests, no LLM required.
 """
+
 from app.services.reflection_agent import (
     ReflectionAgent,
     ReflectionResult,
@@ -43,6 +44,7 @@ POSITIVE_DATA_PNL = {
 
 
 # ── Individual dimension scorers ──────────────────────────────────────────────
+
 
 class TestScoreCompleteness:
     def test_all_topics_found(self):
@@ -98,7 +100,9 @@ class TestScoreSpecificity:
 
 class TestScoreActionability:
     def test_action_words_score_higher(self):
-        dim_good, _ = _score_actionability("Maliyetler azaltılmalı ve gelirler artırılmalı. Strateji gözden geçirilmeli.")
+        dim_good, _ = _score_actionability(
+            "Maliyetler azaltılmalı ve gelirler artırılmalı. Strateji gözden geçirilmeli."
+        )
         dim_none, _ = _score_actionability("Bu dönem rakamlar belirlendi ve hesaplandı.")
         assert dim_good.score > dim_none.score
 
@@ -153,6 +157,7 @@ class TestScoreLength:
 
 
 # ── ReflectionAgent ───────────────────────────────────────────────────────────
+
 
 class TestReflectionAgent:
     def test_returns_reflection_result(self):

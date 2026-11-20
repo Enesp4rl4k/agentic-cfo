@@ -121,11 +121,7 @@ def _vector_literal(values: list[float]) -> str:
 def _has_embedding_support() -> bool:
     settings = get_settings()
     key = (settings.openai_api_key or "").strip()
-    return (
-        settings.rag_embedding_enabled
-        and bool(key)
-        and not key.startswith("llm-placeholder-")
-    )
+    return settings.rag_embedding_enabled and bool(key) and not key.startswith("llm-placeholder-")
 
 
 def _embed_texts(texts: list[str]) -> list[list[float]] | None:
@@ -308,9 +304,7 @@ async def retrieve_evidence(
         lines = ["## RAG Kanıtlar (evidence)"]
         for e in evidence:
             jid = e.job_id or "(unknown-job)"
-            lines.append(
-                f"- job={jid} chunk={e.chunk_index} score={e.score:.2f}: {e.preview}"
-            )
+            lines.append(f"- job={jid} chunk={e.chunk_index} score={e.score:.2f}: {e.preview}")
 
         result = "\n".join(lines)
         _EVIDENCE_CACHE[cache_key] = (time.monotonic(), result)
@@ -325,4 +319,3 @@ async def retrieve_evidence(
 
     async with session_factory()() as _db:
         return await _run(_db)
-

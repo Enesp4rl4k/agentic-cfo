@@ -1,4 +1,5 @@
 """Yetki Matrisi — Delegation-of-Authority engine."""
+
 from __future__ import annotations
 
 from app.platform.authority_matrix import (
@@ -57,25 +58,44 @@ class TestDefaultPolicy:
 
 class TestCustomPolicy:
     POLICY = [
-        {"id": "blocked_gambling", "domain": "*",
-         "when": {"category_in": ["kumar"]}, "decision": "block", "note": "yasak"},
-        {"id": "tier1", "domain": "spending",
-         "when": {"amount_kurus_lt": 2_500_000},
-         "decision": "auto_approve", "note": "₺25k altı serbest"},
-        {"id": "tier2", "domain": "spending",
-         "when": {"amount_kurus_gte": 2_500_000, "amount_kurus_lt": 10_000_000},
-         "decision": "require_approvals",
-         "approvals": [{"role": "finance_manager", "count": 1}], "note": "₺25k–₉100k"},
-        {"id": "tier3", "domain": "spending",
-         "when": {"amount_kurus_gte": 10_000_000},
-         "decision": "require_approvals",
-         "approvals": [{"role": "finance_manager", "count": 1}, {"role": "owner", "count": 1}],
-         "note": "₺100k üzeri"},
+        {
+            "id": "blocked_gambling",
+            "domain": "*",
+            "when": {"category_in": ["kumar"]},
+            "decision": "block",
+            "note": "yasak",
+        },
+        {
+            "id": "tier1",
+            "domain": "spending",
+            "when": {"amount_kurus_lt": 2_500_000},
+            "decision": "auto_approve",
+            "note": "₺25k altı serbest",
+        },
+        {
+            "id": "tier2",
+            "domain": "spending",
+            "when": {"amount_kurus_gte": 2_500_000, "amount_kurus_lt": 10_000_000},
+            "decision": "require_approvals",
+            "approvals": [{"role": "finance_manager", "count": 1}],
+            "note": "₺25k–₉100k",
+        },
+        {
+            "id": "tier3",
+            "domain": "spending",
+            "when": {"amount_kurus_gte": 10_000_000},
+            "decision": "require_approvals",
+            "approvals": [{"role": "finance_manager", "count": 1}, {"role": "owner", "count": 1}],
+            "note": "₺100k üzeri",
+        },
         {"id": "catch_all", "domain": "*", "when": {}, "decision": "auto_approve", "note": "-"},
     ]
 
     def test_tiered_bands(self):
-        assert evaluate(self.POLICY, _req(domain="spending", amount_kurus=1_000_000)).outcome == "auto_approve"
+        assert (
+            evaluate(self.POLICY, _req(domain="spending", amount_kurus=1_000_000)).outcome
+            == "auto_approve"
+        )
         mid = evaluate(self.POLICY, _req(domain="spending", amount_kurus=5_000_000))
         assert mid.matched_rule_id == "tier2"
         top = evaluate(self.POLICY, _req(domain="spending", amount_kurus=20_000_000))
@@ -93,8 +113,14 @@ class TestCustomPolicy:
 
 class TestNoMatchEscalates:
     def test_policy_without_catch_all_escalates(self):
-        policy = [{"id": "only", "domain": "spending", "when": {"amount_kurus_gte": 999_999_999},
-                   "decision": "auto_approve"}]
+        policy = [
+            {
+                "id": "only",
+                "domain": "spending",
+                "when": {"amount_kurus_gte": 999_999_999},
+                "decision": "auto_approve",
+            }
+        ]
         d = evaluate(policy, _req(domain="journal_entry", amount_kurus=1))
         assert d.outcome == "needs_approval"
         assert d.matched_rule_id is None
@@ -117,19 +143,35 @@ class TestValidation:
         assert any("decision" in e for e in errs)
 
     def test_rejects_unknown_when_key(self):
-        errs = validate_rules([
-            {"id": "x", "decision": "auto_approve", "when": {"vibe_check": True}, "domain": "*"},
-        ])
+        errs = validate_rules(
+            [
+                {
+                    "id": "x",
+                    "decision": "auto_approve",
+                    "when": {"vibe_check": True},
+                    "domain": "*",
+                },
+            ]
+        )
         assert any("vibe_check" in e for e in errs)
 
     def test_requires_catch_all(self):
-        errs = validate_rules([
-            {"id": "x", "decision": "auto_approve", "when": {"amount_kurus_gte": 1}, "domain": "*"},
-        ])
+        errs = validate_rules(
+            [
+                {
+                    "id": "x",
+                    "decision": "auto_approve",
+                    "when": {"amount_kurus_gte": 1},
+                    "domain": "*",
+                },
+            ]
+        )
         assert any("catch-all" in e for e in errs)
 
     def test_require_approvals_needs_list(self):
-        errs = validate_rules([
-            {"id": "x", "decision": "require_approvals", "when": {}, "domain": "*"},
-        ])
+        errs = validate_rules(
+            [
+                {"id": "x", "decision": "require_approvals", "when": {}, "domain": "*"},
+            ]
+        )
         assert any("approvals" in e for e in errs)

@@ -1,6 +1,7 @@
 """
 Unit tests for app.core.distributed_lock.
 """
+
 import asyncio
 
 import pytest

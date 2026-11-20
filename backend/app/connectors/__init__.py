@@ -5,6 +5,7 @@ Public surface:
   - `register` / `get_connector` / `list_connectors` — the registry.
   - `run_connector_sync` — the application service (persist + bookkeep).
 """
+
 from __future__ import annotations
 
 from app.connectors.base import (

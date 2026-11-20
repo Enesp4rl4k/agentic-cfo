@@ -24,6 +24,7 @@ Transaction response format:
     }
   }
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -38,16 +39,16 @@ def _make_akbank_config(
 ) -> BankOAuthConfig:
     base = "https://sandbox.api.akbank.com" if sandbox else "https://openapi.akbank.com"
     return BankOAuthConfig(
-        bank_id       = "akbank",
-        bank_name     = "Akbank",
-        client_id     = client_id,
-        client_secret = client_secret,
-        auth_url      = f"{base}/api/v1/oauth/authorize",
-        token_url     = f"{base}/api/v1/oauth/token",
-        accounts_url  = f"{base}/api/v1/accounts",
-        transactions_url = f"{base}/api/v1/accounts/{{account_id}}/transactions",
-        scopes        = ["accounts", "transactions"],
-        sandbox       = sandbox,
+        bank_id="akbank",
+        bank_name="Akbank",
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_url=f"{base}/api/v1/oauth/authorize",
+        token_url=f"{base}/api/v1/oauth/token",
+        accounts_url=f"{base}/api/v1/accounts",
+        transactions_url=f"{base}/api/v1/accounts/{{account_id}}/transactions",
+        scopes=["accounts", "transactions"],
+        sandbox=sandbox,
     )
 
 
@@ -61,12 +62,12 @@ class AkbankClient(OpenBankingClient):
         accounts_raw = raw.get("accounts", [])
         return [
             {
-                "account_id":     acc.get("resourceId") or acc.get("accountId", ""),
-                "iban":           acc.get("iban", ""),
-                "currency":       acc.get("currency", "TRY"),
-                "account_type":   acc.get("cashAccountType", "CACC"),
-                "name":           acc.get("name", "Akbank Hesabı"),
-                "balance":        float(acc.get("balanceAmount", {}).get("amount", 0)),
+                "account_id": acc.get("resourceId") or acc.get("accountId", ""),
+                "iban": acc.get("iban", ""),
+                "currency": acc.get("currency", "TRY"),
+                "account_type": acc.get("cashAccountType", "CACC"),
+                "name": acc.get("name", "Akbank Hesabı"),
+                "balance": float(acc.get("balanceAmount", {}).get("amount", 0)),
             }
             for acc in accounts_raw
         ]
@@ -79,11 +80,11 @@ class AkbankClient(OpenBankingClient):
         result: list[dict[str, Any]] = []
 
         for tx in booked:
-            amount_obj  = tx.get("transactionAmount", {})
-            raw_amount  = float(amount_obj.get("amount", 0) or 0)
-            currency    = amount_obj.get("currency", "TRY")
+            amount_obj = tx.get("transactionAmount", {})
+            raw_amount = float(amount_obj.get("amount", 0) or 0)
+            currency = amount_obj.get("currency", "TRY")
             # Positive = credit (income), negative = debit (expense)
-            tx_type     = "income" if raw_amount > 0 else "expense"
+            tx_type = "income" if raw_amount > 0 else "expense"
             amount_cents = abs(int(raw_amount * 100))
 
             description = (
@@ -93,15 +94,17 @@ class AkbankClient(OpenBankingClient):
             )
             vendor = tx.get("debtorName") or tx.get("creditorName") or None
 
-            result.append({
-                "amount_cents":      amount_cents,
-                "type":              tx_type,
-                "transaction_date":  tx.get("bookingDate") or tx.get("valueDate"),
-                "description":       description[:200],
-                "currency":          currency,
-                "reference":         tx.get("transactionId"),
-                "vendor":            vendor[:100] if vendor else None,
-                "raw_source":        "akbank_open_banking",
-            })
+            result.append(
+                {
+                    "amount_cents": amount_cents,
+                    "type": tx_type,
+                    "transaction_date": tx.get("bookingDate") or tx.get("valueDate"),
+                    "description": description[:200],
+                    "currency": currency,
+                    "reference": tx.get("transactionId"),
+                    "vendor": vendor[:100] if vendor else None,
+                    "raw_source": "akbank_open_banking",
+                }
+            )
 
         return result

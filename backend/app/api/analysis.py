@@ -28,6 +28,7 @@ def _check_job_access(job: AnalysisJob, user: User) -> None:
 
 class AnalyzeRequest(BaseModel):
     """Optional request body for POST /analyze/{job_id}."""
+
     budget_input: dict[str, Any] | None = None
 
 
@@ -88,7 +89,9 @@ async def start_analysis(
     "/analysis/{job_id}/rerun",
     responses={
         404: {"description": "Job not found."},
-        409: {"description": "Job is under review, still running, or its SMMM packet is finalized."},
+        409: {
+            "description": "Job is under review, still running, or its SMMM packet is finalized."
+        },
     },
 )
 async def rerun_analysis(
@@ -169,7 +172,9 @@ async def apply_as_company_view(
         raise HTTPException(status_code=404, detail="Job not found.")
     _check_job_access(job, current_user)
     if job.status != JobStatus.COMPLETED or not job.org_id:
-        raise HTTPException(status_code=409, detail="Only a completed analysis can become the company view.")
+        raise HTTPException(
+            status_code=409, detail="Only a completed analysis can become the company view."
+        )
     result = await saved_result(job_id, db)
     if not result.get("dashboard_json"):
         raise HTTPException(status_code=409, detail="This analysis has no dashboard.")
@@ -265,8 +270,11 @@ async def approve_review(
     # `devam` is the durable record that the held continuation is owed; it is
     # set in the same UPDATE that completes the job and cleared to "tamam" by
     # the continuation (app.services.review_continuation).
-    meta["review"] = {"approved_by": current_user.id, "approved_at": now.isoformat(),
-                      "devam": "bekliyor"}
+    meta["review"] = {
+        "approved_by": current_user.id,
+        "approved_at": now.isoformat(),
+        "devam": "bekliyor",
+    }
     # Atomic on the flag, not on the read: two simultaneous approvers both saw
     # `awaiting_review=True`, but only one UPDATE flips it — the second gets
     # rowcount 0 and a 409 instead of two "approved" responses and the held
@@ -294,7 +302,10 @@ async def approve_review(
         from app.services.review_continuation import devami_baslat
 
         await devami_baslat(job_id)
-    return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
+    return {
+        "data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value},
+        "error": None,
+    }
 
 
 @router.get("/analysis/{job_id}/decision-packet")
@@ -321,10 +332,7 @@ async def get_decision_packet(
     if str(job.status) in RUNNING_STATUSES:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Analiz henüz tamamlanmadı — karar paketi sonuçlar "
-                "hazır olduğunda oluşur."
-            ),
+            detail=("Analiz henüz tamamlanmadı — karar paketi sonuçlar hazır olduğunda oluşur."),
         )
 
     packet = await build_decision_packet(db, job)
@@ -386,6 +394,7 @@ async def list_transactions(
 
     # Paginated rows — nulls last for missing dates
     from sqlalchemy import nullslast
+
     result = await db.execute(
         select(Transaction)
         .where(Transaction.job_id == job_id)
@@ -410,7 +419,9 @@ async def list_transactions(
                     "category": tx.category,
                     "description": tx.description,
                     "vendor": tx.vendor,
-                    "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+                    "transaction_date": tx.transaction_date.isoformat()
+                    if tx.transaction_date
+                    else None,
                     "confidence": float(tx.confidence) if tx.confidence else None,
                     # "user_rule" / "user_edit" / None — the user's own
                     # correction decided the category (plan v5 §F0).

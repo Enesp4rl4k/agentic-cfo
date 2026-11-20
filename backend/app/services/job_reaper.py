@@ -20,6 +20,7 @@ Three ways a run dies without reaching a terminal state:
 `awaiting_review` is deliberately never reaped: a human holding the gate is
 not a fault, and failing it would throw away a finished analysis.
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,10 +47,12 @@ async def reap_stuck_jobs(db: AsyncSession) -> dict[str, Any]:
     expired = await db.execute(
         update(AnalysisJob)
         .where(
-            AnalysisJob.status.in_((
-                JobStatus.INGESTING.value,
-                JobStatus.ANALYZING.value,
-            )),
+            AnalysisJob.status.in_(
+                (
+                    JobStatus.INGESTING.value,
+                    JobStatus.ANALYZING.value,
+                )
+            ),
             AnalysisJob.lease_expires_at.is_not(None),
             AnalysisJob.lease_expires_at < now,
         )
@@ -92,8 +95,7 @@ async def reap_stuck_jobs(db: AsyncSession) -> dict[str, Any]:
         update(AgentRun)
         .where(
             AgentRun.status == "running",
-            AgentRun.updated_at < now
-            - timedelta(minutes=settings.stale_agent_run_minutes),
+            AgentRun.updated_at < now - timedelta(minutes=settings.stale_agent_run_minutes),
         )
         .values(
             status="failed",
@@ -108,17 +110,19 @@ async def reap_stuck_jobs(db: AsyncSession) -> dict[str, Any]:
     # 4. Role runs: a dead claim, or a task lost before it was claimed.
     expired_agent_jobs = await db.execute(
         update(AgentJob)
-        .where(or_(
-            and_(
-                AgentJob.status == AgentJobStatus.RUNNING,
-                AgentJob.lease_expires_at.is_not(None),
-                AgentJob.lease_expires_at < now,
-            ),
-            and_(
-                AgentJob.status == AgentJobStatus.PENDING,
-                AgentJob.created_at < now - timedelta(minutes=settings.stale_pending_minutes),
-            ),
-        ))
+        .where(
+            or_(
+                and_(
+                    AgentJob.status == AgentJobStatus.RUNNING,
+                    AgentJob.lease_expires_at.is_not(None),
+                    AgentJob.lease_expires_at < now,
+                ),
+                and_(
+                    AgentJob.status == AgentJobStatus.PENDING,
+                    AgentJob.created_at < now - timedelta(minutes=settings.stale_pending_minutes),
+                ),
+            )
+        )
         .values(
             status=AgentJobStatus.FAILED,
             error_message="Bu analizi çalıştıran süreç bitiremeden durdu. Yeniden çalıştırın.",

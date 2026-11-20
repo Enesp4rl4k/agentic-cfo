@@ -14,6 +14,7 @@ Coverage targets:
   - Empty inputs
   - Edge cases (empty history, single alert, all suppressed)
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,7 @@ from app.services.alert_router import (
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _alert(
     level: str = "warning",
@@ -49,6 +51,7 @@ def _alert(
 
 
 # ── Priority scoring ──────────────────────────────────────────────────────────
+
 
 class TestComputePriority:
     def test_critical_base_score(self):
@@ -83,7 +86,10 @@ class TestComputePriority:
         assert score == pytest.approx(0.85)
 
     def test_score_capped_at_one(self):
-        a = _alert(level="critical", message="fraud runway cash nakit critical kritik breach outage churn duplicate")
+        a = _alert(
+            level="critical",
+            message="fraud runway cash nakit critical kritik breach outage churn duplicate",
+        )
         score = _compute_priority(a)
         assert score <= 1.0
 
@@ -95,15 +101,18 @@ class TestComputePriority:
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
+
 class TestDeduplication:
     def test_suppress_duplicate_within_ttl(self):
         router = AlertRouter(dedup_ttl_hours=4)
         a = _alert(message="Runway is 3 months")
         # Same alert in history 2 hours ago
-        history = [_alert(
-            message="Runway is 3 months",
-            ts=datetime.now(UTC) - timedelta(hours=2),
-        )]
+        history = [
+            _alert(
+                message="Runway is 3 months",
+                ts=datetime.now(UTC) - timedelta(hours=2),
+            )
+        ]
         decisions = router.process_alerts([a], history)
         assert len(decisions) == 1
         assert decisions[0].action == AlertAction.SUPPRESS
@@ -112,10 +121,12 @@ class TestDeduplication:
         router = AlertRouter(dedup_ttl_hours=4)
         a = _alert(message="Runway is 3 months")
         # Same alert in history 5 hours ago (outside 4h TTL)
-        history = [_alert(
-            message="Runway is 3 months",
-            ts=datetime.now(UTC) - timedelta(hours=5),
-        )]
+        history = [
+            _alert(
+                message="Runway is 3 months",
+                ts=datetime.now(UTC) - timedelta(hours=5),
+            )
+        ]
         decisions = router.process_alerts([a], history)
         assert len(decisions) == 1
         assert decisions[0].action != AlertAction.SUPPRESS
@@ -136,34 +147,31 @@ class TestDeduplication:
     def test_suppress_reason_contains_time(self):
         router = AlertRouter()
         a = _alert(message="Duplicate test")
-        history = [_alert(
-            message="Duplicate test",
-            ts=datetime.now(UTC) - timedelta(hours=1),
-        )]
+        history = [
+            _alert(
+                message="Duplicate test",
+                ts=datetime.now(UTC) - timedelta(hours=1),
+            )
+        ]
         decisions = router.process_alerts([a], history)
         assert "UTC" in decisions[0].reason
 
 
 # ── Aggregation ───────────────────────────────────────────────────────────────
 
+
 class TestAggregation:
     def test_aggregate_when_threshold_met(self):
         # threshold=3 → 3+ alerts of same domain+level → AGGREGATE
         router = AlertRouter(aggregation_threshold=3)
-        alerts = [
-            _alert(message=f"Warning {i}", domain="cfo", level="warning")
-            for i in range(3)
-        ]
+        alerts = [_alert(message=f"Warning {i}", domain="cfo", level="warning") for i in range(3)]
         decisions = router.process_alerts(alerts)
         aggregate_count = sum(1 for d in decisions if d.action == AlertAction.AGGREGATE)
         assert aggregate_count >= 1
 
     def test_no_aggregate_below_threshold(self):
         router = AlertRouter(aggregation_threshold=5)
-        alerts = [
-            _alert(message=f"Warning {i}", domain="cfo", level="warning")
-            for i in range(2)
-        ]
+        alerts = [_alert(message=f"Warning {i}", domain="cfo", level="warning") for i in range(2)]
         decisions = router.process_alerts(alerts)
         # With only 2 alerts and threshold=5, no aggregation
         assert all(d.action != AlertAction.AGGREGATE for d in decisions)
@@ -179,6 +187,7 @@ class TestAggregation:
 
 
 # ── Escalation ────────────────────────────────────────────────────────────────
+
 
 class TestEscalation:
     def test_critical_alert_always_escalates(self):
@@ -212,6 +221,7 @@ class TestEscalation:
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
+
 class TestRouting:
     def test_low_priority_warning_routes_to_domain_owner(self):
         router = AlertRouter(escalate_threshold=0.9)  # high threshold
@@ -243,13 +253,14 @@ class TestRouting:
 
 # ── Sorting ───────────────────────────────────────────────────────────────────
 
+
 class TestSorting:
     def test_decisions_sorted_by_priority_descending(self):
         router = AlertRouter()
         alerts = [
-            _alert(level="info",     message="Low priority info"),
+            _alert(level="info", message="Low priority info"),
             _alert(level="critical", message="Critical runway issue"),
-            _alert(level="warning",  message="Standard warning"),
+            _alert(level="warning", message="Standard warning"),
         ]
         decisions = router.process_alerts(alerts)
         scores = [d.priority_score for d in decisions]
@@ -257,6 +268,7 @@ class TestSorting:
 
 
 # ── Edge cases ────────────────────────────────────────────────────────────────
+
 
 class TestEdgeCases:
     def test_empty_alerts_returns_empty(self):
@@ -300,12 +312,13 @@ class TestEdgeCases:
 
 # ── build_digest ──────────────────────────────────────────────────────────────
 
+
 class TestBuildDigest:
     def test_digest_has_required_keys(self):
         router = AlertRouter()
         alerts = [
             _alert(level="critical", message="Critical issue"),
-            _alert(level="warning",  message="Warning issue"),
+            _alert(level="warning", message="Warning issue"),
         ]
         decisions = router.process_alerts(alerts)
         digest = router.build_digest(decisions)
@@ -328,8 +341,8 @@ class TestBuildDigest:
     def test_actionable_count_correct(self):
         router = AlertRouter()
         alerts = [
-            _alert(level="critical", message="Critical"),         # ESCALATE (actionable)
-            _alert(level="warning",  message="Low priority"),     # ROUTE (actionable)
+            _alert(level="critical", message="Critical"),  # ESCALATE (actionable)
+            _alert(level="warning", message="Low priority"),  # ROUTE (actionable)
         ]
         decisions = router.process_alerts(alerts)
         digest = router.build_digest(decisions)
@@ -339,6 +352,7 @@ class TestBuildDigest:
 
 
 # ── AlertDecision.is_actionable ───────────────────────────────────────────────
+
 
 class TestIsActionable:
     def test_route_is_actionable(self):

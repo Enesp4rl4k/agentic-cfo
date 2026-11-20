@@ -27,6 +27,7 @@ Key management:
 
 DDIA prensip: "Şifreleme = veri dönüşümü." Saf fonksiyon, yan etki yok.
 """
+
 from __future__ import annotations
 
 import base64
@@ -68,11 +69,12 @@ class FieldEncryption:
 
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
             aesgcm = AESGCM(self._key)
-            iv      = os.urandom(12)
-            ct      = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
+            iv = os.urandom(12)
+            ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
             # Format: base64(iv + ciphertext_with_tag)
-            raw     = iv + ct
+            raw = iv + ct
             return "enc:" + base64.b64encode(raw).decode("ascii")
         except ImportError:
             logger.debug("cryptography package not installed — field encryption disabled")
@@ -95,11 +97,12 @@ class FieldEncryption:
 
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-            raw    = base64.b64decode(token[4:])
-            iv     = raw[:12]
-            ct     = raw[12:]
+
+            raw = base64.b64decode(token[4:])
+            iv = raw[:12]
+            ct = raw[12:]
             aesgcm = AESGCM(self._key)
-            plain  = aesgcm.decrypt(iv, ct, None)
+            plain = aesgcm.decrypt(iv, ct, None)
             return plain.decode("utf-8")
         except ImportError:
             logger.debug("cryptography package not installed — returning raw token")
@@ -132,6 +135,7 @@ class FieldEncryption:
 
 # ── Key management ────────────────────────────────────────────────────────────
 
+
 class KeyManager:
     """
     Manages encryption keys with rotation support.
@@ -143,12 +147,13 @@ class KeyManager:
     def __init__(self) -> None:
         self._keys: dict[str, bytes] = {}
         self._current: str = CURRENT_KEY_VERSION
-        self._loaded    = False
+        self._loaded = False
 
     def _load(self) -> None:
         if self._loaded:
             return
         from app.config import get_settings
+
         settings = get_settings()
 
         raw_key = getattr(settings, "field_encryption_key", "")
@@ -160,7 +165,8 @@ class KeyManager:
                 else:
                     logger.warning(
                         "FIELD_ENCRYPTION_KEY must be 32 bytes (base64). "
-                        "Got %d bytes — field encryption disabled.", len(key_bytes)
+                        "Got %d bytes — field encryption disabled.",
+                        len(key_bytes),
                     )
             except Exception as exc:
                 logger.warning("Failed to load FIELD_ENCRYPTION_KEY: %s", exc)
@@ -197,6 +203,7 @@ def get_key_manager() -> KeyManager:
 
 
 # ── Convenience functions ─────────────────────────────────────────────────────
+
 
 def encrypt_field(value: str | None) -> str | None:
     """Encrypt a field using the current key. Passthrough if disabled."""
@@ -235,7 +242,7 @@ def decrypt_json(data: dict[str, Any], sensitive_fields: list[str]) -> dict[str,
 
 ENCRYPTED_FIELDS: dict[str, list[str]] = {
     "transactions": ["description", "vendor"],
-    "analysis_jobs": [],           # result JSON is too large — use application-level
+    "analysis_jobs": [],  # result JSON is too large — use application-level
     "smmm_onay_kayitlari": ["tx_description"],
     "audit_logs": ["request_body"],  # may contain PII
 }

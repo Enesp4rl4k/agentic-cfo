@@ -26,6 +26,7 @@ Limits (enforced, not promised):
     worker process; the endpoint answers 429 beyond it (api/stream.py).
   - `_MAX_QUEUE_SIZE` events buffered per subscriber, drop-oldest beyond.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -145,12 +146,15 @@ class SSEManager:
 
     async def publish_done(self, job_id: str, status: str) -> None:
         """Signal pipeline completion. Clients will close the connection."""
-        await self.publish(job_id, {
-            "event": "done",
-            "job_id": job_id,
-            "status": status,
-            "ts": datetime.now(UTC).isoformat(),
-        })
+        await self.publish(
+            job_id,
+            {
+                "event": "done",
+                "job_id": job_id,
+                "status": status,
+                "ts": datetime.now(UTC).isoformat(),
+            },
+        )
         # Sentinel None → tells subscribe() generator to stop (cross-process
         # subscribers close on the `done` event itself).
         for sub in self._queues.get(job_id, []):
@@ -173,9 +177,7 @@ class SSEManager:
         if await get_redis() is None:
             return
         try:
-            self._listener_task = asyncio.create_task(
-                self._listener_loop(), name="sse-redis-bus"
-            )
+            self._listener_task = asyncio.create_task(self._listener_loop(), name="sse-redis-bus")
         except RuntimeError:
             # No running loop (sync context) — next subscribe retries.
             pass
@@ -206,7 +208,7 @@ class SSEManager:
                     channel = str(message.get("channel", ""))
                     if not channel.startswith(_CHANNEL_PREFIX):
                         continue
-                    job_id = channel[len(_CHANNEL_PREFIX):]
+                    job_id = channel[len(_CHANNEL_PREFIX) :]
                     data = message.get("data")
                     if not isinstance(data, str):
                         continue
@@ -220,9 +222,7 @@ class SSEManager:
                 raise
             except Exception as exc:
                 mark_unavailable(exc)
-                logger.warning(
-                    "SSE bus listener lost — reconnecting in %.0fs: %s", delay, exc
-                )
+                logger.warning("SSE bus listener lost — reconnecting in %.0fs: %s", delay, exc)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30.0)
             finally:
@@ -234,9 +234,7 @@ class SSEManager:
 
     # ── Subscribe side ───────────────────────────────────────────────────────
 
-    async def subscribe(
-        self, job_id: str
-    ) -> AsyncGenerator[str, None]:
+    async def subscribe(self, job_id: str) -> AsyncGenerator[str, None]:
         """
         Async generator that yields SSE-formatted text chunks.
 
@@ -301,8 +299,15 @@ sse_manager = SSEManager()
 
 # Ordered pipeline steps for progress calculation
 _PIPELINE_STEPS = [
-    "data_ingestion", "pnl", "cashflow", "forecast",
-    "budget", "tax", "anomaly", "alert", "report",
+    "data_ingestion",
+    "pnl",
+    "cashflow",
+    "forecast",
+    "budget",
+    "tax",
+    "anomaly",
+    "alert",
+    "report",
 ]
 
 _completed_steps: dict[str, list[str]] = {}  # job_id → completed step names
@@ -343,17 +348,20 @@ async def publish_step_event(
 
     progress_pct = _calc_progress_pct(job_id)
 
-    await sse_manager.publish(job_id, {
-        "event": "step",
-        "job_id": job_id,
-        "step": step,
-        "ok": ok,
-        "detail": detail,
-        "confidence": confidence,
-        "duration_ms": duration_ms,
-        "progress_pct": progress_pct,
-        "ts": datetime.now(UTC).isoformat(),
-    })
+    await sse_manager.publish(
+        job_id,
+        {
+            "event": "step",
+            "job_id": job_id,
+            "step": step,
+            "ok": ok,
+            "detail": detail,
+            "confidence": confidence,
+            "duration_ms": duration_ms,
+            "progress_pct": progress_pct,
+            "ts": datetime.now(UTC).isoformat(),
+        },
+    )
 
 
 async def publish_agent_start_event(
@@ -366,15 +374,18 @@ async def publish_agent_start_event(
     Lets the frontend show "agent X is running" immediately.
     """
     progress_pct = _calc_progress_pct(job_id, current_step=step)
-    await sse_manager.publish(job_id, {
-        "event": "agent_start",
-        "job_id": job_id,
-        "step": step,
-        "current_agent": step,
-        "progress_pct": progress_pct,
-        "estimated_duration_s": estimated_duration_s,
-        "ts": datetime.now(UTC).isoformat(),
-    })
+    await sse_manager.publish(
+        job_id,
+        {
+            "event": "agent_start",
+            "job_id": job_id,
+            "step": step,
+            "current_agent": step,
+            "progress_pct": progress_pct,
+            "estimated_duration_s": estimated_duration_s,
+            "ts": datetime.now(UTC).isoformat(),
+        },
+    )
 
 
 async def publish_job_done(job_id: str, status: str = "completed") -> None:
@@ -384,10 +395,13 @@ async def publish_job_done(job_id: str, status: str = "completed") -> None:
 
 async def publish_job_error(job_id: str, message: str) -> None:
     """Publish job failure. Call from worker on exception."""
-    await sse_manager.publish(job_id, {
-        "event": "error",
-        "job_id": job_id,
-        "message": message,
-        "ts": datetime.now(UTC).isoformat(),
-    })
+    await sse_manager.publish(
+        job_id,
+        {
+            "event": "error",
+            "job_id": job_id,
+            "message": message,
+            "ts": datetime.now(UTC).isoformat(),
+        },
+    )
     await sse_manager.publish_done(job_id, "failed")

@@ -1,4 +1,5 @@
 """Open Banking connectors — Akbank, Garanti BBVA."""
+
 from app.services.open_banking.akbank import AkbankClient
 from app.services.open_banking.base import BankOAuthConfig, OpenBankingClient, OpenBankingError
 from app.services.open_banking.garanti import GarantiClient
@@ -20,7 +21,7 @@ def get_bank_client(
 ) -> OpenBankingClient:
     """Factory: return the correct bank client by bank_id."""
     clients = {
-        "akbank":  AkbankClient,
+        "akbank": AkbankClient,
         "garanti": GarantiClient,
     }
     cls = clients.get(bank_id.lower())

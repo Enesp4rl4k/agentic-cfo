@@ -27,6 +27,7 @@ Usage
     results = svc.fit_and_detect(transactions, contamination=0.05)
     # results: list[AnomalyResult]
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,46 +39,49 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-MIN_SAMPLES         = 20    # minimum transactions to run ML
+MIN_SAMPLES = 20  # minimum transactions to run ML
 DEFAULT_CONTAMINATION = 0.05  # expected anomaly rate (5%)
-BOOTSTRAP_N         = 100   # iterations for confidence interval
+BOOTSTRAP_N = 100  # iterations for confidence interval
 
 # ML model weights for ensemble voting
-IF_WEIGHT     = 0.45    # Isolation Forest
-DBSCAN_WEIGHT = 0.30    # DBSCAN
-RULE_WEIGHT   = 0.25    # Rule-based
+IF_WEIGHT = 0.45  # Isolation Forest
+DBSCAN_WEIGHT = 0.30  # DBSCAN
+RULE_WEIGHT = 0.25  # Rule-based
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class AnomalyResult:
     """Unified anomaly result from any detector."""
-    transaction_id:   str
-    anomaly_type:     str          # "isolation_forest" | "dbscan" | "rule_based" | "ensemble"
-    severity:         str          # "critical" | "high" | "medium" | "low"
-    score:            float        # 0.0 – 1.0 (higher = more anomalous)
-    confidence_lower: float        # bootstrap CI lower bound
-    confidence_upper: float        # bootstrap CI upper bound
-    description:      str
-    evidence:         dict[str, Any] = field(default_factory=dict)
-    detector_type:    str = "ensemble"
+
+    transaction_id: str
+    anomaly_type: str  # "isolation_forest" | "dbscan" | "rule_based" | "ensemble"
+    severity: str  # "critical" | "high" | "medium" | "low"
+    score: float  # 0.0 – 1.0 (higher = more anomalous)
+    confidence_lower: float  # bootstrap CI lower bound
+    confidence_upper: float  # bootstrap CI upper bound
+    description: str
+    evidence: dict[str, Any] = field(default_factory=dict)
+    detector_type: str = "ensemble"
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "transaction_id":   self.transaction_id,
-            "anomaly_type":     self.anomaly_type,
-            "severity":         self.severity,
-            "score":            round(self.score, 3),
+            "transaction_id": self.transaction_id,
+            "anomaly_type": self.anomaly_type,
+            "severity": self.severity,
+            "score": round(self.score, 3),
             "confidence_lower": round(self.confidence_lower, 3),
             "confidence_upper": round(self.confidence_upper, 3),
-            "description":      self.description,
-            "evidence":         self.evidence,
-            "detector_type":    self.detector_type,
+            "description": self.description,
+            "evidence": self.evidence,
+            "detector_type": self.detector_type,
         }
 
 
 # ── Feature engineering ───────────────────────────────────────────────────────
+
 
 def _build_feature_matrix(transactions: list[dict]) -> tuple[list[list[float]], list[str]]:
     """
@@ -90,8 +94,8 @@ def _build_feature_matrix(transactions: list[dict]) -> tuple[list[list[float]], 
     if not transactions:
         return [], []
 
-    amounts     = [abs(float(t.get("amount_cents", 0) or 0)) / 100 for t in transactions]
-    max_amount  = max(amounts) if amounts else 1.0
+    amounts = [abs(float(t.get("amount_cents", 0) or 0)) / 100 for t in transactions]
+    max_amount = max(amounts) if amounts else 1.0
     total_spend = sum(amounts) or 1.0
 
     # Vendor frequency (how often each vendor appears)
@@ -115,10 +119,10 @@ def _build_feature_matrix(transactions: list[dict]) -> tuple[list[list[float]], 
 
     # Global z-score normalization
     mean_amount = sum(amounts) / len(amounts)
-    std_amount  = (sum((a - mean_amount) ** 2 for a in amounts) / len(amounts)) ** 0.5 or 1.0
+    std_amount = (sum((a - mean_amount) ** 2 for a in amounts) / len(amounts)) ** 0.5 or 1.0
 
     features: list[list[float]] = []
-    ids:      list[str]         = []
+    ids: list[str] = []
 
     for t, amt in zip(transactions, amounts, strict=False):
         tx_id = str(t.get("id", ""))
@@ -137,31 +141,34 @@ def _build_feature_matrix(transactions: list[dict]) -> tuple[list[list[float]], 
             pass
 
         vendor = str(t.get("vendor", "") or "unknown")
-        cat    = str(t.get("category", "") or "unknown")
+        cat = str(t.get("category", "") or "unknown")
 
         vendor_freq = vendor_counts.get(vendor, 1) / len(transactions)
-        cat_pct     = cat_spend.get(cat, 0) / total_spend
-        amt_vs_cat  = amt / (cat_mean.get(cat, 1.0) or 1.0)
-        amt_norm    = amt / (max_amount or 1.0)
-        z_score     = (amt - mean_amount) / std_amount
+        cat_pct = cat_spend.get(cat, 0) / total_spend
+        amt_vs_cat = amt / (cat_mean.get(cat, 1.0) or 1.0)
+        amt_norm = amt / (max_amount or 1.0)
+        z_score = (amt - mean_amount) / std_amount
 
         # Clip z-score to [-3, 3] range for normalization
         z_clipped = max(-3.0, min(3.0, z_score)) / 3.0
 
-        features.append([
-            amt_norm,
-            dow,
-            vendor_freq,
-            cat_pct,
-            min(amt_vs_cat, 10.0) / 10.0,  # cap at 10x
-            month_pos,
-            z_clipped,
-        ])
+        features.append(
+            [
+                amt_norm,
+                dow,
+                vendor_freq,
+                cat_pct,
+                min(amt_vs_cat, 10.0) / 10.0,  # cap at 10x
+                month_pos,
+                z_clipped,
+            ]
+        )
 
     return features, ids
 
 
 # ── Confidence interval via bootstrap ─────────────────────────────────────────
+
 
 def _compute_confidence_interval(
     scores: list[float],
@@ -175,6 +182,7 @@ def _compute_confidence_interval(
         return 0.0, 0.0
 
     import random
+
     rng = random.Random(42)
 
     means = []
@@ -189,6 +197,7 @@ def _compute_confidence_interval(
 
 
 # ── Isolation Forest detector ─────────────────────────────────────────────────
+
 
 def _run_isolation_forest(
     features: list[list[float]],
@@ -211,8 +220,8 @@ def _run_isolation_forest(
             n_estimators=100,
         )
         clf.fit(X)
-        raw_scores = clf.decision_function(X)   # negative = more anomalous
-        predictions = clf.predict(X)             # -1 = anomaly, 1 = normal
+        raw_scores = clf.decision_function(X)  # negative = more anomalous
+        predictions = clf.predict(X)  # -1 = anomaly, 1 = normal
 
         # Convert to 0–1 score (1 = most anomalous)
         min_score = raw_scores.min()
@@ -236,6 +245,7 @@ def _run_isolation_forest(
 
 
 # ── DBSCAN detector ───────────────────────────────────────────────────────────
+
 
 def _run_dbscan(
     features: list[list[float]],
@@ -277,11 +287,12 @@ def _run_dbscan(
 
 # ── Ensemble voting ───────────────────────────────────────────────────────────
 
+
 def _ensemble_vote(
-    if_scores:    dict[str, float],
-    dbscan_ids:   set[str],
-    rule_ids:     set[str],
-    all_ids:      list[str],
+    if_scores: dict[str, float],
+    dbscan_ids: set[str],
+    rule_ids: set[str],
+    all_ids: list[str],
 ) -> list[tuple[str, float]]:
     """
     Weighted ensemble: IF score × IF_WEIGHT + DBSCAN × DBSCAN_WEIGHT + rule × RULE_WEIGHT.
@@ -289,9 +300,9 @@ def _ensemble_vote(
     """
     results = []
     for tx_id in all_ids:
-        if_s     = if_scores.get(tx_id, 0.0) * IF_WEIGHT
+        if_s = if_scores.get(tx_id, 0.0) * IF_WEIGHT
         dbscan_s = (0.7 if tx_id in dbscan_ids else 0.0) * DBSCAN_WEIGHT
-        rule_s   = (1.0 if tx_id in rule_ids  else 0.0) * RULE_WEIGHT
+        rule_s = (1.0 if tx_id in rule_ids else 0.0) * RULE_WEIGHT
 
         ensemble = if_s + dbscan_s + rule_s
         if ensemble >= 0.3:
@@ -303,14 +314,19 @@ def _ensemble_vote(
 
 # ── Severity mapping ──────────────────────────────────────────────────────────
 
+
 def _score_to_severity(score: float) -> str:
-    if score >= 0.85: return "critical"
-    if score >= 0.65: return "high"
-    if score >= 0.40: return "medium"
+    if score >= 0.85:
+        return "critical"
+    if score >= 0.65:
+        return "high"
+    if score >= 0.40:
+        return "medium"
     return "low"
 
 
 # ── Main service class ────────────────────────────────────────────────────────
+
 
 class AnomalyMLService:
     """
@@ -340,7 +356,8 @@ class AnomalyMLService:
         if len(transactions) < MIN_SAMPLES:
             logger.debug(
                 "AnomalyML: only %d transactions — minimum %d required, skipping ML",
-                len(transactions), MIN_SAMPLES,
+                len(transactions),
+                MIN_SAMPLES,
             )
             return []
 
@@ -349,12 +366,12 @@ class AnomalyMLService:
             return []
 
         # ── Step 1: Isolation Forest ──────────────────────────────────────────
-        if_results   = _run_isolation_forest(features, ids, contamination)
+        if_results = _run_isolation_forest(features, ids, contamination)
         if_score_map = dict(if_results)
 
         # ── Step 2: DBSCAN ────────────────────────────────────────────────────
         dbscan_results = _run_dbscan(features, ids)
-        dbscan_ids     = {tx_id for tx_id, _ in dbscan_results}
+        dbscan_ids = {tx_id for tx_id, _ in dbscan_results}
 
         # ── Step 3: Rule-based (from existing detectors) ──────────────────────
         rule_ids: set[str] = set()
@@ -366,6 +383,7 @@ class AnomalyMLService:
                 detect_unusual_amounts,
                 detect_vendor_concentration,
             )
+
             rule_anomalies: list[dict] = []
             rule_anomalies.extend(detect_duplicates(transactions))
             rule_anomalies.extend(detect_unusual_amounts(transactions))
@@ -374,7 +392,7 @@ class AnomalyMLService:
             rule_anomalies.extend(detect_round_numbers(transactions))
 
             for ra in rule_anomalies:
-                for tid in (ra.get("transaction_ids") or []):
+                for tid in ra.get("transaction_ids") or []:
                     rule_ids.add(str(tid))
         except Exception as exc:
             logger.warning("Rule-based detectors failed: %s", exc)
@@ -397,44 +415,54 @@ class AnomalyMLService:
         output: list[AnomalyResult] = []
 
         for tx_id, score in ensemble_results:
-            tx     = tx_map.get(tx_id, {})
+            tx = tx_map.get(tx_id, {})
             amount = abs(float(tx.get("amount_cents", 0) or 0)) / 100
             vendor = str(tx.get("vendor", "") or "Bilinmeyen")
-            cat    = str(tx.get("category", "") or "Bilinmeyen")
+            cat = str(tx.get("category", "") or "Bilinmeyen")
 
             # Determine which detectors flagged this transaction
             detectors = []
-            if tx_id in if_score_map: detectors.append("isolation_forest")
-            if tx_id in dbscan_ids:   detectors.append("dbscan")
-            if tx_id in rule_ids:     detectors.append("rule_based")
+            if tx_id in if_score_map:
+                detectors.append("isolation_forest")
+            if tx_id in dbscan_ids:
+                detectors.append("dbscan")
+            if tx_id in rule_ids:
+                detectors.append("rule_based")
             detector_label = "+".join(detectors) or "ensemble"
 
-            output.append(AnomalyResult(
-                transaction_id   = tx_id,
-                anomaly_type     = "ml_ensemble" if len(detectors) > 1 else (detectors[0] if detectors else "ensemble"),
-                severity         = _score_to_severity(score),
-                score            = score,
-                confidence_lower = max(0.0, score - (ci_hi - ci_lo) / 2),
-                confidence_upper = min(1.0, score + (ci_hi - ci_lo) / 2),
-                description      = (
-                    f"ML anomaly detected: {vendor} — {cat} — "
-                    f"₺{amount:,.0f} (detectors: {detector_label})"
-                ),
-                evidence = {
-                    "amount":    amount,
-                    "vendor":    vendor,
-                    "category":  cat,
-                    "detectors": detectors,
-                    "if_score":  round(if_score_map.get(tx_id, 0.0), 3),
-                    "dbscan":    tx_id in dbscan_ids,
-                    "rule":      tx_id in rule_ids,
-                },
-                detector_type = detector_label,
-            ))
+            output.append(
+                AnomalyResult(
+                    transaction_id=tx_id,
+                    anomaly_type="ml_ensemble"
+                    if len(detectors) > 1
+                    else (detectors[0] if detectors else "ensemble"),
+                    severity=_score_to_severity(score),
+                    score=score,
+                    confidence_lower=max(0.0, score - (ci_hi - ci_lo) / 2),
+                    confidence_upper=min(1.0, score + (ci_hi - ci_lo) / 2),
+                    description=(
+                        f"ML anomaly detected: {vendor} — {cat} — "
+                        f"₺{amount:,.0f} (detectors: {detector_label})"
+                    ),
+                    evidence={
+                        "amount": amount,
+                        "vendor": vendor,
+                        "category": cat,
+                        "detectors": detectors,
+                        "if_score": round(if_score_map.get(tx_id, 0.0), 3),
+                        "dbscan": tx_id in dbscan_ids,
+                        "rule": tx_id in rule_ids,
+                    },
+                    detector_type=detector_label,
+                )
+            )
 
         logger.info(
             "AnomalyML: %d transactions → %d anomalies (IF=%d DBSCAN=%d rule=%d)",
-            len(transactions), len(output),
-            len(if_score_map), len(dbscan_ids), len(rule_ids),
+            len(transactions),
+            len(output),
+            len(if_score_map),
+            len(dbscan_ids),
+            len(rule_ids),
         )
         return output

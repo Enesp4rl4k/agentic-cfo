@@ -12,6 +12,7 @@ Supported banks:
   - Garanti BBVA: https://developer.garantibbva.com.tr
   - Akbank: https://developer.akbank.com
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -114,12 +115,10 @@ class PSD2BankClient:
                     # Update rate limit
                     if "X-RateLimit-Reset" in resp.headers:
                         reset_epoch = int(resp.headers["X-RateLimit-Reset"])
-                        self._rate_limit_reset = datetime.fromtimestamp(
-                            reset_epoch, tz=UTC
-                        )
+                        self._rate_limit_reset = datetime.fromtimestamp(reset_epoch, tz=UTC)
 
                     if resp.status_code == 429:
-                        backoff = 2 ** attempt
+                        backoff = 2**attempt
                         logger.warning(
                             f"{self.bank_name} rate limited (attempt {attempt + 1}), "
                             f"backing off {backoff}s"
@@ -134,7 +133,7 @@ class PSD2BankClient:
                 if attempt == retry_count - 1:
                     logger.error(f"{self.bank_name} API call failed: {e}")
                     raise
-                backoff = 2 ** attempt
+                backoff = 2**attempt
                 logger.warning(f"{self.bank_name} request failed, retrying in {backoff}s")
                 await asyncio.sleep(backoff)
 
@@ -189,9 +188,7 @@ class GarantiPSD2Client(PSD2BankClient):
 
                 self._access_token = data["access_token"]
                 expires_in = data.get("expires_in", 3600)
-                self._token_expires_at = datetime.now(UTC) + timedelta(
-                    seconds=expires_in
-                )
+                self._token_expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
 
                 logger.info("Garanti access token obtained")
                 return self._access_token
@@ -261,9 +258,7 @@ class GarantiPSD2Client(PSD2BankClient):
                             amount_cents=amount_cents,
                             tx_type=tx_type,
                             currency=tx.get("currency", "TRY"),
-                            vendor=tx.get("counterparty")[:200]
-                            if tx.get("counterparty")
-                            else None,
+                            vendor=tx.get("counterparty")[:200] if tx.get("counterparty") else None,
                             reference=tx.get("transactionId"),
                             source_type=SyncSourceType.GARANTI,
                             source_id=tx.get("transactionId"),
@@ -274,9 +269,7 @@ class GarantiPSD2Client(PSD2BankClient):
 
                     except (ValidationError, ValueError) as e:
                         batch.error_count += 1
-                        batch.warnings.append(
-                            f"Failed to parse Garanti transaction: {e}"
-                        )
+                        batch.warnings.append(f"Failed to parse Garanti transaction: {e}")
                         logger.warning(f"Garanti transaction parse error: {e}")
 
                 page += 1
@@ -329,9 +322,7 @@ class AkbankPSD2Client(PSD2BankClient):
 
                 self._access_token = data["access_token"]
                 expires_in = data.get("expires_in", 3600)
-                self._token_expires_at = datetime.now(UTC) + timedelta(
-                    seconds=expires_in
-                )
+                self._token_expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
 
                 logger.info("Akbank access token obtained")
                 return self._access_token

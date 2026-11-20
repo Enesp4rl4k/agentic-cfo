@@ -5,6 +5,7 @@ Faz 14 (Durable Runs). `AnalysisJob` tracks the CFO analysis specifically;
 long-running pipeline (cfo / ceo / tr_vertical / cto / …) writes, so a run can be
 observed, audited, and resumed from its last node.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -23,9 +24,7 @@ def _utcnow() -> datetime:
 class AgentRun(Base):
     __tablename__ = "agent_runs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     pipeline: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     # cfo | ceo | tr_vertical | cto | chro | ...

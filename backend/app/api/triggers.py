@@ -17,6 +17,7 @@ Endpoints (prefix /api/v1):
     PATCH  /tetikler/{id}           partial update: merge, re-validate, store
     DELETE /tetikler/{id}           delete a rule (its audit rows survive)
 """
+
 from __future__ import annotations
 
 import json
@@ -107,8 +108,7 @@ def _validated(payload: dict[str, Any]) -> TriggerDefinition:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Bilinmeyen aksiyon türü: {action_kind} — "
-                f"geçerli: {', '.join(_ACTION_KINDS)}"
+                f"Bilinmeyen aksiyon türü: {action_kind} — geçerli: {', '.join(_ACTION_KINDS)}"
             ),
         )
     try:
@@ -125,9 +125,7 @@ def _validated(payload: dict[str, Any]) -> TriggerDefinition:
         ) from exc
 
 
-async def _owned_row(
-    db: AsyncSession, trigger_id: str, user: User
-) -> TriggerDefinitionRow:
+async def _owned_row(db: AsyncSession, trigger_id: str, user: User) -> TriggerDefinitionRow:
     row = await db.get(TriggerDefinitionRow, trigger_id)
     # ensure_tenant reports a foreign rule as missing, never as forbidden — the
     # caller learns nothing about ids outside their org. Rows carry only an org
@@ -172,12 +170,16 @@ async def list_triggers(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     rows = (
-        await db.execute(
-            select(TriggerDefinitionRow)
-            .where(TriggerDefinitionRow.org_id == _org_id(user))
-            .order_by(desc(TriggerDefinitionRow.created_at))
+        (
+            await db.execute(
+                select(TriggerDefinitionRow)
+                .where(TriggerDefinitionRow.org_id == _org_id(user))
+                .order_by(desc(TriggerDefinitionRow.created_at))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     triggers = [{**r.to_dict(), "org_id": r.org_id} for r in rows]
     return {"data": {"triggers": triggers}, "error": None}
 
@@ -188,23 +190,25 @@ async def create_trigger(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    missing = [f for f in ("name", "events", "condition", "action_kind")
-               if getattr(body, f) is None]
+    missing = [
+        f for f in ("name", "events", "condition", "action_kind") if getattr(body, f) is None
+    ]
     if missing:
         raise HTTPException(
             status_code=400,
             detail=f"Zorunlu alanlar eksik: {', '.join(missing)}",
         )
-    definition = _validated({
-        "name": body.name,
-        "events": body.events,
-        "condition": body.condition,
-        "action_kind": body.action_kind,
-        "action_params": body.action_params or {},
-        "cooldown_minutes": body.cooldown_minutes
-        if body.cooldown_minutes is not None else 60,
-        "enabled": body.enabled if body.enabled is not None else True,
-    })
+    definition = _validated(
+        {
+            "name": body.name,
+            "events": body.events,
+            "condition": body.condition,
+            "action_kind": body.action_kind,
+            "action_params": body.action_params or {},
+            "cooldown_minutes": body.cooldown_minutes if body.cooldown_minutes is not None else 60,
+            "enabled": body.enabled if body.enabled is not None else True,
+        }
+    )
     row = TriggerDefinitionRow(
         org_id=_org_id(user),
         name=definition.name,
@@ -233,8 +237,8 @@ async def list_trigger_runs(
     if trigger_id:
         q = q.where(TriggerRunRow.trigger_id == trigger_id)
     rows = (
-        await db.execute(q.order_by(desc(TriggerRunRow.created_at)).limit(limit))
-    ).scalars().all()
+        (await db.execute(q.order_by(desc(TriggerRunRow.created_at)).limit(limit))).scalars().all()
+    )
     return {"data": {"runs": [r.to_dict() for r in rows]}, "error": None}
 
 

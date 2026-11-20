@@ -12,6 +12,7 @@ that says the narrative is missing and the figures still stand.
 `tests/test_narrative_guard.py` fails if a narrative function is added without
 either this guard or its own fallback.
 """
+
 from __future__ import annotations
 
 import functools
@@ -22,8 +23,7 @@ from typing import ParamSpec
 logger = logging.getLogger(__name__)
 
 ACIKLAMA_YOK = (
-    "Açıklama üretilemedi (dil modeline ulaşılamadı). "
-    "Rakamlar veriden hesaplandı ve geçerlidir."
+    "Açıklama üretilemedi (dil modeline ulaşılamadı). Rakamlar veriden hesaplandı ve geçerlidir."
 )
 
 P = ParamSpec("P")

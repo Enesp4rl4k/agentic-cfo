@@ -34,6 +34,7 @@ Usage:
         # Trigger retry with specific feedback
         correction_hint = result.improvement_hints
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,11 +47,12 @@ logger = logging.getLogger(__name__)
 
 # ── Result type ───────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DimensionScore:
     name: str
-    score: float        # 0.0 – 1.0
-    weight: float       # relative importance
+    score: float  # 0.0 – 1.0
+    weight: float  # relative importance
     reason: str = ""
     passed: bool = True
 
@@ -58,12 +60,13 @@ class DimensionScore:
 @dataclass
 class ReflectionResult:
     """Structured quality assessment of an agent output."""
-    overall_score: float            # 0.0 – 1.0 weighted average
+
+    overall_score: float  # 0.0 – 1.0 weighted average
     dimensions: list[DimensionScore]
-    passed: bool                    # overall_score >= threshold
+    passed: bool  # overall_score >= threshold
     threshold: float
-    improvement_hints: list[str]    # specific actionable feedback
-    raw_output_preview: str         # first 100 chars of evaluated text
+    improvement_hints: list[str]  # specific actionable feedback
+    raw_output_preview: str  # first 100 chars of evaluated text
 
     @property
     def grade(self) -> str:
@@ -80,24 +83,25 @@ class ReflectionResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "overall_score": round(self.overall_score, 3),
-            "grade":         self.grade,
-            "passed":        self.passed,
-            "threshold":     self.threshold,
+            "grade": self.grade,
+            "passed": self.passed,
+            "threshold": self.threshold,
             "dimensions": [
                 {
-                    "name":   d.name,
-                    "score":  round(d.score, 3),
+                    "name": d.name,
+                    "score": round(d.score, 3),
                     "passed": d.passed,
                     "reason": d.reason,
                 }
                 for d in self.dimensions
             ],
-            "improvement_hints":    self.improvement_hints,
-            "raw_output_preview":   self.raw_output_preview,
+            "improvement_hints": self.improvement_hints,
+            "raw_output_preview": self.raw_output_preview,
         }
 
 
 # ── Heuristic evaluators ──────────────────────────────────────────────────────
+
 
 def _score_completeness(
     text: str,
@@ -165,10 +169,26 @@ def _score_specificity(text: str, context: dict[str, Any]) -> tuple[DimensionSco
 def _score_actionability(text: str) -> tuple[DimensionScore, list[str]]:
     """Check if the narrative includes actionable recommendations."""
     action_patterns = [
-        r"öneri", r"tavsiye", r"yapılmal", r"gerekli", r"artırıl", r"azaltıl",
-        r"optimize", r"kontrol", r"izlen", r"hedef", r"strateji", r"plan",
-        r"recommend", r"should", r"must", r"action", r"improve", r"reduce",
-        r"increase", r"focus",
+        r"öneri",
+        r"tavsiye",
+        r"yapılmal",
+        r"gerekli",
+        r"artırıl",
+        r"azaltıl",
+        r"optimize",
+        r"kontrol",
+        r"izlen",
+        r"hedef",
+        r"strateji",
+        r"plan",
+        r"recommend",
+        r"should",
+        r"must",
+        r"action",
+        r"improve",
+        r"reduce",
+        r"increase",
+        r"focus",
     ]
     text_lower = text.lower()
     hits = sum(1 for p in action_patterns if re.search(p, text_lower))
@@ -224,12 +244,15 @@ def _score_coherence(
         name="coherence",
         score=score,
         weight=0.15,
-        reason="Veri-metin tutarlılık kontrolü." + (" Çelişki tespit edildi." if penalty > 0 else " Tutarlı."),
+        reason="Veri-metin tutarlılık kontrolü."
+        + (" Çelişki tespit edildi." if penalty > 0 else " Tutarlı."),
         passed=score >= 0.5,
     ), hints
 
 
-def _score_length(text: str, min_chars: int = 100, max_chars: int = 800) -> tuple[DimensionScore, list[str]]:
+def _score_length(
+    text: str, min_chars: int = 100, max_chars: int = 800
+) -> tuple[DimensionScore, list[str]]:
     """Check if the text length is appropriate."""
     n = len(text.strip())
     hints = []
@@ -254,6 +277,7 @@ def _score_length(text: str, min_chars: int = 100, max_chars: int = 800) -> tupl
 
 
 # ── ReflectionAgent ───────────────────────────────────────────────────────────
+
 
 class ReflectionAgent:
     """
@@ -337,7 +361,9 @@ class ReflectionAgent:
 
         # Weighted average
         total_weight = sum(d.weight for d in dimensions)
-        overall = sum(d.score * d.weight for d in dimensions) / total_weight if total_weight > 0 else 0.0
+        overall = (
+            sum(d.score * d.weight for d in dimensions) / total_weight if total_weight > 0 else 0.0
+        )
 
         passed = overall >= self.pass_threshold
 
@@ -352,14 +378,15 @@ class ReflectionAgent:
 
         logger.debug(
             "Reflection: grade=%s score=%.2f passed=%s agent_output_len=%d",
-            result.grade, overall, passed, len(narrative),
+            result.grade,
+            overall,
+            passed,
+            len(narrative),
         )
 
         return result
 
-    def evaluate_pnl_narrative(
-        self, narrative: str, pnl: dict[str, Any]
-    ) -> ReflectionResult:
+    def evaluate_pnl_narrative(self, narrative: str, pnl: dict[str, Any]) -> ReflectionResult:
         return self.evaluate_narrative(
             narrative=narrative,
             context=pnl,

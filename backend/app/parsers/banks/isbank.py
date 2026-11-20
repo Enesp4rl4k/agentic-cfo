@@ -1,4 +1,5 @@
 """İş Bankası statement parser."""
+
 from __future__ import annotations
 
 import re
@@ -40,8 +41,8 @@ class IsBankParser(BankParser):
         row_pattern = re.compile(
             r"(\d{2}\.\d{2}\.\d{4})\s+"
             r"(.+?)\s+"
-            r"([\d.,]+|-)\s+"    # debit or dash
-            r"([\d.,]+|-)\s+"    # credit or dash
+            r"([\d.,]+|-)\s+"  # debit or dash
+            r"([\d.,]+|-)\s+"  # credit or dash
             r"([\d.,]+)\s*$",
             re.MULTILINE,
         )
@@ -65,11 +66,13 @@ class IsBankParser(BankParser):
             if not amount:
                 continue
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description,
-                amount_cents=amount,
-                tx_type=tx_type,
-                raw_row=m.group(0),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description,
+                    amount_cents=amount,
+                    tx_type=tx_type,
+                    raw_row=m.group(0),
+                )
+            )
         return transactions

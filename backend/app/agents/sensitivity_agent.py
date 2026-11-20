@@ -15,6 +15,7 @@ Output: 2D matrix of net_income outcomes + heatmap-ready data.
 
 Used by: POST /api/v1/analysis/{job_id}/sensitivity
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,19 +25,19 @@ logger = logging.getLogger(__name__)
 
 # Default axis ranges (percent change)
 DEFAULT_RANGES: dict[str, list[float]] = {
-    "headcount_change_pct":   [-30, -20, -10, 0, 10, 20, 30],
-    "pricing_change_pct":     [-20, -10,  -5, 0,  5, 10, 20],
-    "growth_rate_change_pct": [-15, -10,  -5, 0,  5, 10, 15],
-    "cogs_change_pct":        [-20, -10,  -5, 0,  5, 10, 20],
-    "opex_change_pct":        [-30, -20, -10, 0, 10, 20, 30],
+    "headcount_change_pct": [-30, -20, -10, 0, 10, 20, 30],
+    "pricing_change_pct": [-20, -10, -5, 0, 5, 10, 20],
+    "growth_rate_change_pct": [-15, -10, -5, 0, 5, 10, 15],
+    "cogs_change_pct": [-20, -10, -5, 0, 5, 10, 20],
+    "opex_change_pct": [-30, -20, -10, 0, 10, 20, 30],
 }
 
 VARIABLE_LABELS: dict[str, str] = {
-    "headcount_change_pct":   "Personel Değişimi (%)",
-    "pricing_change_pct":     "Fiyat Değişimi (%)",
+    "headcount_change_pct": "Personel Değişimi (%)",
+    "pricing_change_pct": "Fiyat Değişimi (%)",
     "growth_rate_change_pct": "Büyüme Hızı Değişimi (%)",
-    "cogs_change_pct":        "SMM Değişimi (%)",
-    "opex_change_pct":        "Faaliyet Gideri Değişimi (%)",
+    "cogs_change_pct": "SMM Değişimi (%)",
+    "opex_change_pct": "Faaliyet Gideri Değişimi (%)",
 }
 
 
@@ -78,13 +79,13 @@ def _apply_variable(
 
     # Recompute derived metrics
     p["gross_profit"] = p.get("revenue", 0) - p.get("cogs", 0)
-    p["ebitda"]       = p["gross_profit"] - p.get("total_opex", 0)
-    p["net_income"]   = p["ebitda"] - p.get("tax", 0) - p.get("loan_payments", 0)
+    p["ebitda"] = p["gross_profit"] - p.get("total_opex", 0)
+    p["net_income"] = p["ebitda"] - p.get("tax", 0) - p.get("loan_payments", 0)
 
     if p.get("revenue", 0) > 0:
         p["gross_margin"] = round(p["gross_profit"] / p["revenue"], 4)
         p["ebitda_margin"] = round(p["ebitda"] / p["revenue"], 4)
-        p["net_margin"]    = round(p["net_income"] / p["revenue"], 4)
+        p["net_margin"] = round(p["net_income"] / p["revenue"], 4)
 
     return p
 
@@ -198,21 +199,21 @@ def compute_single_variable_sensitivity(
         net = modified["net_income"]
         delta = net - base_net
         delta_pct = round((delta / abs(base_net)) * 100, 1) if base_net != 0 else 0.0
-        results.append({
-            "pct_change": pct,
-            "net_income": net,
-            "delta_vs_base": delta,
-            "delta_pct": delta_pct,
-            "net_margin_pct": round(modified.get("net_margin", 0) * 100, 2),
-            "breakeven": net >= 0,
-        })
+        results.append(
+            {
+                "pct_change": pct,
+                "net_income": net,
+                "delta_vs_base": delta,
+                "delta_pct": delta_pct,
+                "net_margin_pct": round(modified.get("net_margin", 0) * 100, 2),
+                "breakeven": net >= 0,
+            }
+        )
 
     return {
         "variable": variable,
         "label": VARIABLE_LABELS.get(variable, variable),
         "base_net_income": base_net,
         "results": results,
-        "breakeven_threshold": next(
-            (r["pct_change"] for r in results if r["breakeven"]), None
-        ),
+        "breakeven_threshold": next((r["pct_change"] for r in results if r["breakeven"]), None),
     }

@@ -23,6 +23,7 @@ Supported intents:
 Usage:
     result = await nl_query(query="Nakit akışım ne?", job_id="...", db=db)
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,37 +36,118 @@ logger = logging.getLogger(__name__)
 # ── Intent patterns (rule-based, zero LLM cost) ───────────────────────────────
 
 _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
-    ("runway_query",   [
-        r"ne zaman biter", r"runway", r"kaç ay", r"kac ay", r"para biter",
-        r"nakit tüken", r"ne kadar dayanır",
-    ]),
-    ("scenario",       [
-        r"artarsa", r"azalırsa", r"düşerse", r"artarsa ne", r"kesersek",
-        r"what if", r"if .* increase", r"if .* decrease",
-        r"değişirse", r"olursa ne", r"etkisi ne",
-    ]),
-    ("forecast_query", [
-        r"tahmin", r"forecast", r"gelecek ay", r"gelecek \d+ ay",
-        r"sonra ne", r"ilerleyen", r"projeksyon",
-        r"\d+ ay sonra", r"ay sonra ne", r"ileriki ay",
-    ]),
-    ("anomaly_query",  [
-        r"anomali", r"anormal", r"şüpheli", r"duplikat", r"fraud",
-        r"unusual", r"olağandışı", r"tekrar eden",
-    ]),
-    ("trend",          [
-        r"geçen ay", r"önceki ay", r"değişti", r"büyüme", r"düşüş", r"artış",
-        r"trend", r"yüzde kaç", r"nasıl değişti", r"kıyasla",
-    ]),
-    ("comparison",     [
-        r"en yüksek", r"en düşük", r"en pahalı", r"en fazla", r"en az",
-        r"hangisi", r"karşılaştır", r"fark", r"top", r"highest", r"lowest",
-    ]),
-    ("metric_lookup",  [
-        r"ciro", r"gelir", r"gider", r"kâr", r"kar", r"brüt", r"net", r"ebitda",
-        r"nakit", r"akış", r"vergi", r"maaş", r"kira", r"ne kadar", r"kaç",
-        r"revenue", r"profit", r"cash", r"expense", r"margin",
-    ]),
+    (
+        "runway_query",
+        [
+            r"ne zaman biter",
+            r"runway",
+            r"kaç ay",
+            r"kac ay",
+            r"para biter",
+            r"nakit tüken",
+            r"ne kadar dayanır",
+        ],
+    ),
+    (
+        "scenario",
+        [
+            r"artarsa",
+            r"azalırsa",
+            r"düşerse",
+            r"artarsa ne",
+            r"kesersek",
+            r"what if",
+            r"if .* increase",
+            r"if .* decrease",
+            r"değişirse",
+            r"olursa ne",
+            r"etkisi ne",
+        ],
+    ),
+    (
+        "forecast_query",
+        [
+            r"tahmin",
+            r"forecast",
+            r"gelecek ay",
+            r"gelecek \d+ ay",
+            r"sonra ne",
+            r"ilerleyen",
+            r"projeksyon",
+            r"\d+ ay sonra",
+            r"ay sonra ne",
+            r"ileriki ay",
+        ],
+    ),
+    (
+        "anomaly_query",
+        [
+            r"anomali",
+            r"anormal",
+            r"şüpheli",
+            r"duplikat",
+            r"fraud",
+            r"unusual",
+            r"olağandışı",
+            r"tekrar eden",
+        ],
+    ),
+    (
+        "trend",
+        [
+            r"geçen ay",
+            r"önceki ay",
+            r"değişti",
+            r"büyüme",
+            r"düşüş",
+            r"artış",
+            r"trend",
+            r"yüzde kaç",
+            r"nasıl değişti",
+            r"kıyasla",
+        ],
+    ),
+    (
+        "comparison",
+        [
+            r"en yüksek",
+            r"en düşük",
+            r"en pahalı",
+            r"en fazla",
+            r"en az",
+            r"hangisi",
+            r"karşılaştır",
+            r"fark",
+            r"top",
+            r"highest",
+            r"lowest",
+        ],
+    ),
+    (
+        "metric_lookup",
+        [
+            r"ciro",
+            r"gelir",
+            r"gider",
+            r"kâr",
+            r"kar",
+            r"brüt",
+            r"net",
+            r"ebitda",
+            r"nakit",
+            r"akış",
+            r"vergi",
+            r"maaş",
+            r"kira",
+            r"ne kadar",
+            r"kaç",
+            r"revenue",
+            r"profit",
+            r"cash",
+            r"expense",
+            r"margin",
+        ],
+    ),
 ]
 
 
@@ -82,24 +164,24 @@ def classify_intent(query: str) -> str:
 
 _METRIC_MAP: dict[str, tuple[str, str]] = {
     # Turkish keyword → (path_in_dashboard, display_name)
-    "gelir":           ("pnl.revenue",           "Gelir"),
-    "ciro":            ("pnl.revenue",           "Ciro"),
-    "brüt kâr":        ("pnl.gross_profit",      "Brüt Kâr"),
-    "brüt kar":        ("pnl.gross_profit",      "Brüt Kâr"),
-    "net kâr":         ("pnl.net_income",        "Net Kâr"),
-    "net kar":         ("pnl.net_income",        "Net Kâr"),
-    "ebitda":          ("pnl.ebitda",            "FAVÖK"),
-    "nakit akış":      ("cashflow.net_change",   "Net Nakit Akışı"),
-    "nakit":           ("cashflow.net_change",   "Net Nakit"),
-    "faaliyet nakit":  ("cashflow.operating",    "Faaliyet Nakit Akışı"),
-    "maaş":            ("pnl.opex.salary",       "Maaş Giderleri"),
-    "kira":            ("pnl.opex.rent",         "Kira Giderleri"),
-    "pazarlama":       ("pnl.opex.marketing",    "Pazarlama Giderleri"),
-    "teknoloji":       ("pnl.opex.technology",   "Teknoloji Giderleri"),
-    "vergi":           ("pnl.tax",               "Vergi"),
-    "revenue":         ("pnl.revenue",           "Revenue"),
-    "profit":          ("pnl.net_income",        "Net Income"),
-    "cash":            ("cashflow.net_change",   "Net Cash"),
+    "gelir": ("pnl.revenue", "Gelir"),
+    "ciro": ("pnl.revenue", "Ciro"),
+    "brüt kâr": ("pnl.gross_profit", "Brüt Kâr"),
+    "brüt kar": ("pnl.gross_profit", "Brüt Kâr"),
+    "net kâr": ("pnl.net_income", "Net Kâr"),
+    "net kar": ("pnl.net_income", "Net Kâr"),
+    "ebitda": ("pnl.ebitda", "FAVÖK"),
+    "nakit akış": ("cashflow.net_change", "Net Nakit Akışı"),
+    "nakit": ("cashflow.net_change", "Net Nakit"),
+    "faaliyet nakit": ("cashflow.operating", "Faaliyet Nakit Akışı"),
+    "maaş": ("pnl.opex.salary", "Maaş Giderleri"),
+    "kira": ("pnl.opex.rent", "Kira Giderleri"),
+    "pazarlama": ("pnl.opex.marketing", "Pazarlama Giderleri"),
+    "teknoloji": ("pnl.opex.technology", "Teknoloji Giderleri"),
+    "vergi": ("pnl.tax", "Vergi"),
+    "revenue": ("pnl.revenue", "Revenue"),
+    "profit": ("pnl.net_income", "Net Income"),
+    "cash": ("cashflow.net_change", "Net Cash"),
 }
 
 
@@ -125,6 +207,7 @@ def get_nested(data: dict, path: str) -> Any:
 
 
 # ── Query executor ─────────────────────────────────────────────────────────────
+
 
 def execute_nl_query(
     query: str,
@@ -181,17 +264,25 @@ def execute_nl_query(
             prev = series[-2]
             net_change = last["net"] - prev["net"]
             pct = ((last["net"] - prev["net"]) / abs(prev["net"]) * 100) if prev["net"] != 0 else 0
-            value = {"last_month": last, "prev_month": prev, "net_change": net_change, "pct_change": round(pct, 1)}
+            value = {
+                "last_month": last,
+                "prev_month": prev,
+                "net_change": net_change,
+                "pct_change": round(pct, 1),
+            }
             context["type"] = "month_over_month"
 
     elif intent == "forecast_query":
         forecast = dashboard.get("forecast") or {}
         scenarios = forecast.get("scenarios") or {}
-        value = {k: {
-            "label": v.get("label"),
-            "twelve_month_net": v.get("twelve_month_net"),
-            "runway_months": v.get("runway_months"),
-        } for k, v in scenarios.items()}
+        value = {
+            k: {
+                "label": v.get("label"),
+                "twelve_month_net": v.get("twelve_month_net"),
+                "runway_months": v.get("runway_months"),
+            }
+            for k, v in scenarios.items()
+        }
         mc = forecast.get("monte_carlo") or {}
         if mc:
             context["monte_carlo_p50"] = mc.get("p50_12m_net")
@@ -211,16 +302,17 @@ def execute_nl_query(
         value = None  # LLM will handle full scenario simulation
 
     return {
-        "intent":          intent,
-        "metric_path":     metric_path,
-        "metric_display":  metric_display,
-        "value":           value,
-        "context":         context,
-        "raw_query":       query,
+        "intent": intent,
+        "metric_path": metric_path,
+        "metric_display": metric_display,
+        "value": value,
+        "context": context,
+        "raw_query": query,
     }
 
 
 # ── Insight generator ──────────────────────────────────────────────────────────
+
 
 async def generate_nl_insight(
     query: str,
@@ -237,7 +329,7 @@ async def generate_nl_insight(
 
     # Build compact context
     pnl = dashboard.get("pnl") or {}
-    cf  = dashboard.get("cashflow") or {}
+    cf = dashboard.get("cashflow") or {}
     dashboard.get("forecast") or {}
 
     def fmt(v: Any) -> str:
@@ -247,7 +339,7 @@ async def generate_nl_insight(
 
     compact_context = (
         f"Gelir: {fmt(pnl.get('revenue', 0))} | "
-        f"Net Kâr: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0)*100:.1f}%) | "
+        f"Net Kâr: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0) * 100:.1f}%) | "
         f"Net Nakit: {fmt(cf.get('net_change', 0))} | "
         f"Intent: {query_result['intent']} | "
         f"Sorgu sonucu: {str(query_result['value'])[:300]}"
@@ -268,9 +360,15 @@ async def generate_nl_insight(
 
     try:
         import json
-        content = (await complete_text(
-            task="quick_analysis", system_prompt=_system, prompt=_user, max_tokens=600,
-        )).strip()
+
+        content = (
+            await complete_text(
+                task="quick_analysis",
+                system_prompt=_system,
+                prompt=_user,
+                max_tokens=600,
+            )
+        ).strip()
 
         # Try to parse JSON response
         json_match = re.search(r"\{.*\}", content, re.DOTALL)
@@ -283,11 +381,11 @@ async def generate_nl_insight(
             follow_ups = []
 
         return {
-            "answer":     answer,
+            "answer": answer,
             "follow_ups": follow_ups[:3],
-            "intent":     query_result["intent"],
-            "value":      query_result["value"],
-            "context":    query_result["context"],
+            "intent": query_result["intent"],
+            "value": query_result["value"],
+            "context": query_result["context"],
         }
 
     except Exception as exc:
@@ -302,15 +400,16 @@ async def generate_nl_insight(
             answer = "Bu soruyu yanıtlamak için yeterli veri bulunamadı."
 
         return {
-            "answer":     answer,
+            "answer": answer,
             "follow_ups": [],
-            "intent":     query_result["intent"],
-            "value":      val,
-            "context":    query_result["context"],
+            "intent": query_result["intent"],
+            "value": val,
+            "context": query_result["context"],
         }
 
 
 # ── Streaming Insight Generator ──────────────────────────────────────────────
+
 
 async def generate_nl_insight_stream(
     query: str,
@@ -332,7 +431,7 @@ async def generate_nl_insight_stream(
     from app.platform.model_gateway import stream as _gw_stream
 
     pnl = dashboard.get("pnl") or {}
-    cf  = dashboard.get("cashflow") or {}
+    cf = dashboard.get("cashflow") or {}
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
@@ -341,7 +440,7 @@ async def generate_nl_insight_stream(
 
     compact_context = (
         f"Gelir: {fmt(pnl.get('revenue', 0))} | "
-        f"Net Kâr: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0)*100:.1f}%) | "
+        f"Net Kâr: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0) * 100:.1f}%) | "
         f"Net Nakit: {fmt(cf.get('net_change', 0))} | "
         f"Intent: {query_result['intent']} | "
         f"Sorgu sonucu: {str(query_result['value'])[:300]}"
@@ -360,7 +459,10 @@ async def generate_nl_insight_stream(
 
     try:
         async for token in _gw_stream(
-            task="quick_analysis", system_prompt=_system, prompt=_user, max_tokens=600,
+            task="quick_analysis",
+            system_prompt=_system,
+            prompt=_user,
+            max_tokens=600,
         ):
             if not token:
                 continue
@@ -399,8 +501,9 @@ async def generate_nl_insight_stream(
         fallback = (
             f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
             if isinstance(val, (int, float)) and val > 1000
-            else f"Sonuç: {val}" if val is not None
+            else f"Sonuç: {val}"
+            if val is not None
             else "Bu soruyu yanıtlamak için yeterli veri bulunamadı."
         )
         yield fallback
-        yield '\x00FOLLOW_UPS:[]'
+        yield "\x00FOLLOW_UPS:[]"

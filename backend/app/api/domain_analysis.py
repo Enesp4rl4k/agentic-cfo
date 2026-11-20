@@ -8,6 +8,7 @@ Replaces the /cto-kernel, /cmo-kernel, /chro-kernel, /coo-kernel,
 /risk-kernel, /audit-kernel and /compliance-kernel estimates. See
 app/agents/orchestration/domain_analysis.py.
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,7 +57,14 @@ async def run_domain(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        out = await recorded_run(db, domain, job.org_id, job.id, da.analiz_et(db, job, domain), payload=lambda o: o.get("sonuc"))
+        out = await recorded_run(
+            db,
+            domain,
+            job.org_id,
+            job.id,
+            da.analiz_et(db, job, domain),
+            payload=lambda o: o.get("sonuc"),
+        )
     except da.AlanBilinmiyor as exc:
         raise HTTPException(status_code=404, detail=f"Bilinmeyen alan: {domain}") from exc
     except ValueError as exc:
@@ -73,8 +81,12 @@ async def run_domain(
 
             # Below the gate it waits for the owner; the person still sees it.
             out["inceleme"] = await persist_agent_completion(
-                str(job.org_id), domain, out["sonuc"], db,
-                job_id=job.id, auto_chain_hook=on_agent_complete,
+                str(job.org_id),
+                domain,
+                out["sonuc"],
+                db,
+                job_id=job.id,
+                auto_chain_hook=on_agent_complete,
             )
         except Exception as exc:
             logger.warning("Alan sonucu bağlama yazılamadı (%s): %s", domain, exc)

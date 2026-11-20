@@ -72,6 +72,7 @@ Overdue audits,compliance,15,5,10,count,up,CCO
 
 # ── Heat Band Tests ───────────────────────────────────────────────────────────
 
+
 class TestHeatBand:
     def test_critical_band_at_15(self):
         assert _heat_band(15) == "critical"
@@ -96,6 +97,7 @@ class TestHeatBand:
 
 
 # ── Register Agent Tests ──────────────────────────────────────────────────────
+
 
 class TestRegisterAgent:
     def test_parse_returns_list(self):
@@ -163,11 +165,14 @@ class TestRegisterAgent:
         m = _compute_register_metrics(rows)
         # Only 1 out of 3 has mitigation
         alerts = _build_register_alerts(m)
-        assert any("mitigation" in a["message"].lower() or "coverage" in a["message"].lower()
-                   for a in alerts)
+        assert any(
+            "mitigation" in a["message"].lower() or "coverage" in a["message"].lower()
+            for a in alerts
+        )
 
 
 # ── Loss Agent Tests ──────────────────────────────────────────────────────────
+
 
 class TestLossAgent:
     def test_parse_returns_list(self):
@@ -210,7 +215,7 @@ class TestLossAgent:
     def test_metrics_open_events(self):
         rows = _parse_loss_csv(LOSS_CSV)
         m = _compute_loss_metrics(rows)
-        assert m["open_events"] == 1   # fraud row is open
+        assert m["open_events"] == 1  # fraud row is open
 
     def test_metrics_loss_trend_worsening(self):
         rows = _parse_loss_csv(LOSS_WORSENING_CSV)
@@ -230,6 +235,7 @@ class TestLossAgent:
 
 
 # ── KRI Agent Tests ───────────────────────────────────────────────────────────
+
 
 class TestKRIAgent:
     def test_parse_returns_list(self):
@@ -293,36 +299,50 @@ class TestKRIAgent:
 
 # ── Enterprise Risk Score Integration ────────────────────────────────────────
 
+
 class TestEnterpriseRiskScore:
     def test_perfect_low_risk(self):
         """All low inputs → score near 0."""
-        reg = {"enterprise_risk_score": 1.0, "unmitigated_critical": [],
-               "by_band": {}, "mitigation_coverage": 1.0, "top_risks": []}
-        loss = {"total_net_loss": 0, "open_events": 0, "loss_trend": "stable",
-                "top_loss_events": []}
+        reg = {
+            "enterprise_risk_score": 1.0,
+            "unmitigated_critical": [],
+            "by_band": {},
+            "mitigation_coverage": 1.0,
+            "top_risks": [],
+        }
+        loss = {
+            "total_net_loss": 0,
+            "open_events": 0,
+            "loss_trend": "stable",
+            "top_loss_events": [],
+        }
         kri = {"composite_kri_score": 0.0, "breached_red": [], "breached_amber": []}
 
         # Manual calculation matching orchestrator formula
-        reg_score  = 1.0
+        reg_score = 1.0
         loss_score = 0.0
-        kri_score  = 0.0
+        kri_score = 0.0
         expected = round(reg_score * 0.35 + loss_score * 0.35 + kri_score * 0.30, 1)
         assert expected == pytest.approx(0.35, abs=0.1)
 
     def test_high_risk_score(self):
         """High inputs → score near 10."""
-        reg_score  = 9.0
+        reg_score = 9.0
         loss_score = 8.0
-        kri_score  = 10.0
+        kri_score = 10.0
         result = round(reg_score * 0.35 + loss_score * 0.35 + kri_score * 0.30, 1)
         assert result >= 8.0
 
     def test_posture_labels(self):
         """Test posture label boundaries."""
+
         def posture(score: float) -> str:
-            if score >= 7.0: return "critical"
-            if score >= 5.0: return "elevated"
-            if score >= 3.0: return "moderate"
+            if score >= 7.0:
+                return "critical"
+            if score >= 5.0:
+                return "elevated"
+            if score >= 3.0:
+                return "moderate"
             return "acceptable"
 
         assert posture(8.5) == "critical"

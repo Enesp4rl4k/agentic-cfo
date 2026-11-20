@@ -13,19 +13,32 @@ The fix is RFC 6266: send an ASCII `filename` that any client can read, and a
 `filename*` carrying the real UTF-8 name for every client written this century.
 Browsers prefer `filename*`, so the user still gets "Yıldız Tekstil".
 """
+
 from __future__ import annotations
 
 from urllib.parse import quote
 
 # Turkish letters that latin-1 cannot carry, plus the ones it can — all folded,
 # so the ASCII fallback reads as a name rather than as damage.
-_TR_ASCII = str.maketrans({
-    "ı": "i", "İ": "I", "ğ": "g", "Ğ": "G", "ş": "s", "Ş": "S",
-    "ö": "o", "Ö": "O", "ü": "u", "Ü": "U", "ç": "c", "Ç": "C",
-    # A lowercased "İ" is "i" plus a combining dot above, and that dot is not
-    # latin-1 either. It is invisible in a filename and worth nothing.
-    "̇": "",
-})
+_TR_ASCII = str.maketrans(
+    {
+        "ı": "i",
+        "İ": "I",
+        "ğ": "g",
+        "Ğ": "G",
+        "ş": "s",
+        "Ş": "S",
+        "ö": "o",
+        "Ö": "O",
+        "ü": "u",
+        "Ü": "U",
+        "ç": "c",
+        "Ç": "C",
+        # A lowercased "İ" is "i" plus a combining dot above, and that dot is not
+        # latin-1 either. It is invisible in a filename and worth nothing.
+        "̇": "",
+    }
+)
 
 
 def ascii_header_value(value: str, *, fallback: str = "") -> str:

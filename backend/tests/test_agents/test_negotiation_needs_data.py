@@ -5,6 +5,7 @@ with no technology data the budget answer assumed 50 000 TRY a month and 15%
 infrastructure waste, then told the company how many liras it could safely cut.
 Both now decline and say what to connect.
 """
+
 from __future__ import annotations
 
 from app.services.agent_negotiation import CHRONegotiationResponder, CTONegotiationResponder

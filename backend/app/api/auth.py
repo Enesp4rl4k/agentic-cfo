@@ -13,6 +13,7 @@ Auth header format:
   OR
   X-API-Key: <api_key>
 """
+
 from __future__ import annotations
 
 import logging
@@ -102,6 +103,7 @@ def _cache_invalidate(user_id: str) -> None:
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
+
 class RegisterRequest(BaseModel):
     # No `role` field. It used to be here with an ANALYST default, which meant
     # anyone could POST `{"role": "owner"}` and self-register as an owner —
@@ -121,10 +123,10 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token:  str
+    access_token: str
     refresh_token: str
-    token_type:    str = "bearer"
-    expires_in:    int = 1800  # 30 minutes
+    token_type: str = "bearer"
+    expires_in: int = 1800  # 30 minutes
 
 
 class RefreshRequest(BaseModel):
@@ -132,6 +134,7 @@ class RefreshRequest(BaseModel):
 
 
 # ── Dependency: get current user ──────────────────────────────────────────────
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -213,18 +216,21 @@ def require_role(*roles: str):
     Note: `async def require_role` was a bug — it returned a coroutine instead
     of a dependency callable. Fixed to a plain `def` factory.
     """
+
     async def _check(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Bu işlem için '{'/'.join(roles)}' rolü gerekli. "
-                       f"Mevcut rol: '{user.role}'.",
+                f"Mevcut rol: '{user.role}'.",
             )
         return user
+
     return _check
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(
@@ -255,8 +261,8 @@ async def register(
     return {
         "data": {
             "user_id": user.id,
-            "email":   user.email,
-            "role":    user.role,
+            "email": user.email,
+            "role": user.role,
         },
         "error": None,
     }
@@ -284,7 +290,7 @@ async def login(
             detail="Hesabınız devre dışı bırakılmış.",
         )
 
-    access_token  = create_access_token(user.id, user.email, user.role)
+    access_token = create_access_token(user.id, user.email, user.role)
     refresh_token = create_refresh_token(user.id)
 
     # Update last login
@@ -295,18 +301,18 @@ async def login(
 
     return {
         "data": {
-            "access_token":  access_token,
+            "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type":    "bearer",
-            "expires_in":    1800,
+            "token_type": "bearer",
+            "expires_in": 1800,
             "user": {
-                "user_id":   user.id,
-                "email":     user.email,
+                "user_id": user.id,
+                "email": user.email,
                 "full_name": user.full_name,
-                "role":      user.role,
+                "role": user.role,
                 # NextAuth bakes this into the session at sign-in; the CEO
                 # synthesize button and org-scoped queries gate on it.
-                "org_id":    user.org_id,
+                "org_id": user.org_id,
             },
         },
         "error": None,
@@ -340,8 +346,8 @@ async def refresh_token(
     return {
         "data": {
             "access_token": new_access,
-            "token_type":   "bearer",
-            "expires_in":   1800,
+            "token_type": "bearer",
+            "expires_in": 1800,
         },
         "error": None,
     }
@@ -352,15 +358,17 @@ async def get_me(current_user: User = Depends(get_current_user)) -> dict[str, An
     """Get the authenticated user's profile."""
     return {
         "data": {
-            "user_id":       current_user.id,
-            "email":         current_user.email,
-            "full_name":     current_user.full_name,
-            "role":          current_user.role,
-            "org_id":        current_user.org_id,
-            "is_active":     current_user.is_active,
-            "has_api_key":   current_user.api_key is not None,
-            "last_login_at": current_user.last_login_at.isoformat() if current_user.last_login_at else None,
-            "created_at":    current_user.created_at.isoformat(),
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "role": current_user.role,
+            "org_id": current_user.org_id,
+            "is_active": current_user.is_active,
+            "has_api_key": current_user.api_key is not None,
+            "last_login_at": current_user.last_login_at.isoformat()
+            if current_user.last_login_at
+            else None,
+            "created_at": current_user.created_at.isoformat(),
         },
         "error": None,
     }
@@ -396,9 +404,9 @@ async def create_api_key(
 
     return {
         "data": {
-            "api_key":  new_key,
-            "note":     "Bu anahtarı güvenli bir yerde saklayın. Tekrar gösterilmeyecek.",
-            "usage":    "X-API-Key: <api_key> başlığı ile kullanın.",
+            "api_key": new_key,
+            "note": "Bu anahtarı güvenli bir yerde saklayın. Tekrar gösterilmeyecek.",
+            "usage": "X-API-Key: <api_key> başlığı ile kullanın.",
         },
         "error": None,
     }

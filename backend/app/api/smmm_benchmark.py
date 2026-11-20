@@ -20,6 +20,7 @@ Benchmark endpoint'leri:
   POST /benchmark/from-org         -- CompanyContext'ten benchmark
   GET  /benchmark/sectors          -- Desteklenen sektörler
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,40 +47,42 @@ def _get_user_id(user: User) -> str:
 
 # ── SMMM Schemas ──────────────────────────────────────────────────────────────
 
+
 class SMMMMuhasebeciRegister(BaseModel):
-    unvan:     str | None = None
-    vergi_no:  str | None = None
-    oda_no:    str | None = None
+    unvan: str | None = None
+    vergi_no: str | None = None
+    oda_no: str | None = None
     firma_adi: str | None = None
-    il:        str | None = None
-    telefon:   str | None = None
+    il: str | None = None
+    telefon: str | None = None
 
 
 class SMMMMusteriCreate(BaseModel):
     firma_adi: str
-    vergi_no:  str | None = None
-    sektor:    str | None = "saas"
-    buyukluk:  str | None = "smb"
-    il:        str | None = None
-    notlar:    str | None = None
+    vergi_no: str | None = None
+    sektor: str | None = "saas"
+    buyukluk: str | None = "smb"
+    il: str | None = None
+    notlar: str | None = None
 
 
 class SMMMMusteriUpdate(BaseModel):
     firma_adi: str | None = None
-    vergi_no:  str | None = None
-    sektor:    str | None = None
-    buyukluk:  str | None = None
-    notlar:    str | None = None
+    vergi_no: str | None = None
+    sektor: str | None = None
+    buyukluk: str | None = None
+    notlar: str | None = None
     is_active: bool | None = None
 
 
 # ── SMMM Endpoints ─────────────────────────────────────────────────────────────
 
+
 @router.post("/smmm/register")
 async def smmm_register(
-    req:          SMMMMuhasebeciRegister,
+    req: SMMMMuhasebeciRegister,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Muhasebeci olarak platforma kayıt ol."""
     from app.models.smmm_portal import SMMMMuhasebeci
@@ -87,19 +90,19 @@ async def smmm_register(
     user_id = _get_user_id(current_user)
 
     # Zaten kayıtlı mı?
-    stmt     = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+    stmt = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
     existing = (await db.execute(stmt)).scalar_one_or_none()
     if existing:
         return {"data": {"already_registered": True, **existing.to_dict()}, "error": None}
 
     muhasebeci = SMMMMuhasebeci(
-        user_id   = user_id,
-        unvan     = req.unvan,
-        vergi_no  = req.vergi_no,
-        oda_no    = req.oda_no,
-        firma_adi = req.firma_adi,
-        il        = req.il,
-        telefon   = req.telefon,
+        user_id=user_id,
+        unvan=req.unvan,
+        vergi_no=req.vergi_no,
+        oda_no=req.oda_no,
+        firma_adi=req.firma_adi,
+        il=req.il,
+        telefon=req.telefon,
     )
     db.add(muhasebeci)
     await db.commit()
@@ -110,16 +113,18 @@ async def smmm_register(
 @router.get("/smmm/profile")
 async def smmm_profile(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Muhasebeci profili ve istatistikler."""
     from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 
     user_id = _get_user_id(current_user)
-    stmt    = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
-    m       = (await db.execute(stmt)).scalar_one_or_none()
+    stmt = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+    m = (await db.execute(stmt)).scalar_one_or_none()
     if not m:
-        raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı. Önce /smmm/register yapın.")
+        raise HTTPException(
+            status_code=404, detail="SMMM kaydı bulunamadı. Önce /smmm/register yapın."
+        )
 
     # Aktif müşteri sayısı
     count_stmt = select(SMMMMusteriKayit).where(
@@ -132,9 +137,9 @@ async def smmm_profile(
         "ok": True,
         "profile": m.to_dict(),
         "stats": {
-            "active_clients":    len(clients),
-            "max_clients":       m.max_clients,
-            "capacity_pct":      round(len(clients) / m.max_clients * 100, 1),
+            "active_clients": len(clients),
+            "max_clients": m.max_clients,
+            "capacity_pct": round(len(clients) / m.max_clients * 100, 1),
             "analyzed_recently": sum(1 for c in clients if c.last_analysis_at),
         },
     }
@@ -143,14 +148,14 @@ async def smmm_profile(
 @router.get("/smmm/clients")
 async def smmm_list_clients(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Muhasebecinin tüm aktif müşterileri."""
     from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 
     user_id = _get_user_id(current_user)
-    stmt    = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
-    m       = (await db.execute(stmt)).scalar_one_or_none()
+    stmt = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+    m = (await db.execute(stmt)).scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
 
@@ -163,26 +168,24 @@ async def smmm_list_clients(
     statuses = await status_for_clients(db, [str(c.id) for c in clients])
 
     return {
-        "ok":      True,
-        "clients": [
-            {**c.to_dict(), "durum": statuses[str(c.id)].to_dict()} for c in clients
-        ],
-        "count":   len(clients),
+        "ok": True,
+        "clients": [{**c.to_dict(), "durum": statuses[str(c.id)].to_dict()} for c in clients],
+        "count": len(clients),
     }
 
 
 @router.post("/smmm/clients")
 async def smmm_add_client(
-    req:          SMMMMusteriCreate,
+    req: SMMMMusteriCreate,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Yeni müşteri firma ekle."""
     from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 
     user_id = _get_user_id(current_user)
-    stmt    = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
-    m       = (await db.execute(stmt)).scalar_one_or_none()
+    stmt = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+    m = (await db.execute(stmt)).scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
 
@@ -195,17 +198,17 @@ async def smmm_add_client(
     if existing_count >= m.max_clients:
         raise HTTPException(
             status_code=402,
-            detail=f"Plan limitine ulaşıldı ({m.max_clients} müşteri). Pro plana geçin."
+            detail=f"Plan limitine ulaşıldı ({m.max_clients} müşteri). Pro plana geçin.",
         )
 
     client = SMMMMusteriKayit(
-        muhasebeci_id = m.id,
-        firma_adi     = req.firma_adi,
-        vergi_no      = req.vergi_no,
-        sektor        = req.sektor,
-        buyukluk      = req.buyukluk,
-        il            = req.il,
-        notlar        = req.notlar,
+        muhasebeci_id=m.id,
+        firma_adi=req.firma_adi,
+        vergi_no=req.vergi_no,
+        sektor=req.sektor,
+        buyukluk=req.buyukluk,
+        il=req.il,
+        notlar=req.notlar,
     )
     db.add(client)
     await db.commit()
@@ -215,17 +218,17 @@ async def smmm_add_client(
 
 @router.put("/smmm/clients/{client_id}")
 async def smmm_update_client(
-    client_id:    str,
-    req:          SMMMMusteriUpdate,
+    client_id: str,
+    req: SMMMMusteriUpdate,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Müşteri bilgilerini güncelle."""
     from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 
     user_id = _get_user_id(current_user)
-    m_stmt  = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
-    m       = (await db.execute(m_stmt)).scalar_one_or_none()
+    m_stmt = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+    m = (await db.execute(m_stmt)).scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
 
@@ -245,9 +248,9 @@ async def smmm_update_client(
 
 @router.delete("/smmm/clients/{client_id}")
 async def smmm_deactivate_client(
-    client_id:    str,
+    client_id: str,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Müşteriyi listeden çıkar — kaydı silmeden.
 
@@ -262,9 +265,7 @@ async def smmm_deactivate_client(
 
     user_id = _get_user_id(current_user)
     m = (
-        await db.execute(
-            select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
-        )
+        await db.execute(select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id))
     ).scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
@@ -288,20 +289,19 @@ async def smmm_deactivate_client(
 @router.get("/smmm/dashboard")
 async def smmm_dashboard(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Tüm müşterilerin özet durumu — muhasebeci ana sayfası."""
     from app.models.smmm_portal import SMMMMuhasebeci, SMMMMusteriKayit
 
     user_id = _get_user_id(current_user)
-    m_stmt  = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
-    m       = (await db.execute(m_stmt)).scalar_one_or_none()
+    m_stmt = select(SMMMMuhasebeci).where(SMMMMuhasebeci.user_id == user_id)
+    m = (await db.execute(m_stmt)).scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="SMMM kaydı bulunamadı")
 
-    clients_stmt = (
-        select(SMMMMusteriKayit)
-        .where(SMMMMusteriKayit.muhasebeci_id == m.id, SMMMMusteriKayit.is_active.is_(True))
+    clients_stmt = select(SMMMMusteriKayit).where(
+        SMMMMusteriKayit.muhasebeci_id == m.id, SMMMMusteriKayit.is_active.is_(True)
     )
     clients = (await db.execute(clients_stmt)).scalars().all()
 
@@ -320,43 +320,44 @@ async def smmm_dashboard(
     pending_total = sum(r["durum"]["pending_review"] for r in rows)
 
     return {
-        "ok":              True,
-        "muhasebeci":      m.to_dict(),
+        "ok": True,
+        "muhasebeci": m.to_dict(),
         "summary": {
-            "total_clients":     len(clients),
-            "analyzed_clients":  len(analysed),
-            "needs_attention":   len(attention),
-            "sealed_clients":    len(sealed),
-            "pending_entries":   pending_total,
+            "total_clients": len(clients),
+            "analyzed_clients": len(analysed),
+            "needs_attention": len(attention),
+            "sealed_clients": len(sealed),
+            "pending_entries": pending_total,
         },
-        "clients":         rows,
-        "attention_list":  attention,
+        "clients": rows,
+        "attention_list": attention,
     }
 
 
 # ── Benchmark Endpoints ────────────────────────────────────────────────────────
 
+
 class BenchmarkCompareRequest(BaseModel):
-    pnl:         dict[str, Any] | None = None
-    cashflow:    dict[str, Any] | None = None
-    forecast:    dict[str, Any] | None = None
-    cmo_data:    dict[str, Any] | None = None
-    chro_data:   dict[str, Any] | None = None
-    coo_data:    dict[str, Any] | None = None
-    cto_data:    dict[str, Any] | None = None
-    sector:      str = Field("saas", description="saas|ecommerce|services|retail|smb")
+    pnl: dict[str, Any] | None = None
+    cashflow: dict[str, Any] | None = None
+    forecast: dict[str, Any] | None = None
+    cmo_data: dict[str, Any] | None = None
+    chro_data: dict[str, Any] | None = None
+    coo_data: dict[str, Any] | None = None
+    cto_data: dict[str, Any] | None = None
+    sector: str = Field("saas", description="saas|ecommerce|services|retail|smb")
     company_name: str = "Şirket"
 
 
 class BenchmarkFromOrgRequest(BaseModel):
-    org_id:      str
-    sector:      str = "saas"
+    org_id: str
+    sector: str = "saas"
     company_name: str | None = None
 
 
 @router.post("/benchmark/compare")
 async def benchmark_compare(
-    req:          BenchmarkCompareRequest,
+    req: BenchmarkCompareRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
@@ -368,15 +369,15 @@ async def benchmark_compare(
     svc = get_benchmark_service()
     try:
         report = svc.compare_all(
-            pnl          = req.pnl,
-            cashflow     = req.cashflow,
-            forecast     = req.forecast,
-            cmo_data     = req.cmo_data,
-            chro_data    = req.chro_data,
-            coo_data     = req.coo_data,
-            cto_data     = req.cto_data,
-            sector       = req.sector,
-            company_name = req.company_name,
+            pnl=req.pnl,
+            cashflow=req.cashflow,
+            forecast=req.forecast,
+            cmo_data=req.cmo_data,
+            chro_data=req.chro_data,
+            coo_data=req.coo_data,
+            cto_data=req.cto_data,
+            sector=req.sector,
+            company_name=req.company_name,
         )
         return {"data": {"report": report.to_dict()}, "error": None}
     except Exception as exc:
@@ -385,7 +386,7 @@ async def benchmark_compare(
 
 @router.post("/benchmark/from-org")
 async def benchmark_from_org(
-    req:          BenchmarkFromOrgRequest,
+    req: BenchmarkFromOrgRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """CompanyContext'teki verilerden benchmark raporu üret."""
@@ -396,20 +397,20 @@ async def benchmark_from_org(
         # The organisation came from the request, never compared with the caller's.
         if not current_user_org_matches(current_user, req.org_id):
             raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
-        ctx     = await get_company_context(req.org_id) or {}
+        ctx = await get_company_context(req.org_id) or {}
         results = ctx.get("agent_results") or {}
-        cfo_r   = results.get("cfo") or {}
+        cfo_r = results.get("cfo") or {}
 
-        svc    = get_benchmark_service()
+        svc = get_benchmark_service()
         report = svc.compare_all(
-            pnl          = cfo_r.get("pnl"),
-            cashflow     = cfo_r.get("cashflow"),
-            forecast     = cfo_r.get("forecast"),
-            cmo_data     = results.get("cmo"),
-            chro_data    = results.get("chro"),
-            coo_data     = results.get("coo"),
-            sector       = req.sector,
-            company_name = req.company_name or ctx.get("company_name", "Şirket"),
+            pnl=cfo_r.get("pnl"),
+            cashflow=cfo_r.get("cashflow"),
+            forecast=cfo_r.get("forecast"),
+            cmo_data=results.get("cmo"),
+            chro_data=results.get("chro"),
+            coo_data=results.get("coo"),
+            sector=req.sector,
+            company_name=req.company_name or ctx.get("company_name", "Şirket"),
         )
         return {"data": {"report": report.to_dict()}, "error": None}
     except Exception as exc:
@@ -423,14 +424,22 @@ async def benchmark_sectors(
     """Desteklenen sektörler ve mevcut benchmark metrikleri."""
     return {
         "sectors": [
-            {"id": "saas",      "label": "SaaS / Yazılım",      "metric_count": 12},
-            {"id": "ecommerce", "label": "E-ticaret",            "metric_count": 8},
-            {"id": "services",  "label": "Hizmet Sektörü",       "metric_count": 7},
-            {"id": "smb",       "label": "Genel KOBİ (Türkiye)", "metric_count": 6},
+            {"id": "saas", "label": "SaaS / Yazılım", "metric_count": 12},
+            {"id": "ecommerce", "label": "E-ticaret", "metric_count": 8},
+            {"id": "services", "label": "Hizmet Sektörü", "metric_count": 7},
+            {"id": "smb", "label": "Genel KOBİ (Türkiye)", "metric_count": 6},
         ],
         "available_metrics": [
-            "Net Kâr Marjı", "Brüt Kâr Marjı", "Gelir Büyümesi", "Nakit Ömrü",
-            "ROAS", "Aylık Churn", "LTV/CAC", "Personel Devir Hızı",
-            "Çalışan Bağlılığı", "SLA Uyumu", "Altyapı İsraf Oranı",
+            "Net Kâr Marjı",
+            "Brüt Kâr Marjı",
+            "Gelir Büyümesi",
+            "Nakit Ömrü",
+            "ROAS",
+            "Aylık Churn",
+            "LTV/CAC",
+            "Personel Devir Hızı",
+            "Çalışan Bağlılığı",
+            "SLA Uyumu",
+            "Altyapı İsraf Oranı",
         ],
     }

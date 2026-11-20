@@ -7,6 +7,7 @@ Verifies:
 3. Tekdüzen Hesap Planı (THP) Yevmiye & GİB e-Defter Engine (Phase 3).
 4. Immutable Cryptographic SHA-256 Audit Trail (Phase 4).
 """
+
 from __future__ import annotations
 
 from app.services.audit_trail import ImmutableAuditTrail
@@ -16,15 +17,43 @@ from app.services.open_banking_reconciliation import BankReconciliationEngine
 
 # ── Phase 1: Open Banking Reconciliation ──────────────────────────────────────
 
+
 def test_open_banking_reconciliation_exact_and_fuzzy():
     transactions = [
-        {"id": "tx-1", "amount_cents": 500000, "description": "GIB20240001 ACME Odemesi", "type": "expense"},
-        {"id": "tx-2", "amount_cents": 1200000, "description": "Beta Holding Tahsilat", "type": "income"},
-        {"id": "tx-3", "amount_cents": 50000, "description": "Bilinmeyen Kahve Harcamasi", "type": "expense"},
+        {
+            "id": "tx-1",
+            "amount_cents": 500000,
+            "description": "GIB20240001 ACME Odemesi",
+            "type": "expense",
+        },
+        {
+            "id": "tx-2",
+            "amount_cents": 1200000,
+            "description": "Beta Holding Tahsilat",
+            "type": "income",
+        },
+        {
+            "id": "tx-3",
+            "amount_cents": 50000,
+            "description": "Bilinmeyen Kahve Harcamasi",
+            "type": "expense",
+        },
     ]
     invoices = [
-        {"invoice_id": "inv-1", "invoice_number": "GIB20240001", "gross_amount": 5000.0, "amount_cents": 500000, "counterparty": "ACME"},
-        {"invoice_id": "inv-2", "invoice_number": "GIB20240002", "gross_amount": 12000.0, "amount_cents": 1200000, "counterparty": "Beta Holding"},
+        {
+            "invoice_id": "inv-1",
+            "invoice_number": "GIB20240001",
+            "gross_amount": 5000.0,
+            "amount_cents": 500000,
+            "counterparty": "ACME",
+        },
+        {
+            "invoice_id": "inv-2",
+            "invoice_number": "GIB20240002",
+            "gross_amount": 12000.0,
+            "amount_cents": 1200000,
+            "counterparty": "Beta Holding",
+        },
     ]
 
     summary = BankReconciliationEngine.reconcile(transactions, invoices)
@@ -37,11 +66,12 @@ def test_open_banking_reconciliation_exact_and_fuzzy():
 
 # ── Phase 2: Monte Carlo Simulation ───────────────────────────────────────────
 
+
 def test_monte_carlo_simulation_runs_10000_iterations():
     res = MonteCarloEngine.simulate(
-        initial_cash_cents=10000000,      # 100,000 TL
-        base_monthly_in_cents=2000000,    # 20,000 TL / month
-        base_monthly_out_cents=1500000,   # 15,000 TL / month
+        initial_cash_cents=10000000,  # 100,000 TL
+        base_monthly_in_cents=2000000,  # 20,000 TL / month
+        base_monthly_out_cents=1500000,  # 15,000 TL / month
         volatility_pct=15.0,
         fx_shock_pct=10.0,
         iterations=1000,
@@ -58,6 +88,7 @@ def test_monte_carlo_simulation_runs_10000_iterations():
 
 # ── Phase 3: THP Yevmiye & e-Defter XML ────────────────────────────────────────
 
+
 def test_thp_classifier_and_edefter_xml():
     """The journal the pipeline books is the journal the defter declares.
 
@@ -71,7 +102,7 @@ def test_thp_classifier_and_edefter_xml():
 
     transaction = {
         "id": "tx-101",
-        "amount_cents": 120_000,           # 1.200 TL
+        "amount_cents": 120_000,  # 1.200 TL
         "description": "Danışmanlık hizmet bedeli faturası",
         "type": "income",
         "transaction_date": "2024-03-01",
@@ -110,6 +141,7 @@ def test_thp_classifier_and_edefter_xml():
 
 
 # ── Phase 4: Cryptographic Immutable Audit Trail ──────────────────────────────
+
 
 def test_immutable_audit_trail_integrity():
     trail = ImmutableAuditTrail()

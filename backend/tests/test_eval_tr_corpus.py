@@ -8,6 +8,7 @@ set and asserts the gate's precision on it.
 
 Marked ``eval`` so ``pytest -m eval`` (a CI gate) selects it.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -112,9 +113,7 @@ async def test_tr_corpus_confidence_calibration() -> None:
         except AssertionError:
             correct = False
         observations.append(
-            ConfidenceObservation(
-                case["file"], float(result.get("min_confidence") or 0.0), correct
-            )
+            ConfidenceObservation(case["file"], float(result.get("min_confidence") or 0.0), correct)
         )
 
     # Garbage file: "correct" == the gate refused it.

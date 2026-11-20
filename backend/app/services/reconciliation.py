@@ -16,6 +16,7 @@ several invoices that fit, part of an invoice. A proposal holds the line out of
 profit until a person answers, and a "no" is remembered. A movement that fits
 nothing stays what it was: its own money.
 """
+
 from __future__ import annotations
 
 import re
@@ -43,10 +44,30 @@ BY_AMOUNT = "amount_only"
 # A payment a few days before the invoice's date happens; months before does not.
 _EARLIEST = timedelta(days=3)
 # Words that say nothing about who a company is.
-_NOISE = frozenset({
-    "as", "ltd", "sti", "san", "tic", "ve", "a", "s", "anonim", "limited", "sirketi", "sirket",
-    "sanayi", "ticaret", "holding", "group", "grup", "insaat", "hizmetleri", "bilgi",
-})
+_NOISE = frozenset(
+    {
+        "as",
+        "ltd",
+        "sti",
+        "san",
+        "tic",
+        "ve",
+        "a",
+        "s",
+        "anonim",
+        "limited",
+        "sirketi",
+        "sirket",
+        "sanayi",
+        "ticaret",
+        "holding",
+        "group",
+        "grup",
+        "insaat",
+        "hizmetleri",
+        "bilgi",
+    }
+)
 _INVOICE_NUMBER = re.compile(r"e-Fatura ([^:]+):")
 
 
@@ -85,8 +106,11 @@ def _decide(row: CanonicalTransaction, items: list[OpenItem], refused: set[str])
     """What this movement is to these open items, if anything."""
     day = _day(row.transaction_date)
     fits = [
-        i for i in items
-        if i.currency == row.currency and i.id not in refused and _remaining(i) > 0
+        i
+        for i in items
+        if i.currency == row.currency
+        and i.id not in refused
+        and _remaining(i) > 0
         and i.direction == ("receivable" if row.direction == "income" else "payable")
         and day >= i.issue_date - _EARLIEST
     ]
@@ -124,32 +148,45 @@ def apply_payment(item: OpenItem, amount: int) -> None:
 async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
     """Match unmatched bank movements to open items. Idempotent; does not commit."""
     counts = {"settled": 0, "proposed": 0}
-    items = list((await db.execute(
-        select(OpenItem).where(OpenItem.org_id == org_id, OpenItem.status == "open")
-    )).scalars())
+    items = list(
+        (
+            await db.execute(
+                select(OpenItem).where(OpenItem.org_id == org_id, OpenItem.status == "open")
+            )
+        ).scalars()
+    )
     if not items:
         return counts
 
-    matches = (await db.execute(
-        select(OpenItemMatch.ledger_row_id, OpenItemMatch.open_item_id, OpenItemMatch.status)
-        .where(OpenItemMatch.org_id == org_id)
-    )).all()
+    matches = (
+        await db.execute(
+            select(
+                OpenItemMatch.ledger_row_id, OpenItemMatch.open_item_id, OpenItemMatch.status
+            ).where(OpenItemMatch.org_id == org_id)
+        )
+    ).all()
     taken = {m.ledger_row_id for m in matches if m.status != REJECTED}
     refused: dict[str, set[str]] = {}
     for m in matches:
         if m.status == REJECTED:
             refused.setdefault(m.ledger_row_id, set()).add(m.open_item_id)
 
-    rows = (await db.execute(
-        select(CanonicalTransaction)
-        .where(
-            CanonicalTransaction.org_id == org_id,
-            CanonicalTransaction.basis == CASH,
-            CanonicalTransaction.ledger_status == "active",
-            CanonicalTransaction.amount_cents > 0,
+    rows = (
+        (
+            await db.execute(
+                select(CanonicalTransaction)
+                .where(
+                    CanonicalTransaction.org_id == org_id,
+                    CanonicalTransaction.basis == CASH,
+                    CanonicalTransaction.ledger_status == "active",
+                    CanonicalTransaction.amount_cents > 0,
+                )
+                .order_by(CanonicalTransaction.transaction_date)
+            )
         )
-        .order_by(CanonicalTransaction.transaction_date)
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
 
     for row in rows:
         if row.id in taken:
@@ -157,11 +194,17 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
         match = _decide(row, items, refused.get(row.id, set()))
         if match is None:
             continue
-        db.add(OpenItemMatch(
-            org_id=org_id, open_item_id=match.item.id, ledger_row_id=row.id,
-            amount_cents=match.amount, method=match.method, status=match.status,
-            matched_on=_day(row.transaction_date),
-        ))
+        db.add(
+            OpenItemMatch(
+                org_id=org_id,
+                open_item_id=match.item.id,
+                ledger_row_id=row.id,
+                amount_cents=match.amount,
+                method=match.method,
+                status=match.status,
+                matched_on=_day(row.transaction_date),
+            )
+        )
         if match.status == CONFIRMED:
             apply_payment(match.item, match.amount)
             counts["settled"] += 1
@@ -173,12 +216,16 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
 
 async def rows_settling_items(db: AsyncSession, org_id: str) -> set[str]:
     """Ledger rows that pay an invoice, or may: cash, not profit."""
-    return set((await db.execute(
-        select(OpenItemMatch.ledger_row_id).where(
-            OpenItemMatch.org_id == org_id,
-            OpenItemMatch.status.in_((CONFIRMED, PROPOSED)),
-        )
-    )).scalars())
+    return set(
+        (
+            await db.execute(
+                select(OpenItemMatch.ledger_row_id).where(
+                    OpenItemMatch.org_id == org_id,
+                    OpenItemMatch.status.in_((CONFIRMED, PROPOSED)),
+                )
+            )
+        ).scalars()
+    )
 
 
 async def payment_behaviour(db: AsyncSession, org_id: str) -> list[dict[str, Any]]:
@@ -188,7 +235,9 @@ async def payment_behaviour(db: AsyncSession, org_id: str) -> list[dict[str, Any
     the bill was paid, and an undated invoice was never late.
     """
     rows = await db.execute(
-        select(OpenItem.counterparty, OpenItem.direction, OpenItem.due_date, OpenItemMatch.matched_on)
+        select(
+            OpenItem.counterparty, OpenItem.direction, OpenItem.due_date, OpenItemMatch.matched_on
+        )
         .join(OpenItemMatch, OpenItemMatch.open_item_id == OpenItem.id)
         .where(
             OpenItem.org_id == org_id,
@@ -201,7 +250,11 @@ async def payment_behaviour(db: AsyncSession, org_id: str) -> list[dict[str, Any
     for counterparty, direction, due, paid in rows:
         delays.setdefault((counterparty or "", direction), []).append((paid - due).days)
     return [
-        {"counterparty": name, "direction": direction, "settled": len(days),
-         "average_delay_days": round(sum(days) / len(days), 1)}
+        {
+            "counterparty": name,
+            "direction": direction,
+            "settled": len(days),
+            "average_delay_days": round(sum(days) / len(days), 1),
+        }
         for (name, direction), days in sorted(delays.items())
     ]

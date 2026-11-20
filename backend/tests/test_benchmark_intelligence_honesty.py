@@ -9,6 +9,7 @@ company it was "behind its sector" in those terms.
 The values stay, because the endpoint's shape depends on them, but every answer says what
 they are, and no text names a source that was not verified.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +21,9 @@ from app.services.benchmark_intelligence import (
     BenchmarkIntelligenceService,
 )
 
-SERVICE_FILE = Path(__file__).resolve().parents[1] / "app" / "services" / "benchmark_intelligence.py"
+SERVICE_FILE = (
+    Path(__file__).resolve().parents[1] / "app" / "services" / "benchmark_intelligence.py"
+)
 PNL = {"net_margin": 0.10, "gross_margin": 0.40}
 
 
@@ -32,7 +35,9 @@ def test_a_report_says_it_is_unverified_and_what_that_means():
 
 
 def test_no_item_cites_a_report_or_a_year():
-    items = BenchmarkIntelligenceService().compare_cfo(PNL, sector="manufacturing").to_dict()["items"]
+    items = (
+        BenchmarkIntelligenceService().compare_cfo(PNL, sector="manufacturing").to_dict()["items"]
+    )
     assert items
     for item in items:
         assert item["context"] == UNVERIFIED_NOTE
@@ -56,5 +61,11 @@ def test_the_dictionary_names_no_source():
 def test_the_file_names_no_report_it_cannot_show():
     """A ratchet: the unverifiable attributions must not come back as text."""
     text = SERVICE_FILE.read_text(encoding="utf-8")
-    for claim in ("KOSGEB", "SaaS raporu", "benchmark datası", "sektör anketleri", "çalışan anketi"):
+    for claim in (
+        "KOSGEB",
+        "SaaS raporu",
+        "benchmark datası",
+        "sektör anketleri",
+        "çalışan anketi",
+    ):
         assert claim not in text, claim

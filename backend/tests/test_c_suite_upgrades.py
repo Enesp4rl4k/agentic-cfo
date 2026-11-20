@@ -4,6 +4,7 @@ Tests for Agentic C-Suite Upgrades:
 2. Action Execution & Human-in-the-Loop Engine
 3. Autonomous Ingestion Webhooks
 """
+
 from decimal import Decimal
 from pathlib import Path
 
@@ -72,12 +73,22 @@ async def test_boardroom_memory_and_past_context(tmp_path: Path):
     mock_debate = BoardroomDebateResult(
         topic="Pazarlama Bütçesi ve Vergi Ödemeleri",
         round_1_statements=[
-            BoardroomStatement(agent_name="CMO", argument="Bütçe %30 artmalı", proposed_solution="Aşama aşama artıralım"),
-            BoardroomStatement(agent_name="CFO", argument="Nakit akışı sıkışık", proposed_solution="%10 artıralım"),
+            BoardroomStatement(
+                agent_name="CMO",
+                argument="Bütçe %30 artmalı",
+                proposed_solution="Aşama aşama artıralım",
+            ),
+            BoardroomStatement(
+                agent_name="CFO", argument="Nakit akışı sıkışık", proposed_solution="%10 artıralım"
+            ),
         ],
         round_2_statements=[
-            BoardroomStatement(agent_name="CMO", argument="Tamam %15 olsun", proposed_solution="%15 artış"),
-            BoardroomStatement(agent_name="CFO", argument="Kabul", proposed_solution="15 gün sonra ROI kontrolü"),
+            BoardroomStatement(
+                agent_name="CMO", argument="Tamam %15 olsun", proposed_solution="%15 artış"
+            ),
+            BoardroomStatement(
+                agent_name="CFO", argument="Kabul", proposed_solution="15 gün sonra ROI kontrolü"
+            ),
         ],
         consensus=BoardroomConsensus(
             topic="Pazarlama Bütçesi ve Vergi Ödemeleri",

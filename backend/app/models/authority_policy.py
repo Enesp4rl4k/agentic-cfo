@@ -3,6 +3,7 @@
 Versioned: `PUT /authority/policy` writes a new row (version + 1) and flips
 `active`; older versions stay for the audit trail. Absent → the engine's default.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -21,9 +22,7 @@ def _utcnow() -> datetime:
 class AuthorityPolicy(Base):
     __tablename__ = "authority_policies"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)

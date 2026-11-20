@@ -3,6 +3,7 @@ Tests for anomaly_agent.py — pure helper functions only (no LLM, no DB).
 Covers: _z_score, _iqr_outlier_score, _is_round_number, _days_between
 and the detection functions that use them.
 """
+
 import pytest
 
 from app.agents.anomaly_agent import (
@@ -17,8 +18,8 @@ from app.agents.anomaly_agent import (
 
 # ── _z_score ──────────────────────────────────────────────────────────────────
 
-class TestZScore:
 
+class TestZScore:
     def test_returns_none_for_short_list(self):
         values = [100, 200, 300]  # < MIN_TRANSACTIONS_FOR_STATS
         assert _z_score(200, values) is None
@@ -34,7 +35,7 @@ class TestZScore:
         # Use many normal values and one extreme outlier
         normals = [100] * 20 + [200]  # 21 values, last is outlier
         z_outlier = _z_score(200, normals)
-        z_normal  = _z_score(100, normals)
+        z_normal = _z_score(100, normals)
         assert z_outlier is not None
         assert z_normal is not None
         assert abs(z_outlier) > abs(z_normal)
@@ -53,8 +54,11 @@ class TestZScore:
         # scipy zscore with ddof=1 returns NaN for identical values (catastrophic cancellation)
         # The implementation may return None, 0.0, or NaN — all acceptable as long as no exception
         import math
-        assert result is None or result == pytest.approx(0.0, abs=0.1) or (
-            isinstance(result, float) and math.isnan(result)
+
+        assert (
+            result is None
+            or result == pytest.approx(0.0, abs=0.1)
+            or (isinstance(result, float) and math.isnan(result))
         )
 
     def test_exactly_min_transactions_works(self):
@@ -66,8 +70,8 @@ class TestZScore:
 
 # ── _iqr_outlier_score ────────────────────────────────────────────────────────
 
-class TestIQROutlierScore:
 
+class TestIQROutlierScore:
     def test_returns_none_for_short_list(self):
         values = [10, 20, 30]
         assert _iqr_outlier_score(20, values) is None
@@ -101,8 +105,8 @@ class TestIQROutlierScore:
 
 # ── _is_round_number ──────────────────────────────────────────────────────────
 
-class TestIsRoundNumber:
 
+class TestIsRoundNumber:
     def test_round_100_tl_is_round(self):
         assert _is_round_number(10_000) is True  # 100 TL
 
@@ -128,8 +132,8 @@ class TestIsRoundNumber:
 
 # ── _days_between ─────────────────────────────────────────────────────────────
 
-class TestDaysBetween:
 
+class TestDaysBetween:
     def test_same_date_zero_days(self):
         result = _days_between("2024-01-15", "2024-01-15")
         assert result == 0
@@ -173,8 +177,8 @@ class TestDaysBetween:
 
 # ── Integration: threshold constants are sensible ─────────────────────────────
 
-class TestThresholdConstants:
 
+class TestThresholdConstants:
     def test_min_transactions_positive(self):
         assert MIN_TRANSACTIONS_FOR_STATS > 0
 

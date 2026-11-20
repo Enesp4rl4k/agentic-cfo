@@ -42,6 +42,7 @@ Kullanim:
         if message.query_type == "hiring_plan":
             await bus.reply(message, payload={"planned_hires": 3})
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,20 +59,22 @@ logger = logging.getLogger(__name__)
 
 # ── Mesaj schemasi ────────────────────────────────────────────────────────────
 
+
 @dataclass
 class AgentMessage:
     """Agent'lar arasi mesaj."""
-    msg_id:     str
-    msg_type:   str          # query | response | broadcast | alert | data_request | data_response
-    from_agent: str          # "cfo" | "chro" | "cto" | "cmo" | "coo" | "risk" | "ceo"
-    to_agent:   str          # hedef agent veya "all" (broadcast)
-    query_type: str          # "hiring_plan" | "tech_budget" | "cash_runway" | ...
-    payload:    dict[str, Any]
-    org_id:     str
-    job_id:     str | None   = None
-    reply_to:   str | None   = None   # hangi msg_id'ye cevap
-    created_at: float        = field(default_factory=time.time)
-    ttl:        float        = 30.0   # saniye, bu sure sonra expire
+
+    msg_id: str
+    msg_type: str  # query | response | broadcast | alert | data_request | data_response
+    from_agent: str  # "cfo" | "chro" | "cto" | "cmo" | "coo" | "risk" | "ceo"
+    to_agent: str  # hedef agent veya "all" (broadcast)
+    query_type: str  # "hiring_plan" | "tech_budget" | "cash_runway" | ...
+    payload: dict[str, Any]
+    org_id: str
+    job_id: str | None = None
+    reply_to: str | None = None  # hangi msg_id'ye cevap
+    created_at: float = field(default_factory=time.time)
+    ttl: float = 30.0  # saniye, bu sure sonra expire
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))
@@ -87,19 +90,20 @@ class AgentMessage:
     def make_response(self, payload: dict[str, Any], from_agent: str) -> AgentMessage:
         """Bu mesaja cevap olustur."""
         return AgentMessage(
-            msg_id     = str(uuid.uuid4()),
-            msg_type   = "response",
-            from_agent = from_agent,
-            to_agent   = self.from_agent,
-            query_type = self.query_type,
-            payload    = payload,
-            org_id     = self.org_id,
-            job_id     = self.job_id,
-            reply_to   = self.msg_id,
+            msg_id=str(uuid.uuid4()),
+            msg_type="response",
+            from_agent=from_agent,
+            to_agent=self.from_agent,
+            query_type=self.query_type,
+            payload=payload,
+            org_id=self.org_id,
+            job_id=self.job_id,
+            reply_to=self.msg_id,
         )
 
 
 # ── In-Memory Bus (test/dev) ──────────────────────────────────────────────────
+
 
 class InMemoryBus:
     """
@@ -143,26 +147,26 @@ class InMemoryBus:
     async def ask(
         self,
         from_agent: str,
-        to_agent:   str,
+        to_agent: str,
         query_type: str,
-        payload:    dict[str, Any],
-        org_id:     str,
-        job_id:     str | None = None,
-        timeout:    float = 10.0,
+        payload: dict[str, Any],
+        org_id: str,
+        job_id: str | None = None,
+        timeout: float = 10.0,
     ) -> AgentMessage | None:
         """
         Soru sor ve cevabi bekle.
         Returns None if timeout veya error.
         """
         msg = AgentMessage(
-            msg_id     = str(uuid.uuid4()),
-            msg_type   = "query",
-            from_agent = from_agent,
-            to_agent   = to_agent,
-            query_type = query_type,
-            payload    = payload,
-            org_id     = org_id,
-            job_id     = job_id,
+            msg_id=str(uuid.uuid4()),
+            msg_type="query",
+            from_agent=from_agent,
+            to_agent=to_agent,
+            query_type=query_type,
+            payload=payload,
+            org_id=org_id,
+            job_id=job_id,
         )
 
         # Cevap beklemek icin Future olustur
@@ -192,26 +196,26 @@ class InMemoryBus:
         self,
         from_agent: str,
         query_type: str,
-        payload:    dict[str, Any],
-        org_id:     str,
-        job_id:     str | None = None,
+        payload: dict[str, Any],
+        org_id: str,
+        job_id: str | None = None,
     ) -> None:
         """Tum agent'lara duyuru yap."""
         msg = AgentMessage(
-            msg_id     = str(uuid.uuid4()),
-            msg_type   = "broadcast",
-            from_agent = from_agent,
-            to_agent   = "all",
-            query_type = query_type,
-            payload    = payload,
-            org_id     = org_id,
-            job_id     = job_id,
+            msg_id=str(uuid.uuid4()),
+            msg_type="broadcast",
+            from_agent=from_agent,
+            to_agent="all",
+            query_type=query_type,
+            payload=payload,
+            org_id=org_id,
+            job_id=job_id,
         )
         await self.publish(msg)
 
     async def listen(
         self,
-        agent:   str,
+        agent: str,
         timeout: float = 0.1,
     ) -> AsyncIterator[AgentMessage]:
         """Agent kuyrugundan mesajlari oku."""
@@ -226,7 +230,7 @@ class InMemoryBus:
 
     async def drain(self, agent: str) -> list[AgentMessage]:
         """Agent kuyrugundan tum bekleyen mesajlari al."""
-        q   = self._get_queue(agent)
+        q = self._get_queue(agent)
         msgs: list[AgentMessage] = []
         while not q.empty():
             try:
@@ -239,6 +243,7 @@ class InMemoryBus:
 
 
 # ── Redis Bus (production) ─────────────────────────────────────────────────────
+
 
 class RedisAgentBus:
     """
@@ -260,6 +265,7 @@ class RedisAgentBus:
         if self._redis is None:
             try:
                 import redis.asyncio as aioredis
+
                 self._redis = await aioredis.from_url(self._redis_url, decode_responses=True)
             except ImportError:
                 raise RuntimeError("redis paketi yuklenmemis. pip install redis")
@@ -267,7 +273,7 @@ class RedisAgentBus:
 
     async def publish(self, message: AgentMessage) -> None:
         redis = await self._get_redis()
-        data  = message.to_json()
+        data = message.to_json()
 
         if message.to_agent == "all":
             channel = f"agent:all:{message.org_id}"
@@ -283,24 +289,24 @@ class RedisAgentBus:
     async def ask(
         self,
         from_agent: str,
-        to_agent:   str,
+        to_agent: str,
         query_type: str,
-        payload:    dict[str, Any],
-        org_id:     str,
-        job_id:     str | None = None,
-        timeout:    float = 10.0,
+        payload: dict[str, Any],
+        org_id: str,
+        job_id: str | None = None,
+        timeout: float = 10.0,
     ) -> AgentMessage | None:
         redis = await self._get_redis()
 
         msg = AgentMessage(
-            msg_id     = str(uuid.uuid4()),
-            msg_type   = "query",
-            from_agent = from_agent,
-            to_agent   = to_agent,
-            query_type = query_type,
-            payload    = payload,
-            org_id     = org_id,
-            job_id     = job_id,
+            msg_id=str(uuid.uuid4()),
+            msg_type="query",
+            from_agent=from_agent,
+            to_agent=to_agent,
+            query_type=query_type,
+            payload=payload,
+            org_id=org_id,
+            job_id=job_id,
         )
 
         # Cevap kanalini dinle
@@ -334,24 +340,24 @@ class RedisAgentBus:
         self,
         from_agent: str,
         query_type: str,
-        payload:    dict[str, Any],
-        org_id:     str,
-        job_id:     str | None = None,
+        payload: dict[str, Any],
+        org_id: str,
+        job_id: str | None = None,
     ) -> None:
         msg = AgentMessage(
-            msg_id     = str(uuid.uuid4()),
-            msg_type   = "broadcast",
-            from_agent = from_agent,
-            to_agent   = "all",
-            query_type = query_type,
-            payload    = payload,
-            org_id     = org_id,
-            job_id     = job_id,
+            msg_id=str(uuid.uuid4()),
+            msg_type="broadcast",
+            from_agent=from_agent,
+            to_agent="all",
+            query_type=query_type,
+            payload=payload,
+            org_id=org_id,
+            job_id=job_id,
         )
         await self.publish(msg)
 
     async def listen(self, agent: str, org_id: str) -> AsyncIterator[AgentMessage]:
-        redis  = await self._get_redis()
+        redis = await self._get_redis()
         pubsub = redis.pubsub()
         await pubsub.subscribe(
             f"agent:{agent}:{org_id}",
@@ -375,7 +381,9 @@ class RedisAgentBus:
 _bus_instance: InMemoryBus | RedisAgentBus | None = None
 
 
-def get_agent_bus(use_redis: bool = False, redis_url: str = "redis://localhost:6379") -> InMemoryBus | RedisAgentBus:
+def get_agent_bus(
+    use_redis: bool = False, redis_url: str = "redis://localhost:6379"
+) -> InMemoryBus | RedisAgentBus:
     """
     Global agent bus singleton al.
 
@@ -385,6 +393,7 @@ def get_agent_bus(use_redis: bool = False, redis_url: str = "redis://localhost:6
     global _bus_instance
     if _bus_instance is None:
         import os
+
         use_redis = use_redis or os.environ.get("AGENT_BUS_REDIS", "").lower() == "true"
         if use_redis:
             url = os.environ.get("REDIS_URL", redis_url)
@@ -404,31 +413,33 @@ def reset_agent_bus() -> None:
 
 # ── Query type constants ──────────────────────────────────────────────────────
 
+
 class QueryType:
     """Standart query type sabitleri."""
+
     # CFO → CHRO
-    HIRING_PLAN        = "hiring_plan"         # Kac ise alim planlanıyor?
-    SALARY_FORECAST    = "salary_forecast"     # Maas gideri tahmini nedir?
-    ATTRITION_RISK     = "attrition_risk"      # Attrition riski nedir?
-    HEADCOUNT_IMPACT   = "headcount_impact"    # Kadro degisimi nakit etkisi?
+    HIRING_PLAN = "hiring_plan"  # Kac ise alim planlanıyor?
+    SALARY_FORECAST = "salary_forecast"  # Maas gideri tahmini nedir?
+    ATTRITION_RISK = "attrition_risk"  # Attrition riski nedir?
+    HEADCOUNT_IMPACT = "headcount_impact"  # Kadro degisimi nakit etkisi?
 
     # CFO → CTO
-    TECH_BUDGET_CUT    = "tech_budget_cut"     # Tech butce kesilebilir mi?
-    VELOCITY_IMPACT    = "velocity_impact"     # Butce kesintisi velocity'yi etkiler mi?
-    CLOUD_SAVINGS      = "cloud_savings"       # Cloud optimizasyondan tasarruf?
-    INFRA_COST         = "infra_cost"          # Altyapi maliyeti nedir?
+    TECH_BUDGET_CUT = "tech_budget_cut"  # Tech butce kesilebilir mi?
+    VELOCITY_IMPACT = "velocity_impact"  # Butce kesintisi velocity'yi etkiler mi?
+    CLOUD_SAVINGS = "cloud_savings"  # Cloud optimizasyondan tasarruf?
+    INFRA_COST = "infra_cost"  # Altyapi maliyeti nedir?
 
     # CFO → CMO
-    MARKETING_ROI      = "marketing_roi"       # Pazarlama ROI'si nedir?
-    CAC_TREND          = "cac_trend"           # CAC trendi nasil?
-    REVENUE_FORECAST   = "revenue_forecast"    # Gelir tahmini nedir?
+    MARKETING_ROI = "marketing_roi"  # Pazarlama ROI'si nedir?
+    CAC_TREND = "cac_trend"  # CAC trendi nasil?
+    REVENUE_FORECAST = "revenue_forecast"  # Gelir tahmini nedir?
 
     # CEO → All
-    STRATEGIC_STATUS   = "strategic_status"   # Stratejik durum nedir?
-    RISK_ASSESSMENT    = "risk_assessment"     # Risk degerlendirmen nedir?
-    BOARD_BRIEF        = "board_brief"         # Board brief icin ozet?
+    STRATEGIC_STATUS = "strategic_status"  # Stratejik durum nedir?
+    RISK_ASSESSMENT = "risk_assessment"  # Risk degerlendirmen nedir?
+    BOARD_BRIEF = "board_brief"  # Board brief icin ozet?
 
     # Broadcast types
-    CASH_CRISIS        = "cash_crisis"         # Nakit krizi bildirimi
-    SCENARIO_UPDATE    = "scenario_update"     # Senaryo guncellendi
-    KRI_BREACH         = "kri_breach"          # KRI ihlali
+    CASH_CRISIS = "cash_crisis"  # Nakit krizi bildirimi
+    SCENARIO_UPDATE = "scenario_update"  # Senaryo guncellendi
+    KRI_BREACH = "kri_breach"  # KRI ihlali

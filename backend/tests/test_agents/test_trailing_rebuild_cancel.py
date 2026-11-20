@@ -4,6 +4,7 @@ The delayed task caught CancelledError and returned, so a superseded rebuild
 looked like one that had finished normally — and cancellation, which asyncio's
 timeouts and task groups rely on, stopped at it. Found by SonarCloud (S7497).
 """
+
 from __future__ import annotations
 
 import asyncio

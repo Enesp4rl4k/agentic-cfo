@@ -13,6 +13,7 @@ No sector benchmark is returned: the benchmark tables in this project
 and a comparison we cannot source would be a made-up number in an audited
 report.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,11 +24,11 @@ GUN = 365
 
 @dataclass
 class CalismaSermayesiGirdisi:
-    alacaklar: float          # accounts receivable, TRY
-    yillik_ciro: float        # annual revenue, TRY
-    borclar: float            # accounts payable, TRY
-    yillik_smm: float         # annual COGS, TRY
-    stok: float = 0.0         # inventory, TRY
+    alacaklar: float  # accounts receivable, TRY
+    yillik_ciro: float  # annual revenue, TRY
+    borclar: float  # accounts payable, TRY
+    yillik_smm: float  # annual COGS, TRY
+    stok: float = 0.0  # inventory, TRY
 
 
 @dataclass
@@ -49,16 +50,25 @@ class CalismaSermayesiSonucu:
 
     def to_dict(self) -> dict[str, Any]:
         def m(x: Metrik) -> dict[str, Any]:
-            return {"ad": x.ad, "gun": None if x.gun is None else round(x.gun, 1),
-                    "formul": x.formul, "aciklama": x.aciklama}
+            return {
+                "ad": x.ad,
+                "gun": None if x.gun is None else round(x.gun, 1),
+                "formul": x.formul,
+                "aciklama": x.aciklama,
+            }
+
         return {
-            "metrikler": {"dso": m(self.dso), "dpo": m(self.dpo), "dio": m(self.dio), "ccc": m(self.ccc)},
+            "metrikler": {
+                "dso": m(self.dso),
+                "dpo": m(self.dpo),
+                "dio": m(self.dio),
+                "ccc": m(self.ccc),
+            },
             "yorum": self.yorum,
             "eksik_girdiler": self.eksik_girdiler,
             "olcum": "hesaplandi",
             "sektor_karsilastirmasi": None,
-            "sektor_karsilastirmasi_notu":
-                "DSO/DPO için sektör ortalaması verimiz yok; karşılaştırma gösterilmiyor.",
+            "sektor_karsilastirmasi_notu": "DSO/DPO için sektör ortalaması verimiz yok; karşılaştırma gösterilmiyor.",
         }
 
 
@@ -81,12 +91,21 @@ def hesapla(g: CalismaSermayesiGirdisi) -> CalismaSermayesiSonucu:
     dpo_gun = _bol(g.borclar, g.yillik_smm)
     dio_gun = _bol(g.stok, g.yillik_smm) if g.stok > 0 else 0.0
 
-    dso = Metrik("DSO", dso_gun, "Alacaklar ÷ Yıllık ciro × 365",
-                 "Kestiğiniz faturanın ortalama kaç günde tahsil edildiği.")
-    dpo = Metrik("DPO", dpo_gun, "Borçlar ÷ Yıllık SMM × 365",
-                 "Tedarikçinize ortalama kaç günde ödediğiniz.")
-    dio = Metrik("DIO", dio_gun, "Stok ÷ Yıllık SMM × 365",
-                 "Stoğun ortalama kaç gün elinizde kaldığı. Stok girilmediyse 0.")
+    dso = Metrik(
+        "DSO",
+        dso_gun,
+        "Alacaklar ÷ Yıllık ciro × 365",
+        "Kestiğiniz faturanın ortalama kaç günde tahsil edildiği.",
+    )
+    dpo = Metrik(
+        "DPO", dpo_gun, "Borçlar ÷ Yıllık SMM × 365", "Tedarikçinize ortalama kaç günde ödediğiniz."
+    )
+    dio = Metrik(
+        "DIO",
+        dio_gun,
+        "Stok ÷ Yıllık SMM × 365",
+        "Stoğun ortalama kaç gün elinizde kaldığı. Stok girilmediyse 0.",
+    )
 
     if dso_gun is None or dpo_gun is None:
         ccc_gun = None
@@ -94,13 +113,19 @@ def hesapla(g: CalismaSermayesiGirdisi) -> CalismaSermayesiSonucu:
     else:
         ccc_gun = dso_gun + (dio_gun or 0.0) - dpo_gun
         if ccc_gun < 0:
-            yorum = (f"Nakit döngünüz {abs(ccc_gun):.0f} gün negatif: tahsilatınız ödemenizden "
-                     "önce geliyor, yani işletme sermayesini tedarikçiniz finanse ediyor.")
+            yorum = (
+                f"Nakit döngünüz {abs(ccc_gun):.0f} gün negatif: tahsilatınız ödemenizden "
+                "önce geliyor, yani işletme sermayesini tedarikçiniz finanse ediyor."
+            )
         elif ccc_gun > 60:
-            yorum = (f"Nakit döngünüz {ccc_gun:.0f} gün. Tahsil ettiğiniz parayı bu kadar süre "
-                     "beklemek zorundasınız; bu sürenin finansmanı sizde.")
+            yorum = (
+                f"Nakit döngünüz {ccc_gun:.0f} gün. Tahsil ettiğiniz parayı bu kadar süre "
+                "beklemek zorundasınız; bu sürenin finansmanı sizde."
+            )
         else:
             yorum = f"Nakit döngünüz {ccc_gun:.0f} gün."
 
     ccc = Metrik("CCC", ccc_gun, "DSO + DIO − DPO", "Paranın işletmede bağlı kaldığı gün sayısı.")
-    return CalismaSermayesiSonucu(dso=dso, dpo=dpo, dio=dio, ccc=ccc, yorum=yorum, eksik_girdiler=eksik)
+    return CalismaSermayesiSonucu(
+        dso=dso, dpo=dpo, dio=dio, ccc=ccc, yorum=yorum, eksik_girdiler=eksik
+    )

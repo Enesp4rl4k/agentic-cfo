@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 class CHROAnalyzeRequest(BaseModel):
     """Request for CHRO analysis."""
+
     headcount_csv: str
     attrition_csv: str
     compensation_csv: str
@@ -47,13 +48,19 @@ async def run_chro_analysis(
     try:
         job_id = str(uuid.uuid4())
 
-        result = await recorded_run(db, "chro", current_user.org_id, job_id, run_chro_pipeline(
-            headcount_csv=body.headcount_csv,
-            attrition_csv=body.attrition_csv,
-            compensation_csv=body.compensation_csv,
-            company_name=body.company_name,
-            analysis_period=body.analysis_period,
-        ))
+        result = await recorded_run(
+            db,
+            "chro",
+            current_user.org_id,
+            job_id,
+            run_chro_pipeline(
+                headcount_csv=body.headcount_csv,
+                attrition_csv=body.attrition_csv,
+                compensation_csv=body.compensation_csv,
+                company_name=body.company_name,
+                analysis_period=body.analysis_period,
+            ),
+        )
 
         inceleme = None
         if current_user.org_id and not result.get("error"):

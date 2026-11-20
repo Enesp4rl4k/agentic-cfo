@@ -15,6 +15,7 @@ Nothing here talks to GİB. The web-service tests run on httpx's
 MockTransport, and one of them exists to prove a missing signer stops the
 call before a connection is opened.
 """
+
 from __future__ import annotations
 
 import copy
@@ -104,10 +105,12 @@ def _schema():
 def _tax(root: etree._Element) -> dict[tuple[str, str], Decimal]:
     out = {}
     for d in root.iter(f"{{{COR}}}entryDetail"):
-        out[(
-            d.findtext(f"{{{COR}}}account/{{{COR}}}accountMainID"),
-            d.findtext(f"{{{COR}}}debitCreditCode"),
-        )] = Decimal(d.findtext(f"{{{COR}}}amount"))
+        out[
+            (
+                d.findtext(f"{{{COR}}}account/{{{COR}}}accountMainID"),
+                d.findtext(f"{{{COR}}}debitCreditCode"),
+            )
+        ] = Decimal(d.findtext(f"{{{COR}}}amount"))
     return out
 
 
@@ -126,6 +129,7 @@ def _flat(el: etree._Element, prefix: str = "") -> dict[str, str]:
 
 
 # ── The berat, derived from GİB's signed defter ──────────────────────────────
+
 
 @pytest.fixture
 def gib_yb():
@@ -215,15 +219,24 @@ def test_a_fresh_uuid_per_berat(gib_yb) -> None:
 OWNER = LedgerOwner(vkn="1234567808", title="TechNova Yazılım A.Ş.")
 ENTRIES = [
     {
-        "kayit_id": "e1", "tarih": "2024-01-15T00:00:00", "aciklama": "Satış",
+        "kayit_id": "e1",
+        "tarih": "2024-01-15T00:00:00",
+        "aciklama": "Satış",
         "satirlar": [
             {"hesap_kodu": "120.01", "hesap_adi": "Alıcılar", "borc": 28_500_00, "alacak": 0},
-            {"hesap_kodu": "600.01", "hesap_adi": "Yurtiçi Satışlar", "borc": 0, "alacak": 23_750_00},
+            {
+                "hesap_kodu": "600.01",
+                "hesap_adi": "Yurtiçi Satışlar",
+                "borc": 0,
+                "alacak": 23_750_00,
+            },
             {"hesap_kodu": "391.01", "hesap_adi": "Hesaplanan KDV", "borc": 0, "alacak": 4_750_00},
         ],
     },
     {
-        "kayit_id": "e2", "tarih": "2024-01-20T00:00:00", "aciklama": "Alış",
+        "kayit_id": "e2",
+        "tarih": "2024-01-20T00:00:00",
+        "aciklama": "Alış",
         "satirlar": [
             {"hesap_kodu": "153.01", "hesap_adi": "Ticari Mallar", "borc": 10_000_00, "alacak": 0},
             {"hesap_kodu": "191.01", "hesap_adi": "İndirilecek KDV", "borc": 2_000_00, "alacak": 0},
@@ -278,6 +291,7 @@ def test_garbage_is_refused_not_parsed_into_something() -> None:
 
 # ── Signing goes through an interface, and is checked on the way out ─────────
 
+
 def test_this_server_has_no_signer_and_says_so(gib_yb) -> None:
     with pytest.raises(SignerUnavailable):
         sign_berat(gib_yb, NoSigner())
@@ -305,52 +319,75 @@ def test_an_unsigned_defters_berat_is_not_signed(ours) -> None:
 
 # ── The package ──────────────────────────────────────────────────────────────
 
+
 def test_gibs_own_pair_makes_a_package() -> None:
-    p = build_package(defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(YB), berat_file_name=YB)
+    p = build_package(
+        defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(YB), berat_file_name=YB
+    )
     assert p.file_name == "1234567808-201804-YB-000000.zip"
     assert p.paket_id == "1234567808-201804-YB-000000"
     with zipfile.ZipFile(io.BytesIO(p.zip_bytes)) as zf:
         assert sorted(zf.namelist()) == sorted([Y, YB])
         assert zf.read(Y) == _bytes(Y)
-    again = build_package(defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(YB), berat_file_name=YB)
+    again = build_package(
+        defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(YB), berat_file_name=YB
+    )
     assert again.zip_bytes == p.zip_bytes, "aynı iki dosya aynı paketi vermeli"
 
 
 def test_a_berat_from_another_defter_is_refused() -> None:
     # KB is a real, signed GİB berat — for the kebir, not this yevmiye.
     with pytest.raises(PackageError):
-        build_package(defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(KB), berat_file_name=KB)
+        build_package(
+            defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(KB), berat_file_name=KB
+        )
     renamed = YB  # right name, wrong content
     with pytest.raises(PackageError, match="SignatureValue"):
-        build_package(defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(KB), berat_file_name=renamed)
+        build_package(
+            defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(KB), berat_file_name=renamed
+        )
 
 
 def test_an_unsigned_defter_never_becomes_a_package(ours) -> None:
     pkg, berat = ours
     signed_looking = _with_signature(berat.xml, _gib_signature(YB))
     with pytest.raises(PackageError, match="defter imzasız"):
-        build_package(defter_xml=pkg.xml.encode("utf-8"), defter_file_name=pkg.file_name,
-                      berat_xml=signed_looking, berat_file_name=berat.file_name)
+        build_package(
+            defter_xml=pkg.xml.encode("utf-8"),
+            defter_file_name=pkg.file_name,
+            berat_xml=signed_looking,
+            berat_file_name=berat.file_name,
+        )
 
 
 def test_an_unsigned_berat_never_becomes_a_package(gib_yb) -> None:
     with pytest.raises(PackageError, match="berat imzasız"):
-        build_package(defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=gib_yb.xml, berat_file_name=YB)
+        build_package(
+            defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=gib_yb.xml, berat_file_name=YB
+        )
 
 
 def test_names_must_agree_on_the_part() -> None:
     with pytest.raises(PackageError, match="part"):
-        build_package(defter_xml=_bytes(Y), defter_file_name=Y, berat_xml=_bytes(YB),
-                      berat_file_name="1234567808-201804-YB-000001.xml")
+        build_package(
+            defter_xml=_bytes(Y),
+            defter_file_name=Y,
+            berat_xml=_bytes(YB),
+            berat_file_name="1234567808-201804-YB-000001.xml",
+        )
 
 
 # ── The web service client ───────────────────────────────────────────────────
+
 
 class _EnvelopeSigner:
     """Marks the envelope signed. The transport is mocked; no key is involved."""
 
     def sign_envelope(self, envelope: bytes) -> bytes:
-        return envelope.replace(b"</wsse:Security>", b"<ds:Signature xmlns:ds='http://www.w3.org/2000/09/xmldsig#'/></wsse:Security>")
+        return envelope.replace(
+            b"</wsse:Security>",
+            b"<ds:Signature xmlns:ds='http://www.w3.org/2000/09/xmldsig#'/></wsse:Security>",
+        )
 
 
 def _soap(body: str) -> bytes:
@@ -390,12 +427,15 @@ def test_the_default_environment_is_test() -> None:
 @pytest.mark.asyncio
 async def test_status_request_matches_the_guides_message_shape() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=_soap(
-            '<ns2:getBatchStatusResponse xmlns:ns2="http://webservice.edefter.gib.gov.tr/">'
-            "<durum><durumAciklama>Paket başarıyla işlendi</durumAciklama>"
-            "<durumKodu>0</durumKodu><paketKimligi>1234567808-201804-YB-000000</paketKimligi></durum>"
-            "</ns2:getBatchStatusResponse>"
-        ))
+        return httpx.Response(
+            200,
+            content=_soap(
+                '<ns2:getBatchStatusResponse xmlns:ns2="http://webservice.edefter.gib.gov.tr/">'
+                "<durum><durumAciklama>Paket başarıyla işlendi</durumAciklama>"
+                "<durumKodu>0</durumKodu><paketKimligi>1234567808-201804-YB-000000</paketKimligi></durum>"
+                "</ns2:getBatchStatusResponse>"
+            ),
+        )
 
     client, seen = _client(handler)
     out = await client.batch_status("1234567808-201804-YB-000000")
@@ -412,11 +452,14 @@ async def test_status_request_matches_the_guides_message_shape() -> None:
 @pytest.mark.asyncio
 async def test_a_package_is_sent_as_a_named_attachment() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=_soap(
-            '<ns2:sendDocumentFileResponse xmlns:ns2="http://webservice.edefter.gib.gov.tr/">'
-            "<return>1234567808-201804-YB-000000.zip paketi işleme alındı</return>"
-            "</ns2:sendDocumentFileResponse>"
-        ))
+        return httpx.Response(
+            200,
+            content=_soap(
+                '<ns2:sendDocumentFileResponse xmlns:ns2="http://webservice.edefter.gib.gov.tr/">'
+                "<return>1234567808-201804-YB-000000.zip paketi işleme alındı</return>"
+                "</ns2:sendDocumentFileResponse>"
+            ),
+        )
 
     client, seen = _client(handler)
     msg = await client.send_package("1234567808-201804-YB-000000.zip", b"PK\x03\x04zip")
@@ -430,10 +473,13 @@ async def test_a_package_is_sent_as_a_named_attachment() -> None:
 @pytest.mark.asyncio
 async def test_gib_faults_carry_their_code(code: str, transient: bool) -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(500, content=_soap(
-            "<soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value></soap:Code>"
-            f"<soap:Reason><soap:Text xml:lang='tr'>{code} - hata</soap:Text></soap:Reason></soap:Fault>"
-        ))
+        return httpx.Response(
+            500,
+            content=_soap(
+                "<soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value></soap:Code>"
+                f"<soap:Reason><soap:Text xml:lang='tr'>{code} - hata</soap:Text></soap:Reason></soap:Fault>"
+            ),
+        )
 
     client, _ = _client(handler)
     with pytest.raises(GibWsError) as exc:
@@ -445,18 +491,23 @@ async def test_gib_faults_carry_their_code(code: str, transient: bool) -> None:
 @pytest.mark.asyncio
 async def test_an_approved_berat_comes_back_as_bytes() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=_soap(
-            '<ns2:receiveDocumentFileResponse xmlns:ns2="http://webservice.edefter.gib.gov.tr/">'
-            "<Attachment><fileName>GIB-1234567808-201804-YB-000000.zip</fileName>"
-            "<binaryData>UEsDBA==</binaryData></Attachment></ns2:receiveDocumentFileResponse>"
-        ))
+        return httpx.Response(
+            200,
+            content=_soap(
+                '<ns2:receiveDocumentFileResponse xmlns:ns2="http://webservice.edefter.gib.gov.tr/">'
+                "<Attachment><fileName>GIB-1234567808-201804-YB-000000.zip</fileName>"
+                "<binaryData>UEsDBA==</binaryData></Attachment></ns2:receiveDocumentFileResponse>"
+            ),
+        )
 
     client, _ = _client(handler)
     f = await client.receive_berat("1234567808-201804-YB-000000")
     assert f.file_name.startswith("GIB-") and f.data == b"PK\x03\x04"
 
 
-@pytest.mark.parametrize("bad", ["", "1234567808-201804-YB", "1234567808-201804-X-000000", "../etc"])
+@pytest.mark.parametrize(
+    "bad", ["", "1234567808-201804-YB", "1234567808-201804-X-000000", "../etc"]
+)
 @pytest.mark.asyncio
 async def test_a_malformed_package_id_is_refused_locally(bad: str) -> None:
     client, seen = _client(lambda r: httpx.Response(200))

@@ -349,13 +349,14 @@ def test_compensation_documented_columns_feed_metrics():
     assert metrics["total_annual_salary"] == (180_000 + 80_000 + 160_000) * 100
     assert metrics["total_annual_benefits"] == (24_000 + 9_000 + 18_000) * 100
     assert metrics["employees_with_equity"] == 2  # equity_annual recognized
-    assert metrics["below_market_count"] == 1     # 80k < 100k * 0.90
-    assert metrics["above_market_count"] == 1     # 160k > 140k * 1.10
+    assert metrics["below_market_count"] == 1  # 80k < 100k * 0.90
+    assert metrics["above_market_count"] == 1  # 160k > 140k * 1.10
 
 
 # ============================================================================
 # CHRO ORCHESTRATOR & SYNTHESIS TESTS
 # ============================================================================
+
 
 def test_chro_health_score_calculation():
     """Test that CHRO health score is computed correctly."""

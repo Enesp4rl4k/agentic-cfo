@@ -1,4 +1,5 @@
 """Regional pack helpers — feature gates for locale-specific modules."""
+
 from __future__ import annotations
 
 from collections.abc import Collection, Iterable

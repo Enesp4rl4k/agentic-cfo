@@ -19,6 +19,7 @@ Design notes:
 - CEO graph is deliberately simple: 5 sequential nodes after parallel fan-in.
 - "Nothing grades its own homework": synthesis is separate from board_deck.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,6 +53,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
+
 def _append_log(state: CEOState, log: CEOStepLog) -> dict[str, Any]:
     existing = list(state.get("logs") or [])
     existing.append(log)
@@ -67,6 +69,7 @@ def _run_config(config: dict) -> CEORunConfig:
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
+
 async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
     """
     Fan-out node: run CFO, CTO, CMO, COO, and CHRO pipelines in parallel.
@@ -76,12 +79,12 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
       a) file-based: file_path + file_type
       b) direct JSON: transactions list (bypasses data ingestion parsing)
     """
-    cfo_input  = state.get("_cfo_input") or {}
-    cto_input  = state.get("_cto_input") or {}
-    cmo_input  = state.get("_cmo_input") or {}
-    coo_input  = state.get("_coo_input") or {}
+    cfo_input = state.get("_cfo_input") or {}
+    cto_input = state.get("_cto_input") or {}
+    cmo_input = state.get("_cmo_input") or {}
+    coo_input = state.get("_coo_input") or {}
     chro_input = state.get("_chro_input") or {}
-    job_id     = state.get("job_id", "ceo-job")
+    job_id = state.get("job_id", "ceo-job")
 
     cfo_result: dict[str, Any] = {}
     cto_result: dict[str, Any] = {}
@@ -105,6 +108,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
                 )
             else:
                 from app.agents.orchestrator import run_cfo_pipeline
+
                 result = await run_cfo_pipeline(
                     job_id=f"{job_id}-cfo",
                     file_path=cfo_input.get("file_path", ""),
@@ -122,6 +126,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
             return
         try:
             from app.agents.cto.orchestrator import run_cto_pipeline
+
             result = await run_cto_pipeline(
                 job_id=f"{job_id}-cto",
                 cloud_billing_csv=cto_input.get("cloud_billing_csv"),
@@ -140,6 +145,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
             return
         try:
             from app.agents.cmo.orchestrator import run_cmo_pipeline
+
             result = await run_cmo_pipeline(
                 job_id=f"{job_id}-cmo",
                 campaign_csv=cmo_input.get("campaign_csv"),
@@ -157,6 +163,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
             return
         try:
             from app.agents.coo.orchestrator import run_coo_pipeline
+
             result = await run_coo_pipeline(
                 job_id=f"{job_id}-coo",
                 process_csv=coo_input.get("process_csv"),
@@ -174,6 +181,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
             return
         try:
             from app.agents.chro.orchestrator import run_chro_pipeline
+
             result = await run_chro_pipeline(
                 headcount_csv=chro_input.get("headcount_csv") or "",
                 attrition_csv=chro_input.get("attrition_csv") or "",
@@ -187,18 +195,21 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
     # Parallel execution
     await asyncio.gather(_run_cfo(), _run_cto(), _run_cmo(), _run_coo(), _run_chro())
 
-    patch = _append_log(state, CEOStepLog(
-        step="run_pipelines",
-        ok=True,
-        detail=(
-            f"CFO: {'ok' if cfo_result else 'skipped'}, "
-            f"CTO: {'ok' if cto_result else 'skipped'}, "
-            f"CMO: {'ok' if cmo_result else 'skipped'}, "
-            f"COO: {'ok' if coo_result else 'skipped'}, "
-            f"CHRO: {'ok' if chro_result else 'skipped'}"
+    patch = _append_log(
+        state,
+        CEOStepLog(
+            step="run_pipelines",
+            ok=True,
+            detail=(
+                f"CFO: {'ok' if cfo_result else 'skipped'}, "
+                f"CTO: {'ok' if cto_result else 'skipped'}, "
+                f"CMO: {'ok' if cmo_result else 'skipped'}, "
+                f"COO: {'ok' if coo_result else 'skipped'}, "
+                f"CHRO: {'ok' if chro_result else 'skipped'}"
+            ),
+            confidence=0.95,
         ),
-        confidence=0.95,
-    ))
+    )
     patch["_cfo_result"] = cfo_result
     patch["_cto_result"] = cto_result
     patch["_cmo_result"] = cmo_result
@@ -215,23 +226,26 @@ async def node_condense_summaries(state: CEOState, config: dict) -> CEOState:
     coo_result = state.get("_coo_result") or {}
     chro_result = state.get("_chro_result") or {}
 
-    fin  = _condense_financial_summary(cfo_result) if cfo_result else {}
-    tech = _condense_tech_summary(cto_result)      if cto_result else {}
-    mkt  = _condense_marketing_summary(cmo_result) if cmo_result else {}
-    ops  = _condense_ops_summary(coo_result)       if coo_result else {}
-    hr   = _condense_hr_summary(chro_result)       if chro_result else {}
+    fin = _condense_financial_summary(cfo_result) if cfo_result else {}
+    tech = _condense_tech_summary(cto_result) if cto_result else {}
+    mkt = _condense_marketing_summary(cmo_result) if cmo_result else {}
+    ops = _condense_ops_summary(coo_result) if coo_result else {}
+    hr = _condense_hr_summary(chro_result) if chro_result else {}
 
-    patch = _append_log(state, CEOStepLog(
-        step="condense_summaries",
-        ok=True,
-        detail=(
-            f"Financial: revenue={fin.get('revenue_cents', 0)/100:,.0f} "
-            f"| Tech health: {tech.get('overall_health_score', 'N/A')}/10 "
-            f"| Headcount: {hr.get('total_headcount', 0)} "
-            f"| Ops score: {ops.get('overall_ops_score', 'N/A')}/10"
+    patch = _append_log(
+        state,
+        CEOStepLog(
+            step="condense_summaries",
+            ok=True,
+            detail=(
+                f"Financial: revenue={fin.get('revenue_cents', 0) / 100:,.0f} "
+                f"| Tech health: {tech.get('overall_health_score', 'N/A')}/10 "
+                f"| Headcount: {hr.get('total_headcount', 0)} "
+                f"| Ops score: {ops.get('overall_ops_score', 'N/A')}/10"
+            ),
+            confidence=0.95,
         ),
-        confidence=0.95,
-    ))
+    )
     patch["financial_summary"] = fin
     patch["tech_summary"] = tech
     patch["marketing_summary"] = mkt
@@ -242,9 +256,12 @@ async def node_condense_summaries(state: CEOState, config: dict) -> CEOState:
 
 async def node_synthesis(state: CEOState, config: dict) -> CEOState:
     result = await run_synthesis_agent(state, _run_config(config))
-    patch = _append_log(state, CEOStepLog(
-        step="synthesis", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CEOStepLog(
+            step="synthesis", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -253,18 +270,27 @@ async def node_synthesis(state: CEOState, config: dict) -> CEOState:
 
 async def node_strategic_priorities(state: CEOState, config: dict) -> CEOState:
     result = await run_strategic_priorities_agent(state, _run_config(config))
-    patch = _append_log(state, CEOStepLog(
-        step="strategic_priorities", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CEOStepLog(
+            step="strategic_priorities",
+            ok=result.ok,
+            detail=result.detail,
+            confidence=result.confidence,
+        ),
+    )
     patch.update(result.patch)
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_board_deck(state: CEOState, config: dict) -> CEOState:
     result = await run_board_deck_agent(state, _run_config(config))
-    patch = _append_log(state, CEOStepLog(
-        step="board_deck", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CEOStepLog(
+            step="board_deck", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
     return {**state, **patch}  # type: ignore[typeddict-item]
 
@@ -272,29 +298,35 @@ async def node_board_deck(state: CEOState, config: dict) -> CEOState:
 async def node_swot(state: CEOState, config: dict) -> CEOState:
     """SWOT analizi — tüm C-Suite özetlerinden otomatik SWOT matrisi üretir."""
     result = await run_swot_agent(state, _run_config(config))
-    patch = _append_log(state, CEOStepLog(
-        step="swot", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        CEOStepLog(step="swot", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 async def node_okr(state: CEOState, config: dict) -> CEOState:
     from app.agents.ceo.okr_agent import run_okr_agent
+
     return await run_okr_agent(state, config)  # type: ignore[arg-type, return-value]
 
 
 async def node_hold_for_review(state: CEOState, config: dict) -> CEOState:
-    patch = _append_log(state, CEOStepLog(
-        step="review_gate",
-        ok=True,
-        detail=f"Held — confidence={state.get('min_confidence', 0):.2f}",
-    ))
+    patch = _append_log(
+        state,
+        CEOStepLog(
+            step="review_gate",
+            ok=True,
+            detail=f"Held — confidence={state.get('min_confidence', 0):.2f}",
+        ),
+    )
     patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
 # ── Routing ────────────────────────────────────────────────────────────────────
+
 
 def route_after_synthesis(state: CEOState) -> str:
     if state.get("awaiting_review") and _run_config({}).require_review:
@@ -306,37 +338,38 @@ def route_after_synthesis(state: CEOState) -> str:
 
 # ── Graph assembly ─────────────────────────────────────────────────────────────
 
+
 def build_ceo_graph() -> StateGraph:
     graph = StateGraph(CEOState)
 
-    graph.add_node("pipelines_step",    node_run_pipelines)   # type: ignore[arg-type]
-    graph.add_node("summaries_step",    node_condense_summaries)  # type: ignore[arg-type]
-    graph.add_node("synthesis_step",    node_synthesis)       # type: ignore[arg-type]
-    graph.add_node("priorities_step",   node_strategic_priorities)  # type: ignore[arg-type]
-    graph.add_node("swot_step",         node_swot)            # type: ignore[arg-type]
-    graph.add_node("deck_step",         node_board_deck)      # type: ignore[arg-type]
-    graph.add_node("okr_step",          node_okr)             # type: ignore[arg-type]
-    graph.add_node("hold_step",         node_hold_for_review)  # type: ignore[arg-type]
+    graph.add_node("pipelines_step", node_run_pipelines)  # type: ignore[arg-type]
+    graph.add_node("summaries_step", node_condense_summaries)  # type: ignore[arg-type]
+    graph.add_node("synthesis_step", node_synthesis)  # type: ignore[arg-type]
+    graph.add_node("priorities_step", node_strategic_priorities)  # type: ignore[arg-type]
+    graph.add_node("swot_step", node_swot)  # type: ignore[arg-type]
+    graph.add_node("deck_step", node_board_deck)  # type: ignore[arg-type]
+    graph.add_node("okr_step", node_okr)  # type: ignore[arg-type]
+    graph.add_node("hold_step", node_hold_for_review)  # type: ignore[arg-type]
 
     graph.set_entry_point("pipelines_step")
 
-    graph.add_edge("pipelines_step",    "summaries_step")
-    graph.add_edge("summaries_step",    "synthesis_step")
+    graph.add_edge("pipelines_step", "summaries_step")
+    graph.add_edge("summaries_step", "synthesis_step")
 
     graph.add_conditional_edges(
         "synthesis_step",
         route_after_synthesis,
         {
             "priorities_step": "priorities_step",
-            CEO_ROUTE_HOLD:    "hold_step",
+            CEO_ROUTE_HOLD: "hold_step",
         },
     )
 
     graph.add_edge("priorities_step", "swot_step")
-    graph.add_edge("swot_step",       "deck_step")
-    graph.add_edge("deck_step",       "okr_step")
-    graph.add_edge("okr_step",        END)
-    graph.add_edge("hold_step",       END)
+    graph.add_edge("swot_step", "deck_step")
+    graph.add_edge("deck_step", "okr_step")
+    graph.add_edge("okr_step", END)
+    graph.add_edge("hold_step", END)
 
     return graph
 
@@ -345,6 +378,7 @@ ceo_graph = build_ceo_graph().compile()
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
+
 
 async def _run_cfo_from_transactions(
     job_id: str,
@@ -467,9 +501,9 @@ async def run_ceo_pipeline(
     if any([cloud_billing_csv, git_log_text, incident_csv, sprint_csv]):
         cto_input = {
             "cloud_billing_csv": cloud_billing_csv,
-            "git_log_text":      git_log_text,
-            "incident_csv":      incident_csv,
-            "sprint_csv":        sprint_csv,
+            "git_log_text": git_log_text,
+            "incident_csv": incident_csv,
+            "sprint_csv": sprint_csv,
         }
 
     # The graph already knows how to run CMO/COO/CHRO, but nothing ever handed
@@ -479,40 +513,40 @@ async def run_ceo_pipeline(
     if any([campaign_csv, funnel_csv, cohort_csv]):
         cmo_input = {
             "campaign_csv": campaign_csv,
-            "funnel_csv":   funnel_csv,
-            "cohort_csv":   cohort_csv,
+            "funnel_csv": funnel_csv,
+            "cohort_csv": cohort_csv,
         }
 
     coo_input: dict[str, Any] = {}
     if any([process_csv, resource_csv, sla_csv]):
         coo_input = {
-            "process_csv":  process_csv,
+            "process_csv": process_csv,
             "resource_csv": resource_csv,
-            "sla_csv":      sla_csv,
+            "sla_csv": sla_csv,
         }
 
     chro_input: dict[str, Any] = {}
     if any([headcount_csv, attrition_csv, compensation_csv]):
         chro_input = {
-            "headcount_csv":    headcount_csv,
-            "attrition_csv":    attrition_csv,
+            "headcount_csv": headcount_csv,
+            "attrition_csv": attrition_csv,
             "compensation_csv": compensation_csv,
         }
 
     initial_state: CEOState = {
-        "job_id":      job_id,
+        "job_id": job_id,
         "company_name": company_name,
-        "period":      period,
-        "_cfo_input":  cfo_input,
-        "_cto_input":  cto_input,
-        "_cmo_input":  cmo_input,
-        "_coo_input":  coo_input,
+        "period": period,
+        "_cfo_input": cfo_input,
+        "_cto_input": cto_input,
+        "_cmo_input": cmo_input,
+        "_coo_input": coo_input,
         "_chro_input": chro_input,
-        "logs":            [],
-        "min_confidence":  1.0,
+        "logs": [],
+        "min_confidence": 1.0,
         "awaiting_review": False,
-        "halted":          False,
-        "error":           None,
+        "halted": False,
+        "error": None,
     }
 
     result: CEOState = await ceo_graph.ainvoke(  # type: ignore[assignment]

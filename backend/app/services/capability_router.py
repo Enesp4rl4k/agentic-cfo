@@ -30,6 +30,7 @@ Usage:
 The router does NOT execute agents — it only decides.
 Execution is the orchestrator's responsibility.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,12 +43,13 @@ logger = logging.getLogger(__name__)
 
 # ── Routing decision ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class RoutingDecision:
     agent: str
     should_run: bool
     reason: str
-    priority: int = 5          # 1 (highest) – 10 (lowest)
+    priority: int = 5  # 1 (highest) – 10 (lowest)
     estimated_tokens: int = 0  # rough token budget for this agent
     dependencies_met: bool = True
     data_quality: float = 1.0  # 0.0 – 1.0
@@ -56,9 +58,10 @@ class RoutingDecision:
 @dataclass
 class RoutingPlan:
     """Full routing decision for all agents in one pipeline run."""
+
     decisions: dict[str, RoutingDecision]
-    execution_order: list[str]   # agents that should_run, in priority order
-    skipped: list[str]           # agents that should NOT run
+    execution_order: list[str]  # agents that should_run, in priority order
+    skipped: list[str]  # agents that should NOT run
     total_estimated_tokens: int
 
     @property
@@ -77,9 +80,11 @@ class RoutingPlan:
 
 # ── Capability declaration ────────────────────────────────────────────────────
 
+
 @dataclass
 class AgentCapability:
     """Declares what an agent needs and what it produces."""
+
     name: str
     # State keys required to have data (list of alternatives → any one suffices)
     requires_any: list[str] = field(default_factory=list)
@@ -98,6 +103,7 @@ class AgentCapability:
 
 
 # ── Agent capability registry ─────────────────────────────────────────────────
+
 
 def _has_data(state: dict[str, Any], key: str) -> bool:
     """Check if a state key exists and has meaningful data."""
@@ -173,7 +179,10 @@ def _multiperiod_validator(state: dict[str, Any]) -> tuple[bool, str]:
     txs = state.get("transactions") or []
     months = {t.get("transaction_date")[:7] for t in txs if t.get("transaction_date")}
     if len(months) < 3:
-        return False, f"Only {len(months)} distinct months in transactions — need ≥3 for trend analysis."
+        return (
+            False,
+            f"Only {len(months)} distinct months in transactions — need ≥3 for trend analysis.",
+        )
     return True, ""
 
 
@@ -278,7 +287,7 @@ AGENT_CAPABILITIES: dict[str, AgentCapability] = {
         requires_all=["transactions"],
         produces=["yevmiye_kayitlari", "mizan", "onay_kuyrugu"],
         depends_on=["data_ingestion"],
-        priority=8,   # report'tan önce, diğer analizlerden sonra
+        priority=8,  # report'tan önce, diğer analizlerden sonra
         token_budget=1024,  # kural motoru ağırlıklı → düşük LLM maliyeti
         validator=lambda state: (
             (True, "")
@@ -290,6 +299,7 @@ AGENT_CAPABILITIES: dict[str, AgentCapability] = {
 
 
 # ── CapabilityRouter ──────────────────────────────────────────────────────────
+
 
 class CapabilityRouter:
     """
@@ -354,8 +364,7 @@ class CapabilityRouter:
 
         # 3. Check depends_on (only if those agents are in the registry)
         missing_deps = [
-            dep for dep in cap.depends_on
-            if dep in self.capabilities and dep not in completed
+            dep for dep in cap.depends_on if dep in self.capabilities and dep not in completed
         ]
         if missing_deps:
             return RoutingDecision(
@@ -369,8 +378,11 @@ class CapabilityRouter:
         # 4. Custom validator — it reads the inputs' content, which an input
         # still to be produced in this run does not have yet. The agent checks
         # its own data when it runs (it reports no_data rather than a number).
-        bekleyen = [k for k in (*cap.requires_all, *cap.requires_any)
-                    if k in planned and not _has_data(state, k)]
+        bekleyen = [
+            k
+            for k in (*cap.requires_all, *cap.requires_any)
+            if k in planned and not _has_data(state, k)
+        ]
         if cap.validator and not bekleyen:
             ok, reason = cap.validator(state)
             if not ok:
@@ -466,17 +478,17 @@ class CapabilityRouter:
 
         # Build execution order (only agents that should run, sorted by priority)
         run_agents = [
-            name for name in sorted_agents
+            name
+            for name in sorted_agents
             if decisions.get(name, RoutingDecision(name, False, "")).should_run
         ]
         skip_agents = [
-            name for name in sorted_agents
+            name
+            for name in sorted_agents
             if not decisions.get(name, RoutingDecision(name, False, "")).should_run
         ]
 
-        total_tokens = sum(
-            decisions[a].estimated_tokens for a in run_agents if a in decisions
-        )
+        total_tokens = sum(decisions[a].estimated_tokens for a in run_agents if a in decisions)
 
         plan = RoutingPlan(
             decisions=decisions,
@@ -487,7 +499,10 @@ class CapabilityRouter:
 
         logger.info(
             "CapabilityRouter: %d run, %d skip | tokens≈%d | %s",
-            plan.run_count, plan.skip_count, total_tokens, plan.summary(),
+            plan.run_count,
+            plan.skip_count,
+            total_tokens,
+            plan.summary(),
         )
 
         return plan

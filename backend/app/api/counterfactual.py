@@ -9,6 +9,7 @@ Endpoint'ler:
   POST /counterfactual/simulate/price       — Fiyat artışı
   GET  /counterfactual/scenarios/{job_id}   — Job'a özgü hazır senaryolar
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Request şemaları ──────────────────────────────────────────────────────────
+
 
 class HeadcountSimRequest(BaseModel):
     job_id: str
@@ -57,6 +59,7 @@ class PriceIncreaseSimRequest(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 async def _load_pnl_cashflow_forecast(job_id: str, db: AsyncSession) -> tuple[dict, dict, dict]:
     """Latest JSON report → (pnl, cashflow, forecast).
 
@@ -69,6 +72,7 @@ async def _load_pnl_cashflow_forecast(job_id: str, db: AsyncSession) -> tuple[di
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/counterfactual/simulate/headcount")
 async def simulate_headcount(
@@ -96,6 +100,7 @@ async def simulate_headcount(
         )
 
     from app.services.counterfactual_engine import CounterfactualEngine
+
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
     result = engine.simulate_headcount_change(
@@ -108,7 +113,9 @@ async def simulate_headcount(
 
     logger.info(
         "Counterfactual headcount: job=%s delta=%+d net_impact=₺%,.0f",
-        body.job_id, body.delta, result.base_net_impact,
+        body.job_id,
+        body.delta,
+        result.base_net_impact,
     )
 
     return {"data": result.to_dict(), "error": None}
@@ -139,6 +146,7 @@ async def simulate_cost_reduction(
         )
 
     from app.services.counterfactual_engine import CounterfactualEngine
+
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
     result = engine.simulate_cost_reduction(
@@ -150,7 +158,10 @@ async def simulate_cost_reduction(
 
     logger.info(
         "Counterfactual cost: job=%s cat=%s pct=%.0f%% saving=₺%,.0f",
-        body.job_id, body.target_category, body.reduction_pct * 100, result.base_net_impact,
+        body.job_id,
+        body.target_category,
+        body.reduction_pct * 100,
+        result.base_net_impact,
     )
 
     return {"data": result.to_dict(), "error": None}
@@ -171,6 +182,7 @@ async def simulate_price_increase(
         raise HTTPException(status_code=404, detail="P&L verisi bulunamadı.")
 
     from app.services.counterfactual_engine import CounterfactualEngine
+
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
     result = engine.simulate_price_increase(
@@ -212,7 +224,7 @@ async def get_preset_scenarios(
 
     return {
         "data": {
-            "job_id":    job_id,
+            "job_id": job_id,
             "scenarios": scenarios,
         },
         "error": None,

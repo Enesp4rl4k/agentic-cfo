@@ -15,6 +15,7 @@ the current one when it adds a period: it covers at least as many months, or it
 reaches a later month. The person can still apply an analysis explicitly
 (POST /analysis/{id}/company-view); the next upload or decision supersedes it.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -68,7 +69,13 @@ def _signature(profit: list[Any], cash: list[Any]) -> str:
     """
     said = [
         sorted(
-            [r.source_record_id, day_of(r.transaction_date).isoformat(), r.amount_cents, r.direction, r.category]
+            [
+                r.source_record_id,
+                day_of(r.transaction_date).isoformat(),
+                r.amount_cents,
+                r.direction,
+                r.category,
+            ]
             for r in rows
         )
         for rows in (profit, cash)
@@ -100,9 +107,7 @@ def months_of(dashboard: dict[str, Any] | None) -> list[str]:
     return sorted(months)
 
 
-def should_replace(
-    current: dict[str, Any] | None, new: dict[str, Any] | None
-) -> tuple[bool, str]:
+def should_replace(current: dict[str, Any] | None, new: dict[str, Any] | None) -> tuple[bool, str]:
     """(replace?, reason) for making `new` the company's active analysis."""
     if not new:
         return False, "no_dashboard"

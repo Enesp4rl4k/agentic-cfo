@@ -13,6 +13,7 @@ and of every `X-EDefter-*` header the card was written to display.
 Nothing fails when this regresses. The header is simply not there, `undefined`
 flows into the UI, and a fallback covers for it. So the check has to be static.
 """
+
 from __future__ import annotations
 
 import ast
@@ -94,7 +95,11 @@ def test_the_exposed_list_has_no_dead_entries() -> None:
     """A header nobody sets is a leftover, and the list should stay readable."""
     set_by_api = {h.lower() for h in _headers_the_api_sets()}
     # Set by middleware rather than a dict literal, so the AST scan misses them.
-    from_middleware = {"retry-after", "x-ratelimit-limit", "x-ratelimit-remaining",
-                       "x-ratelimit-reset"}
+    from_middleware = {
+        "retry-after",
+        "x-ratelimit-limit",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+    }
     stale = sorted(_exposed_headers() - set_by_api - from_middleware)
     assert not stale, f"expose_headers'ta artık kimsenin ayarlamadığı başlıklar: {stale}"

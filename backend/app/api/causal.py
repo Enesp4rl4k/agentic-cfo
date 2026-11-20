@@ -8,6 +8,7 @@ POST /api/v1/analysis/{job_id}/causal
 GET  /api/v1/analysis/{job_id}/causal/feature-importance
      Hangi gider kalemi net kâra en çok etki yapıyor?
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,9 +33,9 @@ _VALID_METRICS = ["in", "out", "net", "revenue", "expenses"]
 
 
 class CausalAnalysisRequest(BaseModel):
-    metric_x: str = "in"       # Cause metric (gelir/income)
-    metric_y: str = "out"      # Effect metric (gider/expense)
-    max_lag:  int = 3          # Maximum months of lag to test (1-6)
+    metric_x: str = "in"  # Cause metric (gelir/income)
+    metric_y: str = "out"  # Effect metric (gider/expense)
+    max_lag: int = 3  # Maximum months of lag to test (1-6)
 
 
 async def _get_dashboard(job_id: str, db: AsyncSession) -> dict[str, Any]:
@@ -111,6 +112,7 @@ async def run_causal_analysis(
         )
 
     from app.agents.causal_agent import run_causal_analysis
+
     result = run_causal_analysis(
         monthly_series=monthly_series,
         pnl=pnl,
@@ -149,6 +151,7 @@ async def get_feature_importance(
         )
 
     from app.agents.causal_agent import feature_importance_analysis
+
     result = feature_importance_analysis(pnl)
 
     return {"data": result, "error": None}

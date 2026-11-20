@@ -41,9 +41,7 @@ class TransactionType(StrEnum):
 class Transaction(Base):
     __tablename__ = "transactions"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     job_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
@@ -54,7 +52,9 @@ class Transaction(Base):
     category: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     vendor: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
-    transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    transaction_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     # True when `transaction_date` was invented because the source had no
     # readable date. The column cannot be null and the row has to exist to be
     # reviewed, so the estimate is made — but it says so, because the date

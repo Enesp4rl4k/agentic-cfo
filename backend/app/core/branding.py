@@ -10,6 +10,7 @@ So: every user-visible mention of the product resolves through here, and the
 contact addresses default to *empty* rather than to a plausible-looking lie.
 Renaming the product is an env change, not a grep.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

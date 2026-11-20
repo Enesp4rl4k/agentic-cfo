@@ -10,6 +10,7 @@ Found by SonarCloud on the first PR analysis.
 Each pipeline is replaced by a stand-in that binds the call against the real
 function's signature — a mismatch fails here without running any agent.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -38,12 +39,21 @@ def _strict_stand_in(real, calls: list[dict[str, Any]]):
 @pytest.fixture
 def calls(monkeypatch):
     recorded: dict[str, list[dict[str, Any]]] = {"risk": [], "audit": [], "compliance": []}
-    monkeypatch.setattr(risk_orch, "run_risk_pipeline",
-                        _strict_stand_in(risk_orch.run_risk_pipeline, recorded["risk"]))
-    monkeypatch.setattr(audit_orch, "run_audit_pipeline",
-                        _strict_stand_in(audit_orch.run_audit_pipeline, recorded["audit"]))
-    monkeypatch.setattr(compliance_orch, "run_compliance_pipeline",
-                        _strict_stand_in(compliance_orch.run_compliance_pipeline, recorded["compliance"]))
+    monkeypatch.setattr(
+        risk_orch,
+        "run_risk_pipeline",
+        _strict_stand_in(risk_orch.run_risk_pipeline, recorded["risk"]),
+    )
+    monkeypatch.setattr(
+        audit_orch,
+        "run_audit_pipeline",
+        _strict_stand_in(audit_orch.run_audit_pipeline, recorded["audit"]),
+    )
+    monkeypatch.setattr(
+        compliance_orch,
+        "run_compliance_pipeline",
+        _strict_stand_in(compliance_orch.run_compliance_pipeline, recorded["compliance"]),
+    )
     return recorded
 
 
@@ -94,10 +104,17 @@ async def test_auto_chain_compliance_step_calls_the_pipeline(calls, no_context_i
 async def test_agent_job_audit_maps_request_fields(calls):
     from app.api.agent_jobs import _dispatch_pipeline
 
-    await _dispatch_pipeline("audit", "job-1", {
-        "findings_csv": "f", "controls_csv": None, "audit_plan_csv": "plan",
-        "company_name": "Kobi", "reporting_period": "2026-Q2",
-    })
+    await _dispatch_pipeline(
+        "audit",
+        "job-1",
+        {
+            "findings_csv": "f",
+            "controls_csv": None,
+            "audit_plan_csv": "plan",
+            "company_name": "Kobi",
+            "reporting_period": "2026-Q2",
+        },
+    )
     got = calls["audit"][0]
     assert got["coverage_csv"] == "plan" and got["controls_csv"] == ""
     assert got["audit_period"] == "2026-Q2"
@@ -106,10 +123,17 @@ async def test_agent_job_audit_maps_request_fields(calls):
 async def test_agent_job_compliance_maps_request_fields(calls):
     from app.api.agent_jobs import _dispatch_pipeline
 
-    await _dispatch_pipeline("compliance", "job-1", {
-        "policies_csv": "p", "violations_csv": None, "regulations_csv": "r",
-        "company_name": "Kobi", "reporting_period": "2026-Q2",
-    })
+    await _dispatch_pipeline(
+        "compliance",
+        "job-1",
+        {
+            "policies_csv": "p",
+            "violations_csv": None,
+            "regulations_csv": "r",
+            "company_name": "Kobi",
+            "reporting_period": "2026-Q2",
+        },
+    )
     got = calls["compliance"][0]
     assert got["job_id"] == "job-1" and got["policy_csv"] == "p"
     assert got["audit_period"] == "2026-Q2"
@@ -118,5 +142,7 @@ async def test_agent_job_compliance_maps_request_fields(calls):
 async def test_agent_job_risk_calls_the_pipeline(calls):
     from app.api.agent_jobs import _dispatch_pipeline
 
-    await _dispatch_pipeline("risk", "job-1", {"register_csv": "r", "loss_csv": "l", "kri_csv": "k"})
+    await _dispatch_pipeline(
+        "risk", "job-1", {"register_csv": "r", "loss_csv": "l", "kri_csv": "k"}
+    )
     assert len(calls["risk"]) == 1

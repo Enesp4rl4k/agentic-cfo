@@ -11,6 +11,7 @@ Usage:
     from app.services.executive_report_pdf import generate_executive_report
     pdf_bytes = generate_executive_report(dashboard_data, company_name="Acme A.Ş.")
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,23 +25,23 @@ def _fmt(cents: int | float) -> str:
     """Format kuruş (raw pipeline series, e.g. monthly_series) to Turkish TL string."""
     val = cents / 100
     if abs(val) >= 1_000_000:
-        return f"₺{val/1_000_000:.1f}M"
+        return f"₺{val / 1_000_000:.1f}M"
     elif abs(val) >= 1_000:
-        return f"₺{val/1_000:.0f}K"
+        return f"₺{val / 1_000:.0f}K"
     return f"₺{val:,.0f}"
 
 
 def _fmt_lira(lira: int | float) -> str:
     """Format an already-lira value (Report.data scalars — report_agent._fmt boundary)."""
     if abs(lira) >= 1_000_000:
-        return f"₺{lira/1_000_000:.1f}M"
+        return f"₺{lira / 1_000_000:.1f}M"
     elif abs(lira) >= 1_000:
-        return f"₺{lira/1_000:.0f}K"
+        return f"₺{lira / 1_000:.0f}K"
     return f"₺{lira:,.0f}"
 
 
 def _pct(v: float) -> str:
-    return f"%{v*100:.1f}"
+    return f"%{v * 100:.1f}"
 
 
 def _sign_class(value: int | float) -> str:
@@ -53,7 +54,7 @@ def _build_html(
     period: str,
     generated_at: str,
 ) -> str:
-    pnl      = dashboard.get("pnl") or {}
+    pnl = dashboard.get("pnl") or {}
     cashflow = dashboard.get("cashflow") or {}
     forecast = dashboard.get("forecast") or {}
     anomalies = dashboard.get("anomalies") or []
@@ -65,11 +66,11 @@ def _build_html(
     cf_alerts = cashflow.get("alerts") or []
     fc_alerts = forecast.get("alerts") or []
     critical_count = sum(1 for a in cf_alerts + fc_alerts if a.get("level") == "critical")
-    warning_count  = sum(1 for a in cf_alerts + fc_alerts if a.get("level") == "warning")
+    warning_count = sum(1 for a in cf_alerts + fc_alerts if a.get("level") == "warning")
 
     # Anomaly severity breakdown
     anom_critical = sum(1 for a in anomalies if a.get("severity") == "critical")
-    anom_high     = sum(1 for a in anomalies if a.get("severity") == "high")
+    anom_high = sum(1 for a in anomalies if a.get("severity") == "high")
 
     # Monthly series for sparkline-like table
     monthly = cashflow.get("monthly_series") or []
@@ -78,20 +79,17 @@ def _build_html(
         net = entry.get("net", 0)
         monthly_rows += f"""
         <tr>
-          <td class="month-cell">{entry.get('month', '')}</td>
-          <td class="amount-cell income">{_fmt(entry.get('in', 0))}</td>
-          <td class="amount-cell expense">{_fmt(entry.get('out', 0))}</td>
+          <td class="month-cell">{entry.get("month", "")}</td>
+          <td class="amount-cell income">{_fmt(entry.get("in", 0))}</td>
+          <td class="amount-cell expense">{_fmt(entry.get("out", 0))}</td>
           <td class="amount-cell {_sign_class(net)}">{_fmt(net)}</td>
         </tr>"""
 
     # OpEx top 3
     opex = pnl.get("opex") or {}
-    top_opex = sorted(
-        [(k, v) for k, v in opex.items() if v and v > 0],
-        key=lambda x: -x[1]
-    )[:3]
+    top_opex = sorted([(k, v) for k, v in opex.items() if v and v > 0], key=lambda x: -x[1])[:3]
     opex_rows = "".join(
-        f'<tr><td class="opex-name">{k.replace("_"," ").title()}</td>'
+        f'<tr><td class="opex-name">{k.replace("_", " ").title()}</td>'
         f'<td class="opex-amt">{_fmt_lira(v)}</td></tr>'
         for k, v in top_opex
     )
@@ -102,7 +100,7 @@ def _build_html(
     for key in ["pessimistic", "base", "optimistic"]:
         sc = scenarios.get(key) or {}
         net12 = sc.get("twelve_month_net", 0)
-        rw    = sc.get("runway_months")
+        rw = sc.get("runway_months")
         label = sc.get("label", key)
         row_class = "base-row" if key == "base" else ""
         scenario_rows += f"""
@@ -328,36 +326,36 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
 
 <!-- Alert strip -->
 <div class="alert-strip">
-  {'<div class="alert-badge alert-critical">⚠ ' + str(critical_count) + ' Kritik Uyarı</div>' if critical_count > 0 else '<div class="alert-badge alert-ok">✓ Kritik Uyarı Yok</div>'}
-  {'<div class="alert-badge alert-warning">▲ ' + str(warning_count) + ' Uyarı</div>' if warning_count > 0 else ''}
-  {'<div class="alert-badge alert-anomaly">◆ ' + str(anom_critical + anom_high) + ' Yüksek Anomali</div>' if (anom_critical + anom_high) > 0 else ''}
-  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + str(runway) + ' Ay</div>' if runway and runway < 12 else ''}
+  {'<div class="alert-badge alert-critical">⚠ ' + str(critical_count) + " Kritik Uyarı</div>" if critical_count > 0 else '<div class="alert-badge alert-ok">✓ Kritik Uyarı Yok</div>'}
+  {'<div class="alert-badge alert-warning">▲ ' + str(warning_count) + " Uyarı</div>" if warning_count > 0 else ""}
+  {'<div class="alert-badge alert-anomaly">◆ ' + str(anom_critical + anom_high) + " Yüksek Anomali</div>" if (anom_critical + anom_high) > 0 else ""}
+  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + str(runway) + " Ay</div>" if runway and runway < 12 else ""}
 </div>
 
 <!-- KPI Strip -->
 <div class="kpi-strip">
   <div class="kpi-card">
     <div class="kpi-label">Ciro</div>
-    <div class="kpi-value">{_fmt_lira(pnl.get('revenue', 0))}</div>
+    <div class="kpi-value">{_fmt_lira(pnl.get("revenue", 0))}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Brüt Kâr</div>
-    <div class="kpi-value">{_fmt_lira(pnl.get('gross_profit', 0))}</div>
-    <div class="kpi-sub">{_pct(pnl.get('gross_margin', 0))} marj</div>
+    <div class="kpi-value">{_fmt_lira(pnl.get("gross_profit", 0))}</div>
+    <div class="kpi-sub">{_pct(pnl.get("gross_margin", 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">FAVÖK</div>
-    <div class="kpi-value {_sign_class(pnl.get('ebitda', 0))}">{_fmt_lira(pnl.get('ebitda', 0))}</div>
-    <div class="kpi-sub">{_pct(pnl.get('ebitda_margin', 0))} marj</div>
+    <div class="kpi-value {_sign_class(pnl.get("ebitda", 0))}">{_fmt_lira(pnl.get("ebitda", 0))}</div>
+    <div class="kpi-sub">{_pct(pnl.get("ebitda_margin", 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Net Kâr</div>
-    <div class="kpi-value {_sign_class(pnl.get('net_income', 0))}">{_fmt_lira(pnl.get('net_income', 0))}</div>
-    <div class="kpi-sub">{_pct(pnl.get('net_margin', 0))} marj</div>
+    <div class="kpi-value {_sign_class(pnl.get("net_income", 0))}">{_fmt_lira(pnl.get("net_income", 0))}</div>
+    <div class="kpi-sub">{_pct(pnl.get("net_margin", 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Net Nakit</div>
-    <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{_fmt_lira(cashflow.get('net_change', 0))}</div>
+    <div class="kpi-value {_sign_class(cashflow.get("net_change", 0))}">{_fmt_lira(cashflow.get("net_change", 0))}</div>
     <div class="kpi-sub">Nakit ömrü: {str(runway) + " ay" if runway else "Stabil"}</div>
   </div>
 </div>
@@ -388,7 +386,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
           {opex_rows or "<tr><td colspan='2' style='color:#94a3b8'>Gider verisi yok</td></tr>"}
           <tr style="font-weight:700;border-top:2px solid #e2e8f0">
             <td>Toplam Faaliyet Gideri</td>
-            <td class="opex-amt">{_fmt_lira(pnl.get('total_opex', 0))}</td>
+            <td class="opex-amt">{_fmt_lira(pnl.get("total_opex", 0))}</td>
           </tr>
         </tbody>
       </table>

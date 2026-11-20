@@ -4,6 +4,7 @@ Multi-Channel Alert Dispatcher (Email, Slack, Webhook).
 Sends actionable, instant financial notifications for critical cash runway,
 tax payment deadlines, and high-severity fraud/anomalies.
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,9 +20,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DispatchedAlert:
     alert_id: str
-    channel: str          # "slack", "email", "webhook"
-    target: str           # Webhook URL or Email address
-    severity: str         # "critical", "warning", "info"
+    channel: str  # "slack", "email", "webhook"
+    target: str  # Webhook URL or Email address
+    severity: str  # "critical", "warning", "info"
     title: str
     message: str
     delivered: bool
@@ -40,7 +41,13 @@ class AlertDispatcher:
         fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Format Slack block kit message payload."""
-        color = "#EF4444" if severity == "critical" else "#F59E0B" if severity == "warning" else "#10B981"
+        color = (
+            "#EF4444"
+            if severity == "critical"
+            else "#F59E0B"
+            if severity == "warning"
+            else "#10B981"
+        )
         block_fields = []
         if fields:
             for k, v in fields.items():
@@ -59,11 +66,7 @@ class AlertDispatcher:
                             "type": "section",
                             "text": {"type": "mrkdwn", "text": message},
                         },
-                        *(
-                            [{"type": "section", "fields": block_fields}]
-                            if block_fields
-                            else []
-                        ),
+                        *([{"type": "section", "fields": block_fields}] if block_fields else []),
                         {
                             "type": "context",
                             "elements": [

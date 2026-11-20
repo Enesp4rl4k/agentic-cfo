@@ -5,6 +5,7 @@ bank statement held the event loop — and so every request to the API — for
 over a minute. These tests pin the results to the textbook definitions and the
 cost to something a request can wait behind.
 """
+
 from __future__ import annotations
 
 import random
@@ -57,8 +58,11 @@ def _reference_duplicates(txs):
     for t in (t for t in txs if t.get("type") == "expense"):
         vendor = (t.get("vendor") or "").lower().strip()
         for prev in seen:
-            if (prev.get("amount_cents") == t.get("amount_cents", 0)
-                    and (prev.get("vendor") or "").lower().strip() == vendor and vendor):
+            if (
+                prev.get("amount_cents") == t.get("amount_cents", 0)
+                and (prev.get("vendor") or "").lower().strip() == vendor
+                and vendor
+            ):
                 days = _days_between(t.get("transaction_date"), prev.get("transaction_date"))
                 if days is not None and days <= DUPLICATE_WINDOW_DAYS:
                     out.append((t["id"], prev["id"]))
@@ -74,27 +78,45 @@ def _statement(n: int, seed: int) -> list[dict]:
         amount = rnd.choice([100_000, 250_000]) if rnd.random() < 0.3 else rnd.randint(1, 10**7)
         if rnd.random() < 0.02:
             amount *= 50
-        rows.append({
-            "id": f"t{i}", "type": rnd.choice(["expense", "expense", "income"]),
-            "category": rnd.choice(["rent", "payroll", "software", "tiny"]) if n > 20 else "rent",
-            "amount_cents": amount, "vendor": rnd.choice(["", "Acme", "acme ", "Beta", None]),
-            "transaction_date": f"2024-0{rnd.randint(1, 3)}-{rnd.randint(10, 28)}",
-        })
+        rows.append(
+            {
+                "id": f"t{i}",
+                "type": rnd.choice(["expense", "expense", "income"]),
+                "category": rnd.choice(["rent", "payroll", "software", "tiny"])
+                if n > 20
+                else "rent",
+                "amount_cents": amount,
+                "vendor": rnd.choice(["", "Acme", "acme ", "Beta", None]),
+                "transaction_date": f"2024-0{rnd.randint(1, 3)}-{rnd.randint(10, 28)}",
+            }
+        )
     return rows
 
 
 @pytest.mark.parametrize("seed", range(8))
 def test_findings_match_the_definitions(seed):
     txs = _statement(random.Random(seed).choice([6, 40, 400]), seed)
-    got = [(a["transaction_ids"][0], a["evidence"]["z_score"], a["evidence"]["iqr_score"])
-           for a in detect_unusual_amounts(txs)]
+    got = [
+        (a["transaction_ids"][0], a["evidence"]["z_score"], a["evidence"]["iqr_score"])
+        for a in detect_unusual_amounts(txs)
+    ]
     assert got == _reference_unusual(txs)
-    assert [tuple(a["transaction_ids"]) for a in detect_duplicates(txs)] == _reference_duplicates(txs)
+    assert [tuple(a["transaction_ids"]) for a in detect_duplicates(txs)] == _reference_duplicates(
+        txs
+    )
 
 
 def test_identical_amounts_are_not_outliers():
-    txs = [{"id": str(i), "type": "expense", "category": "rent", "amount_cents": 500_000,
-            "transaction_date": "2024-01-01"} for i in range(10)]
+    txs = [
+        {
+            "id": str(i),
+            "type": "expense",
+            "category": "rent",
+            "amount_cents": 500_000,
+            "transaction_date": "2024-01-01",
+        }
+        for i in range(10)
+    ]
     assert detect_unusual_amounts(txs) == []
 
 

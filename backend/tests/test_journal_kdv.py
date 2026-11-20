@@ -10,6 +10,7 @@ The rate is not in a bank line, and assuming one would put an invented number
 on a filing. So the engine splits exactly what the source states, and holds
 everything else for the accountant, marked.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,8 +31,14 @@ def clf():
 
 
 def _entry(engine, clf, desc: str, amount: int, typ: str, **extra):
-    tx = {"id": "tx", "amount_kurus": amount, "type": typ, "description": desc,
-          "transaction_date": "2024-01-10T00:00:00+00:00", **extra}
+    tx = {
+        "id": "tx",
+        "amount_kurus": amount,
+        "type": typ,
+        "description": desc,
+        "transaction_date": "2024-01-10T00:00:00+00:00",
+        **extra,
+    }
     return engine.create_entry(tx, clf.classify(desc, amount, typ))
 
 
@@ -67,11 +74,14 @@ def test_a_gross_sale_with_no_stated_kdv_is_held_not_guessed(engine, clf) -> Non
     assert "KDV" in k.onay_neden
 
 
-@pytest.mark.parametrize(("desc", "typ"), [
-    ("Ocak maaş ödemeleri", "expense"),
-    ("SGK primi ödemesi", "expense"),
-    ("Ihracat geliri export", "income"),
-])
+@pytest.mark.parametrize(
+    ("desc", "typ"),
+    [
+        ("Ocak maaş ödemeleri", "expense"),
+        ("SGK primi ödemesi", "expense"),
+        ("Ihracat geliri export", "income"),
+    ],
+)
 def test_accounts_that_carry_no_kdv_are_not_flagged(engine, clf, desc: str, typ: str) -> None:
     k = _entry(engine, clf, desc, 10_000_00, typ)
     assert k.kdv_durumu == "yok", k.thp_hesap_kodu
@@ -99,7 +109,9 @@ def test_the_flag_travels_with_the_journal(engine, clf) -> None:
 def test_the_ledger_says_how_many_entries_went_in_gross(engine, clf) -> None:
     rows = [
         _entry(engine, clf, "Ocak satış geliri", 120_000_00, "income").to_dict(),
-        _entry(engine, clf, "Ocak satış geliri", 60_000_00, "income", kdv_kurus=10_000_00).to_dict(),
+        _entry(
+            engine, clf, "Ocak satış geliri", 60_000_00, "income", kdv_kurus=10_000_00
+        ).to_dict(),
         _entry(engine, clf, "Ocak maaş ödemeleri", 10_000_00, "expense").to_dict(),
     ]
     owner = LedgerOwner(vkn="1234567808", title="TechNova A.Ş.")

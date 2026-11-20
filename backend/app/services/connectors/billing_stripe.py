@@ -4,6 +4,7 @@ Stripe billing connector — paid invoices → canonical transaction CSV.
 Uses org.stripe_customer_id when STRIPE_SECRET_KEY is configured.
 Graceful no-op in dev when Stripe is unavailable.
 """
+
 from __future__ import annotations
 
 import logging

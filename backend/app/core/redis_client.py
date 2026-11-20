@@ -19,6 +19,7 @@ Behaviour contract:
   - Never raises. A broker outage degrades to the old single-process
     behaviour; it does not take the API down.
 """
+
 from __future__ import annotations
 
 import logging

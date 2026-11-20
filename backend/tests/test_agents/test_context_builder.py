@@ -2,6 +2,7 @@
 Tests for ContextBuilder — context engineering layer.
 Pure function tests, no LLM, no DB.
 """
+
 from app.services.context_builder import (
     ContextBuilder,
     ContextResult,
@@ -16,6 +17,7 @@ from app.services.context_builder import (
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _make_transactions(n: int = 10) -> list[dict]:
     return [
@@ -63,9 +65,17 @@ def _make_cashflow() -> dict:
 def _make_forecast() -> dict:
     return {
         "scenarios": {
-            "optimistic":  {"label": "Optimist",  "twelve_month_net": 180_000_00, "runway_months": 18},
-            "base":        {"label": "Baz",        "twelve_month_net": 120_000_00, "runway_months": 14},
-            "pessimistic": {"label": "Pesimist",   "twelve_month_net": -20_000_00, "runway_months": 3},
+            "optimistic": {
+                "label": "Optimist",
+                "twelve_month_net": 180_000_00,
+                "runway_months": 18,
+            },
+            "base": {"label": "Baz", "twelve_month_net": 120_000_00, "runway_months": 14},
+            "pessimistic": {
+                "label": "Pesimist",
+                "twelve_month_net": -20_000_00,
+                "runway_months": 3,
+            },
         }
     }
 
@@ -82,6 +92,7 @@ def _make_state() -> dict:
 
 
 # ── Token counting ────────────────────────────────────────────────────────────
+
 
 class TestTokenCounting:
     def test_empty_string(self):
@@ -101,6 +112,7 @@ class TestTokenCounting:
 
 
 # ── Summarise helpers ─────────────────────────────────────────────────────────
+
 
 class TestSummariseTransactions:
     def test_empty(self):
@@ -123,10 +135,20 @@ class TestSummariseTransactions:
 
     def test_sorts_by_amount(self):
         txs = [
-            {"transaction_date": "2024-01-01", "type": "expense", "category": "rent",
-             "vendor": "A", "amount_cents": 100},
-            {"transaction_date": "2024-01-02", "type": "income", "category": "revenue",
-             "vendor": "B", "amount_cents": 999_999},
+            {
+                "transaction_date": "2024-01-01",
+                "type": "expense",
+                "category": "rent",
+                "vendor": "A",
+                "amount_cents": 100,
+            },
+            {
+                "transaction_date": "2024-01-02",
+                "type": "income",
+                "category": "revenue",
+                "vendor": "B",
+                "amount_cents": 999_999,
+            },
         ]
         result = _summarise_transactions(txs, sort_by_amount=True)
         lines = result.split("\n")
@@ -185,20 +207,28 @@ class TestSummariseAnomalies:
 
     def test_shows_total(self):
         anomalies = [
-            {"severity": "critical", "title": "Duplicate payment", "anomaly_type": "duplicate_payment"},
-            {"severity": "high",     "title": "Unusual amount",    "anomaly_type": "unusual_amount"},
+            {
+                "severity": "critical",
+                "title": "Duplicate payment",
+                "anomaly_type": "duplicate_payment",
+            },
+            {"severity": "high", "title": "Unusual amount", "anomaly_type": "unusual_amount"},
         ]
         result = _summarise_anomalies(anomalies)
         assert "Total: 2" in result
 
     def test_critical_first(self):
         anomalies = [
-            {"severity": "low",      "title": "Low issue",      "anomaly_type": "round_number"},
-            {"severity": "critical", "title": "Critical issue",  "anomaly_type": "duplicate_payment"},
+            {"severity": "low", "title": "Low issue", "anomaly_type": "round_number"},
+            {
+                "severity": "critical",
+                "title": "Critical issue",
+                "anomaly_type": "duplicate_payment",
+            },
         ]
         result = _summarise_anomalies(anomalies)
         crit_pos = result.index("Critical issue")
-        low_pos  = result.index("Low issue")
+        low_pos = result.index("Low issue")
         assert crit_pos < low_pos
 
 
@@ -209,13 +239,14 @@ class TestSummariseAlerts:
     def test_shows_total(self):
         alerts = [
             {"level": "critical", "message": "Cashflow critical"},
-            {"level": "warning",  "message": "Revenue drop"},
+            {"level": "warning", "message": "Revenue drop"},
         ]
         result = _summarise_alerts(alerts)
         assert "Total: 2" in result
 
 
 # ── ContextBuilder ────────────────────────────────────────────────────────────
+
 
 class TestContextBuilder:
     def test_default_budget(self):
@@ -239,7 +270,7 @@ class TestContextBuilder:
         # One tiny slice, one huge slice
         slices = [
             ("small", "Hi"),
-            ("huge",  "word " * 10000),
+            ("huge", "word " * 10000),
         ]
         result = cb._assemble(slices)
         assert result.token_count <= 50 + 20  # some tolerance for overhead
@@ -279,7 +310,9 @@ class TestContextBuilder:
         cb = ContextBuilder(budget=4096)
         state = _make_state()
         result = cb.build_pnl_context(state, benchmark_lines="gross_margin: 70% vs 65%")
-        assert "benchmark" in result.text.lower() or "benchmark" in str(result.slices_included).lower()
+        assert (
+            "benchmark" in result.text.lower() or "benchmark" in str(result.slices_included).lower()
+        )
 
     def test_build_cashflow_context(self):
         cb = ContextBuilder(budget=3072)
@@ -296,8 +329,13 @@ class TestContextBuilder:
     def test_build_anomaly_context(self):
         state = _make_state()
         state["anomalies"] = [
-            {"severity": "critical", "anomaly_type": "duplicate_payment",
-             "title": "Dup", "description": "Duplicate", "confidence": 0.95},
+            {
+                "severity": "critical",
+                "anomaly_type": "duplicate_payment",
+                "title": "Dup",
+                "description": "Duplicate",
+                "confidence": 0.95,
+            },
         ]
         cb = ContextBuilder(budget=4096)
         result = cb.build_anomaly_context(state)

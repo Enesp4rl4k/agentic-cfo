@@ -74,6 +74,7 @@ HIPAA,164.312 Access Control,non-compliant,2022-01-01,,Compliance,missing,critic
 
 # ── PoliciesAgent tests ───────────────────────────────────────────────────────
 
+
 class TestPoliciesAgentParsing:
     def test_parse_returns_list(self):
         rows = _parse_policies_csv(POLICIES_CSV)
@@ -93,7 +94,9 @@ class TestPoliciesAgentParsing:
         rows = _parse_policies_csv(POLICIES_CSV)
         statuses = {r["status"] for r in rows}
         # draft is a valid status, active is valid
-        assert all(s in ("active", "draft", "inactive", "archived", "review") or True for s in statuses)
+        assert all(
+            s in ("active", "draft", "inactive", "archived", "review") or True for s in statuses
+        )
 
     def test_metrics_total_correct(self):
         rows = _parse_policies_csv(POLICIES_CSV)
@@ -140,6 +143,7 @@ class TestPoliciesAgentParsing:
 
 
 # ── ViolationsAgent tests ─────────────────────────────────────────────────────
+
 
 class TestViolationsAgentParsing:
     def test_parse_count(self):
@@ -242,6 +246,7 @@ class TestViolationsAgentParsing:
 
 
 # ── RegulationsAgent tests ────────────────────────────────────────────────────
+
 
 class TestRegulationsAgentParsing:
     def test_parse_count(self):
@@ -355,6 +360,7 @@ class TestRegulationsAgentParsing:
 
 # ── Orchestrator health score tests ──────────────────────────────────────────
 
+
 class TestComplianceHealthScore:
     def test_health_perfect_compliance(self):
         """All compliant, no violations → near 100."""
@@ -380,11 +386,19 @@ class TestComplianceHealthScore:
 
         # Verify score components individually
         # Violations: 100 (no open) → score = 100
-        viol_score = min(100.0, max(0.0,
-            violations["remediation_rate"]
-            - (violations["critical_open"] * 15)
-            - (violations["overdue_violations"] / max(violations["total_violations"] or 1, 1) * 30)
-        ))
+        viol_score = min(
+            100.0,
+            max(
+                0.0,
+                violations["remediation_rate"]
+                - (violations["critical_open"] * 15)
+                - (
+                    violations["overdue_violations"]
+                    / max(violations["total_violations"] or 1, 1)
+                    * 30
+                ),
+            ),
+        )
         assert viol_score == 100.0
 
         # Regulations: coverage 100%
@@ -400,20 +414,33 @@ class TestComplianceHealthScore:
             "critical_open": 3,
             "remediation_rate": 0.0,
         }
-        viol_score = min(100.0, max(0.0,
-            violations_metrics["remediation_rate"]
-            - (violations_metrics["critical_open"] * 15)
-            - (violations_metrics["overdue_violations"] / max(violations_metrics["total_violations"], 1) * 30)
-        ))
+        viol_score = min(
+            100.0,
+            max(
+                0.0,
+                violations_metrics["remediation_rate"]
+                - (violations_metrics["critical_open"] * 15)
+                - (
+                    violations_metrics["overdue_violations"]
+                    / max(violations_metrics["total_violations"], 1)
+                    * 30
+                ),
+            ),
+        )
         assert viol_score < 0 or viol_score == 0  # max(0) floors at 0
 
     def test_health_status_labels(self):
         """health_status maps correctly from score."""
+
         def label(score):
-            if score >= 90: return "excellent"
-            if score >= 75: return "good"
-            if score >= 60: return "fair"
-            if score >= 40: return "poor"
+            if score >= 90:
+                return "excellent"
+            if score >= 75:
+                return "good"
+            if score >= 60:
+                return "fair"
+            if score >= 40:
+                return "poor"
             return "critical"
 
         assert label(95) == "excellent"
@@ -429,6 +456,7 @@ class TestComplianceHealthScore:
     def test_orchestrator_compiles(self):
         """Compliance graph imports and compiles without error."""
         from app.agents.compliance.orchestrator import compliance_graph
+
         assert compliance_graph is not None
 
     @pytest.mark.skipif(
@@ -442,12 +470,11 @@ class TestComplianceHealthScore:
         from app.agents.compliance.orchestrator import run_compliance_pipeline
 
         with pytest.raises(ValueError, match="At least one data source"):
-            asyncio.run(
-                run_compliance_pipeline(job_id="test-empty")
-            )
+            asyncio.run(run_compliance_pipeline(job_id="test-empty"))
 
 
 # ── CEO cross-risk compliance tests ──────────────────────────────────────────
+
 
 class TestCEOComplianceCrossRisks:
     """Tests for compliance-specific cross-domain risk rules in CEO synthesis."""
@@ -522,10 +549,7 @@ class TestCEOComplianceCrossRisks:
             "top_alerts": [],
         }
         risks = _detect_cross_risks(fin_healthy, self.BASE_TECH, compliance=compliance)
-        compliance_risk_ids = [
-            r["risk_id"] for r in risks
-            if "compliance" in r.get("risk_id", "")
-        ]
+        compliance_risk_ids = [r["risk_id"] for r in risks if "compliance" in r.get("risk_id", "")]
         assert compliance_risk_ids == []
 
     def test_condense_compliance_summary(self):
@@ -534,7 +558,9 @@ class TestCEOComplianceCrossRisks:
             "compliance_summary": {
                 "overall_health_score": 72.5,
                 "health_status": "fair",
-                "top_risks": [{"domain": "Violations", "severity": "critical", "message": "2 critical open"}],
+                "top_risks": [
+                    {"domain": "Violations", "severity": "critical", "message": "2 critical open"}
+                ],
                 "narrative": "Fair compliance health.",
             },
             "violations": {

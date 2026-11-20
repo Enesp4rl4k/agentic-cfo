@@ -6,6 +6,7 @@ company context, command-center snapshot and auto-chain the gate had held never
 ran. Approval now completes the job, records who approved it, and continues
 from the saved results.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,8 +34,10 @@ async def _user(client, email: str) -> tuple[dict[str, str], str, str]:
     from app.models.organization import Organization
     from app.models.user import User
 
-    await client.post("/api/v1/auth/register",
-                      json={"email": email, "password": "StrongPassword123!", "full_name": "T"})
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "StrongPassword123!", "full_name": "T"},
+    )
     async with client._maker() as db:
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
         org = Organization(name=email, slug=email.split("@")[0])
@@ -43,9 +46,11 @@ async def _user(client, email: str) -> tuple[dict[str, str], str, str]:
         user.org_id = org.id
         await db.commit()
         org_id, user_id = org.id, user.id
-    token = (await client.post("/api/v1/auth/login",
-                               json={"email": email, "password": "StrongPassword123!"})
-             ).json()["data"]["access_token"]
+    token = (
+        await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "StrongPassword123!"}
+        )
+    ).json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}, org_id, user_id
 
 
@@ -55,14 +60,35 @@ async def _held_job(client, org_id: str) -> str:
     from app.models.report import Report, ReportFormat, ReportType
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="m.csv", file_path="/m.csv", file_type="csv", org_id=org_id,
-                          status=JobStatus.AWAITING_REVIEW, awaiting_review=True, min_confidence=0.6)
+        job = AnalysisJob(
+            filename="m.csv",
+            file_path="/m.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.AWAITING_REVIEW,
+            awaiting_review=True,
+            min_confidence=0.6,
+        )
         db.add(job)
         await db.flush()
-        db.add(Report(job_id=job.id, report_type=ReportType.FULL, report_format=ReportFormat.JSON,
-                      data={"pnl": {"revenue": 1_000_000}, "cashflow": {"net_change": -5}}))
-        db.add(Anomaly(job_id=job.id, anomaly_type="duplicate", severity="high",
-                       title="Mükerrer ödeme", description="Aynı tutar iki kez", confidence=0.9))
+        db.add(
+            Report(
+                job_id=job.id,
+                report_type=ReportType.FULL,
+                report_format=ReportFormat.JSON,
+                data={"pnl": {"revenue": 1_000_000}, "cashflow": {"net_change": -5}},
+            )
+        )
+        db.add(
+            Anomaly(
+                job_id=job.id,
+                anomaly_type="duplicate",
+                severity="high",
+                title="Mükerrer ödeme",
+                description="Aynı tutar iki kez",
+                confidence=0.9,
+            )
+        )
         await db.commit()
         return job.id
 
@@ -93,6 +119,7 @@ async def test_approval_completes_the_job_and_continues_from_saved_results(clien
     assert r.json()["data"]["status"] == "completed"
 
     from app.models.analysis_job import AnalysisJob
+
     async with client._maker() as db:
         job = await db.get(AnalysisJob, job_id)
         assert job.status == "completed" and job.awaiting_review is False

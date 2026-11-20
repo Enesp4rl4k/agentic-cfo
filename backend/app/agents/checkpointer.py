@@ -18,6 +18,7 @@ which is worse than slow.
 
 Thread id convention: AnalysisJob.id (passed as configurable.thread_id).
 """
+
 from __future__ import annotations
 
 import inspect
@@ -95,7 +96,13 @@ def _compatify(saver: Any, *, async_via_thread: bool = False) -> Any:
             return self._fix_tuple(await super().aget_tuple(self._normalize_config(config)))
 
         def put_writes(
-            self, config: Any, writes: Any, task_id: Any, task_path: Any = "", *args: Any, **kwargs: Any
+            self,
+            config: Any,
+            writes: Any,
+            task_id: Any,
+            task_path: Any = "",
+            *args: Any,
+            **kwargs: Any,
         ) -> Any:
             self._normalize_config(config)
             if isinstance(config, dict):
@@ -107,7 +114,13 @@ def _compatify(saver: Any, *, async_via_thread: bool = False) -> Any:
                 return None
 
         async def aput_writes(
-            self, config: Any, writes: Any, task_id: Any, task_path: Any = "", *args: Any, **kwargs: Any
+            self,
+            config: Any,
+            writes: Any,
+            task_id: Any,
+            task_path: Any = "",
+            *args: Any,
+            **kwargs: Any,
         ) -> Any:
             self._normalize_config(config)
             if isinstance(config, dict):
@@ -228,7 +241,9 @@ def _memory_saver() -> Any:
                 tid = (config.get("configurable") or {}).get("thread_id")
                 return self._store.get(str(tid)) if tid is not None else None
 
-            def put(self, config: dict[str, Any], checkpoint: Any, *args: Any, **kwargs: Any) -> None:
+            def put(
+                self, config: dict[str, Any], checkpoint: Any, *args: Any, **kwargs: Any
+            ) -> None:
                 tid = (config.get("configurable") or {}).get("thread_id")
                 if tid is not None:
                     self._store[str(tid)] = checkpoint

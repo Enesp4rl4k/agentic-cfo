@@ -6,6 +6,7 @@ retry, inline + queued racing — and exactly one of them runs, because the
 Terminal transitions guard the same way: outputs and status are one
 transaction, and a job a reaper already failed is never overwritten.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -32,9 +33,7 @@ async def maker():
         yield maker
 
 
-async def _add_job(
-    maker, job_id: str = "j1", status: JobStatus = JobStatus.PENDING
-) -> None:
+async def _add_job(maker, job_id: str = "j1", status: JobStatus = JobStatus.PENDING) -> None:
     async with maker() as db:
         db.add(
             AnalysisJob(
@@ -134,9 +133,7 @@ class TestTerminalTransitions:
             await db.commit()
 
         async with maker() as late:
-            assert (
-                await finish_job(late, "j1", status=JobStatus.AWAITING_REVIEW)
-            ) is False
+            assert (await finish_job(late, "j1", status=JobStatus.AWAITING_REVIEW)) is False
             await late.rollback()
 
         job = await _get(maker)
@@ -178,9 +175,7 @@ class TestTerminalTransitions:
         assert job is not None
         assert job.status == JobStatus.FAILED  # the reaper's verdict stands
         async with maker() as db:
-            rows = (
-                await db.execute(select(Transaction).where(Transaction.job_id == "j1"))
-            ).all()
+            rows = (await db.execute(select(Transaction).where(Transaction.job_id == "j1"))).all()
         assert rows == []  # the discarded outputs never landed
 
     async def test_fail_job_records_the_error(self, maker):
@@ -246,12 +241,8 @@ class TestPurge:
             await db.commit()
 
         async with maker() as db:
-            txs = (
-                await db.execute(select(Transaction).where(Transaction.job_id == "j1"))
-            ).all()
-            reports = (
-                await db.execute(select(Report).where(Report.job_id == "j1"))
-            ).all()
+            txs = (await db.execute(select(Transaction).where(Transaction.job_id == "j1"))).all()
+            reports = (await db.execute(select(Report).where(Report.job_id == "j1"))).all()
         assert txs == []
         assert reports == []
 
@@ -273,7 +264,5 @@ class TestPurge:
             await purge_job_outputs(db, "j1")
             await db.commit()
         async with maker() as db:
-            txs = (
-                await db.execute(select(Transaction).where(Transaction.job_id == "j2"))
-            ).all()
+            txs = (await db.execute(select(Transaction).where(Transaction.job_id == "j2"))).all()
         assert len(txs) == 1

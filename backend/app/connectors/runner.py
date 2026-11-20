@@ -1,6 +1,7 @@
 """Connector application service: load connection → fetch → idempotent upsert →
 advance watermark → bookkeep the SyncRun. Adapters never touch the DB.
 """
+
 from __future__ import annotations
 
 import json
@@ -94,8 +95,16 @@ async def _upsert_rows(
         data = _upsert_dict(org_id, source, sync_run_id, row)
         set_ = {
             k: data[k]
-            for k in ("sync_run_id", "signal_type", "occurred_at", "actor",
-                      "title", "magnitude", "attributes", "updated_at")
+            for k in (
+                "sync_run_id",
+                "signal_type",
+                "occurred_at",
+                "actor",
+                "title",
+                "magnitude",
+                "attributes",
+                "updated_at",
+            )
         }
         if dialect == "postgresql":
             from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -144,7 +153,9 @@ async def run_connector_sync(
     """Pull the connector once and persist its canonical rows. Never raises for a
     connector-level failure — the failure is recorded on the SyncRun and returned."""
     connector = get_connector(connector_name)
-    result = ConnectorSyncResult(connector=connector_name, org_id=org_id, ok=False, sync_run_id=None)
+    result = ConnectorSyncResult(
+        connector=connector_name, org_id=org_id, ok=False, sync_run_id=None
+    )
 
     try:
         conn = await _load_connection(connector_name, org_id, db)
@@ -180,9 +191,7 @@ async def run_connector_sync(
     since = Watermark(since=conn.watermark_since, cursor=conn.watermark_cursor)
 
     try:
-        payload = await connector.fetch(
-            org_id=org_id, config=config, secret=secret, since=since
-        )
+        payload = await connector.fetch(org_id=org_id, config=config, secret=secret, since=since)
     except Exception as exc:
         logger.warning("connector %s sync failed for org=%s: %s", connector_name, org_id, exc)
         sync_run.status = "error"

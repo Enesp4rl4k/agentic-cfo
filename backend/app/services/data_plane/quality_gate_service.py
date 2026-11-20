@@ -37,4 +37,3 @@ def score_sync_quality(
         should_block=should_block,
         should_review=should_review,
     )
-

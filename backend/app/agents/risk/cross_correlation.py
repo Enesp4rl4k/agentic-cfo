@@ -23,6 +23,7 @@ Usage:
     analyzer = CrossKRIAnalyzer(kri_time_series)
     result = analyzer.compute_cross_correlations()
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,8 +50,7 @@ class CrossKRIAnalyzer:
         self.kris = kris
         # Filter KRIs that have time-series history
         self.kris_with_history = [
-            k for k in kris
-            if len(k.get("history") or k.get("values") or []) >= MIN_SERIES_LENGTH
+            k for k in kris if len(k.get("history") or k.get("values") or []) >= MIN_SERIES_LENGTH
         ]
 
     def _get_series(self, kri: dict[str, Any]) -> list[float]:
@@ -77,7 +77,9 @@ class CrossKRIAnalyzer:
                 "note": "Korelasyon için en az 2 KRI'nın zaman serisi gerekiyor.",
             }
 
-        names = [k.get("name") or k.get("kri", f"KRI-{i}") for i, k in enumerate(self.kris_with_history)]
+        names = [
+            k.get("name") or k.get("kri", f"KRI-{i}") for i, k in enumerate(self.kris_with_history)
+        ]
         series = [self._get_series(k) for k in self.kris_with_history]
 
         # Align lengths (use minimum)
@@ -104,22 +106,24 @@ class CrossKRIAnalyzer:
                     matrix[names[i]][names[j]] = round(r, 3)
 
                     if i < j and abs(r) >= 0.5:
-                        pairs.append({
-                            "kri_a":     names[i],
-                            "kri_b":     names[j],
-                            "pearson_r": round(r, 3),
-                            "strength":  "güçlü" if abs(r) > 0.7 else "orta",
-                            "direction": "birlikte hareket" if r > 0 else "ters yönde hareket",
-                        })
+                        pairs.append(
+                            {
+                                "kri_a": names[i],
+                                "kri_b": names[j],
+                                "pearson_r": round(r, 3),
+                                "strength": "güçlü" if abs(r) > 0.7 else "orta",
+                                "direction": "birlikte hareket" if r > 0 else "ters yönde hareket",
+                            }
+                        )
                 except Exception:
                     matrix[names[i]][names[j]] = 0.0
 
         pairs.sort(key=lambda x: -abs(x["pearson_r"]))
 
         return {
-            "matrix":    matrix,
+            "matrix": matrix,
             "top_pairs": pairs[:10],
-            "n_kris":    n,
+            "n_kris": n,
         }
 
     def lag_correlation_analysis(self, max_lag: int = 3) -> list[dict[str, Any]]:
@@ -132,9 +136,11 @@ class CrossKRIAnalyzer:
         if len(self.kris_with_history) < 2:
             return []
 
-        names  = [k.get("name") or k.get("kri", f"KRI-{i}") for i, k in enumerate(self.kris_with_history)]
+        names = [
+            k.get("name") or k.get("kri", f"KRI-{i}") for i, k in enumerate(self.kris_with_history)
+        ]
         series = [self._get_series(k) for k in self.kris_with_history]
-        n      = len(names)
+        n = len(names)
 
         leading_indicators: list[dict[str, Any]] = []
 
@@ -150,7 +156,7 @@ class CrossKRIAnalyzer:
 
                 best_lag, best_r = 0, 0.0
                 for lag in range(1, max_lag + 1):
-                    x_lag = x[:min_len - lag]
+                    x_lag = x[: min_len - lag]
                     y_fut = y[lag:min_len]
                     try:
                         r = float(np.corrcoef(x_lag, y_fut)[0, 1])
@@ -160,19 +166,21 @@ class CrossKRIAnalyzer:
                         continue
 
                 if abs(best_r) >= 0.5:
-                    leading_indicators.append({
-                        "leading_kri":  names[i],
-                        "lagging_kri":  names[j],
-                        "lag_periods":  best_lag,
-                        "correlation":  round(best_r, 3),
-                        "direction":    "birlikte" if best_r > 0 else "ters",
-                        "interpretation": (
-                            f"'{names[i]}' kötüleşince, '{names[j]}' "
-                            f"{best_lag} dönem sonra "
-                            f"{'de kötüleşiyor' if best_r > 0 else 'iyileşiyor'} "
-                            f"(korelasyon: {best_r:.2f})."
-                        ),
-                    })
+                    leading_indicators.append(
+                        {
+                            "leading_kri": names[i],
+                            "lagging_kri": names[j],
+                            "lag_periods": best_lag,
+                            "correlation": round(best_r, 3),
+                            "direction": "birlikte" if best_r > 0 else "ters",
+                            "interpretation": (
+                                f"'{names[i]}' kötüleşince, '{names[j]}' "
+                                f"{best_lag} dönem sonra "
+                                f"{'de kötüleşiyor' if best_r > 0 else 'iyileşiyor'} "
+                                f"(korelasyon: {best_r:.2f})."
+                            ),
+                        }
+                    )
 
         leading_indicators.sort(key=lambda x: -abs(x["correlation"]))
         return leading_indicators[:10]
@@ -193,23 +201,30 @@ class CrossKRIAnalyzer:
         for kri_name, row in matrix.items():
             # Count correlations above threshold (excluding self)
             high_corr = [
-                (other, r) for other, r in row.items()
+                (other, r)
+                for other, r in row.items()
                 if other != kri_name and abs(r) >= corr_threshold
             ]
             contagion_score = len(high_corr)
             avg_corr = statistics.mean([abs(r) for _, r in high_corr]) if high_corr else 0.0
 
-            scores.append({
-                "kri":              kri_name,
-                "contagion_score":  contagion_score,
-                "avg_correlation":  round(avg_corr, 3),
-                "affects_kris":     [other for other, _ in sorted(high_corr, key=lambda x: -abs(x[1]))[:5]],
-                "risk_tier":        (
-                    "sistemik" if contagion_score >= 4 else
-                    "yüksek"   if contagion_score >= 2 else
-                    "izole"
-                ),
-            })
+            scores.append(
+                {
+                    "kri": kri_name,
+                    "contagion_score": contagion_score,
+                    "avg_correlation": round(avg_corr, 3),
+                    "affects_kris": [
+                        other for other, _ in sorted(high_corr, key=lambda x: -abs(x[1]))[:5]
+                    ],
+                    "risk_tier": (
+                        "sistemik"
+                        if contagion_score >= 4
+                        else "yüksek"
+                        if contagion_score >= 2
+                        else "izole"
+                    ),
+                }
+            )
 
         scores.sort(key=lambda x: -x["contagion_score"])
         return scores
@@ -243,22 +258,24 @@ class CrossKRIAnalyzer:
         for d in direct:
             for other, r in matrix.get(d["kri"], {}).items():
                 if other != breached_kri and other not in direct_names and abs(r) >= corr_threshold:
-                    indirect.append({
-                        "kri":        other,
-                        "via":        d["kri"],
-                        "correlation": round(abs(r), 3),
-                    })
+                    indirect.append(
+                        {
+                            "kri": other,
+                            "via": d["kri"],
+                            "correlation": round(abs(r), 3),
+                        }
+                    )
 
         return {
-            "breached_kri":    breached_kri,
-            "direct_cascade":  direct[:5],
+            "breached_kri": breached_kri,
+            "direct_cascade": direct[:5],
             "indirect_cascade": indirect[:5],
-            "total_affected":  len(direct) + len(indirect),
-            "interpretation":  (
+            "total_affected": len(direct) + len(indirect),
+            "interpretation": (
                 f"'{breached_kri}' ihlali {len(direct)} KRI'yı doğrudan "
                 f"ve {len(indirect)} KRI'yı dolaylı olarak etkileyebilir."
-                if direct else
-                f"'{breached_kri}' diğer KRI'larla güçlü korelasyon göstermiyor."
+                if direct
+                else f"'{breached_kri}' diğer KRI'larla güçlü korelasyon göstermiyor."
             ),
         }
 
@@ -275,10 +292,10 @@ class CrossKRIAnalyzer:
               "summary":            str,
             }
         """
-        corr_matrix  = self.correlation_matrix()
-        leading      = self.lag_correlation_analysis()
-        contagion    = self.contagion_scores()
-        systemic     = [c for c in contagion if c["risk_tier"] == "sistemik"]
+        corr_matrix = self.correlation_matrix()
+        leading = self.lag_correlation_analysis()
+        contagion = self.contagion_scores()
+        systemic = [c for c in contagion if c["risk_tier"] == "sistemik"]
 
         # Build Turkish summary
         summary_parts: list[str] = []
@@ -308,8 +325,8 @@ class CrossKRIAnalyzer:
         return {
             "correlation_matrix": corr_matrix,
             "leading_indicators": leading,
-            "contagion_scores":   contagion,
-            "systemic_risks":     systemic,
-            "kris_analyzed":      len(self.kris_with_history),
-            "summary":            " ".join(summary_parts) or "Yeterli KRI zaman serisi verisi yok.",
+            "contagion_scores": contagion,
+            "systemic_risks": systemic,
+            "kris_analyzed": len(self.kris_with_history),
+            "summary": " ".join(summary_parts) or "Yeterli KRI zaman serisi verisi yok.",
         }

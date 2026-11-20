@@ -2,6 +2,7 @@
 
 Figures written by hand: 50,000.00 opening, +10,000.00, -4,000.00, +1,500.50.
 """
+
 from __future__ import annotations
 
 from typing import Any

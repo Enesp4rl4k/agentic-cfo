@@ -3,6 +3,7 @@ Pydantic validation schemas for all data sync operations.
 
 Ensures data quality at ingestion time — validates structure, types, ranges.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class SyncSourceType(StrEnum):
     """Supported data source types."""
+
     PARASUT = "parasut"
     NETSIS = "netsis"
     MIKRO = "mikro"
@@ -23,12 +25,14 @@ class SyncSourceType(StrEnum):
 
 class TransactionType(StrEnum):
     """Transaction classification."""
+
     INCOME = "income"
     EXPENSE = "expense"
 
 
 class SyncTransaction(BaseModel):
     """Normalized transaction from any source."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -67,6 +71,7 @@ class SyncTransaction(BaseModel):
 
 class SyncBatch(BaseModel):
     """Batch of transactions from a single sync operation."""
+
     source_type: SyncSourceType
     sync_timestamp: datetime
     transactions: list[SyncTransaction] = Field(default_factory=list)
@@ -78,6 +83,7 @@ class SyncBatch(BaseModel):
 
 class SyncStatus(StrEnum):
     """Sync job status."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     SUCCESS = "success"
@@ -87,6 +93,7 @@ class SyncStatus(StrEnum):
 
 class SyncJobLog(BaseModel):
     """Immutable log entry for each sync operation."""
+
     source_type: SyncSourceType
     status: SyncStatus
     started_at: datetime
@@ -102,6 +109,7 @@ class SyncJobLog(BaseModel):
 
 class AccountingSourceConfig(BaseModel):
     """Configuration for accounting software sources."""
+
     source_type: SyncSourceType
     is_enabled: bool = True
     schedule_cron: str = "0 2 * * *"  # Default: 2 AM daily
@@ -121,6 +129,7 @@ class AccountingSourceConfig(BaseModel):
 
 class BankingSourceConfig(BaseModel):
     """Configuration for Open Banking APIs."""
+
     source_type: SyncSourceType
     is_enabled: bool = True
     schedule_cron: str = "0 */4 * * *"  # Default: every 4 hours
@@ -138,6 +147,7 @@ class BankingSourceConfig(BaseModel):
 
 class DataQualityThresholds(BaseModel):
     """Thresholds for data quality checks."""
+
     max_consecutive_duplicates: int = 3
     max_amount_increase_percent: int = 500  # Flag if amount > 5x previous avg
     min_transaction_interval_minutes: int = 1

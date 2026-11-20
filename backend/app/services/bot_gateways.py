@@ -6,6 +6,7 @@ for WhatsApp Business API and Slack Interactive Blocks:
 1. Instant Financial Query Answering (Nakit, Gelir, Runway, Vergi)
 2. Interactive 1-Click Expense Approval / Rejection (Masraf & Fatura Onayı)
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BotResponse:
-    channel: str              # "whatsapp", "slack"
+    channel: str  # "whatsapp", "slack"
     recipient_id: str
     reply_text: str
     interactive_blocks: list[dict[str, Any]] = field(default_factory=list)
-    action_type: str = "info" # "info", "approval_requested", "approved"
+    action_type: str = "info"  # "info", "approval_requested", "approved"
 
 
 class OmnichannelCFOBotGateway:
@@ -82,13 +83,26 @@ class OmnichannelCFOBotGateway:
             blocks = [
                 {
                     "type": "section",
-                    "text": {"type": "mrkdwn", "text": "🔔 *Yönetici Onayı Bekleyen Harcama*:\n*Tutar:* ₺45,000.00\n*Kategori:* Bulut Altyapı"},
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "🔔 *Yönetici Onayı Bekleyen Harcama*:\n*Tutar:* ₺45,000.00\n*Kategori:* Bulut Altyapı",
+                    },
                 },
                 {
                     "type": "actions",
                     "elements": [
-                        {"type": "button", "text": {"type": "plain_text", "text": "✅ Onayla"}, "value": "approve_inv_123", "style": "primary"},
-                        {"type": "button", "text": {"type": "plain_text", "text": "❌ Reddet"}, "value": "reject_inv_123", "style": "danger"},
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "✅ Onayla"},
+                            "value": "approve_inv_123",
+                            "style": "primary",
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "❌ Reddet"},
+                            "value": "reject_inv_123",
+                            "style": "danger",
+                        },
                     ],
                 },
             ]

@@ -16,6 +16,7 @@ Input: sprint_csv — Jira / Linear / GitHub Projects CSV export with columns:
 
 done_when: state['velocity']['avg_velocity'] is a float.
 """
+
 from __future__ import annotations
 
 import csv
@@ -29,8 +30,8 @@ from app.agents.narrative_guard import narrative_guard
 
 logger = logging.getLogger(__name__)
 
-LOW_COMPLETION_THRESHOLD = 0.70   # < 70% completion rate = bottleneck sprint
-PREDICTABILITY_TARGET    = 0.85   # target: 85%+ sprints within 20% of avg
+LOW_COMPLETION_THRESHOLD = 0.70  # < 70% completion rate = bottleneck sprint
+PREDICTABILITY_TARGET = 0.85  # target: 85%+ sprints within 20% of avg
 
 
 def _parse_sprint_csv(csv_text: str) -> list[dict[str, Any]]:
@@ -48,10 +49,14 @@ def _parse_sprint_csv(csv_text: str) -> list[dict[str, Any]]:
                 return fields_lower[c.lower()]
         return None
 
-    name_col      = _col("sprint_name", "sprint", "name", "iteration")
-    planned_col   = _col("planned_points", "planned", "story_points_planned", "capacity", "commitment")
-    completed_col = _col("completed_points", "completed", "story_points_completed", "velocity", "done")
-    date_col      = _col("start_date", "date", "sprint_start", "period")
+    name_col = _col("sprint_name", "sprint", "name", "iteration")
+    planned_col = _col(
+        "planned_points", "planned", "story_points_planned", "capacity", "commitment"
+    )
+    completed_col = _col(
+        "completed_points", "completed", "story_points_completed", "velocity", "done"
+    )
+    date_col = _col("start_date", "date", "sprint_start", "period")
     carryover_col = _col("carry_over", "carryover", "carried_over", "rolled_over")
 
     if not planned_col or not completed_col:
@@ -59,8 +64,8 @@ def _parse_sprint_csv(csv_text: str) -> list[dict[str, Any]]:
         return rows
 
     for i, row in enumerate(reader):
-        name = row.get(name_col, f"Sprint {i+1}") if name_col else f"Sprint {i+1}"
-        raw_planned   = (row.get(planned_col, "0") or "0").strip()
+        name = row.get(name_col, f"Sprint {i + 1}") if name_col else f"Sprint {i + 1}"
+        raw_planned = (row.get(planned_col, "0") or "0").strip()
         raw_completed = (row.get(completed_col, "0") or "0").strip()
         date = row.get(date_col, "") if date_col else ""
         raw_carryover = (row.get(carryover_col, "0") or "0").strip() if carryover_col else "0"
@@ -81,14 +86,16 @@ def _parse_sprint_csv(csv_text: str) -> list[dict[str, Any]]:
 
         completion_rate = round(completed / planned, 3) if planned > 0 else 0
 
-        rows.append({
-            "sprint": str(name).strip(),
-            "planned": planned,
-            "completed": completed,
-            "carryover": carryover,
-            "completion_rate": completion_rate,
-            "date": str(date)[:10],
-        })
+        rows.append(
+            {
+                "sprint": str(name).strip(),
+                "planned": planned,
+                "completed": completed,
+                "carryover": carryover,
+                "completion_rate": completion_rate,
+                "date": str(date)[:10],
+            }
+        )
 
     return rows
 
@@ -124,7 +131,11 @@ def _compute_velocity_metrics(sprints: list[dict[str, Any]]) -> dict[str, Any]:
 
     # Bottleneck sprints: low completion rate
     bottleneck_sprints = [
-        {"sprint": s["sprint"], "completion_rate": s["completion_rate"], "completed": s["completed"]}
+        {
+            "sprint": s["sprint"],
+            "completion_rate": s["completion_rate"],
+            "completed": s["completed"],
+        }
         for s in sprints
         if s["completion_rate"] < LOW_COMPLETION_THRESHOLD
     ]
@@ -149,20 +160,26 @@ def _compute_velocity_metrics(sprints: list[dict[str, Any]]) -> dict[str, Any]:
     # Identify bottleneck areas (sprints with lowest velocity)
     bottlenecks = []
     if bottleneck_sprints:
-        bottlenecks.append({
-            "area": f"{len(bottleneck_sprints)} sprints below 70% completion",
-            "impact": f"Average completion: {statistics.mean(s['completion_rate'] for s in bottleneck_sprints)*100:.0f}%",
-        })
+        bottlenecks.append(
+            {
+                "area": f"{len(bottleneck_sprints)} sprints below 70% completion",
+                "impact": f"Average completion: {statistics.mean(s['completion_rate'] for s in bottleneck_sprints) * 100:.0f}%",
+            }
+        )
     if carryover_ratio > 0.15:
-        bottlenecks.append({
-            "area": "High carryover rate",
-            "impact": f"{carryover_ratio*100:.0f}% of planned work carried to next sprint",
-        })
+        bottlenecks.append(
+            {
+                "area": "High carryover rate",
+                "impact": f"{carryover_ratio * 100:.0f}% of planned work carried to next sprint",
+            }
+        )
     if velocity_std / avg_velocity > 0.30 if avg_velocity > 0 else False:
-        bottlenecks.append({
-            "area": "High velocity variance",
-            "impact": f"Velocity ranges ±{velocity_std:.0f} pts — unpredictable throughput",
-        })
+        bottlenecks.append(
+            {
+                "area": "High velocity variance",
+                "impact": f"Velocity ranges ±{velocity_std:.0f} pts — unpredictable throughput",
+            }
+        )
 
     return {
         "sprints_analyzed": n,
@@ -184,30 +201,36 @@ def _build_velocity_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
     predictability = metrics.get("predictability_score", 1.0)
     if predictability < 0.60:
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"Sprint predictability is {predictability*100:.0f}% — "
-                f"team is consistently missing planned scope. Review estimation process."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"Sprint predictability is {predictability * 100:.0f}% — "
+                    f"team is consistently missing planned scope. Review estimation process."
+                ),
+            }
+        )
 
     trend = metrics.get("velocity_trend")
     if trend == "down":
-        alerts.append({
-            "level": "warning",
-            "message": "Engineering velocity is declining. Check for blockers, burnout, or scope creep.",
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": "Engineering velocity is declining. Check for blockers, burnout, or scope creep.",
+            }
+        )
 
     carryover = metrics.get("carryover_ratio", 0)
     if carryover > 0.25:
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"{carryover*100:.0f}% carryover rate — "
-                "team is over-committing each sprint. Reduce sprint scope by 20-25%."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"{carryover * 100:.0f}% carryover rate — "
+                    "team is over-committing each sprint. Reduce sprint scope by 20-25%."
+                ),
+            }
+        )
 
     return alerts
 
@@ -225,27 +248,29 @@ async def _generate_velocity_narrative(
         or "No critical alerts."
     )
 
-    return (await complete_text(
-        task="short_narrative",
-        system_prompt=(
-            "Sen deneyimli bir CTO ve mühendislik liderisisin. "
-            "Sprint velocity verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
-            "Yanıt şu yapıda olsun:\n"
-            "1. Ekip verimliliğinin 1-2 cümlelik değerlendirmesi (velocity trend ve öngörülebilirlik odaklı)\n"
-            "2. En kritik sorun (carryover, düşen velocity veya öngörülemezlik)\n"
-            "3. Sonraki sprint'te uygulanabilecek 2-3 somut iyileştirme (scrum/kanban pratikleri)\n"
-            "Teknik olmayan yöneticinin anlayacağı sade dilde yaz."
-        ),
-        prompt=(
-            f"Analiz Edilen Sprint: {metrics['sprints_analyzed']}\n"
-            f"Ortalama Velocity: {metrics['avg_velocity']} puan/sprint\n"
-            f"Velocity Trendi: {metrics['velocity_trend']}\n"
-            f"Öngörülebilirlik Skoru: %{metrics['predictability_score']*100:.0f}\n"
-            f"Devredilen İş Oranı: %{metrics['carryover_ratio']*100:.0f}\n\n"
-            f"Uyarılar:\n{alert_text}"
-        ),
-        max_tokens=512,
-    )).strip()
+    return (
+        await complete_text(
+            task="short_narrative",
+            system_prompt=(
+                "Sen deneyimli bir CTO ve mühendislik liderisisin. "
+                "Sprint velocity verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
+                "Yanıt şu yapıda olsun:\n"
+                "1. Ekip verimliliğinin 1-2 cümlelik değerlendirmesi (velocity trend ve öngörülebilirlik odaklı)\n"
+                "2. En kritik sorun (carryover, düşen velocity veya öngörülemezlik)\n"
+                "3. Sonraki sprint'te uygulanabilecek 2-3 somut iyileştirme (scrum/kanban pratikleri)\n"
+                "Teknik olmayan yöneticinin anlayacağı sade dilde yaz."
+            ),
+            prompt=(
+                f"Analiz Edilen Sprint: {metrics['sprints_analyzed']}\n"
+                f"Ortalama Velocity: {metrics['avg_velocity']} puan/sprint\n"
+                f"Velocity Trendi: {metrics['velocity_trend']}\n"
+                f"Öngörülebilirlik Skoru: %{metrics['predictability_score'] * 100:.0f}\n"
+                f"Devredilen İş Oranı: %{metrics['carryover_ratio'] * 100:.0f}\n\n"
+                f"Uyarılar:\n{alert_text}"
+            ),
+            max_tokens=512,
+        )
+    ).strip()
 
 
 async def run_velocity_agent(
@@ -267,6 +292,7 @@ async def run_velocity_agent(
 
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         sprints = _parse_sprint_csv(sprint_csv)
@@ -305,7 +331,7 @@ async def run_velocity_agent(
             detail=(
                 f"Velocity: {metrics['avg_velocity']} pts/sprint, "
                 f"trend: {metrics['velocity_trend']}, "
-                f"predictability: {metrics['predictability_score']*100:.0f}%"
+                f"predictability: {metrics['predictability_score'] * 100:.0f}%"
             ),
         )
 

@@ -1,6 +1,7 @@
 """
 Unit tests for app.core.crypto (AES-256-GCM encryption & EncryptedString).
 """
+
 from sqlalchemy import Column, Integer, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Session
 
@@ -78,6 +79,7 @@ def test_sqlalchemy_encrypted_string_decorator():
     # Verify that in raw DB, the values are encrypted
     with engine.connect() as conn:
         from sqlalchemy import text
+
         row = conn.execute(text("SELECT vkn, iban FROM test_secrets WHERE id = 1")).fetchone()
         assert row is not None
         assert row[0].startswith("enc:v1:")

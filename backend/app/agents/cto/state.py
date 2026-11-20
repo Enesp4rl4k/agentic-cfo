@@ -13,6 +13,7 @@ Data inputs (what CTO agents consume):
 
 All cost amounts stored as INTEGER (cents), same as CFO convention.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from typing import Any, TypedDict
 # ---------------------------------------------------------------------------
 # Shared audit type — reused from CFO pattern
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CTOStepLog:
@@ -34,17 +36,18 @@ class CTOStepLog:
 # CTO Run State — threaded through all LangGraph nodes
 # ---------------------------------------------------------------------------
 
+
 class CTOState(TypedDict, total=False):
     # ── Input ─────────────────────────────────────────────────────────────────
     job_id: str
     company_name: str | None
 
     # Raw input data (at least one required)
-    cloud_billing_csv: str | None    # cloud cost export
-    git_log_text: str | None         # git log output
-    incident_csv: str | None         # incident history
-    sprint_csv: str | None           # sprint velocity data
-    sast_report: str | None          # security scan output
+    cloud_billing_csv: str | None  # cloud cost export
+    git_log_text: str | None  # git log output
+    incident_csv: str | None  # incident history
+    sprint_csv: str | None  # sprint velocity data
+    sast_report: str | None  # security scan output
 
     # ── InfraAgent ────────────────────────────────────────────────────────────
     infra: dict[str, Any] | None
@@ -131,6 +134,7 @@ class CTOState(TypedDict, total=False):
 # Skill result — identical to CFO's SkillResult (reused)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CTOSkillResult:
     ok: bool
@@ -144,6 +148,7 @@ class CTOSkillResult:
 # ---------------------------------------------------------------------------
 # Run config
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CTORunConfig:
@@ -159,7 +164,7 @@ DEFAULT_CTO_RUN_CONFIG = CTORunConfig()
 # Routing constants
 # ---------------------------------------------------------------------------
 
-CTO_ROUTE_INFRA    = "infra"
-CTO_ROUTE_HOLD     = "hold_for_review"
-CTO_ROUTE_END      = "__end__"
-CTO_ROUTE_SUMMARY  = "cto_summary"
+CTO_ROUTE_INFRA = "infra"
+CTO_ROUTE_HOLD = "hold_for_review"
+CTO_ROUTE_END = "__end__"
+CTO_ROUTE_SUMMARY = "cto_summary"

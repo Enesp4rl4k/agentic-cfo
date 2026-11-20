@@ -10,6 +10,7 @@ These ran the seven kernels, and the organisation routes read a context field
 that does not exist, so they only ever saw estimates. See
 app/agents/orchestration/cross_domain_hub.py.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,8 +32,8 @@ logger = logging.getLogger(__name__)
 
 class CrossDomainRequest(BaseModel):
     domain_results: dict[str, dict[str, Any] | None] = Field(default_factory=dict)
-    pnl:            dict[str, Any] | None = None
-    forecast:       dict[str, Any] | None = None
+    pnl: dict[str, Any] | None = None
+    forecast: dict[str, Any] | None = None
 
 
 class CrossDomainFromJobRequest(BaseModel):
@@ -65,7 +66,9 @@ async def cross_domain_analyze(
     from app.agents.orchestration.cross_domain_hub import run_cross_domain_analysis
 
     return await run_cross_domain_analysis(
-        domain_results=req.domain_results, pnl=req.pnl, forecast=req.forecast,
+        domain_results=req.domain_results,
+        pnl=req.pnl,
+        forecast=req.forecast,
     )
 
 
@@ -85,7 +88,9 @@ async def cross_domain_from_job(
     if job.org_id:
         domains = (await load_org_inputs(str(job.org_id), db))["domain_results"]
     return await run_cross_domain_analysis(
-        domain_results=domains, pnl=data.get("pnl"), forecast=data.get("forecast"),
+        domain_results=domains,
+        pnl=data.get("pnl"),
+        forecast=data.get("forecast"),
     )
 
 

@@ -3,6 +3,7 @@
 Every organisation used to be created as US/USD with no regional pack: a firm
 that had just signed up got 404 from e-Fatura and muhasebe and US tax rates.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -17,11 +18,15 @@ async def client():
 
 
 async def _headers(client, email: str) -> dict[str, str]:
-    await client.post("/api/v1/auth/register",
-                      json={"email": email, "password": "StrongPassword123!", "full_name": "T"})
-    token = (await client.post("/api/v1/auth/login",
-                               json={"email": email, "password": "StrongPassword123!"})
-             ).json()["data"]["access_token"]
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "StrongPassword123!", "full_name": "T"},
+    )
+    token = (
+        await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "StrongPassword123!"}
+        )
+    ).json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -30,6 +35,7 @@ async def test_a_new_company_is_turkish_by_default(client):
     r = await client.post("/api/v1/org/create", json={"name": "Kobi A.Ş."}, headers=headers)
     assert r.status_code == 201, r.text
     from app.models.organization import Organization
+
     async with client._maker() as db:
         org = await db.get(Organization, r.json()["data"]["org_id"])
         assert (org.country_code, org.base_currency, org.locale) == ("TR", "TRY", "tr-TR")
@@ -40,8 +46,11 @@ async def test_a_new_company_is_turkish_by_default(client):
 
 async def test_another_country_can_be_asked_for(client):
     headers = await _headers(client, "us@example.com")
-    r = await client.post("/api/v1/org/create", json={"name": "Acme Inc", "country_code": "us"}, headers=headers)
+    r = await client.post(
+        "/api/v1/org/create", json={"name": "Acme Inc", "country_code": "us"}, headers=headers
+    )
     from app.models.organization import Organization
+
     async with client._maker() as db:
         org = await db.get(Organization, r.json()["data"]["org_id"])
         assert (org.country_code, org.regional_packs) == ("US", [])

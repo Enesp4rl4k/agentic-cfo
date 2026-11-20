@@ -6,6 +6,7 @@ Akbank PDF ekstrelerinde tipik format:
 - Tarih sütunu: DD.MM.YYYY
 - Tablo: Tarih | Açıklama | Borç | Alacak | Bakiye
 """
+
 from __future__ import annotations
 
 import re
@@ -54,11 +55,11 @@ class AkbankParser(BankParser):
         transactions: list[ParsedTransaction] = []
         # Match: date, description, optional debit, optional credit
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"   # date
-            r"(.+?)\s+"                     # description (non-greedy)
-            r"([\d.,]+)?\s*"                # debit (optional)
-            r"([\d.,]+)?\s*"                # credit (optional)
-            r"([\d.,]+)\s*$",               # balance
+            r"(\d{2}\.\d{2}\.\d{4})\s+"  # date
+            r"(.+?)\s+"  # description (non-greedy)
+            r"([\d.,]+)?\s*"  # debit (optional)
+            r"([\d.,]+)?\s*"  # credit (optional)
+            r"([\d.,]+)\s*$",  # balance
             re.MULTILINE,
         )
         for m in row_pattern.finditer(text):
@@ -81,12 +82,14 @@ class AkbankParser(BankParser):
             if not amount:
                 continue
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description,
-                amount_cents=amount,
-                tx_type=tx_type,
-                raw_row=m.group(0),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description,
+                    amount_cents=amount,
+                    tx_type=tx_type,
+                    raw_row=m.group(0),
+                )
+            )
 
         return transactions

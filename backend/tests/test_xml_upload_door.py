@@ -9,6 +9,7 @@ flow against the GİB corpus on a live instance.
 ElementTree expands internal entities, so the door refuses any document
 declaring a DTD or an entity before anything parses it.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,7 +54,7 @@ def _gib_files() -> list[Path]:
 
 
 def test_an_xml_invoice_passes_the_door():
-    validate_extension("xml")          # no longer raises
+    validate_extension("xml")  # no longer raises
     validate_xml_payload(_UBL_MINIMAL)  # no DTD, no entity
     assert "xml" in _UZANTILAR
     tanima = tani(_UBL_MINIMAL, "fatura.xml")
@@ -64,8 +65,8 @@ def test_an_xml_invoice_passes_the_door():
 @pytest.mark.parametrize("name", ["IDIS_Fatura.xml", "HASTANE.xml", "ISTISNA-1.xml"])
 def test_gibs_own_invoices_pass_the_door(name: str):
     raw = (GIB / name).read_bytes()
-    validate_extension("xml")          # no longer raises
-    validate_xml_payload(raw)          # no DTD, no entity
+    validate_extension("xml")  # no longer raises
+    validate_xml_payload(raw)  # no DTD, no entity
     assert "xml" in _UZANTILAR
     tanima = tani(raw, name)
     assert (tanima.durum, tanima.tur, tanima.alan) == (KESIN, FINANSAL_BELGE, "cfo")
@@ -74,7 +75,7 @@ def test_gibs_own_invoices_pass_the_door(name: str):
 @korpus_var
 def test_every_published_sample_is_accepted_by_the_safety_check():
     for f in _gib_files():
-        guvenli_mi(f.read_bytes())     # raises if any would be refused
+        guvenli_mi(f.read_bytes())  # raises if any would be refused
 
 
 def test_an_entity_bomb_is_refused_before_parsing():
@@ -106,15 +107,26 @@ async def test_the_job_keeps_the_name_the_person_gave_the_file(tmp_path):
 
     async with gecici_oturum() as db:
         job = await create_analysis_job(
-            result=UploadResult(job_id="j1", file_path=str(tmp_path / "document.xml"), ext="xml",
-                                size_bytes=10, original_name="C:/temp/GIB2025000000001.xml"),
-            user_id=None, org_id=None, db=db,
+            result=UploadResult(
+                job_id="j1",
+                file_path=str(tmp_path / "document.xml"),
+                ext="xml",
+                size_bytes=10,
+                original_name="C:/temp/GIB2025000000001.xml",
+            ),
+            user_id=None,
+            org_id=None,
+            db=db,
         )
-        assert job.filename == "GIB2025000000001.xml"   # no path, the person's own name
+        assert job.filename == "GIB2025000000001.xml"  # no path, the person's own name
 
         adsiz = await create_analysis_job(
-            result=UploadResult(job_id="j2", file_path=str(tmp_path / "d.csv"), ext="csv", size_bytes=1),
-            user_id=None, org_id=None, db=db,
+            result=UploadResult(
+                job_id="j2", file_path=str(tmp_path / "d.csv"), ext="csv", size_bytes=1
+            ),
+            user_id=None,
+            org_id=None,
+            db=db,
         )
         assert adsiz.filename == "document.csv"
 
@@ -146,8 +158,11 @@ async def test_the_door_refuses_an_edefter_with_advice(tmp_path, monkeypatch):
 
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path), raising=False)
     async with gecici_oturum() as db:
-        out = await ekle.dosyalari_ekle(db, ekle.Sahip(org_id="o", user_id="u"),
-                                        [("1234567808-201804-Y-000000.xml", _EDEFTER_MINIMAL)])
+        out = await ekle.dosyalari_ekle(
+            db,
+            ekle.Sahip(org_id="o", user_id="u"),
+            [("1234567808-201804-Y-000000.xml", _EDEFTER_MINIMAL)],
+        )
     d = out["dosyalar"][0]
     assert d["durum"] == ekle.REDDEDILDI
     assert "yevmiye defterini" in d["mesaj"]
@@ -158,10 +173,12 @@ def test_a_journal_is_accepted_and_the_others_say_what_to_upload():
     from app.services.ingest.recognize import edefter_ret_nedeni
 
     def defter(tur: str, kok: str = "defter") -> bytes:
-        return (f'<edefter:{kok} xmlns:edefter="http://www.edefter.gov.tr" '
-                'xmlns:gl-cor="http://www.xbrl.org/int/gl/cor/2006-10-25">'
-                f"<gl-cor:documentInfo><gl-cor:entriesType>{tur}</gl-cor:entriesType>"
-                f"</gl-cor:documentInfo></edefter:{kok}>").encode()
+        return (
+            f'<edefter:{kok} xmlns:edefter="http://www.edefter.gov.tr" '
+            'xmlns:gl-cor="http://www.xbrl.org/int/gl/cor/2006-10-25">'
+            f"<gl-cor:documentInfo><gl-cor:entriesType>{tur}</gl-cor:entriesType>"
+            f"</gl-cor:documentInfo></edefter:{kok}>"
+        ).encode()
 
     assert edefter_ret_nedeni(defter("journal")) is None
     assert "kebir" in edefter_ret_nedeni(defter("ledger"))

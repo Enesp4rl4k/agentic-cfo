@@ -11,6 +11,7 @@ either the previous complete file or the new complete file — never an
 intermediate. The temp lives in the destination directory, so the rename
 stays within one filesystem (a cross-device replace is not atomic).
 """
+
 from __future__ import annotations
 
 import json
@@ -53,9 +54,7 @@ def atomic_write_bytes(path: str | os.PathLike[str], data: bytes) -> None:
         raise
 
 
-def atomic_write_text(
-    path: str | os.PathLike[str], text: str, encoding: str = "utf-8"
-) -> None:
+def atomic_write_text(path: str | os.PathLike[str], text: str, encoding: str = "utf-8") -> None:
     """Write `text` to `path` all-or-nothing."""
     atomic_write_bytes(path, text.encode(encoding))
 

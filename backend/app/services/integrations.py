@@ -12,6 +12,7 @@ Her connector:
   - Redis cache (API rate limit koruması)
   - Standart SyncBatch çıktısı (CFO pipeline'a direkt beslenir)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 # INT-2: Open Banking — Türkiye
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TurkiyeOpenBankingClient:
     """
@@ -46,23 +48,24 @@ class TurkiyeOpenBankingClient:
     """
 
     SANDBOX_URLS = {
-        "akbank":    "https://apisandbox.akbank.com/api/v1",
-        "garanti":   "https://api.garanti.com.tr/sandbox/v1",
-        "isbank":    "https://sandbox.isbank.com.tr/openbanking/v1",
+        "akbank": "https://apisandbox.akbank.com/api/v1",
+        "garanti": "https://api.garanti.com.tr/sandbox/v1",
+        "isbank": "https://sandbox.isbank.com.tr/openbanking/v1",
         "yapikredi": "https://api.yapikredi.com.tr/sandbox/v1",
     }
 
     def __init__(self, bank: str, client_id: str, client_secret: str, sandbox: bool = True) -> None:
-        self.bank          = bank
-        self.client_id     = client_id
+        self.bank = bank
+        self.client_id = client_id
         self.client_secret = client_secret
-        self.sandbox       = sandbox
-        self._token:     str | None = None
-        self._token_exp: float      = 0.0
+        self.sandbox = sandbox
+        self._token: str | None = None
+        self._token_exp: float = 0.0
 
     async def _get_token(self) -> str:
         """OAuth2 client credentials token al."""
         import time
+
         if self._token and time.time() < self._token_exp - 60:
             return self._token
 
@@ -71,23 +74,23 @@ class TurkiyeOpenBankingClient:
             resp = await client.post(
                 f"{base}/oauth/token",
                 data={
-                    "grant_type":    "client_credentials",
-                    "client_id":     self.client_id,
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
                     "client_secret": self.client_secret,
-                    "scope":         "accounts transactions",
+                    "scope": "accounts transactions",
                 },
             )
             if resp.status_code != 200:
                 raise RuntimeError(f"Open Banking token hatası: {resp.status_code}")
-            data          = resp.json()
-            self._token   = data["access_token"]
+            data = resp.json()
+            self._token = data["access_token"]
             self._token_exp = time.time() + data.get("expires_in", 3600)
             return self._token
 
     async def list_accounts(self) -> list[dict]:
         """Banka hesaplarını listele."""
         token = await self._get_token()
-        base  = self.SANDBOX_URLS.get(self.bank, self.SANDBOX_URLS["akbank"])
+        base = self.SANDBOX_URLS.get(self.bank, self.SANDBOX_URLS["akbank"])
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 f"{base}/accounts",
@@ -100,7 +103,7 @@ class TurkiyeOpenBankingClient:
     async def get_transactions(self, account_id: str, from_date: str, to_date: str) -> list[dict]:
         """Hesap hareketlerini çek → CFO transaction formatına dönüştür."""
         token = await self._get_token()
-        base  = self.SANDBOX_URLS.get(self.bank, self.SANDBOX_URLS["akbank"])
+        base = self.SANDBOX_URLS.get(self.bank, self.SANDBOX_URLS["akbank"])
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
                 f"{base}/accounts/{account_id}/transactions",
@@ -116,19 +119,19 @@ class TurkiyeOpenBankingClient:
     def _normalize_transaction(self, tx: dict) -> dict:
         """Banka transaction formatını CFO formatına dönüştür."""
         amount_raw = tx.get("amount", {})
-        amount     = float(amount_raw.get("amount", 0))
-        currency   = amount_raw.get("currency", "TRY")
+        amount = float(amount_raw.get("amount", 0))
+        currency = amount_raw.get("currency", "TRY")
 
         return {
             "transaction_date": tx.get("bookingDate") or tx.get("valueDate", ""),
-            "description":      tx.get("transactionText") or tx.get("description", ""),
+            "description": tx.get("transactionText") or tx.get("description", ""),
             # TODO: convert non-TRY amounts to TRY; stored in original currency for now
-            "amount_try":       amount,
-            "currency":         currency,
-            "type":             "income" if amount > 0 else "expense",
-            "bank":             self.bank,
-            "reference":        tx.get("transactionId", ""),
-            "raw":              tx,
+            "amount_try": amount,
+            "currency": currency,
+            "type": "income" if amount > 0 else "expense",
+            "bank": self.bank,
+            "reference": tx.get("transactionId", ""),
+            "raw": tx,
         }
 
 
@@ -136,19 +139,20 @@ class TurkiyeOpenBankingClient:
 # INT-4: E-ticaret kanalları
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class ShopifyConnector:
     """Shopify Admin API — sipariş ve ödeme reconciliation."""
 
     def __init__(self, shop_domain: str, access_token: str) -> None:
-        self.base  = f"https://{shop_domain}/admin/api/2024-01"
+        self.base = f"https://{shop_domain}/admin/api/2024-01"
         self.token = access_token
 
     async def get_orders(self, from_date: str, to_date: str) -> list[dict]:
         params = {
             "created_at_min": from_date,
             "created_at_max": to_date,
-            "status":         "any",
-            "limit":          250,
+            "status": "any",
+            "limit": 250,
         }
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
@@ -165,16 +169,18 @@ class ShopifyConnector:
         result = []
         for o in orders:
             total = float(o.get("total_price", 0))
-            result.append({
-                "transaction_date": (o.get("processed_at") or o.get("created_at", ""))[:10],
-                "description":      f"Shopify Sipariş #{o.get('order_number')}",
-                "amount_try":       total,
-                "type":             "income",
-                "channel":          "shopify",
-                "currency":         o.get("currency", "TRY"),
-                "customer_email":   o.get("email"),
-                "order_id":         str(o.get("id")),
-            })
+            result.append(
+                {
+                    "transaction_date": (o.get("processed_at") or o.get("created_at", ""))[:10],
+                    "description": f"Shopify Sipariş #{o.get('order_number')}",
+                    "amount_try": total,
+                    "type": "income",
+                    "channel": "shopify",
+                    "currency": o.get("currency", "TRY"),
+                    "customer_email": o.get("email"),
+                    "order_id": str(o.get("id")),
+                }
+            )
         return result
 
 
@@ -182,14 +188,14 @@ class TrendyolConnector:
     """Trendyol Supplier API — satıcı siparişleri."""
 
     def __init__(self, supplier_id: str, api_key: str, api_secret: str) -> None:
-        self.base        = "https://api.trendyol.com/sapigw"
+        self.base = "https://api.trendyol.com/sapigw"
         self.supplier_id = supplier_id
-        self.auth        = httpx.BasicAuth(api_key, api_secret)
+        self.auth = httpx.BasicAuth(api_key, api_secret)
 
     async def get_orders(self, from_date: str, to_date: str) -> list[dict]:
         # Trendyol uses Unix millisecond timestamps
         from_ts = int(datetime.fromisoformat(from_date).timestamp() * 1000)
-        to_ts   = int(datetime.fromisoformat(to_date).timestamp() * 1000)
+        to_ts = int(datetime.fromisoformat(to_date).timestamp() * 1000)
 
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
@@ -207,16 +213,18 @@ class TrendyolConnector:
         result = []
         for o in orders:
             for line in o.get("lines", []):
-                result.append({
-                    "transaction_date": datetime.fromtimestamp(
-                        o.get("orderDate", 0) / 1000
-                    ).strftime("%Y-%m-%d"),
-                    "description":   f"Trendyol Sipariş #{o.get('orderNumber')} — {line.get('productName', '')}",
-                    "amount_try":    float(line.get("amount", 0)),
-                    "type":          "income",
-                    "channel":       "trendyol",
-                    "order_id":      str(o.get("id")),
-                })
+                result.append(
+                    {
+                        "transaction_date": datetime.fromtimestamp(
+                            o.get("orderDate", 0) / 1000
+                        ).strftime("%Y-%m-%d"),
+                        "description": f"Trendyol Sipariş #{o.get('orderNumber')} — {line.get('productName', '')}",
+                        "amount_try": float(line.get("amount", 0)),
+                        "type": "income",
+                        "channel": "trendyol",
+                        "order_id": str(o.get("id")),
+                    }
+                )
         return result
 
 
@@ -224,8 +232,8 @@ class HepsiburadaConnector:
     """Hepsiburada Merchant API — satıcı siparişleri."""
 
     def __init__(self, username: str, password: str) -> None:
-        self.base  = "https://listing-external.hepsiburada.com"
-        self.auth  = httpx.BasicAuth(username, password)
+        self.base = "https://listing-external.hepsiburada.com"
+        self.auth = httpx.BasicAuth(username, password)
 
     async def get_orders(self, from_date: str, to_date: str) -> list[dict]:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -243,6 +251,7 @@ class HepsiburadaConnector:
 # ═══════════════════════════════════════════════════════════════════════════════
 # INT-5: Google Sheets Sync
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class GoogleSheetsConnector:
     """
@@ -263,7 +272,8 @@ class GoogleSheetsConnector:
             import json as _json
 
             from google.oauth2.service_account import Credentials
-            info   = _json.loads(self._sa_json)
+
+            info = _json.loads(self._sa_json)
             scopes = ["https://www.googleapis.com/auth/spreadsheets"]
             return Credentials.from_service_account_info(info, scopes=scopes)
         except ImportError:
@@ -275,16 +285,23 @@ class GoogleSheetsConnector:
     async def read_sheet(
         self,
         spreadsheet_id: str,
-        range_name:     str = "Sheet1!A1:Z1000",
+        range_name: str = "Sheet1!A1:Z1000",
     ) -> list[list[Any]]:
         """Read data from a Google Sheet range."""
+
         def _read() -> list[list[Any]]:
             from googleapiclient.discovery import build
+
             service = build("sheets", "v4", credentials=self._build_credentials())
-            result = service.spreadsheets().values().get(
-                spreadsheetId=spreadsheet_id,
-                range=range_name,
-            ).execute()
+            result = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name,
+                )
+                .execute()
+            )
             return result.get("values", [])
 
         # The Google client is synchronous HTTP; on the loop it held every request.
@@ -293,26 +310,33 @@ class GoogleSheetsConnector:
     async def write_sheet(
         self,
         spreadsheet_id: str,
-        range_name:     str,
-        values:         list[list[Any]],
+        range_name: str,
+        values: list[list[Any]],
     ) -> dict:
         """Write data to a Google Sheet range."""
+
         def _write() -> dict:
             from googleapiclient.discovery import build
+
             service = build("sheets", "v4", credentials=self._build_credentials())
-            return service.spreadsheets().values().update(
-                spreadsheetId=spreadsheet_id,
-                range=range_name,
-                valueInputOption="RAW",
-                body={"values": values},
-            ).execute()
+            return (
+                service.spreadsheets()
+                .values()
+                .update(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name,
+                    valueInputOption="RAW",
+                    body={"values": values},
+                )
+                .execute()
+            )
 
         return await asyncio.to_thread(_write)
 
     async def export_cfo_results(
         self,
         spreadsheet_id: str,
-        cfo_result:     dict,
+        cfo_result: dict,
     ) -> None:
         """Export CFO pipeline results to a structured Google Sheet."""
         pnl = cfo_result.get("pnl", {})
@@ -320,7 +344,7 @@ class GoogleSheetsConnector:
             ["Metrik", "Değer", "Güncelleme"],
             ["Gelir (TRY)", pnl.get("revenue", 0) / 100, datetime.now().strftime("%Y-%m-%d %H:%M")],
             ["Brüt Marj %", round((pnl.get("gross_margin", 0)) * 100, 1), ""],
-            ["Net Marj %",  round((pnl.get("net_margin", 0)) * 100, 1),  ""],
+            ["Net Marj %", round((pnl.get("net_margin", 0)) * 100, 1), ""],
         ]
         await self.write_sheet(spreadsheet_id, "CFO!A1", rows)
 
@@ -328,6 +352,7 @@ class GoogleSheetsConnector:
 # ═══════════════════════════════════════════════════════════════════════════════
 # INT-6: Webhook Outbound
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class WebhookDispatcher:
     """
@@ -350,8 +375,7 @@ class WebhookDispatcher:
         blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": message}}]
         if details:
             fields = [
-                {"type": "mrkdwn", "text": f"*{k}:*\n{v}"}
-                for k, v in list(details.items())[:10]
+                {"type": "mrkdwn", "text": f"*{k}:*\n{v}"} for k, v in list(details.items())[:10]
             ]
             blocks.append({"type": "section", "fields": fields})
 
@@ -362,18 +386,22 @@ class WebhookDispatcher:
             logger.warning("Slack webhook failed: %s", exc)
             return False
 
-    async def send_teams(self, webhook_url: str, title: str, message: str, color: str = "0078D4") -> bool:
+    async def send_teams(
+        self, webhook_url: str, title: str, message: str, color: str = "0078D4"
+    ) -> bool:
         """Microsoft Teams Incoming Webhook mesajı gönder."""
         payload = {
-            "@type":       "MessageCard",
-            "@context":    "http://schema.org/extensions",
-            "themeColor":  color,
-            "summary":     title,
-            "sections": [{
-                "activityTitle":    title,
-                "activityText":     message,
-                "activitySubtitle": datetime.now().strftime("%d.%m.%Y %H:%M"),
-            }],
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "themeColor": color,
+            "summary": title,
+            "sections": [
+                {
+                    "activityTitle": title,
+                    "activityText": message,
+                    "activitySubtitle": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                }
+            ],
         }
         try:
             resp = await self._client.post(webhook_url, json=payload)
@@ -403,6 +431,7 @@ class WebhookDispatcher:
         from email.mime.text import MIMEText
 
         from app.config import get_settings
+
         settings = get_settings()
 
         smtp_host = getattr(settings, "smtp_host", "")
@@ -417,8 +446,8 @@ class WebhookDispatcher:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"]    = smtp_user
-            msg["To"]      = to
+            msg["From"] = smtp_user
+            msg["To"] = to
             msg.attach(MIMEText(body, "html", "utf-8"))
 
             def _send() -> None:

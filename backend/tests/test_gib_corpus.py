@@ -10,6 +10,7 @@ ledger is validated against before it can be filed.
 Fetch it with `python scripts/fetch_gib_corpus.py`. It is not vendored — a copy
 in the tree would drift from the standard, and drift is what this catches.
 """
+
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
@@ -52,6 +53,7 @@ def _ids(paths: list[Path]) -> list[str]:
 
 # ── The corpus is what we think it is ─────────────────────────────────────────
 
+
 def test_corpus_covers_the_document_types_gib_actually_issues() -> None:
     """A guard on the input, not the code: if GİB reshapes the package, the
     tests below stop meaning what they claim and should say so loudly."""
@@ -61,6 +63,7 @@ def test_corpus_covers_the_document_types_gib_actually_issues() -> None:
 
 
 # ── Non-invoices must be refused, not silently accepted ───────────────────────
+
 
 def test_every_document_is_either_parsed_or_refused_by_name() -> None:
     """No document may parse into an invoice it is not.
@@ -225,11 +228,11 @@ def test_missing_own_vkn_is_unknown_not_a_guess() -> None:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("1234567890", "1234567890"),      # VKN
-        ("12345678901", "12345678901"),    # TCKN
+        ("1234567890", "1234567890"),  # VKN
+        ("12345678901", "12345678901"),  # TCKN
         ("123 456 78 90", "1234567890"),
-        ("123456789", ""),                 # too short — not an identifier
-        ("123456789012", ""),              # too long
+        ("123456789", ""),  # too short — not an identifier
+        ("123456789012", ""),  # too long
         ("", ""),
         (None, ""),
     ],
@@ -241,6 +244,7 @@ def test_only_vkn_and_tckn_lengths_can_decide_direction(raw, expected) -> None:
 
 
 # ── Tax components, and the balance that proves we read them all ─────────────
+
 
 def _as_supplier(path: Path):
     """Parse as if we issued it, so a journal is actually generated."""
@@ -313,9 +317,9 @@ def test_tevkifat_from_the_buyers_side_owes_the_withheld_vat() -> None:
     inv = UBLTRInvoiceParser.parse_xml(path.read_bytes(), own_vkn=vkn)
 
     by_code = {e.account_code: e for e in inv.suggested_tdhp_entries}
-    assert by_code["191.01"].debit_amount == Decimal("3600")   # full VAT deductible
+    assert by_code["191.01"].debit_amount == Decimal("3600")  # full VAT deductible
     assert by_code["320.01"].credit_amount == Decimal("20360")  # what we actually pay
-    assert by_code["360.02"].credit_amount == Decimal("3240")   # what we owe the state
+    assert by_code["360.02"].credit_amount == Decimal("3240")  # what we owe the state
 
 
 def test_ozel_matrah_does_not_add_vat_that_is_already_in_the_price() -> None:

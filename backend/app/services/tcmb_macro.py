@@ -25,6 +25,7 @@ DDIA: Makro veri "external state" — agresif cache (6 saat TTL).
 API dokümantasyonu: https://evds2.tcmb.gov.tr/help/videos/EVDS_Web_Service.pdf
 Ücretsiz API key: https://evds2.tcmb.gov.tr/index.php?lang=tr
 """
+
 from __future__ import annotations
 
 import json
@@ -40,14 +41,14 @@ logger = logging.getLogger(__name__)
 # ── Statik fallback değerleri (2024 Ocak ortalamalar) ────────────────────────
 # API key yoksa veya API down ise bu değerler kullanılır.
 _STATIC_FALLBACK = {
-    "usd_try":          32.5,
-    "eur_try":          35.2,
-    "policy_rate_pct":  45.0,
-    "inflation_pct":    65.0,   # TÜFE yıllık
-    "ppi_pct":          42.0,   # ÜFE yıllık
-    "repo_rate_pct":    45.0,
-    "data_source":      "static_fallback",
-    "as_of":            "2024-01-01",
+    "usd_try": 32.5,
+    "eur_try": 35.2,
+    "policy_rate_pct": 45.0,
+    "inflation_pct": 65.0,  # TÜFE yıllık
+    "ppi_pct": 42.0,  # ÜFE yıllık
+    "repo_rate_pct": 45.0,
+    "data_source": "static_fallback",
+    "as_of": "2024-01-01",
 }
 
 CACHE_TTL_HOURS = 6
@@ -56,15 +57,16 @@ CACHE_TTL_HOURS = 6
 @dataclass
 class MacroSnapshot:
     """Anlık makroekonomik görüntü."""
-    usd_try:           float
-    eur_try:           float
-    policy_rate_pct:   float    # Politika faizi %
-    inflation_pct:     float    # TÜFE yıllık değişim %
-    ppi_pct:           float    # ÜFE yıllık değişim %
-    repo_rate_pct:     float    # Repo faizi %
-    data_source:       str      # "tcmb_api" | "redis_cache" | "static_fallback"
-    as_of:             str      # ISO date string
-    raw_series:        dict = field(default_factory=dict)
+
+    usd_try: float
+    eur_try: float
+    policy_rate_pct: float  # Politika faizi %
+    inflation_pct: float  # TÜFE yıllık değişim %
+    ppi_pct: float  # ÜFE yıllık değişim %
+    repo_rate_pct: float  # Repo faizi %
+    data_source: str  # "tcmb_api" | "redis_cache" | "static_fallback"
+    as_of: str  # ISO date string
+    raw_series: dict = field(default_factory=dict)
 
     def real_cost_of_capital(self) -> float:
         """Reel sermaye maliyeti = politika faizi - enflasyon."""
@@ -98,17 +100,17 @@ class TCMBMacroService:
 
     # Series codes → friendly names
     SERIES = {
-        "TP.DK.USD.A":   "usd_try",
-        "TP.DK.EUR.A":   "eur_try",
-        "TP.FG.J0":      "policy_rate_pct",
-        "TP.FE.OKTG01":  "inflation_pct",
-        "TP.FE.OKTP01":  "ppi_pct",
+        "TP.DK.USD.A": "usd_try",
+        "TP.DK.EUR.A": "eur_try",
+        "TP.FG.J0": "policy_rate_pct",
+        "TP.FE.OKTG01": "inflation_pct",
+        "TP.FE.OKTP01": "ppi_pct",
     }
 
     def __init__(self, api_key: str = "") -> None:
         self._api_key = api_key
         self._cache: dict[str, Any] | None = None
-        self._cache_time: datetime | None  = None
+        self._cache_time: datetime | None = None
 
     def _is_cache_fresh(self) -> bool:
         if not self._cache or not self._cache_time:
@@ -120,13 +122,16 @@ class TCMBMacroService:
         """Try to load from Redis cache."""
         try:
             from app.services.company_context import _get_redis
+
             redis = await _get_redis()
             if redis:
                 raw = await redis.get("tcmb_macro_snapshot")
                 if raw:
                     data = json.loads(raw)
                     data["data_source"] = "redis_cache"
-                    return MacroSnapshot(**{k: v for k, v in data.items() if k in MacroSnapshot.__dataclass_fields__})
+                    return MacroSnapshot(
+                        **{k: v for k, v in data.items() if k in MacroSnapshot.__dataclass_fields__}
+                    )
         except Exception:
             pass
         return None
@@ -135,6 +140,7 @@ class TCMBMacroService:
         """Save snapshot to Redis with TTL."""
         try:
             from app.services.company_context import _get_redis
+
             redis = await _get_redis()
             if redis:
                 await redis.setex(
@@ -150,15 +156,15 @@ class TCMBMacroService:
         if not self._api_key:
             return None
 
-        today    = datetime.now().strftime("%d-%m-%Y")
+        today = datetime.now().strftime("%d-%m-%Y")
         week_ago = (datetime.now() - timedelta(days=14)).strftime("%d-%m-%Y")
 
         params = {
-            "series":    series_code,
+            "series": series_code,
             "startDate": week_ago,
-            "endDate":   today,
-            "type":      "json",
-            "key":       self._api_key,
+            "endDate": today,
+            "type": "json",
+            "key": self._api_key,
         }
 
         try:
@@ -214,14 +220,14 @@ class TCMBMacroService:
         logger.info("TCMB API unavailable — using static fallback values")
         fallback = _STATIC_FALLBACK
         return MacroSnapshot(
-            usd_try         = float(fallback["usd_try"]),
-            eur_try         = float(fallback["eur_try"]),
-            policy_rate_pct = float(fallback["policy_rate_pct"]),
-            inflation_pct   = float(fallback["inflation_pct"]),
-            ppi_pct         = float(fallback["ppi_pct"]),
-            repo_rate_pct   = float(fallback["repo_rate_pct"]),
-            data_source     = str(fallback["data_source"]),
-            as_of           = str(fallback["as_of"]),
+            usd_try=float(fallback["usd_try"]),
+            eur_try=float(fallback["eur_try"]),
+            policy_rate_pct=float(fallback["policy_rate_pct"]),
+            inflation_pct=float(fallback["inflation_pct"]),
+            ppi_pct=float(fallback["ppi_pct"]),
+            repo_rate_pct=float(fallback["repo_rate_pct"]),
+            data_source=str(fallback["data_source"]),
+            as_of=str(fallback["as_of"]),
         )
 
     async def _fetch_from_api(self) -> MacroSnapshot | None:
@@ -248,14 +254,14 @@ class TCMBMacroService:
 
         fallback = _STATIC_FALLBACK
         return MacroSnapshot(
-            usd_try          = float(mapping.get("usd_try")          or fallback["usd_try"]),
-            eur_try          = float(mapping.get("eur_try")          or fallback["eur_try"]),
-            policy_rate_pct  = float(mapping.get("policy_rate_pct")  or fallback["policy_rate_pct"]),
-            inflation_pct    = float(mapping.get("inflation_pct")    or fallback["inflation_pct"]),
-            ppi_pct          = float(mapping.get("ppi_pct")          or fallback["ppi_pct"]),
-            repo_rate_pct    = float(mapping.get("policy_rate_pct")  or fallback["repo_rate_pct"]),
-            data_source      = "tcmb_api",
-            as_of            = datetime.now().strftime("%Y-%m-%d"),
+            usd_try=float(mapping.get("usd_try") or fallback["usd_try"]),
+            eur_try=float(mapping.get("eur_try") or fallback["eur_try"]),
+            policy_rate_pct=float(mapping.get("policy_rate_pct") or fallback["policy_rate_pct"]),
+            inflation_pct=float(mapping.get("inflation_pct") or fallback["inflation_pct"]),
+            ppi_pct=float(mapping.get("ppi_pct") or fallback["ppi_pct"]),
+            repo_rate_pct=float(mapping.get("policy_rate_pct") or fallback["repo_rate_pct"]),
+            data_source="tcmb_api",
+            as_of=datetime.now().strftime("%Y-%m-%d"),
         )
 
     async def get_exchange_rate_trend(self, currency: str = "USD", days: int = 30) -> list[dict]:
@@ -265,7 +271,9 @@ class TCMBMacroService:
         """
         if not self._api_key:
             # Return synthetic trend based on current fallback rate
-            base = float(_STATIC_FALLBACK["usd_try"] if currency == "USD" else _STATIC_FALLBACK["eur_try"])
+            base = float(
+                _STATIC_FALLBACK["usd_try"] if currency == "USD" else _STATIC_FALLBACK["eur_try"]
+            )
             return [
                 {
                     "date": (datetime.now() - timedelta(days=days - i)).strftime("%Y-%m-%d"),
@@ -276,14 +284,14 @@ class TCMBMacroService:
 
         series_code = "TP.DK.USD.A" if currency == "USD" else "TP.DK.EUR.A"
         start = (datetime.now() - timedelta(days=days)).strftime("%d-%m-%Y")
-        end   = datetime.now().strftime("%d-%m-%Y")
+        end = datetime.now().strftime("%d-%m-%Y")
 
         params = {
-            "series":    series_code,
+            "series": series_code,
             "startDate": start,
-            "endDate":   end,
-            "type":      "json",
-            "key":       self._api_key,
+            "endDate": end,
+            "type": "json",
+            "key": self._api_key,
         }
 
         try:
@@ -291,18 +299,20 @@ class TCMBMacroService:
                 resp = await client.get(self.EVDS_BASE, params=params)
                 if resp.status_code != 200:
                     return []
-                data   = resp.json()
-                items  = data.get("items", [])
+                data = resp.json()
+                items = data.get("items", [])
                 result = []
                 for item in items:
                     date = item.get("Tarih", "")
-                    val  = item.get(series_code)
+                    val = item.get(series_code)
                     if date and val:
                         try:
-                            result.append({
-                                "date": date,
-                                "rate": float(str(val).replace(",", ".")),
-                            })
+                            result.append(
+                                {
+                                    "date": date,
+                                    "rate": float(str(val).replace(",", ".")),
+                                }
+                            )
                         except ValueError:
                             pass
                 return result
@@ -313,25 +323,27 @@ class TCMBMacroService:
 
 # ── Macro context for agents ──────────────────────────────────────────────────
 
+
 async def get_macro_context_for_agents() -> dict[str, Any]:
     """
     Tüm ajanlar için makro ekonomik bağlam.
     CFO/CTO/CMO agentları bu veriyi prompt'larına ekler.
     """
     from app.config import get_settings
+
     settings = get_settings()
     svc = TCMBMacroService(api_key=getattr(settings, "tcmb_api_key", ""))
     snap = await svc.get_macro_snapshot()
 
     return {
         "macro_context": {
-            "usd_try":              snap.usd_try,
-            "eur_try":              snap.eur_try,
-            "policy_rate_pct":      snap.policy_rate_pct,
-            "inflation_pct":        snap.inflation_pct,
+            "usd_try": snap.usd_try,
+            "eur_try": snap.eur_try,
+            "policy_rate_pct": snap.policy_rate_pct,
+            "inflation_pct": snap.inflation_pct,
             "real_cost_of_capital": snap.real_cost_of_capital(),
-            "data_source":          snap.data_source,
-            "as_of":                snap.as_of,
+            "data_source": snap.data_source,
+            "as_of": snap.as_of,
         },
         "agent_prompt_addition": (
             f"\n\nTürkiye Makro Bağlamı ({snap.as_of}):\n"
@@ -355,6 +367,7 @@ def get_tcmb_service() -> TCMBMacroService:
     global _service
     if _service is None:
         from app.config import get_settings
+
         settings = get_settings()
         _service = TCMBMacroService(api_key=getattr(settings, "tcmb_api_key", ""))
     return _service

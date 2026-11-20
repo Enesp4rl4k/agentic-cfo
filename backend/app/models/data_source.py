@@ -10,6 +10,7 @@ Each job can have one primary CFO file (bank statement) plus optional domain fil
 When the CEO pipeline is triggered, it queries DataSource to find all
 available files for the job and passes them to the appropriate sub-pipelines.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -27,96 +28,95 @@ def _utcnow() -> datetime:
 
 
 class DataSourceDomain(StrEnum):
-    CFO  = "cfo"
-    CTO  = "cto"
+    CFO = "cfo"
+    CTO = "cto"
     CHRO = "chro"
-    CMO  = "cmo"
-    COO  = "coo"
+    CMO = "cmo"
+    COO = "coo"
     # Stored as strings, so adding a domain needs no migration. These three had
     # orchestrators and no way to receive a file: their pages were served by
     # the kernels' estimates instead.
-    RISK       = "risk"
-    AUDIT      = "audit"
+    RISK = "risk"
+    AUDIT = "audit"
     COMPLIANCE = "compliance"
 
 
 class DataSourceType(StrEnum):
     # CFO
-    BANK_STATEMENT  = "bank_statement"
+    BANK_STATEMENT = "bank_statement"
     # An e-Fatura, e-Arşiv, receipt or statement dropped alongside another one:
     # extra documents of the same analysis. Dropping three invoices used to
     # start three separate analyses, each with its own review to clear.
     FINANCIAL_DOCUMENT = "financial_document"
 
     # CTO
-    CLOUD_BILLING   = "cloud_billing"
-    GIT_LOG         = "git_log"
-    INCIDENT_LOG    = "incident_log"
-    SPRINT_DATA     = "sprint_data"
+    CLOUD_BILLING = "cloud_billing"
+    GIT_LOG = "git_log"
+    INCIDENT_LOG = "incident_log"
+    SPRINT_DATA = "sprint_data"
 
     # CHRO
-    HEADCOUNT       = "headcount"
-    ATTRITION       = "attrition"
-    COMPENSATION    = "compensation"
+    HEADCOUNT = "headcount"
+    ATTRITION = "attrition"
+    COMPENSATION = "compensation"
 
     # CMO
-    CAMPAIGN        = "campaign"
-    FUNNEL          = "funnel"
-    COHORT          = "cohort"
+    CAMPAIGN = "campaign"
+    FUNNEL = "funnel"
+    COHORT = "cohort"
 
     # COO
-    SLA             = "sla"
-    PROCESS         = "process"
-    RESOURCE        = "resource"
+    SLA = "sla"
+    PROCESS = "process"
+    RESOURCE = "resource"
     # Risk
-    RISK_REGISTER   = "risk_register"
-    LOSS_EVENTS     = "loss_events"
-    KRI             = "kri"
+    RISK_REGISTER = "risk_register"
+    LOSS_EVENTS = "loss_events"
+    KRI = "kri"
     # Audit
-    FINDINGS        = "findings"
-    CONTROLS        = "controls"
-    COVERAGE        = "coverage"
+    FINDINGS = "findings"
+    CONTROLS = "controls"
+    COVERAGE = "coverage"
     # Compliance
-    POLICIES        = "policies"
-    VIOLATIONS      = "violations"
-    REGULATIONS     = "regulations"
+    POLICIES = "policies"
+    VIOLATIONS = "violations"
+    REGULATIONS = "regulations"
 
 
 # Maps each (domain, source_type) to the kwarg name expected by the pipeline
 # e.g. CTO orchestrator expects cloud_billing_csv=<text content>
 DOMAIN_SOURCE_KWARGS: dict[tuple[str, str], str] = {
-    (DataSourceDomain.CTO,  DataSourceType.CLOUD_BILLING):  "cloud_billing_csv",
-    (DataSourceDomain.CTO,  DataSourceType.GIT_LOG):         "git_log_text",
-    (DataSourceDomain.CTO,  DataSourceType.INCIDENT_LOG):    "incident_csv",
-    (DataSourceDomain.CTO,  DataSourceType.SPRINT_DATA):     "sprint_csv",
-    (DataSourceDomain.CHRO, DataSourceType.HEADCOUNT):       "headcount_csv",
-    (DataSourceDomain.CHRO, DataSourceType.ATTRITION):       "attrition_csv",
-    (DataSourceDomain.CHRO, DataSourceType.COMPENSATION):    "compensation_csv",
-    (DataSourceDomain.CMO,  DataSourceType.CAMPAIGN):        "campaign_csv",
-    (DataSourceDomain.CMO,  DataSourceType.FUNNEL):          "funnel_csv",
-    (DataSourceDomain.CMO,  DataSourceType.COHORT):          "cohort_csv",
-    (DataSourceDomain.COO,  DataSourceType.SLA):             "sla_csv",
-    (DataSourceDomain.COO,  DataSourceType.PROCESS):         "process_csv",
-    (DataSourceDomain.COO,  DataSourceType.RESOURCE):        "resource_csv",
-    (DataSourceDomain.RISK, DataSourceType.RISK_REGISTER):   "register_csv",
-    (DataSourceDomain.RISK, DataSourceType.LOSS_EVENTS):     "loss_csv",
-    (DataSourceDomain.RISK, DataSourceType.KRI):             "kri_csv",
-    (DataSourceDomain.AUDIT, DataSourceType.FINDINGS):       "findings_csv",
-    (DataSourceDomain.AUDIT, DataSourceType.CONTROLS):       "controls_csv",
-    (DataSourceDomain.AUDIT, DataSourceType.COVERAGE):       "coverage_csv",
-    (DataSourceDomain.COMPLIANCE, DataSourceType.POLICIES):    "policy_csv",
-    (DataSourceDomain.COMPLIANCE, DataSourceType.VIOLATIONS):  "violations_csv",
+    (DataSourceDomain.CTO, DataSourceType.CLOUD_BILLING): "cloud_billing_csv",
+    (DataSourceDomain.CTO, DataSourceType.GIT_LOG): "git_log_text",
+    (DataSourceDomain.CTO, DataSourceType.INCIDENT_LOG): "incident_csv",
+    (DataSourceDomain.CTO, DataSourceType.SPRINT_DATA): "sprint_csv",
+    (DataSourceDomain.CHRO, DataSourceType.HEADCOUNT): "headcount_csv",
+    (DataSourceDomain.CHRO, DataSourceType.ATTRITION): "attrition_csv",
+    (DataSourceDomain.CHRO, DataSourceType.COMPENSATION): "compensation_csv",
+    (DataSourceDomain.CMO, DataSourceType.CAMPAIGN): "campaign_csv",
+    (DataSourceDomain.CMO, DataSourceType.FUNNEL): "funnel_csv",
+    (DataSourceDomain.CMO, DataSourceType.COHORT): "cohort_csv",
+    (DataSourceDomain.COO, DataSourceType.SLA): "sla_csv",
+    (DataSourceDomain.COO, DataSourceType.PROCESS): "process_csv",
+    (DataSourceDomain.COO, DataSourceType.RESOURCE): "resource_csv",
+    (DataSourceDomain.RISK, DataSourceType.RISK_REGISTER): "register_csv",
+    (DataSourceDomain.RISK, DataSourceType.LOSS_EVENTS): "loss_csv",
+    (DataSourceDomain.RISK, DataSourceType.KRI): "kri_csv",
+    (DataSourceDomain.AUDIT, DataSourceType.FINDINGS): "findings_csv",
+    (DataSourceDomain.AUDIT, DataSourceType.CONTROLS): "controls_csv",
+    (DataSourceDomain.AUDIT, DataSourceType.COVERAGE): "coverage_csv",
+    (DataSourceDomain.COMPLIANCE, DataSourceType.POLICIES): "policy_csv",
+    (DataSourceDomain.COMPLIANCE, DataSourceType.VIOLATIONS): "violations_csv",
     (DataSourceDomain.COMPLIANCE, DataSourceType.REGULATIONS): "regulations_csv",
 }
 
 
 class DataSource(Base):
     """One uploaded file for one domain/type, tied to an AnalysisJob."""
+
     __tablename__ = "data_sources"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # The parent job this data source belongs to.
     # Intentionally no FK relationship object — we query by job_id directly

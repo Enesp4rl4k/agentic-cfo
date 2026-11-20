@@ -38,6 +38,7 @@ Usage:
     async def run_pnl(state, config):
         ...
 """
+
 from __future__ import annotations
 
 import functools
@@ -60,27 +61,45 @@ class JSONFormatter(logging.Formatter):
     {"ts":"2024-03-15T10:23:45.123Z","level":"INFO","logger":"app.agents.pnl","msg":"P&L computed","job_id":"abc123","duration_ms":142}
     """
 
-    RESERVED_ATTRS = frozenset({
-        "args", "created", "exc_info", "exc_text", "filename",
-        "funcName", "levelname", "levelno", "lineno", "message",
-        "module", "msecs", "msg", "name", "pathname", "process",
-        "processName", "relativeCreated", "stack_info", "thread",
-        "threadName",
-    })
+    RESERVED_ATTRS = frozenset(
+        {
+            "args",
+            "created",
+            "exc_info",
+            "exc_text",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "message",
+            "module",
+            "msecs",
+            "msg",
+            "name",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "stack_info",
+            "thread",
+            "threadName",
+        }
+    )
 
     def format(self, record: logging.LogRecord) -> str:
         log: dict[str, Any] = {
-            "ts":     self.formatTime(record, "%Y-%m-%dT%H:%M:%S") + f".{record.msecs:03.0f}Z",
-            "level":  record.levelname,
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S") + f".{record.msecs:03.0f}Z",
+            "level": record.levelname,
             "logger": record.name,
-            "msg":    record.getMessage(),
+            "msg": record.getMessage(),
         }
 
         # Add extra fields (job_id, agent, duration_ms, etc.)
         for key, value in record.__dict__.items():
             if key not in self.RESERVED_ATTRS and not key.startswith("_"):
                 try:
-                    json.dumps(value)   # Only include JSON-serializable values
+                    json.dumps(value)  # Only include JSON-serializable values
                     log[key] = value
                 except (TypeError, ValueError):
                     log[key] = str(value)
@@ -127,11 +146,13 @@ def _setup_otel() -> None:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
-        resource = Resource(attributes={
-            SERVICE_NAME: "aicfo-backend",
-            "service.version": "0.1.0",
-            "deployment.environment": os.getenv("APP_ENV", "development"),
-        })
+        resource = Resource(
+            attributes={
+                SERVICE_NAME: "aicfo-backend",
+                "service.version": "0.1.0",
+                "deployment.environment": os.getenv("APP_ENV", "development"),
+            }
+        )
 
         provider = TracerProvider(resource=resource)
 
@@ -142,6 +163,7 @@ def _setup_otel() -> None:
         elif exporter_type == "otlp":
             try:
                 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
                 endpoint = os.getenv("OTEL_ENDPOINT", "http://localhost:4317")
                 exporter = OTLPSpanExporter(endpoint=endpoint)
                 provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -153,6 +175,7 @@ def _setup_otel() -> None:
         elif exporter_type == "jaeger":
             try:
                 from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+
                 exporter = JaegerExporter(
                     agent_host_name=os.getenv("JAEGER_HOST", "localhost"),
                     agent_port=int(os.getenv("JAEGER_PORT", "6831")),
@@ -166,7 +189,9 @@ def _setup_otel() -> None:
         trace.set_tracer_provider(provider)
         _tracer = trace.get_tracer("aicfo")
         _otel_available = True
-        logging.getLogger(__name__).info("OpenTelemetry tracing enabled", extra={"exporter": exporter_type})
+        logging.getLogger(__name__).info(
+            "OpenTelemetry tracing enabled", extra={"exporter": exporter_type}
+        )
 
     except ImportError:
         logging.getLogger(__name__).info(
@@ -177,16 +202,29 @@ def _setup_otel() -> None:
 
 class _NoOpSpan:
     """No-op span context manager — used when tracing is disabled."""
-    def __enter__(self): return self
-    def __exit__(self, *_): pass
-    def set_attribute(self, *_): pass
-    def set_status(self, *_): pass
-    def record_exception(self, *_): pass
-    def add_event(self, *_, **__): pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def set_attribute(self, *_):
+        pass
+
+    def set_status(self, *_):
+        pass
+
+    def record_exception(self, *_):
+        pass
+
+    def add_event(self, *_, **__):
+        pass
 
 
 class _NoOpTracer:
     """No-op tracer — used when OpenTelemetry is not available."""
+
     def start_as_current_span(self, name: str, **kwargs):
         return _NoOpSpan()
 
@@ -207,6 +245,7 @@ tracer = _get_tracer()
 
 # ── Agent Trace Decorator ─────────────────────────────────────────────────────
 
+
 def trace_agent(agent_name: str) -> Callable:
     """
     Decorator that wraps an agent run function with OpenTelemetry spans + structured logging.
@@ -223,6 +262,7 @@ def trace_agent(agent_name: str) -> Callable:
         async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -241,7 +281,7 @@ def trace_agent(agent_name: str) -> Callable:
 
                 logger.info(
                     f"Agent started: {agent_name}",
-                    extra={"agent": agent_name, "job_id": job_id, "event": "agent.start"}
+                    extra={"agent": agent_name, "job_id": job_id, "event": "agent.start"},
                 )
 
                 try:
@@ -268,7 +308,7 @@ def trace_agent(agent_name: str) -> Callable:
                             "confidence": confidence,
                             "detail": detail,
                             "event": "agent.complete",
-                        }
+                        },
                     )
                     return result
 
@@ -278,6 +318,7 @@ def trace_agent(agent_name: str) -> Callable:
 
                     try:
                         from opentelemetry.trace import Status, StatusCode
+
                         span.set_status(Status(StatusCode.ERROR, str(exc)))
                     except ImportError:
                         pass
@@ -296,10 +337,12 @@ def trace_agent(agent_name: str) -> Callable:
                     raise
 
         return async_wrapper
+
     return decorator
 
 
 # ── LangSmith Integration ─────────────────────────────────────────────────────
+
 
 def setup_langsmith() -> bool:
     """
@@ -319,9 +362,7 @@ def setup_langsmith() -> bool:
     project = os.getenv("LANGSMITH_PROJECT", "aicfo")
 
     if not api_key:
-        logging.getLogger(__name__).warning(
-            "LANGSMITH_ENABLED=true but LANGSMITH_API_KEY not set"
-        )
+        logging.getLogger(__name__).warning("LANGSMITH_ENABLED=true but LANGSMITH_API_KEY not set")
         return False
 
     try:
@@ -333,20 +374,19 @@ def setup_langsmith() -> bool:
         )
 
         logging.getLogger(__name__).info(
-            "LangSmith tracing enabled",
-            extra={"project": project, "event": "langsmith.configured"}
+            "LangSmith tracing enabled", extra={"project": project, "event": "langsmith.configured"}
         )
         return True
 
     except Exception as exc:
         logging.getLogger(__name__).warning(
-            f"LangSmith setup failed: {exc}",
-            extra={"event": "langsmith.error"}
+            f"LangSmith setup failed: {exc}", extra={"event": "langsmith.error"}
         )
         return False
 
 
 # ── Metrics helpers ───────────────────────────────────────────────────────────
+
 
 class AgentMetrics:
     """
@@ -369,13 +409,15 @@ class AgentMetrics:
     ) -> None:
         if agent_name not in cls._runs:
             cls._runs[agent_name] = []
-        cls._runs[agent_name].append({
-            "job_id": job_id,
-            "duration_ms": duration_ms,
-            "ok": ok,
-            "confidence": confidence,
-            "ts": time.time(),
-        })
+        cls._runs[agent_name].append(
+            {
+                "job_id": job_id,
+                "duration_ms": duration_ms,
+                "ok": ok,
+                "confidence": confidence,
+                "ts": time.time(),
+            }
+        )
         # Keep last 1000 runs per agent
         if len(cls._runs[agent_name]) > 1000:
             cls._runs[agent_name] = cls._runs[agent_name][-1000:]
@@ -397,12 +439,15 @@ class AgentMetrics:
                 "success_rate": round(success_rate, 3),
                 "avg_duration_ms": round(sum(durations) / len(durations), 1),
                 "p95_duration_ms": round(sorted(durations)[int(len(durations) * 0.95)], 1),
-                "avg_confidence": round(sum(confidences) / len(confidences), 3) if confidences else None,
+                "avg_confidence": round(sum(confidences) / len(confidences), 3)
+                if confidences
+                else None,
             }
         return result
 
 
 # ── Initialization ────────────────────────────────────────────────────────────
+
 
 def initialize_telemetry(log_level: str = "INFO", json_logs: bool = True) -> None:
     """
@@ -429,5 +474,5 @@ def initialize_telemetry(log_level: str = "INFO", json_logs: bool = True) -> Non
             "langsmith_enabled": os.getenv("LANGSMITH_ENABLED", "false").lower() == "true",
             "log_format": "json" if json_logs else "text",
             "event": "telemetry.init",
-        }
+        },
     )

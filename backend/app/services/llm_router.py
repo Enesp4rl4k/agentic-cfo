@@ -32,6 +32,7 @@ Kullanim:
         model_override="gpt-4o",
     )
 """
+
 from __future__ import annotations
 
 import logging
@@ -65,19 +66,21 @@ __all__ = [
 
 # ── LLM çağrı sonucu ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class LLMResponse:
-    content:      str
-    model_used:   str
-    task_type:    str
+    content: str
+    model_used: str
+    task_type: str
     input_tokens: int = 0
     output_tokens: int = 0
-    latency_ms:   float = 0.0
-    cost_usd:     float = 0.0
-    from_cache:   bool = False
+    latency_ms: float = 0.0
+    cost_usd: float = 0.0
+    from_cache: bool = False
 
 
 # ── LLM Task Router ──────────────────────────────────────────────────────────
+
 
 class LLMTaskRouter:
     """
@@ -91,11 +94,9 @@ class LLMTaskRouter:
     """
 
     def __init__(self, settings: Any = None) -> None:
-        self._settings  = settings
-        self._cache:    dict[str, str] = {}  # basit in-memory cache
-        self._stats:    dict[str, Any] = {
-            "calls": 0, "total_cost_usd": 0.0, "saved_usd": 0.0
-        }
+        self._settings = settings
+        self._cache: dict[str, str] = {}  # basit in-memory cache
+        self._stats: dict[str, Any] = {"calls": 0, "total_cost_usd": 0.0, "saved_usd": 0.0}
 
     def select_model(self, task: str, prompt_length: int = 0) -> ModelConfig:
         """Görev tipine göre model seç — kural app.platform.model_catalog'da."""
@@ -103,12 +104,12 @@ class LLMTaskRouter:
 
     async def complete(
         self,
-        task:           str,
-        prompt:         str,
-        system_prompt:  str | None = None,
+        task: str,
+        prompt: str,
+        system_prompt: str | None = None,
         model_override: str | None = None,
-        use_cache:      bool = False,
-        org_id:         str | None = None,
+        use_cache: bool = False,
+        org_id: str | None = None,
     ) -> LLMResponse:
         """
         Göreve uygun modelle LLM tamamlama yap.
@@ -128,10 +129,10 @@ class LLMTaskRouter:
             cache_key = f"{task}:{hash(prompt)}"
             if cache_key in self._cache:
                 return LLMResponse(
-                    content     = self._cache[cache_key],
-                    model_used  = "cache",
-                    task_type   = task,
-                    from_cache  = True,
+                    content=self._cache[cache_key],
+                    model_used="cache",
+                    task_type=task,
+                    from_cache=True,
                 )
 
         # Model seç
@@ -151,23 +152,23 @@ class LLMTaskRouter:
         # LLM çağrısı
         try:
             response_text, in_tok, out_tok = await self._call_llm(
-                config        = config,
-                prompt        = prompt,
-                system_prompt = system_prompt,
+                config=config,
+                prompt=prompt,
+                system_prompt=system_prompt,
             )
 
             latency = (time.time() - start) * 1000
-            cost    = (in_tok * config.cost_per_1k_in + out_tok * config.cost_per_1k_out) / 1000
+            cost = (in_tok * config.cost_per_1k_in + out_tok * config.cost_per_1k_out) / 1000
 
             # İstatistik güncelle
             self._stats["calls"] += 1
-            self._stats["total_cost_usd"] = round(
-                self._stats["total_cost_usd"] + cost, 6
-            )
+            self._stats["total_cost_usd"] = round(self._stats["total_cost_usd"] + cost, 6)
 
             # Ucuz model kullandıysak tasarrufu hesapla
-            expensive_cost = (in_tok * MODELS["gpt-4o"].cost_per_1k_in +
-                              out_tok * MODELS["gpt-4o"].cost_per_1k_out) / 1000
+            expensive_cost = (
+                in_tok * MODELS["gpt-4o"].cost_per_1k_in
+                + out_tok * MODELS["gpt-4o"].cost_per_1k_out
+            ) / 1000
             saved = max(0, expensive_cost - cost)
             self._stats["saved_usd"] = round(self._stats["saved_usd"] + saved, 6)
 
@@ -177,32 +178,39 @@ class LLMTaskRouter:
 
             logger.debug(
                 "LLM task=%s model=%s tokens=%d/%d cost=$%.4f latency=%.0fms",
-                task, config.model_id, in_tok, out_tok, cost, latency,
+                task,
+                config.model_id,
+                in_tok,
+                out_tok,
+                cost,
+                latency,
             )
 
             return LLMResponse(
-                content       = response_text,
-                model_used    = config.model_id,
-                task_type     = task,
-                input_tokens  = in_tok,
-                output_tokens = out_tok,
-                latency_ms    = round(latency, 1),
-                cost_usd      = round(cost, 6),
+                content=response_text,
+                model_used=config.model_id,
+                task_type=task,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                latency_ms=round(latency, 1),
+                cost_usd=round(cost, 6),
             )
 
         except Exception as exc:
-            logger.error("LLM task router hatasi: task=%s model=%s err=%s", task, config.model_id, exc)
+            logger.error(
+                "LLM task router hatasi: task=%s model=%s err=%s", task, config.model_id, exc
+            )
             # Graceful degradation: basit fallback
             return LLMResponse(
-                content    = f"[LLM hatası: {exc}]",
-                model_used = config.model_id,
-                task_type  = task,
+                content=f"[LLM hatası: {exc}]",
+                model_used=config.model_id,
+                task_type=task,
             )
 
     async def _call_llm(
         self,
-        config:        ModelConfig,
-        prompt:        str,
+        config: ModelConfig,
+        prompt: str,
         system_prompt: str,
     ) -> tuple[str, int, int]:
         """
@@ -232,10 +240,8 @@ class LLMTaskRouter:
         """Router istatistiklerini dön."""
         return {
             **self._stats,
-            "cache_size":   len(self._cache),
-            "avg_cost_usd": round(
-                self._stats["total_cost_usd"] / max(1, self._stats["calls"]), 6
-            ),
+            "cache_size": len(self._cache),
+            "avg_cost_usd": round(self._stats["total_cost_usd"] / max(1, self._stats["calls"]), 6),
         }
 
     def cost_estimate(self, task: str, estimated_tokens: int = 500) -> float:
@@ -243,8 +249,11 @@ class LLMTaskRouter:
         try:
             config = self.select_model(task)
             return round(
-                (estimated_tokens * config.cost_per_1k_in +
-                 estimated_tokens * 0.5 * config.cost_per_1k_out) / 1000,
+                (
+                    estimated_tokens * config.cost_per_1k_in
+                    + estimated_tokens * 0.5 * config.cost_per_1k_out
+                )
+                / 1000,
                 6,
             )
         except ValueError:

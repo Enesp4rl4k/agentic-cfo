@@ -7,6 +7,7 @@ Also asks GPT-4o for a CFO-level narrative summary.
 
 done_when: state['pnl'] contains revenue, gross_profit, net_income (all integers in cents).
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +31,7 @@ def _monthly_buckets(transactions: list[dict[str, Any]], tx_type: str) -> dict[s
     Returns {month_str: total_cents}.
     """
     from collections import defaultdict
+
     buckets: dict[str, int] = defaultdict(int)
     for t in transactions:
         if t.get("type") != tx_type:
@@ -81,9 +83,7 @@ def _compute_trend(monthly: dict[str, int]) -> dict[str, Any]:
         "yoy_change_pct": yoy_pct,
         "avg_last_3m": avg_3m,
         "trend_direction": (
-            "up" if mom_pct and mom_pct > 2 else
-            "down" if mom_pct and mom_pct < -2 else
-            "stable"
+            "up" if mom_pct and mom_pct > 2 else "down" if mom_pct and mom_pct < -2 else "stable"
         ),
     }
 
@@ -115,7 +115,9 @@ def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     ebitda_margin = round(ebitda / revenue, 4) if revenue else 0.0
 
     tax = sum(t.get("amount_cents", 0) for t in expense_txs if t.get("category") == "tax")
-    loan_payments = sum(t.get("amount_cents", 0) for t in expense_txs if t.get("category") == "loan")
+    loan_payments = sum(
+        t.get("amount_cents", 0) for t in expense_txs if t.get("category") == "loan"
+    )
     net_income = ebitda - tax - loan_payments
     net_margin = round(net_income / revenue, 4) if revenue else 0.0
 
@@ -166,6 +168,7 @@ async def _generate_cfo_narrative(
     pnl_with_benchmark = dict(pnl)
     try:
         from app.services.benchmark import get_benchmark_engine
+
         engine = get_benchmark_engine()
         bm = engine.build_full_comparison(pnl, sector=sector)
         # An unverified table never reaches the model: it would write "below the sector
@@ -175,8 +178,8 @@ async def _generate_cfo_narrative(
         for metric, data in metrics.items():
             if "company_value" in data and "benchmark" in data:
                 bm_parts.append(
-                    f"{metric}: şirket %{data['company_value']*100:.1f} "
-                    f"vs medyan %{data['benchmark']['median']*100:.1f} "
+                    f"{metric}: şirket %{data['company_value'] * 100:.1f} "
+                    f"vs medyan %{data['benchmark']['median'] * 100:.1f} "
                     f"({data.get('percentile_position', '')})"
                 )
         if bm_parts:
@@ -206,7 +209,9 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """P&L Skill. done_when: state['pnl']['net_income'] is an integer."""
     transactions = state.get("transactions", [])
     if not transactions:
-        return SkillResult(ok=False, detail="No transactions available for P&L calculation.", halt=True)
+        return SkillResult(
+            ok=False, detail="No transactions available for P&L calculation.", halt=True
+        )
 
     try:
         settings = get_settings()
@@ -220,6 +225,7 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
         # S3-2: Attach evidence chain (transaction IDs + formula + audit trail)
         try:
             from app.services.evidence_builder import get_evidence_builder
+
             pnl = get_evidence_builder().attach_pnl_evidence(pnl, transactions)
         except Exception as ev_exc:
             logger.debug("Evidence builder (non-fatal): %s", ev_exc)
@@ -231,7 +237,7 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
             detail=(
                 f"P&L computed: revenue={_fmt(pnl['revenue'])}, "
                 f"net_income={_fmt(pnl['net_income'])}, "
-                f"net_margin={pnl['net_margin']*100:.1f}%"
+                f"net_margin={pnl['net_margin'] * 100:.1f}%"
             ),
         )
     except Exception as exc:

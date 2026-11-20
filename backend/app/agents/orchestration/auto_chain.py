@@ -14,6 +14,7 @@ Chain map:
 The chain is non-blocking: failures are logged, never raised.
 CEO synthesis only runs if it hasn't already run in the current context.
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,7 +40,7 @@ def _conductor_allows(role: str, runnable_roles: set[str], *, has_plan: bool) ->
 
 # Maps "agent_complete" → list of agents to enqueue next
 AGENT_CHAIN: dict[str, list[str]] = {
-    "cfo":  ["risk", "audit"],
+    "cfo": ["risk", "audit"],
     "risk": ["compliance"],
 }
 
@@ -50,6 +51,7 @@ CEO_TRIGGER_AGENTS = {"cfo", "cto", "cmo", "coo", "chro"}
 # ── Cross-agent feedback signal rules ─────────────────────────────────────────
 # When agent A completes with a specific signal, it triggers inquiry in agent B.
 # Format: agent → list of (signal_check_fn, target_agent, signal_label)
+
 
 def _cfo_has_critical_anomalies(ctx: Any) -> bool:
     """CFO found critical financial anomalies — ask CTO if infra is the cause."""
@@ -87,8 +89,8 @@ def _cmo_has_high_cac(ctx: Any) -> bool:
 # (signal_fn, target_agent, human_readable_label)
 FEEDBACK_RULES: dict[str, list[tuple]] = {
     "cfo": [
-        (_cfo_has_critical_anomalies, "cto",  "CFO kritik anomali → CTO altyapı kontrolü"),
-        (_cfo_has_cash_crisis,        "chro", "CFO düşük runway → CHRO işe alım/attrition riski"),
+        (_cfo_has_critical_anomalies, "cto", "CFO kritik anomali → CTO altyapı kontrolü"),
+        (_cfo_has_cash_crisis, "chro", "CFO düşük runway → CHRO işe alım/attrition riski"),
     ],
     "cto": [
         (_cto_has_low_velocity, "chro", "CTO düşük velocity → CHRO mühendis kadrosu kontrolü"),
@@ -100,6 +102,7 @@ FEEDBACK_RULES: dict[str, list[tuple]] = {
 
 
 # ── Main hook ─────────────────────────────────────────────────────────────────
+
 
 async def build_conductor_plan_dict(
     *,
@@ -255,24 +258,27 @@ async def on_agent_complete(
             if ctx.has_required_data(next_agent):
                 logger.info(
                     "Auto-chain: %s completed → enqueueing %s for org=%s",
-                    agent, next_agent, org_id,
+                    agent,
+                    next_agent,
+                    org_id,
                 )
                 await _run_chained_agent(next_agent, org_id, db)
             else:
                 logger.info(
                     "Auto-chain: %s skipped — missing required data for org=%s",
-                    next_agent, org_id,
+                    next_agent,
+                    org_id,
                 )
 
         # ── Step 2: Trigger CEO synthesis if warranted ────────────────────────
         if agent_lower in CEO_TRIGGER_AGENTS and not upstream_synthetic:
-            if (
-                ctx.last_cfo_result is not None
-                and _conductor_allows("ceo", runnable_roles, has_plan=has_conductor_plan)
+            if ctx.last_cfo_result is not None and _conductor_allows(
+                "ceo", runnable_roles, has_plan=has_conductor_plan
             ):
                 logger.info(
                     "Auto-chain: %s completed → triggering CEO synthesis for org=%s",
-                    agent, org_id,
+                    agent,
+                    org_id,
                 )
                 await _run_ceo_synthesis(org_id, ctx, db)
             elif ctx.last_cfo_result is not None and has_conductor_plan:
@@ -297,14 +303,20 @@ async def on_agent_complete(
                     if not has_recent_result:
                         logger.info(
                             "Feedback loop: %s signal → enqueueing %s for org=%s (%s)",
-                            agent, target_agent, org_id, label,
+                            agent,
+                            target_agent,
+                            org_id,
+                            label,
                         )
                         await _run_chained_agent(target_agent, org_id, db)
                     else:
                         # Target already has data — send a cross-agent notification instead
                         logger.info(
                             "Feedback loop: %s signal → %s already has data, sending insight for org=%s (%s)",
-                            agent, target_agent, org_id, label,
+                            agent,
+                            target_agent,
+                            org_id,
+                            label,
                         )
                         await _send_feedback_notification(
                             org_id=org_id,
@@ -329,7 +341,9 @@ async def on_agent_complete(
     except Exception as exc:
         logger.warning(
             "Auto-chain on_agent_complete failed (non-fatal): agent=%s org=%s error=%s",
-            agent, org_id, exc,
+            agent,
+            org_id,
+            exc,
         )
         return conductor_plan_dict
 
@@ -337,6 +351,7 @@ async def on_agent_complete(
 
 
 # ── Internal runners ──────────────────────────────────────────────────────────
+
 
 async def _run_chained_agent(
     agent: str,
@@ -370,9 +385,7 @@ async def _run_chained_agent(
         logger.warning("Auto-chain agent=%s failed: %s", agent, exc)
 
 
-async def _run_risk_from_context(
-    job_id: str, ctx: Any, org_id: str, db: Any
-) -> None:
+async def _run_risk_from_context(job_id: str, ctx: Any, org_id: str, db: Any) -> None:
     """Extract risk-relevant data from CFO result and run risk pipeline."""
     try:
         from app.agents.risk.orchestrator import run_risk_pipeline
@@ -398,13 +411,18 @@ async def _run_risk_from_context(
 
         # Through the same gate as a risk run by hand (plan v10 G1).
         await write_derived_result(
-            db, org_id, "risk",
+            db,
+            org_id,
+            "risk",
             {
-                "risk_summary": getattr(result.get("risk_summary"), "__dict__", result.get("risk_summary")),
+                "risk_summary": getattr(
+                    result.get("risk_summary"), "__dict__", result.get("risk_summary")
+                ),
                 "auto_generated": True,
                 "source_job": job_id,
             },
-            parent_agent="cfo", job_id=job_id,
+            parent_agent="cfo",
+            job_id=job_id,
         )
         ctx_fresh = await get_company_context(org_id, db)
         logger.info("Auto-chain risk pipeline completed for org=%s", org_id)
@@ -448,9 +466,7 @@ async def _run_auto_consensus(*, org_id: str, ctx: Any, db: Any) -> None:
         logger.debug("Auto-consensus skipped (non-fatal): %s", exc)
 
 
-async def _run_audit_from_context(
-    job_id: str, ctx: Any, org_id: str, db: Any
-) -> None:
+async def _run_audit_from_context(job_id: str, ctx: Any, org_id: str, db: Any) -> None:
     """Extract audit-relevant data from CFO result and run audit pipeline."""
     try:
         from app.agents.audit.orchestrator import run_audit_pipeline
@@ -473,13 +489,18 @@ async def _run_audit_from_context(
         )
 
         await write_derived_result(
-            db, org_id, "audit",
+            db,
+            org_id,
+            "audit",
             {
-                "audit_summary": getattr(result.get("audit_summary"), "__dict__", result.get("audit_summary")),
+                "audit_summary": getattr(
+                    result.get("audit_summary"), "__dict__", result.get("audit_summary")
+                ),
                 "auto_generated": True,
                 "source_job": job_id,
             },
-            parent_agent="cfo", job_id=job_id,
+            parent_agent="cfo",
+            job_id=job_id,
         )
         logger.info("Auto-chain audit pipeline completed for org=%s", org_id)
 
@@ -487,9 +508,7 @@ async def _run_audit_from_context(
         logger.warning("Auto-chain audit pipeline error: %s", exc)
 
 
-async def _run_compliance_from_context(
-    job_id: str, ctx: Any, org_id: str, db: Any
-) -> None:
+async def _run_compliance_from_context(job_id: str, ctx: Any, org_id: str, db: Any) -> None:
     """Run compliance check using risk context."""
     try:
         from app.agents.compliance.orchestrator import run_compliance_pipeline
@@ -500,16 +519,18 @@ async def _run_compliance_from_context(
         )
 
         await write_derived_result(
-            db, org_id, "compliance",
+            db,
+            org_id,
+            "compliance",
             {
                 "compliance_summary": getattr(
-                    result.get("compliance_summary"), "__dict__",
-                    result.get("compliance_summary")
+                    result.get("compliance_summary"), "__dict__", result.get("compliance_summary")
                 ),
                 "auto_generated": True,
                 "source_job": job_id,
             },
-            parent_agent="cfo", job_id=job_id,
+            parent_agent="cfo",
+            job_id=job_id,
         )
         logger.info("Auto-chain compliance pipeline completed for org=%s", org_id)
 
@@ -529,6 +550,7 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
         # Skip if CEO synthesis already ran recently (within last hour)
         if ctx.last_ceo_result:
             from datetime import datetime
+
             updated = datetime.fromisoformat(ctx.updated_at.replace("Z", "+00:00"))
             age = datetime.now(UTC) - updated
             if age.total_seconds() < 3600:
@@ -553,18 +575,25 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
             "company_name": ctx.company_name,
             "logs": [],
             # A synthesis is no surer than what it read (plan v9 §K0).
-            "min_confidence": inherited_confidence([
-                ctx.last_cfo_result, ctx.last_cto_result, ctx.last_cmo_result, ctx.last_coo_result,
-                ctx.last_chro_result, ctx.last_risk_result, ctx.last_audit_result,
-            ]),
+            "min_confidence": inherited_confidence(
+                [
+                    ctx.last_cfo_result,
+                    ctx.last_cto_result,
+                    ctx.last_cmo_result,
+                    ctx.last_coo_result,
+                    ctx.last_chro_result,
+                    ctx.last_risk_result,
+                    ctx.last_audit_result,
+                ]
+            ),
             "awaiting_review": False,
-            "_cfo_result":        ctx.last_cfo_result        or {},
-            "_cto_result":        ctx.last_cto_result        or {},
-            "_cmo_result":        ctx.last_cmo_result        or {},
-            "_coo_result":        ctx.last_coo_result        or {},
-            "_chro_result":       ctx.last_chro_result       or {},
-            "_risk_result":       ctx.last_risk_result       or {},
-            "_audit_result":      ctx.last_audit_result      or {},
+            "_cfo_result": ctx.last_cfo_result or {},
+            "_cto_result": ctx.last_cto_result or {},
+            "_cmo_result": ctx.last_cmo_result or {},
+            "_coo_result": ctx.last_coo_result or {},
+            "_chro_result": ctx.last_chro_result or {},
+            "_risk_result": ctx.last_risk_result or {},
+            "_audit_result": ctx.last_audit_result or {},
             "_compliance_result": ctx.last_compliance_result or {},
         }
 
@@ -572,35 +601,41 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
 
         # Run synthesis chain (skip pipeline fan-out — use cached results)
         state = await node_condense_summaries(initial_state, config)  # type: ignore[arg-type]
-        state = await node_synthesis(state, config)                    # type: ignore[arg-type]
-        state = await node_strategic_priorities(state, config)         # type: ignore[arg-type]
-        state = await node_board_deck(state, config)                   # type: ignore[arg-type]
+        state = await node_synthesis(state, config)  # type: ignore[arg-type]
+        state = await node_strategic_priorities(state, config)  # type: ignore[arg-type]
+        state = await node_board_deck(state, config)  # type: ignore[arg-type]
 
         # Save enriched CEO result to CompanyContext
         agents_used = [
-            a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
+            a
+            for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
             if getattr(ctx, f"last_{a}_result", None) is not None
         ]
         await write_derived_result(
-            db, org_id, "ceo",
+            db,
+            org_id,
+            "ceo",
             {
-                "financial_summary":    state.get("financial_summary"),
-                "tech_summary":         state.get("tech_summary"),
-                "marketing_summary":    state.get("marketing_summary"),
-                "ops_summary":          state.get("ops_summary"),
-                "hr_summary":           state.get("hr_summary"),
-                "cross_risks":          state.get("cross_risks") or [],
+                "financial_summary": state.get("financial_summary"),
+                "tech_summary": state.get("tech_summary"),
+                "marketing_summary": state.get("marketing_summary"),
+                "ops_summary": state.get("ops_summary"),
+                "hr_summary": state.get("hr_summary"),
+                "cross_risks": state.get("cross_risks") or [],
                 "strategic_priorities": state.get("strategic_priorities") or [],
-                "board_deck":           state.get("board_deck"),
-                "agents_used":          agents_used,
-                "auto_generated":       True,
-                "source_job":           job_id,
+                "board_deck": state.get("board_deck"),
+                "agents_used": agents_used,
+                "auto_generated": True,
+                "source_job": job_id,
             },
-            parent_agent="cfo", job_id=job_id, own_confidence=state.get("min_confidence"),
+            parent_agent="cfo",
+            job_id=job_id,
+            own_confidence=state.get("min_confidence"),
         )
         logger.info(
             "Auto-chain CEO synthesis completed for org=%s using agents=%s",
-            org_id, agents_used,
+            org_id,
+            agents_used,
         )
 
     except Exception as exc:
@@ -608,6 +643,7 @@ async def _run_ceo_synthesis(org_id: str, ctx: Any, db: Any) -> None:
 
 
 # ── CSV builders ──────────────────────────────────────────────────────────────
+
 
 def _build_kri_csv_from_cfo(cfo: dict[str, Any]) -> str:
     """Build minimal KRI CSV from CFO financial metrics."""
@@ -654,6 +690,7 @@ def _build_audit_findings_from_cfo(cfo: dict[str, Any]) -> str:
 
 # ── Feedback notification helper ──────────────────────────────────────────────
 
+
 async def _send_feedback_notification(
     org_id: str,
     from_agent: str,
@@ -672,18 +709,18 @@ async def _send_feedback_notification(
         from app.services.notification_service import NotificationService
 
         agent_labels = {
-            "cfo":        "CFO",
-            "cto":        "CTO",
-            "cmo":        "CMO",
-            "coo":        "COO",
-            "chro":       "CHRO",
-            "risk":       "Risk",
-            "audit":      "İç Denetim",
+            "cfo": "CFO",
+            "cto": "CTO",
+            "cmo": "CMO",
+            "coo": "COO",
+            "chro": "CHRO",
+            "risk": "Risk",
+            "audit": "İç Denetim",
             "compliance": "Uyumluluk",
         }
 
         from_label = agent_labels.get(from_agent.lower(), from_agent.upper())
-        to_label   = agent_labels.get(to_agent.lower(), to_agent.upper())
+        to_label = agent_labels.get(to_agent.lower(), to_agent.upper())
 
         message = (
             f"{from_label} analizi, {to_label} alanında yeni bir sinyal tespit etti: "
@@ -692,6 +729,7 @@ async def _send_feedback_notification(
 
         svc = NotificationService()
         from app.services.alert_router import AlertAction, AlertDecision, RawAlert
+
         _alert = RawAlert(
             level="warning",
             domain=from_agent,
@@ -703,7 +741,9 @@ async def _send_feedback_notification(
         await svc.deliver([_decision], org_id=org_id, db=db)
         logger.info(
             "Feedback notification sent: %s → %s for org=%s",
-            from_agent, to_agent, org_id,
+            from_agent,
+            to_agent,
+            org_id,
         )
     except Exception as exc:
         logger.debug("Feedback notification failed (non-fatal): %s", exc)

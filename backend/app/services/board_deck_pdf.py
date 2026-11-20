@@ -4,6 +4,7 @@ Executive Board Deck PDF Exporter (IReportExporter).
 Generates a multi-page, branded C-Suite financial evaluation report
 for Board of Directors, Investors, and Banks.
 """
+
 from __future__ import annotations
 
 import io
@@ -144,9 +145,16 @@ class BoardDeckPDFExporter(IReportExporter):
 
         # ── Header ────────────────────────────────────────────────────────────
         story.append(Paragraph(f"<b>{company_name}</b>", title_style))
-        story.append(Paragraph(f"Yönetim Kurulu Finansal Değerlendirme Raporu · Dönem: {period} · Oluşturulma: {datetime.now().strftime('%d.%m.%Y')}", subtitle_style))
+        story.append(
+            Paragraph(
+                f"Yönetim Kurulu Finansal Değerlendirme Raporu · Dönem: {period} · Oluşturulma: {datetime.now().strftime('%d.%m.%Y')}",
+                subtitle_style,
+            )
+        )
         story.append(Spacer(1, 10))
-        story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#2563EB"), spaceAfter=14))
+        story.append(
+            HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#2563EB"), spaceAfter=14)
+        )
 
         # ── KPI Summary Cards Table ───────────────────────────────────────────
         rev_cents = pnl.get("revenue", 0)
@@ -159,20 +167,24 @@ class BoardDeckPDFExporter(IReportExporter):
             [_fmt(rev_cents), _fmt(net_cents), _fmt(ebitda_cents), f"%{gross_margin:.1f}"],
         ]
         kpi_table = Table(kpi_data, colWidths=[130, 130, 130, 130])
-        kpi_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8FAFC")),
-            ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#FFFFFF")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#64748B")),
-            ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#0F172A")),
-            ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 8.5),
-            ("FONTSIZE", (0, 1), (-1, 1), 12),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E1")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
+        kpi_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8FAFC")),
+                    ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#FFFFFF")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#64748B")),
+                    ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#0F172A")),
+                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 8.5),
+                    ("FONTSIZE", (0, 1), (-1, 1), 12),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E1")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
         story.append(kpi_table)
         story.append(Spacer(1, 14))
 
@@ -192,23 +204,44 @@ class BoardDeckPDFExporter(IReportExporter):
         pnl_table_data = [
             ["Kalem", "Tutar (TL)", "Gelire Oran"],
             ["Brüt Satış Gelirleri", _fmt(rev_cents), "%100.0"],
-            ["Satışların Maliyeti (COGS)", _fmt(-pnl.get("cogs", 0)), f"%{(pnl.get('cogs', 0) / max(1, rev_cents) * 100):.1f}"],
+            [
+                "Satışların Maliyeti (COGS)",
+                _fmt(-pnl.get("cogs", 0)),
+                f"%{(pnl.get('cogs', 0) / max(1, rev_cents) * 100):.1f}",
+            ],
             ["Brüt Faaliyet Kârı", _fmt(pnl.get("gross_profit", 0)), f"%{gross_margin:.1f}"],
-            ["Faaliyet Giderleri (OpEx)", _fmt(-pnl.get("operating_expenses", 0) or -pnl.get("total_opex", 0)), "%—"],
-            ["Net Dönem Kârı / (Zararı)", _fmt(net_cents), f"%{(net_cents / max(1, rev_cents) * 100):.1f}"],
+            [
+                "Faaliyet Giderleri (OpEx)",
+                _fmt(-pnl.get("operating_expenses", 0) or -pnl.get("total_opex", 0)),
+                "%—",
+            ],
+            [
+                "Net Dönem Kârı / (Zararı)",
+                _fmt(net_cents),
+                f"%{(net_cents / max(1, rev_cents) * 100):.1f}",
+            ],
         ]
         pnl_tbl = Table(pnl_table_data, colWidths=[240, 160, 120])
-        pnl_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#FFFFFF"), colors.HexColor("#F8FAFC")]),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
+        pnl_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.HexColor("#FFFFFF"), colors.HexColor("#F8FAFC")],
+                    ),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
         story.append(pnl_tbl)
         story.append(Spacer(1, 14))
 
@@ -223,19 +256,28 @@ class BoardDeckPDFExporter(IReportExporter):
             ["Yatırım Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("investing", 0))],
             ["Finansman Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("financing", 0))],
             ["Net Nakit Değişimi", _fmt(cf_net)],
-            ["Tahmini Nakit Runway", f"{runway_months} Ay" if isinstance(runway_months, (int, float)) else str(runway_months)],
+            [
+                "Tahmini Nakit Runway",
+                f"{runway_months} Ay"
+                if isinstance(runway_months, (int, float))
+                else str(runway_months),
+            ],
         ]
         cf_tbl = Table(cf_data, colWidths=[320, 200])
-        cf_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
+        cf_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
         story.append(cf_tbl)
         story.append(Spacer(1, 14))
 
@@ -244,38 +286,57 @@ class BoardDeckPDFExporter(IReportExporter):
             story.append(Paragraph("Kritik Risk ve Anomali Sinyalleri", heading_style))
             risk_rows = [["Tür / Şiddet", "Açıklama", "Durum"]]
             for anom in (anomalies or [])[:3]:
-                risk_rows.append([
-                    anom.get("severity", "UYARI").upper(),
-                    anom.get("description") or anom.get("title", "Şüpheli işlem"),
-                    "İnceleniyor",
-                ])
+                risk_rows.append(
+                    [
+                        anom.get("severity", "UYARI").upper(),
+                        anom.get("description") or anom.get("title", "Şüpheli işlem"),
+                        "İnceleniyor",
+                    ]
+                )
             for al in (alerts or [])[:3]:
-                risk_rows.append([
-                    al.get("severity", "BİLGİ").upper(),
-                    al.get("message", "Otomasyon uyarısı"),
-                    "Aktif",
-                ])
+                risk_rows.append(
+                    [
+                        al.get("severity", "BİLGİ").upper(),
+                        al.get("message", "Otomasyon uyarısı"),
+                        "Aktif",
+                    ]
+                )
             risk_tbl = Table(risk_rows, colWidths=[100, 320, 100])
-            risk_tbl.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#B91C1C")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]))
+            risk_tbl.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#B91C1C")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]
+                )
+            )
             story.append(risk_tbl)
             story.append(Spacer(1, 14))
 
         # ── Footer note ───────────────────────────────────────────────────────
         story.append(Spacer(1, 10))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceAfter=8))
-        story.append(Paragraph(
-            "Bu rapor Agentic CFO Çoklu Ajan Zekası tarafından otomatik olarak sentezlenmiştir. "
-            "Kararların bağımsız mali müşavir ve yönetim kurulu onayıyla yürütülmesi tavsiye edilir.",
-            ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7.5, leading=10, textColor=colors.HexColor("#94A3B8"), alignment=1),
-        ))
+        story.append(
+            HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceAfter=8)
+        )
+        story.append(
+            Paragraph(
+                "Bu rapor Agentic CFO Çoklu Ajan Zekası tarafından otomatik olarak sentezlenmiştir. "
+                "Kararların bağımsız mali müşavir ve yönetim kurulu onayıyla yürütülmesi tavsiye edilir.",
+                ParagraphStyle(
+                    "Footer",
+                    parent=styles["Normal"],
+                    fontSize=7.5,
+                    leading=10,
+                    textColor=colors.HexColor("#94A3B8"),
+                    alignment=1,
+                ),
+            )
+        )
 
         doc.build(story)
         return buf.getvalue()
@@ -309,10 +370,7 @@ class BoardDeckPDFBuilder:
         lines: list[str] = []
         lines.append(f"{deck.get('company_name', 'Company')} — Board Deck")
         lines.append(f"Period: {deck.get('period', '-')}")
-        lines.append(
-            f"Health: {deck.get('health_score', '-')} "
-            f"({deck.get('health_label', 'n/a')})"
-        )
+        lines.append(f"Health: {deck.get('health_score', '-')} ({deck.get('health_label', 'n/a')})")
         lines.append("")
         lines.append("Executive Summary")
         lines.append(str(deck.get("executive_summary", "")).strip() or "(none)")
@@ -346,24 +404,43 @@ class BoardDeckPDFBuilder:
     def _build_reportlab_pdf(self, deck: dict[str, Any]) -> bytes:
         buf = io.BytesIO()
         doc = SimpleDocTemplate(
-            buf, pagesize=A4,
-            leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40,
+            buf,
+            pagesize=A4,
+            leftMargin=40,
+            rightMargin=40,
+            topMargin=40,
+            bottomMargin=40,
         )
         styles = getSampleStyleSheet()
         h1 = ParagraphStyle(
-            "BD_H1", parent=styles["Title"], fontSize=20, leading=24,
-            textColor=colors.HexColor("#0F172A"), alignment=0,
+            "BD_H1",
+            parent=styles["Title"],
+            fontSize=20,
+            leading=24,
+            textColor=colors.HexColor("#0F172A"),
+            alignment=0,
         )
         sub = ParagraphStyle(
-            "BD_Sub", parent=styles["Normal"], fontSize=10, leading=13,
+            "BD_Sub",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=13,
             textColor=colors.HexColor("#64748B"),
         )
         h2 = ParagraphStyle(
-            "BD_H2", parent=styles["Heading2"], fontSize=13, leading=17,
-            textColor=colors.HexColor("#1E3A8A"), spaceBefore=12, spaceAfter=5,
+            "BD_H2",
+            parent=styles["Heading2"],
+            fontSize=13,
+            leading=17,
+            textColor=colors.HexColor("#1E3A8A"),
+            spaceBefore=12,
+            spaceAfter=5,
         )
         body = ParagraphStyle(
-            "BD_Body", parent=styles["Normal"], fontSize=9.5, leading=13,
+            "BD_Body",
+            parent=styles["Normal"],
+            fontSize=9.5,
+            leading=13,
             textColor=colors.HexColor("#334155"),
         )
 
@@ -375,23 +452,24 @@ class BoardDeckPDFBuilder:
         story: list[Any] = [
             Paragraph(f"<b>{company}</b>", h1),
             Paragraph(
-                f"Board Deck · Period {period} · "
-                f"Generated {datetime.now().strftime('%d.%m.%Y')}",
+                f"Board Deck · Period {period} · Generated {datetime.now().strftime('%d.%m.%Y')}",
                 sub,
             ),
             Spacer(1, 8),
-            HRFlowable(width="100%", thickness=1.2,
-                       color=colors.HexColor("#2563EB"), spaceAfter=12),
+            HRFlowable(
+                width="100%", thickness=1.2, color=colors.HexColor("#2563EB"), spaceAfter=12
+            ),
             Paragraph(f"Company Health: <b>{score}</b> ({label})", body),
             Spacer(1, 10),
         ]
 
         story.append(Paragraph("Executive Summary", h2))
-        story.append(Paragraph(
-            str(deck.get("executive_summary", "")).strip()
-            or "No executive summary provided.",
-            body,
-        ))
+        story.append(
+            Paragraph(
+                str(deck.get("executive_summary", "")).strip() or "No executive summary provided.",
+                body,
+            )
+        )
 
         priorities = deck.get("top_priorities", []) or []
         if priorities:
@@ -404,22 +482,28 @@ class BoardDeckPDFBuilder:
             story.append(Paragraph("Key Insights", h2))
             rows = [["Severity", "Title", "Detail"]]
             for ins in insights[:12]:
-                rows.append([
-                    str(ins.get("severity", "info")).upper(),
-                    str(ins.get("title", "Insight")),
-                    str(ins.get("description", "")),
-                ])
+                rows.append(
+                    [
+                        str(ins.get("severity", "info")).upper(),
+                        str(ins.get("title", "Insight")),
+                        str(ins.get("description", "")),
+                    ]
+                )
             tbl = Table(rows, colWidths=[70, 130, 300])
-            tbl.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]))
+            tbl.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]
+                )
+            )
             story.append(tbl)
 
         cfo = deck.get("cfo_data") or {}
@@ -433,14 +517,18 @@ class BoardDeckPDFBuilder:
                 ["Runway (months)", str(cfo.get("runway_months", "-"))],
             ]
             cfo_tbl = Table(cfo_rows, colWidths=[250, 250])
-            cfo_tbl.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ]))
+            cfo_tbl.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#FFFFFF")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 9),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                    ]
+                )
+            )
             story.append(cfo_tbl)
 
         swot = deck.get("swot") or {}
@@ -449,49 +537,69 @@ class BoardDeckPDFBuilder:
 
             def _swot_cell(key: str) -> str:
                 items = swot.get(key) or []
-                bullets = "<br/>".join(
-                    f"• {it.get('text', it) if isinstance(it, dict) else it}"
-                    for it in items
-                ) or "—"
+                bullets = (
+                    "<br/>".join(
+                        f"• {it.get('text', it) if isinstance(it, dict) else it}" for it in items
+                    )
+                    or "—"
+                )
                 return f"<b>{key.capitalize()}</b><br/>{bullets}"
 
             swot_tbl = Table(
                 [
-                    [Paragraph(_swot_cell("strengths"), body),
-                     Paragraph(_swot_cell("weaknesses"), body)],
-                    [Paragraph(_swot_cell("opportunities"), body),
-                     Paragraph(_swot_cell("threats"), body)],
+                    [
+                        Paragraph(_swot_cell("strengths"), body),
+                        Paragraph(_swot_cell("weaknesses"), body),
+                    ],
+                    [
+                        Paragraph(_swot_cell("opportunities"), body),
+                        Paragraph(_swot_cell("threats"), body),
+                    ],
                 ],
                 colWidths=[250, 250],
             )
-            swot_tbl.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]))
+            swot_tbl.setStyle(
+                TableStyle(
+                    [
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("TOPPADDING", (0, 0), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ]
+                )
+            )
             story.append(swot_tbl)
 
         kri = deck.get("kri_posture") or {}
         if kri:
             counts = kri.get("counts", {})
             story.append(Paragraph("KRI Posture", h2))
-            story.append(Paragraph(
-                f"Score {kri.get('kri_score', '-')} — "
-                f"red {counts.get('red', 0)}, amber {counts.get('amber', 0)}, "
-                f"green {counts.get('green', 0)}",
-                body,
-            ))
+            story.append(
+                Paragraph(
+                    f"Score {kri.get('kri_score', '-')} — "
+                    f"red {counts.get('red', 0)}, amber {counts.get('amber', 0)}, "
+                    f"green {counts.get('green', 0)}",
+                    body,
+                )
+            )
 
         story.append(Spacer(1, 12))
-        story.append(HRFlowable(width="100%", thickness=0.5,
-                                color=colors.HexColor("#CBD5E1"), spaceAfter=6))
-        story.append(Paragraph(
-            f"Auto-synthesized by {get_brand().name}. "
-            "Execute decisions only with board and licensed-advisor approval.",
-            ParagraphStyle("BD_Foot", parent=styles["Normal"], fontSize=7.5,
-                           leading=10, textColor=colors.HexColor("#94A3B8")),
-        ))
+        story.append(
+            HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceAfter=6)
+        )
+        story.append(
+            Paragraph(
+                f"Auto-synthesized by {get_brand().name}. "
+                "Execute decisions only with board and licensed-advisor approval.",
+                ParagraphStyle(
+                    "BD_Foot",
+                    parent=styles["Normal"],
+                    fontSize=7.5,
+                    leading=10,
+                    textColor=colors.HexColor("#94A3B8"),
+                ),
+            )
+        )
 
         doc.build(story)
         return buf.getvalue()

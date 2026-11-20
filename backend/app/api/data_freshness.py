@@ -5,6 +5,7 @@ each one is, the worst state, and the measured age the OKR confidence
 uses. Values come straight from `services.freshness` — the same columns
 the decision packet strip reads, so the two can never disagree.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

@@ -10,6 +10,7 @@ POST /billing/portal                       → create Stripe Customer Portal ses
 POST /billing/cancel                       → cancel subscription (at period end)
 POST /billing/webhook                      → Stripe webhook handler (no auth)
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -30,8 +31,9 @@ router = APIRouter(tags=["billing"])
 
 # ── Request models ────────────────────────────────────────────────────────────
 
+
 class CheckoutRequest(BaseModel):
-    plan: str              # "starter" | "pro" | "enterprise"
+    plan: str  # "starter" | "pro" | "enterprise"
     interval: str = "month"  # "month" | "year"
     success_url: str
     cancel_url: str
@@ -43,6 +45,7 @@ class CancelRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/billing/plans")
 async def list_plans() -> dict[str, Any]:
     """
@@ -51,19 +54,23 @@ async def list_plans() -> dict[str, Any]:
     """
     plans_out = []
     for _plan_id, cfg in PLANS.items():
-        plans_out.append({
-            "id": cfg.id,
-            "name": cfg.name,
-            "price_monthly_try": cfg.price_monthly_try,
-            "price_yearly_try": cfg.price_yearly_try,
-            "yearly_savings_pct": round(
-                (1 - cfg.price_yearly_try / (cfg.price_monthly_try * 12)) * 100
-            ),
-            "max_orgs": cfg.max_orgs if cfg.max_orgs > 0 else None,
-            "max_uploads_per_month": cfg.max_uploads_per_month if cfg.max_uploads_per_month > 0 else None,
-            "max_users": cfg.max_users if cfg.max_users > 0 else None,
-            "features": cfg.features,
-        })
+        plans_out.append(
+            {
+                "id": cfg.id,
+                "name": cfg.name,
+                "price_monthly_try": cfg.price_monthly_try,
+                "price_yearly_try": cfg.price_yearly_try,
+                "yearly_savings_pct": round(
+                    (1 - cfg.price_yearly_try / (cfg.price_monthly_try * 12)) * 100
+                ),
+                "max_orgs": cfg.max_orgs if cfg.max_orgs > 0 else None,
+                "max_uploads_per_month": cfg.max_uploads_per_month
+                if cfg.max_uploads_per_month > 0
+                else None,
+                "max_users": cfg.max_users if cfg.max_users > 0 else None,
+                "features": cfg.features,
+            }
+        )
 
     return {"data": {"plans": plans_out}, "error": None}
 
@@ -104,12 +111,16 @@ async def get_subscription(
             "status": org.subscription_status or "inactive",
             "stripe_customer_id": org.stripe_customer_id,
             "stripe_subscription_id": org.stripe_subscription_id,
-            "period_end": org.subscription_period_end.isoformat() if org.subscription_period_end else None,
+            "period_end": org.subscription_period_end.isoformat()
+            if org.subscription_period_end
+            else None,
             "limits": {
                 "max_orgs": plan_cfg.max_orgs if plan_cfg else 1,
                 "max_uploads_per_month": plan_cfg.max_uploads_per_month if plan_cfg else 5,
                 "max_users": plan_cfg.max_users if plan_cfg else 2,
-            } if plan_cfg else None,
+            }
+            if plan_cfg
+            else None,
             "features": plan_cfg.features if plan_cfg else [],
         },
         "error": None,
@@ -177,6 +188,7 @@ async def create_billing_portal(
         )
 
     from app.config import get_settings
+
     settings = get_settings()
     frontend_url = getattr(settings, "frontend_url", "http://localhost:3000")
     return_url = f"{frontend_url}/billing"
@@ -251,10 +263,11 @@ async def stripe_webhook(
 
 # ── Usage metering endpoints ──────────────────────────────────────────────────
 
+
 @router.get("/billing/usage")
 async def get_usage(
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Return this month's usage summary for the current org.
@@ -287,7 +300,7 @@ async def get_usage(
 async def check_resource_limit(
     resource: str,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Check if the org can perform another action for the given resource.
@@ -317,20 +330,20 @@ async def check_resource_limit(
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
 
     plan_name = await get_org_plan(org_id, db)
-    limits    = PLAN_LIMITS.get(plan_name, PLAN_LIMITS["free"])
+    limits = PLAN_LIMITS.get(plan_name, PLAN_LIMITS["free"])
     limit_key = f"{resource}s_per_month"
-    max_val   = limits.get(limit_key, -1)
-    current   = await get_monthly_usage(org_id, resource, db)
+    max_val = limits.get(limit_key, -1)
+    current = await get_monthly_usage(org_id, resource, db)
 
     allowed = max_val == -1 or current < max_val
 
     return {
         "data": {
-            "allowed":   allowed,
-            "resource":  resource,
-            "plan":      plan_name,
-            "used":      current,
-            "limit":     max_val,
+            "allowed": allowed,
+            "resource": resource,
+            "plan": plan_name,
+            "used": current,
+            "limit": max_val,
             "unlimited": max_val == -1,
             "upgrade_url": "/billing" if not allowed else None,
         },

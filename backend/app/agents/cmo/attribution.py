@@ -24,6 +24,7 @@ Usage:
     engine = AttributionEngine(campaigns, journeys)
     result = engine.compute_all_models()
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Data classes ───────────────────────────────────────────────────────────────
+
 
 class AttributionEngine:
     """
@@ -51,7 +53,7 @@ class AttributionEngine:
         journeys: list[list[str]] | None = None,  # List of channel sequences
     ) -> None:
         self.campaigns = campaigns
-        self.journeys  = journeys or []
+        self.journeys = journeys or []
         self._channels = list({c.get("channel", "unknown") for c in campaigns})
 
     # ── Last-click attribution ────────────────────────────────────────────────
@@ -128,21 +130,21 @@ class AttributionEngine:
             }
         """
         if len(self.journeys) < 10:
-            logger.debug("Markov attribution: insufficient journeys (%d), using Shapley", len(self.journeys))
+            logger.debug(
+                "Markov attribution: insufficient journeys (%d), using Shapley", len(self.journeys)
+            )
             shapley = self._shapley_approximation()
             return {
-                "attribution":       shapley,
-                "removal_effects":   {},
+                "attribution": shapley,
+                "removal_effects": {},
                 "transition_matrix": {},
-                "method":            "shapley_fallback",
-                "note":              f"Markov için 10+ journey gerekiyor (şu an {len(self.journeys)})",
+                "method": "shapley_fallback",
+                "note": f"Markov için 10+ journey gerekiyor (şu an {len(self.journeys)})",
             }
 
         # Build transition matrix
         transitions = self._build_transition_matrix()
-        channels    = set(transitions.keys()) | {
-            ch for row in transitions.values() for ch in row
-        }
+        channels = set(transitions.keys()) | {ch for row in transitions.values() for ch in row}
         channels.discard("(conversion)")
         channels.discard("(null)")
 
@@ -159,15 +161,14 @@ class AttributionEngine:
         # Normalize to attribution credits
         total_effect = sum(removal_effects.values()) or 1
         attribution = {
-            ch: round(eff / total_effect * 100, 2)
-            for ch, eff in removal_effects.items()
+            ch: round(eff / total_effect * 100, 2) for ch, eff in removal_effects.items()
         }
 
         return {
-            "attribution":       attribution,
-            "removal_effects":   {ch: round(v, 4) for ch, v in removal_effects.items()},
+            "attribution": attribution,
+            "removal_effects": {ch: round(v, 4) for ch, v in removal_effects.items()},
             "baseline_conv_rate": round(baseline, 4),
-            "method":            "markov_chain",
+            "method": "markov_chain",
         }
 
     def _build_transition_matrix(self) -> dict[str, dict[str, float]]:
@@ -193,17 +194,20 @@ class AttributionEngine:
 
         return probs
 
-    def _compute_conversion_rate(
-        self, transitions: dict[str, dict[str, float]]
-    ) -> float:
+    def _compute_conversion_rate(self, transitions: dict[str, dict[str, float]]) -> float:
         """
         Compute steady-state conversion rate from transition matrix.
         Uses absorption probability: P(reach conversion | start from (start)).
         """
-        channels = list({
-            ch for row in transitions.values() for ch in row
-            if ch not in ("(conversion)", "(null)")
-        } | set(transitions.keys()) - {"(conversion)", "(null)"})
+        channels = list(
+            {
+                ch
+                for row in transitions.values()
+                for ch in row
+                if ch not in ("(conversion)", "(null)")
+            }
+            | set(transitions.keys()) - {"(conversion)", "(null)"}
+        )
 
         if not channels:
             return 0.0
@@ -276,7 +280,7 @@ class AttributionEngine:
             conv = camp.get("conversions", 0)
             roas = camp.get("roas", 1.0) or 1.0
             # Heuristic: channels that convert more AND have better ROAS get more credit
-            scores[ch] += (conv ** 0.5) * min(roas, 10)  # cap ROAS at 10x
+            scores[ch] += (conv**0.5) * min(roas, 10)  # cap ROAS at 10x
         total = sum(scores.values()) or 1
         return {ch: round(v / total * 100, 2) for ch, v in scores.items()}
 
@@ -311,9 +315,9 @@ class AttributionEngine:
             }
         """
         last_click = self.last_click()
-        linear     = self.linear()
+        linear = self.linear()
         time_decay = self.time_decay()
-        markov     = self.markov_chain()
+        markov = self.markov_chain()
 
         # Which model to recommend
         recommended = "markov" if len(self.journeys) >= 10 else "time_decay"
@@ -343,11 +347,11 @@ class AttributionEngine:
             )
 
         return {
-            "last_click":  last_click,
-            "linear":      linear,
-            "time_decay":  time_decay,
-            "markov":      markov,
+            "last_click": last_click,
+            "linear": linear,
+            "time_decay": time_decay,
+            "markov": markov,
             "recommended": recommended,
-            "insight":     insight,
+            "insight": insight,
             "journey_count": len(self.journeys),
         }

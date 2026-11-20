@@ -6,6 +6,7 @@ Fail-closed security principle:
   - Cross-tenant data access raises TenantIsolationError immediately
   - Async context variable holds current tenant ID per request/task
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,10 @@ _current_tenant: ContextVar[str | None] = ContextVar("current_tenant", default=N
 
 class TenantIsolationError(PermissionError):
     """Raised when an operation attempts cross-tenant data access."""
-    def __init__(self, message: str, *, org_id: str | None = None, expected_org_id: str | None = None):
+
+    def __init__(
+        self, message: str, *, org_id: str | None = None, expected_org_id: str | None = None
+    ):
         super().__init__(message)
         self.org_id = org_id
         self.expected_org_id = expected_org_id
@@ -50,7 +54,10 @@ def assert_tenant_boundary(
     target_org = expected_org_id if expected_org_id is not None else get_current_tenant()
 
     if not target_org:
-        logger.error("Security violation: Tenant boundary check failed — no tenant context set for %s", resource_type)
+        logger.error(
+            "Security violation: Tenant boundary check failed — no tenant context set for %s",
+            resource_type,
+        )
         raise TenantIsolationError(f"No tenant context established for {resource_type}")
 
     if not resource_org_id:

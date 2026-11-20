@@ -38,7 +38,9 @@ def _parse_compensation_csv(csv_text: str) -> list[dict[str, Any]]:
     dept_col = _col("department", "dept", "team")
     salary_col = _col("salary", "base_salary", "base")
     bonus_col = _col("bonus", "bonus_percentage", "target_bonus")
-    equity_col = _col("equity_shares", "equity_annual", "equity", "stock_options", "option_grant", "options")
+    equity_col = _col(
+        "equity_shares", "equity_annual", "equity", "stock_options", "option_grant", "options"
+    )
     equity_vesting_col = _col("vesting", "vest_date", "vesting_schedule")
     benefits_col = _col("benefits", "benefits_annual", "benefits_cost", "benefits_package")
     market_salary_col = _col("market_salary", "market_rate", "industry_rate")
@@ -98,17 +100,19 @@ def _parse_compensation_csv(csv_text: str) -> list[dict[str, Any]]:
                 except (ValueError, TypeError):
                     market_salary = 0
 
-            rows.append({
-                "name": name,
-                "level": level,
-                "department": dept,
-                "salary": salary,
-                "bonus_pct": bonus_pct,
-                "equity_shares": equity_shares,
-                "vesting": vesting_info,
-                "benefits": benefits,
-                "market_salary": market_salary,
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "level": level,
+                    "department": dept,
+                    "salary": salary,
+                    "bonus_pct": bonus_pct,
+                    "equity_shares": equity_shares,
+                    "vesting": vesting_info,
+                    "benefits": benefits,
+                    "market_salary": market_salary,
+                }
+            )
         except Exception:
             pass
 
@@ -129,8 +133,7 @@ def _compute_compensation_metrics(employees: list[dict[str, Any]]) -> dict[str, 
         by_level[level].append(e["salary"])
 
     avg_salary_by_level = {
-        level: int(sum(sals) / len(sals)) if sals else 0
-        for level, sals in by_level.items()
+        level: int(sum(sals) / len(sals)) if sals else 0 for level, sals in by_level.items()
     }
 
     # Total comp costs (salary + benefits)
@@ -193,45 +196,52 @@ def _build_compensation_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     # Wide salary compression
     for level, ratio in metrics.get("salary_compression_ratios", {}).items():
         if ratio > 1.5:
-            alerts.append({
-                "level": "warning",
-                "message": f"Salary compression risk in {level} level: {ratio:.1f}x spread between min/max"
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"Salary compression risk in {level} level: {ratio:.1f}x spread between min/max",
+                }
+            )
 
     # Many below market
     below_count = metrics.get("below_market_count", 0)
     if below_count > metrics.get("total_employees", 1) * 0.20:
-        alerts.append({
-            "level": "warning",
-            "message": f"{below_count} employees ({below_count/metrics['total_employees']*100:.0f}%) paid below market — retention risk"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"{below_count} employees ({below_count / metrics['total_employees'] * 100:.0f}%) paid below market — retention risk",
+            }
+        )
 
     # Low equity penetration
     equity_pen = metrics.get("equity_penetration", 0)
     if equity_pen < 0.50 and metrics.get("total_employees", 0) > 5:
-        alerts.append({
-            "level": "info",
-            "message": f"Low equity penetration ({equity_pen*100:.0f}%) — consider broader equity program"
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "message": f"Low equity penetration ({equity_pen * 100:.0f}%) — consider broader equity program",
+            }
+        )
 
     # High equity burn
     burn = metrics.get("annual_equity_burn", 0)
     if burn > 100_000:
-        alerts.append({
-            "level": "warning",
-            "message": f"High annual equity burn: ₺{burn:,} of equity vesting per year — review cap table impact"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"High annual equity burn: ₺{burn:,} of equity vesting per year — review cap table impact",
+            }
+        )
 
     return alerts
 
 
-async def _generate_compensation_narrative(
-    metrics: dict[str, Any], settings
-) -> str:
+async def _generate_compensation_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative — falls back to rule-based summary."""
     try:
         if settings and hasattr(settings, "llm") and settings.llm:
             from app.config import get_settings
+
             settings = get_settings()
             if not settings.openai_key:
                 raise ValueError("No OpenAI key")
@@ -252,7 +262,7 @@ async def _generate_compensation_narrative(
         )
 
     narrative_lines.append(
-        f"Equity penetration: {equity_pen*100:.0f}% of workforce has equity grants."
+        f"Equity penetration: {equity_pen * 100:.0f}% of workforce has equity grants."
     )
 
     if burn > 0:

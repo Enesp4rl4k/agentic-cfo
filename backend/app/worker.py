@@ -14,6 +14,7 @@ Usage:
     from app.worker import enqueue_analysis
     await enqueue_analysis(job_id, budget_input)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -60,9 +61,9 @@ def _log_inline_failure(task: asyncio.Task[Any]) -> None:
 # same name, so both families have to be named. AuthenticationError subclasses
 # redis's ConnectionError, which is why the message check below is not optional.
 _TRANSIENT_BROKER_ERRORS: tuple[type[BaseException], ...] = (
-    ConnectionError,             # builtins
-    TimeoutError,                # builtins
-    OSError,                     # socket-level: refused, reset, unreachable host
+    ConnectionError,  # builtins
+    TimeoutError,  # builtins
+    OSError,  # socket-level: refused, reset, unreachable host
     redis_exc.ConnectionError,
     redis_exc.TimeoutError,
     redis_exc.BusyLoadingError,  # the server is starting up
@@ -84,12 +85,18 @@ def _is_transient_error(exc: Exception) -> bool:
     txt = str(exc).lower()
     return any(
         m in txt
-        for m in ("timeout", "temporar", "connection reset",
-                  "connection refused", "network unreachable")
+        for m in (
+            "timeout",
+            "temporar",
+            "connection reset",
+            "connection refused",
+            "network unreachable",
+        )
     )
 
 
 # ── Task functions ─────────────────────────────────────────────────────────────
+
 
 async def run_ceo_analysis(
     ctx: dict,
@@ -142,25 +149,33 @@ async def run_ceo_analysis(
                 return {k: getattr(obj, k) for k in obj.__dataclass_fields__}
             raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-        serialized = json.dumps({
-            "status": "completed",
-            "job_id": job_id,
-            "result": {
-                "financial_summary":    result.get("financial_summary"),
-                "tech_summary":         result.get("tech_summary"),
-                "cross_risks":          result.get("cross_risks") or [],
-                "strategic_priorities": result.get("strategic_priorities") or [],
-                "board_deck":           result.get("board_deck"),
-                "okr_status":           result.get("okr_status"),
-                "awaiting_review":      result.get("awaiting_review", False),
-                "min_confidence":       result.get("min_confidence"),
-                "error":                result.get("error"),
-                "logs": [
-                    {"step": lg.step, "ok": lg.ok, "detail": lg.detail, "confidence": lg.confidence}
-                    for lg in (result.get("logs") or [])
-                ],
+        serialized = json.dumps(
+            {
+                "status": "completed",
+                "job_id": job_id,
+                "result": {
+                    "financial_summary": result.get("financial_summary"),
+                    "tech_summary": result.get("tech_summary"),
+                    "cross_risks": result.get("cross_risks") or [],
+                    "strategic_priorities": result.get("strategic_priorities") or [],
+                    "board_deck": result.get("board_deck"),
+                    "okr_status": result.get("okr_status"),
+                    "awaiting_review": result.get("awaiting_review", False),
+                    "min_confidence": result.get("min_confidence"),
+                    "error": result.get("error"),
+                    "logs": [
+                        {
+                            "step": lg.step,
+                            "ok": lg.ok,
+                            "detail": lg.detail,
+                            "confidence": lg.confidence,
+                        }
+                        for lg in (result.get("logs") or [])
+                    ],
+                },
             },
-        }, default=_serialize)
+            default=_serialize,
+        )
 
         await pool.set(f"ceo:{job_id}", serialized, ex=86400)  # 24h TTL
 
@@ -174,12 +189,15 @@ async def run_ceo_analysis(
             from app.agents.orchestration.auto_chain import on_agent_complete as _oac
             from app.core.background import spawn
 
-            spawn(_oac(
-                agent="ceo",
-                org_id=job_id,  # use job_id as org proxy if org_id not in result
-                result={"job_id": job_id, "ceo_result": result},
-                db=None,
-            ), name=f"auto-chain-ceo-{job_id[:8]}")
+            spawn(
+                _oac(
+                    agent="ceo",
+                    org_id=job_id,  # use job_id as org proxy if org_id not in result
+                    result={"job_id": job_id, "ceo_result": result},
+                    db=None,
+                ),
+                name=f"auto-chain-ceo-{job_id[:8]}",
+            )
 
         return {"ok": True, "job_id": job_id}
 
@@ -187,6 +205,7 @@ async def run_ceo_analysis(
         logger.exception("ARQ worker: CEO job=%s failed", job_id)
         pool = await get_arq_pool()
         import json
+
         await pool.set(
             f"ceo:{job_id}",
             json.dumps({"status": "failed", "job_id": job_id, "error": str(exc)}),
@@ -201,22 +220,35 @@ async def _ek_belgeler(job_id: str, db: Any) -> list[dict[str, str]]:
 
     from app.models.data_source import DataSource, DataSourceDomain, DataSourceType
 
-    rows = (await db.execute(
-        select(DataSource)
-        .where(DataSource.job_id == job_id,
-               DataSource.domain == DataSourceDomain.CFO,
-               DataSource.source_type == DataSourceType.FINANCIAL_DOCUMENT)
-        .order_by(DataSource.created_at)
-    )).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(DataSource)
+                .where(
+                    DataSource.job_id == job_id,
+                    DataSource.domain == DataSourceDomain.CFO,
+                    DataSource.source_type == DataSourceType.FINANCIAL_DOCUMENT,
+                )
+                .order_by(DataSource.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return [
-        {"path": r.file_path,
-         "type": (r.filename or "").rsplit(".", 1)[-1].lower(),
-         "ad": r.filename or ""}
-        for r in rows if r.file_path
+        {
+            "path": r.file_path,
+            "type": (r.filename or "").rsplit(".", 1)[-1].lower(),
+            "ad": r.filename or "",
+        }
+        for r in rows
+        if r.file_path
     ]
 
 
-def _records_run(fn: Callable[..., Awaitable[dict[str, Any]]]) -> Callable[..., Awaitable[dict[str, Any]]]:
+def _records_run(
+    fn: Callable[..., Awaitable[dict[str, Any]]],
+) -> Callable[..., Awaitable[dict[str, Any]]]:
     """The CFO analysis with its AgentRun around it (plan v9 §K0 / §V6 S2)."""
 
     @functools.wraps(fn)
@@ -324,7 +356,8 @@ async def run_cfo_analysis(
             _routing_plan = get_capability_router().route(_preflight_state)
             logger.info(
                 "CapabilityRouter pre-flight: job=%s — %s",
-                job_id, _routing_plan.summary(),
+                job_id,
+                _routing_plan.summary(),
             )
             # Pass routing plan to pipeline so it can skip unavailable agents
             from app.config import get_settings as _gs
@@ -389,9 +422,7 @@ async def run_cfo_analysis(
                 # to exist to be reviewed — but the row now says so, because
                 # this date decides the accounting period and the period ends
                 # up on the e-Defter.
-                tx_date, tx_date_estimated = parse_transaction_date(
-                    tx_data.get("transaction_date")
-                )
+                tx_date, tx_date_estimated = parse_transaction_date(tx_data.get("transaction_date"))
                 tx = Transaction(
                     job_id=job_id,
                     amount_kurus=tx_data.get("amount_cents", 0),
@@ -410,7 +441,9 @@ async def run_cfo_analysis(
                     category_source=tx_data.get("category_source"),
                     account_code=tx_data.get("account_code"),
                     document_id=tx_data.get("document_id"),
-                    due_date=date.fromisoformat(tx_data["due_date"]) if tx_data.get("due_date") else None,
+                    due_date=date.fromisoformat(tx_data["due_date"])
+                    if tx_data.get("due_date")
+                    else None,
                     payment_note=tx_data.get("payment_note"),
                     counterparty=tx_data.get("counterparty"),
                 )
@@ -423,35 +456,41 @@ async def run_cfo_analysis(
 
             # Persist dashboard JSON report
             if result.get("dashboard_json"):
-                db.add(Report(
-                    job_id=job_id,
-                    report_type=ReportType.FULL,
-                    report_format=ReportFormat.JSON,
-                    data=result["dashboard_json"],
-                ))
+                db.add(
+                    Report(
+                        job_id=job_id,
+                        report_type=ReportType.FULL,
+                        report_format=ReportFormat.JSON,
+                        data=result["dashboard_json"],
+                    )
+                )
 
             # Persist Excel report reference
             report_paths = result.get("report_paths") or {}
             if report_paths.get("xlsx"):
-                db.add(Report(
-                    job_id=job_id,
-                    report_type=ReportType.FULL,
-                    report_format=ReportFormat.EXCEL,
-                    file_path=report_paths["xlsx"],
-                ))
+                db.add(
+                    Report(
+                        job_id=job_id,
+                        report_type=ReportType.FULL,
+                        report_format=ReportFormat.EXCEL,
+                        file_path=report_paths["xlsx"],
+                    )
+                )
 
             # Persist anomalies
             for a in result.get("anomalies") or []:
-                db.add(Anomaly(
-                    job_id=job_id,
-                    anomaly_type=a.get("anomaly_type", "unknown"),
-                    severity=a.get("severity", "medium"),
-                    title=a.get("title", ""),
-                    description=a.get("description", ""),
-                    transaction_ids=a.get("transaction_ids"),
-                    evidence=a.get("evidence"),
-                    confidence=a.get("confidence"),
-                ))
+                db.add(
+                    Anomaly(
+                        job_id=job_id,
+                        anomaly_type=a.get("anomaly_type", "unknown"),
+                        severity=a.get("severity", "medium"),
+                        title=a.get("title", ""),
+                        description=a.get("description", ""),
+                        transaction_ids=a.get("transaction_ids"),
+                        evidence=a.get("evidence"),
+                        confidence=a.get("confidence"),
+                    )
+                )
 
             logs_serializable = [
                 {"step": lg.step, "ok": lg.ok, "detail": lg.detail, "confidence": lg.confidence}
@@ -525,7 +564,9 @@ async def run_cfo_analysis(
 
             logger.info(
                 "ARQ worker: job=%s completed — status=%s awaiting_review=%s",
-                job_id, terminal, bool(result.get("awaiting_review")),
+                job_id,
+                terminal,
+                bool(result.get("awaiting_review")),
             )
 
             # RAG indexing in its own transaction, after the analysis commit.
@@ -673,8 +714,6 @@ async def get_arq_pool() -> ArqRedis:
     return _pool
 
 
-
-
 async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
     """
     ARQ maintenance task: backfill missing rag_chunks for recently completed jobs.
@@ -711,7 +750,9 @@ async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
         for job in jobs:
             checked += 1
             count_result = await db.execute(
-                select(func.count()).select_from(RagChunk).where(
+                select(func.count())
+                .select_from(RagChunk)
+                .where(
                     RagChunk.org_id == str(job.org_id),
                     RagChunk.job_id == str(job.id),
                     RagChunk.source_type == "cfo_transactions_raw",
@@ -969,6 +1010,7 @@ async def enqueue_ceo_analysis(
     )
     # Mark job as pending in Redis immediately so polling returns a valid status
     import json
+
     await pool.set(
         f"ceo:{job_id}",
         json.dumps({"status": "pending", "job_id": job_id}),
@@ -1038,16 +1080,17 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
 
 # ── ARQ Worker settings ────────────────────────────────────────────────────────
 
+
 class WorkerSettings:
     """ARQ worker configuration. Run with: arq app.worker.WorkerSettings"""
 
     functions = [run_cfo_analysis, run_ceo_analysis]
     queue_name = get_settings().arq_analysis_queue_name
     max_jobs = get_settings().arq_analysis_max_jobs  # concurrent jobs per worker process
-    job_timeout = 600               # 10 minutes max per job
-    keep_result = 86400             # keep job result in Redis for 24h
+    job_timeout = 600  # 10 minutes max per job
+    keep_result = 86400  # keep job result in Redis for 24h
     retry_jobs = True
-    max_tries = 2                   # retry once on failure
+    max_tries = 2  # retry once on failure
 
     @classmethod
     def redis_settings(cls) -> RedisSettings:
@@ -1061,14 +1104,19 @@ class MaintenanceWorkerSettings:
     This isolates user-facing analysis throughput under high traffic.
     """
 
-    functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance, run_semantic_rebuild,
-                 run_review_continuation]
+    functions = [
+        run_rag_backfill_maintenance,
+        run_usage_prune_maintenance,
+        run_semantic_rebuild,
+        run_review_continuation,
+    ]
     queue_name = get_settings().arq_maintenance_queue_name
     max_jobs = get_settings().arq_maintenance_max_jobs
     job_timeout = 1200
     keep_result = 86400
     retry_jobs = True
     max_tries = 2
+
     @classmethod
     def redis_settings(cls) -> RedisSettings:
         settings = get_settings()

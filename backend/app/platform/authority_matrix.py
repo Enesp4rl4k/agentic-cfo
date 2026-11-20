@@ -10,6 +10,7 @@ as ordered rules (first match wins, like an ACL):
 DB. `load_active_rules()` fetches an org's editable policy (or the sane default
 that reproduces the previously hard-coded thresholds).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -17,9 +18,10 @@ from typing import Any
 
 # ── Request / decision ──────────────────────────────────────────────────────
 
+
 @dataclass
 class AuthorityRequest:
-    domain: str                       # journal_entry | spending | hiring | agent_recommendation
+    domain: str  # journal_entry | spending | hiring | agent_recommendation
     amount_kurus: int = 0
     category: str | None = None
     counterparty: str | None = None
@@ -32,7 +34,7 @@ class AuthorityRequest:
 
 @dataclass
 class AuthorityDecision:
-    outcome: str                      # auto_approve | needs_approval | blocked
+    outcome: str  # auto_approve | needs_approval | blocked
     matched_rule_id: str | None
     required_approvals: list[dict[str, Any]] = field(default_factory=list)
     required_evidence: list[str] = field(default_factory=list)
@@ -114,6 +116,7 @@ DEFAULT_POLICY_RULES: list[dict[str, Any]] = [
 
 # ── Matching ────────────────────────────────────────────────────────────────
 
+
 def _matches(when: dict[str, Any], req: AuthorityRequest) -> bool:
     if "amount_kurus_gte" in when and req.amount_kurus < when["amount_kurus_gte"]:
         return False
@@ -151,12 +154,14 @@ def evaluate(rules: list[dict[str, Any]], req: AuthorityRequest) -> AuthorityDec
         decision = rule.get("decision", "auto_approve")
         if decision == "auto_approve":
             return AuthorityDecision(
-                outcome="auto_approve", matched_rule_id=rule.get("id"),
+                outcome="auto_approve",
+                matched_rule_id=rule.get("id"),
                 rationale=rule.get("note", ""),
             )
         if decision == "block":
             return AuthorityDecision(
-                outcome="blocked", matched_rule_id=rule.get("id"),
+                outcome="blocked",
+                matched_rule_id=rule.get("id"),
                 rationale=rule.get("note", "Politika tarafından engellendi"),
             )
         return AuthorityDecision(
@@ -168,7 +173,8 @@ def evaluate(rules: list[dict[str, Any]], req: AuthorityRequest) -> AuthorityDec
         )
     # No rule matched (policy has no catch-all) — safest is to escalate.
     return AuthorityDecision(
-        outcome="needs_approval", matched_rule_id=None,
+        outcome="needs_approval",
+        matched_rule_id=None,
         required_approvals=[{"role": "owner", "count": 1}],
         rationale="Eşleşen kural yok — güvenli tarafta kalmak için yükseltildi",
     )
@@ -178,8 +184,14 @@ def evaluate(rules: list[dict[str, Any]], req: AuthorityRequest) -> AuthorityDec
 
 _VALID_DECISIONS = {"auto_approve", "require_approvals", "block"}
 _VALID_WHEN_KEYS = {
-    "amount_kurus_gte", "amount_kurus_gt", "amount_kurus_lt", "confidence_lt",
-    "category_in", "classification_method_in", "is_related_party", "is_fixed_asset",
+    "amount_kurus_gte",
+    "amount_kurus_gt",
+    "amount_kurus_lt",
+    "confidence_lt",
+    "category_in",
+    "classification_method_in",
+    "is_related_party",
+    "is_fixed_asset",
     "requested_by_role_in",
 }
 
@@ -209,7 +221,11 @@ def validate_rules(rules: Any) -> list[str]:
         bad = set((rule.get("when") or {}).keys()) - _VALID_WHEN_KEYS
         if bad:
             errors.append(f"Kural '{rid}': bilinmeyen koşul anahtar(lar)ı: {sorted(bad)}")
-    if not any((r.get("when") in (None, {}) and r.get("domain", "*") == "*") for r in rules if isinstance(r, dict)):
+    if not any(
+        (r.get("when") in (None, {}) and r.get("domain", "*") == "*")
+        for r in rules
+        if isinstance(r, dict)
+    ):
         errors.append("Politikada bir catch-all kural yok (when'i boş, domain '*').")
     return errors
 

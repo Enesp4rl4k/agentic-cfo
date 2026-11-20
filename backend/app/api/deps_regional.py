@@ -1,4 +1,5 @@
 """FastAPI dependency: require Turkey regional pack."""
+
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, status

@@ -32,6 +32,7 @@ its own audit rows), and the call site wraps emission in the same non-fatal
 guard ``continue_after_completion`` uses for cache invalidation — a trigger
 that misbehaves must never fail the analysis it rode in on.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -55,11 +56,7 @@ def _metric_values(dashboard: dict[str, Any], job_id: str) -> dict[str, Any]:
     from app.services.semantic.projectors import project_from_cfo
 
     points = project_from_cfo({"dashboard": dashboard}, job_id=job_id)
-    return {
-        p.metric_id: p.value
-        for p in points
-        if p.value is not None
-    }
+    return {p.metric_id: p.value for p in points if p.value is not None}
 
 
 async def emit_job_completed(
@@ -99,9 +96,7 @@ async def emit_tx_arrived(
 
     count = (
         await db.execute(
-            select(func.count())
-            .select_from(Transaction)
-            .where(Transaction.job_id == job_id)
+            select(func.count()).select_from(Transaction).where(Transaction.job_id == job_id)
         )
     ).scalar() or 0
     if not count:
@@ -137,19 +132,15 @@ async def emit_anomaly_detected(
     """
     from app.models.anomaly import Anomaly
 
-    rows = (
-        await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))
-    ).scalars().all()
+    rows = (await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))).scalars().all()
     if not rows:
         logger.debug("anomaly.detected skipped: job=%s has no anomalies", job_id)
         return []
 
-    findings = sorted(
-        (str(r.anomaly_type), _severity(r.severity), str(r.title)) for r in rows
-    )
-    digest = hashlib.sha256(
-        json.dumps(findings, ensure_ascii=False).encode("utf-8")
-    ).hexdigest()[:16]
+    findings = sorted((str(r.anomaly_type), _severity(r.severity), str(r.title)) for r in rows)
+    digest = hashlib.sha256(json.dumps(findings, ensure_ascii=False).encode("utf-8")).hexdigest()[
+        :16
+    ]
     by_severity = Counter(sev for _, sev, _ in findings)
     return await handle_event(
         db,
@@ -210,8 +201,6 @@ async def emit_job_events(
     dashboard: dict[str, Any] | None,
 ) -> list[TriggerRunOutcome]:
     """The completion events, in one session — the call site's single seam."""
-    outcomes = await emit_job_completed(
-        db, job_id=job_id, org_id=org_id, dashboard=dashboard
-    )
+    outcomes = await emit_job_completed(db, job_id=job_id, org_id=org_id, dashboard=dashboard)
     outcomes += await emit_tx_arrived(db, job_id=job_id, org_id=org_id)
     return outcomes + await emit_anomaly_detected(db, job_id=job_id, org_id=org_id)

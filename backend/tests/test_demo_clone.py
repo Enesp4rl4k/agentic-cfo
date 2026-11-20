@@ -12,6 +12,7 @@ D2 — golden → konuk klonlama kapıları (DEMO_PLAN §D2).
 5. /demo/status klonlu konukta has_demo=True (QuickDemoBanner hazır göstergesi)
 6. İdempotent: aynı org'a ikinci klon denemesi already_cloned
 """
+
 from __future__ import annotations
 
 import pytest
@@ -52,9 +53,7 @@ async def test_guest_without_golden_starts_empty(test_client):
     ctx = await _context(test_client, data)
     assert not ctx.get("last_cfo_result")
 
-    status = await test_client.get(
-        "/api/v1/demo/status", headers=_auth(data)
-    )
+    status = await test_client.get("/api/v1/demo/status", headers=_auth(data))
     assert status.status_code == 200
     assert status.json()["data"]["has_demo"] is False
 
@@ -85,9 +84,7 @@ async def test_guest_dashboard_serves_cloned_report(test_client):
     ctx = await _context(test_client, data)
     job_id = ctx["active_cfo_job_id"]
 
-    dash = await test_client.get(
-        f"/api/v1/dashboard/{job_id}", headers=_auth(data)
-    )
+    dash = await test_client.get(f"/api/v1/dashboard/{job_id}", headers=_auth(data))
     assert dash.status_code == 200, dash.text
     payload = dash.json()["data"]
     assert payload["net"] == 12345
@@ -108,9 +105,7 @@ async def test_two_guests_get_isolated_clones(test_client):
     assert job_a and job_b and job_a != job_b
 
     # B asks for A's dashboard → refused (404, never 403 per access.py)
-    foreign = await test_client.get(
-        f"/api/v1/dashboard/{job_a}", headers=_auth(b)
-    )
+    foreign = await test_client.get(f"/api/v1/dashboard/{job_a}", headers=_auth(b))
     assert foreign.status_code == 404
 
 

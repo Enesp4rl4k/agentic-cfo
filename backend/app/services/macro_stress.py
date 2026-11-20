@@ -16,20 +16,21 @@ Here the baseline comes only from the org's own CFO result
 integers inside, and every modelling constant is surfaced in
 :data:`ASSUMPTIONS` so the UI can label the output as an estimate.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
 # Modelling assumptions — rule-based, not measured. Returned with every result.
-FX_EXPOSURE_RATIO = 0.25       # share of opex priced in USD/EUR (cloud, licences, imports)
-FX_USD_SHARE = 0.5             # split of that exposure between USD and EUR
-WC_DEBT_MONTHS = 2             # working-capital debt ≈ this many months of opex
+FX_EXPOSURE_RATIO = 0.25  # share of opex priced in USD/EUR (cloud, licences, imports)
+FX_USD_SHARE = 0.5  # split of that exposure between USD and EUR
+WC_DEBT_MONTHS = 2  # working-capital debt ≈ this many months of opex
 DELAY_DRAG_PER_30_DAYS = 0.10  # share of monthly revenue frozen per 30 days of delay
 DELAY_DRAG_CAP = 0.30
-DELAY_AMORTIZE_MONTHS = 6      # frozen revenue spread over this many months
-RUNWAY_ELASTICITY = 1.5        # runway shrink per unit of burn increase / opex
-RUNWAY_FLOOR = 0.20            # runway never contracts below this share
+DELAY_AMORTIZE_MONTHS = 6  # frozen revenue spread over this many months
+RUNWAY_ELASTICITY = 1.5  # runway shrink per unit of burn increase / opex
+RUNWAY_FLOOR = 0.20  # runway never contracts below this share
 
 ASSUMPTIONS: dict[str, float] = {
     "fx_exposure_ratio": FX_EXPOSURE_RATIO,
@@ -150,9 +151,7 @@ def simulate(shock: ShockInputs, baseline: StressBaseline) -> dict[str, Any]:
     opex = baseline.monthly_opex_kurus
 
     # 1. FX: the exposed share of opex reprices with each currency's shock.
-    blended_fx_pct = (
-        shock.usd_shock_pct * FX_USD_SHARE + shock.eur_shock_pct * (1 - FX_USD_SHARE)
-    )
+    blended_fx_pct = shock.usd_shock_pct * FX_USD_SHARE + shock.eur_shock_pct * (1 - FX_USD_SHARE)
     fx_kurus = int(opex * FX_EXPOSURE_RATIO * blended_fx_pct / 100.0)
 
     # 2. Interest: annual rate delta on working-capital debt, per month.

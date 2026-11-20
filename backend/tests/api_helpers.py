@@ -5,6 +5,7 @@ each new test file, and the copies were enough to fail the pull request's
 duplication gate. One definition here; each file keeps a three-line fixture
 that names it.
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -25,6 +26,7 @@ async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
     from app.main import app
 
     async with gecici_veritabani() as maker:
+
         async def _override():
             async with maker() as session:
                 yield session
@@ -41,7 +43,11 @@ async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
 
 
 async def kullanici(
-    client: AsyncClient, email: str, *, attach_org: bool = True, role: str = "analyst",
+    client: AsyncClient,
+    email: str,
+    *,
+    attach_org: bool = True,
+    role: str = "analyst",
 ) -> tuple[dict[str, str], str | None, str]:
     """Register, optionally attach a fresh organisation, sign in.
 
@@ -53,8 +59,9 @@ async def kullanici(
     from app.models.organization import Organization
     from app.models.user import User
 
-    await client.post("/api/v1/auth/register",
-                      json={"email": email, "password": PAROLA, "full_name": "T"})
+    await client.post(
+        "/api/v1/auth/register", json={"email": email, "password": PAROLA, "full_name": "T"}
+    )
     async with client._maker() as db:  # type: ignore[attr-defined]
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
         if role != "analyst":
@@ -68,8 +75,9 @@ async def kullanici(
             org_id = org.id
         user_id = user.id
         await db.commit()
-    token = (await client.post("/api/v1/auth/login",
-                               json={"email": email, "password": PAROLA})).json()["data"]["access_token"]
+    token = (
+        await client.post("/api/v1/auth/login", json={"email": email, "password": PAROLA})
+    ).json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}, org_id, user_id
 
 

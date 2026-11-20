@@ -2,6 +2,7 @@
 Tests for nl_query_engine.py — pure rule-based functions (no LLM, no DB).
 Covers: classify_intent, extract_metric, get_nested, execute_nl_query
 """
+
 from app.agents.nl_query_engine import (
     classify_intent,
     execute_nl_query,
@@ -13,20 +14,20 @@ from app.agents.nl_query_engine import (
 
 DASHBOARD = {
     "pnl": {
-        "revenue":     2_000_000,
+        "revenue": 2_000_000,
         "gross_profit": 1_400_000,
-        "net_income":    400_000,
-        "ebitda":        600_000,
+        "net_income": 400_000,
+        "ebitda": 600_000,
         "opex": {
-            "salary":    500_000,
-            "rent":      150_000,
+            "salary": 500_000,
+            "rent": 150_000,
             "marketing": 100_000,
-            "technology":  80_000,
+            "technology": 80_000,
         },
     },
     "cashflow": {
-        "operating":   300_000,
-        "net_change":  200_000,
+        "operating": 300_000,
+        "net_change": 200_000,
         "monthly_series": [
             {"month": "2024-01", "in": 1_000_000, "out": 800_000, "net": 200_000},
             {"month": "2024-02", "in": 1_100_000, "out": 850_000, "net": 250_000},
@@ -52,8 +53,8 @@ DASHBOARD = {
 
 # ── classify_intent ───────────────────────────────────────────────────────────
 
-class TestClassifyIntent:
 
+class TestClassifyIntent:
     def test_runway_query_turkish(self):
         assert classify_intent("Paramız ne zaman biter?") == "runway_query"
 
@@ -115,8 +116,8 @@ class TestClassifyIntent:
 
 # ── extract_metric ────────────────────────────────────────────────────────────
 
-class TestExtractMetric:
 
+class TestExtractMetric:
     def test_gelir_extracts_revenue(self):
         path, name = extract_metric("Gelir ne kadar?")
         assert path == "pnl.revenue"
@@ -160,8 +161,8 @@ class TestExtractMetric:
 
 # ── get_nested ────────────────────────────────────────────────────────────────
 
-class TestGetNested:
 
+class TestGetNested:
     def test_single_key(self):
         data = {"a": 1}
         assert get_nested(data, "a") == 1
@@ -198,8 +199,8 @@ class TestGetNested:
 
 # ── execute_nl_query ──────────────────────────────────────────────────────────
 
-class TestExecuteNLQuery:
 
+class TestExecuteNLQuery:
     def test_returns_dict(self):
         result = execute_nl_query("Gelir ne kadar?", DASHBOARD, [])
         assert isinstance(result, dict)
@@ -254,6 +255,7 @@ class TestExecuteNLQuery:
 
 # ── generate_nl_insight money formatting (LLM mocked) ─────────────────────────
 
+
 class TestInsightMoneyFormat:
     """Report.data scalars are LIRA — the insight formatter must not divide."""
 
@@ -272,14 +274,18 @@ class TestInsightMoneyFormat:
 
         from app.agents.nl_query_engine import generate_nl_insight
 
-        out = asyncio.run(generate_nl_insight(
-            "Gelir ne kadar?",
-            {"intent": "metric_lookup", "value": 2_000_000, "context": {}},
-            DASHBOARD, [], None,
-        ))
+        out = asyncio.run(
+            generate_nl_insight(
+                "Gelir ne kadar?",
+                {"intent": "metric_lookup", "value": 2_000_000, "context": {}},
+                DASHBOARD,
+                [],
+                None,
+            )
+        )
         assert out["answer"] == "ok"
         prompt = seen[0]
-        assert "Gelir: 2,000,000 TL" in prompt    # lira — not 20,000
+        assert "Gelir: 2,000,000 TL" in prompt  # lira — not 20,000
         assert "Net Kâr: 400,000 TL" in prompt
         assert "Net Nakit: 200,000 TL" in prompt
 
@@ -295,10 +301,18 @@ class TestInsightMoneyFormat:
 
         from app.agents.nl_query_engine import generate_nl_insight
 
-        out = asyncio.run(generate_nl_insight(
-            "Gelir ne kadar?",
-            {"intent": "metric_lookup", "value": 250_000,
-             "metric_display": "Gelir", "context": {}},
-            DASHBOARD, [], None,
-        ))
+        out = asyncio.run(
+            generate_nl_insight(
+                "Gelir ne kadar?",
+                {
+                    "intent": "metric_lookup",
+                    "value": 250_000,
+                    "metric_display": "Gelir",
+                    "context": {},
+                },
+                DASHBOARD,
+                [],
+                None,
+            )
+        )
         assert out["answer"] == "Gelir: 250,000 TL"

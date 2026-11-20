@@ -19,6 +19,7 @@ Semantics pinned by backend/tests/test_trigger_conditions.py:
   missing-metric comparison fires. Prefer `any`-lists of positive comparisons
   for alerts; `not` is a sharp tool.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -82,9 +83,7 @@ def parse_condition(payload: object) -> Condition:
 
 def condition_to_dict(condition: Condition) -> dict[str, Any]:
     """JSON-serialisable form (keys `all`/`any`/`not`) for storage and APIs."""
-    dumped: dict[str, Any] = _condition_adapter.dump_python(
-        condition, mode="json", by_alias=True
-    )
+    dumped: dict[str, Any] = _condition_adapter.dump_python(condition, mode="json", by_alias=True)
     return dumped
 
 

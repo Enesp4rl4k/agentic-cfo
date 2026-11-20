@@ -3,6 +3,7 @@ Tests for alert_agent.py — pure alert builder functions (no LLM, no DB).
 Covers: _check_profitability, _check_cashflow, _check_growth, _check_budget
 and THRESHOLDS constants.
 """
+
 from app.agents.alert_agent import (
     THRESHOLDS,
     _check_budget,
@@ -13,8 +14,8 @@ from app.agents.alert_agent import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _pnl(gross_margin: float = 0.40, net_margin: float = 0.10,
-         net_income: int = 100_000) -> dict:
+
+def _pnl(gross_margin: float = 0.40, net_margin: float = 0.10, net_income: int = 100_000) -> dict:
     return {
         "gross_margin": gross_margin,
         "net_margin": net_margin,
@@ -41,8 +42,7 @@ def _forecast(runway: int | None = None) -> dict:
     return {"scenarios": {"base": {"runway_months": runway}}}
 
 
-def _multi_period(rev_change_pct: float | None = None,
-                  trend: str = "stable") -> dict:
+def _multi_period(rev_change_pct: float | None = None, trend: str = "stable") -> dict:
     mom = None
     if rev_change_pct is not None:
         mom = {"revenue_change_pct": rev_change_pct}
@@ -55,20 +55,20 @@ def _budget(total_var_pct: float = 0.0) -> dict:
 
 # ── _check_profitability ──────────────────────────────────────────────────────
 
-class TestCheckProfitability:
 
+class TestCheckProfitability:
     def test_healthy_pnl_no_alerts(self):
         alerts = _check_profitability(_pnl(gross_margin=0.50, net_margin=0.15))
         assert alerts == []
 
     def test_critical_gross_margin_triggers_critical_alert(self):
-        pnl = _pnl(gross_margin=0.05)   # below 10%
+        pnl = _pnl(gross_margin=0.05)  # below 10%
         alerts = _check_profitability(pnl)
         levels = [a["severity"] for a in alerts if a["metric"] == "gross_margin_pct"]
         assert "critical" in levels
 
     def test_warning_gross_margin_triggers_warning(self):
-        pnl = _pnl(gross_margin=0.15)   # 15% — below 20% but above 10%
+        pnl = _pnl(gross_margin=0.15)  # 15% — below 20% but above 10%
         alerts = _check_profitability(pnl)
         levels = [a["severity"] for a in alerts if a["metric"] == "gross_margin_pct"]
         assert "warning" in levels
@@ -109,12 +109,12 @@ class TestCheckProfitability:
 
 # ── _check_cashflow ───────────────────────────────────────────────────────────
 
-class TestCheckCashflow:
 
+class TestCheckCashflow:
     def test_healthy_cashflow_no_alerts(self):
         alerts = _check_cashflow(
             {"operating": 500_000, "net_change": 200_000, "monthly_series": []},
-            _forecast(runway=12)
+            _forecast(runway=12),
         )
         assert alerts == []
 
@@ -154,8 +154,8 @@ class TestCheckCashflow:
 
 # ── _check_growth ─────────────────────────────────────────────────────────────
 
-class TestCheckGrowth:
 
+class TestCheckGrowth:
     def test_no_data_no_alerts(self):
         alerts = _check_growth(None)
         assert alerts == []
@@ -165,13 +165,13 @@ class TestCheckGrowth:
         assert alerts == []
 
     def test_critical_revenue_decline_triggers_critical(self):
-        mp = _multi_period(rev_change_pct=-25.0)   # -25% < -20% threshold
+        mp = _multi_period(rev_change_pct=-25.0)  # -25% < -20% threshold
         alerts = _check_growth(mp)
         rev_alerts = [a for a in alerts if a["metric"] == "revenue_mom_pct"]
         assert any(a["severity"] == "critical" for a in rev_alerts)
 
     def test_warning_revenue_decline_triggers_warning(self):
-        mp = _multi_period(rev_change_pct=-12.0)   # -12% < -10%
+        mp = _multi_period(rev_change_pct=-12.0)  # -12% < -10%
         alerts = _check_growth(mp)
         rev_alerts = [a for a in alerts if a["metric"] == "revenue_mom_pct"]
         assert any(a["severity"] == "warning" for a in rev_alerts)
@@ -201,8 +201,8 @@ class TestCheckGrowth:
 
 # ── _check_budget ─────────────────────────────────────────────────────────────
 
-class TestCheckBudget:
 
+class TestCheckBudget:
     def test_no_budget_no_alerts(self):
         assert _check_budget(None) == []
 
@@ -220,7 +220,7 @@ class TestCheckBudget:
         assert any(a["severity"] == "warning" for a in alerts)
 
     def test_on_budget_no_alerts(self):
-        budget = _budget(total_var_pct=5.0)   # only 5% over
+        budget = _budget(total_var_pct=5.0)  # only 5% over
         alerts = _check_budget(budget)
         assert alerts == []
 
@@ -241,8 +241,8 @@ class TestCheckBudget:
 
 # ── THRESHOLDS sanity ─────────────────────────────────────────────────────────
 
-class TestThresholds:
 
+class TestThresholds:
     def test_critical_thresholds_more_severe_than_warning(self):
         assert THRESHOLDS["gross_margin_critical"] < THRESHOLDS["gross_margin_warning"]
         assert THRESHOLDS["cashflow_runway_critical"] < THRESHOLDS["cashflow_runway_warning"]
@@ -254,11 +254,16 @@ class TestThresholds:
 
     def test_all_threshold_keys_present(self):
         expected = {
-            "gross_margin_critical", "gross_margin_warning",
-            "net_margin_critical", "net_margin_warning",
-            "cashflow_runway_critical", "cashflow_runway_warning",
-            "revenue_mom_decline_critical", "revenue_mom_decline_warning",
-            "budget_variance_warning", "budget_variance_critical",
+            "gross_margin_critical",
+            "gross_margin_warning",
+            "net_margin_critical",
+            "net_margin_warning",
+            "cashflow_runway_critical",
+            "cashflow_runway_warning",
+            "revenue_mom_decline_critical",
+            "revenue_mom_decline_warning",
+            "budget_variance_warning",
+            "budget_variance_critical",
             "tax_payment_days_warning",
         }
         assert expected.issubset(set(THRESHOLDS.keys()))

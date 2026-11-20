@@ -7,6 +7,7 @@ period the ledger holds.
 Expected figures are summed from `demo/data/logo_tiger_2024.csv` without the
 pipeline (`_file_revenue`), plus amounts written here by hand.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -38,8 +39,10 @@ async def ortam(monkeypatch):
         monkeypatch.setattr(database, "session_factory", lambda: c._maker)
         monkeypatch.setattr(database, "engine", lambda: None)
         chained: list[str] = []
-        monkeypatch.setattr("app.post_completion.spawn_auto_chain",
-                            lambda job_id, org_id, chain: chained.append(job_id))
+        monkeypatch.setattr(
+            "app.post_completion.spawn_auto_chain",
+            lambda job_id, org_id, chain: chained.append(job_id),
+        )
         monkeypatch.setattr("app.post_completion._job_side_effects", lambda *a, **k: None)
         headers, org_id, _ = await kullanici(c, "defter@example.com", role="owner")
         c.headers_of_owner = headers
@@ -53,19 +56,30 @@ def _march_invoice() -> dict[str, Any]:
 
 async def _analysed(client, org_id: str, rows: list[dict[str, Any]]) -> str:
     async with client._maker() as db:
-        job = AnalysisJob(filename="x", file_path="/x", file_type="csv", org_id=org_id,
-                          status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="x", file_path="/x", file_type="csv", org_id=org_id, status=JobStatus.COMPLETED
+        )
         db.add(job)
         await db.flush()
         for r in rows:
             when, estimated = parse_transaction_date(r["transaction_date"])
-            db.add(Transaction(
-                job_id=job.id, amount_kurus=r["amount_cents"], currency="TRY", type=r["type"],
-                category=r["category"], description=r.get("description"), vendor=r.get("vendor"),
-                transaction_date=when, date_is_estimated=estimated, document_id=r.get("document_id"),
-                due_date=r.get("due_date"), counterparty=r.get("counterparty"),
-                account_code=r.get("account_code"),
-            ))
+            db.add(
+                Transaction(
+                    job_id=job.id,
+                    amount_kurus=r["amount_cents"],
+                    currency="TRY",
+                    type=r["type"],
+                    category=r["category"],
+                    description=r.get("description"),
+                    vendor=r.get("vendor"),
+                    transaction_date=when,
+                    date_is_estimated=estimated,
+                    document_id=r.get("document_id"),
+                    due_date=r.get("due_date"),
+                    counterparty=r.get("counterparty"),
+                    account_code=r.get("account_code"),
+                )
+            )
         await db.commit()
         return job.id
 
@@ -102,9 +116,18 @@ async def _revenue(client, org_id: str) -> float:
 
 async def _waiting(client, org_id: str) -> list[AgentJob]:
     async with client._maker() as db:
-        return list((await db.execute(select(AgentJob).where(
-            AgentJob.org_id == org_id, AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
-        ))).scalars().all())
+        return list(
+            (
+                await db.execute(
+                    select(AgentJob).where(
+                        AgentJob.org_id == org_id,
+                        AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
 
 def _hold_every_view(monkeypatch) -> Any:
@@ -161,7 +184,8 @@ async def test_an_invoice_is_not_cash_and_its_receipt_is_not_revenue_again(ortam
     view = await _view(client, org_id)
     assert view["dashboard"]["pnl"]["revenue"] == 285_000.0
     assert view["dashboard"]["cashflow"]["monthly_series"] == [
-        {"month": "2024-04", "in": 285_000_00, "out": 0, "net": 285_000_00}]
+        {"month": "2024-04", "in": 285_000_00, "out": 0, "net": 285_000_00}
+    ]
 
 
 async def test_the_same_file_again_changes_nothing_and_runs_nothing(ortam):
@@ -197,7 +221,9 @@ async def test_a_doubtful_row_waits_outside_the_view(ortam):
 
 async def test_a_persons_no_on_a_settlement_reaches_the_view(ortam):
     client, org_id, _ = ortam
-    await _upload(client, org_id, [_sale("F1", no="GIB2024000000002", issued="2024-03-01", due=None)])
+    await _upload(
+        client, org_id, [_sale("F1", no="GIB2024000000002", issued="2024-03-01", due=None)]
+    )
     await _upload(client, org_id, [_bank("Gelen EFT", 285_000_00, "2024-04-10")])
     assert await _revenue(client, org_id) == 285_000.0
     async with client._maker() as db:
@@ -205,8 +231,11 @@ async def test_a_persons_no_on_a_settlement_reaches_the_view(ortam):
         assert match.status == "proposed"
         match_id = match.id
 
-    response = await client.post(f"/api/v1/ledger/settlements/{match_id}/resolve",
-                                 headers=client.headers_of_owner, json={"action": "reject"})
+    response = await client.post(
+        f"/api/v1/ledger/settlements/{match_id}/resolve",
+        headers=client.headers_of_owner,
+        json={"action": "reject"},
+    )
     assert response.status_code == 200, response.text
     await arka_plan_bitsin()
 
@@ -230,8 +259,9 @@ async def test_a_held_view_waits_for_the_owner_and_the_old_one_stands(ortam, mon
     assert [q.agent_type for q in queued] == ["cfo"]
     assert queued[0].result_json["dashboard"]["pnl"]["revenue"] == standing + INVOICE / 100
 
-    response = await client.post(f"/api/v1/agent-jobs/{queued[0].id}/approve",
-                                 headers=client.headers_of_owner, json={})
+    response = await client.post(
+        f"/api/v1/agent-jobs/{queued[0].id}/approve", headers=client.headers_of_owner, json={}
+    )
     assert response.status_code == 200, response.text
     await arka_plan_bitsin()
 
@@ -261,13 +291,17 @@ async def test_the_ledger_run_is_on_record(ortam):
     client, org_id, _ = ortam
     await _upload(client, org_id, _demo_rows("01"))
     async with client._maker() as db:
-        runs = (await db.execute(
-            select(AgentRun).where(AgentRun.pipeline == "cfo_ledger")
-        )).scalars().all()
+        runs = (
+            (await db.execute(select(AgentRun).where(AgentRun.pipeline == "cfo_ledger")))
+            .scalars()
+            .all()
+        )
     assert [r.status for r in runs] == ["completed"]
 
 
-async def test_a_ledger_that_moved_during_the_run_leaves_the_write_to_the_later_run(ortam, monkeypatch):
+async def test_a_ledger_that_moved_during_the_run_leaves_the_write_to_the_later_run(
+    ortam, monkeypatch
+):
     import app.agents.orchestrator as orchestrator
 
     client, org_id, _ = ortam

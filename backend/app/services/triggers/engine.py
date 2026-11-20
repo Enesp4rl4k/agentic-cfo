@@ -14,6 +14,7 @@ happened (a job completed, a transaction arrived, a schedule tick):
 The engine owns its transaction: it flushes its writes and commits at the end so
 the audit/idempotency rows are durable for the next delivery of the same event.
 """
+
 from __future__ import annotations
 
 import json
@@ -86,13 +87,17 @@ async def handle_event(
     payload = payload or {}
 
     rows = (
-        await db.execute(
-            select(TriggerDefinitionRow).where(
-                TriggerDefinitionRow.org_id == org_id,
-                TriggerDefinitionRow.enabled.is_(True),
+        (
+            await db.execute(
+                select(TriggerDefinitionRow).where(
+                    TriggerDefinitionRow.org_id == org_id,
+                    TriggerDefinitionRow.enabled.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     matching = [r for r in rows if event_kind in json.loads(r.events)]
     if not matching:
         return []
@@ -184,16 +189,12 @@ async def _handle_one(
             action_result={"error": detail},
             detail=detail,
         )
-        return TriggerRunOutcome(
-            trigger_id, row.name, ERROR, run_id=run.id, detail=detail
-        )
+        return TriggerRunOutcome(trigger_id, row.name, ERROR, run_id=run.id, detail=detail)
 
     try:
         result = await handler(db, org_id, definition, payload)
     except Exception as exc:
-        logger.exception(
-            "trigger %s action %s failed", trigger_id, definition.action_kind
-        )
+        logger.exception("trigger %s action %s failed", trigger_id, definition.action_kind)
         detail = f"{type(exc).__name__}: {exc}"
         run = await _record(
             db,
@@ -206,9 +207,7 @@ async def _handle_one(
             action_result={"error": detail},
             detail=detail,
         )
-        return TriggerRunOutcome(
-            trigger_id, row.name, ERROR, run_id=run.id, detail=detail
-        )
+        return TriggerRunOutcome(trigger_id, row.name, ERROR, run_id=run.id, detail=detail)
 
     run = await _record(
         db,
@@ -220,9 +219,7 @@ async def _handle_one(
         definition,
         action_result=result,
     )
-    return TriggerRunOutcome(
-        trigger_id, row.name, FIRED, run_id=run.id, action_result=result
-    )
+    return TriggerRunOutcome(trigger_id, row.name, FIRED, run_id=run.id, action_result=result)
 
 
 async def _load_values(db: AsyncSession, org_id: str) -> dict[str, Any]:
@@ -233,9 +230,7 @@ async def _load_values(db: AsyncSession, org_id: str) -> dict[str, Any]:
     return snapshot.values() if snapshot is not None else {}
 
 
-async def _in_cooldown(
-    db: AsyncSession, trigger_id: str, cooldown_minutes: int
-) -> str | None:
+async def _in_cooldown(db: AsyncSession, trigger_id: str, cooldown_minutes: int) -> str | None:
     """Return a cooldown reason if the trigger fired within the window, else None."""
     if cooldown_minutes <= 0:
         return None

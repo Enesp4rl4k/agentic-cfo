@@ -6,6 +6,7 @@ Calculates:
 3. 3-Aylık Geçici Kurumlar Vergisi (%25 Vergi Oranı)
 4. 30/60/90 Günlük Vergi Ödeme Takvimi & Nakit Çıkış Projeksiyonu
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -16,26 +17,26 @@ from pydantic import BaseModel
 
 class KDVDeclarationResult(BaseModel):
     period_year_month: str
-    hesaplanan_kdv_391: Decimal    # Satışlardan doğan KDV
-    indirilecek_kdv_191: Decimal   # Alış/Giderlerden doğan KDV
+    hesaplanan_kdv_391: Decimal  # Satışlardan doğan KDV
+    indirilecek_kdv_191: Decimal  # Alış/Giderlerden doğan KDV
     onceki_donem_devreden_kdv: Decimal
-    odenecek_kdv: Decimal          # Devlete ödenecek vergi
+    odenecek_kdv: Decimal  # Devlete ödenecek vergi
     sonraki_doneme_devreden_kdv: Decimal
-    odeme_vadesi: date             # İlgili ayı takip eden ayın 26'sı
+    odeme_vadesi: date  # İlgili ayı takip eden ayın 26'sı
     status_summary: str
 
 
 class MuhtasarStopajResult(BaseModel):
     period_year_month: str
-    kira_stopaji: Decimal          # %20 Kira Stopajı
-    smm_stopaji: Decimal           # %20 Serbest Meslek Makbuzu Stopajı
+    kira_stopaji: Decimal  # %20 Kira Stopajı
+    smm_stopaji: Decimal  # %20 Serbest Meslek Makbuzu Stopajı
     toplam_stopaj: Decimal
     odeme_vadesi: date
     status_summary: str
 
 
 class GeciciVergiResult(BaseModel):
-    quarter: str                   # 2024-Q1, 2024-Q2 vb.
+    quarter: str  # 2024-Q1, 2024-Q2 vb.
     ticari_kar: Decimal
     kanunen_kabul_edilmeyen_giderler: Decimal = Decimal("0.0")
     mali_kar_matrahi: Decimal
@@ -48,7 +49,7 @@ class GeciciVergiResult(BaseModel):
 
 class TaxCashOutflowItem(BaseModel):
     payment_date: date
-    tax_type: str                  # KDV, MUHTASAR_SGK, GECICI_VERGI
+    tax_type: str  # KDV, MUHTASAR_SGK, GECICI_VERGI
     amount: Decimal
     priority: str = "HIGH"
     description: str
@@ -77,7 +78,9 @@ class TurkishTaxEngine:
         if net_tax > 0:
             odenecek = net_tax
             devreden = Decimal("0.0")
-            summary = f"{year}/{month:02d} döneminde {odenecek:,.2f} TL Ödenecek KDV tahakkuk etmiştir."
+            summary = (
+                f"{year}/{month:02d} döneminde {odenecek:,.2f} TL Ödenecek KDV tahakkuk etmiştir."
+            )
         else:
             odenecek = Decimal("0.0")
             devreden = abs(net_tax)

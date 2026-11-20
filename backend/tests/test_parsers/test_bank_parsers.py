@@ -63,41 +63,54 @@ Hesap No: 7890-1234
 
 # ── Detection tests ───────────────────────────────────────────────────────────
 
+
 def test_detect_akbank():
     assert AkbankParser.can_parse(AKBANK_TEXT) is True
+
 
 def test_detect_garanti():
     assert GarantiParser.can_parse(GARANTI_TEXT) is True
 
+
 def test_detect_isbank():
     assert IsBankParser.can_parse(ISBANK_TEXT) is True
 
+
 def test_detect_ziraat():
     assert ZiraatParser.can_parse(ZIRAAT_TEXT) is True
+
 
 def test_no_cross_detection():
     """Garanti parser should not match Akbank text."""
     # Both have generic "Hesap No" but bank name check should differentiate
     assert GarantiParser.can_parse(AKBANK_TEXT) is False
 
+
 # ── Amount parsing tests ──────────────────────────────────────────────────────
+
 
 def test_parse_amount_turkish_format():
     assert BankParser.parse_turkish_amount("1.234,56") == 123456
 
+
 def test_parse_amount_simple():
     assert BankParser.parse_turkish_amount("500,00") == 50000
+
 
 def test_parse_amount_with_symbol():
     assert BankParser.parse_turkish_amount("₺1.500,00") == 150000
 
+
 def test_parse_amount_invalid():
     assert BankParser.parse_turkish_amount("N/A") is None
+
 
 def test_parse_amount_integer():
     assert BankParser.parse_turkish_amount("3.500") == 350000
 
+
 # ── Date parsing tests ────────────────────────────────────────────────────────
+
 
 def test_parse_date_dot_format():
     d = BankParser.parse_turkish_date("15.01.2024")
@@ -106,26 +119,33 @@ def test_parse_date_dot_format():
     assert d.month == 1
     assert d.year == 2024
 
+
 def test_parse_date_iso_format():
     d = BankParser.parse_turkish_date("2024-03-20")
     assert d is not None
     assert d.month == 3
 
+
 def test_parse_date_invalid():
     assert BankParser.parse_turkish_date("not-a-date") is None
 
+
 # ── Registry tests ────────────────────────────────────────────────────────────
+
 
 def test_registry_detects_akbank():
     from app.parsers.registry import ParserRegistry
+
     cls = ParserRegistry.detect(AKBANK_TEXT)
     assert cls is not None
     assert cls.bank_id == "akbank"
+
 
 def test_registry_detects_garanti():
     cls = ParserRegistry.detect(GARANTI_TEXT)
     assert cls is not None
     assert cls.bank_id == "garanti"
+
 
 def test_registry_falls_back_to_generic():
     cls = ParserRegistry.detect("Some random text with no bank name")
@@ -134,20 +154,29 @@ def test_registry_falls_back_to_generic():
     # (Generic is handled separately in parse())
     assert cls is None or cls.bank_id == "generic"
 
+
 # ── Classifier keyword tests ──────────────────────────────────────────────────
+
 
 def test_classify_salary():
     from app.services.classifier import classify_by_keywords
+
     assert classify_by_keywords("Maaş Ödemesi Ocak") == "salary"
+
 
 def test_classify_rent():
     from app.services.classifier import classify_by_keywords
+
     assert classify_by_keywords("Kira Faturası Şubat") == "rent"
+
 
 def test_classify_utilities():
     from app.services.classifier import classify_by_keywords
+
     assert classify_by_keywords("Elektrik Faturası") == "utilities"
+
 
 def test_classify_unknown():
     from app.services.classifier import classify_by_keywords
+
     assert classify_by_keywords("Bilinmeyen işlem xyz") == "other_expense"

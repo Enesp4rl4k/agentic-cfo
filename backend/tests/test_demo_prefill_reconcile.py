@@ -15,6 +15,7 @@ yeniden uygular:
    (chro/risk/audit — production'da state job_id gömmez) sadece varlık
    kontrolüyle doğrulanır.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -94,19 +95,46 @@ async def _seed_org(db) -> str:
 async def _seed_suite_jobs(db, org_id: str) -> None:
     """Completed jobs for every suite agent except coo (job-less scenario)."""
     # chro/risk/audit results carry no job_id — mirrors production state shape
-    db.add(_job(org_id, "cmo", created=_T0 + timedelta(minutes=1),
-                status=AgentJobStatus.COMPLETED,
-                result={"job_id": "cmo-1", "campaigns": {"total_spend_cents": 1}},
-                jid="cmo-1"))
-    db.add(_job(org_id, "chro", created=_T0 + timedelta(minutes=1),
-                status=AgentJobStatus.COMPLETED,
-                result={"headcount": {"total": 5}}, jid="chro-1"))
-    db.add(_job(org_id, "risk", created=_T0 + timedelta(minutes=1),
-                status=AgentJobStatus.COMPLETED,
-                result={"risk_summary": {"open_kris": 3}}, jid="risk-1"))
-    db.add(_job(org_id, "audit", created=_T0 + timedelta(minutes=1),
-                status=AgentJobStatus.COMPLETED,
-                result={"findings": {"total": 5}}, jid="audit-1"))
+    db.add(
+        _job(
+            org_id,
+            "cmo",
+            created=_T0 + timedelta(minutes=1),
+            status=AgentJobStatus.COMPLETED,
+            result={"job_id": "cmo-1", "campaigns": {"total_spend_cents": 1}},
+            jid="cmo-1",
+        )
+    )
+    db.add(
+        _job(
+            org_id,
+            "chro",
+            created=_T0 + timedelta(minutes=1),
+            status=AgentJobStatus.COMPLETED,
+            result={"headcount": {"total": 5}},
+            jid="chro-1",
+        )
+    )
+    db.add(
+        _job(
+            org_id,
+            "risk",
+            created=_T0 + timedelta(minutes=1),
+            status=AgentJobStatus.COMPLETED,
+            result={"risk_summary": {"open_kris": 3}},
+            jid="risk-1",
+        )
+    )
+    db.add(
+        _job(
+            org_id,
+            "audit",
+            created=_T0 + timedelta(minutes=1),
+            status=AgentJobStatus.COMPLETED,
+            result={"findings": {"total": 5}},
+            jid="audit-1",
+        )
+    )
     await db.commit()
 
 
@@ -117,18 +145,36 @@ async def test_reconcile_rewrites_stale_result_from_newest_completed_job(db):
     await _seed_suite_jobs(db, org_id)
 
     # old completed (stale) → new completed (real run) → FAILED newest (ignored)
-    db.add(_job(org_id, "cto", created=_T0, status=AgentJobStatus.COMPLETED,
-                result={"job_id": "cto-old",
-                        "cto_summary": {"overall_health_score": 0.0}},
-                jid="cto-old"))
-    db.add(_job(org_id, "cto", created=_T0 + timedelta(minutes=5),
-                status=AgentJobStatus.COMPLETED,
-                result={"job_id": "cto-new",
-                        "cto_summary": {"overall_health_score": 3.5}},
-                jid="cto-new"))
-    db.add(_job(org_id, "cto", created=_T0 + timedelta(minutes=9),
-                status=AgentJobStatus.FAILED,
-                result={"job_id": "cto-failed"}, jid="cto-failed"))
+    db.add(
+        _job(
+            org_id,
+            "cto",
+            created=_T0,
+            status=AgentJobStatus.COMPLETED,
+            result={"job_id": "cto-old", "cto_summary": {"overall_health_score": 0.0}},
+            jid="cto-old",
+        )
+    )
+    db.add(
+        _job(
+            org_id,
+            "cto",
+            created=_T0 + timedelta(minutes=5),
+            status=AgentJobStatus.COMPLETED,
+            result={"job_id": "cto-new", "cto_summary": {"overall_health_score": 3.5}},
+            jid="cto-new",
+        )
+    )
+    db.add(
+        _job(
+            org_id,
+            "cto",
+            created=_T0 + timedelta(minutes=9),
+            status=AgentJobStatus.FAILED,
+            result={"job_id": "cto-failed"},
+            jid="cto-failed",
+        )
+    )
     await db.commit()
 
     applied = await mod._reconcile_suite_context(db, org_id)
@@ -156,10 +202,16 @@ async def test_reconcile_keeps_matching_job_and_flags_drift(db):
 
     # context already matches the only completed cto job → no rewrite needed
     # (production shape: the state's embedded job_id == the AgentJob row id)
-    db.add(_job(org_id, "cto", created=_T0, status=AgentJobStatus.COMPLETED,
-                result={"job_id": "cto-job-stale",
-                        "cto_summary": {"overall_health_score": 0.0}},
-                jid="cto-job-stale"))
+    db.add(
+        _job(
+            org_id,
+            "cto",
+            created=_T0,
+            status=AgentJobStatus.COMPLETED,
+            result={"job_id": "cto-job-stale", "cto_summary": {"overall_health_score": 0.0}},
+            jid="cto-job-stale",
+        )
+    )
     await db.commit()
 
     applied = await mod._reconcile_suite_context(db, org_id)

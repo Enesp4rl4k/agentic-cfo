@@ -9,6 +9,7 @@ longer exists.
 When this fails, read the diff it prints, check the change was intended, and
 copy the measured table into `app/services/accounting/guven.py`.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -55,6 +56,7 @@ def test_every_rule_level_is_measured() -> None:
 
 # ── The number ───────────────────────────────────────────────────────────────
 
+
 def test_fewer_examples_mean_less_confidence_at_the_same_hit_rate() -> None:
     assert guven.wilson_alt_sinir(6, 6) < guven.wilson_alt_sinir(60, 60)
     assert guven.wilson_alt_sinir(0, 0) == 0.0
@@ -77,43 +79,65 @@ def test_the_organisations_own_record_replaces_the_corpus_once_it_is_enough() ->
 
 def test_history_counts_approvals_as_right_and_corrections_as_wrong() -> None:
     kararlar = [
-        (guven.KURAL, "onaylandi"), (guven.KURAL, "onaylandi"),
+        (guven.KURAL, "onaylandi"),
+        (guven.KURAL, "onaylandi"),
         (guven.KURAL, "duzeltildi"),
-        (guven.KURAL, "reddedildi"),     # not about the account
-        (guven.KURAL, "bekliyor"),       # no verdict yet
-        (None, "onaylandi"),             # entries from before levels existed
+        (guven.KURAL, "reddedildi"),  # not about the account
+        (guven.KURAL, "bekliyor"),  # no verdict yet
+        (None, "onaylandi"),  # entries from before levels existed
     ]
     assert guven.gecmisten_olc(kararlar) == {guven.KURAL: (2, 3)}
 
 
 # ── The classifier ───────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize(("description", "tx_type", "level"), [
-    ("Google Ads reklam harcamasi", "expense", guven.GUCLU_KURAL),  # 'google ads' birebir, iki kelime
-    ("Ofis kira odemesi", "expense", guven.KURAL),                # 'kira' tek kelime
-    ("Kiralama bedeli", "expense", guven.ZAYIF_KURAL),            # 'kira' kelime içinde
-])
+
+@pytest.mark.parametrize(
+    ("description", "tx_type", "level"),
+    [
+        (
+            "Google Ads reklam harcamasi",
+            "expense",
+            guven.GUCLU_KURAL,
+        ),  # 'google ads' birebir, iki kelime
+        ("Ofis kira odemesi", "expense", guven.KURAL),  # 'kira' tek kelime
+        ("Kiralama bedeli", "expense", guven.ZAYIF_KURAL),  # 'kira' kelime içinde
+    ],
+)
 def test_the_level_names_the_evidence(description: str, tx_type: str, level: str) -> None:
-    r = get_thp_classifier().classify(description=description, amount_kurus=1, transaction_type=tx_type)
+    r = get_thp_classifier().classify(
+        description=description, amount_kurus=1, transaction_type=tx_type
+    )
     assert r.guven_seviyesi == level
     assert "→" in r.kanit
 
 
 def test_no_match_is_not_dressed_up_as_a_percentage() -> None:
     """The fallback used to report 0.3 — '%30 güven' for no evidence at all."""
-    r = get_thp_classifier().classify(description="zxqv", amount_kurus=1, transaction_type="expense")
+    r = get_thp_classifier().classify(
+        description="zxqv", amount_kurus=1, transaction_type="expense"
+    )
     assert r.guven_seviyesi == guven.VARSAYILAN
     assert r.confidence == 0.0
 
 
 # ── The journal entry ────────────────────────────────────────────────────────
 
+
 def _entry(desc: str, gecmis=None):
     from app.agents.accounting.double_entry import DoubleEntryEngine
 
-    tx = {"id": "t", "amount_kurus": 50_000, "type": "expense", "description": desc,
-          "transaction_date": "2024-01-10T00:00:00+00:00", "kdv_kurus": 0}
-    thp = get_thp_classifier().classify(description=desc, amount_kurus=50_000, transaction_type="expense")
+    tx = {
+        "id": "t",
+        "amount_kurus": 50_000,
+        "type": "expense",
+        "description": desc,
+        "transaction_date": "2024-01-10T00:00:00+00:00",
+        "kdv_kurus": 0,
+    }
+    thp = get_thp_classifier().classify(
+        description=desc, amount_kurus=50_000, transaction_type="expense"
+    )
     return DoubleEntryEngine().create_entry(tx, thp, guven_gecmisi=gecmis)
 
 

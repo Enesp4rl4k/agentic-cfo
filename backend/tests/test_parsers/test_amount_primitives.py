@@ -7,6 +7,7 @@ one primitive all seven parsers share.
 
 Both regressions below were found this way, without a real statement.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -20,9 +21,9 @@ from app.parsers.base import BankParser
         ("1.234,56", 123456),
         ("500,00", 50000),
         ("0,00", 0),
-        ("3.500", 350000),              # bare dot, three digits = thousands
-        ("1234.56", 123456),            # US fallback
-        ("3.5", 350),                   # bare dot, not three digits = decimal
+        ("3.500", 350000),  # bare dot, three digits = thousands
+        ("1234.56", 123456),  # US fallback
+        ("3.5", 350),  # bare dot, not three digits = decimal
         ("₺1.500,00", 150000),
         ("1.500,00 TL", 150000),
         ("N/A", None),
@@ -57,7 +58,7 @@ def test_amounts_over_a_million_without_kurus(raw: str, expected: int) -> None:
     ("raw", "negative"),
     [
         ("-4.500,00", True),
-        ("−4.500,00", True),     # U+2212, what a PDF often actually contains
+        ("−4.500,00", True),  # U+2212, what a PDF often actually contains
         ("₺-500", True),
         ("- 500,00", True),
         ("4.500,00", False),

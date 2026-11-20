@@ -10,6 +10,7 @@ Roles within an org:
   analyst — can upload, run analysis, view results
   viewer  — read-only access to completed jobs
 """
+
 from __future__ import annotations
 
 import uuid
@@ -32,9 +33,7 @@ def _utcnow() -> datetime:
 class Organization(Base):
     __tablename__ = "organizations"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
 
@@ -65,7 +64,9 @@ class Organization(Base):
         String(30), default="inactive", nullable=False
     )  # inactive | active | past_due | cancelled | trialing
     stripe_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
-    stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
     subscription_period_end: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -87,11 +88,10 @@ class Organization(Base):
 
 class OrgInvite(Base):
     """Pending invitation to join an organization."""
+
     __tablename__ = "org_invites"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )

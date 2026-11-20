@@ -1,13 +1,44 @@
 """Tests for cash flow agent — pure computation, no LLM calls."""
+
 from app.agents.cashflow_agent import _classify_cashflow, _detect_alerts
 
 SAMPLE_TRANSACTIONS = [
-    {"type": "income",  "category": "revenue",  "amount_cents": 500_000, "transaction_date": "2024-01-15"},
-    {"type": "expense", "category": "salary",   "amount_cents": 200_000, "transaction_date": "2024-01-20"},
-    {"type": "expense", "category": "rent",     "amount_cents":  50_000, "transaction_date": "2024-01-25"},
-    {"type": "income",  "category": "revenue",  "amount_cents": 400_000, "transaction_date": "2024-02-10"},
-    {"type": "expense", "category": "salary",   "amount_cents": 200_000, "transaction_date": "2024-02-20"},
-    {"type": "expense", "category": "loan",     "amount_cents": 100_000, "transaction_date": "2024-02-25"},
+    {
+        "type": "income",
+        "category": "revenue",
+        "amount_cents": 500_000,
+        "transaction_date": "2024-01-15",
+    },
+    {
+        "type": "expense",
+        "category": "salary",
+        "amount_cents": 200_000,
+        "transaction_date": "2024-01-20",
+    },
+    {
+        "type": "expense",
+        "category": "rent",
+        "amount_cents": 50_000,
+        "transaction_date": "2024-01-25",
+    },
+    {
+        "type": "income",
+        "category": "revenue",
+        "amount_cents": 400_000,
+        "transaction_date": "2024-02-10",
+    },
+    {
+        "type": "expense",
+        "category": "salary",
+        "amount_cents": 200_000,
+        "transaction_date": "2024-02-20",
+    },
+    {
+        "type": "expense",
+        "category": "loan",
+        "amount_cents": 100_000,
+        "transaction_date": "2024-02-25",
+    },
 ]
 
 

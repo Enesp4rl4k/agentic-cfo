@@ -1,4 +1,5 @@
 """Human-readable render of a DefensibilityPacket (text always; PDF if reportlab)."""
+
 from __future__ import annotations
 
 import io
@@ -42,9 +43,12 @@ def _lines(packet: Any) -> list[str]:
     if recon:
         out.append(f"Bağımsız mutabakat: {recon.get('action', '-')}")
     if packet.smmm_statement:
-        out += ["", "MALİ MÜŞAVİR BEYANI:", packet.smmm_statement,
-                f"Kesinleştiren: {packet.finalized_by_user_id}  "
-                f"Zaman: {packet.finalized_at}"]
+        out += [
+            "",
+            "MALİ MÜŞAVİR BEYANI:",
+            packet.smmm_statement,
+            f"Kesinleştiren: {packet.finalized_by_user_id}  Zaman: {packet.finalized_at}",
+        ]
     out += ["", "KAYIT DÖKÜMÜ:"]
     for it in p.get("entries", []):
         out.append(

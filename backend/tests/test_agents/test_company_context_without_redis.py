@@ -8,6 +8,7 @@ saved, and its downstream steps skipped for "no CFO data". Seen in a live run:
 "CompanyContext + semantic persisted for org=…" followed immediately by
 "No context found for org=… — returning empty".
 """
+
 from __future__ import annotations
 
 import pytest_asyncio

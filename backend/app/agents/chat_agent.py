@@ -14,6 +14,7 @@ Veri kaynağı: DB'den çekilen job dashboard JSON + transactions + isteğe bağ
 
 done_when: yanıt üretildi (streaming veya tek seferlik)
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Financial context builder ─────────────────────────────────────────────────
+
 
 def _build_financial_context(
     dashboard: dict[str, Any],
@@ -49,9 +51,9 @@ def _build_financial_context(
     lines = [
         "=== FINANCIAL SUMMARY ===",
         f"Revenue: {fmt(pnl.get('revenue', 0))}",
-        f"Gross Profit: {fmt(pnl.get('gross_profit', 0))} ({pnl.get('gross_margin', 0)*100:.1f}%)",
-        f"EBITDA: {fmt(pnl.get('ebitda', 0))} ({pnl.get('ebitda_margin', 0)*100:.1f}%)",
-        f"Net Income: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0)*100:.1f}%)",
+        f"Gross Profit: {fmt(pnl.get('gross_profit', 0))} ({pnl.get('gross_margin', 0) * 100:.1f}%)",
+        f"EBITDA: {fmt(pnl.get('ebitda', 0))} ({pnl.get('ebitda_margin', 0) * 100:.1f}%)",
+        f"Net Income: {fmt(pnl.get('net_income', 0))} ({pnl.get('net_margin', 0) * 100:.1f}%)",
         "",
         "=== OPERATING EXPENSES ===",
     ]
@@ -89,12 +91,13 @@ def _build_financial_context(
 
     # Recent transactions sample
     if transactions:
-        lines += ["", f"=== RECENT TRANSACTIONS (last {min(len(transactions), max_transactions)}) ==="]
-        for tx in sorted(
-            transactions,
-            key=lambda t: t.get("transaction_date") or "",
-            reverse=True
-        )[:max_transactions]:
+        lines += [
+            "",
+            f"=== RECENT TRANSACTIONS (last {min(len(transactions), max_transactions)}) ===",
+        ]
+        for tx in sorted(transactions, key=lambda t: t.get("transaction_date") or "", reverse=True)[
+            :max_transactions
+        ]:
             lines.append(
                 f"  {(tx.get('transaction_date') or '')[:10]} | "
                 f"{tx.get('type', '')} | "
@@ -110,8 +113,12 @@ def _build_financial_context(
 
 _NICEL = ("ne kadar", "kac", "toplam", "hangisi", "nedir", "en buyuk")
 _GIDER_ADI = {
-    "salary": "maaş ve ücretler", "rent": "kira", "utilities": "elektrik, su ve iletişim",
-    "marketing": "pazarlama", "technology": "teknoloji", "other_expense": "diğer giderler",
+    "salary": "maaş ve ücretler",
+    "rent": "kira",
+    "utilities": "elektrik, su ve iletişim",
+    "marketing": "pazarlama",
+    "technology": "teknoloji",
+    "other_expense": "diğer giderler",
 }
 
 
@@ -172,6 +179,7 @@ def dogrudan_cevap(soru: str, dashboard: dict[str, Any]) -> str | None:
 
 # ── CEO/CTO context builder ───────────────────────────────────────────────────
 
+
 def _build_executive_context(
     ceo_result: dict[str, Any] | None = None,
     cto_result: dict[str, Any] | None = None,
@@ -196,8 +204,8 @@ def _build_executive_context(
 
         if infra:
             lines.append(
-                f"Infrastructure Cost: ₺{infra.get('total_cost_cents', 0)/100:,.0f}/month"
-                f" | Waste: ₺{infra.get('waste_estimate_cents', 0)/100:,.0f}"
+                f"Infrastructure Cost: ₺{infra.get('total_cost_cents', 0) / 100:,.0f}/month"
+                f" | Waste: ₺{infra.get('waste_estimate_cents', 0) / 100:,.0f}"
             )
 
         if tech_debt:
@@ -217,14 +225,16 @@ def _build_executive_context(
             lines.append(
                 f"Engineering Velocity: {velocity.get('avg_velocity', 0)} pts/sprint"
                 f" | Trend: {velocity.get('velocity_trend', 'N/A')}"
-                f" | Predictability: {velocity.get('predictability_score', 0)*100:.0f}%"
+                f" | Predictability: {velocity.get('predictability_score', 0) * 100:.0f}%"
             )
 
         top_risks = summary.get("top_risks", [])[:3]
         if top_risks:
             lines += ["", "Top Tech Risks:"]
             for r in top_risks:
-                lines.append(f"  [{r.get('severity','').upper()}] {r.get('domain','')}: {r.get('message','')}")
+                lines.append(
+                    f"  [{r.get('severity', '').upper()}] {r.get('domain', '')}: {r.get('message', '')}"
+                )
 
         if summary.get("narrative"):
             lines += ["", f"CTO Assessment: {summary['narrative']}"]
@@ -242,31 +252,29 @@ def _build_executive_context(
 
         if fin_summary:
             lines += [
-                f"Revenue: ₺{fin_summary.get('revenue_cents', 0)/100:,.0f}",
-                f"Net Income: ₺{fin_summary.get('net_income_cents', 0)/100:,.0f}"
-                f" ({fin_summary.get('net_margin', 0)*100:.1f}% margin)",
+                f"Revenue: ₺{fin_summary.get('revenue_cents', 0) / 100:,.0f}",
+                f"Net Income: ₺{fin_summary.get('net_income_cents', 0) / 100:,.0f}"
+                f" ({fin_summary.get('net_margin', 0) * 100:.1f}% margin)",
                 f"Cash Runway: {fin_summary.get('cash_runway_months', 'N/A')} months",
             ]
 
         if tech_summary:
-            lines.append(
-                f"Tech Health: {tech_summary.get('overall_health_score', 'N/A')}/10"
-            )
+            lines.append(f"Tech Health: {tech_summary.get('overall_health_score', 'N/A')}/10")
 
         if cross_risks:
             lines += ["", f"Cross-Domain Risks ({len(cross_risks)}):"]
             for r in cross_risks[:5]:
                 lines.append(
-                    f"  [{r.get('severity','').upper()}] {r.get('title','')}"
-                    f" — {r.get('recommended_action','')[:80]}"
+                    f"  [{r.get('severity', '').upper()}] {r.get('title', '')}"
+                    f" — {r.get('recommended_action', '')[:80]}"
                 )
 
         if priorities:
             lines += ["", f"Strategic Priorities ({len(priorities)}):"]
             for p in priorities[:5]:
                 lines.append(
-                    f"  {p.get('rank','')}.  [{p.get('urgency','').upper()}] {p.get('action','')}"
-                    f" (Owner: {p.get('owner','')})"
+                    f"  {p.get('rank', '')}.  [{p.get('urgency', '').upper()}] {p.get('action', '')}"
+                    f" (Owner: {p.get('owner', '')})"
                 )
 
         if board_deck.get("one_page_summary"):
@@ -311,6 +319,7 @@ Company Data:
 
 # ── Main chat functions ───────────────────────────────────────────────────────
 
+
 async def chat_with_cfo(
     question: str,
     dashboard: dict[str, Any],
@@ -340,13 +349,15 @@ async def chat_with_cfo(
         context = _build_financial_context(dashboard, transactions)
         system_content = CFO_SYSTEM_PROMPT.format(context=context)
 
-    return (await complete_text(
-        task="deep_analysis",
-        system_prompt=system_content,
-        prompt=question,
-        history=conversation_history,
-        max_tokens=1024,
-    )).strip()
+    return (
+        await complete_text(
+            task="deep_analysis",
+            system_prompt=system_content,
+            prompt=question,
+            history=conversation_history,
+            max_tokens=1024,
+        )
+    ).strip()
 
 
 async def chat_with_ceo(
@@ -378,13 +389,15 @@ async def chat_with_ceo(
         context_parts.append(exec_ctx)
     context = "\n\n".join(context_parts) if context_parts else "No data available."
 
-    return (await complete_text(
-        task="deep_analysis",
-        system_prompt=CEO_SYSTEM_PROMPT.format(context=context),
-        prompt=question,
-        history=conversation_history,
-        max_tokens=1024,
-    )).strip()
+    return (
+        await complete_text(
+            task="deep_analysis",
+            system_prompt=CEO_SYSTEM_PROMPT.format(context=context),
+            prompt=question,
+            history=conversation_history,
+            max_tokens=1024,
+        )
+    ).strip()
 
 
 async def stream_chat_with_cfo(

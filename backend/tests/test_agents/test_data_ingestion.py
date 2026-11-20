@@ -4,6 +4,7 @@ Covers: _guess_category, _parse_amount, _parse_date, CATEGORY_KEYWORDS.
 
 data_ingestion.py imports langchain_openai at module level, so we stub it first.
 """
+
 import sys
 import types
 
@@ -32,8 +33,8 @@ from app.agents.data_ingestion import (
 
 # ── _guess_category ───────────────────────────────────────────────────────────
 
-class TestGuessCategory:
 
+class TestGuessCategory:
     # Revenue keywords
     def test_sales_is_revenue(self):
         assert _guess_category("Sales invoice for Q1") == "revenue"
@@ -130,8 +131,8 @@ class TestGuessCategory:
 
 # ── _parse_amount ─────────────────────────────────────────────────────────────
 
-class TestParseAmount:
 
+class TestParseAmount:
     def test_integer_amount(self):
         assert _parse_amount("1000") == 100_000
 
@@ -180,8 +181,8 @@ class TestParseAmount:
 
 # ── _parse_date ───────────────────────────────────────────────────────────────
 
-class TestParseDate:
 
+class TestParseDate:
     def test_dd_mm_yyyy_dot(self):
         result = _parse_date("15.03.2024")
         assert result is not None
@@ -238,8 +239,8 @@ class TestParseDate:
 
 # ── CATEGORY_KEYWORDS sanity ──────────────────────────────────────────────────
 
-class TestCategoryKeywords:
 
+class TestCategoryKeywords:
     def test_revenue_has_keywords(self):
         assert len(CATEGORY_KEYWORDS.get("revenue", [])) > 0
 
@@ -247,9 +248,19 @@ class TestCategoryKeywords:
         assert len(CATEGORY_KEYWORDS.get("salary", [])) > 0
 
     def test_all_expected_categories_present(self):
-        expected = {"revenue", "cogs", "salary", "rent", "utilities",
-                    "marketing", "technology", "tax", "loan",
-                    "other_expense", "other_income"}
+        expected = {
+            "revenue",
+            "cogs",
+            "salary",
+            "rent",
+            "utilities",
+            "marketing",
+            "technology",
+            "tax",
+            "loan",
+            "other_expense",
+            "other_income",
+        }
         assert expected.issubset(set(CATEGORY_KEYWORDS.keys()))
 
     def test_no_empty_keyword_strings(self):

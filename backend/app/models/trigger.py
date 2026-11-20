@@ -11,6 +11,7 @@ event can never fire twice. ``status`` records the decision — ``fired``,
 ``cooldown``, ``condition_false`` or ``error`` — so "why didn't my rule fire?" is
 answerable from the data.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -36,13 +37,9 @@ class TriggerDefinitionRow(Base):
     """One stored rule: on ``events``, if ``condition`` holds → run ``action_kind``."""
 
     __tablename__ = "trigger_definitions"
-    __table_args__ = (
-        Index("ix_trigger_definitions_org_enabled", "org_id", "enabled"),
-    )
+    __table_args__ = (Index("ix_trigger_definitions_org_enabled", "org_id", "enabled"),)
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: uuid.uuid4().hex
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     # JSON list[EventKind]: ["job.completed", "schedule", …]
@@ -52,9 +49,7 @@ class TriggerDefinitionRow(Base):
     action_kind: Mapped[str] = mapped_column(String(40), nullable=False)
     # JSON object — the free-form envelope each action kind validates.
     action_params: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    cooldown_minutes: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=60
-    )
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -96,16 +91,12 @@ class TriggerRunRow(Base):
     __table_args__ = (
         # The idempotency guard: a redelivered event (same trigger + event_ref)
         # can only ever be handled once.
-        UniqueConstraint(
-            "trigger_id", "event_ref", name="uq_trigger_runs_trigger_event"
-        ),
+        UniqueConstraint("trigger_id", "event_ref", name="uq_trigger_runs_trigger_event"),
         # Cooldown lookup: latest fired run for a trigger.
         Index("ix_trigger_runs_trigger_created", "trigger_id", "created_at"),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: uuid.uuid4().hex
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     # Deliberately not a hard FK (matches alert_history.rule_id): the definition
     # may be deleted while its audit history stays readable.

@@ -20,8 +20,9 @@ from typing import Any, TypedDict
 @dataclass
 class RiskStepLog:
     """Log entry for Risk pipeline execution."""
+
     node: str
-    status: str          # "started" | "completed" | "failed"
+    status: str  # "started" | "completed" | "failed"
     message: str
     metrics: dict[str, Any] | None = None
 
@@ -29,6 +30,7 @@ class RiskStepLog:
 @dataclass
 class RiskSkillResult:
     """Result from a Risk skill agent."""
+
     skill_name: str
     metrics: dict[str, Any]
     alerts: list[dict[str, str]]
@@ -39,6 +41,7 @@ class RiskSkillResult:
 @dataclass
 class RiskRunConfig:
     """Configuration for Risk pipeline run."""
+
     llm_enabled: bool = False
     settings: Any = None
 

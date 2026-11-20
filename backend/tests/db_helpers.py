@@ -16,6 +16,7 @@ tests.
 A file gets a normal pool: one connection per session, real transaction
 isolation, and SQLite's own locking serialises writers, as Postgres would.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -67,7 +68,9 @@ def gecici_motor(**kwargs: Any) -> AsyncEngine:
 
 
 @asynccontextmanager
-async def gecici_veritabani(tables: Sequence[Any] | None = None) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+async def gecici_veritabani(
+    tables: Sequence[Any] | None = None,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """The app's schema (or just `tables`) on a fresh file; yields its sessionmaker."""
     from app.database import Base
 

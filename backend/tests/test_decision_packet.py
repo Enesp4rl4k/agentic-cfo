@@ -16,6 +16,7 @@ empty options list with the freshness strip still present.
 No LLM and no API key is needed anywhere in this file — that is itself
 the determinism test.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -99,6 +100,7 @@ async def _seed_job(
 
 # ── 1. Dört soru ─────────────────────────────────────────────────────────────
 
+
 async def test_packet_answers_all_four_questions(client):
     headers, org_id, _ = await _user(client, "paket@example.com")
     job_id = await _seed_job(client, org_id)
@@ -131,7 +133,9 @@ async def test_packet_answers_all_four_questions(client):
     assert "analysis_file" in states and "coverage" in states
     assert states["coverage"]["age_days"] == 10  # transaction_date = 10 gün önce
     assert states["coverage"]["state"] == "aging"
-    assert all(f["state"] in {"fresh", "aging", "stale", "never", "unknown"} for f in d["freshness"])
+    assert all(
+        f["state"] in {"fresh", "aging", "stale", "never", "unknown"} for f in d["freshness"]
+    )
 
     # 4. Emsal: bu org'un kayıtları (kayıt yok → boş ama yapı var)
     assert d["precedent"] == {"decisions": [], "pending_actions": 0}
@@ -141,6 +145,7 @@ async def test_packet_answers_all_four_questions(client):
 
 
 # ── 3. Tazelik: bayat connector gerçekten bayat ─────────────────────────────
+
 
 async def test_stale_connector_reads_stale_not_fresh(client):
     from datetime import UTC, datetime, timedelta
@@ -171,6 +176,7 @@ async def test_stale_connector_reads_stale_not_fresh(client):
 
 # ── Henüz karar verilemez / yetki kenarları ─────────────────────────────────
 
+
 async def test_running_job_is_409(client):
     headers, org_id, _ = await _user(client, "calisiyor@example.com")
     job_id = await _seed_job(client, org_id, status="analyzing", awaiting=False)
@@ -196,6 +202,7 @@ async def test_missing_job_is_404(client):
 
 # ── Bozuk/eksik veri: düşmez, dürüst kalır ─────────────────────────────────
 
+
 async def test_no_report_degrades_to_empty_options(client):
     headers, org_id, _ = await _user(client, "raporyok@example.com")
     job_id = await _seed_job(client, org_id, awaiting=False, with_report=False)
@@ -203,24 +210,21 @@ async def test_no_report_degrades_to_empty_options(client):
     r = await client.get(f"/api/v1/analysis/{job_id}/decision-packet", headers=headers)
     assert r.status_code == 200
     d = r.json()["data"]
-    assert d["options"] == []          # seçenek yoksa uydurmuyor
-    assert d["freshness"]              # ama tazelik şeridi yine dürüst
+    assert d["options"] == []  # seçenek yoksa uydurmuyor
+    assert d["freshness"]  # ama tazelik şeridi yine dürüst
     assert d["gate"]["held_for_review"] is False
     assert d["gate"]["reason"] is None
 
 
 # ── Parite: paket ile simulate endpoint'i aynı sayıyı okuyor ───────────────
 
+
 async def test_packet_and_scenarios_endpoint_agree(client):
     headers, org_id, _ = await _user(client, "parite@example.com")
     job_id = await _seed_job(client, org_id)
 
-    packet = await client.get(
-        f"/api/v1/analysis/{job_id}/decision-packet", headers=headers
-    )
-    scenarios = await client.get(
-        f"/api/v1/counterfactual/scenarios/{job_id}", headers=headers
-    )
+    packet = await client.get(f"/api/v1/analysis/{job_id}/decision-packet", headers=headers)
+    scenarios = await client.get(f"/api/v1/counterfactual/scenarios/{job_id}", headers=headers)
     assert scenarios.status_code == 200, scenarios.text
 
     packet_presets = [
@@ -229,8 +233,7 @@ async def test_packet_and_scenarios_endpoint_agree(client):
         if not o["baseline"]
     ]
     endpoint_presets = [
-        (s["label"], s["base_net_impact"])
-        for s in scenarios.json()["data"]["scenarios"]
+        (s["label"], s["base_net_impact"]) for s in scenarios.json()["data"]["scenarios"]
     ]
     # Aynı paylaşılan preset kurucusu → aynı etiketler ve aynı sonuçlar.
     assert packet_presets == endpoint_presets
@@ -238,6 +241,7 @@ async def test_packet_and_scenarios_endpoint_agree(client):
 
 
 # ── Birim sınırı: saklanan rapor lira, bu yol kuruş ─────────────────────────
+
 
 async def test_loader_normalizes_report_lira_to_kurus(client):
     """The stored report is lira (`report_agent._fmt` divides the pipeline's
@@ -253,12 +257,12 @@ async def test_loader_normalizes_report_lira_to_kurus(client):
         pnl, cashflow, forecast = await load_pnl_cashflow_forecast(db, job_id)
 
     # Para: lira tohumu ×100 = kuruş (aynı değerler, doğru birim)
-    assert pnl["revenue"] == 1_200_000_000           # 12_000_000_00
-    assert pnl["total_opex"] == 800_000_000          # 8_000_000_00
-    assert pnl["opex"]["salary"] == 400_000_000      # 4_000_000_00
-    assert cashflow["net_change"] == 50_000_000      # 500_000_00
+    assert pnl["revenue"] == 1_200_000_000  # 12_000_000_00
+    assert pnl["total_opex"] == 800_000_000  # 8_000_000_00
+    assert pnl["opex"]["salary"] == 400_000_000  # 4_000_000_00
+    assert cashflow["net_change"] == 50_000_000  # 500_000_00
     base = forecast["scenarios"]["base"]
-    assert base["twelve_month_net"] == 300_000_000   # 3_000_000_00
+    assert base["twelve_month_net"] == 300_000_000  # 3_000_000_00
 
     # Para değil: oran ve ay sayıları dokunulmaz
     assert pnl["net_margin"] == 0.2

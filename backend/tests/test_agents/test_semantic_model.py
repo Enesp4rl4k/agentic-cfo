@@ -1,4 +1,5 @@
 """Tests for canonical semantic model, projectors, brief, bridge preference."""
+
 from __future__ import annotations
 
 from app.services.semantic.brief import CONFIDENCE_GATE, build_from_snapshot, compute_health_score
@@ -60,14 +61,18 @@ def test_project_from_cfo_converts_lira_scalars_to_cents() -> None:
     pts = project_from_cfo(flat, currency="USD")
     mmap = {p.metric_id: p for p in pts}
     assert mmap["finance.revenue"].unit == "cents"
-    assert mmap["finance.revenue"].value == 100_000_000       # 1_000_000 lira
-    assert mmap["finance.ebitda"].value == 25_000_000         # 250_000 lira
+    assert mmap["finance.revenue"].value == 100_000_000  # 1_000_000 lira
+    assert mmap["finance.ebitda"].value == 25_000_000  # 250_000 lira
     assert mmap["finance.operating_cashflow"].value == 30_000_000  # 300_000 lira
 
 
 def test_merge_metrics_later_wins() -> None:
     a = [MetricPoint("finance.revenue", 1, "cents", source_agent="cfo")]
-    b = [MetricPoint("finance.revenue", 2, "cents", source_agent="canonical", data_source="canonical")]
+    b = [
+        MetricPoint(
+            "finance.revenue", 2, "cents", source_agent="canonical", data_source="canonical"
+        )
+    ]
     merged = merge_metrics(a, b)
     assert len(merged) == 1
     assert merged[0].value == 2
@@ -193,15 +198,19 @@ def test_bridge_prefers_semantic() -> None:
         mock_ctx.last_cmo_result = None
         mock_ctx.last_chro_result = None
 
-        with patch(
-            "app.services.company_context.get_company_context",
-            new=AsyncMock(return_value=mock_ctx),
-        ), patch(
-            "app.services.semantic.store.get_semantic_snapshot",
-            new=AsyncMock(return_value=semantic_snap),
-        ), patch(
-            "app.services.semantic.store.get_latest_semantic_snapshot",
-            new=AsyncMock(return_value=None),
+        with (
+            patch(
+                "app.services.company_context.get_company_context",
+                new=AsyncMock(return_value=mock_ctx),
+            ),
+            patch(
+                "app.services.semantic.store.get_semantic_snapshot",
+                new=AsyncMock(return_value=semantic_snap),
+            ),
+            patch(
+                "app.services.semantic.store.get_latest_semantic_snapshot",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             from app.services.agent_context_bridge import enrich_state
 

@@ -10,6 +10,7 @@ Tetikleyici türleri:
   key_person_loss     → role
   market_shock        → usd_try_increase_pct, inflation_pct
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Request şemaları ──────────────────────────────────────────────────────────
+
 
 class CashCrisisParams(BaseModel):
     runway_months: float = Field(..., gt=0, le=60, description="Kalan nakit ömrü (ay)")
@@ -52,6 +54,7 @@ class MarketShockParams(BaseModel):
 
 class CascadeSimulateRequest(BaseModel):
     """Cascade simülasyon isteği."""
+
     trigger: Literal[
         "cash_crisis",
         "revenue_drop",
@@ -64,13 +67,14 @@ class CascadeSimulateRequest(BaseModel):
     org_id: str | None = Field(None, description="Org ID (CompanyContext'ten veri çek)")
 
     # Tetikleyiciye özel parametreler
-    cash_crisis:      CashCrisisParams     | None = None
-    revenue_drop:     RevenueDropParams    | None = None
-    key_person_loss:  KeyPersonLossParams  | None = None
-    market_shock:     MarketShockParams    | None = None
+    cash_crisis: CashCrisisParams | None = None
+    revenue_drop: RevenueDropParams | None = None
+    key_person_loss: KeyPersonLossParams | None = None
+    market_shock: MarketShockParams | None = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 async def _load_context_from_job(
     job_id: str,
@@ -90,6 +94,7 @@ async def _load_context_from_job(
         return {}
     try:
         import json
+
         data = json.loads(row.data) if isinstance(row.data, str) else row.data
         return data if isinstance(data, dict) else {}
     except Exception:
@@ -162,6 +167,7 @@ async def _load_context_from_org(
 
 # ── Endpoint'ler ───────────────────────────────────────────────────────────────
 
+
 @router.post("/cascade/simulate")
 async def simulate_cascade(
     req: CascadeSimulateRequest,
@@ -186,7 +192,7 @@ async def simulate_cascade(
             await load_owned_job(db, req.job_id, current_user)
         report_data = await _load_context_from_job(req.job_id, db)
         ctx = {
-            "pnl":      report_data.get("pnl") or {},
+            "pnl": report_data.get("pnl") or {},
             "cashflow": report_data.get("cashflow") or {},
             "forecast": report_data.get("forecast") or {},
         }
@@ -196,13 +202,13 @@ async def simulate_cascade(
             raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
         org_ctx = await _load_context_from_org(req.org_id, db)
         ctx = {
-            "pnl":       org_ctx.get("pnl") or {},
-            "cashflow":  org_ctx.get("cashflow") or {},
-            "forecast":  org_ctx.get("forecast") or {},
+            "pnl": org_ctx.get("pnl") or {},
+            "cashflow": org_ctx.get("cashflow") or {},
+            "forecast": org_ctx.get("forecast") or {},
             "chro_data": org_ctx.get("chro_data") or org_ctx.get("chro") or {},
-            "cto_data":  org_ctx.get("cto_data") or org_ctx.get("cto") or {},
-            "cmo_data":  org_ctx.get("cmo_data") or org_ctx.get("cmo") or {},
-            "coo_data":  org_ctx.get("coo_data") or org_ctx.get("coo") or {},
+            "cto_data": org_ctx.get("cto_data") or org_ctx.get("cto") or {},
+            "cmo_data": org_ctx.get("cmo_data") or org_ctx.get("cmo") or {},
+            "coo_data": org_ctx.get("coo_data") or org_ctx.get("coo") or {},
         }
 
     sim = get_cascade_simulator(**ctx)
@@ -229,7 +235,7 @@ async def simulate_cascade(
     elif trigger == TriggerType.MARKET_SHOCK:
         p = req.market_shock or MarketShockParams(usd_try_increase_pct=30.0, inflation_pct=50.0)
         kwargs["usd_try_increase_pct"] = p.usd_try_increase_pct
-        kwargs["inflation_pct"]        = p.inflation_pct
+        kwargs["inflation_pct"] = p.inflation_pct
 
     try:
         result = sim.simulate(trigger, **kwargs)
@@ -248,36 +254,61 @@ async def list_triggers(
     return {
         "triggers": [
             {
-                "type":        "cash_crisis",
-                "label":       "Nakit Krizi",
+                "type": "cash_crisis",
+                "label": "Nakit Krizi",
                 "description": "Nakit ömrü kritik eşiğin altına düştüğünde zincirleme etki",
                 "params": [
-                    {"name": "runway_months", "type": "float", "label": "Kalan Nakit Ömrü (ay)", "default": 2.5},
+                    {
+                        "name": "runway_months",
+                        "type": "float",
+                        "label": "Kalan Nakit Ömrü (ay)",
+                        "default": 2.5,
+                    },
                 ],
             },
             {
-                "type":        "revenue_drop",
-                "label":       "Gelir Düşüşü",
+                "type": "revenue_drop",
+                "label": "Gelir Düşüşü",
                 "description": "Ani gelir kaybının tüm domainlere etkisi",
                 "params": [
-                    {"name": "drop_pct", "type": "float", "label": "Düşüş Oranı (0–1)", "default": 0.3},
+                    {
+                        "name": "drop_pct",
+                        "type": "float",
+                        "label": "Düşüş Oranı (0–1)",
+                        "default": 0.3,
+                    },
                 ],
             },
             {
-                "type":        "key_person_loss",
-                "label":       "Kilit Kişi Kaybı",
+                "type": "key_person_loss",
+                "label": "Kilit Kişi Kaybı",
                 "description": "Kritik bir yöneticinin ayrılmasının organizasyona etkisi",
                 "params": [
-                    {"name": "role", "type": "select", "label": "Rol", "options": ["cto", "cfo", "ceo", "cmo", "chro"]},
+                    {
+                        "name": "role",
+                        "type": "select",
+                        "label": "Rol",
+                        "options": ["cto", "cfo", "ceo", "cmo", "chro"],
+                    },
                 ],
             },
             {
-                "type":        "market_shock",
-                "label":       "Piyasa Şoku",
+                "type": "market_shock",
+                "label": "Piyasa Şoku",
                 "description": "Kur krizi veya yüksek enflasyonun etkisi",
                 "params": [
-                    {"name": "usd_try_increase_pct", "type": "float", "label": "USD/TRY Artışı (%)", "default": 30},
-                    {"name": "inflation_pct",         "type": "float", "label": "Enflasyon (%)",      "default": 50},
+                    {
+                        "name": "usd_try_increase_pct",
+                        "type": "float",
+                        "label": "USD/TRY Artışı (%)",
+                        "default": 30,
+                    },
+                    {
+                        "name": "inflation_pct",
+                        "type": "float",
+                        "label": "Enflasyon (%)",
+                        "default": 50,
+                    },
                 ],
             },
         ]

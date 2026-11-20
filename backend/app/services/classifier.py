@@ -9,6 +9,7 @@ Priority order:
 When user corrects a category, call learn() to persist the rule.
 Next time the same vendor/keyword appears, the correct category is applied.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,18 +30,30 @@ logger = logging.getLogger(__name__)
 # ── Built-in keyword heuristics (same as data_ingestion, centralised here) ──
 
 KEYWORD_RULES: dict[str, list[str]] = {
-    "revenue":        ["satış", "gelir", "tahsilat", "sales", "income", "revenue", "payment received"],
-    "cogs":           ["hammadde", "malzeme", "raw material", "goods", "manufacturing", "inventory"],
-    "salary":         ["maaş", "ücret", "bordro", "sgk", "prim", "ikramiye", "kıdem",
-                       "salary", "payroll", "wages", "staff", "bonus"],
-    "rent":           ["kira", "kiralık", "rent", "lease"],
-    "utilities":      ["elektrik", "su", "doğalgaz", "electricity", "water", "gas", "internet", "phone"],
-    "marketing":      ["reklam", "pazarlama", "advertising", "marketing", "google ads", "meta ads"],
-    "technology":     ["yazılım", "sunucu", "software", "cloud", "aws", "azure", "saas", "license"],
+    "revenue": ["satış", "gelir", "tahsilat", "sales", "income", "revenue", "payment received"],
+    "cogs": ["hammadde", "malzeme", "raw material", "goods", "manufacturing", "inventory"],
+    "salary": [
+        "maaş",
+        "ücret",
+        "bordro",
+        "sgk",
+        "prim",
+        "ikramiye",
+        "kıdem",
+        "salary",
+        "payroll",
+        "wages",
+        "staff",
+        "bonus",
+    ],
+    "rent": ["kira", "kiralık", "rent", "lease"],
+    "utilities": ["elektrik", "su", "doğalgaz", "electricity", "water", "gas", "internet", "phone"],
+    "marketing": ["reklam", "pazarlama", "advertising", "marketing", "google ads", "meta ads"],
+    "technology": ["yazılım", "sunucu", "software", "cloud", "aws", "azure", "saas", "license"],
     # KDV is paid over to the state: cash, not a P&L expense (plan v8 §A1).
-    "tax_payment":    ["kdv", "katma değer", "vat"],
-    "tax":            ["vergi", "stopaj", "tax", "withholding"],
-    "loan":           ["kredi", "borç", "faiz", "loan", "interest", "installment"],
+    "tax_payment": ["kdv", "katma değer", "vat"],
+    "tax": ["vergi", "stopaj", "tax", "withholding"],
+    "loan": ["kredi", "borç", "faiz", "loan", "interest", "installment"],
 }
 
 
@@ -108,8 +121,10 @@ async def classify(
     if vendor:
         result = await db.execute(
             select(CategoryRule)
-            .where(CategoryRule.org_id == org_id,
-                   CategoryRule.vendor_match.ilike(f"%{vendor.strip()}%"))
+            .where(
+                CategoryRule.org_id == org_id,
+                CategoryRule.vendor_match.ilike(f"%{vendor.strip()}%"),
+            )
             .order_by(CategoryRule.hit_count.desc())
             .limit(1)
         )
@@ -180,12 +195,16 @@ async def load_rules(org_id: str | None, db: AsyncSession) -> list[RuleSpec]:
     from app.models.category_rule import CategoryRule
 
     rows = (
-        await db.execute(
-            select(CategoryRule)
-            .where(CategoryRule.org_id == org_id, CategoryRule.apply_always.is_(True))
-            .order_by(CategoryRule.hit_count.desc())
+        (
+            await db.execute(
+                select(CategoryRule)
+                .where(CategoryRule.org_id == org_id, CategoryRule.apply_always.is_(True))
+                .order_by(CategoryRule.hit_count.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         RuleSpec(
             id=str(r.id),
@@ -242,9 +261,7 @@ def apply_rules(
     if not rules:
         return hits
     for tx in transactions:
-        rule = match_rule(
-            rules, vendor=tx.get(vendor_key), description=tx.get(description_key)
-        )
+        rule = match_rule(rules, vendor=tx.get(vendor_key), description=tx.get(description_key))
         if rule is None:
             continue
         tx["category"] = rule.category
@@ -287,10 +304,12 @@ async def learn(
         existing = await db.execute(
             # Only this organisation's rule: matching on the vendor name alone
             # let one company's correction rewrite another company's rule.
-            select(CategoryRule).where(
+            select(CategoryRule)
+            .where(
                 CategoryRule.org_id == org_id,
                 CategoryRule.vendor_match.ilike(vendor.strip()),
-            ).limit(1)
+            )
+            .limit(1)
         )
         rule = existing.scalars().first()
         if rule:
@@ -310,7 +329,12 @@ async def learn(
     )
     db.add(rule)
     await db.commit()
-    logger.info("Learned new rule: vendor=%s keyword=%s → %s", rule.vendor_match, rule.keyword_match, new_category)
+    logger.info(
+        "Learned new rule: vendor=%s keyword=%s → %s",
+        rule.vendor_match,
+        rule.keyword_match,
+        new_category,
+    )
     return rule
 
 
@@ -320,7 +344,23 @@ def _extract_keyword(description: str) -> str | None:
     Returns the longest word that's not a stopword (date, amount, etc).
     """
     import re
-    stopwords = {"the", "and", "for", "from", "to", "of", "a", "an", "in", "on", "at", "ödeme", "işlem", "transfer"}
+
+    stopwords = {
+        "the",
+        "and",
+        "for",
+        "from",
+        "to",
+        "of",
+        "a",
+        "an",
+        "in",
+        "on",
+        "at",
+        "ödeme",
+        "işlem",
+        "transfer",
+    }
     words = re.findall(r"[a-zA-ZğüşıöçĞÜŞİÖÇ]{4,}", description)
     candidates = [w.lower() for w in words if w.lower() not in stopwords]
     # Pick the longest candidate — most specific

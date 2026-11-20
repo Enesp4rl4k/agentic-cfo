@@ -7,6 +7,7 @@ Strategy:
   2. If rule-based yields 0 transactions → fall back to LLM extraction
   3. LLM is ONLY called when rule-based fails — avoids unnecessary API costs
 """
+
 from __future__ import annotations
 
 import csv
@@ -25,25 +26,71 @@ logger = logging.getLogger(__name__)
 # Each role has a list of accepted column names (case-insensitive, whitespace-stripped).
 
 _DATE_COLS = {
-    "tarih", "date", "işlem tarihi", "islem tarihi", "value date",
-    "valör", "valor", "trans. date", "transaction date", "dt",
+    "tarih",
+    "date",
+    "işlem tarihi",
+    "islem tarihi",
+    "value date",
+    "valör",
+    "valor",
+    "trans. date",
+    "transaction date",
+    "dt",
 }
 _AMOUNT_COLS = {
-    "tutar", "amount", "miktar", "toplam", "total", "fiyat", "price",
-    "gelir/gider", "gelir", "gider", "income", "expense", "debit/credit",
-    "alacak/borç", "alacak", "borç",
+    "tutar",
+    "amount",
+    "miktar",
+    "toplam",
+    "total",
+    "fiyat",
+    "price",
+    "gelir/gider",
+    "gelir",
+    "gider",
+    "income",
+    "expense",
+    "debit/credit",
+    "alacak/borç",
+    "alacak",
+    "borç",
 }
 _DESC_COLS = {
-    "açıklama", "aciklama", "description", "detay", "detail", "narration",
-    "işlem açıklaması", "islem aciklamasi", "transaction", "trans. desc",
-    "bilgi", "bilgi notu", "notes",
+    "açıklama",
+    "aciklama",
+    "description",
+    "detay",
+    "detail",
+    "narration",
+    "işlem açıklaması",
+    "islem aciklamasi",
+    "transaction",
+    "trans. desc",
+    "bilgi",
+    "bilgi notu",
+    "notes",
 }
 _TYPE_COLS = {
-    "tür", "tur", "type", "işlem tipi", "islem tipi", "kategori", "category",
+    "tür",
+    "tur",
+    "type",
+    "işlem tipi",
+    "islem tipi",
+    "kategori",
+    "category",
 }
 _VENDOR_COLS = {
-    "satıcı", "satici", "vendor", "karşı hesap", "karsi hesap",
-    "müşteri", "musteri", "gönderen", "gonderen", "alıcı", "alici",
+    "satıcı",
+    "satici",
+    "vendor",
+    "karşı hesap",
+    "karsi hesap",
+    "müşteri",
+    "musteri",
+    "gönderen",
+    "gonderen",
+    "alıcı",
+    "alici",
 }
 
 
@@ -110,7 +157,7 @@ def _parse_csv_transactions(text: str) -> list[ParsedTransaction]:
     transactions: list[ParsedTransaction] = []
     parser = GenericParser()
 
-    for row in rows[header_idx + 1:]:
+    for row in rows[header_idx + 1 :]:
         if len(row) <= max(roles.values()):
             continue
         if not any(c.strip() for c in row):
@@ -141,14 +188,16 @@ def _parse_csv_transactions(text: str) -> list[ParsedTransaction]:
         # If no type column: amount sign may indicate direction
         # (negative = expense handled by caller via parse_turkish_amount which strips sign)
 
-        transactions.append(ParsedTransaction(
-            date=date,
-            description=description or raw_date,
-            amount_cents=amount,
-            tx_type=tx_type,
-            vendor=vendor or None,
-            raw_row=",".join(row),
-        ))
+        transactions.append(
+            ParsedTransaction(
+                date=date,
+                description=description or raw_date,
+                amount_cents=amount,
+                tx_type=tx_type,
+                vendor=vendor or None,
+                raw_row=",".join(row),
+            )
+        )
 
     return transactions
 
@@ -195,9 +244,7 @@ class GenericParser(BankParser):
             transactions = self._extract_via_llm(text)
             statement.transactions = transactions
             if transactions:
-                logger.info(
-                    "GenericParser: LLM extracted %d transactions", len(transactions)
-                )
+                logger.info("GenericParser: LLM extracted %d transactions", len(transactions))
         except Exception as exc:
             logger.exception("GenericParser LLM extraction failed")
             statement.parse_warnings.append(f"LLM extraction failed: {exc}")
@@ -274,13 +321,15 @@ class GenericParser(BankParser):
             amount = self.parse_turkish_amount(str(item.get("amount", "")))
             if not amount:
                 continue
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=str(item.get("description", "")),
-                amount_cents=amount,
-                tx_type=item.get("type", "expense"),
-                vendor=item.get("vendor"),
-                raw_row=str(item),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=str(item.get("description", "")),
+                    amount_cents=amount,
+                    tx_type=item.get("type", "expense"),
+                    vendor=item.get("vendor"),
+                    raw_row=str(item),
+                )
+            )
 
         return transactions

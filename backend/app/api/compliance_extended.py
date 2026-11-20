@@ -15,6 +15,7 @@ GET  /compliance/iso27001/controls       → ISO 27001 Annex A kontrol listesi
 GET  /compliance/dashboard/{org_id}      → Tüm framework'ler için özet skor
 POST /compliance/report/generate         → Uyum raporu oluştur (async)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,24 +44,25 @@ logger = logging.getLogger(__name__)
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
+
 class SOXCertifyRequest(BaseModel):
-    period:          str           # "2024-Q2"
-    certifier_name:  str           = Field(min_length=3)
-    certifier_role:  Literal["CEO", "CFO", "Audit Committee"]
-    statements:      list[bool]    = Field(min_length=3, max_length=10)
+    period: str  # "2024-Q2"
+    certifier_name: str = Field(min_length=3)
+    certifier_role: Literal["CEO", "CFO", "Audit Committee"]
+    statements: list[bool] = Field(min_length=3, max_length=10)
 
 
 class BreachNotificationRequest(BaseModel):
-    description:     str
-    severity:        Literal["low", "medium", "high", "critical"] = "medium"
-    affected_users:  int = 0
-    discovered_at:   str | None = None   # ISO datetime; defaults to now
+    description: str
+    severity: Literal["low", "medium", "high", "critical"] = "medium"
+    affected_users: int = 0
+    discovered_at: str | None = None  # ISO datetime; defaults to now
 
 
 class ReportGenerateRequest(BaseModel):
-    org_id:    str | None = None
+    org_id: str | None = None
     framework: Literal["gdpr", "sox", "iso27001", "all"] = "all"
-    period:    str = "2024"
+    period: str = "2024"
 
 
 # ── SOX Section definitions ───────────────────────────────────────────────────
@@ -122,6 +124,7 @@ ISO_27001_CONTROLS = {
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
+
 async def _get_org_id(user: User) -> str:
     org_id = str(user.org_id) if user.org_id else None
     if not org_id:
@@ -147,8 +150,8 @@ async def _get_anomalies_for_sox(org_id: str, db: AsyncSession) -> dict[str, Any
         counts = {str(sev): int(cnt) for sev, cnt in result.all()}
         return {
             "critical_unacked": counts.get("critical", 0),
-            "medium_count":     counts.get("medium", 0),
-            "low_count":        counts.get("low", 0),
+            "medium_count": counts.get("medium", 0),
+            "low_count": counts.get("low", 0),
         }
     except Exception as exc:
         logger.debug("SOX anomaly lookup failed: %s", exc)
@@ -157,10 +160,11 @@ async def _get_anomalies_for_sox(org_id: str, db: AsyncSession) -> dict[str, Any
 
 # ── GET /compliance/sox/status ────────────────────────────────────────────────
 
+
 @router.get("/compliance/sox/status")
 async def sox_status(
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     SOX Section 302/404/409 uyum durumu.
@@ -188,13 +192,11 @@ async def sox_status(
         last_cert = None
 
     section_302 = {
-        "status":         "certified" if last_cert else "pending",
+        "status": "certified" if last_cert else "pending",
         "last_certifier": last_cert.certifier_name if last_cert else None,
-        "last_period":    last_cert.period if last_cert else None,
-        "certified_at":   (
-            last_cert.certified_at.isoformat()
-            if last_cert and last_cert.certified_at
-            else None
+        "last_period": last_cert.period if last_cert else None,
+        "certified_at": (
+            last_cert.certified_at.isoformat() if last_cert and last_cert.certified_at else None
         ),
         "action_required": last_cert is None,
     }
@@ -204,45 +206,50 @@ async def sox_status(
     critical_cnt = anomaly_data["critical_unacked"]
 
     section_404 = {
-        "status":               "clean" if critical_cnt == 0 else "material_weakness",
-        "critical_anomalies":   critical_cnt,
-        "medium_anomalies":     anomaly_data["medium_count"],
+        "status": "clean" if critical_cnt == 0 else "material_weakness",
+        "critical_anomalies": critical_cnt,
+        "medium_anomalies": anomaly_data["medium_count"],
         "internal_control_gap": critical_cnt > 0,
-        "action_required":      critical_cnt > 0,
+        "action_required": critical_cnt > 0,
         "description": (
-            "İç kontroller etkin" if critical_cnt == 0
+            "İç kontroller etkin"
+            if critical_cnt == 0
             else f"{critical_cnt} kritik anomaly onay bekliyor — material weakness riski"
         ),
     }
 
     # Section 409: Real-time disclosure triggers
     section_409 = {
-        "status":          "no_triggers",
-        "triggers":        [],
+        "status": "no_triggers",
+        "triggers": [],
         "disclosure_window_days": 4,
         "action_required": False,
     }
     if critical_cnt > 0:
-        section_409["triggers"].append({
-            "type":        "critical_anomaly",
-            "description": f"{critical_cnt} kritik anomaly tespit edildi",
-            "deadline":    (datetime.now(UTC) + timedelta(days=4)).isoformat(),
-        })
+        section_409["triggers"].append(
+            {
+                "type": "critical_anomaly",
+                "description": f"{critical_cnt} kritik anomaly tespit edildi",
+                "deadline": (datetime.now(UTC) + timedelta(days=4)).isoformat(),
+            }
+        )
         section_409["status"] = "disclosure_required"
         section_409["action_required"] = True
 
     # Overall SOX score
-    issues = sum([
-        section_302["action_required"],
-        section_404["action_required"],
-        section_409["action_required"],
-    ])
+    issues = sum(
+        [
+            section_302["action_required"],
+            section_404["action_required"],
+            section_409["action_required"],
+        ]
+    )
     sox_score = round(100 - issues * 33.3)
 
     return {
         "data": {
-            "org_id":      org_id,
-            "sox_score":   sox_score,
+            "org_id": org_id,
+            "sox_score": sox_score,
             "section_302": section_302,
             "section_404": section_404,
             "section_409": section_409,
@@ -253,11 +260,12 @@ async def sox_status(
 
 # ── POST /compliance/sox/certify ──────────────────────────────────────────────
 
+
 @router.post("/compliance/sox/certify")
 async def sox_certify(
     body: SOXCertifyRequest,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     SOX Section 302 sertifikasyonu imzala.
@@ -274,28 +282,33 @@ async def sox_certify(
         )
 
     # Generate signature hash
-    payload = json.dumps({
-        "org_id":       org_id,
-        "period":       body.period,
-        "certifier":    body.certifier_name,
-        "role":         body.certifier_role,
-        "statements":   body.statements,
-        "timestamp":    datetime.now(UTC).isoformat(),
-    }, sort_keys=True)
+    payload = json.dumps(
+        {
+            "org_id": org_id,
+            "period": body.period,
+            "certifier": body.certifier_name,
+            "role": body.certifier_role,
+            "statements": body.statements,
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+        sort_keys=True,
+    )
     signature_hash = hashlib.sha256(payload.encode()).hexdigest()
 
     try:
-        db.add(ComplianceCertification(
-            id             = uuid.uuid4().hex,
-            org_id         = org_id,
-            framework      = "sox_302",
-            period         = body.period,
-            certifier_name = body.certifier_name,
-            certifier_role = body.certifier_role,
-            statements     = json.dumps(body.statements),
-            signature_hash = signature_hash,
-            certified_at   = datetime.now(UTC),
-        ))
+        db.add(
+            ComplianceCertification(
+                id=uuid.uuid4().hex,
+                org_id=org_id,
+                framework="sox_302",
+                period=body.period,
+                certifier_name=body.certifier_name,
+                certifier_role=body.certifier_role,
+                statements=json.dumps(body.statements),
+                signature_hash=signature_hash,
+                certified_at=datetime.now(UTC),
+            )
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -304,19 +317,20 @@ async def sox_certify(
 
     return {
         "data": {
-            "signature_hash":  signature_hash,
-            "period":          body.period,
-            "certifier":       body.certifier_name,
-            "role":            body.certifier_role,
-            "certified_at":    datetime.now(UTC).isoformat(),
-            "framework":       "sox_302",
-            "message":         f"SOX Section 302 sertifikasyonu başarıyla imzalandı. Hash: {signature_hash[:16]}...",
+            "signature_hash": signature_hash,
+            "period": body.period,
+            "certifier": body.certifier_name,
+            "role": body.certifier_role,
+            "certified_at": datetime.now(UTC).isoformat(),
+            "framework": "sox_302",
+            "message": f"SOX Section 302 sertifikasyonu başarıyla imzalandı. Hash: {signature_hash[:16]}...",
         },
         "error": None,
     }
 
 
 # ── GET /compliance/gdpr/article30-register ───────────────────────────────────
+
 
 @router.get("/compliance/gdpr/article30-register")
 async def gdpr_article30_register(
@@ -329,40 +343,40 @@ async def gdpr_article30_register(
     # Standard data processing activities for SaaS financial platform
     activities = [
         {
-            "id":               "fin-analysis",
-            "purpose":          "Finansal analiz ve raporlama",
-            "categories":       ["Finansal veriler", "İş işlemleri"],
-            "recipients":       ["Platform kullanıcıları", "Muhasebeciler"],
-            "retention_days":   1095,   # 3 years
-            "legal_basis":      "Sözleşmenin ifası (GDPR Art. 6(1)(b))",
-            "third_countries":  [],
+            "id": "fin-analysis",
+            "purpose": "Finansal analiz ve raporlama",
+            "categories": ["Finansal veriler", "İş işlemleri"],
+            "recipients": ["Platform kullanıcıları", "Muhasebeciler"],
+            "retention_days": 1095,  # 3 years
+            "legal_basis": "Sözleşmenin ifası (GDPR Art. 6(1)(b))",
+            "third_countries": [],
         },
         {
-            "id":               "auth",
-            "purpose":          "Kullanıcı kimlik doğrulama ve erişim yönetimi",
-            "categories":       ["Kimlik verileri", "Oturum verileri"],
-            "recipients":       ["Platform işletmecisi"],
-            "retention_days":   365,
-            "legal_basis":      "Sözleşmenin ifası (GDPR Art. 6(1)(b))",
-            "third_countries":  [],
+            "id": "auth",
+            "purpose": "Kullanıcı kimlik doğrulama ve erişim yönetimi",
+            "categories": ["Kimlik verileri", "Oturum verileri"],
+            "recipients": ["Platform işletmecisi"],
+            "retention_days": 365,
+            "legal_basis": "Sözleşmenin ifası (GDPR Art. 6(1)(b))",
+            "third_countries": [],
         },
         {
-            "id":               "audit-log",
-            "purpose":          "Denetim günlüğü ve güvenlik izleme",
-            "categories":       ["Kullanım verileri", "IP adresleri"],
-            "recipients":       ["Platform güvenlik ekibi"],
-            "retention_days":   730,    # 2 years
-            "legal_basis":      "Meşru menfaat (GDPR Art. 6(1)(f))",
-            "third_countries":  [],
+            "id": "audit-log",
+            "purpose": "Denetim günlüğü ve güvenlik izleme",
+            "categories": ["Kullanım verileri", "IP adresleri"],
+            "recipients": ["Platform güvenlik ekibi"],
+            "retention_days": 730,  # 2 years
+            "legal_basis": "Meşru menfaat (GDPR Art. 6(1)(f))",
+            "third_countries": [],
         },
         {
-            "id":               "notifications",
-            "purpose":          "E-posta ve bildirim gönderimi",
-            "categories":       ["İletişim verileri"],
-            "recipients":       ["E-posta servis sağlayıcısı (Resend)"],
-            "retention_days":   90,
-            "legal_basis":      "Rıza (GDPR Art. 6(1)(a))",
-            "third_countries":  ["ABD (Standart sözleşme maddeleri)"],
+            "id": "notifications",
+            "purpose": "E-posta ve bildirim gönderimi",
+            "categories": ["İletişim verileri"],
+            "recipients": ["E-posta servis sağlayıcısı (Resend)"],
+            "retention_days": 90,
+            "legal_basis": "Rıza (GDPR Art. 6(1)(a))",
+            "third_countries": ["ABD (Standart sözleşme maddeleri)"],
         },
     ]
 
@@ -372,13 +386,13 @@ async def gdpr_article30_register(
             # An unset contact comes back null, not a plausible-looking
             # address. A KVKK record naming a mailbox nobody owns is worse
             # than one that admits the deployment has not configured it.
-            "organization":      brand.legal_name,
-            "controller_email":  brand.privacy_email or None,
-            "dpo_email":         brand.dpo_email or None,
+            "organization": brand.legal_name,
+            "controller_email": brand.privacy_email or None,
+            "dpo_email": brand.dpo_email or None,
             "contact_configured": brand.has_domain,
-            "last_updated":      datetime.now(UTC).date().isoformat(),
-            "activities":        activities,
-            "total_activities":  len(activities),
+            "last_updated": datetime.now(UTC).date().isoformat(),
+            "activities": activities,
+            "total_activities": len(activities),
         },
         "error": None,
     }
@@ -386,11 +400,12 @@ async def gdpr_article30_register(
 
 # ── POST /compliance/gdpr/breach-notification ────────────────────────────────
 
+
 @router.post("/compliance/gdpr/breach-notification")
 async def gdpr_breach_notification(
-    body:  BreachNotificationRequest,
-    user:  User = Depends(get_current_user),
-    db:    AsyncSession = Depends(get_db),
+    body: BreachNotificationRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     GDPR Article 33 — Veri ihlali bildirimi kaydı.
@@ -408,20 +423,22 @@ async def gdpr_breach_notification(
             pass
 
     deadline_72h = discovered_at + timedelta(hours=72)
-    breach_id    = uuid.uuid4().hex
+    breach_id = uuid.uuid4().hex
 
     try:
-        db.add(BreachNotification(
-            id             = breach_id,
-            org_id         = org_id,
-            description    = body.description[:2000],
-            severity       = body.severity,
-            affected_users = body.affected_users,
-            discovered_at  = discovered_at,
-            deadline_72h   = deadline_72h,
-            status         = "pending",
-            created_at     = datetime.now(UTC),
-        ))
+        db.add(
+            BreachNotification(
+                id=breach_id,
+                org_id=org_id,
+                description=body.description[:2000],
+                severity=body.severity,
+                affected_users=body.affected_users,
+                discovered_at=discovered_at,
+                deadline_72h=deadline_72h,
+                status="pending",
+                created_at=datetime.now(UTC),
+            )
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -431,13 +448,13 @@ async def gdpr_breach_notification(
 
     return {
         "data": {
-            "breach_id":         breach_id,
-            "severity":          body.severity,
-            "discovered_at":     discovered_at.isoformat(),
-            "deadline_72h":      deadline_72h.isoformat(),
-            "hours_remaining":   round(max(0, hours_remaining), 1),
-            "status":            "pending",
-            "action_required":   "KVKK Kurumu'na 72 saat içinde bildirim yapılması gerekmektedir.",
+            "breach_id": breach_id,
+            "severity": body.severity,
+            "discovered_at": discovered_at.isoformat(),
+            "deadline_72h": deadline_72h.isoformat(),
+            "hours_remaining": round(max(0, hours_remaining), 1),
+            "status": "pending",
+            "action_required": "KVKK Kurumu'na 72 saat içinde bildirim yapılması gerekmektedir.",
         },
         "error": None,
     }
@@ -445,14 +462,15 @@ async def gdpr_breach_notification(
 
 # ── GET /compliance/gdpr/breaches ────────────────────────────────────────────
 
+
 @router.get("/compliance/gdpr/breaches")
 async def list_breaches(
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """List active breach notifications with 72h countdown."""
     org_id = await _get_org_id(user)
-    now    = datetime.now(UTC)
+    now = datetime.now(UTC)
 
     try:
         result = await db.execute(
@@ -472,12 +490,14 @@ async def list_breaches(
         hours_left = (deadline - now).total_seconds() / 3600 if deadline else None
         is_overdue = hours_left is not None and hours_left < 0
 
-        breaches.append({
-            **row.to_dict(),
-            "hours_remaining": round(max(0, hours_left or 0), 1),
-            "is_overdue":      is_overdue,
-            "status":          "overdue" if is_overdue else row.status,
-        })
+        breaches.append(
+            {
+                **row.to_dict(),
+                "hours_remaining": round(max(0, hours_left or 0), 1),
+                "is_overdue": is_overdue,
+                "status": "overdue" if is_overdue else row.status,
+            }
+        )
 
     return {
         "data": {"org_id": org_id, "breaches": breaches, "count": len(breaches)},
@@ -487,11 +507,12 @@ async def list_breaches(
 
 # ── POST /compliance/gdpr/breach/{id}/notify ─────────────────────────────────
 
+
 @router.post("/compliance/gdpr/breach/{breach_id}/notify")
 async def mark_breach_notified(
     breach_id: str,
-    user:      User = Depends(get_current_user),
-    db:        AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Mark a breach as officially notified to KVKK/DPA."""
     # The raw UPDATE this replaces had no tenant predicate at all: any
@@ -514,8 +535,8 @@ async def mark_breach_notified(
 
     return {
         "data": {
-            "breach_id":   breach_id,
-            "status":      "notified",
+            "breach_id": breach_id,
+            "status": "notified",
             "notified_at": datetime.now(UTC).isoformat(),
         },
         "error": None,
@@ -524,10 +545,11 @@ async def mark_breach_notified(
 
 # ── GET /compliance/iso27001/controls ────────────────────────────────────────
 
+
 @router.get("/compliance/iso27001/controls")
 async def iso27001_controls(
     domain: str | None = None,
-    user:   User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     ISO 27001 Annex A kontrol listesi.
@@ -546,20 +568,22 @@ async def iso27001_controls(
     items = []
     for domain_name, control_list in controls.items():
         for control in control_list:
-            items.append({
-                "domain":  domain_name,
-                "control": control,
-                "status":  "implemented",  # TODO: pull from compliance_records
-                "notes":   None,
-            })
+            items.append(
+                {
+                    "domain": domain_name,
+                    "control": control,
+                    "status": "implemented",  # TODO: pull from compliance_records
+                    "notes": None,
+                }
+            )
 
     return {
         "data": {
-            "framework":     "ISO 27001:2022",
+            "framework": "ISO 27001:2022",
             "domain_filter": domain,
             "total_controls": len(items),
-            "domains":       list(ISO_27001_CONTROLS.keys()),
-            "controls":      items,
+            "domains": list(ISO_27001_CONTROLS.keys()),
+            "controls": items,
         },
         "error": None,
     }
@@ -567,11 +591,12 @@ async def iso27001_controls(
 
 # ── GET /compliance/dashboard/{org_id} ───────────────────────────────────────
 
+
 @router.get("/compliance/dashboard/{org_id}")
 async def compliance_dashboard(
     org_id: str,
-    user:   User = Depends(get_current_user),
-    db:     AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Tüm framework'ler için birleşik uyum skoru.
@@ -627,20 +652,20 @@ async def compliance_dashboard(
 
     return {
         "data": {
-            "org_id":  org_id,
+            "org_id": org_id,
             "overall_score": overall,
             "frameworks": {
                 "gdpr": {
-                    "score":         gdpr_score,
+                    "score": gdpr_score,
                     "open_breaches": open_breaches,
-                    "status":        "compliant" if gdpr_score >= 80 else "needs_attention",
+                    "status": "compliant" if gdpr_score >= 80 else "needs_attention",
                 },
                 "sox": {
-                    "score":  sox_score,
+                    "score": sox_score,
                     "status": "compliant" if sox_score >= 80 else "needs_attention",
                 },
                 "iso27001": {
-                    "score":  iso_score,
+                    "score": iso_score,
                     "status": "compliant" if iso_score >= 80 else "needs_attention",
                 },
             },

@@ -1,6 +1,7 @@
 """
 Unit tests for app.core.tenancy (Multi-tenant isolation and boundary guard).
 """
+
 import pytest
 
 from app.core.tenancy import (

@@ -9,6 +9,7 @@ seller and buyer are the same taxpayer does not say which side of it we are
 on. So the first test pins that refusal, and the second puts our own VKN on
 one side to show the same documents post, balanced, once the side is known.
 """
+
 from __future__ import annotations
 
 import re
@@ -19,7 +20,14 @@ import pytest
 
 from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
 
-XML = Path(__file__).resolve().parent / "fixtures" / "gib_corpus" / "ubl_tr" / "UBLTR_1.2.1_Paketi" / "xml"
+XML = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "gib_corpus"
+    / "ubl_tr"
+    / "UBLTR_1.2.1_Paketi"
+    / "xml"
+)
 OURS = "1234567808"
 GIB = "3333333888"
 
@@ -42,7 +50,9 @@ def _with_vkn(raw: bytes, party: str, vkn: str) -> bytes:
     start = raw.index(b"<" + tag + b">")
     end = raw.index(b"</" + tag + b">") + len(tag) + 3
     block = re.sub(
-        rb'(<cbc:ID schemeID="VKN">)\d+(</cbc:ID>)', rb"\g<1>" + vkn.encode() + rb"\g<2>", raw[start:end]
+        rb'(<cbc:ID schemeID="VKN">)\d+(</cbc:ID>)',
+        rb"\g<1>" + vkn.encode() + rb"\g<2>",
+        raw[start:end],
     )
     return raw[:start] + block + raw[end:]
 
@@ -61,10 +71,13 @@ def test_same_vkn_on_both_sides_posts_nothing(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.name)
-@pytest.mark.parametrize(("party", "direction"), [
-    ("AccountingSupplierParty", "sale"),
-    ("AccountingCustomerParty", "purchase"),
-])
+@pytest.mark.parametrize(
+    ("party", "direction"),
+    [
+        ("AccountingSupplierParty", "sale"),
+        ("AccountingCustomerParty", "purchase"),
+    ],
+)
 def test_once_the_side_is_known_the_invoice_posts_balanced(
     path: Path, party: str, direction: str
 ) -> None:
@@ -80,6 +93,12 @@ def test_once_the_side_is_known_the_invoice_posts_balanced(
 
 def test_a_sales_earsiv_books_its_kdv_to_391() -> None:
     path = next(p for p in SAMPLES if "Satıs" in p.name or "Satış" in p.name)
-    inv = UBLTRInvoiceParser.parse_xml(_with_vkn(path.read_bytes(), "AccountingSupplierParty", OURS), own_vkn=OURS)
-    kdv = {e.account_code: e.credit_amount for e in inv.suggested_tdhp_entries if e.account_code.startswith("391")}
+    inv = UBLTRInvoiceParser.parse_xml(
+        _with_vkn(path.read_bytes(), "AccountingSupplierParty", OURS), own_vkn=OURS
+    )
+    kdv = {
+        e.account_code: e.credit_amount
+        for e in inv.suggested_tdhp_entries
+        if e.account_code.startswith("391")
+    }
     assert kdv and sum(kdv.values()) == Decimal("300.00")

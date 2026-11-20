@@ -2,16 +2,17 @@
 Tests for P&L agent — pure computation, no LLM calls.
 done_when: pytest tests/test_agents/test_pnl_agent.py -q → pass
 """
+
 from app.agents.pnl_agent import _compute_pnl
 
 SAMPLE_TRANSACTIONS = [
-    {"type": "income",  "category": "revenue",    "amount_cents": 500_000},  # $5,000
-    {"type": "income",  "category": "revenue",    "amount_cents": 300_000},  # $3,000
-    {"type": "expense", "category": "cogs",       "amount_cents": 200_000},  # $2,000
-    {"type": "expense", "category": "salary",     "amount_cents": 150_000},  # $1,500
-    {"type": "expense", "category": "rent",       "amount_cents":  50_000},  # $500
-    {"type": "expense", "category": "utilities",  "amount_cents":  20_000},  # $200
-    {"type": "expense", "category": "tax",        "amount_cents":  80_000},  # $800
+    {"type": "income", "category": "revenue", "amount_cents": 500_000},  # $5,000
+    {"type": "income", "category": "revenue", "amount_cents": 300_000},  # $3,000
+    {"type": "expense", "category": "cogs", "amount_cents": 200_000},  # $2,000
+    {"type": "expense", "category": "salary", "amount_cents": 150_000},  # $1,500
+    {"type": "expense", "category": "rent", "amount_cents": 50_000},  # $500
+    {"type": "expense", "category": "utilities", "amount_cents": 20_000},  # $200
+    {"type": "expense", "category": "tax", "amount_cents": 80_000},  # $800
 ]
 
 

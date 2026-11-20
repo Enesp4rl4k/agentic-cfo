@@ -40,6 +40,7 @@ implementation here. XAdES over a smart card or HSM is done with the vendor's
 library, and cryptography written for this codebase would be the one part of
 it nobody could audit.
 """
+
 from __future__ import annotations
 
 import copy
@@ -72,7 +73,9 @@ TAX_DETAIL_ACCOUNTS: tuple[tuple[str, str], ...] = (
     ("602", "Diğer Gelirler Hesabı"),
 )
 
-DEFTER_NAME = re.compile(r"^(?P<vkn>\d{10,11})-(?P<period>\d{6})-(?P<kind>Y|K)-(?P<part>\d{6})\.xml$")
+DEFTER_NAME = re.compile(
+    r"^(?P<vkn>\d{10,11})-(?P<period>\d{6})-(?P<kind>Y|K)-(?P<part>\d{6})\.xml$"
+)
 
 _MIB = Decimal(1024 * 1024)
 
@@ -113,12 +116,12 @@ class NoSigner:
 class EDefterBerat:
     """A berat, and exactly how far it is from being filable."""
 
-    file_name: str               # VKN-YYYYMM-YB-000000.xml
+    file_name: str  # VKN-YYYYMM-YB-000000.xml
     xml: bytes
     defter_file_name: str
-    kind: str                    # "YB" | "KB"
+    kind: str  # "YB" | "KB"
     unique_id: str
-    number_of_entries: int | None    # journal only, as GİB's rules require
+    number_of_entries: int | None  # journal only, as GİB's rules require
     size_mib: str
     tax_detail: dict[tuple[str, str], Decimal]
     defter_signed: bool
@@ -218,17 +221,23 @@ def build_berat(defter_xml: bytes, *, defter_file_name: str) -> EDefterBerat:
     if xbrl_src is None:
         raise BeratError("defterde xbrli:xbrl yok")
 
-    entries_type = (xbrl_src.findtext(
-        f"{_q('gl-cor', 'accountingEntries')}/{_q('gl-cor', 'documentInfo')}/{_q('gl-cor', 'entriesType')}"
-    ) or "").strip()
+    entries_type = (
+        xbrl_src.findtext(
+            f"{_q('gl-cor', 'accountingEntries')}/{_q('gl-cor', 'documentInfo')}/{_q('gl-cor', 'entriesType')}"
+        )
+        or ""
+    ).strip()
     expected = "journal" if kind == "Y" else "ledger"
     if entries_type != expected:
         raise BeratError(
             f"dosya adı {kind} diyor, defter entriesType={entries_type!r} — ikisi aynı defteri anlatmalı"
         )
-    identifier = (xbrl_src.findtext(
-        f"{_q('xbrli', 'context')}/{_q('xbrli', 'entity')}/{_q('xbrli', 'identifier')}"
-    ) or "").strip()
+    identifier = (
+        xbrl_src.findtext(
+            f"{_q('xbrli', 'context')}/{_q('xbrli', 'entity')}/{_q('xbrli', 'identifier')}"
+        )
+        or ""
+    ).strip()
     if identifier != m["vkn"]:
         raise BeratError(f"dosya adındaki VKN {m['vkn']} ile defterdeki {identifier!r} farklı")
 
@@ -273,19 +282,23 @@ def build_berat(defter_xml: bytes, *, defter_file_name: str) -> EDefterBerat:
         entity.remove(old)
     segment = etree.SubElement(entity, _q("xbrli", "segment"))
     if kind == "Y":
-        etree.SubElement(segment, _q("gl-bus", "numberOfEntries"),
-                         contextRef=context_id, unitRef=count_unit).text = str(entry_count)
+        etree.SubElement(
+            segment, _q("gl-bus", "numberOfEntries"), contextRef=context_id, unitRef=count_unit
+        ).text = str(entry_count)
     unique_id = str(uuid.uuid4())
     etree.SubElement(segment, _q("gl-cor", "uniqueID"), contextRef=context_id).text = unique_id
     size = size_mib(len(defter_xml))
-    etree.SubElement(segment, _q("gl-bus", "measurableQuantity"),
-                     contextRef=context_id, unitRef=count_unit).text = size
+    etree.SubElement(
+        segment, _q("gl-bus", "measurableQuantity"), contextRef=context_id, unitRef=count_unit
+    ).text = size
 
     # ── one entryHeader: the tax detail ──
     for h in headers:
         entries.remove(h)
     header = etree.SubElement(entries, _q("gl-cor", "entryHeader"))
-    etree.SubElement(header, _q("gl-cor", "qualifierEntry"), contextRef=context_id).text = "standard"
+    etree.SubElement(
+        header, _q("gl-cor", "qualifierEntry"), contextRef=context_id
+    ).text = "standard"
     line = 0
     for code, name in TAX_DETAIL_ACCOUNTS:
         for side in ("D", "C"):
@@ -294,12 +307,17 @@ def build_berat(defter_xml: bytes, *, defter_file_name: str) -> EDefterBerat:
             etree.SubElement(d, _q("gl-cor", "lineNumber"), contextRef=context_id).text = str(line)
             acc = etree.SubElement(d, _q("gl-cor", "account"))
             etree.SubElement(acc, _q("gl-cor", "accountMainID"), contextRef=context_id).text = code
-            etree.SubElement(acc, _q("gl-cor", "accountMainDescription"), contextRef=context_id).text = name
-            etree.SubElement(d, _q("gl-cor", "amount"), contextRef=context_id,
-                             decimals="INF", unitRef=try_unit).text = _amount_text(tax[(code, side)])
+            etree.SubElement(
+                acc, _q("gl-cor", "accountMainDescription"), contextRef=context_id
+            ).text = name
+            etree.SubElement(
+                d, _q("gl-cor", "amount"), contextRef=context_id, decimals="INF", unitRef=try_unit
+            ).text = _amount_text(tax[(code, side)])
             etree.SubElement(d, _q("gl-cor", "debitCreditCode"), contextRef=context_id).text = side
             info = etree.SubElement(d, _q("gl-cor", "xbrlInfo"))
-            etree.SubElement(info, _q("gl-cor", "xbrlInclude"), contextRef=context_id).text = "period_change"
+            etree.SubElement(
+                info, _q("gl-cor", "xbrlInclude"), contextRef=context_id
+            ).text = "period_change"
 
     # ── the berat itself ──
     berat = etree.Element(

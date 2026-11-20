@@ -4,6 +4,7 @@ AgentJob — Async job queue for non-CFO agents.
 Desteklenen agent tipleri: cto, cmo, coo, chro, risk, audit, compliance
 Her job: input CSV/text → pipeline çalışır → result_json'a yazılır.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -21,13 +22,13 @@ def _utcnow() -> datetime:
 
 
 class AgentJobStatus(StrEnum):
-    PENDING   = "pending"
-    RUNNING   = "running"
+    PENDING = "pending"
+    RUNNING = "running"
     # Finished, below the gate (app.platform.run_gate): visible to the person
     # deciding, not written to the company's context until they approve.
     AWAITING_REVIEW = "awaiting_review"
     COMPLETED = "completed"
-    FAILED    = "failed"
+    FAILED = "failed"
 
 
 # Supported agent types
@@ -37,9 +38,7 @@ AGENT_TYPES = frozenset({"cto", "cmo", "coo", "chro", "risk", "audit", "complian
 class AgentJob(Base):
     __tablename__ = "agent_jobs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Which agent runs this job
     agent_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
@@ -91,6 +90,4 @@ class AgentJob(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

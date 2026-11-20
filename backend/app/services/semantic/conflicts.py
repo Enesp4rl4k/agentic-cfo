@@ -1,4 +1,5 @@
 """Load open agent conflicts + detect metric-level contradictions."""
+
 from __future__ import annotations
 
 import json
@@ -48,7 +49,12 @@ def detect_metric_conflicts(metrics: list[MetricPoint]) -> list[dict[str, Any]]:
     inflow = mmap.get("finance.canonical_inflow")
     rev_n = _num(revenue.value) if revenue else None
     in_n = _num(inflow.value) if inflow else None
-    if rev_n is not None and in_n is not None and in_n > 0 and _rel_diff(rev_n, in_n) > REVENUE_INFLOW_REL_THRESHOLD:
+    if (
+        rev_n is not None
+        and in_n is not None
+        and in_n > 0
+        and _rel_diff(rev_n, in_n) > REVENUE_INFLOW_REL_THRESHOLD
+    ):
         found.append(
             {
                 "topic": "revenue_vs_canonical_inflow",

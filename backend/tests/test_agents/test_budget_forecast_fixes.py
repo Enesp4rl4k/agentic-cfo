@@ -5,6 +5,7 @@ Found by SonarCloud: the message returned None for any variance <= 5, so its
 "watch" by the severity classifier — said nothing. The forecast compared floats
 to its defaults to decide whether growth_rate applied.
 """
+
 from __future__ import annotations
 
 from app.agents.budget_agent import _classify_variance_severity, _variance_alert_message

@@ -10,6 +10,7 @@ Supported CSV formats (flexible column detection):
 
 done_when: state['resources']['avg_utilization_rate'] is a float
 """
+
 from __future__ import annotations
 
 import csv
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # -- CSV Parser ---------------------------------------------------------------
 
+
 def _parse_resource_csv(csv_text: str) -> list[dict[str, Any]]:
     """Parse resource/headcount CSV -- flexible column detection."""
     reader = csv.DictReader(io.StringIO(csv_text.strip()))
@@ -31,28 +33,34 @@ def _parse_resource_csv(csv_text: str) -> list[dict[str, Any]]:
 
     def _col(*candidates: str) -> str | None:
         for c in candidates:
-            for k in (reader.fieldnames or []):
-                if k.strip().lower().replace(" ", "_").replace("-", "_") == \
-                   c.lower().replace(" ", "_"):
+            for k in reader.fieldnames or []:
+                if k.strip().lower().replace(" ", "_").replace("-", "_") == c.lower().replace(
+                    " ", "_"
+                ):
                     return k
         return None
 
-    team_col        = _col("team", "department", "dept", "squad", "group", "name")
-    headcount_col   = _col("headcount", "ftes", "fte", "employees", "count", "staff")
-    util_col        = _col("utilization", "utilization_rate", "util_pct",
-                           "capacity_used", "billable_rate")
-    output_col      = _col("output", "tasks_completed", "deliverables",
-                           "weekly_output", "monthly_output", "productivity")
-    capacity_col    = _col("capacity", "max_capacity", "max_output", "target_output")
-    cost_col        = _col("cost", "labor_cost", "monthly_cost", "salary_total")
+    team_col = _col("team", "department", "dept", "squad", "group", "name")
+    headcount_col = _col("headcount", "ftes", "fte", "employees", "count", "staff")
+    util_col = _col("utilization", "utilization_rate", "util_pct", "capacity_used", "billable_rate")
+    output_col = _col(
+        "output",
+        "tasks_completed",
+        "deliverables",
+        "weekly_output",
+        "monthly_output",
+        "productivity",
+    )
+    capacity_col = _col("capacity", "max_capacity", "max_output", "target_output")
+    cost_col = _col("cost", "labor_cost", "monthly_cost", "salary_total")
 
     for i, row in enumerate(reader):
-        team      = (row.get(team_col) or f"Team {i+1}").strip()
+        team = (row.get(team_col) or f"Team {i + 1}").strip()
         headcount = 1
-        util      = None
-        output    = 0.0
-        capacity  = 0.0
-        cost      = 0.0
+        util = None
+        output = 0.0
+        capacity = 0.0
+        cost = 0.0
 
         try:
             headcount = max(1, int(float((row.get(headcount_col) or "1").replace(",", ""))))
@@ -87,19 +95,22 @@ def _parse_resource_csv(csv_text: str) -> list[dict[str, Any]]:
         elif util is None:
             util = 0.0
 
-        rows.append({
-            "team":        team,
-            "headcount":   headcount,
-            "utilization": util,
-            "output":      output,
-            "capacity":    capacity,
-            "cost_cents":  int(cost * 100),
-        })
+        rows.append(
+            {
+                "team": team,
+                "headcount": headcount,
+                "utilization": util,
+                "output": output,
+                "capacity": capacity,
+                "cost_cents": int(cost * 100),
+            }
+        )
 
     return rows
 
 
 # -- Pure Calculations --------------------------------------------------------
+
 
 def _compute_resource_metrics(
     resources: list[dict[str, Any]],
@@ -108,18 +119,18 @@ def _compute_resource_metrics(
     """Pure calculation -- no LLM."""
     if not resources:
         return {
-            "total_headcount":       0,
-            "avg_utilization_rate":  0.0,
+            "total_headcount": 0,
+            "avg_utilization_rate": 0.0,
             "revenue_per_fte_cents": 0,
-            "output_per_fte":        0.0,
-            "overutilized_teams":    [],
-            "underutilized_teams":   [],
-            "by_department":         {},
-            "alerts":                [],
-            "narrative":             "",
+            "output_per_fte": 0.0,
+            "overutilized_teams": [],
+            "underutilized_teams": [],
+            "by_department": {},
+            "alerts": [],
+            "narrative": "",
         }
 
-    total_hc   = sum(r["headcount"] for r in resources)
+    total_hc = sum(r["headcount"] for r in resources)
     total_cost = sum(r["cost_cents"] for r in resources)
 
     # Weighted average utilization (weighted by headcount)
@@ -140,11 +151,11 @@ def _compute_resource_metrics(
         out = r["output"]
         util = r["utilization"]
         by_dept[r["team"]] = {
-            "headcount":    r["headcount"],
-            "utilization":  round(util, 3),
-            "output":       out,
-            "capacity":     cap,
-            "cost_cents":   r["cost_cents"],
+            "headcount": r["headcount"],
+            "utilization": round(util, 3),
+            "output": out,
+            "capacity": cap,
+            "cost_cents": r["cost_cents"],
             "output_per_fte": round(out / r["headcount"], 2) if r["headcount"] > 0 else 0.0,
         }
 
@@ -152,35 +163,37 @@ def _compute_resource_metrics(
     # > 90% = overutilized (burnout risk), < 50% = underutilized (waste)
     overutilized = [
         {
-            "team":        r["team"],
+            "team": r["team"],
             "utilization": r["utilization"],
-            "headcount":   r["headcount"],
+            "headcount": r["headcount"],
             "burnout_risk": "critical" if r["utilization"] > 1.1 else "high",
         }
-        for r in resources if r["utilization"] > 0.90
+        for r in resources
+        if r["utilization"] > 0.90
     ]
 
     underutilized = [
         {
-            "team":        r["team"],
+            "team": r["team"],
             "utilization": r["utilization"],
-            "headcount":   r["headcount"],
+            "headcount": r["headcount"],
             "opportunity": "Reallocate or upskill to higher-demand areas",
         }
-        for r in resources if 0 < r["utilization"] < 0.50
+        for r in resources
+        if 0 < r["utilization"] < 0.50
     ]
 
     return {
-        "total_headcount":        total_hc,
-        "total_cost_cents":       total_cost,
-        "avg_utilization_rate":   round(avg_util, 3),
-        "revenue_per_fte_cents":  rev_per_fte,
-        "output_per_fte":         round(output_per_fte, 2),
-        "overutilized_teams":     sorted(overutilized, key=lambda x: -x["utilization"]),
-        "underutilized_teams":    sorted(underutilized, key=lambda x: x["utilization"]),
-        "by_department":          by_dept,
-        "alerts":                 [],
-        "narrative":              "",
+        "total_headcount": total_hc,
+        "total_cost_cents": total_cost,
+        "avg_utilization_rate": round(avg_util, 3),
+        "revenue_per_fte_cents": rev_per_fte,
+        "output_per_fte": round(output_per_fte, 2),
+        "overutilized_teams": sorted(overutilized, key=lambda x: -x["utilization"]),
+        "underutilized_teams": sorted(underutilized, key=lambda x: x["utilization"]),
+        "by_department": by_dept,
+        "alerts": [],
+        "narrative": "",
     }
 
 
@@ -188,91 +201,108 @@ def _build_resource_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     """Generate actionable alerts from resource metrics."""
     alerts: list[dict[str, str]] = []
 
-    util     = metrics.get("avg_utilization_rate", 0.0)
-    over     = metrics.get("overutilized_teams", [])
-    under    = metrics.get("underutilized_teams", [])
-    rev_fte  = metrics.get("revenue_per_fte_cents", 0)
+    util = metrics.get("avg_utilization_rate", 0.0)
+    over = metrics.get("overutilized_teams", [])
+    under = metrics.get("underutilized_teams", [])
+    rev_fte = metrics.get("revenue_per_fte_cents", 0)
 
     if util > 1.0:
-        alerts.append({
-            "level": "critical",
-            "message": (
-                f"Average utilization {util:.0%} exceeds 100%. "
-                "Teams are chronically overloaded — risk of burnout and quality degradation."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": (
+                    f"Average utilization {util:.0%} exceeds 100%. "
+                    "Teams are chronically overloaded — risk of burnout and quality degradation."
+                ),
+            }
+        )
     elif util > 0.90:
-        alerts.append({
-            "level": "high",
-            "message": (
-                f"Average utilization {util:.0%} is above sustainable 90% threshold. "
-                "Monitor burnout indicators and consider capacity planning."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "high",
+                "message": (
+                    f"Average utilization {util:.0%} is above sustainable 90% threshold. "
+                    "Monitor burnout indicators and consider capacity planning."
+                ),
+            }
+        )
 
     critical_over = [t for t in over if t.get("burnout_risk") == "critical"]
     if critical_over:
         team_names = ", ".join(t["team"] for t in critical_over[:3])
-        alerts.append({
-            "level": "critical",
-            "message": (
-                f"Critical burnout risk in {len(critical_over)} team(s): {team_names}. "
-                "Utilization >110% — immediate hiring or scope reduction needed."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": (
+                    f"Critical burnout risk in {len(critical_over)} team(s): {team_names}. "
+                    "Utilization >110% — immediate hiring or scope reduction needed."
+                ),
+            }
+        )
 
     if len(under) > 0 and len(over) > 0:
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"{len(over)} overutilized team(s) while {len(under)} team(s) are under 50% utilized. "
-                "Rebalance workload or reorganize team structure."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"{len(over)} overutilized team(s) while {len(under)} team(s) are under 50% utilized. "
+                    "Rebalance workload or reorganize team structure."
+                ),
+            }
+        )
     elif len(under) > 0:
         total_under_hc = sum(t["headcount"] for t in under)
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"{total_under_hc} FTEs across {len(under)} team(s) are under 50% utilized. "
-                "Opportunity to redirect capacity to higher-value work."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"{total_under_hc} FTEs across {len(under)} team(s) are under 50% utilized. "
+                    "Opportunity to redirect capacity to higher-value work."
+                ),
+            }
+        )
 
     if rev_fte > 0 and rev_fte < 5_000_000:  # < ₺50k/FTE/year
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"Revenue per FTE ₺{rev_fte / 100:,.0f} is below ₺50k benchmark. "
-                "Review pricing, product mix, or team structure."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"Revenue per FTE ₺{rev_fte / 100:,.0f} is below ₺50k benchmark. "
+                    "Review pricing, product mix, or team structure."
+                ),
+            }
+        )
 
     return alerts
 
 
 # -- LLM Narrative ------------------------------------------------------------
 
+
 async def _generate_resource_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative -- falls back to rule-based summary."""
     try:
         from app.platform.model_gateway import complete_text
 
-        util  = metrics["avg_utilization_rate"]
-        hc    = metrics["total_headcount"]
-        over  = len(metrics.get("overutilized_teams", []))
+        util = metrics["avg_utilization_rate"]
+        hc = metrics["total_headcount"]
+        over = len(metrics.get("overutilized_teams", []))
         under = len(metrics.get("underutilized_teams", []))
         prompt = (
             f"Resource analysis: headcount={hc}, avg_utilization={util:.0%}, "
             f"overutilized_teams={over}, underutilized_teams={under}. "
             "Write a 2-sentence COO-level insight on resource efficiency."
         )
-        return (await complete_text(
-            task="metric_commentary", prompt=prompt, max_tokens=300,
-        )).strip()
+        return (
+            await complete_text(
+                task="metric_commentary",
+                prompt=prompt,
+                max_tokens=300,
+            )
+        ).strip()
     except Exception:
         util = metrics.get("avg_utilization_rate", 0.0)
-        hc   = metrics.get("total_headcount", 0)
+        hc = metrics.get("total_headcount", 0)
         return (
             f"{hc} FTEs at {util:.0%} average utilization. "
             f"{len(metrics.get('overutilized_teams', []))} overutilized team(s) detected."
@@ -280,6 +310,7 @@ async def _generate_resource_narrative(metrics: dict[str, Any], settings) -> str
 
 
 # -- LangGraph Node -----------------------------------------------------------
+
 
 async def run_resource_agent(state: COOState, config: dict) -> dict[str, Any]:
     """
@@ -293,13 +324,14 @@ async def run_resource_agent(state: COOState, config: dict) -> dict[str, Any]:
         return {"resources": None}
 
     try:
-        rows    = _parse_resource_csv(csv_text)
+        rows = _parse_resource_csv(csv_text)
         metrics = _compute_resource_metrics(rows)
-        alerts  = _build_resource_alerts(metrics)
+        alerts = _build_resource_alerts(metrics)
         metrics["alerts"] = alerts
 
         try:
             from app.config import get_settings
+
             settings = get_settings()
             metrics["narrative"] = await _generate_resource_narrative(metrics, settings)
         except Exception:
@@ -307,7 +339,8 @@ async def run_resource_agent(state: COOState, config: dict) -> dict[str, Any]:
 
         logger.info(
             "COO ResourceAgent: job=%s teams=%d util=%.1f%%",
-            state.get("job_id"), len(rows),
+            state.get("job_id"),
+            len(rows),
             metrics["avg_utilization_rate"] * 100,
         )
         return {"resources": metrics}

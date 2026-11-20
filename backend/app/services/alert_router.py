@@ -14,6 +14,7 @@ Usage:
     decisions = router.process_alerts(raw_alerts, recent_history)
     # decisions: list of AlertDecision
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -27,23 +28,24 @@ logger = logging.getLogger(__name__)
 
 
 class AlertAction(StrEnum):
-    SUPPRESS   = "suppress"    # Duplicate — drop
-    AGGREGATE  = "aggregate"   # Group with similar alerts
-    ROUTE      = "route"       # Send to domain owner
-    ESCALATE   = "escalate"    # Critical — send to executives
+    SUPPRESS = "suppress"  # Duplicate — drop
+    AGGREGATE = "aggregate"  # Group with similar alerts
+    ROUTE = "route"  # Send to domain owner
+    ESCALATE = "escalate"  # Critical — send to executives
 
 
 @dataclass
 class RawAlert:
     """Incoming alert from any pipeline agent."""
-    level:     str          # critical | warning | info
-    message:   str
-    domain:    str          # cfo | cto | chro | cmo | coo | audit | risk
-    source:    str          # cashflow | forecast | anomaly | ...
-    job_id:    str
+
+    level: str  # critical | warning | info
+    message: str
+    domain: str  # cfo | cto | chro | cmo | coo | audit | risk
+    source: str  # cashflow | forecast | anomaly | ...
+    job_id: str
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    evidence:  dict[str, Any] = field(default_factory=dict)
-    org_id:    str | None = None   # multi-tenant scope; set by the scheduler fan-out
+    evidence: dict[str, Any] = field(default_factory=dict)
+    org_id: str | None = None  # multi-tenant scope; set by the scheduler fan-out
 
     @property
     def fingerprint(self) -> str:
@@ -54,13 +56,13 @@ class RawAlert:
 
 @dataclass
 class AlertDecision:
-    action:        AlertAction
-    alert:         RawAlert
-    grouped_with:  list[RawAlert] = field(default_factory=list)
+    action: AlertAction
+    alert: RawAlert
+    grouped_with: list[RawAlert] = field(default_factory=list)
     priority_score: float = 0.0
-    route_to:      list[str] = field(default_factory=list)
-    channel:       str = "dashboard"  # dashboard | slack | email | sms
-    reason:        str = ""
+    route_to: list[str] = field(default_factory=list)
+    channel: str = "dashboard"  # dashboard | slack | email | sms
+    reason: str = ""
 
     @property
     def is_actionable(self) -> bool:
@@ -71,19 +73,19 @@ class AlertDecision:
 
 _SEVERITY_SCORE: dict[str, float] = {
     "critical": 1.0,
-    "warning":  0.5,
-    "info":     0.1,
+    "warning": 0.5,
+    "info": 0.1,
 }
 
 # Domain → default owner role
 _DOMAIN_OWNERS: dict[str, list[str]] = {
-    "cfo":        ["cfo@company.com"],
-    "cto":        ["cto@company.com"],
-    "chro":       ["chro@company.com"],
-    "cmo":        ["cmo@company.com"],
-    "coo":        ["coo@company.com"],
-    "audit":      ["audit@company.com", "cfo@company.com"],
-    "risk":       ["cro@company.com", "ceo@company.com"],
+    "cfo": ["cfo@company.com"],
+    "cto": ["cto@company.com"],
+    "chro": ["chro@company.com"],
+    "cmo": ["cmo@company.com"],
+    "coo": ["coo@company.com"],
+    "audit": ["audit@company.com", "cfo@company.com"],
+    "risk": ["cro@company.com", "ceo@company.com"],
     "compliance": ["compliance@company.com"],
 }
 
@@ -112,10 +114,7 @@ def _compute_priority(alert: RawAlert) -> float:
         ("fraud", 0.3),
         ("duplicate", 0.2),
     ]
-    boost = sum(
-        b for kw, b in urgency_keywords
-        if kw.lower() in alert.message.lower()
-    )
+    boost = sum(b for kw, b in urgency_keywords if kw.lower() in alert.message.lower())
 
     return min(1.0, base + boost)
 
@@ -134,9 +133,9 @@ class AlertRouter:
         aggregation_threshold: int = 3,
         escalate_threshold: float = 0.75,
     ) -> None:
-        self.dedup_ttl      = timedelta(hours=dedup_ttl_hours)
-        self.agg_threshold  = aggregation_threshold
-        self.esc_threshold  = escalate_threshold
+        self.dedup_ttl = timedelta(hours=dedup_ttl_hours)
+        self.agg_threshold = aggregation_threshold
+        self.esc_threshold = escalate_threshold
 
     def process_alerts(
         self,
@@ -177,52 +176,60 @@ class AlertRouter:
             if fp in seen_fingerprints:
                 last_seen = seen_fingerprints[fp]
                 if (now - last_seen) < self.dedup_ttl:
-                    decisions.append(AlertDecision(
-                        action=AlertAction.SUPPRESS,
-                        alert=alert,
-                        priority_score=priority,
-                        reason=f"Duplicate — last seen {last_seen.strftime('%H:%M')} UTC",
-                    ))
+                    decisions.append(
+                        AlertDecision(
+                            action=AlertAction.SUPPRESS,
+                            alert=alert,
+                            priority_score=priority,
+                            reason=f"Duplicate — last seen {last_seen.strftime('%H:%M')} UTC",
+                        )
+                    )
                     continue
 
             # ── 2. Aggregation ───────────────────────────────────────────────
             key = f"{alert.domain}:{alert.level}"
             siblings = [a for a in domain_level_groups.get(key, []) if a is not alert]
             if len(siblings) >= self.agg_threshold - 1:
-                decisions.append(AlertDecision(
-                    action=AlertAction.AGGREGATE,
-                    alert=alert,
-                    grouped_with=siblings,
-                    priority_score=priority,
-                    route_to=_DOMAIN_OWNERS.get(alert.domain, []),
-                    channel="dashboard",
-                    reason=(
-                        f"Aggregated with {len(siblings)} similar {alert.domain} alerts. "
-                        f"Showing as group to reduce noise."
-                    ),
-                ))
+                decisions.append(
+                    AlertDecision(
+                        action=AlertAction.AGGREGATE,
+                        alert=alert,
+                        grouped_with=siblings,
+                        priority_score=priority,
+                        route_to=_DOMAIN_OWNERS.get(alert.domain, []),
+                        channel="dashboard",
+                        reason=(
+                            f"Aggregated with {len(siblings)} similar {alert.domain} alerts. "
+                            f"Showing as group to reduce noise."
+                        ),
+                    )
+                )
                 continue
 
             # ── 3. Escalate vs. Route ────────────────────────────────────────
             if priority >= self.esc_threshold or alert.level == "critical":
                 channel = "sms+email" if alert.level == "critical" else "email"
-                decisions.append(AlertDecision(
-                    action=AlertAction.ESCALATE,
-                    alert=alert,
-                    priority_score=priority,
-                    route_to=_EXEC_TEAM + _DOMAIN_OWNERS.get(alert.domain, []),
-                    channel=channel,
-                    reason=f"Priority {priority:.2f} ≥ threshold {self.esc_threshold}",
-                ))
+                decisions.append(
+                    AlertDecision(
+                        action=AlertAction.ESCALATE,
+                        alert=alert,
+                        priority_score=priority,
+                        route_to=_EXEC_TEAM + _DOMAIN_OWNERS.get(alert.domain, []),
+                        channel=channel,
+                        reason=f"Priority {priority:.2f} ≥ threshold {self.esc_threshold}",
+                    )
+                )
             else:
-                decisions.append(AlertDecision(
-                    action=AlertAction.ROUTE,
-                    alert=alert,
-                    priority_score=priority,
-                    route_to=_DOMAIN_OWNERS.get(alert.domain, ["owner@company.com"]),
-                    channel="slack",
-                    reason=f"Routed to domain owner ({alert.domain})",
-                ))
+                decisions.append(
+                    AlertDecision(
+                        action=AlertAction.ROUTE,
+                        alert=alert,
+                        priority_score=priority,
+                        route_to=_DOMAIN_OWNERS.get(alert.domain, ["owner@company.com"]),
+                        channel="slack",
+                        reason=f"Routed to domain owner ({alert.domain})",
+                    )
+                )
 
         # Sort by priority descending
         decisions.sort(key=lambda d: -d.priority_score)
@@ -246,21 +253,21 @@ class AlertRouter:
               "top_action": str,
             }
         """
-        critical:    list[dict] = []
-        high:        list[dict] = []
-        aggregated:  list[dict] = []
-        suppressed   = 0
+        critical: list[dict] = []
+        high: list[dict] = []
+        aggregated: list[dict] = []
+        suppressed = 0
 
         for d in decisions:
             item = {
-                "level":          d.alert.level,
-                "domain":         d.alert.domain,
-                "message":        d.alert.message,
+                "level": d.alert.level,
+                "domain": d.alert.domain,
+                "message": d.alert.message,
                 "priority_score": round(d.priority_score, 2),
-                "route_to":       d.route_to,
-                "channel":        d.channel,
-                "job_id":         d.alert.job_id,
-                "timestamp":      d.alert.timestamp.isoformat(),
+                "route_to": d.route_to,
+                "channel": d.channel,
+                "job_id": d.alert.job_id,
+                "timestamp": d.alert.timestamp.isoformat(),
             }
             if d.action == AlertAction.SUPPRESS:
                 suppressed += 1
@@ -282,13 +289,12 @@ class AlertRouter:
             top_action = high[0]["message"]
 
         return {
-            "total":            len(decisions),
-            "actionable":       actionable_count,
-            "critical":         critical,
-            "high":             high,
-            "aggregated":       aggregated,
+            "total": len(decisions),
+            "actionable": actionable_count,
+            "critical": critical,
+            "high": high,
+            "aggregated": aggregated,
             "suppressed_count": suppressed,
             "total_actionable": actionable_count,
-            "top_action":       top_action,
+            "top_action": top_action,
         }
-

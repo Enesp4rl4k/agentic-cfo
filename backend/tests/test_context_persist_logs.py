@@ -7,6 +7,7 @@ sessizce atılırdı → her koşuda job≠context "drift" ve context'te ``logs:
 
 Kapı: context'in log çıktısı job'ınkiyle birebir aynı biçimde olmalı.
 """
+
 from __future__ import annotations
 
 import dataclasses

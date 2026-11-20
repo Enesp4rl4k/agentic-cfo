@@ -86,11 +86,12 @@ async def _get_redis() -> Any | None:
 
 # ── Turn model ────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ConversationTurn:
     """A single message exchange in a conversation."""
 
-    role: str                        # "user" | "assistant" | "system"
+    role: str  # "user" | "assistant" | "system"
     content: str
     ts: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -128,6 +129,7 @@ def _fallback_key(user_id: str, session_id: str) -> str:
 
 # ── ConversationMemoryService ─────────────────────────────────────────────────
 
+
 class ConversationMemoryService:
     """
     Load and persist conversation turns for a user session.
@@ -136,8 +138,8 @@ class ConversationMemoryService:
     Max turns kept: `max_turns` (oldest pruned beyond that).
     """
 
-    REDIS_TTL = 60 * 60 * 24 * 7   # 7 days in seconds
-    DEFAULT_MAX_TURNS = 40          # per session
+    REDIS_TTL = 60 * 60 * 24 * 7  # 7 days in seconds
+    DEFAULT_MAX_TURNS = 40  # per session
 
     def __init__(self, max_turns: int = DEFAULT_MAX_TURNS) -> None:
         self.max_turns = max_turns
@@ -213,22 +215,26 @@ class ConversationMemoryService:
 
         # Append new turns
         ts = time.time()
-        existing.append(ConversationTurn(
-            role="user",
-            content=user_message,
-            ts=ts,
-            metadata=metadata or {},
-        ).to_dict())
-        existing.append(ConversationTurn(
-            role="assistant",
-            content=assistant_message,
-            ts=ts + 0.001,
-            metadata={"agent": "cfo_chat"},
-        ).to_dict())
+        existing.append(
+            ConversationTurn(
+                role="user",
+                content=user_message,
+                ts=ts,
+                metadata=metadata or {},
+            ).to_dict()
+        )
+        existing.append(
+            ConversationTurn(
+                role="assistant",
+                content=assistant_message,
+                ts=ts + 0.001,
+                metadata={"agent": "cfo_chat"},
+            ).to_dict()
+        )
 
         # Prune oldest turns beyond max
         if len(existing) > self.max_turns * 2:  # *2 because user+assistant pairs
-            existing = existing[-(self.max_turns * 2):]
+            existing = existing[-(self.max_turns * 2) :]
 
         # Persist
         serialised = json.dumps(existing)
@@ -257,11 +263,7 @@ class ConversationMemoryService:
         redis = await _get_redis()
         if not redis:
             prefix = f"conv:{user_id}:"
-            return [
-                k.removeprefix(prefix)
-                for k in _fallback_store
-                if k.startswith(prefix)
-            ]
+            return [k.removeprefix(prefix) for k in _fallback_store if k.startswith(prefix)]
         try:
             keys: list[str] = []
             pattern = f"conv:{user_id}:*"
@@ -289,6 +291,7 @@ class ConversationMemoryService:
 
 
 # ── MemoryInjector ────────────────────────────────────────────────────────────
+
 
 class MemoryInjector:
     """
@@ -363,9 +366,7 @@ class MemoryInjector:
         except Exception as exc:
             logger.debug("MemoryInjector: RAG evidence retrieval failed: %s", exc)
 
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": enriched_system}
-        ]
+        messages: list[dict[str, str]] = [{"role": "system", "content": enriched_system}]
 
         # 2. Load recent conversation turns
         past_turns = await self._conv.load(user_id, session_id, last_n=last_n_turns * 2)
@@ -399,6 +400,7 @@ class MemoryInjector:
 async def _safe_retrieve(memory_store: Any, org_id: str, top_k: int, query: str) -> list:
     """Wrapper: handles both sync and async retrieve methods."""
     import asyncio
+
     try:
         result = memory_store.retrieve(org_id=org_id, top_k=top_k, query=query)
         if asyncio.iscoroutine(result):
@@ -425,6 +427,7 @@ def get_memory_injector() -> MemoryInjector:
     global _memory_injector
     if _memory_injector is None:
         from app.services.agent_memory import get_memory_store
+
         _memory_injector = MemoryInjector(
             memory_store=get_memory_store(),
             conversation_svc=get_conversation_service(),

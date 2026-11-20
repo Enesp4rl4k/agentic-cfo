@@ -3,6 +3,7 @@
 Kept as its own record so a settlement can be traced to the line that made it, a
 "no" is remembered, and how late a customer really pays can be measured.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,7 +32,11 @@ class OpenItemMatch(Base):
     ledger_row_id: Mapped[str] = mapped_column(String(36), nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     method: Mapped[str] = mapped_column(String(30), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)    # confirmed | proposed | rejected
-    matched_on: Mapped[date] = mapped_column(Date, nullable=False)     # the day the money moved
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # confirmed | proposed | rejected
+    matched_on: Mapped[date] = mapped_column(Date, nullable=False)  # the day the money moved
     decided_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )

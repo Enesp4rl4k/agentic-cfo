@@ -1,4 +1,5 @@
 """Shared dual-RAG + semantic KPI grounding for chat surfaces."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -53,9 +54,7 @@ async def prepare_grounded_chat(
     )
 
     ctx = await get_company_context(org_id, db)
-    active_job = job_id or (
-        ctx.active_cfo_job_id if hasattr(ctx, "active_cfo_job_id") else None
-    )
+    active_job = job_id or (ctx.active_cfo_job_id if hasattr(ctx, "active_cfo_job_id") else None)
 
     evidence_bundle = await retrieve_dual_evidence(
         db=db,

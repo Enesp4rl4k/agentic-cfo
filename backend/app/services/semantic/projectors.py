@@ -1,4 +1,5 @@
 """Deterministic projectors: agent blobs / canonical txs → MetricPoint[]."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -82,18 +83,69 @@ def project_from_cfo(
         oc = cashflow.get("operating")
         op_cf = round(float(oc) * 100) if isinstance(oc, (int, float)) else oc
 
-    refs = [
-        EvidenceRef(source_type="cfo_result", job_id=job_id, preview="last_cfo_result")
-    ]
+    refs = [EvidenceRef(source_type="cfo_result", job_id=job_id, preview="last_cfo_result")]
     out: list[MetricPoint] = []
     for p in (
-        _point("finance.revenue", revenue, "cents", currency=currency, source_agent="cfo", source_job_id=job_id, evidence=refs),
-        _point("finance.gross_margin", pnl.get("gross_margin"), "ratio", source_agent="cfo", source_job_id=job_id, evidence=refs),
-        _point("finance.net_margin", pnl.get("net_margin"), "ratio", source_agent="cfo", source_job_id=job_id, evidence=refs),
-        _point("finance.ebitda", ebitda, "cents", currency=currency, source_agent="cfo", source_job_id=job_id, evidence=refs),
-        _point("finance.operating_cashflow", op_cf, "cents", currency=currency, source_agent="cfo", source_job_id=job_id, evidence=refs),
-        _point("finance.runway_months", runway, "months", source_agent="cfo", source_job_id=job_id, evidence=refs),
-        _point("finance.critical_anomalies", critical, "count", confidence=1.0, source_agent="cfo", source_job_id=job_id, evidence=refs),
+        _point(
+            "finance.revenue",
+            revenue,
+            "cents",
+            currency=currency,
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "finance.gross_margin",
+            pnl.get("gross_margin"),
+            "ratio",
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "finance.net_margin",
+            pnl.get("net_margin"),
+            "ratio",
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "finance.ebitda",
+            ebitda,
+            "cents",
+            currency=currency,
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "finance.operating_cashflow",
+            op_cf,
+            "cents",
+            currency=currency,
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "finance.runway_months",
+            runway,
+            "months",
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "finance.critical_anomalies",
+            critical,
+            "count",
+            confidence=1.0,
+            source_agent="cfo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
     ):
         if p is not None:
             out.append(p)
@@ -111,12 +163,38 @@ def project_from_cmo(
     campaigns = last_cmo.get("campaigns") or {}
     summary = last_cmo.get("cmo_summary") or {}
     refs = [EvidenceRef(source_type="cmo_result", job_id=job_id)]
-    cac = campaigns.get("blended_cac_cents") or campaigns.get("cac") or campaigns.get("overall_cac_cents")
+    cac = (
+        campaigns.get("blended_cac_cents")
+        or campaigns.get("cac")
+        or campaigns.get("overall_cac_cents")
+    )
     out: list[MetricPoint] = []
     for p in (
-        _point("growth.overall_roas", campaigns.get("overall_roas") or summary.get("overall_roas"), "ratio", source_agent="cmo", source_job_id=job_id, evidence=refs),
-        _point("growth.blended_cac", cac, "cents", currency=currency, source_agent="cmo", source_job_id=job_id, evidence=refs),
-        _point("growth.conversions", campaigns.get("total_conversions"), "count", source_agent="cmo", source_job_id=job_id, evidence=refs),
+        _point(
+            "growth.overall_roas",
+            campaigns.get("overall_roas") or summary.get("overall_roas"),
+            "ratio",
+            source_agent="cmo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "growth.blended_cac",
+            cac,
+            "cents",
+            currency=currency,
+            source_agent="cmo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "growth.conversions",
+            campaigns.get("total_conversions"),
+            "count",
+            source_agent="cmo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
     ):
         if p is not None:
             out.append(p)
@@ -143,10 +221,38 @@ def project_from_cto(
 
     out: list[MetricPoint] = []
     for p in (
-        _point("tech.health_score", summary.get("overall_health_score"), "score", source_agent="cto", source_job_id=job_id, evidence=refs),
-        _point("tech.velocity_trend", velocity.get("velocity_trend") or velocity.get("trend"), "string", source_agent="cto", source_job_id=job_id, evidence=refs),
-        _point("tech.debt_score", debt.get("debt_score"), "score", source_agent="cto", source_job_id=job_id, evidence=refs),
-        _point("tech.infra_waste_pct", waste_pct, "percent", source_agent="cto", source_job_id=job_id, evidence=refs),
+        _point(
+            "tech.health_score",
+            summary.get("overall_health_score"),
+            "score",
+            source_agent="cto",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "tech.velocity_trend",
+            velocity.get("velocity_trend") or velocity.get("trend"),
+            "string",
+            source_agent="cto",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "tech.debt_score",
+            debt.get("debt_score"),
+            "score",
+            source_agent="cto",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "tech.infra_waste_pct",
+            waste_pct,
+            "percent",
+            source_agent="cto",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
     ):
         if p is not None:
             out.append(p)
@@ -171,9 +277,30 @@ def project_from_chro(
     turnover = workforce.get("turnover_rate")
     out: list[MetricPoint] = []
     for p in (
-        _point("people.headcount", hc, "count", source_agent="chro", source_job_id=job_id, evidence=refs),
-        _point("people.attrition_rate", attr, "ratio", source_agent="chro", source_job_id=job_id, evidence=refs),
-        _point("people.turnover_rate", turnover, "ratio", source_agent="chro", source_job_id=job_id, evidence=refs),
+        _point(
+            "people.headcount",
+            hc,
+            "count",
+            source_agent="chro",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "people.attrition_rate",
+            attr,
+            "ratio",
+            source_agent="chro",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "people.turnover_rate",
+            turnover,
+            "ratio",
+            source_agent="chro",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
     ):
         if p is not None:
             out.append(p)
@@ -191,12 +318,28 @@ def project_from_coo(
     bottlenecks = last_coo.get("bottlenecks") or last_coo.get("processes") or []
     sla = last_coo.get("sla") or {}
     refs = [EvidenceRef(source_type="coo_result", job_id=job_id)]
-    bn_count = len(bottlenecks) if isinstance(bottlenecks, list) else summary.get("bottleneck_count")
+    bn_count = (
+        len(bottlenecks) if isinstance(bottlenecks, list) else summary.get("bottleneck_count")
+    )
     breach = sla.get("breach_rate") or summary.get("sla_breach_rate")
     out: list[MetricPoint] = []
     for p in (
-        _point("ops.bottleneck_count", bn_count, "count", source_agent="coo", source_job_id=job_id, evidence=refs),
-        _point("ops.sla_breach_rate", breach, "ratio", source_agent="coo", source_job_id=job_id, evidence=refs),
+        _point(
+            "ops.bottleneck_count",
+            bn_count,
+            "count",
+            source_agent="coo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "ops.sla_breach_rate",
+            breach,
+            "ratio",
+            source_agent="coo",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
     ):
         if p is not None:
             out.append(p)
@@ -213,18 +356,36 @@ def project_from_risk(
     summary = last_risk.get("risk_summary") or last_risk.get("summary") or {}
     kris = last_risk.get("kris") or last_risk.get("kri") or []
     refs = [EvidenceRef(source_type="risk_result", job_id=job_id)]
-    score = summary.get("overall_score") or summary.get("risk_score") or last_risk.get("overall_score")
+    score = (
+        summary.get("overall_score") or summary.get("risk_score") or last_risk.get("overall_score")
+    )
     critical = 0
     if isinstance(kris, list):
         critical = sum(
             1
             for k in kris
-            if isinstance(k, dict) and str(k.get("severity") or k.get("status") or "").lower() in {"critical", "red"}
+            if isinstance(k, dict)
+            and str(k.get("severity") or k.get("status") or "").lower() in {"critical", "red"}
         )
     out: list[MetricPoint] = []
     for p in (
-        _point("risk.overall_score", score, "score", source_agent="risk", source_job_id=job_id, evidence=refs),
-        _point("risk.critical_kri_count", critical, "count", confidence=1.0, source_agent="risk", source_job_id=job_id, evidence=refs),
+        _point(
+            "risk.overall_score",
+            score,
+            "score",
+            source_agent="risk",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
+        _point(
+            "risk.critical_kri_count",
+            critical,
+            "count",
+            confidence=1.0,
+            source_agent="risk",
+            source_job_id=job_id,
+            evidence=refs,
+        ),
     ):
         if p is not None:
             out.append(p)

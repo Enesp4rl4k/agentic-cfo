@@ -12,6 +12,7 @@ Scenarios:
   5. memory_store       — episode saved after successful run
   6. routing_plan       — CapabilityRouter skips budget when no budget_input
 """
+
 from __future__ import annotations
 
 import os
@@ -98,6 +99,7 @@ def run_config_no_review():
 
 # ── Scenario 1: Happy path ────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_happy_path_completes(csv_file, run_config_no_review):
     """Full pipeline runs without halting on valid CSV data."""
@@ -149,8 +151,9 @@ async def test_happy_path_transactions_parsed(csv_file, run_config_no_review):
 
     for tx in transactions:
         assert "amount_cents" in tx or "amount" in tx, f"Transaction missing amount: {tx}"
-        assert tx.get("type") in ("income", "expense", "revenue"), \
+        assert tx.get("type") in ("income", "expense", "revenue"), (
             f"Unexpected transaction type: {tx.get('type')}"
+        )
 
 
 @pytest.mark.asyncio
@@ -165,11 +168,13 @@ async def test_happy_path_dashboard_json(csv_file, run_config_no_review):
 
     dashboard = result.get("dashboard_json") or {}
     # At minimum PnL and cashflow should be in the dashboard
-    assert dashboard.get("pnl") is not None or result.get("pnl") is not None, \
+    assert dashboard.get("pnl") is not None or result.get("pnl") is not None, (
         "No PnL data in result"
+    )
 
 
 # ── Scenario 2: Halt on bad data ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_empty_file_halts_pipeline(empty_file, run_config_no_review):
@@ -181,12 +186,10 @@ async def test_empty_file_halts_pipeline(empty_file, run_config_no_review):
         run_config=run_config_no_review,
     )
 
-    assert result.get("halted") is True, \
-        "Pipeline should halt on empty file but did not"
+    assert result.get("halted") is True, "Pipeline should halt on empty file but did not"
 
     # PnL and downstream agents should NOT have run
-    assert result.get("pnl") is None, \
-        "PnL should not have run after fatal ingestion failure"
+    assert result.get("pnl") is None, "PnL should not have run after fatal ingestion failure"
 
     # Error should be recorded
     logs = result.get("logs") or []
@@ -205,12 +208,12 @@ async def test_nonexistent_file_halts_pipeline(run_config_no_review):
         run_config=run_config_no_review,
     )
 
-    assert result.get("halted") is True, \
-        "Pipeline should halt on missing file"
+    assert result.get("halted") is True, "Pipeline should halt on missing file"
     assert result.get("error") is not None
 
 
 # ── Scenario 3: Review gate (low confidence) ──────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_low_confidence_triggers_review_gate(empty_file):
@@ -228,11 +231,13 @@ async def test_low_confidence_triggers_review_gate(empty_file):
     )
 
     # Empty file → ingestion fails → either halted or awaiting_review
-    assert result.get("halted") or result.get("awaiting_review"), \
+    assert result.get("halted") or result.get("awaiting_review"), (
         "Expected halted or awaiting_review on empty file with strict config"
+    )
 
 
 # ── Scenario 4: Anomaly detection ─────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_duplicate_transactions_detected(duplicate_csv_file, run_config_no_review):
@@ -251,19 +256,21 @@ async def test_duplicate_transactions_detected(duplicate_csv_file, run_config_no
     # At least one anomaly should be detected given the obvious duplicates
     # (either from anomaly_agent or in dashboard_json)
     dashboard_anomalies = (result.get("dashboard_json") or {}).get("anomalies") or []
-    dash_items = dashboard_anomalies if isinstance(dashboard_anomalies, list) else (dashboard_anomalies.get("items") or [])
+    dash_items = (
+        dashboard_anomalies
+        if isinstance(dashboard_anomalies, list)
+        else (dashboard_anomalies.get("items") or [])
+    )
     all_anomalies = anomalies + dash_items
 
-    assert len(all_anomalies) > 0, \
-        "Expected duplicate anomalies to be detected in DUPLICATE_CSV"
+    assert len(all_anomalies) > 0, "Expected duplicate anomalies to be detected in DUPLICATE_CSV"
 
 
 # ── Scenario 5: Multi-period analysis ─────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_multi_period_runs_on_multi_month_data(
-    multi_month_csv_file, run_config_no_review
-):
+async def test_multi_period_runs_on_multi_month_data(multi_month_csv_file, run_config_no_review):
     """Multi-period agent runs when data spans multiple months."""
     result: CFOState = await run_cfo_pipeline(
         job_id="test-multiperiod-001",
@@ -279,11 +286,11 @@ async def test_multi_period_runs_on_multi_month_data(
     multi_period_log = next((lg for lg in logs if lg.step == "multi_period"), None)
 
     # multi_period_agent should have run (not skipped by CapabilityRouter)
-    assert multi_period_log is not None, \
-        "multi_period step not found in logs"
+    assert multi_period_log is not None, "multi_period step not found in logs"
 
 
 # ── Scenario 6: CapabilityRouter skips budget agent ──────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_budget_agent_skipped_without_budget_input(csv_file, run_config_no_review):
@@ -300,8 +307,9 @@ async def test_budget_agent_skipped_without_budget_input(csv_file, run_config_no
         pytest.skip("Pipeline halted — skipping routing check")
 
     # Budget should be None since no input was provided
-    assert result.get("budget") is None, \
+    assert result.get("budget") is None, (
         "Budget agent should not produce output without budget_input"
+    )
 
 
 @pytest.mark.asyncio
@@ -309,10 +317,10 @@ async def test_budget_agent_runs_with_budget_input(csv_file, run_config_no_revie
     """When budget_input is provided, budget agent runs and produces output."""
     budget = {
         "items": [
-            {"category": "payroll",    "budgeted": 3200000},
-            {"category": "rent",       "budgeted":  800000},
-            {"category": "utilities",  "budgeted":  200000},
-            {"category": "software",   "budgeted":  200000},
+            {"category": "payroll", "budgeted": 3200000},
+            {"category": "rent", "budgeted": 800000},
+            {"category": "utilities", "budgeted": 200000},
+            {"category": "software", "budgeted": 200000},
         ]
     }
 
@@ -328,11 +336,13 @@ async def test_budget_agent_runs_with_budget_input(csv_file, run_config_no_revie
         pytest.skip("Pipeline halted — skipping budget check")
 
     budget_result = result.get("budget")
-    assert budget_result is not None, \
+    assert budget_result is not None, (
         "Budget agent should produce output when budget_input is provided"
+    )
 
 
 # ── Scenario 7: AgentMemory episode saved ────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_memory_episode_saved_on_success(csv_file, run_config_no_review):
@@ -355,8 +365,9 @@ async def test_memory_episode_saved_on_success(csv_file, run_config_no_review):
         pytest.skip("Pipeline halted — skipping memory check")
 
     episode_ids = result.get("memory_episode_ids") or []
-    assert len(episode_ids) > 0, \
+    assert len(episode_ids) > 0, (
         "Expected at least one memory episode to be saved after successful run"
+    )
 
 
 @pytest.mark.asyncio
@@ -373,11 +384,11 @@ async def test_memory_not_saved_when_halted(empty_file, run_config_no_review):
     assert result.get("halted") is True
 
     episode_ids = result.get("memory_episode_ids") or []
-    assert len(episode_ids) == 0, \
-        "Memory should not be saved when pipeline halts"
+    assert len(episode_ids) == 0, "Memory should not be saved when pipeline halts"
 
 
 # ── Scenario 8: State integrity ───────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_state_always_has_required_fields(csv_file, run_config_no_review):

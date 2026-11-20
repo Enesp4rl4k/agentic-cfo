@@ -18,6 +18,7 @@ revenue).
   category the P&L does not read: `tax_payment` for tax and social-security
   accounts (KDV, stopaj, geçici vergi, SGK), `transfer` for the rest.
 """
+
 from __future__ import annotations
 
 import re
@@ -25,22 +26,42 @@ from dataclasses import dataclass
 
 # account main-code prefix → category. Longest prefix wins.
 GELIR: dict[str, str] = {
-    "600": "revenue", "601": "revenue", "602": "revenue",
-    "610": "revenue", "611": "revenue", "612": "revenue",   # deductions: reduce revenue
-    "64": "other_income", "67": "other_income",
+    "600": "revenue",
+    "601": "revenue",
+    "602": "revenue",
+    "610": "revenue",
+    "611": "revenue",
+    "612": "revenue",  # deductions: reduce revenue
+    "64": "other_income",
+    "67": "other_income",
 }
 GIDER: dict[str, str] = {
     "62": "cogs",
-    "630": "other_expense", "631": "marketing", "632": "other_expense",
-    "65": "other_expense", "66": "other_expense", "68": "other_expense",
+    "630": "other_expense",
+    "631": "marketing",
+    "632": "other_expense",
+    "65": "other_expense",
+    "66": "other_expense",
+    "68": "other_expense",
     "691": "tax",
     # 7/A cost accounts, before they are transferred into 6xx
-    "710": "cogs", "720": "cogs", "730": "cogs", "740": "cogs",
-    "750": "other_expense", "760": "marketing", "770": "other_expense", "780": "other_expense",
+    "710": "cogs",
+    "720": "cogs",
+    "730": "cogs",
+    "740": "cogs",
+    "750": "other_expense",
+    "760": "marketing",
+    "770": "other_expense",
+    "780": "other_expense",
     # 7/B expense-by-nature accounts
-    "790": "other_expense", "791": "other_expense", "792": "other_expense",
-    "793": "other_expense", "794": "other_expense", "795": "other_expense",
-    "796": "other_expense", "797": "other_expense",
+    "790": "other_expense",
+    "791": "other_expense",
+    "792": "other_expense",
+    "793": "other_expense",
+    "794": "other_expense",
+    "795": "other_expense",
+    "796": "other_expense",
+    "797": "other_expense",
 }
 # Sales deductions carry a debit balance: a debit reduces revenue.
 GELIR_INDIRIMI = ("610", "611", "612")
@@ -59,9 +80,9 @@ _KOD = re.compile(r"^\s*(\d{3})")
 
 @dataclass(frozen=True)
 class Hesap:
-    kod: str        # three-digit main account, e.g. "600"
-    rol: str        # gelir | gelir_indirimi | gider | bilanco | yansitma | kapanis
-    kategori: str   # the account's category; for gider, the default when the nature is unknown
+    kod: str  # three-digit main account, e.g. "600"
+    rol: str  # gelir | gelir_indirimi | gider | bilanco | yansitma | kapanis
+    kategori: str  # the account's category; for gider, the default when the nature is unknown
 
 
 def ana_hesap(kod: str | None) -> str | None:

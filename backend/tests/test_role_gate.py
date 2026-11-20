@@ -1,4 +1,5 @@
 """Plan v9 §K0 / §V6 S1 — one gate for every role; what it holds stays out of the context."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -30,7 +31,9 @@ _NODE_LOGS = [CHROStepLog, RiskStepLog, AuditStepLog, ComplianceStepLog]
 @pytest.mark.parametrize("log", _CONF_LOGS)
 def test_roles_that_measure_pass_above_the_threshold_and_wait_below_it(log):
     assert not evaluate({"logs": [log(step="a", ok=True, confidence=0.9)]}).awaiting_review
-    low = evaluate({"logs": [log(step="a", ok=True, confidence=0.9), log(step="b", ok=True, confidence=0.6)]})
+    low = evaluate(
+        {"logs": [log(step="a", ok=True, confidence=0.9), log(step="b", ok=True, confidence=0.6)]}
+    )
     assert low.awaiting_review
     assert low.min_confidence == 0.6
 
@@ -46,29 +49,40 @@ def test_roles_that_measure_nothing_wait_for_a_person(log):
 
 @pytest.mark.parametrize("log", _NODE_LOGS)
 def test_every_log_shape_reads_as_one_contract(log):
-    steps = step_results({"logs": [
-        log(node="a", status="started", message="başladı"),
-        log(node="a", status="failed", message="bozuk dosya"),
-    ]})
-    assert [(s.step, s.ok, s.status, s.detail) for s in steps] == [("a", False, "failed", "bozuk dosya")]
+    steps = step_results(
+        {
+            "logs": [
+                log(node="a", status="started", message="başladı"),
+                log(node="a", status="failed", message="bozuk dosya"),
+            ]
+        }
+    )
+    assert [(s.step, s.ok, s.status, s.detail) for s in steps] == [
+        ("a", False, "failed", "bozuk dosya")
+    ]
 
 
 def test_a_skipped_step_has_no_confidence_and_does_not_count():
-    steps = [{"step": "a", "ok": True, "confidence": 0.9},
-             {"step": "b", "ok": True, "status": "skipped", "confidence": 1.0}]
+    steps = [
+        {"step": "a", "ok": True, "confidence": 0.9},
+        {"step": "b", "ok": True, "status": "skipped", "confidence": 1.0},
+    ]
     decision = evaluate({"logs": steps})
     assert decision.steps[1].confidence is None
     assert not decision.awaiting_review
 
 
-@pytest.mark.parametrize("result", [
-    {"logs": [{"step": "a", "ok": False, "confidence": 0.95}]},
-    {"logs": [{"step": "a", "ok": True, "confidence": 0.95, "needs_review": True}]},
-    {"logs": [{"step": "a", "ok": True, "confidence": 0.95}], "awaiting_review": True},
-    {"logs": [{"step": "a", "ok": True, "confidence": 0.95}], "error": "patladı"},
-    {"logs": [{"step": "a", "ok": True, "confidence": 0.95}], "min_confidence": 0.5},
-    {"logs": []},
-])
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"logs": [{"step": "a", "ok": False, "confidence": 0.95}]},
+        {"logs": [{"step": "a", "ok": True, "confidence": 0.95, "needs_review": True}]},
+        {"logs": [{"step": "a", "ok": True, "confidence": 0.95}], "awaiting_review": True},
+        {"logs": [{"step": "a", "ok": True, "confidence": 0.95}], "error": "patladı"},
+        {"logs": [{"step": "a", "ok": True, "confidence": 0.95}], "min_confidence": 0.5},
+        {"logs": []},
+    ],
+)
 def test_what_holds_a_run(result):
     assert evaluate(result).awaiting_review
 
@@ -76,7 +90,12 @@ def test_what_holds_a_run(result):
 def test_a_synthesis_is_no_surer_than_what_it_read():
     from app.platform.run_gate import inherited_confidence
 
-    inputs = [None, {"min_confidence": 0.92}, {"gate": {"min_confidence": 0.7}}, {"gate": {"min_confidence": None}}]
+    inputs = [
+        None,
+        {"min_confidence": 0.92},
+        {"gate": {"min_confidence": 0.7}},
+        {"gate": {"min_confidence": None}},
+    ]
     assert inherited_confidence(inputs) == 0.7
     assert inherited_confidence([None, {}]) == 1.0
 
@@ -84,8 +103,14 @@ def test_a_synthesis_is_no_surer_than_what_it_read():
 # ── flow ──────────────────────────────────────────────────────────────────────
 
 
-_TEMIZ: dict[str, Any] = {"cmo_summary": {"x": 1}, "logs": [{"step": "a", "ok": True, "confidence": 0.9}]}
-_ZAYIF: dict[str, Any] = {"cmo_summary": {"x": 2}, "logs": [{"step": "a", "ok": True, "confidence": 0.5}]}
+_TEMIZ: dict[str, Any] = {
+    "cmo_summary": {"x": 1},
+    "logs": [{"step": "a", "ok": True, "confidence": 0.9}],
+}
+_ZAYIF: dict[str, Any] = {
+    "cmo_summary": {"x": 2},
+    "logs": [{"step": "a", "ok": True, "confidence": 0.5}],
+}
 
 
 @pytest_asyncio.fixture
@@ -117,7 +142,11 @@ async def _persist(client, org_id: str, result: dict) -> dict:
 
     async with client._maker() as db:
         return await persist_agent_completion(
-            org_id, "cmo", dict(result), db, auto_chain_hook=auto_chain.on_agent_complete,
+            org_id,
+            "cmo",
+            dict(result),
+            db,
+            auto_chain_hook=auto_chain.on_agent_complete,
         )
 
 
@@ -207,7 +236,9 @@ async def test_an_agent_job_below_the_gate_waits(ortam, monkeypatch):
 
     monkeypatch.setattr(agent_jobs, "_dispatch_pipeline", dispatch)
     async with client._maker() as db:
-        job = AgentJob(agent_type="cmo", org_id=org_id, status=AgentJobStatus.PENDING, input_data={})
+        job = AgentJob(
+            agent_type="cmo", org_id=org_id, status=AgentJobStatus.PENDING, input_data={}
+        )
         db.add(job)
         await db.commit()
         job_id = job.id
@@ -219,6 +250,6 @@ async def test_an_agent_job_below_the_gate_waits(ortam, monkeypatch):
         assert row.status == AgentJobStatus.AWAITING_REVIEW
         assert row.result_json["gate"]["awaiting_review"] is True
         n = len((await db.execute(select(AgentJob))).scalars().all())
-    assert n == 1                                   # no second queue row
+    assert n == 1  # no second queue row
     assert not await _context_result(client, org_id)
     assert zincir == []

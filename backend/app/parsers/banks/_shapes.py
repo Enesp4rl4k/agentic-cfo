@@ -10,6 +10,7 @@ A bank belongs here when its statement has the same *shape*, not when it has
 the same name. Adding a bank whose layout differs means a new shape, not a new
 marker in an existing one.
 """
+
 from __future__ import annotations
 
 import re

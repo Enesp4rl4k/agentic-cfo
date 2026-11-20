@@ -12,6 +12,7 @@ POST /api/v1/brief/morning/generate
 GET  /api/v1/brief/morning/history
      Returns the last N briefs (if stored — future: persist to DB).
 """
+
 from __future__ import annotations
 
 import json
@@ -47,6 +48,7 @@ async def get_morning_brief(current_user: User = Depends(get_current_user)) -> d
     try:
         from app.scheduler import morning_brief_key
         from app.worker import get_arq_pool
+
         pool = await get_arq_pool()
         raw = await pool.get(morning_brief_key(org_id))
     except Exception as exc:
@@ -91,6 +93,7 @@ async def trigger_morning_brief(current_user: User = Depends(get_current_user)) 
     org_id = _require_org(current_user)
     try:
         from app.scheduler import _generate_morning_brief
+
         # This organisation's brief only. Unauthenticated, this used to run the
         # LLM over every organisation's jobs for whoever called it.
         await _generate_morning_brief(org_id)
@@ -104,8 +107,10 @@ async def trigger_morning_brief(current_user: User = Depends(get_current_user)) 
     # Return the freshly generated brief
     try:
         from app.worker import get_arq_pool
+
         pool = await get_arq_pool()
         from app.scheduler import morning_brief_key
+
         raw = await pool.get(morning_brief_key(org_id))
         brief = json.loads(raw) if raw else {}
     except Exception:

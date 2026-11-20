@@ -20,6 +20,7 @@ OAuth2 flow:
 IMPORTANT: Production requires BDDK "Ödeme Hizmeti Sağlayıcısı" (ÖHS) license.
 Sandbox access is available for development without a license.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -52,16 +53,16 @@ class BankOAuthConfig:
         scopes: list[str],
         sandbox: bool = True,
     ) -> None:
-        self.bank_id         = bank_id
-        self.bank_name       = bank_name
-        self.client_id       = client_id
-        self.client_secret   = client_secret
-        self.auth_url        = auth_url
-        self.token_url       = token_url
-        self.accounts_url    = accounts_url
+        self.bank_id = bank_id
+        self.bank_name = bank_name
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.auth_url = auth_url
+        self.token_url = token_url
+        self.accounts_url = accounts_url
         self.transactions_url = transactions_url
-        self.scopes          = scopes
-        self.sandbox         = sandbox
+        self.scopes = scopes
+        self.sandbox = sandbox
 
 
 class OpenBankingClient:
@@ -77,7 +78,7 @@ class OpenBankingClient:
 
     def __init__(self, config: BankOAuthConfig) -> None:
         self.config = config
-        self._http  = httpx.AsyncClient(timeout=30.0)
+        self._http = httpx.AsyncClient(timeout=30.0)
 
     def build_authorization_url(
         self,
@@ -94,16 +95,16 @@ class OpenBankingClient:
             state = secrets.token_urlsafe(32)
 
         # PKCE code challenge (required by some banks)
-        code_verifier  = secrets.token_urlsafe(64)
+        code_verifier = secrets.token_urlsafe(64)
         code_challenge = hashlib.sha256(code_verifier.encode()).hexdigest()
 
         params = {
-            "response_type":         "code",
-            "client_id":             self.config.client_id,
-            "redirect_uri":          redirect_uri,
-            "scope":                 " ".join(self.config.scopes),
-            "state":                 state,
-            "code_challenge":        code_challenge,
+            "response_type": "code",
+            "client_id": self.config.client_id,
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(self.config.scopes),
+            "state": state,
+            "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
 
@@ -123,10 +124,10 @@ class OpenBankingClient:
             {access_token, refresh_token, expires_in, token_type}
         """
         data: dict[str, str] = {
-            "grant_type":   "authorization_code",
-            "client_id":    self.config.client_id,
+            "grant_type": "authorization_code",
+            "client_id": self.config.client_id,
             "client_secret": self.config.client_secret,
-            "code":         code,
+            "code": code,
             "redirect_uri": redirect_uri,
         }
         if code_verifier:
@@ -142,8 +143,8 @@ class OpenBankingClient:
     async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
         """Refresh an expired access token."""
         data = {
-            "grant_type":    "refresh_token",
-            "client_id":     self.config.client_id,
+            "grant_type": "refresh_token",
+            "client_id": self.config.client_id,
             "client_secret": self.config.client_secret,
             "refresh_token": refresh_token,
         }
@@ -170,8 +171,8 @@ class OpenBankingClient:
         self,
         access_token: str,
         account_id: str,
-        start_date: str,   # YYYY-MM-DD
-        end_date: str,     # YYYY-MM-DD
+        start_date: str,  # YYYY-MM-DD
+        end_date: str,  # YYYY-MM-DD
     ) -> list[dict[str, Any]]:
         """
         Fetch transactions for an account.

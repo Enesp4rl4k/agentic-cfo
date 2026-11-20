@@ -1,4 +1,5 @@
 """Connector Platform (Faz 13) — adapter, runner idempotency, and the CTO flip."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -27,6 +28,7 @@ pytestmark = pytest.mark.connectors
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
+
 @pytest_asyncio.fixture
 async def db():
     async with gecici_oturum() as session:
@@ -42,12 +44,16 @@ class _StubConnector:
         self.calls: list[Watermark] = []
         self.rows: list[CanonicalRow] = []
 
-    async def health(self, *, config: Mapping[str, Any], secret: Mapping[str, Any]) -> ConnectorHealth:
+    async def health(
+        self, *, config: Mapping[str, Any], secret: Mapping[str, Any]
+    ) -> ConnectorHealth:
         return ConnectorHealth(ok=True, detail="stub ok", account="stub/acct")
 
     async def fetch(self, *, org_id, config, secret, since: Watermark, **_) -> ConnectorPayload:
         self.calls.append(since)
-        return ConnectorPayload(rows=list(self.rows), next_watermark=Watermark(since=datetime.now(UTC)))
+        return ConnectorPayload(
+            rows=list(self.rows), next_watermark=Watermark(since=datetime.now(UTC))
+        )
 
 
 @pytest.fixture
@@ -62,8 +68,11 @@ def stub_connector():
 
 async def _seed_connection(db, org_id="org-1", connector="stub") -> ConnectorConnection:
     row = ConnectorConnection(
-        org_id=org_id, connector=connector, status="active",
-        secret_enc=encrypt_secret('{"token": "x"}'), config_json="{}",
+        org_id=org_id,
+        connector=connector,
+        status="active",
+        secret_enc=encrypt_secret('{"token": "x"}'),
+        config_json="{}",
     )
     db.add(row)
     await db.commit()
@@ -71,6 +80,7 @@ async def _seed_connection(db, org_id="org-1", connector="stub") -> ConnectorCon
 
 
 # ── registry + crypto ───────────────────────────────────────────────────────
+
 
 def test_registry_has_github():
     assert registry.has_connector("github")
@@ -92,6 +102,7 @@ def test_crypto_rejects_garbage():
 
 
 # ── github adapter normalisation ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_github_adapter_normalizes(monkeypatch):
@@ -136,7 +147,8 @@ async def test_github_adapter_normalizes(monkeypatch):
 
     class _FakeApi:
         def __init__(self, *a, **k): ...
-        async def fetch(self, **k): return _FakeData()
+        async def fetch(self, **k):
+            return _FakeData()
 
     monkeypatch.setattr("app.services.github_connector.GitHubConnector", _FakeApi)
 
@@ -157,14 +169,23 @@ async def test_github_adapter_normalizes(monkeypatch):
 
 # ── runner: idempotency + bookkeeping ──────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_runner_upsert_is_idempotent(db, stub_connector):
     await _seed_connection(db)
     stub_connector.rows = [
-        CanonicalRow(source_record_id="commit:1", signal_type="commit",
-                     occurred_at=datetime.now(UTC), magnitude=5),
-        CanonicalRow(source_record_id="pr:1", signal_type="pull_request",
-                     occurred_at=datetime.now(UTC), magnitude=12),
+        CanonicalRow(
+            source_record_id="commit:1",
+            signal_type="commit",
+            occurred_at=datetime.now(UTC),
+            magnitude=5,
+        ),
+        CanonicalRow(
+            source_record_id="pr:1",
+            signal_type="pull_request",
+            occurred_at=datetime.now(UTC),
+            magnitude=12,
+        ),
     ]
 
     r1 = await run_connector_sync(connector_name="stub", org_id="org-1", db=db)
@@ -175,9 +196,11 @@ async def test_runner_upsert_is_idempotent(db, stub_connector):
     assert r2.ok
 
     count = len(
-        (await db.execute(
-            CanonicalEngSignal.__table__.select().where(CanonicalEngSignal.org_id == "org-1")
-        )).all()
+        (
+            await db.execute(
+                CanonicalEngSignal.__table__.select().where(CanonicalEngSignal.org_id == "org-1")
+            )
+        ).all()
     )
     assert count == 2
     # watermark advanced → second fetch got a non-empty `since`
@@ -197,9 +220,11 @@ async def test_runner_records_fetch_failure(db, stub_connector):
     assert result.ok is False
     assert "exploded" in (result.error or "")
 
-    row = (await db.execute(
-        ConnectorConnection.__table__.select().where(ConnectorConnection.org_id == "org-1")
-    )).first()
+    row = (
+        await db.execute(
+            ConnectorConnection.__table__.select().where(ConnectorConnection.org_id == "org-1")
+        )
+    ).first()
     assert row.last_status == "error"
 
 
@@ -212,6 +237,7 @@ async def test_runner_errors_without_connection(db, stub_connector):
 
 # ── GitHub signals are real CTO data ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_eng_signals_summarise_what_was_synced(db):
     """The synced rows are summarised as they are. They used to be passed to
@@ -221,20 +247,38 @@ async def test_eng_signals_summarise_what_was_synced(db):
 
     now = datetime.now(UTC)
     for i in range(12):
-        db.add(CanonicalEngSignal(
-            org_id="org-1", source="github", source_record_id=f"commit:{i}",
-            signal_type="commit", occurred_at=now - timedelta(days=i),
-            actor="dev", magnitude=40,
-        ))
-    db.add(CanonicalEngSignal(
-        org_id="org-1", source="github", source_record_id="pr:1",
-        signal_type="pull_request", occurred_at=now - timedelta(days=1),
-        magnitude=18, attributes={"merged": True},
-    ))
-    db.add(CanonicalEngSignal(
-        org_id="org-1", source="github", source_record_id="issue:1",
-        signal_type="incident", occurred_at=now - timedelta(days=2), magnitude=3,
-    ))
+        db.add(
+            CanonicalEngSignal(
+                org_id="org-1",
+                source="github",
+                source_record_id=f"commit:{i}",
+                signal_type="commit",
+                occurred_at=now - timedelta(days=i),
+                actor="dev",
+                magnitude=40,
+            )
+        )
+    db.add(
+        CanonicalEngSignal(
+            org_id="org-1",
+            source="github",
+            source_record_id="pr:1",
+            signal_type="pull_request",
+            occurred_at=now - timedelta(days=1),
+            magnitude=18,
+            attributes={"merged": True},
+        )
+    )
+    db.add(
+        CanonicalEngSignal(
+            org_id="org-1",
+            source="github",
+            source_record_id="issue:1",
+            signal_type="incident",
+            occurred_at=now - timedelta(days=2),
+            magnitude=3,
+        )
+    )
     await db.commit()
 
     summary = await summarize_eng_signals("org-1", db)

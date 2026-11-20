@@ -15,6 +15,7 @@ idempotent recomputes (run_ledger) and the worker purges outputs before
 rewriting — so the fallback is a performance loss, not a data loss. It
 still must be visible: silent is how the previous bug survived.
 """
+
 from __future__ import annotations
 
 import asyncio

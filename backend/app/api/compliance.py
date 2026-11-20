@@ -4,6 +4,7 @@ Compliance API endpoints — /api/v1/compliance/*
 POST /compliance/analyze        → run compliance pipeline synchronously
 GET  /compliance/health-check   → verify graph compiles
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,6 +26,7 @@ router = APIRouter()
 
 # ── Request / Response schemas ─────────────────────────────────────────────────
 
+
 class ComplianceAnalyzeRequest(BaseModel):
     """
     Compliance analysis request — provide at least one CSV data source.
@@ -42,14 +44,16 @@ class ComplianceAnalyzeRequest(BaseModel):
         regulation, requirement, compliance_status, last_audit,
         next_audit, control_owner, evidence_status, risk_level
     """
-    company_name:    str | None = None
-    audit_period:    str | None = None   # e.g. "2024-Q2", "2024-06"
-    policy_csv:      str | None = None
-    violations_csv:  str | None = None
+
+    company_name: str | None = None
+    audit_period: str | None = None  # e.g. "2024-Q2", "2024-06"
+    policy_csv: str | None = None
+    violations_csv: str | None = None
     regulations_csv: str | None = None
 
 
 # ── Sync endpoint ──────────────────────────────────────────────────────────────
+
 
 @router.post("/compliance/analyze")
 async def run_compliance_analysis(
@@ -69,22 +73,27 @@ async def run_compliance_analysis(
         raise HTTPException(
             status_code=400,
             detail=(
-                "At least one data source required: "
-                "policy_csv, violations_csv, or regulations_csv."
+                "At least one data source required: policy_csv, violations_csv, or regulations_csv."
             ),
         )
 
     job_id = str(uuid.uuid4())
 
     try:
-        result = await recorded_run(db, "compliance", current_user.org_id, job_id, run_compliance_pipeline(
-            job_id=job_id,
-            policy_csv=body.policy_csv,
-            violations_csv=body.violations_csv,
-            regulations_csv=body.regulations_csv,
-            company_name=body.company_name,
-            audit_period=body.audit_period,
-        ))
+        result = await recorded_run(
+            db,
+            "compliance",
+            current_user.org_id,
+            job_id,
+            run_compliance_pipeline(
+                job_id=job_id,
+                policy_csv=body.policy_csv,
+                violations_csv=body.violations_csv,
+                regulations_csv=body.regulations_csv,
+                company_name=body.company_name,
+                audit_period=body.audit_period,
+            ),
+        )
 
         inceleme = None
         if current_user.org_id and not result.get("error"):
@@ -93,16 +102,21 @@ async def run_compliance_analysis(
 
             # Below the gate this waits in the owner's queue.
             inceleme = await persist_agent_completion(
-                str(current_user.org_id), "compliance", dict(result), db,
-                job_id=job_id, company_name=body.company_name,
-                reporting_period=body.audit_period, auto_chain_hook=on_agent_complete,
+                str(current_user.org_id),
+                "compliance",
+                dict(result),
+                db,
+                job_id=job_id,
+                company_name=body.company_name,
+                reporting_period=body.audit_period,
+                auto_chain_hook=on_agent_complete,
             )
 
         # Serialize logs (dataclass → dict)
         logs_serializable = [
             {
-                "node":    lg.node,
-                "status":  lg.status,
+                "node": lg.node,
+                "status": lg.status,
                 "message": lg.message,
                 "metrics": lg.metrics,
             }
@@ -111,16 +125,16 @@ async def run_compliance_analysis(
 
         return {
             "data": {
-                "job_id":             job_id,
-                "company_name":       body.company_name,
-                "audit_period":       body.audit_period,
-                "policies":           result.get("policies"),
-                "violations":         result.get("violations"),
-                "regulations":        result.get("regulations"),
+                "job_id": job_id,
+                "company_name": body.company_name,
+                "audit_period": body.audit_period,
+                "policies": result.get("policies"),
+                "violations": result.get("violations"),
+                "regulations": result.get("regulations"),
                 "compliance_summary": result.get("compliance_summary"),
-                "logs":               logs_serializable,
-                "error":              result.get("error"),
-                "inceleme":           inceleme,
+                "logs": logs_serializable,
+                "error": result.get("error"),
+                "inceleme": inceleme,
             },
             "error": None,
         }
@@ -139,13 +153,12 @@ async def run_compliance_analysis(
 async def compliance_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify Compliance pipeline agents are importable and graph compiles."""
     from app.agents.compliance.orchestrator import compliance_graph
+
     return {
         "data": {
             "status": "ok",
             "graph_nodes": (
-                list(compliance_graph.nodes.keys())
-                if hasattr(compliance_graph, "nodes")
-                else []
+                list(compliance_graph.nodes.keys()) if hasattr(compliance_graph, "nodes") else []
             ),
             "agents": [
                 "policies_agent",
@@ -154,9 +167,16 @@ async def compliance_health(current_user: User = Depends(get_current_user)) -> d
                 "compliance_summary",
             ],
             "supported_frameworks": [
-                "SOC2", "ISO 27001", "GDPR", "HIPAA",
-                "PCI-DSS", "NIST CSF", "CCPA", "FedRAMP",
-                "SOX", "CIS Controls",
+                "SOC2",
+                "ISO 27001",
+                "GDPR",
+                "HIPAA",
+                "PCI-DSS",
+                "NIST CSF",
+                "CCPA",
+                "FedRAMP",
+                "SOX",
+                "CIS Controls",
             ],
         },
         "error": None,

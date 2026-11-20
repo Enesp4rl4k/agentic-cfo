@@ -13,6 +13,7 @@ reason we can see before sending it:
 A package that would bounce is not built at all. Error 111 ("daha önce
 yüklenmiş") and the rest are GİB's to say; these are ours.
 """
+
 from __future__ import annotations
 
 import io
@@ -22,7 +23,9 @@ from dataclasses import dataclass
 
 from app.services.edefter_berat import DEFTER_NAME, NS, BeratError, _parse, signature_value
 
-BERAT_NAME = re.compile(r"^(?P<vkn>\d{10,11})-(?P<period>\d{6})-(?P<kind>YB|KB)-(?P<part>\d{6})\.xml$")
+BERAT_NAME = re.compile(
+    r"^(?P<vkn>\d{10,11})-(?P<period>\d{6})-(?P<kind>YB|KB)-(?P<part>\d{6})\.xml$"
+)
 
 # Fixed so the same two files always make byte-identical zips; a package's
 # hash should not depend on the second it was built in.
@@ -35,8 +38,8 @@ class PackageError(ValueError):
 
 @dataclass
 class EDefterPackage:
-    file_name: str        # 1234567808-201804-YB-000000.zip
-    paket_id: str         # the same, without .zip — what getBatchStatus takes
+    file_name: str  # 1234567808-201804-YB-000000.zip
+    paket_id: str  # the same, without .zip — what getBatchStatus takes
     zip_bytes: bytes
 
 
@@ -63,7 +66,9 @@ def build_package(
                 f"defter ve berat farklı {key} taşıyor ({d[key]} / {b[key]}) — aynı parçaya ait olmalı"
             )
     if b["kind"] != f"{d['kind']}B":
-        raise PackageError(f"{d['kind']} defterinin beratı {d['kind']}B olmalı, {b['kind']} verildi")
+        raise PackageError(
+            f"{d['kind']} defterinin beratı {d['kind']}B olmalı, {b['kind']} verildi"
+        )
 
     try:
         defter_root = _parse(defter_xml)
@@ -73,7 +78,9 @@ def build_package(
 
     defter_sig = signature_value(defter_root)
     if defter_sig is None:
-        raise PackageError("defter imzasız (HashValue taşıyor) — GİB yalnızca mali mühürlü defter kabul eder")
+        raise PackageError(
+            "defter imzasız (HashValue taşıyor) — GİB yalnızca mali mühürlü defter kabul eder"
+        )
     if berat_root.find(f"{{{NS['ds']}}}Signature") is None:
         raise PackageError("berat imzasız — ds:Signature zorunlu")
     berat_ref = _berat_signature_value(berat_xml)

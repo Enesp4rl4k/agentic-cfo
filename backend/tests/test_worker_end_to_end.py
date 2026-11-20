@@ -9,6 +9,7 @@ test saw it — a live run of the e-Defter package through /baglan did.
 The pipeline itself is stood in (it has its own tests); everything around it —
 claim, the read transaction, persistence, the terminal write — is real.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -37,8 +38,15 @@ def _boru_hatti(monkeypatch, *, awaiting_review: bool) -> list[dict[str, Any]]:
     async def sahte(**kw: Any) -> dict[str, Any]:
         alinan.append(kw)
         return {
-            "transactions": [{"amount_cents": 1_000_00, "type": "income", "category": "revenue",
-                              "description": "Tahsilat", "transaction_date": "2026-08-01"}],
+            "transactions": [
+                {
+                    "amount_cents": 1_000_00,
+                    "type": "income",
+                    "category": "revenue",
+                    "description": "Tahsilat",
+                    "transaction_date": "2026-08-01",
+                }
+            ],
             "dashboard_json": {"pnl": {"revenue": 1000}},
             "anomalies": [],
             "logs": [],
@@ -56,8 +64,13 @@ async def _is(client, tmp_path, org_id: str) -> str:
     dosya = tmp_path / "ekstre.csv"
     dosya.write_text("tarih,aciklama,tutar\n2026-08-01,Tahsilat,1000\n", encoding="utf-8")
     async with client._maker() as db:
-        job = AnalysisJob(filename="ekstre.csv", file_path=str(dosya), file_type="csv",
-                          org_id=org_id, status=JobStatus.PENDING)
+        job = AnalysisJob(
+            filename="ekstre.csv",
+            file_path=str(dosya),
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.PENDING,
+        )
         db.add(job)
         await db.commit()
         return job.id
@@ -80,7 +93,11 @@ async def test_a_pending_job_reaches_a_terminal_state(ortam, monkeypatch):
     async with client._maker() as db:
         job = await db.get(AnalysisJob, job_id)
         assert job.status == "awaiting_review" and job.awaiting_review is True
-        satirlar = (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).scalars().all()
+        satirlar = (
+            (await db.execute(select(Transaction).where(Transaction.job_id == job_id)))
+            .scalars()
+            .all()
+        )
         assert len(satirlar) == 1
 
 
@@ -95,9 +112,16 @@ async def test_the_extra_documents_reach_the_pipeline(ortam, monkeypatch):
     ek = tmp_path / "ikinci.xml"
     ek.write_text("<Invoice/>", encoding="utf-8")
     async with client._maker() as db:
-        db.add(DataSource(job_id=job_id, domain=DataSourceDomain.CFO,
-                          source_type=DataSourceType.FINANCIAL_DOCUMENT,
-                          filename="ikinci.xml", file_path=str(ek), file_size_bytes=10))
+        db.add(
+            DataSource(
+                job_id=job_id,
+                domain=DataSourceDomain.CFO,
+                source_type=DataSourceType.FINANCIAL_DOCUMENT,
+                filename="ikinci.xml",
+                file_path=str(ek),
+                file_size_bytes=10,
+            )
+        )
         await db.commit()
 
     await run_cfo_analysis({}, job_id)

@@ -22,6 +22,7 @@ transaction of its own would not exist for the next claimer to see).
 `finish_job` / `fail_job` deliberately do NOT commit: outputs and status must
 land in the caller's transaction.
 """
+
 from __future__ import annotations
 
 import os
@@ -215,7 +216,5 @@ async def purge_job_outputs(db: AsyncSession, job_id: str) -> None:
 
     for model in (Transaction, Report, Anomaly):
         await db.execute(
-            delete(model).where(model.job_id == job_id).execution_options(
-                synchronize_session=False
-            )
+            delete(model).where(model.job_id == job_id).execution_options(synchronize_session=False)
         )

@@ -13,6 +13,7 @@ Three things were true of CI before this, and none was visible:
 
 These tests hold the workflow to what it now claims.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,6 +44,7 @@ def _env_blocks(ci: dict):
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 
+
 def test_the_sync_url_follows_the_override() -> None:
     s = Settings(database_url_override="postgresql+asyncpg://u:p@db:5432/aicfo", use_sqlite=False)
     assert s.database_url == "postgresql+asyncpg://u:p@db:5432/aicfo"
@@ -61,6 +63,7 @@ def test_database_url_is_not_a_setting() -> None:
 
 
 # ── Workflow ─────────────────────────────────────────────────────────────────
+
 
 def test_no_job_relies_on_the_ignored_variable(ci) -> None:
     offenders = [f"{job} / {step}" for job, step, env in _env_blocks(ci) if "DATABASE_URL" in env]
@@ -92,6 +95,7 @@ def test_migrations_run_on_postgres(ci) -> None:
 # service-level env, where GitHub does not provide it, and GitHub rejects the
 # whole file. Nothing locally parsed the expressions, so it looked fine.
 
+
 def _exprs(value) -> list[str]:
     import re
 
@@ -101,11 +105,19 @@ def _exprs(value) -> list[str]:
 def test_contexts_are_used_only_where_github_provides_them(ci) -> None:
     offenders = []
     for name, job in ci["jobs"].items():
-        positions = [("name", job.get("name", ""), ("env.", "secrets.", "job.", "steps.", "runner.")),
-                     ("if", job.get("if", ""), ("env.", "secrets.", "job.", "steps.", "runner.", "matrix.")),
-                     ("env", job.get("env") or {}, ("env.", "job.", "steps.", "runner."))]
+        positions = [
+            ("name", job.get("name", ""), ("env.", "secrets.", "job.", "steps.", "runner.")),
+            ("if", job.get("if", ""), ("env.", "secrets.", "job.", "steps.", "runner.", "matrix.")),
+            ("env", job.get("env") or {}, ("env.", "job.", "steps.", "runner.")),
+        ]
         for svc, spec in (job.get("services") or {}).items():
-            positions.append((f"services.{svc}.env", spec.get("env") or {}, ("env.", "job.", "steps.", "runner.")))
+            positions.append(
+                (
+                    f"services.{svc}.env",
+                    spec.get("env") or {},
+                    ("env.", "job.", "steps.", "runner."),
+                )
+            )
         for where, value, forbidden in positions:
             for expr in _exprs(value):
                 if any(f in expr for f in forbidden):

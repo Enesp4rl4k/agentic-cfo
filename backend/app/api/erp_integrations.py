@@ -23,6 +23,7 @@ A sync used to feed transactions into a pipeline under a made-up job id
 showed the result. Synced transactions now become an ordinary analysis
 through the same path as a dropped file.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 # ── Request schemalar ─────────────────────────────────────────────────────────
 
+
 class LogoTigerConnectRequest(BaseModel):
     display_name: str = Field("Logo Tiger", description="Entegrasyon gorunum adi")
 
@@ -56,6 +58,7 @@ class FirmaSecimi(BaseModel):
 
 
 # ── Org ID helper ─────────────────────────────────────────────────────────────
+
 
 def _get_org_id(current_user: User) -> str:
     """User'dan org_id cek."""
@@ -67,15 +70,20 @@ def _get_org_id(current_user: User) -> str:
 
 async def _owned_integration(db: AsyncSession, integration_id: str, org_id: str) -> ERPIntegration:
     """The integration, if it is this organisation's; otherwise 404."""
-    row = (await db.execute(
-        select(ERPIntegration).where(ERPIntegration.id == integration_id, ERPIntegration.org_id == org_id)
-    )).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(ERPIntegration).where(
+                ERPIntegration.id == integration_id, ERPIntegration.org_id == org_id
+            )
+        )
+    ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Entegrasyon bulunamadi")
     return row
 
 
 # ── Genel listele ─────────────────────────────────────────────────────────────
+
 
 @router.get("/erp/integrations")
 async def list_integrations(
@@ -84,18 +92,22 @@ async def list_integrations(
 ) -> dict[str, Any]:
     """Organizasyonun tum ERP entegrasyonlarini listele."""
     org_id = _get_org_id(current_user)
-    rows = (await db.execute(select(ERPIntegration).where(ERPIntegration.org_id == org_id))).scalars().all()
+    rows = (
+        (await db.execute(select(ERPIntegration).where(ERPIntegration.org_id == org_id)))
+        .scalars()
+        .all()
+    )
     return {
         "integrations": [r.to_summary() for r in rows],
-        "providers":    ["parasut", "logo_tiger", "mikro", "netsis"],
+        "providers": ["parasut", "logo_tiger", "mikro", "netsis"],
     }
 
 
 @router.get("/erp/integrations/{integration_id}")
 async def get_integration(
     integration_id: str,
-    current_user:   User = Depends(get_current_user),
-    db:             AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Tek entegrasyon detayi."""
     return (await _owned_integration(db, integration_id, _get_org_id(current_user))).to_summary()
@@ -104,8 +116,8 @@ async def get_integration(
 @router.delete("/erp/integrations/{integration_id}")
 async def delete_integration(
     integration_id: str,
-    current_user:   User = Depends(get_current_user),
-    db:             AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Entegrasyonu ve tum loglarini sil."""
     row = await _owned_integration(db, integration_id, _get_org_id(current_user))
@@ -116,28 +128,36 @@ async def delete_integration(
 
 # ── Paraşüt ──────────────────────────────────────────────────────────────────
 
+
 @router.get("/erp/parasut/durum")
 async def parasut_durum(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     from app.services.erp.parasut_connector import ParasutConnector, parasut_acik
 
     org_id = _get_org_id(current_user)
-    row = (await db.execute(
-        select(ERPIntegration).where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut")
-    )).scalar_one_or_none()
-    return {"data": {
-        "acik": parasut_acik(),
-        "baglanti": row.to_summary() if row else None,
-        "firmalar": ParasutConnector.secilecek_firmalar(row) if row else [],
-    }, "error": None}
+    row = (
+        await db.execute(
+            select(ERPIntegration).where(
+                ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut"
+            )
+        )
+    ).scalar_one_or_none()
+    return {
+        "data": {
+            "acik": parasut_acik(),
+            "baglanti": row.to_summary() if row else None,
+            "firmalar": ParasutConnector.secilecek_firmalar(row) if row else [],
+        },
+        "error": None,
+    }
 
 
 @router.post("/erp/parasut/baglan")
 async def parasut_baglan(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """The Paraşüt login address. The person logs in there and is sent back connected."""
     from app.services.erp.parasut_connector import ParasutAyarlanmadi, ParasutConnector
@@ -151,10 +171,10 @@ async def parasut_baglan(
 
 @router.get("/erp/parasut/callback")
 async def parasut_callback(
-    code:  str = "",
+    code: str = "",
     state: str = "",
     error: str = "",
-    db:    AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """Paraşüt sends the browser here. No session comes with it: the signed,
     expiring, single-use state is what identifies the organisation."""
@@ -168,22 +188,27 @@ async def parasut_callback(
     except ValueError as exc:
         logger.warning("Paraşüt callback reddedildi: %s", exc)
         return RedirectResponse(f"{hedef}?parasut=hata", status_code=303)
-    return RedirectResponse(f"{hedef}?parasut={'firma_sec' if durum == FIRMA_SECIMI else 'baglandi'}",
-                            status_code=303)
+    return RedirectResponse(
+        f"{hedef}?parasut={'firma_sec' if durum == FIRMA_SECIMI else 'baglandi'}", status_code=303
+    )
 
 
 @router.post("/erp/parasut/firma")
 async def parasut_firma(
-    body:         FirmaSecimi,
+    body: FirmaSecimi,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     from app.services.erp.parasut_connector import ParasutConnector
 
     org_id = _get_org_id(current_user)
-    row = (await db.execute(
-        select(ERPIntegration).where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut")
-    )).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(ERPIntegration).where(
+                ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut"
+            )
+        )
+    ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Entegrasyon bulunamadi")
     try:
@@ -196,8 +221,8 @@ async def parasut_firma(
 @router.post("/erp/parasut/sync")
 async def parasut_sync(
     integration_id: str = Form(...),
-    current_user:   User = Depends(get_current_user),
-    db:             AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Pull the invoices and start an analysis of them, if they changed."""
     from app.services.erp.parasut_connector import parasut_al
@@ -218,15 +243,19 @@ class OtomatikAyar(BaseModel):
 
 @router.patch("/erp/parasut/otomatik")
 async def parasut_otomatik(
-    body:         OtomatikAyar,
+    body: OtomatikAyar,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """How often invoices are pulled by themselves: daily, weekly, or not at all."""
     org_id = _get_org_id(current_user)
-    row = (await db.execute(
-        select(ERPIntegration).where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut")
-    )).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(ERPIntegration).where(
+                ERPIntegration.org_id == org_id, ERPIntegration.provider == "parasut"
+            )
+        )
+    ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Entegrasyon bulunamadi")
     row.auto_sync_enabled = body.aralik != "kapali"
@@ -239,8 +268,8 @@ async def parasut_otomatik(
 @router.post("/erp/parasut/disconnect")
 async def parasut_disconnect(
     integration_id: str,
-    current_user:   User = Depends(get_current_user),
-    db:             AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Parasut baglantisini kes."""
     from app.services.erp.parasut_connector import ParasutConnector
@@ -251,6 +280,7 @@ async def parasut_disconnect(
 
 
 # ── Logo Tiger / Mikro ───────────────────────────────────────────────────────
+
 
 def _decode(content: bytes) -> str:
     for enc in ("utf-8-sig", "cp1254"):
@@ -263,17 +293,21 @@ def _decode(content: bytes) -> str:
 
 @router.post("/erp/logo-tiger/connect")
 async def logo_tiger_connect(
-    req:          LogoTigerConnectRequest,
+    req: LogoTigerConnectRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Logo Tiger entegrasyon kaydı olustur."""
     from app.services.erp.logo_tiger_connector import LogoTigerConnector
+
     return await LogoTigerConnector(db).create_or_update_integration(
-        org_id=_get_org_id(current_user), display_name=req.display_name)
+        org_id=_get_org_id(current_user), display_name=req.display_name
+    )
 
 
-async def _csv_sync(kaynak: str, file: UploadFile, current_user: User, db: AsyncSession) -> dict[str, Any]:
+async def _csv_sync(
+    kaynak: str, file: UploadFile, current_user: User, db: AsyncSession
+) -> dict[str, Any]:
     from app.services.erp.logo_tiger_connector import LogoTigerConnector, MikroConnector
 
     content = await file.read()
@@ -295,9 +329,9 @@ async def _csv_sync(kaynak: str, file: UploadFile, current_user: User, db: Async
 
 @router.post("/erp/logo-tiger/sync")
 async def logo_tiger_sync(
-    file:         UploadFile = File(..., description="Logo Tiger CSV export dosyasi"),
+    file: UploadFile = File(..., description="Logo Tiger CSV export dosyasi"),
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Logo Tiger CSV (Fiş Listesi, Hesap Hareketleri, Mizan) yükle; analiz başlat."""
     return await _csv_sync("logo_tiger", file, current_user, db)
@@ -305,9 +339,9 @@ async def logo_tiger_sync(
 
 @router.post("/erp/mikro/sync")
 async def mikro_sync(
-    file:         UploadFile = File(..., description="Mikro ERP CSV export"),
+    file: UploadFile = File(..., description="Mikro ERP CSV export"),
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Mikro ERP CSV dosyasini yükle; analiz başlat."""
     return await _csv_sync("mikro", file, current_user, db)
@@ -315,12 +349,13 @@ async def mikro_sync(
 
 # ── Sync logs ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/erp/sync-logs")
 async def get_sync_logs(
-    provider:     str | None = None,
-    limit:        int = 20,
+    provider: str | None = None,
+    limit: int = 20,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Son sync loglarini getir."""
     from app.models.erp_integration import ERPSyncLog

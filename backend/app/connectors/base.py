@@ -6,6 +6,7 @@ into a canonical row list. Everything else — persistence, idempotency, sync-ru
 bookkeeping, watermark storage, kernel notification — is the runner's job
 (`app.connectors.runner`), so every adapter stays small.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -75,12 +76,13 @@ class Connector(Protocol):
     """Adapter contract. Implementations are registered via
     `app.connectors.registry.register`."""
 
-    name: ClassVar[str]           # "github"
-    domain: ClassVar[str]         # engineering | hr | marketing | ops | finance
+    name: ClassVar[str]  # "github"
+    domain: ClassVar[str]  # engineering | hr | marketing | ops | finance
     kernel_role: ClassVar[str | None]  # C-level this feeds, e.g. "cto"; None if none
 
-    async def health(self, *, config: Mapping[str, Any], secret: Mapping[str, Any]) -> ConnectorHealth:
-        ...
+    async def health(
+        self, *, config: Mapping[str, Any], secret: Mapping[str, Any]
+    ) -> ConnectorHealth: ...
 
     async def fetch(
         self,
@@ -89,5 +91,4 @@ class Connector(Protocol):
         config: Mapping[str, Any],
         secret: Mapping[str, Any],
         since: Watermark,
-    ) -> ConnectorPayload:
-        ...
+    ) -> ConnectorPayload: ...

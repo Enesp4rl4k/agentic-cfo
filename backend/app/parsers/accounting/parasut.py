@@ -24,6 +24,7 @@ Paraşüt'ün CSV'si her zaman UTF-8 BOM ile gelir ve başlık satırında
   "Kasa Girişi" → income
   "Kasa Çıkışı" → expense
 """
+
 from __future__ import annotations
 
 import csv
@@ -33,24 +34,24 @@ from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 # Paraşüt işlem tipi → tx_type mapping
 _TYPE_MAP: dict[str, str] = {
-    "gelir":               "income",
-    "gider":               "expense",
-    "satış faturası":      "income",
-    "satis faturasi":      "income",
-    "alış faturası":       "expense",
-    "alis faturasi":       "expense",
-    "kasa girişi":         "income",
-    "kasa cikisi":         "expense",
-    "kasa çıkışı":         "expense",
-    "banka girişi":        "income",
-    "banka çıkışı":        "expense",
-    "banka cikisi":        "expense",
-    "tahsilat":            "income",
-    "ödeme":               "expense",
-    "odeme":               "expense",
-    "masraf":              "expense",
-    "transfer girişi":     "income",
-    "transfer çıkışı":     "expense",
+    "gelir": "income",
+    "gider": "expense",
+    "satış faturası": "income",
+    "satis faturasi": "income",
+    "alış faturası": "expense",
+    "alis faturasi": "expense",
+    "kasa girişi": "income",
+    "kasa cikisi": "expense",
+    "kasa çıkışı": "expense",
+    "banka girişi": "income",
+    "banka çıkışı": "expense",
+    "banka cikisi": "expense",
+    "tahsilat": "income",
+    "ödeme": "expense",
+    "odeme": "expense",
+    "masraf": "expense",
+    "transfer girişi": "income",
+    "transfer çıkışı": "expense",
 }
 
 
@@ -67,12 +68,20 @@ class ParasutParser(BankParser):
     bank_display_name = "Paraşüt"
 
     _MARKERS = [
-        "Paraşüt", "PARAŞÜT", "parasut", "PARASUT",
-        "parasut.com", "app.parasut.com",
-        "İşlem Tarihi", "Islem Tarihi",
+        "Paraşüt",
+        "PARAŞÜT",
+        "parasut",
+        "PARASUT",
+        "parasut.com",
+        "app.parasut.com",
+        "İşlem Tarihi",
+        "Islem Tarihi",
         # Paraşüt column headers
-        "Fatura No", "Müşteri/Tedarikçi", "Musteri/Tedarikci",
-        "Hesap Adı", "KDV Tutarı",
+        "Fatura No",
+        "Müşteri/Tedarikçi",
+        "Musteri/Tedarikci",
+        "Hesap Adı",
+        "KDV Tutarı",
     ]
 
     @classmethod
@@ -109,7 +118,7 @@ class ParasutParser(BankParser):
         if transactions:
             dates = [t.date for t in transactions]
             statement.statement_period_start = min(dates)
-            statement.statement_period_end   = max(dates)
+            statement.statement_period_end = max(dates)
         return statement
 
     def _find_col(self, headers: list[str], candidates: list[str]) -> int | None:
@@ -143,18 +152,18 @@ class ParasutParser(BankParser):
                 break
 
         headers = rows[header_idx]
-        date_col  = self._find_col(headers, ["tarih", "işlem tarihi", "date"])
-        type_col  = self._find_col(headers, ["tip", "type", "işlem türü", "tür"])
-        desc_col  = self._find_col(headers, ["açıklama", "aciklama", "description"])
-        amt_col   = self._find_col(headers, ["tutar", "amount", "toplam", "net tutar"])
-        acc_col   = self._find_col(headers, ["hesap", "account", "hesap adı"])
-        ref_col   = self._find_col(headers, ["referans", "fatura no", "belge no"])
+        date_col = self._find_col(headers, ["tarih", "işlem tarihi", "date"])
+        type_col = self._find_col(headers, ["tip", "type", "işlem türü", "tür"])
+        desc_col = self._find_col(headers, ["açıklama", "aciklama", "description"])
+        amt_col = self._find_col(headers, ["tutar", "amount", "toplam", "net tutar"])
+        acc_col = self._find_col(headers, ["hesap", "account", "hesap adı"])
+        ref_col = self._find_col(headers, ["referans", "fatura no", "belge no"])
 
         if date_col is None or amt_col is None:
             return []
 
         transactions: list[ParsedTransaction] = []
-        for row in rows[header_idx + 1:]:
+        for row in rows[header_idx + 1 :]:
             if not row or len(row) <= max(c for c in [date_col, amt_col] if c is not None):
                 continue
 
@@ -164,9 +173,11 @@ class ParasutParser(BankParser):
                 continue
 
             raw_type = row[type_col].strip() if type_col is not None and type_col < len(row) else ""
-            description = row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
-            reference   = row[ref_col].strip() if ref_col is not None and ref_col < len(row) else None
-            account     = row[acc_col].strip() if acc_col is not None and acc_col < len(row) else ""
+            description = (
+                row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
+            )
+            reference = row[ref_col].strip() if ref_col is not None and ref_col < len(row) else None
+            account = row[acc_col].strip() if acc_col is not None and acc_col < len(row) else ""
 
             raw_amt = row[amt_col].strip() if amt_col < len(row) else ""
             # Paraşüt uses negative for outflows
@@ -182,16 +193,18 @@ class ParasutParser(BankParser):
 
             vendor = self._extract_vendor(description, account)
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description or raw_type or f"Paraşüt {date.strftime('%d.%m.%Y')}",
-                amount_cents=abs(amount_cents),
-                tx_type=tx_type,
-                currency="TRY",
-                vendor=vendor,
-                reference=reference or None,
-                raw_row=",".join(row),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description or raw_type or f"Paraşüt {date.strftime('%d.%m.%Y')}",
+                    amount_cents=abs(amount_cents),
+                    tx_type=tx_type,
+                    currency="TRY",
+                    vendor=vendor,
+                    reference=reference or None,
+                    raw_row=",".join(row),
+                )
+            )
         return transactions
 
     def _parse_invoice_list(self, text: str) -> list[ParsedTransaction]:
@@ -212,16 +225,16 @@ class ParasutParser(BankParser):
                 break
 
         headers = rows[header_idx]
-        date_col   = self._find_col(headers, ["tarih", "fatura tarihi"])
-        desc_col   = self._find_col(headers, ["açıklama", "müşteri", "tedarikçi", "musteri"])
-        total_col  = self._find_col(headers, ["toplam", "fatura tutarı", "tutar"])
-        type_col   = self._find_col(headers, ["tür", "tip", "fatura türü", "type"])
+        date_col = self._find_col(headers, ["tarih", "fatura tarihi"])
+        desc_col = self._find_col(headers, ["açıklama", "müşteri", "tedarikçi", "musteri"])
+        total_col = self._find_col(headers, ["toplam", "fatura tutarı", "tutar"])
+        type_col = self._find_col(headers, ["tür", "tip", "fatura türü", "type"])
 
         if date_col is None or total_col is None:
             return []
 
         transactions: list[ParsedTransaction] = []
-        for row in rows[header_idx + 1:]:
+        for row in rows[header_idx + 1 :]:
             if not row:
                 continue
             raw_date = row[date_col].strip() if date_col < len(row) else ""
@@ -230,22 +243,28 @@ class ParasutParser(BankParser):
                 continue
 
             raw_type = row[type_col].strip() if type_col is not None and type_col < len(row) else ""
-            description = row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
-            amount_cents = self.parse_turkish_amount(row[total_col].strip()) if total_col < len(row) else None
+            description = (
+                row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
+            )
+            amount_cents = (
+                self.parse_turkish_amount(row[total_col].strip()) if total_col < len(row) else None
+            )
             if not amount_cents or amount_cents == 0:
                 continue
 
             tx_type = _map_type(raw_type) or "income"
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description or f"Paraşüt Fatura {date.strftime('%d.%m.%Y')}",
-                amount_cents=abs(amount_cents),
-                tx_type=tx_type,
-                currency="TRY",
-                vendor=description[:50] if description else None,
-                raw_row=",".join(row),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description or f"Paraşüt Fatura {date.strftime('%d.%m.%Y')}",
+                    amount_cents=abs(amount_cents),
+                    tx_type=tx_type,
+                    currency="TRY",
+                    vendor=description[:50] if description else None,
+                    raw_row=",".join(row),
+                )
+            )
         return transactions
 
     def _parse_bank_movement(self, text: str) -> list[ParsedTransaction]:
@@ -266,15 +285,15 @@ class ParasutParser(BankParser):
                 break
 
         headers = rows[header_idx]
-        date_col   = self._find_col(headers, ["tarih", "işlem tarihi"])
-        desc_col   = self._find_col(headers, ["açıklama", "işlem türü"])
+        date_col = self._find_col(headers, ["tarih", "işlem tarihi"])
+        desc_col = self._find_col(headers, ["açıklama", "işlem türü"])
         amount_col = self._find_col(headers, ["tutar", "amount"])
 
         if date_col is None or amount_col is None:
             return []
 
         transactions: list[ParsedTransaction] = []
-        for row in rows[header_idx + 1:]:
+        for row in rows[header_idx + 1 :]:
             if not row:
                 continue
             raw_date = row[date_col].strip() if date_col < len(row) else ""
@@ -282,7 +301,9 @@ class ParasutParser(BankParser):
             if not date:
                 continue
 
-            description = row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
+            description = (
+                row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
+            )
             raw_amt = row[amount_col].strip() if amount_col < len(row) else ""
             is_negative = raw_amt.startswith("-")
             amount_cents = self.parse_turkish_amount(raw_amt)
@@ -291,14 +312,16 @@ class ParasutParser(BankParser):
 
             tx_type = "expense" if is_negative else "income"
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description or f"Paraşüt Banka {date.strftime('%d.%m.%Y')}",
-                amount_cents=abs(amount_cents),
-                tx_type=tx_type,
-                currency="TRY",
-                raw_row=",".join(row),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description or f"Paraşüt Banka {date.strftime('%d.%m.%Y')}",
+                    amount_cents=abs(amount_cents),
+                    tx_type=tx_type,
+                    currency="TRY",
+                    raw_row=",".join(row),
+                )
+            )
         return transactions
 
     @staticmethod

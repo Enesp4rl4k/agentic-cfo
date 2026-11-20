@@ -11,6 +11,7 @@ their inputs**, so re-invoking with the same `thread_id` either resumes from the
 LangGraph checkpoint (durable backend) or re-runs cleanly (memory backend) — both
 converge to the same result.
 """
+
 from __future__ import annotations
 
 import time
@@ -157,7 +158,9 @@ async def recorded_run(
     The row says what the gate decided. `payload` picks the role's result out of
     a wrapper; a None result means nothing ran, recorded as `halted`.
     """
-    async with agent_run(db, pipeline=pipeline, org_id=str(org_id) if org_id else None, job_id=job_id) as run:
+    async with agent_run(
+        db, pipeline=pipeline, org_id=str(org_id) if org_id else None, job_id=job_id
+    ) as run:
         result = await work
         body = payload(result) if payload else result
         if body is None:

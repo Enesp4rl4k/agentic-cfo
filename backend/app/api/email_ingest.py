@@ -15,6 +15,7 @@ the "Verilerimi Bağla" page: a statement starts an analysis, a staff list
 joins the latest one. Nobody is there to answer "which kind is this?", so a
 file that needs that answer is recorded as such and not guessed at.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 _KOD = re.compile(r"veri\+([a-z0-9]{8,32})@", re.IGNORECASE)
 _MAX_MIME = 25 * 1024 * 1024
-_TEKRAR_BAKILAN = 200          # recent messages checked for a file already received
+_TEKRAR_BAKILAN = 200  # recent messages checked for a file already received
 ONCEDEN_ALINDI = "onceden_alindi"
 
 
@@ -62,18 +63,26 @@ def _org(user: User) -> str:
 
 
 async def _aktif_adres(db: AsyncSession, org_id: str) -> EmailIngestAddress | None:
-    return (await db.execute(
-        select(EmailIngestAddress)
-        .where(EmailIngestAddress.org_id == org_id, EmailIngestAddress.revoked_at.is_(None))
-        .order_by(desc(EmailIngestAddress.created_at)).limit(1)
-    )).scalar_one_or_none()
+    return (
+        await db.execute(
+            select(EmailIngestAddress)
+            .where(EmailIngestAddress.org_id == org_id, EmailIngestAddress.revoked_at.is_(None))
+            .order_by(desc(EmailIngestAddress.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
 
 def _adres_yaniti(adres: EmailIngestAddress | None) -> dict[str, Any]:
     if not _acik():
-        return {"acik": False, "adres": None, "mesaj": (
-            "Bu sunucuda e-postayla veri alma henüz açılmadı. Dosyalarınızı 'Verilerimi Bağla' "
-            "sayfasından yükleyebilirsiniz.")}
+        return {
+            "acik": False,
+            "adres": None,
+            "mesaj": (
+                "Bu sunucuda e-postayla veri alma henüz açılmadı. Dosyalarınızı 'Verilerimi Bağla' "
+                "sayfasından yükleyebilirsiniz."
+            ),
+        }
     assert adres is not None
     return {
         "acik": True,
@@ -131,18 +140,35 @@ async def get_email_history(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     org_id = _org(current_user)
-    rows = (await db.execute(
-        select(EmailIngestMessage).where(EmailIngestMessage.org_id == org_id)
-        .order_by(desc(EmailIngestMessage.received_at)).limit(max(1, min(limit, 100)))
-    )).scalars().all()
-    return {"data": [
-        {"id": m.id, "alindi": m.received_at.isoformat() if m.received_at else None,
-         "gonderen": m.sender, "konu": m.subject, "dosyalar": m.sonuclar}
-        for m in rows
-    ], "error": None}
+    rows = (
+        (
+            await db.execute(
+                select(EmailIngestMessage)
+                .where(EmailIngestMessage.org_id == org_id)
+                .order_by(desc(EmailIngestMessage.received_at))
+                .limit(max(1, min(limit, 100)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "data": [
+            {
+                "id": m.id,
+                "alindi": m.received_at.isoformat() if m.received_at else None,
+                "gonderen": m.sender,
+                "konu": m.subject,
+                "dosyalar": m.sonuclar,
+            }
+            for m in rows
+        ],
+        "error": None,
+    }
 
 
 # ── The provider's webhook ──────────────────────────────────────────────────
+
 
 def _gizli_dogru(request: Request) -> bool:
     beklenen = get_settings().email_inbound_secret
@@ -170,14 +196,16 @@ async def _mime(request: Request) -> tuple[bytes, list[str]]:
                 continue
             veri = await v.read() if hasattr(v, "read") else str(v).encode("utf-8")
             return veri, alici
-        raise HTTPException(status_code=400, detail="Formda ham e-posta yok (email ya da body-mime alanı).")
+        raise HTTPException(
+            status_code=400, detail="Formda ham e-posta yok (email ya da body-mime alanı)."
+        )
     return await request.body(), []
 
 
 def _kod_bul(parsed: Any, disaridan: list[str], ham: bytes) -> str | None:
     import email
 
-    msg = email.message_from_bytes(ham[:256 * 1024])
+    msg = email.message_from_bytes(ham[: 256 * 1024])
     adaylar = [*disaridan, parsed.recipient or ""]
     for h in ("Delivered-To", "X-Original-To", "X-Forwarded-To", "Envelope-To", "To", "Cc"):
         adaylar += [str(v) for v in (msg.get_all(h) or [])]
@@ -206,9 +234,9 @@ async def email_inbound(request: Request, db: AsyncSession = Depends(get_db)) ->
     kod = _kod_bul(parsed, disaridan, ham)
     adres = None
     if kod:
-        adres = (await db.execute(
-            select(EmailIngestAddress).where(EmailIngestAddress.kod == kod)
-        )).scalar_one_or_none()
+        adres = (
+            await db.execute(select(EmailIngestAddress).where(EmailIngestAddress.kod == kod))
+        ).scalar_one_or_none()
     # A provider retries anything but a success, so mail to an unknown or
     # replaced address is answered 200 and dropped; the answer says nothing
     # about which organisations exist.
@@ -216,19 +244,35 @@ async def email_inbound(request: Request, db: AsyncSession = Depends(get_db)) ->
         logger.info("E-posta alındı ama adres geçerli değil (kod=%s)", "var" if kod else "yok")
         return {"data": {"kabul": False}, "error": None}
 
-    onceki = (await db.execute(
-        select(EmailIngestMessage.sonuclar).where(EmailIngestMessage.org_id == adres.org_id)
-        .order_by(desc(EmailIngestMessage.received_at)).limit(_TEKRAR_BAKILAN)
-    )).scalars().all()
-    alinmis = {d.get("sha256") for sonuc in onceki for d in (sonuc or []) if d.get("durum") != "reddedildi"}
+    onceki = (
+        (
+            await db.execute(
+                select(EmailIngestMessage.sonuclar)
+                .where(EmailIngestMessage.org_id == adres.org_id)
+                .order_by(desc(EmailIngestMessage.received_at))
+                .limit(_TEKRAR_BAKILAN)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    alinmis = {
+        d.get("sha256") for sonuc in onceki for d in (sonuc or []) if d.get("durum") != "reddedildi"
+    }
 
     yeni: list[tuple[str, bytes]] = []
     sonuclar: list[dict[str, Any]] = []
     for att in parsed.attachments:
         sha = att.sha256 or hashlib.sha256(att.content).hexdigest()
         if sha in alinmis:
-            sonuclar.append({"dosya": att.filename, "sha256": sha, "durum": ONCEDEN_ALINDI,
-                             "mesaj": "Bu dosya daha önce alınmış; tekrar eklenmedi."})
+            sonuclar.append(
+                {
+                    "dosya": att.filename,
+                    "sha256": sha,
+                    "durum": ONCEDEN_ALINDI,
+                    "mesaj": "Bu dosya daha önce alınmış; tekrar eklenmedi.",
+                }
+            )
             continue
         alinmis.add(sha)
         yeni.append((att.filename, att.content))
@@ -240,17 +284,31 @@ async def email_inbound(request: Request, db: AsyncSession = Depends(get_db)) ->
             d["sha256"] = sahalar.get(d["dosya"])
             if d.get("durum") == "secim_gerekli":
                 d["mesaj"] = (d.get("mesaj") or "") + (
-                    " E-postayla gelen dosyanın türü seçilemiyor; 'Verilerimi Bağla' sayfasından yükleyin.")
-            sonuclar.append({k: v for k, v in d.items() if k != "tanima"} | {
-                "etiket": (d.get("tanima") or {}).get("etiket")})
+                    " E-postayla gelen dosyanın türü seçilemiyor; 'Verilerimi Bağla' sayfasından yükleyin."
+                )
+            sonuclar.append(
+                {k: v for k, v in d.items() if k != "tanima"}
+                | {"etiket": (d.get("tanima") or {}).get("etiket")}
+            )
     if not parsed.attachments:
-        sonuclar.append({"dosya": None, "durum": "ek_yok",
-                         "mesaj": "E-postada okunabilir ek yok (Excel, CSV ya da PDF)."})
+        sonuclar.append(
+            {
+                "dosya": None,
+                "durum": "ek_yok",
+                "mesaj": "E-postada okunabilir ek yok (Excel, CSV ya da PDF).",
+            }
+        )
 
-    db.add(EmailIngestMessage(
-        org_id=adres.org_id, address_id=adres.id, sender=(parsed.sender or "")[:500],
-        subject=(parsed.subject or "")[:500], message_id=(parsed.message_id or None), sonuclar=sonuclar,
-    ))
+    db.add(
+        EmailIngestMessage(
+            org_id=adres.org_id,
+            address_id=adres.id,
+            sender=(parsed.sender or "")[:500],
+            subject=(parsed.subject or "")[:500],
+            message_id=(parsed.message_id or None),
+            sonuclar=sonuclar,
+        )
+    )
     await db.commit()
     logger.info("E-posta işlendi org=%s ek=%d", adres.org_id, len(parsed.attachments))
     return {"data": {"kabul": True, "dosyalar": len(sonuclar)}, "error": None}

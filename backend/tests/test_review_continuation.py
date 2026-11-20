@@ -5,6 +5,7 @@ task's end lost it silently — the job read "completed" and the command center
 never heard of it. The approval now records `review.devam = "bekliyor"`, the
 continuation marks it "tamam", and the reaper re-dispatches what is left.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,12 +54,25 @@ async def _held_job(client, org_id: str) -> str:
     from app.models.report import Report, ReportFormat, ReportType
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="m.csv", file_path="/m.csv", file_type="csv", org_id=org_id,
-                          status=JobStatus.AWAITING_REVIEW, awaiting_review=True, min_confidence=0.6)
+        job = AnalysisJob(
+            filename="m.csv",
+            file_path="/m.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.AWAITING_REVIEW,
+            awaiting_review=True,
+            min_confidence=0.6,
+        )
         db.add(job)
         await db.flush()
-        db.add(Report(job_id=job.id, report_type=ReportType.FULL,
-                      report_format=ReportFormat.JSON, data=ornek_rapor()))
+        db.add(
+            Report(
+                job_id=job.id,
+                report_type=ReportType.FULL,
+                report_format=ReportFormat.JSON,
+                data=ornek_rapor(),
+            )
+        )
         await db.commit()
         return job.id
 
@@ -106,7 +120,7 @@ async def test_the_continuation_runs_once_however_often_it_is_dispatched(client,
         return rc.devam_durumu(await _meta(client, job_id)) == rc.TAMAM
 
     await _bekle(kapandi)
-    await rc.devam_et(job_id)          # the reaper dispatching it again
+    await rc.devam_et(job_id)  # the reaper dispatching it again
     assert calisanlar == [job_id]
 
 
@@ -120,10 +134,17 @@ async def test_the_reaper_finds_an_approval_whose_continuation_was_lost(client, 
     job_id = await _held_job(client, org_id)
     eski = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
     async with client._maker() as db:
-        await db.execute(update(AnalysisJob).where(AnalysisJob.id == job_id).values(
-            status=JobStatus.COMPLETED, awaiting_review=False,
-            result_metadata={"review": {"approved_by": "u", "approved_at": eski, "devam": rc.BEKLIYOR}},
-        ))
+        await db.execute(
+            update(AnalysisJob)
+            .where(AnalysisJob.id == job_id)
+            .values(
+                status=JobStatus.COMPLETED,
+                awaiting_review=False,
+                result_metadata={
+                    "review": {"approved_by": "u", "approved_at": eski, "devam": rc.BEKLIYOR}
+                },
+            )
+        )
         await db.commit()
 
         assert await rc.yarim_kalanlari_bul(db) == [job_id]
@@ -143,16 +164,24 @@ async def test_a_fresh_approval_is_left_to_its_own_run(client, calisanlar):
     _, org_id, _ = await kullanici(client, "taze@example.com")
     job_id = await _held_job(client, org_id)
     async with client._maker() as db:
-        await db.execute(update(AnalysisJob).where(AnalysisJob.id == job_id).values(
-            status=JobStatus.COMPLETED, awaiting_review=False,
-            result_metadata={"review": {"approved_at": datetime.now(UTC).isoformat(),
-                                        "devam": rc.BEKLIYOR}},
-        ))
+        await db.execute(
+            update(AnalysisJob)
+            .where(AnalysisJob.id == job_id)
+            .values(
+                status=JobStatus.COMPLETED,
+                awaiting_review=False,
+                result_metadata={
+                    "review": {"approved_at": datetime.now(UTC).isoformat(), "devam": rc.BEKLIYOR}
+                },
+            )
+        )
         await db.commit()
         assert await rc.yarim_kalanlari_bul(db) == []
 
 
-async def test_with_a_broker_the_continuation_is_queued_not_run_here(client, calisanlar, monkeypatch):
+async def test_with_a_broker_the_continuation_is_queued_not_run_here(
+    client, calisanlar, monkeypatch
+):
     kuyruk: list[str] = []
 
     async def kuyruga(job_id: str) -> None:
@@ -207,11 +236,17 @@ async def test_two_overlapping_runs_do_the_work_once(client, monkeypatch):
     _, org_id, _ = await kullanici(client, "cakisma@example.com")
     job_id = await _held_job(client, org_id)
     async with client._maker() as db:
-        await db.execute(update(AnalysisJob).where(AnalysisJob.id == job_id).values(
-            status=JobStatus.COMPLETED, awaiting_review=False,
-            result_metadata={"review": {"approved_at": datetime.now(UTC).isoformat(),
-                                        "devam": rc.BEKLIYOR}},
-        ))
+        await db.execute(
+            update(AnalysisJob)
+            .where(AnalysisJob.id == job_id)
+            .values(
+                status=JobStatus.COMPLETED,
+                awaiting_review=False,
+                result_metadata={
+                    "review": {"approved_at": datetime.now(UTC).isoformat(), "devam": rc.BEKLIYOR}
+                },
+            )
+        )
         await db.commit()
 
     sonuclar = await asyncio.gather(rc.devam_et(job_id), rc.devam_et(job_id))
@@ -232,11 +267,17 @@ async def test_a_failed_run_goes_back_to_owed(client, monkeypatch):
     _, org_id, _ = await kullanici(client, "hata@example.com")
     job_id = await _held_job(client, org_id)
     async with client._maker() as db:
-        await db.execute(update(AnalysisJob).where(AnalysisJob.id == job_id).values(
-            status=JobStatus.COMPLETED, awaiting_review=False,
-            result_metadata={"review": {"approved_at": datetime.now(UTC).isoformat(),
-                                        "devam": rc.BEKLIYOR}},
-        ))
+        await db.execute(
+            update(AnalysisJob)
+            .where(AnalysisJob.id == job_id)
+            .values(
+                status=JobStatus.COMPLETED,
+                awaiting_review=False,
+                result_metadata={
+                    "review": {"approved_at": datetime.now(UTC).isoformat(), "devam": rc.BEKLIYOR}
+                },
+            )
+        )
         await db.commit()
 
     import pytest

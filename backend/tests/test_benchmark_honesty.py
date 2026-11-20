@@ -9,6 +9,7 @@ CMO compared ROAS (divided by ten) with the gross margin of a default sector.
 Until a verified, dated table exists, the values stay but are labelled for what they are,
 and nothing a person or the model reads rests on them.
 """
+
 from __future__ import annotations
 
 import re
@@ -20,7 +21,10 @@ from app.services.benchmark import UNVERIFIED_SOURCE, VERIFIED, BenchmarkEngine
 ROOT = Path(__file__).resolve().parents[2]
 
 PNL = {
-    "revenue": 1_000_000_00, "gross_margin": 0.30, "net_margin": 0.05, "ebitda_margin": 0.12,
+    "revenue": 1_000_000_00,
+    "gross_margin": 0.30,
+    "net_margin": 0.05,
+    "ebitda_margin": 0.12,
     "total_opex": 200_000_00,
 }
 
@@ -51,7 +55,9 @@ def test_the_pnl_narrative_is_not_given_the_sector_comparison(monkeypatch):
         return SimpleNamespace(to_text=lambda: "metin")
 
     monkeypatch.setattr("app.services.llm_structured.get_pnl_narrative", fake_narrative)
-    text = asyncio.run(pnl_agent._generate_cfo_narrative(dict(PNL), settings=None, sector="manufacturing"))
+    text = asyncio.run(
+        pnl_agent._generate_cfo_narrative(dict(PNL), settings=None, sector="manufacturing")
+    )
 
     assert text == "metin"
     assert "_benchmark_context" not in seen

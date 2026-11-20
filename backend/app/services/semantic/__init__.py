@@ -1,4 +1,5 @@
 """Canonical company semantic model — metrics, snapshots, decision briefs."""
+
 from __future__ import annotations
 
 from app.services.semantic.brief import build_from_snapshot, enrich_brief_from_ceo_synthesis

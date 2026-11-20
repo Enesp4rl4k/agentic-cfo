@@ -5,6 +5,7 @@ connector has populated real signals, this produces the `existing_cto_data` dict
 the CTO kernel treats as measured data (`data_source="real"`), instead of the
 CFO-financials × benchmark extrapolation.
 """
+
 from __future__ import annotations
 
 import statistics
@@ -30,13 +31,17 @@ async def summarize_eng_signals(
     """Return a raw metrics summary, or None if the org has no signals."""
     since = datetime.now(UTC) - timedelta(days=window_days)
     rows = (
-        await db.execute(
-            select(CanonicalEngSignal).where(
-                CanonicalEngSignal.org_id == org_id,
-                CanonicalEngSignal.occurred_at >= since,
+        (
+            await db.execute(
+                select(CanonicalEngSignal).where(
+                    CanonicalEngSignal.org_id == org_id,
+                    CanonicalEngSignal.occurred_at >= since,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not rows:
         return None
 

@@ -9,6 +9,7 @@ because their fixture *inserted* the dashboard a held run never wrote.
 These run the real pipeline on the real files and check the dashboard exists
 while held and after approval.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -45,8 +46,13 @@ async def _job(client, tmp_path: Path, org_id: str, source: str) -> str:
     dst = tmp_path / source
     shutil.copy(CORPUS / source, dst)
     async with client._maker() as db:
-        job = AnalysisJob(filename=source, file_path=str(dst), file_type="csv",
-                          org_id=org_id, status=JobStatus.PENDING)
+        job = AnalysisJob(
+            filename=source,
+            file_path=str(dst),
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.PENDING,
+        )
         db.add(job)
         await db.commit()
         return job.id
@@ -81,7 +87,9 @@ async def _held_then_approved(client, tmp_path, email: str, source: str) -> None
 
 async def test_a_run_held_at_the_verifier_has_a_dashboard_before_and_after_approval(ortam):
     client, tmp_path = ortam
-    await _held_then_approved(client, tmp_path, "subat@example.com", "technova_subat_2024_zarar.csv")
+    await _held_then_approved(
+        client, tmp_path, "subat@example.com", "technova_subat_2024_zarar.csv"
+    )
 
 
 async def test_a_run_held_at_ingestion_is_still_analysed_for_the_reviewer(ortam):

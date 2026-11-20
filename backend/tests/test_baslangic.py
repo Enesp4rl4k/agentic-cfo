@@ -1,4 +1,5 @@
 """The first-use guide reads each step from the organisation's own data."""
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -14,9 +15,11 @@ async def client():
 
 
 async def _login(client, email: str) -> dict[str, str]:
-    token = (await client.post("/api/v1/auth/login",
-                               json={"email": email, "password": "StrongPassword123!"})
-             ).json()["data"]["access_token"]
+    token = (
+        await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "StrongPassword123!"}
+        )
+    ).json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -24,8 +27,10 @@ async def _user(client, email: str, *, with_org: bool = True) -> tuple[dict[str,
     from app.models.organization import Organization
     from app.models.user import User
 
-    await client.post("/api/v1/auth/register",
-                      json={"email": email, "password": "StrongPassword123!", "full_name": "T"})
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "StrongPassword123!", "full_name": "T"},
+    )
     org_id = None
     if with_org:
         async with client._maker() as db:
@@ -43,7 +48,9 @@ async def _job(client, org_id: str, **kw) -> str:
     from app.models.analysis_job import AnalysisJob
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="ekstre.csv", file_path="/e.csv", file_type="csv", org_id=org_id, **kw)
+        job = AnalysisJob(
+            filename="ekstre.csv", file_path="/e.csv", file_type="csv", org_id=org_id, **kw
+        )
         db.add(job)
         await db.commit()
         return job.id
@@ -60,7 +67,9 @@ async def test_a_new_user_has_everything_left_to_do(client):
 
 async def test_a_held_analysis_is_reported_as_waiting_for_approval(client):
     headers, org_id = await _user(client, "firma@example.com")
-    job_id = await _job(client, org_id, status="awaiting_review", awaiting_review=True, min_confidence=0.62)
+    job_id = await _job(
+        client, org_id, status="awaiting_review", awaiting_review=True, min_confidence=0.62
+    )
     d = (await client.get("/api/v1/baslangic", headers=headers)).json()["data"]
     assert d["firma"] == {"var": True, "ad": "Kobi A.Ş."}
     assert d["veri"]["analiz_sayisi"] == 1

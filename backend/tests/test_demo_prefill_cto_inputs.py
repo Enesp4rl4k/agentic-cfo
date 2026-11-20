@@ -10,6 +10,7 @@ veri sessizce boş sonuca düşer ("0.0/10, 0 risk"). İki kilit:
 2. Frontend SAMPLE_CTO_INPUTS ↔ backend _CTO_INPUTS byte-for-byte aynı kalır
    (formun "Örnek veriyle doldur" düğmesi ile prefill aynı veriyi yollar).
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -52,17 +53,16 @@ def test_cto_sample_inputs_parse_into_signals() -> None:
     assert len(parsed["commits"]) >= 10
     file_changes = parsed["file_changes"]
     assert any(v["count"] >= 5 for v in file_changes.values()), "no hotspot"
-    assert any(
-        v["count"] >= 3 and len(v["authors"]) == 1 for v in file_changes.values()
-    ), "no bus-factor file"
+    assert any(v["count"] >= 3 and len(v["authors"]) == 1 for v in file_changes.values()), (
+        "no bus-factor file"
+    )
     assert _compute_debt_metrics(parsed)["debt_score"] > 0
 
     # incidents → SLA breach + recurring service
     incidents = _parse_incident_csv(inputs["incident_csv"])
     assert len(incidents) >= 6
     assert any(
-        r["ttr_hours"] is not None
-        and r["ttr_hours"] > SLA_TARGETS_HOURS.get(r["severity"], 24.0)
+        r["ttr_hours"] is not None and r["ttr_hours"] > SLA_TARGETS_HOURS.get(r["severity"], 24.0)
         for r in incidents
     ), "no SLA breach"
     assert Counter(r["service"] for r in incidents).most_common(1)[0][1] >= 3

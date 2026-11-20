@@ -6,6 +6,7 @@ Graph:
 
 Each node runs its skill independently; cmo_summary synthesizes all three.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _append_log(state: CMOState, log: CMOStepLog) -> dict[str, Any]:
     existing = list(state.get("logs") or [])
     existing.append(log)
@@ -35,33 +37,43 @@ def _append_log(state: CMOState, log: CMOStepLog) -> dict[str, Any]:
 
 # ── LangGraph Nodes ───────────────────────────────────────────────────────────
 
+
 async def node_campaigns(state: CMOState, config: dict) -> CMOState:
     result = await run_campaign_agent(state, config)
-    patch  = _append_log(state, CMOStepLog(
-        step="campaigns",
-        ok=result.get("campaigns") is not None,
-        detail=f"roas={result.get('campaigns', {}) and result['campaigns'].get('overall_roas')}",
-    ))
+    patch = _append_log(
+        state,
+        CMOStepLog(
+            step="campaigns",
+            ok=result.get("campaigns") is not None,
+            detail=f"roas={result.get('campaigns', {}) and result['campaigns'].get('overall_roas')}",
+        ),
+    )
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
 async def node_funnel(state: CMOState, config: dict) -> CMOState:
     result = await run_funnel_agent(state, config)
-    patch  = _append_log(state, CMOStepLog(
-        step="funnel",
-        ok=result.get("funnel") is not None,
-        detail=f"conversion={result.get('funnel', {}) and result['funnel'].get('overall_conversion_rate')}",
-    ))
+    patch = _append_log(
+        state,
+        CMOStepLog(
+            step="funnel",
+            ok=result.get("funnel") is not None,
+            detail=f"conversion={result.get('funnel', {}) and result['funnel'].get('overall_conversion_rate')}",
+        ),
+    )
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
 async def node_cohort(state: CMOState, config: dict) -> CMOState:
     result = await run_cohort_agent(state, config)
-    patch  = _append_log(state, CMOStepLog(
-        step="cohort",
-        ok=result.get("cohorts") is not None,
-        detail=f"ltv_cac={result.get('cohorts', {}) and result['cohorts'].get('ltv_cac_ratio')}",
-    ))
+    patch = _append_log(
+        state,
+        CMOStepLog(
+            step="cohort",
+            ok=result.get("cohorts") is not None,
+            detail=f"ltv_cac={result.get('cohorts', {}) and result['cohorts'].get('ltv_cac_ratio')}",
+        ),
+    )
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
@@ -71,8 +83,8 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
     holistic marketing health score and top-risk list.
     """
     campaigns = state.get("campaigns") or {}
-    funnel    = state.get("funnel") or {}
-    cohorts   = state.get("cohorts") or {}
+    funnel = state.get("funnel") or {}
+    cohorts = state.get("cohorts") or {}
 
     scores: dict[str, float] = {}
     top_risks: list[dict[str, str]] = []
@@ -85,11 +97,13 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
         scores["campaigns"] = round(campaign_score, 1)
         for alert in campaigns.get("alerts") or []:
             if alert["level"] in ("critical", "high"):
-                top_risks.append({
-                    "domain":   "Campaigns",
-                    "severity": alert["level"],
-                    "message":  alert["message"],
-                })
+                top_risks.append(
+                    {
+                        "domain": "Campaigns",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # ── Funnel score ───────────────────────────────────────────────────────────
     if funnel:
@@ -99,33 +113,33 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
         scores["funnel"] = round(funnel_score, 1)
         for alert in funnel.get("alerts") or []:
             if alert["level"] in ("critical", "high"):
-                top_risks.append({
-                    "domain":   "Funnel",
-                    "severity": alert["level"],
-                    "message":  alert["message"],
-                })
+                top_risks.append(
+                    {
+                        "domain": "Funnel",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # ── Cohort / retention score ───────────────────────────────────────────────
     if cohorts:
         ltv_cac = cohorts.get("ltv_cac_ratio", 0.0)
-        churn   = cohorts.get("churn_rate", 0.0)
+        churn = cohorts.get("churn_rate", 0.0)
         # Score: 10 = terrible (ltv_cac < 1 OR churn > 15%)
-        cohort_score = max(0.0, min(10.0,
-            (max(0, 3.0 - ltv_cac) * 2.0) + (churn * 30.0)
-        ))
+        cohort_score = max(0.0, min(10.0, (max(0, 3.0 - ltv_cac) * 2.0) + (churn * 30.0)))
         scores["retention"] = round(cohort_score, 1)
         for alert in cohorts.get("alerts") or []:
             if alert["level"] in ("critical", "high"):
-                top_risks.append({
-                    "domain":   "Retention",
-                    "severity": alert["level"],
-                    "message":  alert["message"],
-                })
+                top_risks.append(
+                    {
+                        "domain": "Retention",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # None = nothing measured, not a 0/10 (plan v6 §S0).
-    overall_score: float | None = (
-        round(sum(scores.values()) / len(scores), 1) if scores else None
-    )
+    overall_score: float | None = round(sum(scores.values()) / len(scores), 1) if scores else None
     growth_efficiency = _compute_growth_efficiency(campaigns, cohorts)
 
     # Sort critical first
@@ -134,77 +148,88 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
     # ── Quick wins ─────────────────────────────────────────────────────────────
     quick_wins: list[dict[str, str]] = []
 
-    underperforming = (campaigns.get("underperforming") or [])
+    underperforming = campaigns.get("underperforming") or []
     if underperforming:
         waste = sum(c["spend_cents"] for c in underperforming)
-        quick_wins.append({
-            "action":           f"Pause {len(underperforming)} underperforming campaign(s)",
-            "estimated_impact": f"Boşa harcanan reklam bütçesinden {waste / 100:,.0f} ₺ tasarruf",
-            "effort":           "düşük",
-        })
+        quick_wins.append(
+            {
+                "action": f"Pause {len(underperforming)} underperforming campaign(s)",
+                "estimated_impact": f"Boşa harcanan reklam bütçesinden {waste / 100:,.0f} ₺ tasarruf",
+                "effort": "düşük",
+            }
+        )
 
     bottleneck = funnel.get("bottleneck_stage")
     if bottleneck:
-        quick_wins.append({
-            "action":           f"Dönüşüm hunisi darboğazını çöz: {bottleneck.replace('_', ' ')} aşaması",
-            "estimated_impact": "Dönüşüm oranını artır ve CAC'yi düşür",
-            "effort":           "orta",
-        })
+        quick_wins.append(
+            {
+                "action": f"Dönüşüm hunisi darboğazını çöz: {bottleneck.replace('_', ' ')} aşaması",
+                "estimated_impact": "Dönüşüm oranını artır ve CAC'yi düşür",
+                "effort": "orta",
+            }
+        )
 
     if cohorts.get("retention_trend") == "degrading":
-        quick_wins.append({
-            "action":           "Yeni kohortlar için müşteri başarı programı başlat",
-            "estimated_impact": "30 günlük tutunmayı %10-15 artır",
-            "effort":           "orta",
-        })
+        quick_wins.append(
+            {
+                "action": "Yeni kohortlar için müşteri başarı programı başlat",
+                "estimated_impact": "30 günlük tutunmayı %10-15 artır",
+                "effort": "orta",
+            }
+        )
 
     # ── LLM Narrative (Türkçe + actionable) ───────────────────────────────────
     narrative = _build_fallback_narrative(overall_score, campaigns, funnel, cohorts)
     try:
         from app.platform.model_gateway import complete_text
 
-        roas    = campaigns.get("overall_roas", 0.0)
-        conv    = funnel.get("overall_conversion_rate", 0.0)
+        roas = campaigns.get("overall_roas", 0.0)
+        conv = funnel.get("overall_conversion_rate", 0.0)
         ltv_cac = cohorts.get("ltv_cac_ratio", 0.0)
-        churn   = cohorts.get("churn_rate", 0.0)
+        churn = cohorts.get("churn_rate", 0.0)
 
-        narrative = (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir CMO'sun. Pazarlama sağlık verilerini analiz et ve "
-                "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
-                "Yanıt şu yapıda olsun:\n"
-                "1. Pazarlama verimliliğinin 1-2 cümlelik değerlendirmesi (ROAS ve LTV:CAC odaklı)\n"
-                "2. En kritik 1-2 sorun (churn, dönüşüm darboğazı, düşük ROAS)\n"
-                "3. Pazarlama ekibinin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
-                "Growth hacker bakış açısıyla pratik öneriler ekle."
-            ),
-            prompt=(
-                f"Pazarlama Sağlık Skoru: {overall_score}/10\n"
-                f"ROAS: {roas:.2f}x | Dönüşüm Oranı: %{conv*100:.1f} | "
-                f"LTV:CAC: {ltv_cac:.2f}x | Aylık Churn: %{churn*100:.1f}\n"
-                f"Önemli Risk Sayısı: {len(top_risks)}"
-            ),
-            max_tokens=700,
-        )).strip()
+        narrative = (
+            await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir CMO'sun. Pazarlama sağlık verilerini analiz et ve "
+                    "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
+                    "Yanıt şu yapıda olsun:\n"
+                    "1. Pazarlama verimliliğinin 1-2 cümlelik değerlendirmesi (ROAS ve LTV:CAC odaklı)\n"
+                    "2. En kritik 1-2 sorun (churn, dönüşüm darboğazı, düşük ROAS)\n"
+                    "3. Pazarlama ekibinin hemen yapması gereken 2-3 somut eylem (öncelik sırasıyla)\n"
+                    "Growth hacker bakış açısıyla pratik öneriler ekle."
+                ),
+                prompt=(
+                    f"Pazarlama Sağlık Skoru: {overall_score}/10\n"
+                    f"ROAS: {roas:.2f}x | Dönüşüm Oranı: %{conv * 100:.1f} | "
+                    f"LTV:CAC: {ltv_cac:.2f}x | Aylık Churn: %{churn * 100:.1f}\n"
+                    f"Önemli Risk Sayısı: {len(top_risks)}"
+                ),
+                max_tokens=700,
+            )
+        ).strip()
     except Exception as exc:
         logger.warning("CMO summary narrative failed: %s", exc)
 
     summary = {
-        "overall_marketing_score":  overall_score,
-        "growth_efficiency_score":  growth_efficiency,
-        "component_scores":         scores,
-        "top_risks":                top_risks[:8],
-        "quick_wins":               quick_wins[:5],
-        "narrative":                narrative,
+        "overall_marketing_score": overall_score,
+        "growth_efficiency_score": growth_efficiency,
+        "component_scores": scores,
+        "top_risks": top_risks[:8],
+        "quick_wins": quick_wins[:5],
+        "narrative": narrative,
     }
 
-    patch = _append_log(state, CMOStepLog(
-        step="cmo_summary",
-        ok=True,
-        detail=f"Marketing score: {overall_score}/10, risks: {len(top_risks)}",
-        confidence=0.88,
-    ))
+    patch = _append_log(
+        state,
+        CMOStepLog(
+            step="cmo_summary",
+            ok=True,
+            detail=f"Marketing score: {overall_score}/10, risks: {len(top_risks)}",
+            confidence=0.88,
+        ),
+    )
     patch["cmo_summary"] = summary
     return {**state, **patch}  # type: ignore[return-value]
 
@@ -217,7 +242,7 @@ def _compute_growth_efficiency(
     Growth efficiency score (0-10, higher = better).
     Combines ROAS and LTV:CAC into a single metric.
     """
-    roas    = campaigns.get("overall_roas", 0.0) if campaigns else 0.0
+    roas = campaigns.get("overall_roas", 0.0) if campaigns else 0.0
     ltv_cac = cohorts.get("ltv_cac_ratio", 0.0) if cohorts else 0.0
 
     scores: list[float] = []
@@ -239,9 +264,9 @@ def _build_fallback_narrative(
 ) -> str:
     if score is None:
         return "Pazarlama skoru ölçülmedi: kampanya, huni veya kohort verisi okunamadı."
-    roas  = campaigns.get("overall_roas", 0.0) if campaigns else 0.0
-    conv  = funnel.get("overall_conversion_rate", 0.0) if funnel else 0.0
-    ltv   = cohorts.get("ltv_cac_ratio", 0.0) if cohorts else 0.0
+    roas = campaigns.get("overall_roas", 0.0) if campaigns else 0.0
+    conv = funnel.get("overall_conversion_rate", 0.0) if funnel else 0.0
+    ltv = cohorts.get("ltv_cac_ratio", 0.0) if cohorts else 0.0
     return (
         f"Marketing health score: {score}/10. "
         f"Campaign ROAS {roas:.2f}x, funnel conversion {conv:.1%}, LTV:CAC {ltv:.2f}x."
@@ -250,19 +275,20 @@ def _build_fallback_narrative(
 
 # ── Graph Builder ──────────────────────────────────────────────────────────────
 
+
 def build_cmo_graph() -> StateGraph:
     g = StateGraph(CMOState)
 
     g.add_node("campaigns_agent", node_campaigns)
-    g.add_node("funnel_agent",    node_funnel)
-    g.add_node("cohort_agent",    node_cohort)
-    g.add_node("summary_agent",   node_cmo_summary)
+    g.add_node("funnel_agent", node_funnel)
+    g.add_node("cohort_agent", node_cohort)
+    g.add_node("summary_agent", node_cmo_summary)
 
     g.set_entry_point("campaigns_agent")
     g.add_edge("campaigns_agent", "funnel_agent")
-    g.add_edge("funnel_agent",    "cohort_agent")
-    g.add_edge("cohort_agent",    "summary_agent")
-    g.add_edge("summary_agent",   "__end__")
+    g.add_edge("funnel_agent", "cohort_agent")
+    g.add_edge("cohort_agent", "summary_agent")
+    g.add_edge("summary_agent", "__end__")
 
     return g.compile()
 
@@ -272,6 +298,7 @@ _cmo_graph = build_cmo_graph()
 
 # ── Public Entry Point ────────────────────────────────────────────────────────
 
+
 async def run_cmo_pipeline(
     job_id: str,
     company_name: str | None = None,
@@ -279,7 +306,7 @@ async def run_cmo_pipeline(
     campaign_csv: str | None = None,
     funnel_csv: str | None = None,
     cohort_csv: str | None = None,
-    org_id: str | None = None,   # S2-3: cross-domain context
+    org_id: str | None = None,  # S2-3: cross-domain context
 ) -> CMOState:
     """
     Run the full CMO pipeline.
@@ -291,23 +318,24 @@ async def run_cmo_pipeline(
         raise ValueError("At least one of campaign_csv, funnel_csv, or cohort_csv is required.")
 
     base: CMOState = {
-        "job_id":       job_id,
+        "job_id": job_id,
         "company_name": company_name,
-        "period":       period,
+        "period": period,
         "campaign_csv": campaign_csv,
-        "funnel_csv":   funnel_csv,
-        "cohort_csv":   cohort_csv,
-        "logs":         [],
+        "funnel_csv": funnel_csv,
+        "cohort_csv": cohort_csv,
+        "logs": [],
         "min_confidence": DEFAULT_CMO_RUN_CONFIG.auto_proceed_min_confidence,
         "awaiting_review": False,
-        "halted":       False,
-        "error":        None,
+        "halted": False,
+        "error": None,
     }
 
     # S2-3: Inject cross-domain context (CFO + COO) into initial state
     if org_id:
         try:
             from app.services.cross_context_enricher import enrich_initial_state
+
             base = await enrich_initial_state("cmo", base, org_id=org_id)  # type: ignore[assignment]
         except Exception:
             pass  # non-fatal

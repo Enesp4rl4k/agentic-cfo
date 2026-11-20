@@ -33,6 +33,7 @@ Frequency options
 
 Model stored in PostgreSQL (sync_schedules table via Alembic migration).
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,41 +46,44 @@ logger = logging.getLogger(__name__)
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
+
 class SyncFrequency(StrEnum):
-    DAILY   = "daily"
-    WEEKLY  = "weekly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
     MONTHLY = "monthly"
-    MANUAL  = "manual"
+    MANUAL = "manual"
 
 
 class SyncStatus(StrEnum):
-    IDLE      = "idle"
-    RUNNING   = "running"
-    SUCCESS   = "success"
-    FAILED    = "failed"
-    SKIPPED   = "skipped"
+    IDLE = "idle"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class SyncSourceType(StrEnum):
     ERP_LOGO_TIGER = "erp_logo_tiger"
-    ERP_PARASUT    = "erp_parasut"
-    ERP_NETSIS     = "erp_netsis"
-    OPEN_BANKING   = "open_banking"
-    GIB_EFATURA    = "gib_efatura"
+    ERP_PARASUT = "erp_parasut"
+    ERP_NETSIS = "erp_netsis"
+    OPEN_BANKING = "open_banking"
+    GIB_EFATURA = "gib_efatura"
     BILLING_STRIPE = "billing_stripe"
-    CRM_EXPORT     = "crm_export"
-    HR_EXPORT      = "hr_export"
+    CRM_EXPORT = "crm_export"
+    HR_EXPORT = "hr_export"
     GITHUB_ACTIVITY = "github_activity"
-    MANUAL_CSV     = "manual_csv"
+    MANUAL_CSV = "manual_csv"
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
+
 
 class SyncScheduleConfig:
     """
     In-memory config for a sync schedule.
     In production this is backed by the sync_schedules DB table.
     """
+
     __slots__ = (
         "auto_analyze",
         "enabled",
@@ -100,7 +104,7 @@ class SyncScheduleConfig:
         org_id: str,
         source_type: str,
         frequency: str = SyncFrequency.DAILY,
-        hour_utc: int = 3,          # 06:00 Istanbul (UTC+3)
+        hour_utc: int = 3,  # 06:00 Istanbul (UTC+3)
         enabled: bool = True,
         last_run_at: datetime | None = None,
         last_status: str = SyncStatus.IDLE,
@@ -150,6 +154,7 @@ class SyncScheduleConfig:
 
 class SyncResult:
     """Result of a single sync run."""
+
     __slots__ = (
         "duration_ms",
         "error",
@@ -204,6 +209,7 @@ class SyncResult:
 
 # ── SyncRunner ────────────────────────────────────────────────────────────────
 
+
 class ScheduledSyncRunner:
     """
     Executes a single sync run for a SyncScheduleConfig.
@@ -213,7 +219,7 @@ class ScheduledSyncRunner:
     passed to CSVValidator then to AnalysisJob creation.
     """
 
-    MIN_HEALTH_SCORE = 30   # below this, skip analysis
+    MIN_HEALTH_SCORE = 30  # below this, skip analysis
 
     async def run(
         self,
@@ -223,11 +229,14 @@ class ScheduledSyncRunner:
     ) -> SyncResult:
         """Execute a sync for the given schedule."""
         import time
+
         t0 = int(time.time() * 1000)
 
         logger.info(
             "ScheduledSync: starting %s for org=%s source=%s",
-            schedule.schedule_id, schedule.org_id, schedule.source_type
+            schedule.schedule_id,
+            schedule.org_id,
+            schedule.source_type,
         )
         sync_run_id: str | None = None
 
@@ -248,6 +257,7 @@ class ScheduledSyncRunner:
 
             # Validate data quality
             from app.services.csv_validator import CSVValidator
+
             validation = CSVValidator.validate(csv_bytes, filename=filename)
             sync_run_id = await self._start_sync_run(
                 db=db,
@@ -260,7 +270,9 @@ class ScheduledSyncRunner:
             if validation.health_score < self.MIN_HEALTH_SCORE:
                 logger.warning(
                     "ScheduledSync: health score %d < %d for %s — skipping analysis",
-                    validation.health_score, self.MIN_HEALTH_SCORE, schedule.schedule_id
+                    validation.health_score,
+                    self.MIN_HEALTH_SCORE,
+                    schedule.schedule_id,
                 )
                 if sync_run_id:
                     await self._finish_sync_run(
@@ -309,8 +321,7 @@ class ScheduledSyncRunner:
                         quality_score=quality.quality_score,
                         triggered_job_id=None,
                         error_message=(
-                            "Data-plane quality gate blocked sync "
-                            f"(score={quality.quality_score})"
+                            f"Data-plane quality gate blocked sync (score={quality.quality_score})"
                         ),
                     )
                 return SyncResult(
@@ -320,10 +331,7 @@ class ScheduledSyncRunner:
                     status=SyncStatus.SKIPPED,
                     row_count=validation.row_count,
                     health_score=validation.health_score,
-                    error=(
-                        "Data-plane quality gate blocked sync "
-                        f"(score={quality.quality_score})"
-                    ),
+                    error=(f"Data-plane quality gate blocked sync (score={quality.quality_score})"),
                     duration_ms=int(time.time() * 1000) - t0,
                 )
 
@@ -459,8 +467,11 @@ class ScheduledSyncRunner:
             duration = int(time.time() * 1000) - t0
             logger.info(
                 "ScheduledSync: completed %s in %dms — job=%s rows=%d score=%d",
-                schedule.schedule_id, duration, job_id,
-                validation.row_count, validation.health_score,
+                schedule.schedule_id,
+                duration,
+                job_id,
+                validation.row_count,
+                validation.health_score,
             )
 
             return SyncResult(
@@ -558,11 +569,7 @@ class ScheduledSyncRunner:
         result = await db.execute(
             select(AnalysisJob)
             .where(AnalysisJob.org_id == org_id)
-            .where(
-                AnalysisJob.status.in_(
-                    ("pending", "analyzing", "completed", "awaiting_review")
-                )
-            )
+            .where(AnalysisJob.status.in_(("pending", "analyzing", "completed", "awaiting_review")))
             .order_by(AnalysisJob.created_at.desc())
             .limit(40)
         )
@@ -622,7 +629,9 @@ class ScheduledSyncRunner:
 
         return await pull_hr_export_csv(cfg)
 
-    async def _run_github_overlay(self, schedule: SyncScheduleConfig, db: Any, t0: int) -> SyncResult:
+    async def _run_github_overlay(
+        self, schedule: SyncScheduleConfig, db: Any, t0: int
+    ) -> SyncResult:
         """GitHub is not a ledger source — write CTO velocity onto company context."""
         from app.services.company_context import get_company_context, save_company_context
         from app.services.connectors.github_activity import pull_github_cto_overlay
@@ -670,6 +679,7 @@ class ScheduledSyncRunner:
     async def _pull_logo_tiger(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:
             from app.services.erp.logo_tiger_connector import LogoTigerConnector
+
             connector = LogoTigerConnector(settings=settings)
             transactions = await connector.get_transactions(
                 from_date=cfg.get("from_date"),
@@ -705,11 +715,17 @@ class ScheduledSyncRunner:
         from app.models.erp_integration import ERPIntegration
         from app.services.erp.parasut_connector import ParasutConnector
 
-        integration = (await db.execute(
-            select(ERPIntegration).where(ERPIntegration.id == str(integration_id), ERPIntegration.org_id == org_id)
-        )).scalar_one_or_none()
+        integration = (
+            await db.execute(
+                select(ERPIntegration).where(
+                    ERPIntegration.id == str(integration_id), ERPIntegration.org_id == org_id
+                )
+            )
+        ).scalar_one_or_none()
         if integration is None:
-            logger.warning("Parasut pull refused: integration %s is not org %s's", integration_id, org_id)
+            logger.warning(
+                "Parasut pull refused: integration %s is not org %s's", integration_id, org_id
+            )
             return b"", ""
         try:
             raw_txs = await ParasutConnector(db).islemleri_cek(integration)
@@ -719,7 +735,8 @@ class ScheduledSyncRunner:
         transactions = [
             {
                 "date": str(tx.get("date") or "")[:10],
-                "amount": (int(tx.get("amount_cents") or 0) / 100) * (1 if tx.get("type") == "income" else -1),
+                "amount": (int(tx.get("amount_cents") or 0) / 100)
+                * (1 if tx.get("type") == "income" else -1),
                 "description": tx.get("description") or "",
                 "type": "income" if tx.get("type") == "income" else "expense",
                 "reference": tx.get("source_id") or "",
@@ -731,6 +748,7 @@ class ScheduledSyncRunner:
     async def _pull_open_banking(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:
             from app.services.integrations import TurkiyeOpenBankingClient
+
             bank_name = cfg.get("bank", "akbank")
             client = TurkiyeOpenBankingClient(bank_name=bank_name, settings=settings)
             transactions = await client.get_transactions(
@@ -747,6 +765,7 @@ class ScheduledSyncRunner:
     async def _pull_efatura(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
         try:
             from app.services.gib_efatura import get_efatura_client
+
             client = get_efatura_client(sandbox=getattr(settings, "gib_efatura_sandbox", True))
             if not client:
                 return b"", ""
@@ -785,9 +804,7 @@ class ScheduledSyncRunner:
             upload_result = await stream_to_disk(fake_file, "csv", settings.max_upload_size_mb)
 
             # Get a system user for the org (owner)
-            result = await db.execute(
-                select(User).where(User.org_id == org_id).limit(1)
-            )
+            result = await db.execute(select(User).where(User.org_id == org_id).limit(1))
             user = result.scalar_one_or_none()
             if not user:
                 logger.warning("No user found for org %s — cannot create job", org_id)
@@ -834,6 +851,7 @@ class ScheduledSyncRunner:
                 from sqlalchemy import update as sql_update
 
                 from app.models.analysis_job import AnalysisJob
+
                 meta = job.result_metadata or {}
                 if column_mapping:
                     meta["column_mapping"] = column_mapping
@@ -845,7 +863,9 @@ class ScheduledSyncRunner:
                     .where(AnalysisJob.id == job.id)
                     .values(
                         result_metadata=meta,
-                        awaiting_review=bool(quality_meta and quality_meta.get("quality_should_review")),
+                        awaiting_review=bool(
+                            quality_meta and quality_meta.get("quality_should_review")
+                        ),
                     )
                 )
                 await db.commit()
@@ -869,12 +889,10 @@ class ScheduledSyncRunner:
         """Send in-app notification after sync completion."""
         try:
             from app.services.notification_service import get_notification_service
+
             svc = get_notification_service()
             source_label = schedule.source_type.replace("_", " ").title()
-            message = (
-                f"{source_label} senkronizasyonu tamamlandı. "
-                f"{row_count} işlem çekildi."
-            )
+            message = f"{source_label} senkronizasyonu tamamlandı. {row_count} işlem çekildi."
             if job_id:
                 message += " Analiz başlatıldı."
             await svc.send_org_notification(
@@ -890,6 +908,7 @@ class ScheduledSyncRunner:
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
+
 
 def _today_str() -> str:
     return datetime.now(UTC).strftime("%Y%m%d")
@@ -932,8 +951,9 @@ def _transactions_to_csv(transactions: list[dict[str, Any]]) -> bytes:
     all_keys = list({k for tx in transactions for k in tx})
     # Ensure date and amount come first
     priority = ["date", "amount", "description", "category", "reference"]
-    ordered_keys = [k for k in priority if k in all_keys] + \
-                   [k for k in all_keys if k not in priority]
+    ordered_keys = [k for k in priority if k in all_keys] + [
+        k for k in all_keys if k not in priority
+    ]
 
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=ordered_keys, extrasaction="ignore")
@@ -955,6 +975,7 @@ def get_sync_runner() -> ScheduledSyncRunner:
 
 
 # ── APScheduler hook (called from scheduler.py) ───────────────────────────────
+
 
 async def run_due_syncs(db: Any, settings: Any) -> list[SyncResult]:
     """
@@ -991,9 +1012,7 @@ async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
 
         from app.models.sync_schedule import SyncSchedule
 
-        result = await db.execute(
-            select(SyncSchedule).where(SyncSchedule.enabled.is_(True))
-        )
+        result = await db.execute(select(SyncSchedule).where(SyncSchedule.enabled.is_(True)))
         rows = result.scalars().all()
         schedules: list[SyncScheduleConfig] = []
         for row in rows:

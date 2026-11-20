@@ -28,6 +28,7 @@ Usage
     # result.change_points: [{date, direction}, ...]
     # result.seasonality: {trend: [...], seasonal: [...], residual: [...]}
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,53 +39,55 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-MIN_POINTS_STL    = 12    # STL needs at least 2 full seasons
-MIN_POINTS_ARIMA  = 8     # ARIMA minimum
-MIN_POINTS_LINEAR = 4     # absolute minimum
+MIN_POINTS_STL = 12  # STL needs at least 2 full seasons
+MIN_POINTS_ARIMA = 8  # ARIMA minimum
+MIN_POINTS_LINEAR = 4  # absolute minimum
 PREDICTION_INTERVALS = [0.10, 0.50, 0.90]  # P10, P50, P90
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ForecastPoint:
     date: str
-    p10:  float
-    p50:  float
-    p90:  float
+    p10: float
+    p50: float
+    p90: float
 
 
 @dataclass
 class TrendChangePoint:
-    date:         str
-    direction:    str    # "up" | "down"
-    magnitude:    float  # absolute change
-    description:  str
+    date: str
+    direction: str  # "up" | "down"
+    magnitude: float  # absolute change
+    description: str
 
 
 @dataclass
 class ForecastResult:
-    method:       str                         # "stl" | "arima" | "linear"
-    historical:   list[dict[str, Any]]        # [{date, value}]
-    forecast:     list[dict[str, Any]]        # [{date, p10, p50, p90}]
-    change_points: list[dict[str, Any]]       # [{date, direction, magnitude}]
-    seasonality:  dict[str, list[float]]      # {trend, seasonal, residual}
-    mae:          float | None = None         # mean absolute error (in-sample)
-    summary:      str = ""
+    method: str  # "stl" | "arima" | "linear"
+    historical: list[dict[str, Any]]  # [{date, value}]
+    forecast: list[dict[str, Any]]  # [{date, p10, p50, p90}]
+    change_points: list[dict[str, Any]]  # [{date, direction, magnitude}]
+    seasonality: dict[str, list[float]]  # {trend, seasonal, residual}
+    mae: float | None = None  # mean absolute error (in-sample)
+    summary: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "method":        self.method,
-            "historical":    self.historical,
-            "forecast":      self.forecast,
+            "method": self.method,
+            "historical": self.historical,
+            "forecast": self.forecast,
             "change_points": self.change_points,
-            "seasonality":   self.seasonality,
-            "mae":           self.mae,
-            "summary":       self.summary,
+            "seasonality": self.seasonality,
+            "mae": self.mae,
+            "summary": self.summary,
         }
 
 
 # ── Trend change detection (PELT-inspired simple implementation) ─────────────
+
 
 def _detect_trend_changes(
     series: list[float],
@@ -105,8 +108,8 @@ def _detect_trend_changes(
     change_points = []
 
     for i in range(window, len(series) - window):
-        pre_mean  = sum(series[i - window:i]) / window
-        post_mean = sum(series[i:i + window]) / window
+        pre_mean = sum(series[i - window : i]) / window
+        post_mean = sum(series[i : i + window]) / window
 
         if pre_mean == 0:
             continue
@@ -117,22 +120,25 @@ def _detect_trend_changes(
             magnitude = abs(post_mean - pre_mean)
             date = dates[i] if i < len(dates) else str(i)
 
-            change_points.append({
-                "date":        date,
-                "direction":   direction,
-                "magnitude":   round(magnitude, 2),
-                "pct_change":  round(pct_change * 100, 1),
-                "description": (
-                    f"Trend değişimi: {date} tarihinde "
-                    f"{'+' if pct_change > 0 else ''}{pct_change*100:.1f}% "
-                    f"{'artış' if direction == 'up' else 'düşüş'}"
-                ),
-            })
+            change_points.append(
+                {
+                    "date": date,
+                    "direction": direction,
+                    "magnitude": round(magnitude, 2),
+                    "pct_change": round(pct_change * 100, 1),
+                    "description": (
+                        f"Trend değişimi: {date} tarihinde "
+                        f"{'+' if pct_change > 0 else ''}{pct_change * 100:.1f}% "
+                        f"{'artış' if direction == 'up' else 'düşüş'}"
+                    ),
+                }
+            )
 
     return change_points
 
 
 # ── Linear fallback ───────────────────────────────────────────────────────────
+
 
 def _linear_forecast(
     series: list[float],
@@ -155,7 +161,7 @@ def _linear_forecast(
 
     # Residual std for uncertainty bounds
     residuals = [series[i] - (slope * i + intercept) for i in range(n)]
-    std = (sum(r ** 2 for r in residuals) / max(1, n - 2)) ** 0.5
+    std = (sum(r**2 for r in residuals) / max(1, n - 2)) ** 0.5
 
     # Generate future dates
     last_date = dates[-1] if dates else "T+0"
@@ -166,26 +172,29 @@ def _linear_forecast(
         p50 = slope * (n + step - 1) + intercept
         # Uncertainty grows with horizon
         uncertainty = std * (1.0 + 0.1 * step)
-        forecast_points.append({
-            "date": fdate,
-            "p10":  round(p50 - 1.645 * uncertainty, 2),
-            "p50":  round(p50, 2),
-            "p90":  round(p50 + 1.645 * uncertainty, 2),
-        })
+        forecast_points.append(
+            {
+                "date": fdate,
+                "p10": round(p50 - 1.645 * uncertainty, 2),
+                "p50": round(p50, 2),
+                "p90": round(p50 + 1.645 * uncertainty, 2),
+            }
+        )
 
     historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)]
 
     return ForecastResult(
-        method        = "linear",
-        historical    = historical,
-        forecast      = forecast_points,
-        change_points = _detect_trend_changes(series, dates),
-        seasonality   = {},
-        summary       = f"Lineer ekstrapolasyon ({n} veri noktası, {periods} dönem tahmin)",
+        method="linear",
+        historical=historical,
+        forecast=forecast_points,
+        change_points=_detect_trend_changes(series, dates),
+        seasonality={},
+        summary=f"Lineer ekstrapolasyon ({n} veri noktası, {periods} dönem tahmin)",
     )
 
 
 # ── STL (Seasonal-Trend Decomposition) ───────────────────────────────────────
+
 
 def _stl_forecast(
     series: list[float],
@@ -211,7 +220,7 @@ def _stl_forecast(
         stl = STL(y, period=min(period_seasonality, n // 2), robust=True)
         stl_result = stl.fit()
 
-        trend    = stl_result.trend
+        trend = stl_result.trend
         seasonal = stl_result.seasonal
         residual = stl_result.resid
 
@@ -227,9 +236,7 @@ def _stl_forecast(
         # Seasonal: use last full cycle
         cycle_len = min(period_seasonality, n)
         seasonal_cycle = seasonal[-cycle_len:]
-        seasonal_forecast = [
-            seasonal_cycle[i % cycle_len] for i in range(periods)
-        ]
+        seasonal_forecast = [seasonal_cycle[i % cycle_len] for i in range(periods)]
 
         # Residual uncertainty: use IQR
         q25, q75 = np.percentile(residual, 25), np.percentile(residual, 75)
@@ -243,35 +250,38 @@ def _stl_forecast(
         ):
             p50 = float(tf + sf)
             uncertainty = iqr * (1.0 + 0.05 * step)
-            forecast_pts.append({
-                "date": fdate,
-                "p10":  round(p50 - 1.645 * uncertainty, 2),
-                "p50":  round(p50, 2),
-                "p90":  round(p50 + 1.645 * uncertainty, 2),
-            })
+            forecast_pts.append(
+                {
+                    "date": fdate,
+                    "p10": round(p50 - 1.645 * uncertainty, 2),
+                    "p50": round(p50, 2),
+                    "p90": round(p50 + 1.645 * uncertainty, 2),
+                }
+            )
 
         # In-sample MAE
         fitted = trend + seasonal + residual
         mae = float(np.mean(np.abs(y - fitted)))
 
         seasonality_data = {
-            "trend":    [round(float(v), 2) for v in trend],
+            "trend": [round(float(v), 2) for v in trend],
             "seasonal": [round(float(v), 2) for v in seasonal],
             "residual": [round(float(v), 2) for v in residual],
         }
 
-        historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)]
+        historical = [
+            {"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)
+        ]
 
         return ForecastResult(
-            method        = "stl",
-            historical    = historical,
-            forecast      = forecast_pts,
-            change_points = _detect_trend_changes(series, dates),
-            seasonality   = seasonality_data,
-            mae           = round(mae, 2),
-            summary       = (
-                f"STL ayrıştırma + Üstel Düzleştirme "
-                f"(MAE: {mae:.1f}, {periods} dönem tahmin)"
+            method="stl",
+            historical=historical,
+            forecast=forecast_pts,
+            change_points=_detect_trend_changes(series, dates),
+            seasonality=seasonality_data,
+            mae=round(mae, 2),
+            summary=(
+                f"STL ayrıştırma + Üstel Düzleştirme (MAE: {mae:.1f}, {periods} dönem tahmin)"
             ),
         )
 
@@ -284,6 +294,7 @@ def _stl_forecast(
 
 
 # ── ARIMA ─────────────────────────────────────────────────────────────────────
+
 
 def _arima_forecast(
     series: list[float],
@@ -302,15 +313,15 @@ def _arima_forecast(
         y = np.array(series, dtype=float)
 
         # Try simple ARIMA orders — pick best AIC
-        best_aic  = float("inf")
-        best_fit  = None
+        best_aic = float("inf")
+        best_fit = None
 
         for p in range(4):
             for d in range(3):
                 for q in range(4):
                     try:
                         model = ARIMA(y, order=(p, d, q))
-                        fit   = model.fit()
+                        fit = model.fit()
                         if fit.aic < best_aic:
                             best_aic = fit.aic
                             best_fit = fit
@@ -320,36 +331,38 @@ def _arima_forecast(
         if best_fit is None:
             return _stl_forecast(series, dates, periods)
 
-        forecast_obj  = best_fit.get_forecast(steps=periods)
-        p50_values    = forecast_obj.predicted_mean
-        conf_int      = forecast_obj.conf_int(alpha=0.1)  # 90% CI
+        forecast_obj = best_fit.get_forecast(steps=periods)
+        p50_values = forecast_obj.predicted_mean
+        conf_int = forecast_obj.conf_int(alpha=0.1)  # 90% CI
 
-        future_dates  = _generate_future_dates(dates[-1] if dates else "T+0", periods)
-        forecast_pts  = []
+        future_dates = _generate_future_dates(dates[-1] if dates else "T+0", periods)
+        forecast_pts = []
 
         for fdate, p50, ci_row in zip(future_dates, p50_values, conf_int, strict=False):
-            forecast_pts.append({
-                "date": fdate,
-                "p10":  round(float(ci_row[0]), 2),
-                "p50":  round(float(p50), 2),
-                "p90":  round(float(ci_row[1]), 2),
-            })
+            forecast_pts.append(
+                {
+                    "date": fdate,
+                    "p10": round(float(ci_row[0]), 2),
+                    "p50": round(float(p50), 2),
+                    "p90": round(float(ci_row[1]), 2),
+                }
+            )
 
         # In-sample MAE
         mae = float(np.mean(np.abs(y - best_fit.fittedvalues)))
 
-        historical = [{"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)]
+        historical = [
+            {"date": d, "value": round(v, 2)} for d, v in zip(dates, series, strict=False)
+        ]
 
         return ForecastResult(
-            method        = "arima",
-            historical    = historical,
-            forecast      = forecast_pts,
-            change_points = _detect_trend_changes(series, dates),
-            seasonality   = {},
-            mae           = round(mae, 2),
-            summary       = (
-                f"ARIMA (AIC: {best_aic:.1f}, MAE: {mae:.1f}, {periods} dönem)"
-            ),
+            method="arima",
+            historical=historical,
+            forecast=forecast_pts,
+            change_points=_detect_trend_changes(series, dates),
+            seasonality={},
+            mae=round(mae, 2),
+            summary=(f"ARIMA (AIC: {best_aic:.1f}, MAE: {mae:.1f}, {periods} dönem)"),
         )
 
     except ImportError:
@@ -361,6 +374,7 @@ def _arima_forecast(
 
 
 # ── Date generation helper ────────────────────────────────────────────────────
+
 
 def _generate_future_dates(last_date: str, periods: int) -> list[str]:
     """
@@ -381,7 +395,7 @@ def _generate_future_dates(last_date: str, periods: int) -> list[str]:
                 for i in range(1, periods + 1):
                     # Add months
                     month = (dt.month - 1 + i) % 12 + 1
-                    year  = dt.year + (dt.month - 1 + i) // 12
+                    year = dt.year + (dt.month - 1 + i) // 12
                     future.append(f"{year:04d}-{month:02d}")
                 return future
             except ValueError:
@@ -394,6 +408,7 @@ def _generate_future_dates(last_date: str, periods: int) -> list[str]:
 
 
 # ── Main service class ────────────────────────────────────────────────────────
+
 
 class ForecastingService:
     """
@@ -429,11 +444,15 @@ class ForecastingService:
         if n < MIN_POINTS_LINEAR:
             logger.warning(
                 "ForecastingService: only %d points, need %d minimum",
-                n, MIN_POINTS_LINEAR,
+                n,
+                MIN_POINTS_LINEAR,
             )
             return ForecastResult(
-                method="none", historical=[], forecast=[],
-                change_points=[], seasonality={},
+                method="none",
+                historical=[],
+                forecast=[],
+                change_points=[],
+                seasonality={},
                 summary="Yeterli veri yok (minimum 4 nokta gerekli)",
             )
 

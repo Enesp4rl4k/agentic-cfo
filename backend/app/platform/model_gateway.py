@@ -18,6 +18,7 @@ sites:
 Design rule (enforced by tests/test_platform/test_llm_egress_single_chokepoint.py):
 ``from langchain_openai import ChatOpenAI`` appears in this module only.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -66,9 +67,7 @@ class LLMBudgetExceeded(RuntimeError):
     """The org has spent past its monthly LLM budget. Callers should fall back."""
 
     def __init__(self, org_id: str, spend_usd: float, budget_usd: float) -> None:
-        super().__init__(
-            f"org {org_id} LLM spend ${spend_usd:.2f} >= budget ${budget_usd:.2f}"
-        )
+        super().__init__(f"org {org_id} LLM spend ${spend_usd:.2f} >= budget ${budget_usd:.2f}")
         self.org_id = org_id
         self.spend_usd = spend_usd
         self.budget_usd = budget_usd
@@ -82,12 +81,13 @@ def is_placeholder_key(api_key: str | None) -> bool:
 
 # ── Result type ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class GatewayResult:
     text: str
     model: str
     task: str
-    parsed: Any | None = None          # pydantic instance when schema= was given
+    parsed: Any | None = None  # pydantic instance when schema= was given
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
@@ -97,6 +97,7 @@ class GatewayResult:
 
 
 # ── In-process cost ledger (survives without a DB) ───────────────────────────
+
 
 @dataclass
 class _Ledger:
@@ -182,9 +183,7 @@ async def _org_month_spend_usd(org_id: str) -> float:
         from app.database import session_factory
         from app.models.llm_call_log import LLMCallLog
 
-        month_start = datetime.now(UTC).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+        month_start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         async with session_factory()() as db:
             total = await db.scalar(
                 select(func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0)).where(
@@ -213,11 +212,15 @@ async def _enforce_org_budget(org_id: str | None) -> None:
     if spend >= budget * LLM_ORG_BUDGET_SOFT_WARN_RATIO:
         logger.warning(
             "LLM budget: org=%s at $%.2f / $%.2f (%.0f%%)",
-            org_id, spend, budget, 100 * spend / budget,
+            org_id,
+            spend,
+            budget,
+            100 * spend / budget,
         )
 
 
 # ── Model selection ─────────────────────────────────────────────────────────
+
 
 def _resolve_model(task: str, prompt_len: int, model_override: str | None) -> ModelConfig:
     if model_override:
@@ -352,6 +355,7 @@ def _persist_call_log(
 
 # ── Public entry point ─────────────────────────────────────────────────────
 
+
 async def complete(
     *,
     task: str,
@@ -430,15 +434,30 @@ async def complete(
                     continue
                 latency_ms = round((time.time() - start) * 1000, 1)
                 _LEDGER.record(
-                    GatewayResult(text="", model=cfg.model_id, task=task, latency_ms=latency_ms,
-                                  attempts=attempts),
-                    org_id, ok=False,
+                    GatewayResult(
+                        text="",
+                        model=cfg.model_id,
+                        task=task,
+                        latency_ms=latency_ms,
+                        attempts=attempts,
+                    ),
+                    org_id,
+                    ok=False,
                 )
                 _persist_call_log(
-                    org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
-                    res=GatewayResult(text="", model=cfg.model_id, task=task,
-                                      latency_ms=latency_ms, attempts=attempts),
-                    ok=False, error=f"{type(exc).__name__}: {exc}",
+                    org_id=org_id,
+                    job_id=job_id,
+                    task=task,
+                    model=cfg.model_id,
+                    res=GatewayResult(
+                        text="",
+                        model=cfg.model_id,
+                        task=task,
+                        latency_ms=latency_ms,
+                        attempts=attempts,
+                    ),
+                    ok=False,
+                    error=f"{type(exc).__name__}: {exc}",
                 )
                 try:
                     span.set_attribute("llm.ok", False)
@@ -447,9 +466,7 @@ async def complete(
                 raise RuntimeError(f"LLM call failed after {attempts} attempts: {exc}") from exc
 
     latency_ms = round((time.time() - start) * 1000, 1)
-    cost = round(
-        (in_tok * cfg.cost_per_1k_in + out_tok * cfg.cost_per_1k_out) / 1000, 6
-    )
+    cost = round((in_tok * cfg.cost_per_1k_in + out_tok * cfg.cost_per_1k_out) / 1000, 6)
     result = GatewayResult(
         text=text,
         model=cfg.model_id,
@@ -464,8 +481,13 @@ async def complete(
 
     _LEDGER.record(result, org_id, ok=True)
     _persist_call_log(
-        org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
-        res=result, ok=True, error=None,
+        org_id=org_id,
+        job_id=job_id,
+        task=task,
+        model=cfg.model_id,
+        res=result,
+        ok=True,
+        error=None,
     )
 
     if use_cache:
@@ -559,12 +581,21 @@ async def stream(
     out_tok = int(len(text.split()) * 1.3)
     cost = round((in_tok * cfg.cost_per_1k_in + out_tok * cfg.cost_per_1k_out) / 1000, 6)
     res = GatewayResult(
-        text=text, model=cfg.model_id, task=task,
-        input_tokens=in_tok, output_tokens=out_tok, cost_usd=cost,
+        text=text,
+        model=cfg.model_id,
+        task=task,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        cost_usd=cost,
         latency_ms=round((time.time() - start) * 1000, 1),
     )
     _LEDGER.record(res, org_id, ok=True)
     _persist_call_log(
-        org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
-        res=res, ok=True, error=None,
+        org_id=org_id,
+        job_id=job_id,
+        task=task,
+        model=cfg.model_id,
+        res=res,
+        ok=True,
+        error=None,
     )

@@ -10,6 +10,7 @@ So the check here is not "does our code agree with our code". It is the
 authority's schema, applied to the authority's sample first (to prove the
 harness works) and then to ours.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,7 +45,12 @@ ENTRIES = [
         "kaynak_islem_id": "tx-1",
         "satirlar": [
             {"hesap_kodu": "120.01", "hesap_adi": "Alıcılar", "borc": 28_500_00, "alacak": 0},
-            {"hesap_kodu": "600.01", "hesap_adi": "Yurtiçi Satışlar", "borc": 0, "alacak": 23_750_00},
+            {
+                "hesap_kodu": "600.01",
+                "hesap_adi": "Yurtiçi Satışlar",
+                "borc": 0,
+                "alacak": 23_750_00,
+            },
             {"hesap_kodu": "391.01", "hesap_adi": "Hesaplanan KDV", "borc": 0, "alacak": 4_750_00},
         ],
     },
@@ -53,7 +59,12 @@ ENTRIES = [
         "tarih": "2024-01-20T00:00:00",
         "aciklama": "Ofis kirası",
         "satirlar": [
-            {"hesap_kodu": "770.01", "hesap_adi": "Genel Yönetim Giderleri", "borc": 12_000_00, "alacak": 0},
+            {
+                "hesap_kodu": "770.01",
+                "hesap_adi": "Genel Yönetim Giderleri",
+                "borc": 12_000_00,
+                "alacak": 0,
+            },
             {"hesap_kodu": "102.01", "hesap_adi": "Bankalar", "borc": 0, "alacak": 12_000_00},
         ],
     },
@@ -69,6 +80,7 @@ def _ledger():
 
 
 # ── Schema validation, against GİB's published XSD ───────────────────────────
+
 
 def _schema():
     """Build the validator, or skip with the reason.
@@ -99,9 +111,8 @@ def test_generated_ledger_validates_against_gib_schema(kind: str) -> None:
     etree, schema = _schema()
     pkg = _journal() if kind == "yevmiye" else _ledger()
     doc = etree.fromstring(pkg.xml.encode("utf-8"))
-    assert schema.validate(doc), (
-        f"{kind} şemadan geçmedi:\n  "
-        + "\n  ".join(e.message for e in schema.error_log[:5])
+    assert schema.validate(doc), f"{kind} şemadan geçmedi:\n  " + "\n  ".join(
+        e.message for e in schema.error_log[:5]
     )
 
 
@@ -135,6 +146,7 @@ def test_hash_value_is_unqualified() -> None:
 
 # ── What the ledger says about itself ────────────────────────────────────────
 
+
 def test_it_never_claims_to_be_filable() -> None:
     """Structurally complete and legally incomplete are different things, and a
     single "valid" flag blurs them. Filing needs a mali mühür we do not have."""
@@ -158,8 +170,8 @@ def test_amounts_are_lira_derived_from_integer_kurus() -> None:
 
 def test_debit_and_credit_are_marked_per_line() -> None:
     xml = _journal().xml
-    assert xml.count(">D<") == 2   # 120 and 770
-    assert xml.count(">C<") == 3   # 600, 391, 102
+    assert xml.count(">D<") == 2  # 120 and 770
+    assert xml.count(">C<") == 3  # 600, 391, 102
 
 
 def test_journal_balances() -> None:
@@ -170,6 +182,7 @@ def test_journal_balances() -> None:
 
 
 # ── Kebir is the journal read down the account column ────────────────────────
+
 
 def test_ledger_groups_by_account_without_inventing_movements() -> None:
     """GİB checks that yevmiye and kebir agree. Deriving both from the same rows
@@ -189,15 +202,18 @@ def test_ledger_declares_itself_a_ledger() -> None:
 
 # ── Refusals ─────────────────────────────────────────────────────────────────
 
+
 def test_a_line_carrying_both_sides_is_refused() -> None:
     """One detail is one side. A row with both is two rows merged upstream, and
     splitting it here would invent a structure the sealed record does not have.
     """
-    bad = [{
-        "kayit_id": "x",
-        "tarih": "2024-01-01T00:00:00",
-        "satirlar": [{"hesap_kodu": "100", "hesap_adi": "Kasa", "borc": 100, "alacak": 50}],
-    }]
+    bad = [
+        {
+            "kayit_id": "x",
+            "tarih": "2024-01-01T00:00:00",
+            "satirlar": [{"hesap_kodu": "100", "hesap_adi": "Kasa", "borc": 100, "alacak": 50}],
+        }
+    ]
     with pytest.raises(EDefterError, match="hem borç hem alacak"):
         EDefterXBRLGenerator.generate_journal(bad, period="2024-01", owner=OWNER)
 
@@ -206,7 +222,8 @@ def test_a_line_carrying_both_sides_is_refused() -> None:
 def test_a_ledger_needs_a_real_vkn(bad_vkn: str) -> None:
     with pytest.raises(EDefterError, match="VKN"):
         EDefterXBRLGenerator.generate_journal(
-            ENTRIES, period="2024-01",
+            ENTRIES,
+            period="2024-01",
             owner=LedgerOwner(vkn=bad_vkn, title="X"),
         )
 
@@ -214,24 +231,20 @@ def test_a_ledger_needs_a_real_vkn(bad_vkn: str) -> None:
 @pytest.mark.parametrize("bad_period", ["2024", "2024-13", "01-2024", ""])
 def test_period_must_be_year_month(bad_period: str) -> None:
     with pytest.raises(EDefterError, match="dönem"):
-        EDefterXBRLGenerator.generate_journal(
-            ENTRIES, period=bad_period, owner=OWNER
-        )
+        EDefterXBRLGenerator.generate_journal(ENTRIES, period=bad_period, owner=OWNER)
 
 
 def test_period_end_is_the_last_day_of_the_month() -> None:
     for period, expected in (
         ("2024-01", "2024-01-31"),
-        ("2024-02", "2024-02-29"),   # leap year
+        ("2024-02", "2024-02-29"),  # leap year
         ("2023-02", "2023-02-28"),
         ("2024-12", "2024-12-31"),
     ):
         # Entries dated inside the period: the generator refuses another
         # month's posting, so the fixture moves with the month under test.
         moved = [{**e, "tarih": f"{period}-15T00:00:00"} for e in ENTRIES]
-        pkg = EDefterXBRLGenerator.generate_journal(
-            moved, period=period, owner=OWNER
-        )
+        pkg = EDefterXBRLGenerator.generate_journal(moved, period=period, owner=OWNER)
         assert f">{expected}<" in pkg.xml, period
 
 
@@ -239,7 +252,8 @@ def test_blank_owner_details_are_omitted_not_invented() -> None:
     """A ledger carrying a plausible address nobody entered is worse than one
     carrying none."""
     pkg = EDefterXBRLGenerator.generate_journal(
-        ENTRIES, period="2024-01",
+        ENTRIES,
+        period="2024-01",
         owner=LedgerOwner(vkn="1234567808", title="Yalın A.Ş."),
     )
     assert "organizationAddress" not in pkg.xml

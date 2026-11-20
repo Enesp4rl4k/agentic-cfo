@@ -5,6 +5,7 @@ POST /cto/analyze     → run CTO pipeline (async via ARQ)
 GET  /cto/{job_id}    → get CTO analysis result
 POST /cto/analyze/sync → run CTO pipeline synchronously (dev/test only)
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,20 +24,23 @@ router = APIRouter()
 
 # ── Request/Response schemas ───────────────────────────────────────────────────
 
+
 class CTOAnalyzeRequest(BaseModel):
     """
     CTO analysis request — provide at least one data source.
 
     All fields are optional; agents gracefully skip missing inputs.
     """
+
     company_name: str | None = None
-    cloud_billing_csv: str | None = None   # raw CSV text
-    git_log_text: str | None = None        # git log --stat output
-    incident_csv: str | None = None        # PagerDuty / OpsGenie CSV
-    sprint_csv: str | None = None          # Jira / Linear sprint CSV
+    cloud_billing_csv: str | None = None  # raw CSV text
+    git_log_text: str | None = None  # git log --stat output
+    incident_csv: str | None = None  # PagerDuty / OpsGenie CSV
+    sprint_csv: str | None = None  # Jira / Linear sprint CSV
 
 
 # ── Sync endpoint (dev / small payloads) ──────────────────────────────────────
+
 
 @router.post("/cto/analyze")
 async def run_cto_analysis(
@@ -51,12 +55,14 @@ async def run_cto_analysis(
     """
     from app.agents.cto.orchestrator import run_cto_pipeline
 
-    if not any([
-        body.cloud_billing_csv,
-        body.git_log_text,
-        body.incident_csv,
-        body.sprint_csv,
-    ]):
+    if not any(
+        [
+            body.cloud_billing_csv,
+            body.git_log_text,
+            body.incident_csv,
+            body.sprint_csv,
+        ]
+    ):
         raise HTTPException(
             status_code=400,
             detail="At least one data source required: cloud_billing_csv, git_log_text, incident_csv, or sprint_csv.",
@@ -106,11 +112,11 @@ async def run_cto_analysis(
         raise HTTPException(status_code=500, detail=f"CTO analysis failed: {exc}")
 
 
-
 @router.get("/cto/health-check")
 async def cto_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify CTO pipeline agents are importable and graph compiles."""
     from app.agents.cto.orchestrator import cto_graph
+
     return {
         "data": {
             "status": "ok",

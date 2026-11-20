@@ -5,6 +5,7 @@ Yönetim kurulu kararlarından çıkan somut aksiyon maddelerini (Örn: Banka EF
 Google Ads bütçe güncellemesi, Denetim görevi atama) CEO onayı eşliğinde
 gerçek API/Sistem işlemlerine dönüştüren icraat motoru.
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,7 +70,13 @@ class ActionRunner:
         # Eylem Yönlendirme (Action Routing)
         if "bütçe" in desc or "ads" in desc or "reklam" in desc or agent == "CMO":
             result = await self._execute_marketing_budget_update(action, custom_params)
-        elif "vergi" in desc or "ödeme" in desc or "eft" in desc or "fatura" in desc or agent == "CFO":
+        elif (
+            "vergi" in desc
+            or "ödeme" in desc
+            or "eft" in desc
+            or "fatura" in desc
+            or agent == "CFO"
+        ):
             result = await self._execute_financial_payment_draft(action, custom_params)
         elif "toplantı" in desc or "değerlendirme" in desc or "rapor" in desc:
             result = await self._execute_schedule_audit(action, custom_params)

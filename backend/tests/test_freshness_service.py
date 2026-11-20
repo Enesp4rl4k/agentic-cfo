@@ -12,6 +12,7 @@ that fiction:
 
 No LLM and no API key is needed anywhere in this file.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -64,6 +65,7 @@ async def _seed_job_with_txns(client, org_id: str, *, txn_days_old: int = 3):
 
 
 # ── Servis: yaş = kaynakların en kötüsü ──────────────────────────────────────
+
 
 async def test_age_summary_unknown_without_any_source(client):
     """Org with no job and no connector: nothing to be fresh *about*."""
@@ -155,6 +157,7 @@ async def test_age_summary_never_synced_source_is_a_gap(client):
 
 # ── Endpoint: GET /data/freshness ────────────────────────────────────────────
 
+
 async def test_endpoint_rejects_user_without_org(client):
     headers, org_id, _ = await _user(client, "koprusuz@example.com", attach_org=False)
     assert org_id is None
@@ -206,6 +209,7 @@ async def test_endpoint_requires_auth(client):
 
 # ── OKR: sahte tazelik gitti ─────────────────────────────────────────────────
 
+
 def _all_krs(objectives):
     return [kr for obj in objectives for kr in obj["key_results"]]
 
@@ -214,16 +218,17 @@ def test_okr_uses_measured_freshness_not_hardcoded():
     from app.agents.ceo.okr_agent import _confidence_from_data_freshness, _infer_okrs
 
     objs = _infer_okrs(
-        None, None, None, "2026-Q3",
+        None,
+        None,
+        None,
+        "2026-Q3",
         freshness={"days": 45, "quality": "low"},
     )
     krs = _all_krs(objs)
     assert krs
-    expected = _confidence_from_data_freshness(
-        days_since_update=45, data_quality="low"
-    )
+    expected = _confidence_from_data_freshness(days_since_update=45, data_quality="low")
     for kr in krs:
-        assert kr["data_freshness_days"] == 45       # measured, org-wide
+        assert kr["data_freshness_days"] == 45  # measured, org-wide
         assert kr["data_freshness_source"] == "org"
         assert kr["confidence"] == expected
         assert kr["confidence"] < 1.0

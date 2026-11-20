@@ -17,6 +17,7 @@ CEOState carries:
   - board_deck:        executive presentation data
   - okr_status:        OKR tracking (optional)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ class CEOState(TypedDict, total=False):
     # ── Input ─────────────────────────────────────────────────────────────────
     job_id: str
     company_name: str | None
-    period: str | None            # e.g. "2024-Q1", "2024-06"
+    period: str | None  # e.g. "2024-Q1", "2024-06"
 
     # ── CFO pipeline output (condensed) ───────────────────────────────────────
     financial_summary: dict[str, Any] | None
@@ -170,7 +171,7 @@ class CEOSkillResult:
 @dataclass
 class CEORunConfig:
     dry_run: bool = False
-    require_review: bool = False   # CEO is exec-level, auto-proceed by default
+    require_review: bool = False  # CEO is exec-level, auto-proceed by default
     auto_proceed_min_confidence: float = 0.75
     # swot_agent reads this to skip LLM enrichment and use its deterministic
     # fallback narrative. It was read but never declared — the AttributeError
@@ -181,8 +182,8 @@ class CEORunConfig:
 DEFAULT_CEO_RUN_CONFIG = CEORunConfig()
 
 # Routing constants
-CEO_ROUTE_SYNTHESIS   = "synthesis"
-CEO_ROUTE_PRIORITIES  = "strategic_priorities"
-CEO_ROUTE_BOARD_DECK  = "board_deck"
-CEO_ROUTE_HOLD        = "hold_for_review"
-CEO_ROUTE_END         = "__end__"
+CEO_ROUTE_SYNTHESIS = "synthesis"
+CEO_ROUTE_PRIORITIES = "strategic_priorities"
+CEO_ROUTE_BOARD_DECK = "board_deck"
+CEO_ROUTE_HOLD = "hold_for_review"
+CEO_ROUTE_END = "__end__"

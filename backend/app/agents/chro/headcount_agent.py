@@ -82,17 +82,19 @@ def _parse_headcount_csv(csv_text: str) -> list[dict[str, Any]]:
                 except (ValueError, TypeError):
                     start_date = None
 
-            rows.append({
-                "name": name,
-                "level": level,
-                "department": dept,
-                "role": role,
-                "salary": salary,
-                "location": location,
-                "start_date": start_date,
-                "status": status,
-                "fte": max(0.0, fte),
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "level": level,
+                    "department": dept,
+                    "role": role,
+                    "salary": salary,
+                    "location": location,
+                    "start_date": start_date,
+                    "status": status,
+                    "fte": max(0.0, fte),
+                }
+            )
         except Exception:
             pass
 
@@ -139,10 +141,7 @@ def _compute_headcount_metrics(employees: list[dict[str, Any]]) -> dict[str, Any
     avg_tenure_years = avg_tenure_days / 365.25
 
     # Recently hired (< 1 year)
-    recently_hired = [
-        e for e in active
-        if e["start_date"] and (today - e["start_date"]).days < 365
-    ]
+    recently_hired = [e for e in active if e["start_date"] and (today - e["start_date"]).days < 365]
 
     # High salary roles (top 10% by comp)
     if active_salaries:
@@ -152,10 +151,7 @@ def _compute_headcount_metrics(employees: list[dict[str, Any]]) -> dict[str, Any
         high_earners = []
 
     # Org structure risk: unbalanced levels
-    level_ratios = {
-        level: count / total_headcount
-        for level, count in by_level.items()
-    }
+    level_ratios = {level: count / total_headcount for level, count in by_level.items()}
 
     # Healthy pyramid: exec ~5%, senior ~15%, mid ~40%, junior ~40%
     org_health_risk = False
@@ -183,35 +179,40 @@ def _build_headcount_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
     # Org structure risk
     if metrics.get("org_structure_risk"):
-        alerts.append({
-            "level": "warning",
-            "message": "Org structure imbalanced — consider building management layers"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": "Org structure imbalanced — consider building management layers",
+            }
+        )
 
     # High recent hiring (potential onboarding burden)
     if metrics.get("recently_hired_count", 0) > metrics.get("total_headcount", 1) * 0.15:
-        alerts.append({
-            "level": "info",
-            "message": f"High recent hiring ({metrics['recently_hired_count']} in <1yr) — focus on onboarding & retention"
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "message": f"High recent hiring ({metrics['recently_hired_count']} in <1yr) — focus on onboarding & retention",
+            }
+        )
 
     # High concentration of salary
     if metrics.get("high_earners_count", 0) > metrics.get("total_headcount", 1) * 0.15:
-        alerts.append({
-            "level": "warning",
-            "message": f"High earner concentration — {metrics['high_earners_count']} in top 10% comp"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"High earner concentration — {metrics['high_earners_count']} in top 10% comp",
+            }
+        )
 
     return alerts
 
 
-async def _generate_headcount_narrative(
-    metrics: dict[str, Any], settings
-) -> str:
+async def _generate_headcount_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative — falls back to rule-based summary."""
     try:
         if settings and hasattr(settings, "llm") and settings.llm:
             from app.config import get_settings
+
             settings = get_settings()
             if not settings.openai_key:
                 raise ValueError("No OpenAI key")
@@ -236,9 +237,7 @@ async def _generate_headcount_narrative(
         )
 
     if payroll > 0:
-        narrative_lines.append(
-            f"Annual payroll commitment: {format_currency_try(payroll)}"
-        )
+        narrative_lines.append(f"Annual payroll commitment: {format_currency_try(payroll)}")
 
     return " ".join(narrative_lines)
 

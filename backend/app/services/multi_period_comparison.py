@@ -23,6 +23,7 @@ Period detection
 Periods are auto-detected from transaction date ranges inside each job.
 Labels: "2024-Q1", "2024-H1", "Jan 2024", "2023", etc.
 """
+
 from __future__ import annotations
 
 import logging
@@ -34,20 +35,22 @@ logger = logging.getLogger(__name__)
 
 # ── Data containers ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class PeriodData:
     """Parsed financial metrics for one period."""
+
     job_id: str
-    label: str                # human-readable period label
+    label: str  # human-readable period label
     date_from: str | None
     date_to: str | None
 
     # Financial metrics
     revenue: float
     gross_profit: float
-    gross_margin: float        # 0-1
+    gross_margin: float  # 0-1
     net_income: float
-    net_margin: float          # 0-1
+    net_margin: float  # 0-1
     ebitda: float
     ebitda_margin: float
 
@@ -69,13 +72,14 @@ class PeriodData:
 @dataclass
 class MetricChange:
     """Change between two periods for a single metric."""
+
     metric: str
     label: str
     period_a_value: float | None
     period_b_value: float | None
     absolute_change: float | None
-    pct_change: float | None     # as decimal: 0.15 = 15%
-    direction: str               # "up" | "down" | "flat" | "na"
+    pct_change: float | None  # as decimal: 0.15 = 15%
+    direction: str  # "up" | "down" | "flat" | "na"
     is_positive_good: bool = True  # for color coding: up = green or red?
 
     @property
@@ -99,10 +103,11 @@ class MetricChange:
 @dataclass
 class ComparisonReport:
     """Full multi-period comparison report."""
+
     periods: list[PeriodData]
-    changes: list[MetricChange]    # A vs B (most recent two)
-    cagr: dict[str, float]         # compound annual growth rates (3+ periods)
-    trend_labels: list[str]        # period labels in order
+    changes: list[MetricChange]  # A vs B (most recent two)
+    cagr: dict[str, float]  # compound annual growth rates (3+ periods)
+    trend_labels: list[str]  # period labels in order
     trend_revenue: list[float | None]
     trend_net_income: list[float | None]
     trend_operating_cf: list[float | None]
@@ -140,7 +145,9 @@ class ComparisonReport:
                     "period_a": c.period_a_value,
                     "period_b": c.period_b_value,
                     "absolute_change": c.absolute_change,
-                    "pct_change": round(c.pct_change * 100, 1) if c.pct_change is not None else None,
+                    "pct_change": round(c.pct_change * 100, 1)
+                    if c.pct_change is not None
+                    else None,
                     "formatted_pct": c.formatted_pct,
                     "direction": c.direction,
                     "color_class": c.color_class,
@@ -161,6 +168,7 @@ class ComparisonReport:
 
 # ── Extraction helpers ────────────────────────────────────────────────────────
 
+
 def _extract_period_data(job_id: str, job_result: dict[str, Any]) -> PeriodData:
     """
     Extract PeriodData from a stored analysis job result dict.
@@ -174,7 +182,7 @@ def _extract_period_data(job_id: str, job_result: dict[str, Any]) -> PeriodData:
     # Date range from transactions or metadata
     meta = job_result.get("metadata") or {}
     date_from = meta.get("date_from") or pnl.get("period_start")
-    date_to   = meta.get("date_to")   or pnl.get("period_end")
+    date_to = meta.get("date_to") or pnl.get("period_end")
 
     # Period label
     label = _make_period_label(date_from, date_to, job_id)
@@ -184,7 +192,7 @@ def _extract_period_data(job_id: str, job_result: dict[str, Any]) -> PeriodData:
     cf_net = cashflow.get("net", 0.0) or 0.0
 
     # Runway
-    scenarios = (forecast.get("scenarios") or {})
+    scenarios = forecast.get("scenarios") or {}
     runway = None
     for scenario in ("base", "pessimist"):
         sc = scenarios.get(scenario) or {}
@@ -218,7 +226,9 @@ def _extract_period_data(job_id: str, job_result: dict[str, Any]) -> PeriodData:
         ebitda_margin=float(pnl.get("ebitda_margin", 0) or 0),
         operating_cf=cf_operating,
         net_cf=cf_net,
-        ending_cash=float(cashflow.get("ending_cash", 0) or cashflow.get("closing_balance", 0) or 0),
+        ending_cash=float(
+            cashflow.get("ending_cash", 0) or cashflow.get("closing_balance", 0) or 0
+        ),
         runway_months=runway,
         opex_total=float(pnl.get("total_opex", 0) or sum(opex_breakdown.values())),
         opex_breakdown=opex_breakdown,
@@ -234,16 +244,30 @@ def _make_period_label(date_from: str | None, date_to: str | None, job_id: str) 
 
     try:
         from datetime import datetime
+
         d_from = datetime.fromisoformat(date_from.replace("Z", "+00:00")).date()
-        d_to   = datetime.fromisoformat(date_to.replace("Z", "+00:00")).date()
+        d_to = datetime.fromisoformat(date_to.replace("Z", "+00:00")).date()
 
         days = (d_to - d_from).days
         year_from = d_from.year
         year_to = d_to.year
 
         if days <= 35:
-            months = ["", "Oca", "Şub", "Mar", "Nis", "May", "Haz",
-                      "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+            months = [
+                "",
+                "Oca",
+                "Şub",
+                "Mar",
+                "Nis",
+                "May",
+                "Haz",
+                "Tem",
+                "Ağu",
+                "Eyl",
+                "Eki",
+                "Kas",
+                "Ara",
+            ]
             return f"{months[d_from.month]} {year_from}"
         elif days <= 95:  # quarter
             q = (d_from.month - 1) // 3 + 1
@@ -269,10 +293,14 @@ def _metric_change(
     """Compute change between period A (older) and period B (newer)."""
     if a is None or b is None:
         return MetricChange(
-            metric=metric, label=label,
-            period_a_value=a, period_b_value=b,
-            absolute_change=None, pct_change=None,
-            direction="na", is_positive_good=is_positive_good,
+            metric=metric,
+            label=label,
+            period_a_value=a,
+            period_b_value=b,
+            absolute_change=None,
+            pct_change=None,
+            direction="na",
+            is_positive_good=is_positive_good,
         )
 
     abs_change = b - a
@@ -286,10 +314,14 @@ def _metric_change(
         direction = "down"
 
     return MetricChange(
-        metric=metric, label=label,
-        period_a_value=a, period_b_value=b,
-        absolute_change=abs_change, pct_change=pct_change,
-        direction=direction, is_positive_good=is_positive_good,
+        metric=metric,
+        label=label,
+        period_a_value=a,
+        period_b_value=b,
+        absolute_change=abs_change,
+        pct_change=pct_change,
+        direction=direction,
+        is_positive_good=is_positive_good,
     )
 
 
@@ -304,6 +336,7 @@ def _cagr(start: float, end: float, periods: int) -> float | None:
 
 
 # ── ComparisonEngine ──────────────────────────────────────────────────────────
+
 
 class MultiPeriodComparisonEngine:
     """
@@ -336,17 +369,23 @@ class MultiPeriodComparisonEngine:
 
         # Changes: A → B
         changes = [
-            _metric_change("revenue",       "Gelir",             a.revenue,       b.revenue),
-            _metric_change("gross_profit",   "Brüt Kâr",          a.gross_profit,  b.gross_profit),
-            _metric_change("gross_margin",   "Brüt Marj",         a.gross_margin,  b.gross_margin),
-            _metric_change("net_income",     "Net Kâr",           a.net_income,    b.net_income),
-            _metric_change("net_margin",     "Net Marj",          a.net_margin,    b.net_margin),
-            _metric_change("ebitda",         "FAVÖK",             a.ebitda,        b.ebitda),
-            _metric_change("operating_cf",   "İşletme Nakit Akışı", a.operating_cf, b.operating_cf),
-            _metric_change("opex_total",     "Toplam OpEx",       a.opex_total,    b.opex_total,
-                           is_positive_good=False),
-            _metric_change("anomaly_count",  "Anomali Sayısı",    float(a.anomaly_count),
-                           float(b.anomaly_count), is_positive_good=False),
+            _metric_change("revenue", "Gelir", a.revenue, b.revenue),
+            _metric_change("gross_profit", "Brüt Kâr", a.gross_profit, b.gross_profit),
+            _metric_change("gross_margin", "Brüt Marj", a.gross_margin, b.gross_margin),
+            _metric_change("net_income", "Net Kâr", a.net_income, b.net_income),
+            _metric_change("net_margin", "Net Marj", a.net_margin, b.net_margin),
+            _metric_change("ebitda", "FAVÖK", a.ebitda, b.ebitda),
+            _metric_change("operating_cf", "İşletme Nakit Akışı", a.operating_cf, b.operating_cf),
+            _metric_change(
+                "opex_total", "Toplam OpEx", a.opex_total, b.opex_total, is_positive_good=False
+            ),
+            _metric_change(
+                "anomaly_count",
+                "Anomali Sayısı",
+                float(a.anomaly_count),
+                float(b.anomaly_count),
+                is_positive_good=False,
+            ),
         ]
 
         # CAGR for 3 periods
@@ -391,7 +430,7 @@ class MultiPeriodComparisonEngine:
         """Generate a plain-language comparison narrative."""
         rev_change = next((c for c in changes if c.metric == "revenue"), None)
         net_change = next((c for c in changes if c.metric == "net_income"), None)
-        cf_change  = next((c for c in changes if c.metric == "operating_cf"), None)
+        cf_change = next((c for c in changes if c.metric == "operating_cf"), None)
 
         parts = [f"{a.label} ile {b.label} dönemleri karşılaştırılıyor."]
 
@@ -421,17 +460,33 @@ class MultiPeriodComparisonEngine:
         """Generate actionable recommendations from change data."""
         recs = []
         for c in changes:
-            if c.metric == "opex_total" and c.direction == "up" and c.pct_change and c.pct_change > 0.15:
-                recs.append(f"OpEx %{c.pct_change * 100:.0f} arttı — maliyet kalemlerini gözden geçirin.")
-            if c.metric == "net_margin" and c.direction == "down" and c.pct_change and abs(c.pct_change) > 0.05:
-                recs.append(f"Net marj {abs(c.pct_change * 100):.1f} puan geriledi — fiyatlama stratejisini değerlendirin.")
+            if (
+                c.metric == "opex_total"
+                and c.direction == "up"
+                and c.pct_change
+                and c.pct_change > 0.15
+            ):
+                recs.append(
+                    f"OpEx %{c.pct_change * 100:.0f} arttı — maliyet kalemlerini gözden geçirin."
+                )
+            if (
+                c.metric == "net_margin"
+                and c.direction == "down"
+                and c.pct_change
+                and abs(c.pct_change) > 0.05
+            ):
+                recs.append(
+                    f"Net marj {abs(c.pct_change * 100):.1f} puan geriledi — fiyatlama stratejisini değerlendirin."
+                )
             if c.metric == "operating_cf" and c.direction == "down":
                 recs.append("Nakit akışı kötüleşiyor — alacak tahsilatını hızlandırın.")
             if c.metric == "anomaly_count" and c.direction == "up":
                 recs.append("Anomali sayısı arttı — fraud ve hata riskini inceleyin.")
 
         if not recs:
-            recs.append("Genel eğilim kararlı görünüyor. Detaylı CFO analizini incelemeye devam edin.")
+            recs.append(
+                "Genel eğilim kararlı görünüyor. Detaylı CFO analizini incelemeye devam edin."
+            )
 
         return recs
 

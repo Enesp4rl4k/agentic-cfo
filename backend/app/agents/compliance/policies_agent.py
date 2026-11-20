@@ -70,14 +70,16 @@ def _parse_policies_csv(csv_text: str) -> list[dict[str, Any]]:
             if review_col and row.get(review_col):
                 review_date = _parse_datetime(row.get(review_col))
 
-            rows.append({
-                "name": name,
-                "severity": severity,
-                "status": status,
-                "owner": owner,
-                "category": category,
-                "last_review_date": review_date,
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "severity": severity,
+                    "status": status,
+                    "owner": owner,
+                    "category": category,
+                    "last_review_date": review_date,
+                }
+            )
         except Exception:
             pass
 
@@ -109,10 +111,12 @@ def _compute_policies_metrics(policies: list[dict[str, Any]]) -> dict[str, Any]:
     for p in policies:
         if p["last_review_date"] and p["last_review_date"] < one_year_ago:
             days_overdue = (today - p["last_review_date"]).days
-            needs_review.append({
-                "policy": p["name"],
-                "days_overdue": days_overdue,
-            })
+            needs_review.append(
+                {
+                    "policy": p["name"],
+                    "days_overdue": days_overdue,
+                }
+            )
 
     # Critical/high policies
     critical = [p for p in policies if p["severity"] in ["critical", "high"]]
@@ -147,45 +151,49 @@ def _build_policies_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     # Policies needing review
     overdue_count = metrics.get("policies_needing_review", 0)
     if overdue_count > 0:
-        alerts.append({
-            "level": "warning",
-            "message": f"{overdue_count} policies haven't been reviewed in >1 year — schedule reviews"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"{overdue_count} policies haven't been reviewed in >1 year — schedule reviews",
+            }
+        )
 
     # High concentration of policies on one owner
     by_owner = metrics.get("by_owner", {})
     if by_owner:
         max_owner_count = max(by_owner.values()) if by_owner else 0
         if max_owner_count > metrics.get("total_policies", 1) * 0.40:
-            alerts.append({
-                "level": "medium",
-                "message": f"Policy ownership concentrated — one owner manages {max_owner_count} of {metrics['total_policies']} policies"
-            })
+            alerts.append(
+                {
+                    "level": "medium",
+                    "message": f"Policy ownership concentrated — one owner manages {max_owner_count} of {metrics['total_policies']} policies",
+                }
+            )
 
     # Many critical policies
     if metrics.get("critical_policies", 0) > metrics.get("total_policies", 1) * 0.25:
-        alerts.append({
-            "level": "info",
-            "message": f"High proportion of critical policies ({metrics['critical_policies']}/{metrics['total_policies']})"
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "message": f"High proportion of critical policies ({metrics['critical_policies']}/{metrics['total_policies']})",
+            }
+        )
 
     # No active policies
     if metrics.get("active_policies", 0) == 0:
-        alerts.append({
-            "level": "critical",
-            "message": "No active policies — governance framework incomplete"
-        })
+        alerts.append(
+            {"level": "critical", "message": "No active policies — governance framework incomplete"}
+        )
 
     return alerts
 
 
-async def _generate_policies_narrative(
-    metrics: dict[str, Any], settings
-) -> str:
+async def _generate_policies_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative — falls back to rule-based summary."""
     try:
         if settings and hasattr(settings, "llm") and settings.llm:
             from app.config import get_settings
+
             settings = get_settings()
             if not settings.openai_key:
                 raise ValueError("No OpenAI key")
@@ -199,19 +207,13 @@ async def _generate_policies_narrative(
     critical = metrics.get("critical_policies", 0)
     overdue = metrics.get("policies_needing_review", 0)
 
-    narrative_lines = [
-        f"Policy inventory: {total} policies ({active} active)."
-    ]
+    narrative_lines = [f"Policy inventory: {total} policies ({active} active)."]
 
     if critical > 0:
-        narrative_lines.append(
-            f"Critical/high severity policies: {critical}"
-        )
+        narrative_lines.append(f"Critical/high severity policies: {critical}")
 
     if overdue > 0:
-        narrative_lines.append(
-            f"Policies needing review: {overdue} overdue by >1 year."
-        )
+        narrative_lines.append(f"Policies needing review: {overdue} overdue by >1 year.")
 
     return " ".join(narrative_lines)
 

@@ -7,6 +7,7 @@ the three suites from drifting (they are a favourite spot for jscpd/Sonar to
 flag as duplicated lines, and for a future edit to fix a bug in one copy but
 not the others).
 """
+
 from __future__ import annotations
 
 import json
@@ -60,9 +61,7 @@ async def _seed_golden(sessionmaker) -> str:
         )
 
         ctx = CompanyContext(org_id=str(org.id), company_name="TechNova Yazılım A.Ş.")
-        ctx.update_agent_result(
-            "cfo", {"job_id": str(job.id), "dashboard": {"net": 12345}}
-        )
+        ctx.update_agent_result("cfo", {"job_id": str(job.id), "dashboard": {"net": 12345}})
         ctx.set_active_job("cfo", str(job.id))
         await save_company_context(ctx, db)
 

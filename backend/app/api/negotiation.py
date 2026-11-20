@@ -6,6 +6,7 @@ GET  /negotiation/conflicts/{org_id} → List open conflicts for org
 POST /negotiation/resolve/{conflict_id} → Mark conflict as resolved
 GET  /negotiation/topics          → List available topics with weights
 """
+
 from __future__ import annotations
 
 import json
@@ -29,24 +30,26 @@ logger = logging.getLogger(__name__)
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
+
 class ConsensusRequest(BaseModel):
-    org_id:          str | None = None   # defaults to current user's org
-    topic:           str                  # "cash_risk" | "growth_forecast" | etc.
-    resolution:      Literal["weighted", "majority", "escalate"] = "weighted"
+    org_id: str | None = None  # defaults to current user's org
+    topic: str  # "cash_risk" | "growth_forecast" | etc.
+    resolution: Literal["weighted", "majority", "escalate"] = "weighted"
 
 
 class ResolveRequest(BaseModel):
-    resolution:      str          # "accept_a" | "accept_b" | "custom"
-    note:            str = ""     # optional resolution note
+    resolution: str  # "accept_a" | "accept_b" | "custom"
+    note: str = ""  # optional resolution note
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/negotiation/consensus")
 async def run_consensus(
     body: ConsensusRequest,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Run consensus protocol for a topic across all relevant agents.
@@ -85,45 +88,45 @@ async def run_consensus(
 
     engine = ConsensusEngine()
     result = await engine.run_consensus(
-        org_id          = org_id,
-        topic           = body.topic,
-        resolution_mode = body.resolution,
-        db              = db,
+        org_id=org_id,
+        topic=body.topic,
+        resolution_mode=body.resolution,
+        db=db,
     )
 
     # Serialize result
     def _claim_dict(c: Any) -> dict:
         return {
-            "agent":      c.agent,
-            "topic":      c.topic,
-            "value":      round(c.value, 3),
-            "label":      c.label,
-            "evidence":   c.evidence,
+            "agent": c.agent,
+            "topic": c.topic,
+            "value": round(c.value, 3),
+            "label": c.label,
+            "evidence": c.evidence,
             "confidence": c.confidence,
         }
 
     def _conflict_dict(c: Any) -> dict:
         return {
-            "agent_a":     c.agent_a,
-            "agent_b":     c.agent_b,
-            "claim_a":     _claim_dict(c.claim_a),
-            "claim_b":     _claim_dict(c.claim_b),
-            "magnitude":   c.magnitude,
+            "agent_a": c.agent_a,
+            "agent_b": c.agent_b,
+            "claim_a": _claim_dict(c.claim_a),
+            "claim_b": _claim_dict(c.claim_b),
+            "magnitude": c.magnitude,
             "fingerprint": c.fingerprint,
         }
 
     return {
         "data": {
-            "topic":            result.topic,
-            "resolution_mode":  result.resolution_mode,
-            "agreement_score":  result.agreement_score,
-            "winning_agent":    result.winning_agent,
-            "winning_view":     _claim_dict(result.winning_view),
+            "topic": result.topic,
+            "resolution_mode": result.resolution_mode,
+            "agreement_score": result.agreement_score,
+            "winning_agent": result.winning_agent,
+            "winning_view": _claim_dict(result.winning_view),
             "dissenting_views": [_claim_dict(c) for c in result.dissenting_views],
-            "conflicts":        [_conflict_dict(c) for c in result.conflicts],
-            "evidence_map":     result.evidence_map,
-            "narrative":        result.narrative,
-            "escalated":        result.escalated,
+            "conflicts": [_conflict_dict(c) for c in result.conflicts],
+            "evidence_map": result.evidence_map,
+            "narrative": result.narrative,
+            "escalated": result.escalated,
         },
         "error": None,
     }
@@ -131,11 +134,11 @@ async def run_consensus(
 
 @router.get("/negotiation/conflicts/{org_id}")
 async def list_conflicts(
-    org_id:  str,
-    status:  str = "open",    # "open" | "resolved" | "escalated" | "all"
-    topic:   str | None = None,
-    user:    User = Depends(get_current_user),
-    db:      AsyncSession = Depends(get_db),
+    org_id: str,
+    status: str = "open",  # "open" | "resolved" | "escalated" | "all"
+    topic: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     List agent conflicts for an organization.
@@ -154,9 +157,7 @@ async def list_conflicts(
     try:
         from app.services.semantic.conflicts import list_org_conflicts
 
-        conflicts = await list_org_conflicts(
-            org_id, db, status=status, topic=topic, limit=50
-        )
+        conflicts = await list_org_conflicts(org_id, db, status=status, topic=topic, limit=50)
         return {
             "data": {
                 "org_id": org_id,
@@ -174,9 +175,9 @@ async def list_conflicts(
 @router.post("/negotiation/resolve/{conflict_id}")
 async def resolve_conflict(
     conflict_id: str,
-    body:        ResolveRequest,
-    user:        User = Depends(get_current_user),
-    db:          AsyncSession = Depends(get_db),
+    body: ResolveRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Mark a conflict as resolved.
@@ -242,23 +243,25 @@ async def list_topics(
 
     topics = []
     for topic, weights in TOPIC_WEIGHTS.items():
-        topics.append({
-            "topic":        topic,
-            "agents":       list(weights.keys()),
-            "weights":      weights,
-            "description":  _topic_description(topic),
-        })
+        topics.append(
+            {
+                "topic": topic,
+                "agents": list(weights.keys()),
+                "weights": weights,
+                "description": _topic_description(topic),
+            }
+        )
 
     return {"data": {"topics": topics}, "error": None}
 
 
 def _topic_description(topic: str) -> str:
     descriptions = {
-        "cash_risk":        "Nakit riski — CFO vs Risk ajanı çelişkisi",
-        "growth_forecast":  "Büyüme tahmini — CFO vs CMO görüş farkı",
-        "headcount":        "Personel kararları — CHRO vs CFO bütçe çelişkisi",
-        "tech_risk":        "Teknoloji riski — CTO vs Risk ajanı değerlendirmesi",
-        "revenue_outlook":  "Gelir görünümü — CFO vs CMO vs CEO beklentileri",
+        "cash_risk": "Nakit riski — CFO vs Risk ajanı çelişkisi",
+        "growth_forecast": "Büyüme tahmini — CFO vs CMO görüş farkı",
+        "headcount": "Personel kararları — CHRO vs CFO bütçe çelişkisi",
+        "tech_risk": "Teknoloji riski — CTO vs Risk ajanı değerlendirmesi",
+        "revenue_outlook": "Gelir görünümü — CFO vs CMO vs CEO beklentileri",
         "operational_risk": "Operasyonel risk — COO vs Risk vs CFO",
     }
     return descriptions.get(topic, topic)
@@ -266,10 +269,12 @@ def _topic_description(topic: str) -> str:
 
 # ── Boardroom Endpoints (FAZ 1) ────────────────────────────────────────────────────────
 
+
 class BoardroomDebateRequest(BaseModel):
     topic: str
     context: str
     agents: list[str] = ["CFO", "CMO"]
+
 
 @router.post(
     "/negotiation/boardroom/debate",
@@ -279,8 +284,7 @@ class BoardroomDebateRequest(BaseModel):
     },
 )
 async def start_boardroom_debate(
-    body: BoardroomDebateRequest,
-    user: User = Depends(get_current_user)
+    body: BoardroomDebateRequest, user: User = Depends(get_current_user)
 ) -> dict[str, Any]:
     """
     Run an active LLM-driven boardroom debate between agents.

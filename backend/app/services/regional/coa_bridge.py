@@ -1,4 +1,5 @@
 """Bridge ChartOfAccountsAdapter → THPSonucu for double-entry compatibility."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -16,7 +17,15 @@ def _tip_and_balance(code: str, label: str) -> tuple[str, str, str]:
         return "borç", "alacak", "Liabilities"
     if c.startswith("4") or c == "4000":
         return "gelir", "alacak", "Revenue"
-    if c.startswith(("5", "6", "7")) or c in {"5000", "6100", "6200", "6300", "6400", "6500", "6900"}:
+    if c.startswith(("5", "6", "7")) or c in {
+        "5000",
+        "6100",
+        "6200",
+        "6300",
+        "6400",
+        "6500",
+        "6900",
+    }:
         return "gider", "borç", "Expenses"
     lower = (label or "").lower()
     if "revenue" in lower or "income" in lower or "gelir" in lower:

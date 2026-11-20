@@ -6,6 +6,7 @@ January 2024 books came back as `1234567808-202609-Y-000000.xml` — the right
 movements, filed as September 2026. On a legal document that is not a label
 error; it is a filing for the wrong month, and an empty one for the right one.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -72,7 +73,8 @@ def test_the_generator_refuses_an_entry_outside_its_period(kind: str) -> None:
     """The last line of defence: whatever the caller passes as the period,
     a posting dated in another month cannot go into this month's ledger."""
     build = (
-        EDefterXBRLGenerator.generate_journal if kind == "journal"
+        EDefterXBRLGenerator.generate_journal
+        if kind == "journal"
         else EDefterXBRLGenerator.generate_ledger
     )
     with pytest.raises(EDefterError, match="dönem"):

@@ -3,6 +3,7 @@ Persist agent results to CompanyContext + trigger semantic rebuild / auto-chain.
 
 Single write path for agent_jobs, sync analyze APIs, and worker completions.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -176,8 +177,13 @@ async def persist_agent_completion(
     # holds waits in the owner's queue as an AgentJob, whichever path produced it.
     if gate.awaiting_review and not approved:
         return await _hold_for_review(
-            org_id, agent_lower, payload, gate, db,
-            company_name=company_name, reporting_period=reporting_period,
+            org_id,
+            agent_lower,
+            payload,
+            gate,
+            db,
+            company_name=company_name,
+            reporting_period=reporting_period,
         )
 
     try:
@@ -233,7 +239,9 @@ async def persist_agent_completion(
     elif trigger_auto_chain and auto_chain_hook is None:
         logger.debug(
             "persist_agent_completion: no auto_chain_hook passed — chain not triggered "
-            "for agent=%s org=%s", agent_lower, org_id,
+            "for agent=%s org=%s",
+            agent_lower,
+            org_id,
         )
 
     return gate.to_dict()
@@ -273,14 +281,21 @@ async def write_derived_result(
         confidence = min(confidence, float(own_confidence))
     result = {
         **payload,
-        "logs": [{
-            "step": f"{agent}_from_{parent_agent}",
-            "ok": True,
-            "confidence": confidence,
-            "detail": f"Derived from the {parent_agent} result; its confidence is inherited.",
-        }],
+        "logs": [
+            {
+                "step": f"{agent}_from_{parent_agent}",
+                "ok": True,
+                "confidence": confidence,
+                "detail": f"Derived from the {parent_agent} result; its confidence is inherited.",
+            }
+        ],
         "min_confidence": confidence,
     }
     return await persist_agent_completion(
-        org_id, agent, result, db, job_id=job_id, trigger_auto_chain=False,
+        org_id,
+        agent,
+        result,
+        db,
+        job_id=job_id,
+        trigger_auto_chain=False,
     )

@@ -5,6 +5,7 @@ which org / job triggered it, which model answered, token counts, computed
 USD cost, latency, and whether it succeeded.  This is the ledger behind the
 per-org cost endpoint and the audit trail for agent reasoning spend.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -23,9 +24,7 @@ def utcnow() -> datetime:
 class LLMCallLog(Base):
     __tablename__ = "llm_call_logs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Who / what triggered the call (both nullable — not every call is org-scoped)
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)

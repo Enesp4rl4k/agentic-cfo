@@ -28,6 +28,7 @@ Parser mimarisi:
   - Alış faturası   → expense
   - İade faturası   → income (alış iadesi) veya expense (satış iadesi)
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,17 +45,30 @@ logger = logging.getLogger(__name__)
 # ── GİB e-Fatura marker'ları ───────────────────────────────────────────────────
 
 _GIB_MARKERS = [
-    "e-Fatura", "E-FATURA", "GİB", "Gelir İdaresi Başkanlığı",
-    "ETTN", "Senaryo:", "TEMELFATURA", "TICARIFATURA",
-    "Mal/Hizmet Bedeli", "Vergi Dairesi",
+    "e-Fatura",
+    "E-FATURA",
+    "GİB",
+    "Gelir İdaresi Başkanlığı",
+    "ETTN",
+    "Senaryo:",
+    "TEMELFATURA",
+    "TICARIFATURA",
+    "Mal/Hizmet Bedeli",
+    "Vergi Dairesi",
 ]
 
 # Logo Tiger / Mikro / genel muhasebe fatura marker'ları
 _ACCOUNTING_INVOICE_MARKERS = [
-    "SATIŞ FATURASI", "ALIŞ FATURASI", "Satış Faturası", "Alış Faturası",
-    "PROFORMA FATURA", "Proforma Fatura",
-    "Fatura Tarihi", "FATURA TARİHİ",
-    "KDV Dahil Toplam", "Genel Toplam",
+    "SATIŞ FATURASI",
+    "ALIŞ FATURASI",
+    "Satış Faturası",
+    "Alış Faturası",
+    "PROFORMA FATURA",
+    "Proforma Fatura",
+    "Fatura Tarihi",
+    "FATURA TARİHİ",
+    "KDV Dahil Toplam",
+    "Genel Toplam",
     "Mal Hizmet Tutarı",
 ]
 
@@ -66,17 +80,26 @@ def _detect_invoice_type(text: str) -> str:
     """
     text_upper = text.upper()
     # iade/credit check first (to avoid matching "satis" inside "satis iadesi")
-    if any(k in text_upper for k in ["İADE FATUR", "IADE FATUR", "CREDIT NOTE", "CREDIT MEMO", "IADE EDILEN"]):
+    if any(
+        k in text_upper
+        for k in ["İADE FATUR", "IADE FATUR", "CREDIT NOTE", "CREDIT MEMO", "IADE EDILEN"]
+    ):
         return "iade"
     if any(k in text_upper for k in ["ALIŞ FATUR", "ALIS FATUR", "PURCHASE INVOICE", "ALIM FATUR"]):
         return "alis"
-    if any(k in text_upper for k in [
-        "SATIŞ FATUR", "SATIS FATUR", "SALE INVOICE",
-        # GİB e-Fatura contains "TEMELFATURA" or "TICARIFATURA" which are sales invoices
-        "TEMELFATURA", "TICARIFATURA",
-        # If it has ETTN (e-Fatura UUID) and no other type indicator, it's a sales invoice
-        "ETTN",
-    ]):
+    if any(
+        k in text_upper
+        for k in [
+            "SATIŞ FATUR",
+            "SATIS FATUR",
+            "SALE INVOICE",
+            # GİB e-Fatura contains "TEMELFATURA" or "TICARIFATURA" which are sales invoices
+            "TEMELFATURA",
+            "TICARIFATURA",
+            # If it has ETTN (e-Fatura UUID) and no other type indicator, it's a sales invoice
+            "ETTN",
+        ]
+    ):
         return "satis"
     if any(k in text_upper for k in ["PROFORMA", "TEKLIF", "TEKLİF"]):
         return "proforma"
@@ -100,15 +123,15 @@ def _invoice_type_to_tx_type(invoice_type: str, context: str = "") -> str:
     marks the result uncertain so it stops at the review gate.
     """
     if invoice_type == "satis":
-        return "income"    # We sold something → we receive money
+        return "income"  # We sold something → we receive money
     elif invoice_type == "alis":
-        return "expense"   # We bought something → we pay money
+        return "expense"  # We bought something → we pay money
     elif invoice_type == "iade":
         # Default: treat as income (we get a refund on purchase)
         # Context override: if caller explicitly signals "satis_iadesi"
         return "expense" if "satis_iade" in context.lower() else "income"
     else:
-        return "expense"   # Default: treat unknown as expense
+        return "expense"  # Default: treat unknown as expense
 
 
 def _normalize_vkn(raw: Any) -> str:
@@ -136,8 +159,10 @@ def _resolve_direction(
     elif mine and mine == buyer:
         return "expense", f"alıcı VKN {buyer} bizim VKN'mizle eşleşti", True
 
-    reason = "kendi VKN'miz yapılandırılmamış" if not mine else (
-        f"VKN {mine} ne satıcıyla ({vendor or 'yok'}) ne alıcıyla ({buyer or 'yok'}) eşleşti"
+    reason = (
+        "kendi VKN'miz yapılandırılmamış"
+        if not mine
+        else (f"VKN {mine} ne satıcıyla ({vendor or 'yok'}) ne alıcıyla ({buyer or 'yok'}) eşleşti")
     )
     return (
         _invoice_type_to_tx_type(invoice_type),
@@ -158,10 +183,10 @@ def _extract_line_items(text: str) -> list[dict[str, Any]]:
 
     # Match lines with: quantity, description, unit price, total
     line_pattern = re.compile(
-        r"^\s*(?P<qty>\d+(?:[.,]\d+)?)\s+"     # quantity
-        r"(?P<desc>[^\d\n]{5,60}?)\s+"          # description
-        r"(?P<unit_price>[\d.,]+)\s+"           # unit price
-        r"(?P<total>[\d.,]+)\s*$",              # total
+        r"^\s*(?P<qty>\d+(?:[.,]\d+)?)\s+"  # quantity
+        r"(?P<desc>[^\d\n]{5,60}?)\s+"  # description
+        r"(?P<unit_price>[\d.,]+)\s+"  # unit price
+        r"(?P<total>[\d.,]+)\s*$",  # total
         re.MULTILINE,
     )
 
@@ -169,12 +194,14 @@ def _extract_line_items(text: str) -> list[dict[str, Any]]:
         try:
             qty_str = m.group("qty").replace(",", ".")
             total_str = m.group("total").replace(".", "").replace(",", ".")
-            items.append({
-                "description": m.group("desc").strip(),
-                "quantity": float(qty_str),
-                "unit_price": None,  # Not always parseable
-                "total": float(total_str),
-            })
+            items.append(
+                {
+                    "description": m.group("desc").strip(),
+                    "quantity": float(qty_str),
+                    "unit_price": None,  # Not always parseable
+                    "total": float(total_str),
+                }
+            )
         except (ValueError, AttributeError):
             continue
 
@@ -188,6 +215,7 @@ class TurkishInvoiceParser(BankParser):
     Handles both digital PDFs and OCR-extracted text.
     Each invoice becomes a single ParsedTransaction.
     """
+
     bank_id = "turkish_invoice"
     bank_display_name = "Turkish Invoice (GİB / Muhasebe)"
 
@@ -210,9 +238,7 @@ class TurkishInvoiceParser(BankParser):
         try:
             result = extract_text_from_pdf(file_path)
             # Check only first 2 pages for speed
-            first_pages = " ".join(
-                pr.text for pr in result.page_results[:2]
-            )
+            first_pages = " ".join(pr.text for pr in result.page_results[:2])
             return cls.can_parse(first_pages), result.text
         except Exception:
             return False, ""
@@ -238,6 +264,7 @@ class TurkishInvoiceParser(BankParser):
         own_vkn = ""
         try:
             from app.config import get_settings
+
             own_vkn = get_settings().gib_vkn
         except Exception:  # pragma: no cover - parser must work without settings
             pass
@@ -273,9 +300,7 @@ class TurkishInvoiceParser(BankParser):
         if fields.get("invoice_date"):
             for fmt in ("%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
                 try:
-                    parsed_date = datetime.strptime(
-                        fields["invoice_date"], fmt
-                    ).replace(tzinfo=UTC)
+                    parsed_date = datetime.strptime(fields["invoice_date"], fmt).replace(tzinfo=UTC)
                     break
                 except ValueError:
                     continue
@@ -307,9 +332,7 @@ class TurkishInvoiceParser(BankParser):
             # Every other field can be right and the entry still lands on the
             # wrong side of the ledger, where it will reconcile perfectly.
             confidence = min(confidence, 0.60)
-            statement.parse_warnings.append(
-                f"Fatura yönü kesin değil: {direction_basis}"
-            )
+            statement.parse_warnings.append(f"Fatura yönü kesin değil: {direction_basis}")
 
         tx = ParsedTransaction(
             date=parsed_date or datetime.now(UTC),
@@ -383,16 +406,18 @@ class InvoiceBatchParser(TurkishInvoiceParser):
     Splits the document into individual invoices by detecting invoice boundaries.
     Each detected invoice section becomes a separate ParsedTransaction.
     """
+
     bank_id = "invoice_batch"
     bank_display_name = "Invoice Batch (Multi-Invoice PDF)"
 
     @classmethod
     def can_parse(cls, text: str) -> bool:
         """True if text contains multiple invoices (>2 invoice markers)."""
-        inv_count = len(re.findall(
-            r"(?:Fatura\s*No|FATURA\s*NO|Invoice\s*No)[:\s#]*[A-Z0-9\-/]+",
-            text, re.IGNORECASE
-        ))
+        inv_count = len(
+            re.findall(
+                r"(?:Fatura\s*No|FATURA\s*NO|Invoice\s*No)[:\s#]*[A-Z0-9\-/]+", text, re.IGNORECASE
+            )
+        )
         return inv_count >= 2
 
     def parse(self, text: str, file_path: str = "") -> ParsedStatement:
@@ -407,16 +432,14 @@ class InvoiceBatchParser(TurkishInvoiceParser):
         # Split at invoice boundaries:
         # 1. "--- Page N ---" separators (from OCR service page markers)
         # 2. Explicit "SATIŞ/ALIŞ FATURASI" headers
-        sections = re.split(
-            r"(?:---\s*Page\s*\d+\s*---)",
-            text, flags=re.IGNORECASE
-        )
+        sections = re.split(r"(?:---\s*Page\s*\d+\s*---)", text, flags=re.IGNORECASE)
 
         # If page-based split didn't work, try header-based split
         if len(sections) <= 1:
             sections = re.split(
                 r"(?=(?:SATIŞ\s*FATURA|ALIŞ\s*FATURA|İADE\s*FATURA|SATIS\s*FATURA|ALIS\s*FATURA))",
-                text, flags=re.IGNORECASE
+                text,
+                flags=re.IGNORECASE,
             )
 
         base_parser = TurkishInvoiceParser()

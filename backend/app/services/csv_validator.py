@@ -58,6 +58,7 @@ Usage
     print(result.summary)          # human-readable
     print(result.column_mapping)   # suggested field names
 """
+
 from __future__ import annotations
 
 import io
@@ -73,49 +74,88 @@ logger = logging.getLogger(__name__)
 
 FIELD_MAP_CANDIDATES: dict[str, list[str]] = {
     "date": [
-        "tarih", "date", "işlem tarihi", "islem tarihi", "value date",
-        "valör", "valör tarihi", "hareket tarihi", "fatura tarihi",
+        "tarih",
+        "date",
+        "işlem tarihi",
+        "islem tarihi",
+        "value date",
+        "valör",
+        "valör tarihi",
+        "hareket tarihi",
+        "fatura tarihi",
     ],
     "amount": [
-        "tutar", "amount", "miktar", "para", "değer", "deger", "borç",
-        "alacak", "debit", "credit", "işlem tutarı", "islem tutari",
+        "tutar",
+        "amount",
+        "miktar",
+        "para",
+        "değer",
+        "deger",
+        "borç",
+        "alacak",
+        "debit",
+        "credit",
+        "işlem tutarı",
+        "islem tutari",
         "fatura tutarı",
     ],
     "description": [
-        "açıklama", "aciklama", "description", "detay", "işlem açıklaması",
-        "islem aciklamasi", "narration", "particulars", "bilgi", "not",
+        "açıklama",
+        "aciklama",
+        "description",
+        "detay",
+        "işlem açıklaması",
+        "islem aciklamasi",
+        "narration",
+        "particulars",
+        "bilgi",
+        "not",
     ],
     "category": [
-        "kategori", "category", "tür", "tur", "tip", "type",
-        "hesap kodu", "account code",
+        "kategori",
+        "category",
+        "tür",
+        "tur",
+        "tip",
+        "type",
+        "hesap kodu",
+        "account code",
     ],
     "reference": [
-        "referans", "reference", "ref", "fiş no", "fis no", "belge no",
-        "invoice no", "fatura no",
+        "referans",
+        "reference",
+        "ref",
+        "fiş no",
+        "fis no",
+        "belge no",
+        "invoice no",
+        "fatura no",
     ],
 }
 
 # Turkish date formats to try
 DATE_FORMATS = [
-    "%Y-%m-%d",      # ISO
-    "%d.%m.%Y",      # Turkish standard
+    "%Y-%m-%d",  # ISO
+    "%d.%m.%Y",  # Turkish standard
     "%d/%m/%Y",
-    "%m/%d/%Y",      # US format
+    "%m/%d/%Y",  # US format
     "%d-%m-%Y",
     "%Y/%m/%d",
-    "%d.%m.%y",      # 2-digit year
+    "%d.%m.%y",  # 2-digit year
 ]
 
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
 
+
 @dataclass
 class ColumnInfo:
     """Per-column analysis result."""
+
     name: str
-    raw_name: str              # original header before normalisation
-    detected_type: str         # "date" | "amount" | "text" | "integer" | "boolean" | "mixed"
-    mapped_field: str | None   # suggested system field name
+    raw_name: str  # original header before normalisation
+    detected_type: str  # "date" | "amount" | "text" | "integer" | "boolean" | "mixed"
+    mapped_field: str | None  # suggested system field name
     null_count: int
     null_pct: float
     sample_values: list[str]
@@ -126,25 +166,27 @@ class ColumnInfo:
 @dataclass
 class RowIssue:
     """A single row-level issue."""
-    row: int           # 1-based row number (header = 0)
+
+    row: int  # 1-based row number (header = 0)
     column: str | None
-    severity: str      # "error" | "warning" | "info"
-    code: str          # machine-readable code
+    severity: str  # "error" | "warning" | "info"
+    code: str  # machine-readable code
     message: str
 
 
 @dataclass
 class ValidationResult:
     """Complete validation result."""
-    health_score: int                # 0-100
-    health_label: str                # "excellent" | "good" | "fair" | "poor" | "critical"
+
+    health_score: int  # 0-100
+    health_label: str  # "excellent" | "good" | "fair" | "poor" | "critical"
     row_count: int
     column_count: int
     encoding: str
     delimiter: str
     columns: list[ColumnInfo]
     row_issues: list[RowIssue]
-    column_mapping: dict[str, str]   # system_field → csv_column_name
+    column_mapping: dict[str, str]  # system_field → csv_column_name
     summary: str
     recommendations: list[str]
     # Breakdown scores
@@ -200,6 +242,7 @@ class ValidationResult:
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
+
 
 def _detect_encoding(raw: bytes) -> str:
     """Try common encodings. Turkish files often use Windows-1254."""
@@ -322,6 +365,7 @@ def _iqr_outliers(values: list[float]) -> list[int]:
 
 # ── CSVValidator ──────────────────────────────────────────────────────────────
 
+
 class CSVValidator:
     """
     Main CSV validation engine.
@@ -366,7 +410,15 @@ class CSVValidator:
                 encoding=encoding,
                 delimiter=",",
                 columns=[],
-                row_issues=[RowIssue(0, None, "error", "EMPTY_FILE", "Dosya boş veya sadece başlık satırı içeriyor.")],
+                row_issues=[
+                    RowIssue(
+                        0,
+                        None,
+                        "error",
+                        "EMPTY_FILE",
+                        "Dosya boş veya sadece başlık satırı içeriyor.",
+                    )
+                ],
                 column_mapping={},
                 summary="Dosya boş — analiz yapılamıyor.",
                 recommendations=["En az 2 satır (başlık + veri) içeren bir CSV yükleyin."],
@@ -378,15 +430,23 @@ class CSVValidator:
 
         # ── 4. Parse CSV ──────────────────────────────────────────────────────
         import csv as _csv
+
         reader = _csv.reader(io.StringIO(text), delimiter=delimiter)
         all_rows: list[list[str]] = list(reader)
 
         if not all_rows:
             return ValidationResult(
-                health_score=0, health_label="critical", row_count=0,
-                column_count=0, encoding=encoding, delimiter=delimiter,
-                columns=[], row_issues=[], column_mapping={},
-                summary="CSV parse edilemedi.", recommendations=[],
+                health_score=0,
+                health_label="critical",
+                row_count=0,
+                column_count=0,
+                encoding=encoding,
+                delimiter=delimiter,
+                columns=[],
+                row_issues=[],
+                column_mapping={},
+                summary="CSV parse edilemedi.",
+                recommendations=[],
                 score_breakdown={"parse_error": 100},
             )
 
@@ -400,10 +460,7 @@ class CSVValidator:
         column_mapping: dict[str, str] = {}
 
         for col_idx, col_raw in enumerate(header):
-            col_values = [
-                row[col_idx] if col_idx < len(row) else ""
-                for row in data_rows
-            ]
+            col_values = [row[col_idx] if col_idx < len(row) else "" for row in data_rows]
             non_empty = [v for v in col_values if v and v.strip()]
             null_count = len(col_values) - len(non_empty)
             null_pct = null_count / len(col_values) * 100 if col_values else 0
@@ -417,20 +474,27 @@ class CSVValidator:
             if null_pct > 20:
                 col_issues.append(f"Yüksek boş değer oranı: %{null_pct:.0f}")
 
-            if detected_type == "date" and date_fmt and date_fmt != "%Y-%m-%d" and date_fmt != "%d.%m.%Y":
+            if (
+                detected_type == "date"
+                and date_fmt
+                and date_fmt != "%Y-%m-%d"
+                and date_fmt != "%d.%m.%Y"
+            ):
                 col_issues.append(f"Standart dışı tarih formatı: {date_fmt}")
 
-            column_infos.append(ColumnInfo(
-                name=col_raw.strip().lower().replace(" ", "_"),
-                raw_name=col_raw,
-                detected_type=detected_type,
-                mapped_field=mapped_field,
-                null_count=null_count,
-                null_pct=null_pct,
-                sample_values=list(non_empty[:5]),
-                issues=col_issues,
-                date_format=date_fmt,
-            ))
+            column_infos.append(
+                ColumnInfo(
+                    name=col_raw.strip().lower().replace(" ", "_"),
+                    raw_name=col_raw,
+                    detected_type=detected_type,
+                    mapped_field=mapped_field,
+                    null_count=null_count,
+                    null_pct=null_pct,
+                    sample_values=list(non_empty[:5]),
+                    issues=col_issues,
+                    date_format=date_fmt,
+                )
+            )
 
         # ── 6. Required fields check ──────────────────────────────────────────
         required = {"date", "amount"}
@@ -438,11 +502,15 @@ class CSVValidator:
         if missing_required:
             score_deductions["missing_required"] = 20
             for f in missing_required:
-                row_issues.append(RowIssue(
-                    row=0, column=None, severity="error",
-                    code="MISSING_REQUIRED_COLUMN",
-                    message=f"Zorunlu kolon bulunamadı: '{f}'. Lütfen tarih ve tutar kolonlarının var olduğundan emin olun."
-                ))
+                row_issues.append(
+                    RowIssue(
+                        row=0,
+                        column=None,
+                        severity="error",
+                        code="MISSING_REQUIRED_COLUMN",
+                        message=f"Zorunlu kolon bulunamadı: '{f}'. Lütfen tarih ve tutar kolonlarının var olduğundan emin olun.",
+                    )
+                )
             recommendations.append("CSV'de tarih ve tutar kolonları olması zorunludur.")
 
         # ── 7. Missing values ─────────────────────────────────────────────────
@@ -451,7 +519,9 @@ class CSVValidator:
         missing_pct = total_missing / total_cells * 100 if total_cells else 0
         if missing_pct > 5:
             score_deductions["missing_values"] = 10
-            recommendations.append(f"Toplamda %{missing_pct:.1f} oranında boş değer var — veriyi gözden geçirin.")
+            recommendations.append(
+                f"Toplamda %{missing_pct:.1f} oranında boş değer var — veriyi gözden geçirin."
+            )
 
         # ── 8. Duplicate rows ─────────────────────────────────────────────────
         row_signatures = ["|".join(row[:5]) for row in data_rows]
@@ -460,18 +530,24 @@ class CSVValidator:
         for row_idx, sig in enumerate(row_signatures):
             if sig in seen:
                 duplicate_count += 1
-                row_issues.append(RowIssue(
-                    row=row_idx + 2, column=None, severity="warning",
-                    code="DUPLICATE_ROW",
-                    message=f"Satır {row_idx + 2} ile satır {seen[sig] + 2} özdeş görünüyor."
-                ))
+                row_issues.append(
+                    RowIssue(
+                        row=row_idx + 2,
+                        column=None,
+                        severity="warning",
+                        code="DUPLICATE_ROW",
+                        message=f"Satır {row_idx + 2} ile satır {seen[sig] + 2} özdeş görünüyor.",
+                    )
+                )
             else:
                 seen[sig] = row_idx
 
         dup_pct = duplicate_count / row_count * 100 if row_count else 0
         if dup_pct > 2:
             score_deductions["duplicates"] = 10
-            recommendations.append(f"%{dup_pct:.1f} oranında duplicate satır tespit edildi — temizlemeniz önerilir.")
+            recommendations.append(
+                f"%{dup_pct:.1f} oranında duplicate satır tespit edildi — temizlemeniz önerilir."
+            )
 
         # ── 9. Amount column checks ────────────────────────────────────────────
         amount_col = column_mapping.get("amount")
@@ -479,18 +555,21 @@ class CSVValidator:
             amount_col_idx = next((i for i, c in enumerate(header) if c == amount_col), None)
             if amount_col_idx is not None:
                 raw_amounts = [
-                    row[amount_col_idx] if amount_col_idx < len(row) else ""
-                    for row in data_rows
+                    row[amount_col_idx] if amount_col_idx < len(row) else "" for row in data_rows
                 ]
                 parsed_amounts: list[float] = []
                 for row_idx, val in enumerate(raw_amounts):
                     parsed = _parse_amount(val)
                     if parsed is None and val.strip():
-                        row_issues.append(RowIssue(
-                            row=row_idx + 2, column=amount_col, severity="warning",
-                            code="NON_NUMERIC_AMOUNT",
-                            message=f"Satır {row_idx + 2}: '{val}' sayıya dönüştürülemedi."
-                        ))
+                        row_issues.append(
+                            RowIssue(
+                                row=row_idx + 2,
+                                column=amount_col,
+                                severity="warning",
+                                code="NON_NUMERIC_AMOUNT",
+                                message=f"Satır {row_idx + 2}: '{val}' sayıya dönüştürülemedi.",
+                            )
+                        )
                     elif parsed is not None:
                         parsed_amounts.append(parsed)
 
@@ -499,40 +578,58 @@ class CSVValidator:
                 all_positive = neg_count == 0
                 all_negative = neg_count == len(parsed_amounts)
                 if all_positive:
-                    row_issues.append(RowIssue(
-                        row=0, column=amount_col, severity="info",
-                        code="ALL_POSITIVE_AMOUNTS",
-                        message="Tüm tutarlar pozitif — gider kalemleri eksik olabilir."
-                    ))
+                    row_issues.append(
+                        RowIssue(
+                            row=0,
+                            column=amount_col,
+                            severity="info",
+                            code="ALL_POSITIVE_AMOUNTS",
+                            message="Tüm tutarlar pozitif — gider kalemleri eksik olabilir.",
+                        )
+                    )
                 elif all_negative:
-                    row_issues.append(RowIssue(
-                        row=0, column=amount_col, severity="info",
-                        code="ALL_NEGATIVE_AMOUNTS",
-                        message="Tüm tutarlar negatif — gelir kalemleri eksik olabilir."
-                    ))
+                    row_issues.append(
+                        RowIssue(
+                            row=0,
+                            column=amount_col,
+                            severity="info",
+                            code="ALL_NEGATIVE_AMOUNTS",
+                            message="Tüm tutarlar negatif — gelir kalemleri eksik olabilir.",
+                        )
+                    )
 
                 # Outliers
                 if parsed_amounts:
                     outlier_indices = _iqr_outliers(parsed_amounts)
                     outlier_pct = len(outlier_indices) / len(parsed_amounts) * 100
                     for idx in outlier_indices[:20]:  # cap
-                        row_issues.append(RowIssue(
-                            row=idx + 2, column=amount_col, severity="warning",
-                            code="OUTLIER_AMOUNT",
-                            message=f"Satır {idx + 2}: Olağandışı tutar — {parsed_amounts[idx]:,.2f}"
-                        ))
+                        row_issues.append(
+                            RowIssue(
+                                row=idx + 2,
+                                column=amount_col,
+                                severity="warning",
+                                code="OUTLIER_AMOUNT",
+                                message=f"Satır {idx + 2}: Olağandışı tutar — {parsed_amounts[idx]:,.2f}",
+                            )
+                        )
                     if outlier_pct > 10:
                         score_deductions["outliers"] = 5
 
                     # Round numbers
-                    round_count = sum(1 for a in parsed_amounts if abs(a) > 0 and a == int(a) and abs(a) >= 100)
+                    round_count = sum(
+                        1 for a in parsed_amounts if abs(a) > 0 and a == int(a) and abs(a) >= 100
+                    )
                     round_pct = round_count / len(parsed_amounts) * 100
                     if round_pct > 20:
-                        row_issues.append(RowIssue(
-                            row=0, column=amount_col, severity="info",
-                            code="MANY_ROUND_NUMBERS",
-                            message=f"%{round_pct:.0f} oranında yuvarlak tutar — tahmini değerler olabilir."
-                        ))
+                        row_issues.append(
+                            RowIssue(
+                                row=0,
+                                column=amount_col,
+                                severity="info",
+                                code="MANY_ROUND_NUMBERS",
+                                message=f"%{round_pct:.0f} oranında yuvarlak tutar — tahmini değerler olabilir.",
+                            )
+                        )
 
         # ── 10. Date column checks ────────────────────────────────────────────
         date_col = column_mapping.get("date")
@@ -540,8 +637,7 @@ class CSVValidator:
             date_col_idx = next((i for i, c in enumerate(header) if c == date_col), None)
             if date_col_idx is not None:
                 raw_dates = [
-                    row[date_col_idx] if date_col_idx < len(row) else ""
-                    for row in data_rows
+                    row[date_col_idx] if date_col_idx < len(row) else "" for row in data_rows
                 ]
                 parsed_dates: list[date] = []
                 today = datetime.now().date()
@@ -549,19 +645,27 @@ class CSVValidator:
                 for row_idx, val in enumerate(raw_dates):
                     parsed = _parse_date(val)
                     if parsed is None and val.strip():
-                        row_issues.append(RowIssue(
-                            row=row_idx + 2, column=date_col, severity="warning",
-                            code="INVALID_DATE",
-                            message=f"Satır {row_idx + 2}: '{val}' tarih olarak okunamadı."
-                        ))
+                        row_issues.append(
+                            RowIssue(
+                                row=row_idx + 2,
+                                column=date_col,
+                                severity="warning",
+                                code="INVALID_DATE",
+                                message=f"Satır {row_idx + 2}: '{val}' tarih olarak okunamadı.",
+                            )
+                        )
                     elif parsed is not None:
                         parsed_dates.append(parsed)
                         if parsed > today:
-                            row_issues.append(RowIssue(
-                                row=row_idx + 2, column=date_col, severity="warning",
-                                code="FUTURE_DATE",
-                                message=f"Satır {row_idx + 2}: Gelecek tarihli işlem — {parsed}"
-                            ))
+                            row_issues.append(
+                                RowIssue(
+                                    row=row_idx + 2,
+                                    column=date_col,
+                                    severity="warning",
+                                    code="FUTURE_DATE",
+                                    message=f"Satır {row_idx + 2}: Gelecek tarihli işlem — {parsed}",
+                                )
+                            )
 
                 if parsed_dates:
                     date_range_days = (max(parsed_dates) - min(parsed_dates)).days

@@ -4,6 +4,7 @@ On `sqlite+aiosqlite:///:memory:` every session shared one connection, and a
 session closing mid-way rolled back another's pending write — the order- and
 load-dependent failures in the approval, category-rule and company-view tests.
 """
+
 from __future__ import annotations
 
 import re
@@ -32,7 +33,7 @@ async def test_a_session_closing_does_not_undo_another_sessions_write():
         async with maker() as yazan:
             yazan.add(_Satir(id=1))
             await yazan.flush()
-            async with maker() as okuyan:      # a poller reads, then closes
+            async with maker() as okuyan:  # a poller reads, then closes
                 assert (await okuyan.execute(select(_Satir))).scalars().all() == []
             await yazan.commit()
         async with maker() as db:
@@ -45,7 +46,8 @@ def test_no_test_builds_an_in_memory_async_engine():
     tests = Path(__file__).parent
     desen = re.compile(r"aiosqlite:///:memory:")
     kullananlar = [
-        str(p.relative_to(tests)) for p in tests.rglob("*.py")
+        str(p.relative_to(tests))
+        for p in tests.rglob("*.py")
         if p.name not in {"db_helpers.py", Path(__file__).name}
         and desen.search(p.read_text(encoding="utf-8"))
     ]

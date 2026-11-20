@@ -27,6 +27,7 @@ Security:
 
 DDIA: email'i immutable event olarak sakla, parser sonuçlarını ayrı.
 """
+
 from __future__ import annotations
 
 import email
@@ -43,8 +44,8 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024   # 10 MB
-MAX_ATTACHMENTS      = 5
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_ATTACHMENTS = 5
 
 ALLOWED_MIME_TYPES = {
     "application/pdf",
@@ -52,7 +53,7 @@ ALLOWED_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "text/csv",
     "text/plain",
-    "application/octet-stream",   # many email clients use this for CSV
+    "application/octet-stream",  # many email clients use this for CSV
 }
 
 # Recognise financial attachment by filename patterns
@@ -63,70 +64,74 @@ FINANCIAL_PATTERNS = [
 ]
 
 BANK_SENDER_PATTERNS = {
-    "isbank":    re.compile(r"(isbank|isbankas[ıi])", re.I),
-    "garanti":   re.compile(r"garanti", re.I),
+    "isbank": re.compile(r"(isbank|isbankas[ıi])", re.I),
+    "garanti": re.compile(r"garanti", re.I),
     "yapikredi": re.compile(r"(yapikredi|yapi.kredi)", re.I),
-    "akbank":    re.compile(r"akbank", re.I),
-    "ziraat":    re.compile(r"ziraat", re.I),
+    "akbank": re.compile(r"akbank", re.I),
+    "ziraat": re.compile(r"ziraat", re.I),
     "vakifbank": re.compile(r"vakifbank", re.I),
-    "parasut":   re.compile(r"parasut", re.I),
-    "logo":      re.compile(r"(logo|tiger)", re.I),
-    "netsis":    re.compile(r"netsis", re.I),
-    "mikro":     re.compile(r"mikro", re.I),
+    "parasut": re.compile(r"parasut", re.I),
+    "logo": re.compile(r"(logo|tiger)", re.I),
+    "netsis": re.compile(r"netsis", re.I),
+    "mikro": re.compile(r"mikro", re.I),
 }
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ParsedAttachment:
     """Single extracted attachment from an email."""
-    filename:    str
-    content:     bytes
-    mime_type:   str
-    size_bytes:  int
-    sha256:      str
-    source_type: str    # "bank_statement" | "financial_report" | "invoice" | "unknown"
-    bank_hint:   str | None = None   # "garanti" | "isbank" | ...
+
+    filename: str
+    content: bytes
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    source_type: str  # "bank_statement" | "financial_report" | "invoice" | "unknown"
+    bank_hint: str | None = None  # "garanti" | "isbank" | ...
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "filename":    self.filename,
-            "mime_type":   self.mime_type,
-            "size_bytes":  self.size_bytes,
-            "sha256":      self.sha256,
+            "filename": self.filename,
+            "mime_type": self.mime_type,
+            "size_bytes": self.size_bytes,
+            "sha256": self.sha256,
             "source_type": self.source_type,
-            "bank_hint":   self.bank_hint,
+            "bank_hint": self.bank_hint,
         }
 
 
 @dataclass
 class ParsedEmail:
     """Result of parsing a raw MIME email."""
-    message_id:     str
-    subject:        str
-    sender:         str
-    recipient:      str
-    date_str:       str
-    body_text:      str
-    attachments:    list[ParsedAttachment] = field(default_factory=list)
-    bank_hint:      str | None = None
-    parse_errors:   list[str]  = field(default_factory=list)
+
+    message_id: str
+    subject: str
+    sender: str
+    recipient: str
+    date_str: str
+    body_text: str
+    attachments: list[ParsedAttachment] = field(default_factory=list)
+    bank_hint: str | None = None
+    parse_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "message_id":  self.message_id,
-            "subject":     self.subject,
-            "sender":      self.sender,
-            "recipient":   self.recipient,
-            "date_str":    self.date_str,
-            "bank_hint":   self.bank_hint,
+            "message_id": self.message_id,
+            "subject": self.subject,
+            "sender": self.sender,
+            "recipient": self.recipient,
+            "date_str": self.date_str,
+            "bank_hint": self.bank_hint,
             "attachments": [a.to_dict() for a in self.attachments],
             "parse_errors": self.parse_errors,
         }
 
 
 # ── Core parser ───────────────────────────────────────────────────────────────
+
 
 class EmailParser:
     """
@@ -165,10 +170,10 @@ class EmailParser:
             )
 
         # ── Extract headers ───────────────────────────────────────────────────
-        subject    = self._decode_header(msg.get("Subject", ""))
-        sender     = msg.get("From", "")
-        recipient  = msg.get("To", "")
-        date_str   = msg.get("Date", "")
+        subject = self._decode_header(msg.get("Subject", ""))
+        sender = msg.get("From", "")
+        recipient = msg.get("To", "")
+        date_str = msg.get("Date", "")
         message_id = msg.get("Message-ID", str(uuid.uuid4()))
 
         # ── Detect bank from sender ───────────────────────────────────────────
@@ -191,7 +196,7 @@ class EmailParser:
             if part.get("Content-Disposition") is None and not part.get_filename():
                 continue
 
-            filename  = self._decode_header(part.get_filename() or "")
+            filename = self._decode_header(part.get_filename() or "")
             mime_type = part.get_content_type() or "application/octet-stream"
 
             if len(attachments) >= MAX_ATTACHMENTS:
@@ -219,29 +224,31 @@ class EmailParser:
                 sha256 = hashlib.sha256(payload).hexdigest()
                 source_type = self._classify_attachment(filename, mime_type, bank_hint)
 
-                attachments.append(ParsedAttachment(
-                    filename    = filename or f"attachment_{len(attachments)+1}",
-                    content     = payload,
-                    mime_type   = mime_type,
-                    size_bytes  = len(payload),
-                    sha256      = sha256,
-                    source_type = source_type,
-                    bank_hint   = bank_hint,
-                ))
+                attachments.append(
+                    ParsedAttachment(
+                        filename=filename or f"attachment_{len(attachments) + 1}",
+                        content=payload,
+                        mime_type=mime_type,
+                        size_bytes=len(payload),
+                        sha256=sha256,
+                        source_type=source_type,
+                        bank_hint=bank_hint,
+                    )
+                )
 
             except Exception as exc:
                 parse_errors.append(f"Failed to decode '{filename}': {exc}")
 
         return ParsedEmail(
-            message_id  = message_id,
-            subject     = subject,
-            sender      = sender,
-            recipient   = recipient,
-            date_str    = date_str,
-            body_text   = body_text[:2000],   # cap body size
-            attachments = attachments,
-            bank_hint   = bank_hint,
-            parse_errors= parse_errors,
+            message_id=message_id,
+            subject=subject,
+            sender=sender,
+            recipient=recipient,
+            date_str=date_str,
+            body_text=body_text[:2000],  # cap body size
+            attachments=attachments,
+            bank_hint=bank_hint,
+            parse_errors=parse_errors,
         )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -328,6 +335,7 @@ def get_email_parser() -> EmailParser:
 
 # ── Org allowlist helper ──────────────────────────────────────────────────────
 
+
 def extract_sender_domain(sender: str) -> str | None:
     """Extract domain from email address."""
     match = re.search(r"@([\w.-]+)", sender)
@@ -342,6 +350,7 @@ def generate_ingest_address(org_id: str) -> str:
     Users configure their accounting software to CC this address.
     """
     from app.config import get_settings
+
     settings = get_settings()
     domain = getattr(settings, "email_ingest_domain", "ingest.agentic-cfo.io")
     # Short deterministic hash of org_id

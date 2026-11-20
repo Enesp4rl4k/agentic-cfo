@@ -15,6 +15,7 @@ that the two seams which *emit* events deliver them the way the engine promises:
 - every ``EventKind`` in the contract has an emitter, so no rule can be built
   on an event nothing ever sends.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,11 +86,7 @@ async def _mk_trigger(
 
 async def _runs(db: AsyncSession) -> list[TriggerRunRow]:
     return list(
-        (
-            await db.execute(
-                select(TriggerRunRow).order_by(TriggerRunRow.created_at)
-            )
-        ).scalars()
+        (await db.execute(select(TriggerRunRow).order_by(TriggerRunRow.created_at))).scalars()
     )
 
 
@@ -99,9 +96,7 @@ async def _runs(db: AsyncSession) -> list[TriggerRunRow]:
 async def test_job_completed_projects_metrics_and_fires(db):
     await _mk_trigger(db)
 
-    await emit_job_completed(
-        db, job_id="job-1", org_id=ORG, dashboard=DASH_LOW_RUNWAY
-    )
+    await emit_job_completed(db, job_id="job-1", org_id=ORG, dashboard=DASH_LOW_RUNWAY)
 
     alert = (await db.execute(select(AlertHistory))).scalar_one()
     assert alert.org_id == ORG
@@ -117,9 +112,7 @@ async def test_job_completed_projects_metrics_and_fires(db):
 async def test_job_completed_condition_false_on_safe_runway(db):
     await _mk_trigger(db)
 
-    await emit_job_completed(
-        db, job_id="job-2", org_id=ORG, dashboard=DASH_SAFE_RUNWAY
-    )
+    await emit_job_completed(db, job_id="job-2", org_id=ORG, dashboard=DASH_SAFE_RUNWAY)
 
     assert (await db.execute(select(AlertHistory))).scalar_one_or_none() is None
     (run,) = await _runs(db)
@@ -149,12 +142,8 @@ async def test_job_completed_fires_once_per_job_across_redelivery(db):
     """Worker then review-approval both emit; the job id keys uniqueness."""
     await _mk_trigger(db)
 
-    first = await emit_job_completed(
-        db, job_id="job-4", org_id=ORG, dashboard=DASH_LOW_RUNWAY
-    )
-    second = await emit_job_completed(
-        db, job_id="job-4", org_id=ORG, dashboard=DASH_LOW_RUNWAY
-    )
+    first = await emit_job_completed(db, job_id="job-4", org_id=ORG, dashboard=DASH_LOW_RUNWAY)
+    second = await emit_job_completed(db, job_id="job-4", org_id=ORG, dashboard=DASH_LOW_RUNWAY)
 
     assert first[0].status == FIRED
     assert second[0].status == DUPLICATE
@@ -166,12 +155,8 @@ async def test_job_completed_fires_once_per_job_across_redelivery(db):
 async def test_job_completed_respects_cooldown_window(db):
     await _mk_trigger(db, cooldown_minutes=60)
 
-    await emit_job_completed(
-        db, job_id="job-5", org_id=ORG, dashboard=DASH_LOW_RUNWAY
-    )
-    await emit_job_completed(
-        db, job_id="job-6", org_id=ORG, dashboard=DASH_LOW_RUNWAY
-    )
+    await emit_job_completed(db, job_id="job-5", org_id=ORG, dashboard=DASH_LOW_RUNWAY)
+    await emit_job_completed(db, job_id="job-6", org_id=ORG, dashboard=DASH_LOW_RUNWAY)
 
     runs = await _runs(db)
     assert [r.status for r in runs] == [FIRED, COOLDOWN]
@@ -189,9 +174,7 @@ async def test_job_completed_empty_dashboard_evaluates_not_crashes(db):
 async def test_job_completed_ignores_other_orgs_rules(db):
     await _mk_trigger(db, org_id="org-someone-else")
 
-    await emit_job_completed(
-        db, job_id="job-8", org_id=ORG, dashboard=DASH_LOW_RUNWAY
-    )
+    await emit_job_completed(db, job_id="job-8", org_id=ORG, dashboard=DASH_LOW_RUNWAY)
 
     assert await _runs(db) == []
 
@@ -206,11 +189,7 @@ async def _seed_snapshot(db: AsyncSession, *, runway: float) -> None:
             period=Period(key="2026-09"),
             currency="USD",
             locale="tr-TR",
-            metrics=[
-                MetricPoint(
-                    metric_id="finance.runway_months", value=runway, unit="months"
-                )
-            ],
+            metrics=[MetricPoint(metric_id="finance.runway_months", value=runway, unit="months")],
             source_job_ids=["seed"],
         ),
         db,
@@ -243,9 +222,13 @@ async def test_tx_arrived_fires_against_latest_snapshot(db):
     await _seed_snapshot(db, runway=2.0)
     db.add(
         Transaction(
-            job_id="job-t1", amount_kurus=100, currency="USD",
-            type=TransactionType.EXPENSE, category="other_expense",
-            description="kira", transaction_date=datetime(2026, 9, 15, tzinfo=UTC),
+            job_id="job-t1",
+            amount_kurus=100,
+            currency="USD",
+            type=TransactionType.EXPENSE,
+            category="other_expense",
+            description="kira",
+            transaction_date=datetime(2026, 9, 15, tzinfo=UTC),
         )
     )
     await db.commit()
@@ -316,9 +299,7 @@ async def _seed_anomalies(
 async def _clear_anomalies(db: AsyncSession, job_id: str) -> None:
     from app.models.anomaly import Anomaly
 
-    for row in (
-        await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))
-    ).scalars():
+    for row in (await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))).scalars():
         await db.delete(row)
     await db.commit()
 
@@ -335,11 +316,15 @@ async def test_anomaly_detected_payload_reaches_the_action(db, monkeypatch):
     monkeypatch.setitem(actions.ACTION_REGISTRY, "alert.dispatch", _capture)
     await _mk_trigger(db, events=["anomaly.detected"])
     await _seed_snapshot(db, runway=2.0)
-    await _seed_anomalies(db, "job-a2", [
-        ("duplicate", "high", "A"),
-        ("unusual_amount", "critical", "B"),
-        ("round_number", "high", "C"),
-    ])
+    await _seed_anomalies(
+        db,
+        "job-a2",
+        [
+            ("duplicate", "high", "A"),
+            ("unusual_amount", "critical", "B"),
+            ("round_number", "high", "C"),
+        ],
+    )
 
     (outcome,) = await emit_anomaly_detected(db, job_id="job-a2", org_id=ORG)
 
@@ -396,9 +381,7 @@ async def test_job_events_seam_includes_anomaly_detected(db):
     await _seed_snapshot(db, runway=2.0)
     await _seed_anomalies(db, "job-a6", [("duplicate", "high", "A")])
 
-    outcomes = await emit_job_events(
-        db, job_id="job-a6", org_id=ORG, dashboard=None
-    )
+    outcomes = await emit_job_events(db, job_id="job-a6", org_id=ORG, dashboard=None)
 
     assert [o.status for o in outcomes] == [FIRED]
     (run,) = await _runs(db)

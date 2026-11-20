@@ -4,6 +4,7 @@ Dependency Injection Container — Dependency Inversion Principle (DIP).
 Decouples high-level components from concrete service implementations,
 allowing seamless substitution of mocks/stubs in tests and runtime configuration.
 """
+
 from __future__ import annotations
 
 from typing import Any, TypeVar
@@ -54,9 +55,11 @@ container = ServiceContainer()
 
 # ── Built-in Factory Resolvers ────────────────────────────────────────────────
 
+
 def get_cache_provider() -> ICacheProvider:
     """Resolve the active cache provider (Redis or In-Memory fallback)."""
     from app.services.cache_service import get_cache_service
+
     resolved = container.resolve("ICacheProvider")
     if resolved is None:
         resolved = get_cache_service()
@@ -67,6 +70,7 @@ def get_cache_provider() -> ICacheProvider:
 def get_memory_store_instance() -> IMemoryStore:
     """Resolve the active memory store."""
     from app.services.agent_memory import get_memory_store
+
     resolved = container.resolve("IMemoryStore")
     if resolved is None:
         resolved = get_memory_store()
@@ -77,6 +81,7 @@ def get_memory_store_instance() -> IMemoryStore:
 def get_report_exporter():
     """Resolve the active Excel report exporter (IReportExporter)."""
     from app.services.exporters import ExcelReportExporter
+
     resolved = container.resolve("IReportExporter")
     if resolved is None:
         resolved = ExcelReportExporter()

@@ -25,6 +25,7 @@ Kullanim:
     # result.simulation_type = "headcount"
     # result.answer = "5 mühendis eklenmesi durumunda..."
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 class IntentResult(str):
     """String subclass that also behaves as a (intent, confidence) tuple when unpacked."""
+
     confidence: float
 
     def __new__(cls, intent: str, confidence: float = 0.0):
@@ -62,17 +64,19 @@ class IntentResult(str):
 @dataclass
 class SimulationQueryResult:
     """NL sorgusu → simulasyon sonucu."""
-    original_query:  str
-    simulation_type: str      # "headcount" | "marketing" | "cascade" | "cost_cut" | "price" | "unknown"
+
+    original_query: str
+    simulation_type: str  # "headcount" | "marketing" | "cascade" | "cost_cut" | "price" | "unknown"
     intent_confidence: float  # 0-1
     extracted_params: dict[str, Any]
     simulation_result: dict[str, Any] | None
-    answer:          str      # Turkce aciklama
+    answer: str  # Turkce aciklama
     follow_up_questions: list[str]
-    error:           str | None = None
+    error: str | None = None
 
 
 # ── NL Simulation Bridge ──────────────────────────────────────────────────────
+
 
 class NLSimulationBridge:
     """
@@ -121,19 +125,29 @@ class NLSimulationBridge:
         r"(?:%\d+|yuzde\s*\d+|yüzde\s*\d+).{0,20}(?:fiyat|zam|artis|artış)",
     ]
 
-
     def classify_intent(self, query: str) -> IntentResult:
         """Intent siniflandir ve guven skoru dondur."""
-        q = (query or "").replace("İ", "i").replace("I", "ı").replace("Ş", "ş").replace("Ğ", "ğ").replace("Ü", "ü").replace("Ö", "ö").replace("Ç", "ç").lower().strip()
+        q = (
+            (query or "")
+            .replace("İ", "i")
+            .replace("I", "ı")
+            .replace("Ş", "ş")
+            .replace("Ğ", "ğ")
+            .replace("Ü", "ü")
+            .replace("Ö", "ö")
+            .replace("Ç", "ç")
+            .lower()
+            .strip()
+        )
         if not q:
             return IntentResult("unknown", 0.0)
 
         checks = [
             ("headcount", self._HEADCOUNT_PATTERNS, 0.85),
-            ("cascade",   self._CASCADE_PATTERNS,   0.80),
+            ("cascade", self._CASCADE_PATTERNS, 0.80),
             ("marketing", self._MARKETING_PATTERNS, 0.80),
-            ("cost_cut",  self._COST_CUT_PATTERNS,  0.75),
-            ("price",     self._PRICE_PATTERNS,     0.75),
+            ("cost_cut", self._COST_CUT_PATTERNS, 0.75),
+            ("price", self._PRICE_PATTERNS, 0.75),
         ]
 
         for intent, patterns, base_conf in checks:
@@ -157,18 +171,30 @@ class NLSimulationBridge:
 
     def extract_params(self, query: str, intent: str) -> dict[str, Any]:
         """Sorgudan sayisal parametreler cikar."""
-        q      = (query or "").replace("İ", "i").replace("I", "ı").replace("Ş", "ş").replace("Ğ", "ğ").replace("Ü", "ü").replace("Ö", "ö").replace("Ç", "ç").lower()
+        q = (
+            (query or "")
+            .replace("İ", "i")
+            .replace("I", "ı")
+            .replace("Ş", "ş")
+            .replace("Ğ", "ğ")
+            .replace("Ü", "ü")
+            .replace("Ö", "ö")
+            .replace("Ç", "ç")
+            .lower()
+        )
         params: dict[str, Any] = {}
 
         # Kisi sayisi
-        m = re.search(r"(\d+)\s*(?:muhendis|mühendis|kisi|kişi|calisan|çalışan|personel|eleman|developer|yazilimci|yazılımcı|satis|satış|hire)", q)
+        m = re.search(
+            r"(\d+)\s*(?:muhendis|mühendis|kisi|kişi|calisan|çalışan|personel|eleman|developer|yazilimci|yazılımcı|satis|satış|hire)",
+            q,
+        )
         if m:
             params["count"] = int(m.group(1))
         elif intent == "headcount":
             m2 = re.search(r"(\d+)", q)
             if m2:
                 params["count"] = int(m2.group(1))
-
 
         # Yuzde
         m = re.search(r"(%|yuzde)\s*(\d+(?:\.\d+)?)", q)
@@ -179,7 +205,6 @@ class NLSimulationBridge:
             if m:
                 val = float(m.group(1))
                 params["pct"] = val / 100 if val > 1 else val
-
 
         # Ay sayisi
         m = re.search(r"(\d+(?:\.\d+)?)\s*(?:ay|month)", q)
@@ -200,9 +225,12 @@ class NLSimulationBridge:
         # Rolu tahmin et
         if intent == "headcount":
             for role, keywords in [
-                ("engineer", ["muhendis", "developer", "yazilimci", "backend", "frontend", "fullstack"]),
-                ("sales",    ["satis", "sales", "account", "bdm"]),
-                ("ops",      ["operasyon", "destek", "support", "ops"]),
+                (
+                    "engineer",
+                    ["muhendis", "developer", "yazilimci", "backend", "frontend", "fullstack"],
+                ),
+                ("sales", ["satis", "sales", "account", "bdm"]),
+                ("ops", ["operasyon", "destek", "support", "ops"]),
             ]:
                 if any(kw in q for kw in keywords):
                     params["role_type"] = role
@@ -225,74 +253,74 @@ class NLSimulationBridge:
 
     async def _run_headcount_simulation(
         self,
-        params:  dict[str, Any],
+        params: dict[str, Any],
         context: dict[str, Any],
     ) -> dict[str, Any]:
         from app.services.multidomain_counterfactual import get_multidomain_cf
 
-        delta    = params.get("count", 3)
+        delta = params.get("count", 3)
         if "azalt" in str(params.get("_raw_query", "")).lower() or delta < 0:
             delta = -abs(delta)
 
         engine = get_multidomain_cf(
-            pnl      = context.get("pnl"),
-            cashflow = context.get("cashflow"),
-            forecast = context.get("forecast"),
-            chro_data = context.get("chro"),
-            cto_data  = context.get("cto"),
+            pnl=context.get("pnl"),
+            cashflow=context.get("cashflow"),
+            forecast=context.get("forecast"),
+            chro_data=context.get("chro"),
+            cto_data=context.get("cto"),
         )
         result = engine.analyze_headcount_change(
-            delta        = delta,
-            role_type    = params.get("role_type", "general"),
-            horizon_months = int(params.get("months", 12)),
+            delta=delta,
+            role_type=params.get("role_type", "general"),
+            horizon_months=int(params.get("months", 12)),
         )
         return result.to_dict()
 
     async def _run_marketing_simulation(
         self,
-        params:  dict[str, Any],
+        params: dict[str, Any],
         context: dict[str, Any],
     ) -> dict[str, Any]:
         from app.services.multidomain_counterfactual import get_multidomain_cf
 
-        monthly_rev  = (context.get("pnl", {}).get("revenue", 0) or 0) / 100 / 12
-        budget_inc   = params.get("amount_try") or (monthly_rev * params.get("pct", 0.20))
+        monthly_rev = (context.get("pnl", {}).get("revenue", 0) or 0) / 100 / 12
+        budget_inc = params.get("amount_try") or (monthly_rev * params.get("pct", 0.20))
         expected_roas = params.get("pct", 1.0) * 2.5 if params.get("pct") else 2.5
 
         engine = get_multidomain_cf(
-            pnl      = context.get("pnl"),
-            cashflow = context.get("cashflow"),
-            cmo_data = context.get("cmo"),
+            pnl=context.get("pnl"),
+            cashflow=context.get("cashflow"),
+            cmo_data=context.get("cmo"),
         )
         result = engine.analyze_marketing_investment(
-            monthly_increase_try = max(budget_inc, 10_000),
-            expected_roas        = expected_roas,
+            monthly_increase_try=max(budget_inc, 10_000),
+            expected_roas=expected_roas,
         )
         return result.to_dict()
 
     async def _run_cascade_simulation(
         self,
-        params:  dict[str, Any],
+        params: dict[str, Any],
         context: dict[str, Any],
     ) -> dict[str, Any]:
         from app.services.cascade_simulator import TriggerType, get_cascade_simulator
 
-        trigger_str  = params.get("trigger", "cash_crisis")
-        trigger_map  = {
-            "cash_crisis":      TriggerType.CASH_CRISIS,
-            "revenue_drop":     TriggerType.REVENUE_DROP,
-            "key_person_loss":  TriggerType.KEY_PERSON_LOSS,
-            "market_shock":     TriggerType.MARKET_SHOCK,
+        trigger_str = params.get("trigger", "cash_crisis")
+        trigger_map = {
+            "cash_crisis": TriggerType.CASH_CRISIS,
+            "revenue_drop": TriggerType.REVENUE_DROP,
+            "key_person_loss": TriggerType.KEY_PERSON_LOSS,
+            "market_shock": TriggerType.MARKET_SHOCK,
         }
         trigger = trigger_map.get(trigger_str, TriggerType.CASH_CRISIS)
 
         sim = get_cascade_simulator(
-            pnl      = context.get("pnl"),
-            cashflow = context.get("cashflow"),
-            forecast = context.get("forecast"),
-            chro_data = context.get("chro"),
-            cto_data  = context.get("cto"),
-            cmo_data  = context.get("cmo"),
+            pnl=context.get("pnl"),
+            cashflow=context.get("cashflow"),
+            forecast=context.get("forecast"),
+            chro_data=context.get("chro"),
+            cto_data=context.get("cto"),
+            cmo_data=context.get("cmo"),
         )
 
         kwargs: dict[str, Any] = {}
@@ -304,43 +332,43 @@ class NLSimulationBridge:
             kwargs["role"] = params.get("role_type", "cto")
         elif trigger == TriggerType.MARKET_SHOCK:
             kwargs["usd_try_increase_pct"] = params.get("pct", 30) * 100
-            kwargs["inflation_pct"]        = 50
+            kwargs["inflation_pct"] = 50
 
         result = sim.simulate(trigger, **kwargs)
         return result.to_dict()
 
     async def _run_cost_cut_simulation(
         self,
-        params:  dict[str, Any],
+        params: dict[str, Any],
         context: dict[str, Any],
     ) -> dict[str, Any]:
         from app.services.counterfactual_engine import get_counterfactual_engine
 
         engine = get_counterfactual_engine(
-            pnl      = context.get("pnl"),
-            cashflow = context.get("cashflow"),
-            forecast = context.get("forecast"),
+            pnl=context.get("pnl"),
+            cashflow=context.get("cashflow"),
+            forecast=context.get("forecast"),
         )
         result = engine.simulate_cost_reduction(
-            target_category = "general",
-            reduction_pct   = params.get("pct", 0.20),
+            target_category="general",
+            reduction_pct=params.get("pct", 0.20),
         )
         return result.to_dict()
 
     async def _run_price_simulation(
         self,
-        params:  dict[str, Any],
+        params: dict[str, Any],
         context: dict[str, Any],
     ) -> dict[str, Any]:
         from app.services.counterfactual_engine import get_counterfactual_engine
 
         engine = get_counterfactual_engine(
-            pnl      = context.get("pnl"),
-            cashflow = context.get("cashflow"),
+            pnl=context.get("pnl"),
+            cashflow=context.get("cashflow"),
         )
         result = engine.simulate_price_increase(
-            increase_pct        = params.get("pct", 0.15),
-            churn_rate_increase = 0.04,
+            increase_pct=params.get("pct", 0.15),
+            churn_rate_increase=0.04,
         )
         return result.to_dict()
 
@@ -350,25 +378,25 @@ class NLSimulationBridge:
         """Simulasyon sonucundan Turkce yanit uret."""
         if intent == "headcount":
             base = result.get("scenarios", [{}])[1] if result.get("scenarios") else {}
-            net  = base.get("net_financial_impact_try", 0)
+            net = base.get("net_financial_impact_try", 0)
             sign = "+" if net >= 0 else ""
             count = params.get("count", "?")
-            role  = params.get("role_type", "genel")
+            role = params.get("role_type", "genel")
             answer = (
                 f"{count:+d} kişi ({role}) değişiminin 12 aylık analizi tamamlandı. "
-                f"Baz senaryoda yıllık net etki: **₺{net:,.0f}** ({sign}{net//1000}K TRY). "
+                f"Baz senaryoda yıllık net etki: **₺{net:,.0f}** ({sign}{net // 1000}K TRY). "
             )
             domain_effects = base.get("domain_effects", [])
             for eff in domain_effects[:2]:
-                label   = eff.get("label", "")
+                label = eff.get("label", "")
                 fin_imp = eff.get("financial_impact_try", 0)
                 answer += f"{label}: ₺{fin_imp:,.0f}. "
 
         elif intent == "cascade":
-            base    = next((s for s in result.get("scenarios", []) if s.get("name") == "baz"), {})
-            score   = base.get("overall_risk_score", 0)
+            base = next((s for s in result.get("scenarios", []) if s.get("name") == "baz"), {})
+            score = base.get("overall_risk_score", 0)
             recovery = base.get("recovery_months", 0)
-            answer  = (
+            answer = (
                 f"Bu risk senaryosunda genel risk skoru **{score:.0f}/100**. "
                 f"Tahmini toparlanma: {recovery:.0f} ay. "
                 f"{result.get('executive_summary', '')}"
@@ -376,7 +404,7 @@ class NLSimulationBridge:
 
         elif intent == "marketing":
             base = result.get("scenarios", [{}])[1] if result.get("scenarios") else {}
-            net  = base.get("net_financial_impact_try", 0)
+            net = base.get("net_financial_impact_try", 0)
             answer = (
                 f"Pazarlama yatırımı analizi tamamlandı. "
                 f"Baz senaryoda yıllık net etki: **₺{net:,.0f}**. "
@@ -384,8 +412,8 @@ class NLSimulationBridge:
             )
 
         elif intent in ("cost_cut", "price"):
-            net  = result.get("base_net_impact", 0)
-            be   = result.get("breakeven_months")
+            net = result.get("base_net_impact", 0)
+            be = result.get("breakeven_months")
             answer = (
                 f"{'Maliyet kesintisi' if intent == 'cost_cut' else 'Fiyat artışı'} analizi tamamlandı. "
                 f"12 aylık net etki: **₺{net:,.0f}**. "
@@ -427,9 +455,9 @@ class NLSimulationBridge:
 
     async def process(
         self,
-        query:   str,
-        org_id:  str,
-        job_id:  str | None = None,
+        query: str,
+        org_id: str,
+        job_id: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> SimulationQueryResult:
         """
@@ -442,17 +470,17 @@ class NLSimulationBridge:
 
         if intent == "unknown":
             return SimulationQueryResult(
-                original_query     = query,
-                simulation_type    = "unknown",
-                intent_confidence  = 0.0,
-                extracted_params   = {},
-                simulation_result  = None,
-                answer             = (
+                original_query=query,
+                simulation_type="unknown",
+                intent_confidence=0.0,
+                extracted_params={},
+                simulation_result=None,
+                answer=(
                     "Bu soruyu bir simülasyon olarak yorumlayamadım. "
                     "Örnek: 'Nakit 3 ayda biterse ne olur?' veya "
                     "'5 mühendis işe alırsam 12 ayda ne olur?'"
                 ),
-                follow_up_questions = [
+                follow_up_questions=[
                     "Nakit krizi senaryosu için soru sorun",
                     "İşe alım etkisini analiz edin",
                     "Pazarlama bütçesi değişikliği sorun",
@@ -473,58 +501,60 @@ class NLSimulationBridge:
             sim_runners = {
                 "headcount": self._run_headcount_simulation,
                 "marketing": self._run_marketing_simulation,
-                "cascade":   self._run_cascade_simulation,
-                "cost_cut":  self._run_cost_cut_simulation,
-                "price":     self._run_price_simulation,
+                "cascade": self._run_cascade_simulation,
+                "cost_cut": self._run_cost_cut_simulation,
+                "price": self._run_price_simulation,
             }
-            runner         = sim_runners.get(intent)
-            sim_result     = await runner(params, context) if runner else None
-            answer         = self._build_answer(intent, params, sim_result or {})
-            follow_ups     = self._build_follow_ups(intent, params)
+            runner = sim_runners.get(intent)
+            sim_result = await runner(params, context) if runner else None
+            answer = self._build_answer(intent, params, sim_result or {})
+            follow_ups = self._build_follow_ups(intent, params)
 
             return SimulationQueryResult(
-                original_query     = query,
-                simulation_type    = intent,
-                intent_confidence  = confidence,
-                extracted_params   = {k: v for k, v in params.items() if not k.startswith("_")},
-                simulation_result  = sim_result,
-                answer             = answer,
-                follow_up_questions = follow_ups,
+                original_query=query,
+                simulation_type=intent,
+                intent_confidence=confidence,
+                extracted_params={k: v for k, v in params.items() if not k.startswith("_")},
+                simulation_result=sim_result,
+                answer=answer,
+                follow_up_questions=follow_ups,
             )
 
         except Exception as exc:
             logger.error("NL Simulation Bridge hatasi: intent=%s err=%s", intent, exc)
             return SimulationQueryResult(
-                original_query     = query,
-                simulation_type    = intent,
-                intent_confidence  = confidence,
-                extracted_params   = params,
-                simulation_result  = None,
-                answer             = f"Simülasyon çalıştırılırken hata oluştu: {exc}",
-                follow_up_questions = [],
-                error              = str(exc),
+                original_query=query,
+                simulation_type=intent,
+                intent_confidence=confidence,
+                extracted_params=params,
+                simulation_result=None,
+                answer=f"Simülasyon çalıştırılırken hata oluştu: {exc}",
+                follow_up_questions=[],
+                error=str(exc),
             )
 
     async def _load_context(self, org_id: str) -> dict[str, Any]:
         """CompanyContext'ten veri yukle."""
         try:
             from app.services.company_context import get_company_context
-            ctx     = await get_company_context(org_id) or {}
+
+            ctx = await get_company_context(org_id) or {}
             results = ctx.get("agent_results") or {}
-            cfo_r   = results.get("cfo") or {}
+            cfo_r = results.get("cfo") or {}
             return {
-                "pnl":      cfo_r.get("pnl"),
+                "pnl": cfo_r.get("pnl"),
                 "cashflow": cfo_r.get("cashflow"),
                 "forecast": cfo_r.get("forecast"),
-                "chro":     results.get("chro"),
-                "cto":      results.get("cto"),
-                "cmo":      results.get("cmo"),
+                "chro": results.get("chro"),
+                "cto": results.get("cto"),
+                "cmo": results.get("cmo"),
             }
         except Exception:
             return {}
 
 
 # ── Public factory ─────────────────────────────────────────────────────────────
+
 
 def get_nl_simulation_bridge() -> NLSimulationBridge:
     return NLSimulationBridge()

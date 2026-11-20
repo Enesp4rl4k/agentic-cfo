@@ -16,6 +16,7 @@ Testable without a broker, which matters: there is no Docker on this machine
 (see the docker-deferred note), so the queue path itself stays unverified and
 these are the parts that need not.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,23 +29,38 @@ from app.worker import _is_transient_error, enqueue_analysis
 
 # ── Which broker faults deserve an inline run ────────────────────────────────
 
+
 @pytest.mark.parametrize(
     ("exc", "transient", "why"),
     [
-        (redis_exc.TimeoutError("Timeout connecting to server"), True,
-         "broker yok — bu makinede olağan durum"),
-        (redis_exc.ConnectionError("Error 10061 connecting to localhost:6379."), True,
-         "bağlantı reddedildi"),
-        (redis_exc.BusyLoadingError("Redis is loading the dataset in memory"), True,
-         "sunucu açılıyor"),
+        (
+            redis_exc.TimeoutError("Timeout connecting to server"),
+            True,
+            "broker yok — bu makinede olağan durum",
+        ),
+        (
+            redis_exc.ConnectionError("Error 10061 connecting to localhost:6379."),
+            True,
+            "bağlantı reddedildi",
+        ),
+        (
+            redis_exc.BusyLoadingError("Redis is loading the dataset in memory"),
+            True,
+            "sunucu açılıyor",
+        ),
         (ConnectionRefusedError("refused"), True, "yerleşik soket hatası"),
         (OSError("network unreachable"), True, "ağ"),
-        (redis_exc.AuthenticationError("Authentication required."), False,
-         "kimlik doğrulama — yapılandırma hatası"),
-        (redis_exc.ResponseError("WRONGPASS invalid username-password pair"), False,
-         "yanlış parola"),
-        (ValueError("redis config broken"), False,
-         "metninde redis geçiyor ama geçici değil"),
+        (
+            redis_exc.AuthenticationError("Authentication required."),
+            False,
+            "kimlik doğrulama — yapılandırma hatası",
+        ),
+        (
+            redis_exc.ResponseError("WRONGPASS invalid username-password pair"),
+            False,
+            "yanlış parola",
+        ),
+        (ValueError("redis config broken"), False, "metninde redis geçiyor ama geçici değil"),
     ],
 )
 def test_only_a_briefly_unreachable_broker_is_transient(
@@ -67,6 +83,7 @@ def test_redis_exceptions_do_not_subclass_the_builtins() -> None:
 
 
 # ── What the caller is told ──────────────────────────────────────────────────
+
 
 @pytest.fixture
 def inline_fallback(monkeypatch):
@@ -105,8 +122,10 @@ async def test_an_inline_run_says_inline_rather_than_queued(inline_fallback) -> 
         ran.set()
 
     with (
-        patch("app.worker.get_arq_pool",
-              AsyncMock(side_effect=redis_exc.TimeoutError("Timeout connecting to server"))),
+        patch(
+            "app.worker.get_arq_pool",
+            AsyncMock(side_effect=redis_exc.TimeoutError("Timeout connecting to server")),
+        ),
         patch("app.worker.run_cfo_analysis", _fake_run),
     ):
         assert await enqueue_analysis("job-2") == "inline"
@@ -120,8 +139,10 @@ async def test_a_misconfigured_broker_is_raised_not_hidden(inline_fallback) -> N
     undurably and the deployment never learned why."""
     inline_fallback(True)
     with (
-        patch("app.worker.get_arq_pool",
-              AsyncMock(side_effect=redis_exc.AuthenticationError("WRONGPASS"))),
+        patch(
+            "app.worker.get_arq_pool",
+            AsyncMock(side_effect=redis_exc.AuthenticationError("WRONGPASS")),
+        ),
     ):
         with pytest.raises(redis_exc.AuthenticationError):
             await enqueue_analysis("job-3")
@@ -131,14 +152,17 @@ async def test_a_misconfigured_broker_is_raised_not_hidden(inline_fallback) -> N
 async def test_without_the_fallback_an_unreachable_broker_raises(inline_fallback) -> None:
     inline_fallback(False)
     with (
-        patch("app.worker.get_arq_pool",
-              AsyncMock(side_effect=redis_exc.TimeoutError("Timeout connecting"))),
+        patch(
+            "app.worker.get_arq_pool",
+            AsyncMock(side_effect=redis_exc.TimeoutError("Timeout connecting")),
+        ),
     ):
         with pytest.raises(redis_exc.TimeoutError):
             await enqueue_analysis("job-4")
 
 
 # ── Both upload paths have to say the same thing ─────────────────────────────
+
 
 def test_both_upload_routes_report_how_the_work_was_dispatched() -> None:
     """These two have diverged once already: /data-quality copied the job

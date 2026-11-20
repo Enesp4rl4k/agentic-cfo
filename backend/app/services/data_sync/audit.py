@@ -8,6 +8,7 @@ Immutable log of every sync with:
   - Warnings/errors
   - Conflict resolutions
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,9 +43,7 @@ class SyncAuditLog(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
-    ended_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Metrics
@@ -53,9 +52,7 @@ class SyncAuditLog(Base):
     conflict_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # Data integrity
-    data_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False
-    )  # SHA256
+    data_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA256
 
     # Diagnostics
     warnings: Mapped[list[str]] = mapped_column(JSON, default=[])

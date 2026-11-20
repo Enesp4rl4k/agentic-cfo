@@ -20,6 +20,7 @@ SETUP:
     GIB_PASSWORD=your_password
     GIB_SANDBOX=true
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,8 +41,8 @@ logger = logging.getLogger(__name__)
 
 class EFaturaSyncRequest(BaseModel):
     start_date: str  # YYYY-MM-DD
-    end_date:   str  # YYYY-MM-DD
-    analyze:    bool = True   # Otomatik CFO analizi başlat
+    end_date: str  # YYYY-MM-DD
+    analyze: bool = True  # Otomatik CFO analizi başlat
 
 
 @router.get("/efatura/status")
@@ -51,22 +52,23 @@ async def get_efatura_status() -> dict[str, Any]:
     Credentials .env'de yapılandırılmış mı?
     """
     from app.services.gib_efatura import get_efatura_client
+
     client = get_efatura_client()
 
     if client is None:
         return {
             "data": {
                 "configured": False,
-                "sandbox":    True,
-                "message":    (
+                "sandbox": True,
+                "message": (
                     "GİB e-Fatura kimlik bilgileri yapılandırılmamış. "
                     ".env dosyasına GIB_VKN, GIB_USERNAME, GIB_PASSWORD ekleyin."
                 ),
                 "setup_guide": {
-                    "GIB_VKN":      "Vergi Kimlik Numaranız (10 hane)",
+                    "GIB_VKN": "Vergi Kimlik Numaranız (10 hane)",
                     "GIB_USERNAME": "e-Fatura portal kullanıcı adı",
                     "GIB_PASSWORD": "e-Fatura portal şifresi",
-                    "GIB_SANDBOX":  "true (test ortamı) / false (production)",
+                    "GIB_SANDBOX": "true (test ortamı) / false (production)",
                 },
                 "sandbox_url": "https://efatura.gib.gov.tr/test",
             },
@@ -76,10 +78,10 @@ async def get_efatura_status() -> dict[str, Any]:
     return {
         "data": {
             "configured": True,
-            "sandbox":    client.sandbox,
-            "vkn":        client.vkn[:3] + "***" + client.vkn[-2:],  # Masked
-            "base_url":   client.base_url,
-            "message":    f"{'Test ortamı' if client.sandbox else 'Production ortamı'} yapılandırıldı.",
+            "sandbox": client.sandbox,
+            "vkn": client.vkn[:3] + "***" + client.vkn[-2:],  # Masked
+            "base_url": client.base_url,
+            "message": f"{'Test ortamı' if client.sandbox else 'Production ortamı'} yapılandırıldı.",
         },
         "error": None,
     }
@@ -87,9 +89,9 @@ async def get_efatura_status() -> dict[str, Any]:
 
 @router.get("/efatura/invoices/{direction}")
 async def list_invoices(
-    direction:  str = "inbound",
+    direction: str = "inbound",
     start_date: str = Query(default=None, description="YYYY-MM-DD"),
-    end_date:   str = Query(default=None, description="YYYY-MM-DD"),
+    end_date: str = Query(default=None, description="YYYY-MM-DD"),
 ) -> dict[str, Any]:
     """
     e-Fatura listesi çek.
@@ -105,6 +107,7 @@ async def list_invoices(
         )
 
     from app.services.gib_efatura import GIBError, get_efatura_client
+
     client = get_efatura_client()
     if not client:
         raise HTTPException(
@@ -131,13 +134,13 @@ async def list_invoices(
 
     return {
         "data": {
-            "direction":       direction,
-            "period":          f"{start_date} – {end_date}",
-            "invoice_count":   len(invoices),
-            "invoices":        invoices[:50],  # Cap at 50 for API response
-            "total_net":       sum(inv.get("net_amount", 0) for inv in invoices),
-            "total_vat":       sum(inv.get("vat_amount", 0) for inv in invoices),
-            "total_gross":     sum(inv.get("gross_amount", 0) for inv in invoices),
+            "direction": direction,
+            "period": f"{start_date} – {end_date}",
+            "invoice_count": len(invoices),
+            "invoices": invoices[:50],  # Cap at 50 for API response
+            "total_net": sum(inv.get("net_amount", 0) for inv in invoices),
+            "total_vat": sum(inv.get("vat_amount", 0) for inv in invoices),
+            "total_gross": sum(inv.get("gross_amount", 0) for inv in invoices),
         },
         "error": None,
     }
@@ -158,6 +161,7 @@ async def get_tax_calendar(
     - Ödeme tarihleri otomatik hesaplanır
     """
     import re
+
     if not re.match(r"^\d{4}-\d{2}$", period):
         raise HTTPException(
             status_code=400,
@@ -165,6 +169,7 @@ async def get_tax_calendar(
         )
 
     from app.services.gib_efatura import GIBError, compute_tax_calendar, get_efatura_client
+
     client = get_efatura_client()
     if not client:
         raise HTTPException(
@@ -174,7 +179,15 @@ async def get_tax_calendar(
 
     start_date = f"{period}-01"
     year, month = int(period[:4]), int(period[5:7])
-    last_day = 31 if month in (1, 3, 5, 7, 8, 10, 12) else 30 if month in (4, 6, 9, 11) else 29 if year % 4 == 0 else 28
+    last_day = (
+        31
+        if month in (1, 3, 5, 7, 8, 10, 12)
+        else 30
+        if month in (4, 6, 9, 11)
+        else 29
+        if year % 4 == 0
+        else 28
+    )
     end_date = f"{period}-{last_day:02d}"
 
     try:
@@ -230,15 +243,16 @@ async def sync_efatura(
     if not invoices:
         return {
             "data": {
-                "job_id":        None,
+                "job_id": None,
                 "invoice_count": 0,
-                "message":       "Bu dönemde e-Fatura verisi bulunamadı.",
+                "message": "Bu dönemde e-Fatura verisi bulunamadı.",
             },
             "error": None,
         }
 
     # Create analysis job
     from app.models.analysis_job import AnalysisJob, JobStatus
+
     job = AnalysisJob(
         id=str(uuid.uuid4()),
         status=JobStatus.PENDING,
@@ -255,6 +269,7 @@ async def sync_efatura(
             import json
 
             from app.worker import enqueue_analysis, get_arq_pool
+
             pool = await get_arq_pool()
             await pool.set(
                 f"ob_transactions:{job.id}",
@@ -266,20 +281,20 @@ async def sync_efatura(
         except Exception as exc:
             logger.warning("Could not enqueue e-Fatura analysis: %s", exc)
 
-    inbound  = [inv for inv in invoices if inv.get("direction") == "inbound"]
+    inbound = [inv for inv in invoices if inv.get("direction") == "inbound"]
     outbound = [inv for inv in invoices if inv.get("direction") == "outbound"]
 
     return {
         "data": {
-            "job_id":        job.id,
+            "job_id": job.id,
             "invoice_count": len(invoices),
             "inbound_count": len(inbound),
             "outbound_count": len(outbound),
-            "period":        f"{body.start_date} – {body.end_date}",
-            "total_income":  sum(inv.get("gross_amount", 0) for inv in outbound),
+            "period": f"{body.start_date} – {body.end_date}",
+            "total_income": sum(inv.get("gross_amount", 0) for inv in outbound),
             "total_expense": sum(inv.get("gross_amount", 0) for inv in inbound),
-            "queued":        queued,
-            "poll_url":      f"/api/v1/analysis/{job.id}" if queued else None,
+            "queued": queued,
+            "poll_url": f"/api/v1/analysis/{job.id}" if queued else None,
         },
         "error": None,
     }

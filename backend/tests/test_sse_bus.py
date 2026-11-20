@@ -10,6 +10,7 @@ bus echo (the listener hearing our own publish).
 Tests run with USE_SQLITE=true → the broker is disabled, so they exercise
 the local path and the dedupe logic directly.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +30,7 @@ class TestDedupe:
         manager._queues["job-1"] = [sub]
 
         event = {"event": "step", "step": "pnl", "eid": "abc123"}
-        manager._deliver_local("job-1", event)   # direct path
+        manager._deliver_local("job-1", event)  # direct path
         manager._deliver_local("job-1", dict(event))  # echo via the listener
 
         assert sub.queue.qsize() == 1  # exactly once, not twice
@@ -68,9 +69,7 @@ class TestPublish:
     def test_every_publish_gets_a_unique_eid(self, monkeypatch):
         manager = SSEManager()
         captured: list[dict] = []
-        monkeypatch.setattr(
-            manager, "_deliver_local", lambda job_id, event: captured.append(event)
-        )
+        monkeypatch.setattr(manager, "_deliver_local", lambda job_id, event: captured.append(event))
 
         async def run():
             await manager.publish("j", {"event": "step"})

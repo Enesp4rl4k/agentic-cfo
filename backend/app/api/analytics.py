@@ -8,6 +8,7 @@ GET  /analytics/trend-analysis/{job_id} → Trend direction + change points
 All endpoints require authentication.
 ML services fall back gracefully when scikit-learn/statsmodels not installed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,22 +30,25 @@ logger = logging.getLogger(__name__)
 
 # ── Request / Response schemas ────────────────────────────────────────────────
 
+
 class AdvancedAnomalyRequest(BaseModel):
-    job_id:      str
-    method:      Literal["isolation_forest", "dbscan", "ensemble"] = "ensemble"
-    sensitivity: float = Field(default=0.05, ge=0.01, le=0.5,
-                               description="Contamination rate (0.01–0.5)")
+    job_id: str
+    method: Literal["isolation_forest", "dbscan", "ensemble"] = "ensemble"
+    sensitivity: float = Field(
+        default=0.05, ge=0.01, le=0.5, description="Contamination rate (0.01–0.5)"
+    )
 
 
 class ForecastV2Request(BaseModel):
-    job_id:              str
-    periods:             int   = Field(default=6, ge=1, le=24)
-    method:              Literal["stl", "arima", "linear"] = "stl"
-    include_seasonality: bool  = True
-    metric:              str   = "revenue"    # which cashflow metric to forecast
+    job_id: str
+    periods: int = Field(default=6, ge=1, le=24)
+    method: Literal["stl", "arima", "linear"] = "stl"
+    include_seasonality: bool = True
+    metric: str = "revenue"  # which cashflow metric to forecast
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 async def _load_transactions_for_job(
     job_id: str,
@@ -56,19 +60,19 @@ async def _load_transactions_for_job(
 
         from app.models.transaction import Transaction
 
-        result = await db.execute(
-            select(Transaction).where(Transaction.job_id == job_id)
-        )
+        result = await db.execute(select(Transaction).where(Transaction.job_id == job_id))
         txs = result.scalars().all()
         return [
             {
-                "id":               tx.id,
-                "amount_cents":     tx.amount_kurus,
-                "type":             tx.type,
-                "category":         tx.category,
-                "description":      tx.description,
-                "vendor":           tx.vendor,
-                "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+                "id": tx.id,
+                "amount_cents": tx.amount_kurus,
+                "type": tx.type,
+                "category": tx.category,
+                "description": tx.description,
+                "vendor": tx.vendor,
+                "transaction_date": tx.transaction_date.isoformat()
+                if tx.transaction_date
+                else None,
             }
             for tx in txs
         ]
@@ -102,7 +106,7 @@ async def _load_cashflow_series(
         series_data = cashflow.get("monthly_series", [])
 
         series: list[float] = []
-        dates:  list[str]   = []
+        dates: list[str] = []
 
         for point in series_data:
             value = point.get(metric) or point.get("net_cashflow") or point.get("revenue")
@@ -118,11 +122,12 @@ async def _load_cashflow_series(
 
 # ── POST /analytics/advanced-anomaly ─────────────────────────────────────────
 
+
 @router.post("/analytics/advanced-anomaly")
 async def advanced_anomaly_detection(
     body: AdvancedAnomalyRequest,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     ML-powered anomaly detection using Isolation Forest + DBSCAN ensemble.
@@ -156,9 +161,9 @@ async def advanced_anomaly_detection(
     use_ensemble = body.method == "ensemble"
 
     results = svc.fit_and_detect(
-        transactions  = transactions,
-        contamination = body.sensitivity,
-        use_ensemble  = use_ensemble,
+        transactions=transactions,
+        contamination=body.sensitivity,
+        use_ensemble=use_ensemble,
     )
 
     # Breakdown by detector type
@@ -169,16 +174,15 @@ async def advanced_anomaly_detection(
 
     return {
         "data": {
-            "job_id":             body.job_id,
-            "method":             body.method,
-            "transaction_count":  len(transactions),
-            "anomaly_count":      len(results),
-            "sensitivity":        body.sensitivity,
-            "anomalies":          [r.to_dict() for r in results],
+            "job_id": body.job_id,
+            "method": body.method,
+            "transaction_count": len(transactions),
+            "anomaly_count": len(results),
+            "sensitivity": body.sensitivity,
+            "anomalies": [r.to_dict() for r in results],
             "detector_breakdown": breakdown,
-            "ml_available":       len(results) > 0 and any(
-                "isolation_forest" in r.detector_type for r in results
-            ),
+            "ml_available": len(results) > 0
+            and any("isolation_forest" in r.detector_type for r in results),
         },
         "error": None,
     }
@@ -186,11 +190,12 @@ async def advanced_anomaly_detection(
 
 # ── POST /analytics/forecast-v2 ──────────────────────────────────────────────
 
+
 @router.post("/analytics/forecast-v2")
 async def forecast_v2(
     body: ForecastV2Request,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Advanced forecasting with probabilistic bands (P10/P50/P90).
@@ -220,12 +225,12 @@ async def forecast_v2(
             detail=f"job_id={body.job_id} için nakit akış verisi bulunamadı.",
         )
 
-    svc    = ForecastingService()
+    svc = ForecastingService()
     result = svc.forecast(
-        series  = series,
-        dates   = dates,
-        periods = body.periods,
-        method  = body.method,
+        series=series,
+        dates=dates,
+        periods=body.periods,
+        method=body.method,
     )
 
     resp = result.to_dict()
@@ -233,20 +238,21 @@ async def forecast_v2(
         resp["seasonality"] = {}  # omit heavy seasonality data if not requested
 
     return {
-        "data":  {**resp, "job_id": body.job_id, "metric": body.metric},
+        "data": {**resp, "job_id": body.job_id, "metric": body.metric},
         "error": None,
     }
 
 
 # ── GET /analytics/trend-analysis/{job_id} ───────────────────────────────────
 
+
 @router.get("/analytics/trend-analysis/{job_id}")
 async def trend_analysis(
-    job_id:  str,
-    metric:  str = "revenue",
-    window:  int = 3,
-    user:    User = Depends(get_current_user),
-    db:      AsyncSession = Depends(get_db),
+    job_id: str,
+    metric: str = "revenue",
+    window: int = 3,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     job: AnalysisJob = Depends(owned_job),
 ) -> dict[str, Any]:
     """
@@ -266,14 +272,14 @@ async def trend_analysis(
     if len(series) < 3:
         return {
             "data": {
-                "job_id":           job_id,
-                "metric":           metric,
-                "trend_direction":  "unknown",
-                "velocity":         None,
-                "acceleration":     None,
-                "change_points":    [],
-                "anomaly_markers":  [],
-                "message":          "Trend analizi için en az 3 veri noktası gereklidir.",
+                "job_id": job_id,
+                "metric": metric,
+                "trend_direction": "unknown",
+                "velocity": None,
+                "acceleration": None,
+                "change_points": [],
+                "anomaly_markers": [],
+                "message": "Trend analizi için en az 3 veri noktası gereklidir.",
             },
             "error": None,
         }
@@ -283,14 +289,14 @@ async def trend_analysis(
 
     n = len(series)
     # Velocity: average period-over-period change (last 3 periods)
-    recent = series[-min(3, n):]
+    recent = series[-min(3, n) :]
     velocity = (recent[-1] - recent[0]) / (len(recent) - 1) if len(recent) > 1 else 0.0
 
     # Acceleration: change in velocity
     if n >= 4:
-        older_velocity  = (series[n-2] - series[n-3]) if n >= 3 else 0.0
-        newer_velocity  = (series[n-1] - series[n-2]) if n >= 2 else 0.0
-        acceleration    = newer_velocity - older_velocity
+        older_velocity = (series[n - 2] - series[n - 3]) if n >= 3 else 0.0
+        newer_velocity = (series[n - 1] - series[n - 2]) if n >= 2 else 0.0
+        acceleration = newer_velocity - older_velocity
     else:
         acceleration = 0.0
 
@@ -303,9 +309,9 @@ async def trend_analysis(
         trend_direction = "down"
 
     # Simple anomaly markers: values > 2σ from mean
-    mean_val  = sum(series) / n
-    variance  = sum((v - mean_val) ** 2 for v in series) / n
-    std_val   = variance ** 0.5 or 1.0
+    mean_val = sum(series) / n
+    variance = sum((v - mean_val) ** 2 for v in series) / n
+    std_val = variance**0.5 or 1.0
     anomaly_markers = [
         {"date": d, "value": round(v, 2), "z_score": round((v - mean_val) / std_val, 2)}
         for d, v in zip(dates, series, strict=False)
@@ -314,14 +320,14 @@ async def trend_analysis(
 
     return {
         "data": {
-            "job_id":           job_id,
-            "metric":           metric,
-            "trend_direction":  trend_direction,
-            "velocity":         round(velocity, 2),
-            "acceleration":     round(acceleration, 2),
-            "data_points":      n,
-            "change_points":    change_points,
-            "anomaly_markers":  anomaly_markers,
+            "job_id": job_id,
+            "metric": metric,
+            "trend_direction": trend_direction,
+            "velocity": round(velocity, 2),
+            "acceleration": round(acceleration, 2),
+            "data_points": n,
+            "change_points": change_points,
+            "anomaly_markers": anomaly_markers,
         },
         "error": None,
     }
@@ -334,15 +340,16 @@ from app.services.tcmb_macro import TCMBMacroService, get_tcmb_service
 
 @router.get("/analytics/macro")
 async def macro_snapshot(
-    user: User = Depends(get_current_user),
-    tcmb: TCMBMacroService = Depends(get_tcmb_service)
+    user: User = Depends(get_current_user), tcmb: TCMBMacroService = Depends(get_tcmb_service)
 ) -> dict[str, Any]:
     snapshot = await tcmb.get_macro_snapshot()
     return {"data": snapshot.to_dict(), "error": None}
 
+
 class MonteCarloRequest(BaseModel):
     job_id: str
     iterations: int = 1000
+
 
 @router.post("/analytics/monte-carlo")
 async def monte_carlo(
@@ -357,9 +364,10 @@ async def monte_carlo(
     if not series:
         raise HTTPException(404, detail="No cashflow data found")
     import dataclasses
+
     mean_val = sum(series) / len(series)
-    initial_cash_cents   = int(series[0])
-    base_monthly_in_cents  = int(max(0.0, mean_val))
+    initial_cash_cents = int(series[0])
+    base_monthly_in_cents = int(max(0.0, mean_val))
     base_monthly_out_cents = int(max(0.0, -mean_val))
     result = MonteCarloEngine.simulate(
         initial_cash_cents=initial_cash_cents,
@@ -369,9 +377,11 @@ async def monte_carlo(
     )
     return {"data": dataclasses.asdict(result), "error": None}
 
+
 class WorkingCapitalRequest(BaseModel):
     """The figures the page asks for. They used to be ignored: the endpoint
     answered every company with the same four constants."""
+
     accounts_receivable_try: float = Field(ge=0)
     annual_revenue_try: float = Field(ge=0)
     accounts_payable_try: float = Field(ge=0)
@@ -391,14 +401,17 @@ async def working_capital(
 
     if body.job_id:
         await load_owned_job(db, body.job_id, user)
-    sonuc = hesapla(CalismaSermayesiGirdisi(
-        alacaklar=body.accounts_receivable_try,
-        yillik_ciro=body.annual_revenue_try,
-        borclar=body.accounts_payable_try,
-        yillik_smm=body.annual_cogs_try,
-        stok=body.inventory_try,
-    ))
+    sonuc = hesapla(
+        CalismaSermayesiGirdisi(
+            alacaklar=body.accounts_receivable_try,
+            yillik_ciro=body.annual_revenue_try,
+            borclar=body.accounts_payable_try,
+            yillik_smm=body.annual_cogs_try,
+            stok=body.inventory_try,
+        )
+    )
     return {"data": sonuc.to_dict(), "error": None}
+
 
 class BreakEvenRequest(BaseModel):
     job_id: str
@@ -406,25 +419,33 @@ class BreakEvenRequest(BaseModel):
     variable_cost_per_unit: float
     price_per_unit: float
 
+
 @router.post("/analytics/break-even")
 async def break_even(
-    body: BreakEvenRequest,
-    user: User = Depends(get_current_user)
+    body: BreakEvenRequest, user: User = Depends(get_current_user)
 ) -> dict[str, Any]:
     if body.price_per_unit <= body.variable_cost_per_unit:
         raise HTTPException(400, "Price must be greater than variable cost")
     contribution_margin = body.price_per_unit - body.variable_cost_per_unit
     break_even_units = body.fixed_costs / contribution_margin
     break_even_revenue = break_even_units * body.price_per_unit
-    return {"data": {"break_even_units": break_even_units, "break_even_revenue": break_even_revenue, "margin_ratio": contribution_margin / body.price_per_unit}, "error": None}
+    return {
+        "data": {
+            "break_even_units": break_even_units,
+            "break_even_revenue": break_even_revenue,
+            "margin_ratio": contribution_margin / body.price_per_unit,
+        },
+        "error": None,
+    }
+
 
 class CohortRequest(BaseModel):
     job_id: str
 
+
 @router.post("/analytics/cohort")
 async def cohort_analysis(
-    body: CohortRequest,
-    user: User = Depends(get_current_user)
+    body: CohortRequest, user: User = Depends(get_current_user)
 ) -> dict[str, Any]:
     return {"data": {"cohorts": []}, "error": None}
 

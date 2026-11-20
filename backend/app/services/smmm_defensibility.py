@@ -6,6 +6,7 @@ human review it (approve / correct / reject) or did the AI auto-post it, and
 what did the independent reconciliation say. Draft is regenerable; `finalize`
 freezes the payload and locks `content_hash`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -24,11 +25,11 @@ from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 _JOURNAL_REPORT = "tr_muhasebe_journal"
 
 # per-entry decision provenance
-DS_AI_AUTO = "ai_auto_posted"          # AI classified, no review required
-DS_HUMAN_OK = "human_approved"         # went to queue, SMMM approved as-is
-DS_HUMAN_FIX = "human_corrected"       # SMMM changed the account code
-DS_REJECTED = "rejected"               # SMMM rejected
-DS_PENDING = "pending_review"          # queued, not yet actioned
+DS_AI_AUTO = "ai_auto_posted"  # AI classified, no review required
+DS_HUMAN_OK = "human_approved"  # went to queue, SMMM approved as-is
+DS_HUMAN_FIX = "human_corrected"  # SMMM changed the account code
+DS_REJECTED = "rejected"  # SMMM rejected
+DS_PENDING = "pending_review"  # queued, not yet actioned
 
 
 class DefensibilityError(RuntimeError):
@@ -113,10 +114,10 @@ async def build_packet(
     entries: list[dict[str, Any]] = journal.get("yevmiye_kayitlari") or []
 
     onay_rows = (
-        await db.execute(
-            select(SMMMOnayKaydi).where(SMMMOnayKaydi.job_id == job_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(SMMMOnayKaydi).where(SMMMOnayKaydi.job_id == job_id)))
+        .scalars()
+        .all()
+    )
     onay_by_kayit = {o.kayit_id: o for o in onay_rows}
 
     run = (
@@ -160,9 +161,14 @@ async def build_packet(
             "latency_ms": run.latency_ms if run else None,
             "cost_usd": run.cost_usd if run else None,
         },
-        "defensible": human_touched + counts.get(DS_AI_AUTO, 0) == len(items) and not counts.get(DS_PENDING),
+        "defensible": human_touched + counts.get(DS_AI_AUTO, 0) == len(items)
+        and not counts.get(DS_PENDING),
     }
-    payload = {"summary": summary, "entries": items, "thp_dagilim": journal.get("thp_dagilim") or {}}
+    payload = {
+        "summary": summary,
+        "entries": items,
+        "thp_dagilim": journal.get("thp_dagilim") or {},
+    }
 
     existing = (
         await db.execute(
@@ -210,8 +216,7 @@ async def finalize_packet(
     packet.status = "finalized"
     # Re-hash the frozen payload + the statement so the seal covers the sign-off.
     packet.content_hash = content_hash(
-        {"payload": packet.payload, "statement": packet.smmm_statement,
-         "finalized_by": user_id}
+        {"payload": packet.payload, "statement": packet.smmm_statement, "finalized_by": user_id}
     )
     await db.commit()
     return packet

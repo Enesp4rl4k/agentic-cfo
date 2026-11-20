@@ -3,6 +3,7 @@ Sync Schedules API — DQ-5
 
 CRUD endpoints for managing automatic data sync schedules (SQLAlchemy ORM).
 """
+
 from __future__ import annotations
 
 import json
@@ -107,7 +108,12 @@ SOURCE_TYPES = [
         "pack": None,
         "config_fields": [
             {"key": "csv_url", "label": "CSV URL", "type": "url", "required": False},
-            {"key": "csv_base64", "label": "Inline CSV (base64)", "type": "text", "required": False},
+            {
+                "key": "csv_base64",
+                "label": "Inline CSV (base64)",
+                "type": "text",
+                "required": False,
+            },
         ],
     },
     {
@@ -117,7 +123,12 @@ SOURCE_TYPES = [
         "pack": None,
         "config_fields": [
             {"key": "csv_url", "label": "CSV URL", "type": "url", "required": False},
-            {"key": "csv_base64", "label": "Inline CSV (base64)", "type": "text", "required": False},
+            {
+                "key": "csv_base64",
+                "label": "Inline CSV (base64)",
+                "type": "text",
+                "required": False,
+            },
         ],
     },
     {

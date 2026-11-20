@@ -24,6 +24,7 @@ Usage:
         correction_builder=build_correction_prompt,
     )
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,6 +40,7 @@ FallbackStrategy = Literal["raise", "return_last", "return_default"]
 
 
 # ── Attempt log ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class AttemptLog:
@@ -68,6 +70,7 @@ class RetryResult:
 
 # ── Built-in validators ───────────────────────────────────────────────────────
 
+
 def validate_non_empty_string(output: Any) -> tuple[bool, str]:
     if not isinstance(output, str) or not output.strip():
         return False, "Output is empty or not a string."
@@ -82,6 +85,7 @@ def validate_non_empty_dict(output: Any) -> tuple[bool, str]:
 
 def validate_has_keys(*required_keys: str):
     """Returns a validator that checks for required keys in a dict."""
+
     def _validator(output: Any) -> tuple[bool, str]:
         if not isinstance(output, dict):
             return False, f"Expected dict, got {type(output).__name__}."
@@ -89,6 +93,7 @@ def validate_has_keys(*required_keys: str):
         if missing:
             return False, f"Missing required keys: {missing}"
         return True, ""
+
     return _validator
 
 
@@ -115,6 +120,7 @@ def validate_narrative_quality(output: Any) -> tuple[bool, str]:
 
 # ── Default correction builder ────────────────────────────────────────────────
 
+
 def default_correction_builder(
     original_input: Any,
     previous_output: Any,
@@ -139,6 +145,7 @@ def default_correction_builder(
 
 
 # ── RetryHarness ──────────────────────────────────────────────────────────────
+
 
 class RetryHarness:
     """
@@ -201,8 +208,10 @@ class RetryHarness:
             Extra keyword arguments passed to fn on every call.
         """
         if validator is None:
+
             def validator(_):
                 return (True, "")
+
         if correction_builder is None:
             correction_builder = default_correction_builder
         if fn_kwargs is None:
@@ -220,16 +229,22 @@ class RetryHarness:
             except Exception as exc:
                 latency = (time.monotonic() - t0) * 1000
                 reason = f"Exception: {exc}"
-                attempts.append(AttemptLog(
-                    attempt=attempt,
-                    ok=False,
-                    latency_ms=latency,
-                    reason=reason,
-                ))
-                logger.warning("RetryHarness attempt %d/%d failed: %s", attempt, self.max_retries, reason)
+                attempts.append(
+                    AttemptLog(
+                        attempt=attempt,
+                        ok=False,
+                        latency_ms=latency,
+                        reason=reason,
+                    )
+                )
+                logger.warning(
+                    "RetryHarness attempt %d/%d failed: %s", attempt, self.max_retries, reason
+                )
                 last_output = None
                 if attempt < self.max_retries:
-                    await asyncio.sleep(self.base_delay_ms * (self.backoff_factor ** (attempt - 1)) / 1000)
+                    await asyncio.sleep(
+                        self.base_delay_ms * (self.backoff_factor ** (attempt - 1)) / 1000
+                    )
                 continue
 
             latency = (time.monotonic() - t0) * 1000
@@ -237,19 +252,23 @@ class RetryHarness:
             ok, reason = validator(output)
 
             preview = str(output)[:80] if output is not None else None
-            attempts.append(AttemptLog(
-                attempt=attempt,
-                ok=ok,
-                latency_ms=latency,
-                reason=reason if not ok else None,
-                output_preview=preview,
-            ))
+            attempts.append(
+                AttemptLog(
+                    attempt=attempt,
+                    ok=ok,
+                    latency_ms=latency,
+                    reason=reason if not ok else None,
+                    output_preview=preview,
+                )
+            )
 
             if ok:
                 total = (time.monotonic() - start_total) * 1000
                 logger.debug(
                     "RetryHarness succeeded on attempt %d/%d (%.0f ms)",
-                    attempt, self.max_retries, total,
+                    attempt,
+                    self.max_retries,
+                    total,
                 )
                 return RetryResult(
                     value=output,
@@ -279,8 +298,7 @@ class RetryHarness:
         if self.fallback == "raise":
             last_reason = attempts[-1].reason if attempts else "unknown"
             raise RuntimeError(
-                f"RetryHarness failed after {self.max_retries} attempts. "
-                f"Last reason: {last_reason}"
+                f"RetryHarness failed after {self.max_retries} attempts. Last reason: {last_reason}"
             )
         elif self.fallback == "return_default":
             return RetryResult(
@@ -299,6 +317,7 @@ class RetryHarness:
 
 
 # ── Convenience wrapper ───────────────────────────────────────────────────────
+
 
 async def retry_with_correction(
     fn: Callable[..., Awaitable[Any]],

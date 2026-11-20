@@ -4,6 +4,7 @@ Live audit 2026-10-24: approving a broken CSV made it the active CFO analysis
 and the company snapshot lost revenue, runway and margin. A new analysis now
 replaces the view only if it adds a period; otherwise the person can apply it.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -14,8 +15,10 @@ from tests.api_helpers import arka_plan_bitsin, bellek_istemcisi, kullanici
 
 
 def _dash(*months: str, revenue: float = 1.0) -> dict:
-    return {"pnl": {"revenue": revenue},
-            "cashflow": {"monthly_series": [{"month": m, "net": 1} for m in months]}}
+    return {
+        "pnl": {"revenue": revenue},
+        "cashflow": {"monthly_series": [{"month": m, "net": 1} for m in months]},
+    }
 
 
 YEAR_2024 = _dash(*(f"2024-{m:02d}" for m in range(1, 13)), revenue=9_799_500)
@@ -35,7 +38,9 @@ def test_first_analysis_always_becomes_the_view():
 
 def test_a_narrower_period_inside_the_view_does_not_replace_it():
     assert should_replace(YEAR_2024, _dash("2024-02")) == (
-        False, "narrower_period_within_current_view")
+        False,
+        "narrower_period_within_current_view",
+    )
 
 
 def test_an_unreadable_period_does_not_replace_a_view_that_has_one():
@@ -66,8 +71,10 @@ async def ortam(monkeypatch):
         monkeypatch.setattr(database, "session_factory", lambda: c._maker)
         monkeypatch.setattr(database, "engine", lambda: None)
         chained: list[str] = []
-        monkeypatch.setattr("app.post_completion.spawn_auto_chain",
-                            lambda job_id, org_id, chain: chained.append(job_id))
+        monkeypatch.setattr(
+            "app.post_completion.spawn_auto_chain",
+            lambda job_id, org_id, chain: chained.append(job_id),
+        )
         monkeypatch.setattr("app.post_completion._job_side_effects", lambda *a, **k: None)
         yield c, chained
         await arka_plan_bitsin()
@@ -78,12 +85,23 @@ async def _completed_job(client, org_id: str, dashboard: dict) -> str:
     from app.models.report import Report, ReportFormat, ReportType
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="x.csv", file_path="/x.csv", file_type="csv",
-                          org_id=org_id, status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="x.csv",
+            file_path="/x.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.COMPLETED,
+        )
         db.add(job)
         await db.flush()
-        db.add(Report(job_id=job.id, report_type=ReportType.FULL,
-                      report_format=ReportFormat.JSON, data=dashboard))
+        db.add(
+            Report(
+                job_id=job.id,
+                report_type=ReportType.FULL,
+                report_format=ReportFormat.JSON,
+                data=dashboard,
+            )
+        )
         await db.commit()
         return job.id
 
@@ -121,7 +139,9 @@ async def test_a_single_month_or_a_broken_file_keeps_the_year_view(ortam):
     async with client._maker() as db:
         m = await db.get(AnalysisJob, month)
         assert m.result_metadata["company_view"] == {
-            "applied": False, "reason": "narrower_period_within_current_view"}
+            "applied": False,
+            "reason": "narrower_period_within_current_view",
+        }
 
 
 async def test_a_new_period_moves_the_view_and_the_person_can_apply_any(ortam):

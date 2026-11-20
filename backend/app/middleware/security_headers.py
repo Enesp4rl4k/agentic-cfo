@@ -11,6 +11,7 @@ Injects defense-in-depth HTTP headers on all API and server responses:
   - Content-Security-Policy (CSP): safe API baseline
   - Cross-Origin-Opener-Policy: same-origin
 """
+
 from __future__ import annotations
 
 import logging

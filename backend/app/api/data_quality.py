@@ -18,6 +18,7 @@ GET  /data-quality/field-mapping-hints
 POST /data-quality/accept-mapping
     Accept a user-confirmed column mapping and start analysis.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,11 +44,13 @@ MIN_AUTO_PROCEED_SCORE = 40
 
 # ── Request / Response models ─────────────────────────────────────────────────
 
+
 class AcceptMappingRequest(BaseModel):
     """User-confirmed column mapping to override auto-detection."""
+
     job_id: str | None = None
     filename: str
-    column_mapping: dict[str, str]   # system_field → csv_column_name
+    column_mapping: dict[str, str]  # system_field → csv_column_name
     # Raw CSV content (base64 if binary, or plain text)
     csv_content: str
     encoding: str = "utf-8"
@@ -58,6 +61,7 @@ class AcceptMappingRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/data-quality/validate")
 async def validate_csv(
@@ -77,8 +81,7 @@ async def validate_csv(
     ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
     if ext not in ("csv", "txt", "tsv"):
         raise HTTPException(
-            status_code=400,
-            detail=f"Sadece CSV dosyaları doğrulanabilir. Alınan: .{ext}"
+            status_code=400, detail=f"Sadece CSV dosyaları doğrulanabilir. Alınan: .{ext}"
         )
 
     settings = get_settings()
@@ -87,8 +90,7 @@ async def validate_csv(
     file_bytes = await file.read()
     if len(file_bytes) > max_bytes:
         raise HTTPException(
-            status_code=413,
-            detail=f"Dosya çok büyük. Maksimum: {settings.max_upload_size_mb}MB"
+            status_code=413, detail=f"Dosya çok büyük. Maksimum: {settings.max_upload_size_mb}MB"
         )
 
     try:
@@ -145,8 +147,7 @@ async def validate_and_upload(
     file_bytes = await file.read()
     if len(file_bytes) > max_bytes:
         raise HTTPException(
-            status_code=413,
-            detail=f"Dosya çok büyük. Maksimum: {settings.max_upload_size_mb}MB"
+            status_code=413, detail=f"Dosya çok büyük. Maksimum: {settings.max_upload_size_mb}MB"
         )
 
     # Phase 1: validate
@@ -171,8 +172,7 @@ async def validate_and_upload(
     blocked_reason: str | None = None
 
     should_proceed = force or (
-        validation_result is None or
-        validation_result.health_score >= min_score
+        validation_result is None or validation_result.health_score >= min_score
     )
 
     if not should_proceed:
@@ -224,9 +224,7 @@ async def validate_and_upload(
                         "Analizi panelden yeniden tetikleyebilirsiniz."
                     )
             else:
-                blocked_reason = (
-                    "Dosya yüklendi. Otomatik analiz kapalı, analizi elle başlatın."
-                )
+                blocked_reason = "Dosya yüklendi. Otomatik analiz kapalı, analizi elle başlatın."
         except FileValidationError as exc:
             blocked_reason = str(exc)
         except Exception as exc:
@@ -284,9 +282,7 @@ async def accept_column_mapping(
     """
     if body.client_id:
         try:
-            body.client_id = await assert_owns_client(
-                db, str(user.id), body.client_id
-            )
+            body.client_id = await assert_owns_client(db, str(user.id), body.client_id)
         except ClientNotOwned as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -335,10 +331,10 @@ async def accept_column_mapping(
 
         # Persist mapping in job metadata (for the pipeline to use)
         if job and body.column_mapping:
-
             from sqlalchemy import update
 
             from app.models.analysis_job import AnalysisJob
+
             existing_meta = job.result_metadata or {}
             existing_meta["column_mapping"] = body.column_mapping
             await db.execute(
@@ -366,12 +362,13 @@ async def accept_column_mapping(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _field_description(field_name: str) -> str:
     descriptions = {
-        "date":        "İşlem tarihi (zorunlu)",
-        "amount":      "İşlem tutarı (zorunlu)",
+        "date": "İşlem tarihi (zorunlu)",
+        "amount": "İşlem tutarı (zorunlu)",
         "description": "İşlem açıklaması / narrasyon",
-        "category":    "Kategori veya hesap kodu",
-        "reference":   "Referans / fiş / fatura numarası",
+        "category": "Kategori veya hesap kodu",
+        "reference": "Referans / fiş / fatura numarası",
     }
     return descriptions.get(field_name, field_name)

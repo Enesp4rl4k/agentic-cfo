@@ -7,6 +7,7 @@ scale; the CEO SWOT read the CTO's higher-is-worse score as higher-is-better
 tech score and a "0.0 months" critical runway when either was unknown; and a
 client could write any "agent result" into the company context.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -38,8 +39,12 @@ def _no_llm(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 async def test_risk_with_no_inputs_is_no_data_not_acceptable(monkeypatch):
     calls = _no_llm(monkeypatch)
     out = await node_risk_summary(
-        {"register": {"total_risks": 0}, "losses": {"total_events": 0},
-         "kris": {"total_kris": 0}, "logs": []},
+        {
+            "register": {"total_risks": 0},
+            "losses": {"total_events": 0},
+            "kris": {"total_kris": 0},
+            "logs": [],
+        },
         {},
     )
     s = out["risk_summary"]
@@ -53,8 +58,12 @@ async def test_risk_with_no_inputs_is_no_data_not_acceptable(monkeypatch):
 async def test_risk_weights_renormalise_over_what_was_measured(monkeypatch):
     _no_llm(monkeypatch)
     out = await node_risk_summary(
-        {"register": {"total_risks": 4, "enterprise_risk_score": 8.0},
-         "losses": {"total_events": 0}, "kris": {"total_kris": 0}, "logs": []},
+        {
+            "register": {"total_risks": 4, "enterprise_risk_score": 8.0},
+            "losses": {"total_events": 0},
+            "kris": {"total_kris": 0},
+            "logs": [],
+        },
         {},
     )
     s = out["risk_summary"]
@@ -80,8 +89,11 @@ async def test_coo_with_nothing_measured_is_unknown(monkeypatch):
 async def test_coo_names_a_missing_input_instead_of_showing_zero(monkeypatch):
     calls = _no_llm(monkeypatch)
     await node_coo_summary(
-        {"logs": [], "processes": {"efficiency_score": 2.0},
-         "sla": {"sla_breach_rate": 0.0, "avg_nps_score": 60}},
+        {
+            "logs": [],
+            "processes": {"efficiency_score": 2.0},
+            "sla": {"sla_breach_rate": 0.0, "avg_nps_score": 60},
+        },
         {},
     )
     assert calls, "a measured run still asks the model"
@@ -113,8 +125,13 @@ def test_swot_makes_no_tech_claim_without_a_cto_run():
 
 
 def test_board_deck_does_not_invent_a_tech_score_or_a_runway_alarm():
-    slides = _build_slides({"revenue_cents": 100_000_00, "net_income_cents": 10_000_00,
-                            "cash_runway_months": None}, {}, [], [], "2026-Q3")
+    slides = _build_slides(
+        {"revenue_cents": 100_000_00, "net_income_cents": 10_000_00, "cash_runway_months": None},
+        {},
+        [],
+        [],
+        "2026-Q3",
+    )
     cards = {m["label"]: m for m in slides[0]["key_metrics"]}
     assert cards["Teknoloji Sağlığı"]["value"] == "—"
     assert cards["Teknoloji Sağlığı"]["label_detail"] == "Ölçülmedi"
@@ -134,7 +151,8 @@ async def test_context_cannot_be_written_by_a_client():
     async with bellek_istemcisi() as client:
         headers, _, _ = await kullanici(client, "baglam@example.com")
         res = await client.post(
-            "/api/v1/context/me", headers=headers,
+            "/api/v1/context/me",
+            headers=headers,
             json={"agent": "risk", "result": {"risk_summary": {"risk_posture": "acceptable"}}},
         )
         assert res.status_code == 405

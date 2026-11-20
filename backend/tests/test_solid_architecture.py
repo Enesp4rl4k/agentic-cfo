@@ -9,6 +9,7 @@ Tests:
 5. Dependency Inversion Principle (DIP): ServiceContainer resolution and mock override.
 6. DRY & KISS: Financial math primitives and unified resilient safe_llm_call.
 """
+
 from __future__ import annotations
 
 import os
@@ -39,6 +40,7 @@ from app.services.exporters import DashboardExporter, ExcelReportExporter
 
 # ── 1. Single Responsibility Principle (SRP) Tests ────────────────────────────
 
+
 class TestSingleResponsibilityPrinciple:
     """Validate that components have a single, well-defined responsibility."""
 
@@ -57,11 +59,18 @@ class TestSingleResponsibilityPrinciple:
 
     def test_dashboard_exporter_builds_valid_json(self):
         """DashboardExporter only handles JSON dashboard formatting."""
-        pnl = {"revenue": 5000000, "net_income": 1000000, "gross_margin_pct": 50.0, "net_margin_pct": 20.0}
+        pnl = {
+            "revenue": 5000000,
+            "net_income": 1000000,
+            "gross_margin_pct": 50.0,
+            "net_margin_pct": 20.0,
+        }
         cashflow = {"operating": 800000, "net_change": 800000}
         forecast = {"burn_rate_monthly": 100000, "runway_months": 12, "scenarios": {}}
 
-        dashboard = DashboardExporter.build_dashboard_dict(pnl, cashflow, forecast, org_id="org-123")
+        dashboard = DashboardExporter.build_dashboard_dict(
+            pnl, cashflow, forecast, org_id="org-123"
+        )
         assert "summary" in dashboard
         assert dashboard["summary"]["revenue_cents"] == 5000000
         assert dashboard["meta"]["org_id"] == "org-123"
@@ -69,8 +78,10 @@ class TestSingleResponsibilityPrinciple:
 
 # ── 2. Open/Closed Principle (OCP) Tests ──────────────────────────────────────
 
+
 class CustomCsvExporter(IReportExporter):
     """Extends reporting without modifying existing exporter classes."""
+
     format_name = "csv"
 
     def export(self, pnl: dict, cashflow: dict, forecast: dict, output_path: str, **kwargs) -> str:
@@ -96,6 +107,7 @@ class TestOpenClosedPrinciple:
 
 
 # ── 3. Liskov Substitution Principle (LSP) Tests ──────────────────────────────
+
 
 class TestLiskovSubstitutionPrinciple:
     """Validate that implementations can be substituted without breaking contracts."""
@@ -123,6 +135,7 @@ class TestLiskovSubstitutionPrinciple:
 
 # ── 4. Interface Segregation Principle (ISP) Tests ───────────────────────────
 
+
 class TestInterfaceSegregationPrinciple:
     """Validate that interfaces are cohesive and client-focused."""
 
@@ -137,6 +150,7 @@ class TestInterfaceSegregationPrinciple:
 
 
 # ── 5. Dependency Inversion Principle (DIP) Tests ─────────────────────────────
+
 
 class TestDependencyInversionPrinciple:
     """Validate dependency injection container and mock overrides."""
@@ -160,6 +174,7 @@ class TestDependencyInversionPrinciple:
 
 
 # ── 6. DRY & Financial Math Primitive Tests ───────────────────────────────────
+
 
 class TestFinancialMathPrimitives:
     """Validate pure centralized financial formulas."""
@@ -198,6 +213,7 @@ class TestFinancialMathPrimitives:
 
 
 # ── 7. Unified Resilient LLM Client Tests ─────────────────────────────────────
+
 
 class TestResilientLLMClient:
     """Validate safe_llm_call fallback handling."""

@@ -16,6 +16,7 @@ account code (Tekdüzen Hesap Planı), not read off this pipeline's output:
 Live audit 2026-10-24 (W4): the "Hesap Kodu" column was never read, categories
 came from keywords, and the dashboard showed EBITDA ₺6,03M.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,11 +66,28 @@ def test_a_salary_row_on_a_sales_account_is_an_expense_not_revenue():
 
 def test_balance_sheet_cash_is_neither_revenue_nor_expense():
     """A loan drawn (credit on 300) and a KDV payment move cash, not profit."""
-    pnl = _compute_pnl([
-        {"type": "income", "category": "revenue", "amount_cents": 100_00, "transaction_date": "2024-01-02"},
-        {"type": "income", "category": "transfer", "amount_cents": 500_00, "transaction_date": "2024-01-03"},
-        {"type": "expense", "category": "tax_payment", "amount_cents": 18_00, "transaction_date": "2024-01-26"},
-    ])
+    pnl = _compute_pnl(
+        [
+            {
+                "type": "income",
+                "category": "revenue",
+                "amount_cents": 100_00,
+                "transaction_date": "2024-01-02",
+            },
+            {
+                "type": "income",
+                "category": "transfer",
+                "amount_cents": 500_00,
+                "transaction_date": "2024-01-03",
+            },
+            {
+                "type": "expense",
+                "category": "tax_payment",
+                "amount_cents": 18_00,
+                "transaction_date": "2024-01-26",
+            },
+        ]
+    )
     assert (pnl["revenue"], pnl["total_expenses"], pnl["ebitda"]) == (100_00, 0, 100_00)
 
 
@@ -81,7 +99,9 @@ async def test_the_tax_section_reports_what_the_books_say_was_paid():
     result = await run_tax({"transactions": txs, "pnl": _compute_pnl(txs)}, AgentRunConfig())
     paid = result.patch["tax"]["paid"]
     assert (paid["total"], paid["row_count"], paid["basis"]) == (1_156_550_00, 17, "ledger")
-    assert paid["by_month"]["2024-03"] == 32_500_00 + 85_000_00  # F029 KDV Mart + F030 geçici vergi Q1
+    assert (
+        paid["by_month"]["2024-03"] == 32_500_00 + 85_000_00
+    )  # F029 KDV Mart + F030 geçici vergi Q1
 
 
 async def test_the_dashboard_carries_the_tax_shape_the_tax_page_reads():
@@ -96,7 +116,14 @@ async def test_the_dashboard_carries_the_tax_shape_the_tax_page_reads():
     pnl = _compute_pnl(txs)
     tax = (await run_tax({"transactions": txs, "pnl": pnl}, AgentRunConfig())).patch["tax"]
     block = _build_dashboard_json({"transactions": txs, "pnl": pnl, "tax": tax})["tax"]
-    assert {"vat", "withholding", "corporate", "payment_calendar", "reference_month", "paid"} <= set(block)
+    assert {
+        "vat",
+        "withholding",
+        "corporate",
+        "payment_calendar",
+        "reference_month",
+        "paid",
+    } <= set(block)
     assert block["vat"]["net_vat_payable"] >= 0
     assert block["paid"]["total"] == 1_156_550_00
 
@@ -106,7 +133,9 @@ async def _demo_tax() -> dict:
     from app.agents.tax_agent import run_tax
 
     txs = _txs()
-    return (await run_tax({"transactions": txs, "pnl": _compute_pnl(txs)}, AgentRunConfig())).patch["tax"]
+    return (await run_tax({"transactions": txs, "pnl": _compute_pnl(txs)}, AgentRunConfig())).patch[
+        "tax"
+    ]
 
 
 async def test_the_tax_section_says_which_period_its_figures_cover():

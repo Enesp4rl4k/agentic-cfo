@@ -5,6 +5,7 @@ Extracts report rendering from agent orchestration:
 - ExcelReportExporter: Builds formatted openpyxl workbooks with financial styling.
 - DashboardExporter: Builds normalized frontend JSON structures.
 """
+
 from __future__ import annotations
 
 import os
@@ -65,7 +66,9 @@ class ExcelReportExporter(IReportExporter):
             if "Margin" in label:
                 ws_pnl.append([label, round(value, 2)])
             else:
-                ws_pnl.append([label, _fmt(int(value)) if isinstance(value, (int, float)) else value])
+                ws_pnl.append(
+                    [label, _fmt(int(value)) if isinstance(value, (int, float)) else value]
+                )
 
         ws_pnl.column_dimensions["A"].width = 35
         ws_pnl.column_dimensions["B"].width = 18
@@ -104,12 +107,14 @@ class ExcelReportExporter(IReportExporter):
             cell.fill = subheader_fill
 
         for entry in cashflow.get("monthly_series", []):
-            ws_cf.append([
-                entry["month"],
-                _fmt(entry["in"]),
-                _fmt(entry["out"]),
-                _fmt(entry["net"]),
-            ])
+            ws_cf.append(
+                [
+                    entry["month"],
+                    _fmt(entry["in"]),
+                    _fmt(entry["out"]),
+                    _fmt(entry["net"]),
+                ]
+            )
 
         ws_cf.column_dimensions["A"].width = 30
         for col in ["B", "C", "D"]:
@@ -129,12 +134,14 @@ class ExcelReportExporter(IReportExporter):
                 cell.fill = header_fill
                 cell.font = header_font
             for entry in scenario.get("months", []):
-                ws_fc.append([
-                    entry["month"],
-                    _fmt(entry["in"]),
-                    _fmt(entry["out"]),
-                    _fmt(entry["net"]),
-                ])
+                ws_fc.append(
+                    [
+                        entry["month"],
+                        _fmt(entry["in"]),
+                        _fmt(entry["out"]),
+                        _fmt(entry["net"]),
+                    ]
+                )
             ws_fc.append([])
 
         ws_fc.column_dimensions["A"].width = 25
@@ -199,7 +206,9 @@ class DashboardExporter(IReportExporter):
                 "burn_rate_monthly_cents": forecast.get("burn_rate_monthly", 0),
                 "runway_months": forecast.get("runway_months", "N/A"),
                 "total_alerts": len(alerts or []),
-                "critical_alerts": sum(1 for a in (alerts or []) if a.get("severity") == "critical"),
+                "critical_alerts": sum(
+                    1 for a in (alerts or []) if a.get("severity") == "critical"
+                ),
                 "total_anomalies": len(anomalies or []),
             },
             "pnl": {

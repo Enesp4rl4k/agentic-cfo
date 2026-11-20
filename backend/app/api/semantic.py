@@ -6,6 +6,7 @@ GET  /semantic/me/metrics/{metric_id} — single metric
 POST /semantic/me/rebuild             — reproject from context + canonical txs (admin+)
 GET  /semantic/me/brief               — latest DecisionBrief
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,9 +105,7 @@ async def rebuild_my_semantic(
         snap = await rebuild_semantic_snapshot(org_id, db, include_brief=True, strict=True)
     except Exception as exc:
         logger.exception("Semantic rebuild failed for org=%s", org_id)
-        raise HTTPException(
-            status_code=500, detail=f"Semantic rebuild failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=500, detail=f"Semantic rebuild failed: {exc}") from exc
     if snap is None:
         raise HTTPException(
             status_code=409,
@@ -136,7 +135,9 @@ async def get_my_brief(
         "data": {
             "brief": brief,
             "period_key": period.key,
-            "awaiting_review": bool(brief.get("awaiting_review")) if isinstance(brief, dict) else False,
+            "awaiting_review": bool(brief.get("awaiting_review"))
+            if isinstance(brief, dict)
+            else False,
         },
         "error": None,
     }
@@ -236,7 +237,9 @@ async def get_live_data_status(
             "live_sync_enabled": has_live_sync,
             "last_sync": {
                 "provider": sync_row.provider if sync_row else None,
-                "completed_at": sync_row.completed_at.isoformat() if sync_row and sync_row.completed_at else None,
+                "completed_at": sync_row.completed_at.isoformat()
+                if sync_row and sync_row.completed_at
+                else None,
                 "row_count_canonical": sync_row.row_count_canonical if sync_row else 0,
                 "quality_score": sync_row.quality_score if sync_row else None,
                 "triggered_job_id": sync_row.triggered_job_id if sync_row else None,

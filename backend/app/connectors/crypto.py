@@ -7,6 +7,7 @@ consistent, never plaintext. Production must set `FIELD_ENCRYPTION_KEY`.
 A proper OAuth broker with rotation is Faz 17 / a DISPATCH item; this module is
 the interim, and deliberately narrow: encrypt/decrypt a short string.
 """
+
 from __future__ import annotations
 
 import base64

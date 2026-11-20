@@ -3,6 +3,7 @@
 `focus_mode` is an organisation setting the owner or an admin can switch on. It
 is off for every existing company and for the demo, so nothing changes for them.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -31,7 +32,9 @@ async def test_an_admin_switches_focus_on_and_off(client):
     on = await client.patch("/api/v1/org/me", json={"focus_mode": True}, headers=headers)
     assert on.status_code == 200, on.text
     assert on.json()["data"]["focus_mode"] is True
-    assert (await client.get("/api/v1/org/me", headers=headers)).json()["data"]["focus_mode"] is True
+    assert (await client.get("/api/v1/org/me", headers=headers)).json()["data"][
+        "focus_mode"
+    ] is True
 
     off = await client.patch("/api/v1/org/me", json={"focus_mode": False}, headers=headers)
     assert off.json()["data"]["focus_mode"] is False
@@ -49,5 +52,9 @@ async def test_an_analyst_cannot_switch_it(client):
     response = await client.patch("/api/v1/org/me", json={"focus_mode": True}, headers=headers)
     assert response.status_code == 403
     async with client._maker() as db:
-        rows = (await db.execute(select(Organization.focus_mode).where(Organization.id == org_id))).scalars().all()
+        rows = (
+            (await db.execute(select(Organization.focus_mode).where(Organization.id == org_id)))
+            .scalars()
+            .all()
+        )
     assert rows == [False]

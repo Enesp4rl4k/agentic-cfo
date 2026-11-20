@@ -12,6 +12,7 @@ Guarantees:
   - Safe release: atomic Lua script ensures workers only release their own lock
   - Fallback: in-memory asyncio locks when Redis is unavailable
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -91,7 +92,9 @@ async def distributed_lock(
                 existing = await redis.get(key)
                 if existing:
                     logger.info("Distributed lock conflict on %s (held by another worker)", key)
-                    raise LockAcquisitionError(f"Could not acquire lock for '{resource_key}' within {timeout_seconds}s")
+                    raise LockAcquisitionError(
+                        f"Could not acquire lock for '{resource_key}' within {timeout_seconds}s"
+                    )
             except LockAcquisitionError:
                 raise
             except Exception:
@@ -117,7 +120,9 @@ async def distributed_lock(
         await asyncio.wait_for(lock.acquire(), timeout=timeout_seconds)
     except TimeoutError:
         logger.info("Local lock timeout on %s", resource_key)
-        raise LockAcquisitionError(f"Could not acquire local lock for '{resource_key}' within {timeout_seconds}s")
+        raise LockAcquisitionError(
+            f"Could not acquire local lock for '{resource_key}' within {timeout_seconds}s"
+        )
 
     try:
         logger.debug("Acquired local lock: %s", resource_key)

@@ -4,6 +4,7 @@ The backend is httpx's MockTransport throughout: every test that reaches the
 API records the request, so the tests can say what was sent, with which key,
 and — as often — that nothing was sent at all.
 """
+
 from __future__ import annotations
 
 import ast
@@ -38,26 +39,42 @@ def _server(handler=None, *, key: str = "test-key") -> tuple[Server, list[httpx.
             return httpx.Response(200, json={"data": {}, "error": None})
         return handler(request)
 
-    backend = Backend(base_url="http://csuite.test", api_key=key, transport=httpx.MockTransport(wrapped))
+    backend = Backend(
+        base_url="http://csuite.test", api_key=key, transport=httpx.MockTransport(wrapped)
+    )
     return Server(backend), seen
 
 
 def _call(server: Server, name: str, arguments: dict | None = None) -> dict:
-    resp = server.handle({
-        "jsonrpc": "2.0", "id": 7, "method": "tools/call",
-        "params": {"name": name, "arguments": arguments or {}},
-    })
+    resp = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments or {}},
+        }
+    )
     assert resp is not None
     return resp
 
 
 # ── Protocol ─────────────────────────────────────────────────────────────────
 
+
 def test_initialize_agrees_on_a_version_the_client_asked_for() -> None:
     server, _ = _server()
-    resp = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                          "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                                     "clientInfo": {"name": "t", "version": "0"}}})
+    resp = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "t", "version": "0"},
+            },
+        }
+    )
     result = resp["result"]
     assert result["protocolVersion"] == "2025-06-18"
     assert result["capabilities"]["tools"] == {"listChanged": False}
@@ -67,8 +84,14 @@ def test_initialize_agrees_on_a_version_the_client_asked_for() -> None:
 
 def test_an_unknown_version_gets_the_newest_we_speak() -> None:
     server, _ = _server()
-    resp = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                          "params": {"protocolVersion": "1999-01-01"}})
+    resp = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "1999-01-01"},
+        }
+    )
     assert resp["result"]["protocolVersion"] == SUPPORTED_PROTOCOLS[0]
 
 
@@ -92,10 +115,13 @@ def test_the_stdio_loop_answers_line_by_line_and_survives_garbage() -> None:
     server, _ = _server()
     stdin = io.StringIO(
         "not json\n"
-        + json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}) + "\n"
-        + json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
+        + json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"})
         + "\n"
-        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) + "\n"
+        + json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        + "\n"
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        + "\n"
     )
     stdout = io.StringIO()
     server.serve(stdin, stdout)
@@ -107,10 +133,16 @@ def test_the_stdio_loop_answers_line_by_line_and_survives_garbage() -> None:
 
 # ── The tool list ────────────────────────────────────────────────────────────
 
+
 def test_the_chain_is_exposed() -> None:
     assert set(TOOLS) == {
-        "musteri_paneli", "dosya_yukle", "analiz_durumu", "muhasebe_calistir",
-        "onay_kuyrugu", "mizan", "edefter_durumu",
+        "musteri_paneli",
+        "dosya_yukle",
+        "analiz_durumu",
+        "muhasebe_calistir",
+        "onay_kuyrugu",
+        "mizan",
+        "edefter_durumu",
     }
 
 
@@ -136,10 +168,20 @@ def test_every_tool_describes_itself_properly() -> None:
 
 # ── Calling the API ──────────────────────────────────────────────────────────
 
+
 def test_a_call_goes_to_the_api_with_the_users_key() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"data": {"job_id": JOB, "status": "completed",
-                                                  "logs": [f"l{i}" for i in range(25)]}, "error": None})
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "job_id": JOB,
+                    "status": "completed",
+                    "logs": [f"l{i}" for i in range(25)],
+                },
+                "error": None,
+            },
+        )
 
     server, seen = _server(handler)
     resp = _call(server, "analiz_durumu", {"job_id": JOB})
@@ -152,13 +194,16 @@ def test_a_call_goes_to_the_api_with_the_users_key() -> None:
     assert seen[0].headers["x-api-key"] == "test-key"
 
 
-@pytest.mark.parametrize(("tool", "method", "path"), [
-    ("musteri_paneli", "GET", "/api/v1/smmm/dashboard"),
-    ("muhasebe_calistir", "POST", "/api/v1/muhasebe/analiz"),
-    ("onay_kuyrugu", "GET", f"/api/v1/smmm/onay/queue/{JOB}"),
-    ("mizan", "GET", f"/api/v1/muhasebe/mizan/{JOB}"),
-    ("edefter_durumu", "GET", f"/api/v1/muhasebe/{JOB}/e-defter/durum"),
-])
+@pytest.mark.parametrize(
+    ("tool", "method", "path"),
+    [
+        ("musteri_paneli", "GET", "/api/v1/smmm/dashboard"),
+        ("muhasebe_calistir", "POST", "/api/v1/muhasebe/analiz"),
+        ("onay_kuyrugu", "GET", f"/api/v1/smmm/onay/queue/{JOB}"),
+        ("mizan", "GET", f"/api/v1/muhasebe/mizan/{JOB}"),
+        ("edefter_durumu", "GET", f"/api/v1/muhasebe/{JOB}/e-defter/durum"),
+    ],
+)
 def test_each_tool_hits_its_route(tool: str, method: str, path: str) -> None:
     server, seen = _server()
     args = {} if tool == "musteri_paneli" else {"job_id": JOB}
@@ -173,7 +218,9 @@ def test_running_the_chain_sends_the_job_as_json() -> None:
 
 
 def test_the_queue_says_who_decides() -> None:
-    server, _ = _server(lambda r: httpx.Response(200, json={"data": {"kayitlar": []}, "error": None}))
+    server, _ = _server(
+        lambda r: httpx.Response(200, json={"data": {"kayitlar": []}, "error": None})
+    )
     data = _call(server, "onay_kuyrugu", {"job_id": JOB})["result"]["structuredContent"]
     assert "web uygulamasından" in data["not"]
 
@@ -187,7 +234,9 @@ def test_period_is_passed_and_checked() -> None:
 
 
 def test_an_api_error_is_a_tool_error_with_the_reason() -> None:
-    server, _ = _server(lambda r: httpx.Response(404, json={"detail": "Analiz iş kaydı bulunamadı."}))
+    server, _ = _server(
+        lambda r: httpx.Response(404, json={"detail": "Analiz iş kaydı bulunamadı."})
+    )
     result = _call(server, "mizan", {"job_id": JOB})["result"]
     assert result["isError"] is True
     assert "404" in result["content"][0]["text"]
@@ -227,10 +276,13 @@ def test_unknown_tool_and_unknown_argument_are_protocol_errors() -> None:
 
 # ── Upload ───────────────────────────────────────────────────────────────────
 
+
 def test_upload_sends_the_file_and_the_client(tmp_path: Path) -> None:
     f = tmp_path / "ocak.csv"
     f.write_text("tarih,açıklama,tutar\n2024-01-03,Satış,100\n", encoding="utf-8")
-    server, seen = _server(lambda r: httpx.Response(200, json={"data": {"job_id": JOB}, "error": None}))
+    server, seen = _server(
+        lambda r: httpx.Response(200, json={"data": {"job_id": JOB}, "error": None})
+    )
     result = _call(server, "dosya_yukle", {"path": str(f), "client_id": CLIENT})["result"]
     assert result["structuredContent"]["job_id"] == JOB
     req = seen[0]
@@ -265,6 +317,7 @@ def test_upload_of_a_missing_file(tmp_path: Path) -> None:
 
 
 # ── It is a client of the API and nothing more ───────────────────────────────
+
 
 def test_the_mcp_package_imports_nothing_from_the_app() -> None:
     """Reaching past the API would skip auth, org scoping and ownership."""

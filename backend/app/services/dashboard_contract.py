@@ -9,6 +9,7 @@ computed; the stress test read lira as kuruş; a report divided lira by 100.
 Readers go through these accessors instead of `pnl.get(...)`, so the shape is
 answered once.
 """
+
 from __future__ import annotations
 
 from typing import Any

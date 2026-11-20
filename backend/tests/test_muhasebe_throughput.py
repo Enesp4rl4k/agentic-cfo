@@ -1,4 +1,5 @@
 """Booking a large statement: the model is asked only where the rules failed, in parallel, once per input."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,8 +12,16 @@ from app.services.accounting.thp_classifier import THPClassifier, THPSonucu
 
 
 def _sonuc(kod: str, yontem: str) -> THPSonucu:
-    return THPSonucu(hesap_kodu=kod, hesap_adi=kod, ana_grup="7", normal_bakiye="borç", tip="gider",
-                     confidence=0.9, yontem=yontem, aciklama="")
+    return THPSonucu(
+        hesap_kodu=kod,
+        hesap_adi=kod,
+        ana_grup="7",
+        normal_bakiye="borç",
+        tip="gider",
+        confidence=0.9,
+        yontem=yontem,
+        aciklama="",
+    )
 
 
 class FakeClassifier:
@@ -43,8 +52,13 @@ def _agent(classifier) -> MuhasebeAgent:
 
 
 def _tx(i: int, desc: str, amount: int = 1000) -> dict:
-    return {"id": f"t{i}", "description": desc, "amount_cents": amount, "type": "expense",
-            "transaction_date": "2024-01-05"}
+    return {
+        "id": f"t{i}",
+        "description": desc,
+        "amount_cents": amount,
+        "type": "expense",
+        "transaction_date": "2024-01-05",
+    }
 
 
 @pytest.mark.asyncio
@@ -53,7 +67,11 @@ async def test_rows_keep_their_own_result_and_order():
     txs = [_tx(0, "ofis kira"), _tx(1, "google reklam"), _tx(2, "bilinmeyen"), _tx(3, "ofis kira")]
     sonuclar = await _agent(fake)._siniflandir(txs)
     assert [(r.hesap_kodu, r.yontem) for r in sonuclar] == [
-        ("770", "kural"), ("760", "llm"), ("740", "llm"), ("770", "kural")]
+        ("770", "kural"),
+        ("760", "llm"),
+        ("740", "llm"),
+        ("770", "kural"),
+    ]
     # The rules' rows never reach the model.
     assert sorted(fake.model_calls) == ["bilinmeyen", "google reklam"]
 
@@ -102,8 +120,10 @@ async def test_a_large_statement_is_classified_off_the_event_loop_thread():
     """
     classifier = ThreadRecordingClassifier()
     agent = MuhasebeAgent(classifier=classifier, use_llm_fallback=False, regional_packs=["tr"])
-    txs = [_tx(i, "Ocak ofis kirası Levent" if i % 2 else "Personel maaş ödemesi", 100_000 + i)
-           for i in range(6000)]
+    txs = [
+        _tx(i, "Ocak ofis kirası Levent" if i % 2 else "Personel maaş ödemesi", 100_000 + i)
+        for i in range(6000)
+    ]
 
     loop_thread = threading.get_ident()
     sonuc = await agent.run("perf", txs)

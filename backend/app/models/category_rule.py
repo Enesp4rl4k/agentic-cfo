@@ -5,6 +5,7 @@ When a user corrects a transaction's category, we store a rule so future
 transactions from the same vendor/keyword are auto-categorized correctly.
 This is the feedback loop that makes the classifier smarter over time.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -23,9 +24,7 @@ def utcnow() -> datetime:
 class CategoryRule(Base):
     __tablename__ = "category_rules"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Matching criteria — at least one must be set
     # Exact vendor match (case-insensitive)

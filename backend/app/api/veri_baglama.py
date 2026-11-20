@@ -9,6 +9,7 @@ GET  /veri/turler  the types a person can choose from, in plain Turkish.
 The person never picks a "source type", renames a column or reformats a
 number. When the system cannot tell, it says so and asks; it does not guess.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,25 +35,34 @@ async def veri_turleri(current_user: User = Depends(get_current_user)) -> dict[s
 @router.post("/veri/ekle", status_code=status.HTTP_201_CREATED)
 async def veri_ekle(
     files: list[UploadFile] = File(..., description="Bir ya da daha fazla dosya"),
-    secimler: str | None = Form(default=None, description='{"dosya adı": "tür"} — belirsiz dosyalar için'),
-    job_id: str | None = Form(default=None, description="Alan dosyalarının ekleneceği analiz; boşsa en son analiz"),
+    secimler: str | None = Form(
+        default=None, description='{"dosya adı": "tür"} — belirsiz dosyalar için'
+    ),
+    job_id: str | None = Form(
+        default=None, description="Alan dosyalarının ekleneceği analiz; boşsa en son analiz"
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if len(files) > _MAX_DOSYA:
-        raise HTTPException(status_code=400, detail=f"Bir seferde en fazla {_MAX_DOSYA} dosya ekleyin.")
+        raise HTTPException(
+            status_code=400, detail=f"Bir seferde en fazla {_MAX_DOSYA} dosya ekleyin."
+        )
     try:
         secim: dict[str, str] = json.loads(secimler) if secimler else {}
         if not isinstance(secim, dict):
             raise ValueError
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="secimler bir {dosya adı: tür} nesnesi olmalı.") from exc
+        raise HTTPException(
+            status_code=422, detail="secimler bir {dosya adı: tür} nesnesi olmalı."
+        ) from exc
 
     # Checked before anything is saved: a job that is not the caller's is a 404
     # for the whole request, not after the first files are stored.
     istenen = await load_owned_job(db, job_id, current_user) if job_id else None
 
     okunan = [(f.filename or "dosya", await f.read()) for f in files]
-    return {"data": await dosyalari_ekle(db, Sahip.kullanici(current_user), okunan, secim, istenen), "error": None}
-
-
+    return {
+        "data": await dosyalari_ekle(db, Sahip.kullanici(current_user), okunan, secim, istenen),
+        "error": None,
+    }

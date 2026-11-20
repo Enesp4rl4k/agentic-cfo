@@ -7,6 +7,7 @@ part of the analysis to check.
 
 Pure function, no I/O — safe to call from any node or an API serializer.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -29,7 +30,9 @@ def build_confidence_breakdown(
     components: list[dict[str, Any]] = []
     for log in state.get("logs") or []:
         step = getattr(log, "step", None) or (log.get("step") if isinstance(log, dict) else None)
-        conf = getattr(log, "confidence", None) if not isinstance(log, dict) else log.get("confidence")
+        conf = (
+            getattr(log, "confidence", None) if not isinstance(log, dict) else log.get("confidence")
+        )
         ok = getattr(log, "ok", True) if not isinstance(log, dict) else log.get("ok", True)
         detail = getattr(log, "detail", None) if not isinstance(log, dict) else log.get("detail")
         if step in _ECHO_STEPS or conf is None:

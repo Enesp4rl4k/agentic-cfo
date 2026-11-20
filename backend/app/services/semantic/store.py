@@ -1,4 +1,5 @@
 """Persistence for CompanySemanticSnapshot (DB + Redis mirror)."""
+
 from __future__ import annotations
 
 import json

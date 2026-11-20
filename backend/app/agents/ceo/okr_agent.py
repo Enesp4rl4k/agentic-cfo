@@ -49,6 +49,7 @@ OKR schema produced:
     "narrative": "...",
   }
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,6 +62,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Scoring Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _score_kr(actual: float | None, target: float, higher_is_better: bool = True) -> float:
     """
@@ -157,6 +159,7 @@ def _overall_status(key_results: list[dict[str, Any]]) -> tuple[str, float]:
 # OKR Inference
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _infer_okrs(
     financial_summary: dict[str, Any] | None,
     tech_summary: dict[str, Any] | None,
@@ -169,140 +172,132 @@ def _infer_okrs(
     Derive standard OKRs from CFO + CTO outputs.
     Now includes strategic weights and momentum tracking.
     """
-    fin   = financial_summary or {}
-    tech  = tech_summary or {}
+    fin = financial_summary or {}
+    tech = tech_summary or {}
     risks = cross_risks or []
 
     # Pull metrics
-    net_margin          = fin.get("net_margin")
-    revenue_cents       = fin.get("revenue_cents")
-    cash_runway_months  = fin.get("cash_runway_months")
-    forecast_12m_cents  = fin.get("forecast_base_12m_cents")
+    net_margin = fin.get("net_margin")
+    revenue_cents = fin.get("revenue_cents")
+    cash_runway_months = fin.get("cash_runway_months")
+    forecast_12m_cents = fin.get("forecast_base_12m_cents")
     fin.get("prev_net_margin")
 
-    infra_waste_cents   = tech.get("infra_waste_cents")
-    infra_cost_cents    = tech.get("infra_cost_cents")
-    debt_score          = tech.get("debt_score")
-    mttr_hours          = tech.get("mttr_hours")
-    avg_velocity        = tech.get("avg_velocity")
-    prev_mttr_hours     = tech.get("prev_mttr_hours")
+    infra_waste_cents = tech.get("infra_waste_cents")
+    infra_cost_cents = tech.get("infra_cost_cents")
+    debt_score = tech.get("debt_score")
+    mttr_hours = tech.get("mttr_hours")
+    avg_velocity = tech.get("avg_velocity")
+    prev_mttr_hours = tech.get("prev_mttr_hours")
 
     critical_risk_count = sum(1 for r in risks if r.get("severity") == "critical")
 
     # ── Strategic weights (sum = 1.0) ──────────────────────────────────────────
     # Higher weight = more strategic importance for this company
     weights = {
-        "fin_profitability": 0.25,   # Sustainability
-        "fin_growth":        0.15,   # Revenue expansion
-        "tech_reliability":  0.20,   # Operational resilience
-        "tech_efficiency":   0.15,   # Cost optimization
-        "team_velocity":     0.15,   # Execution capability
+        "fin_profitability": 0.25,  # Sustainability
+        "fin_growth": 0.15,  # Revenue expansion
+        "tech_reliability": 0.20,  # Operational resilience
+        "tech_efficiency": 0.15,  # Cost optimization
+        "team_velocity": 0.15,  # Execution capability
         # Remaining 10% reserved for emergent objectives
     }
 
     # ── Default OKR definitions with strategic weights ───────────────────────
     defaults: dict[str, dict[str, Any]] = {
         "fin_profitability": {
-            "title":   "Sürdürülebilir Kârlılığı Sağla",
-            "owner":   "CFO",
-            "weight":  weights["fin_profitability"],
+            "title": "Sürdürülebilir Kârlılığı Sağla",
+            "owner": "CFO",
+            "weight": weights["fin_profitability"],
             "krs": [
                 {
-                    "kr":               "Net marj ≥ 15%",
-                    "target":           0.15,
-                    "actual":           net_margin,
-                    "unit":             "oran",
+                    "kr": "Net marj ≥ 15%",
+                    "target": 0.15,
+                    "actual": net_margin,
+                    "unit": "oran",
                     "higher_is_better": True,
-
                 },
                 {
-                    "kr":               "Nakit pisti ≥ 12 ay",
-                    "target":           12.0,
-                    "actual":           cash_runway_months,
-                    "unit":             "ay",
+                    "kr": "Nakit pisti ≥ 12 ay",
+                    "target": 12.0,
+                    "actual": cash_runway_months,
+                    "unit": "ay",
                     "higher_is_better": True,
-
                 },
             ],
         },
         "fin_growth": {
-            "title":   "Gelir Büyümesini Sürükle",
-            "owner":   "CFO",
-            "weight":  weights["fin_growth"],
+            "title": "Gelir Büyümesini Sürükle",
+            "owner": "CFO",
+            "weight": weights["fin_growth"],
             "krs": [
                 {
-                    "kr":               "12 aylık tahmin ≥ gelirin %110'u",
-                    "target":           1.10,
-                    "actual":           (forecast_12m_cents / revenue_cents)
-                                        if (forecast_12m_cents and revenue_cents and revenue_cents > 0)
-                                        else None,
-                    "unit":             "oran",
+                    "kr": "12 aylık tahmin ≥ gelirin %110'u",
+                    "target": 1.10,
+                    "actual": (forecast_12m_cents / revenue_cents)
+                    if (forecast_12m_cents and revenue_cents and revenue_cents > 0)
+                    else None,
+                    "unit": "oran",
                     "higher_is_better": True,
-
                 },
             ],
         },
         "tech_reliability": {
-            "title":   "Mühendislik Güvenilirliğini İyileştir",
-            "owner":   "CTO",
-            "weight":  weights["tech_reliability"],
+            "title": "Mühendislik Güvenilirliğini İyileştir",
+            "owner": "CTO",
+            "weight": weights["tech_reliability"],
             "krs": [
                 {
-                    "kr":               "MTTR ≤ 2 saat",
-                    "target":           2.0,
-                    "actual":           mttr_hours,
-                    "unit":             "saat",
+                    "kr": "MTTR ≤ 2 saat",
+                    "target": 2.0,
+                    "actual": mttr_hours,
+                    "unit": "saat",
                     "higher_is_better": False,
-
-                    "prev_actual":      prev_mttr_hours,
+                    "prev_actual": prev_mttr_hours,
                 },
                 {
-                    "kr":               "Sıfır kritik çapraz alan riski",
-                    "target":           0.0,
-                    "actual":           float(critical_risk_count),
-                    "unit":             "sayı",
+                    "kr": "Sıfır kritik çapraz alan riski",
+                    "target": 0.0,
+                    "actual": float(critical_risk_count),
+                    "unit": "sayı",
                     "higher_is_better": False,
-
                 },
             ],
         },
         "tech_efficiency": {
-            "title":   "Altyapı İsrafını Azalt",
-            "owner":   "CTO",
-            "weight":  weights["tech_efficiency"],
+            "title": "Altyapı İsrafını Azalt",
+            "owner": "CTO",
+            "weight": weights["tech_efficiency"],
             "krs": [
                 {
-                    "kr":               "Altyapı israfı ≤ cost'un %10'u",
-                    "target":           0.10,
-                    "actual":           (infra_waste_cents / infra_cost_cents)
-                                        if (infra_waste_cents is not None and infra_cost_cents and infra_cost_cents > 0)
-                                        else None,
-                    "unit":             "oran",
+                    "kr": "Altyapı israfı ≤ cost'un %10'u",
+                    "target": 0.10,
+                    "actual": (infra_waste_cents / infra_cost_cents)
+                    if (infra_waste_cents is not None and infra_cost_cents and infra_cost_cents > 0)
+                    else None,
+                    "unit": "oran",
                     "higher_is_better": False,
-
                 },
                 {
-                    "kr":               "Teknik borç skoru ≤ 4 (0–10 scale)",
-                    "target":           4.0,
-                    "actual":           debt_score,
-                    "unit":             "skor",
+                    "kr": "Teknik borç skoru ≤ 4 (0–10 scale)",
+                    "target": 4.0,
+                    "actual": debt_score,
+                    "unit": "skor",
                     "higher_is_better": False,
-
                 },
             ],
         },
         "team_velocity": {
-            "title":   "Mühendislik Hızını Artır",
-            "owner":   "Engineering",
-            "weight":  weights["team_velocity"],
+            "title": "Mühendislik Hızını Artır",
+            "owner": "Engineering",
+            "weight": weights["team_velocity"],
             "krs": [
                 {
-                    "kr":               "Ortalama sprint hızı ≥ 40 puan",
-                    "target":           40.0,
-                    "actual":           avg_velocity,
-                    "unit":             "puan/sprint",
+                    "kr": "Ortalama sprint hızı ≥ 40 puan",
+                    "target": 40.0,
+                    "actual": avg_velocity,
+                    "unit": "puan/sprint",
                     "higher_is_better": True,
-
                 },
             ],
         },
@@ -313,7 +308,7 @@ def _infer_okrs(
         for defn in okr_definitions:
             obj_id = defn.get("id")
             if obj_id and obj_id in defaults:
-                for override_kr in (defn.get("key_results") or []):
+                for override_kr in defn.get("key_results") or []:
                     for default_kr in defaults[obj_id]["krs"]:
                         if default_kr["kr"] == override_kr.get("kr"):
                             if "target" in override_kr:
@@ -350,19 +345,21 @@ def _infer_okrs(
                 kr_def.get("prev_actual"),
             )
 
-            krs_out.append({
-                "kr":           kr_def["kr"],
-                "target":       kr_def["target"],
-                "actual":       kr_def["actual"],
-                "unit":         kr_def["unit"],
-                "status":       _status_from_score(score),
-                "progress_pct": round(score * 100),
-                "momentum":     round(momentum_val, 3),
-                "momentum_label": momentum_label,
-                "confidence":            confidence,
-                "data_freshness_days":   f_days,
-                "data_freshness_source": f_source,
-            })
+            krs_out.append(
+                {
+                    "kr": kr_def["kr"],
+                    "target": kr_def["target"],
+                    "actual": kr_def["actual"],
+                    "unit": kr_def["unit"],
+                    "status": _status_from_score(score),
+                    "progress_pct": round(score * 100),
+                    "momentum": round(momentum_val, 3),
+                    "momentum_label": momentum_label,
+                    "confidence": confidence,
+                    "data_freshness_days": f_days,
+                    "data_freshness_source": f_source,
+                }
+            )
 
         overall_status, avg_score = _overall_status(krs_out)
         weight = obj_def.get("weight", 0.20)
@@ -373,26 +370,30 @@ def _infer_okrs(
         if obj_momentum_vals:
             obj_momentum = sum(obj_momentum_vals) / len(obj_momentum_vals)
             obj_momentum_label = (
-                "accelerating" if obj_momentum > 0.05
-                else "decelerating" if obj_momentum < -0.05
+                "accelerating"
+                if obj_momentum > 0.05
+                else "decelerating"
+                if obj_momentum < -0.05
                 else "flat"
             )
         else:
             obj_momentum = 0.0
             obj_momentum_label = "unknown"
 
-        objectives.append({
-            "id":               obj_id,
-            "title":            obj_def["title"],
-            "owner":            obj_def["owner"],
-            "weight":           weight,
-            "key_results":      krs_out,
-            "overall_status":   overall_status,
-            "score":            avg_score,
-            "weighted_score":   weighted_score,
-            "momentum":         round(obj_momentum, 3),
-            "momentum_label":   obj_momentum_label,
-        })
+        objectives.append(
+            {
+                "id": obj_id,
+                "title": obj_def["title"],
+                "owner": obj_def["owner"],
+                "weight": weight,
+                "key_results": krs_out,
+                "overall_status": overall_status,
+                "score": avg_score,
+                "weighted_score": weighted_score,
+                "momentum": round(obj_momentum, 3),
+                "momentum_label": obj_momentum_label,
+            }
+        )
 
     return objectives
 
@@ -400,6 +401,7 @@ def _infer_okrs(
 # ─────────────────────────────────────────────────────────────────────────────
 # OKR Narrative (with momentum & weighted scores)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def _generate_okr_narrative(
     objectives: list[dict[str, Any]],
@@ -411,9 +413,9 @@ async def _generate_okr_narrative(
     try:
         from app.platform.model_gateway import complete_text
 
-        achieved  = [o for o in objectives if o["overall_status"] == "achieved"]
-        on_track  = [o for o in objectives if o["overall_status"] == "on_track"]
-        at_risk   = [o for o in objectives if o["overall_status"] == "at_risk"]
+        achieved = [o for o in objectives if o["overall_status"] == "achieved"]
+        on_track = [o for o in objectives if o["overall_status"] == "on_track"]
+        at_risk = [o for o in objectives if o["overall_status"] == "at_risk"]
         off_track = [o for o in objectives if o["overall_status"] == "off_track"]
 
         accel = len([o for o in objectives if o.get("momentum_label") == "accelerating"])
@@ -422,8 +424,7 @@ async def _generate_okr_narrative(
         summary_lines = []
         for obj in objectives:
             kr_lines = ", ".join(
-                f"{kr['kr']} ({kr['progress_pct']}% — {kr['status']})"
-                for kr in obj["key_results"]
+                f"{kr['kr']} ({kr['progress_pct']}% — {kr['status']})" for kr in obj["key_results"]
             )
             summary_lines.append(
                 f"• {obj['title']} [{obj['overall_status']} — {obj['momentum_label']:12}] "
@@ -442,20 +443,22 @@ async def _generate_okr_narrative(
             "yapılması gereken tek en önemli eylemi belirt. Sade ve doğrudan yaz."
         )
 
-        return (await complete_text(
-            task="short_narrative",
-            system_prompt="Sen Türkçe olarak kısa, öz ve aksiyon odaklı OKR durum güncellemeleri yazan deneyimli yönetim danışmanısın.",
-            prompt=prompt,
-            max_tokens=450,
-        )).strip()
+        return (
+            await complete_text(
+                task="short_narrative",
+                system_prompt="Sen Türkçe olarak kısa, öz ve aksiyon odaklı OKR durum güncellemeleri yazan deneyimli yönetim danışmanısın.",
+                prompt=prompt,
+                max_tokens=450,
+            )
+        ).strip()
 
     except Exception as exc:
         logger.warning("OKR narrative generation failed: %s", exc)
         # Fallback: rule-based summary
-        achieved_titles  = [o["title"] for o in objectives if o["overall_status"] == "achieved"]
-        at_risk_titles   = [o["title"] for o in objectives if o["overall_status"] == "at_risk"]
+        achieved_titles = [o["title"] for o in objectives if o["overall_status"] == "achieved"]
+        at_risk_titles = [o["title"] for o in objectives if o["overall_status"] == "at_risk"]
         off_track_titles = [o["title"] for o in objectives if o["overall_status"] == "off_track"]
-        accel_titles     = [o["title"] for o in objectives if o.get("momentum_label") == "accelerating"]
+        accel_titles = [o["title"] for o in objectives if o.get("momentum_label") == "accelerating"]
         [o["title"] for o in objectives if o.get("momentum_label") == "decelerating"]
 
         parts: list[str] = []
@@ -477,6 +480,7 @@ async def _generate_okr_narrative(
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Agent Entry Point
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def _resolve_org_freshness(job_id: str | None) -> dict[str, Any] | None:
     """Real org data age for confidence — `None` (unknown) on any failure.
@@ -525,6 +529,7 @@ async def run_okr_agent(
     logger.info("OKR agent: starting with momentum & weighted scoring")
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         objectives = _infer_okrs(
@@ -550,11 +555,11 @@ async def run_okr_agent(
         )
 
         okr_status: dict[str, Any] = {
-            "objectives":              objectives,
-            "period":                  state.get("period"),
+            "objectives": objectives,
+            "period": state.get("period"),
             "company_weighted_okr_score": company_weighted_score,
-            "generated_at":            datetime.now(UTC).isoformat(),
-            "narrative":               narrative,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "narrative": narrative,
         }
 
         log = CEOStepLog(

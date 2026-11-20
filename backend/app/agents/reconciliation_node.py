@@ -16,6 +16,7 @@ Verdicts:
                           computed value (possible LLM hallucination).
   * ``proceed``         — numbers are internally consistent and grounded.
 """
+
 from __future__ import annotations
 
 import logging
@@ -73,9 +74,7 @@ def _check_pnl_identities(pnl: dict[str, Any], transactions: list[dict]) -> list
     total_expenses = pnl.get("total_expenses")
 
     # Independent recomputation of the one lossless figure: revenue = Σ income.
-    income_sum = sum(
-        t.get("amount_cents", 0) for t in transactions if t.get("type") == "income"
-    )
+    income_sum = sum(t.get("amount_cents", 0) for t in transactions if t.get("type") == "income")
     if transactions and not _close(revenue, income_sum):
         fails.append(f"revenue {revenue} != Σ income transactions {income_sum}")
 
@@ -83,23 +82,15 @@ def _check_pnl_identities(pnl: dict[str, Any], transactions: list[dict]) -> list
         fails.append(f"gross_profit {gross_profit} != revenue - cogs ({revenue - cogs})")
 
     if not _close(ebitda, gross_profit - total_opex):
-        fails.append(
-            f"ebitda {ebitda} != gross_profit - total_opex ({gross_profit - total_opex})"
-        )
+        fails.append(f"ebitda {ebitda} != gross_profit - total_opex ({gross_profit - total_opex})")
 
     if not _close(net_income, ebitda - tax - loans):
-        fails.append(
-            f"net_income {net_income} != ebitda - tax - loans ({ebitda - tax - loans})"
-        )
+        fails.append(f"net_income {net_income} != ebitda - tax - loans ({ebitda - tax - loans})")
 
     if opex and not _close(sum(opex.values()), total_opex):
-        fails.append(
-            f"Σ opex categories {sum(opex.values())} != total_opex {total_opex}"
-        )
+        fails.append(f"Σ opex categories {sum(opex.values())} != total_opex {total_opex}")
 
-    if total_expenses is not None and not _close(
-        total_expenses, cogs + total_opex + tax + loans
-    ):
+    if total_expenses is not None and not _close(total_expenses, cogs + total_opex + tax + loans):
         fails.append(
             f"total_expenses {total_expenses} != cogs+opex+tax+loans "
             f"({cogs + total_opex + tax + loans})"
@@ -139,10 +130,20 @@ def _uncategorized_expense_note(pnl: dict, transactions: list[dict]) -> str | No
     """Expenses that fall outside every P&L bucket silently vanish from net_income."""
     if not pnl or not transactions:
         return None
-    known = {"cogs", "tax", "loan", "salary", "rent", "utilities",
-             "marketing", "technology", "other_expense"}
+    known = {
+        "cogs",
+        "tax",
+        "loan",
+        "salary",
+        "rent",
+        "utilities",
+        "marketing",
+        "technology",
+        "other_expense",
+    }
     orphan = [
-        t for t in transactions
+        t
+        for t in transactions
         if t.get("type") == "expense" and str(t.get("category", "")) not in known
     ]
     if not orphan:
@@ -191,9 +192,7 @@ def reconcile_cfo_state(state: CFOState) -> ReconVerdict:
             notes=notes,
         )
     if ungrounded:
-        return ReconVerdict(
-            action="hold_for_review", ungrounded_claims=ungrounded, notes=notes
-        )
+        return ReconVerdict(action="hold_for_review", ungrounded_claims=ungrounded, notes=notes)
     return ReconVerdict(action="proceed", notes=notes)
 
 

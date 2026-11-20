@@ -8,6 +8,7 @@ This module handles:
   - Usage metering: plan limit check before upload
   - Returning the HTTP response
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -81,12 +82,12 @@ async def upload_file(
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail={
-                    "error":   "plan_limit_exceeded",
+                    "error": "plan_limit_exceeded",
                     "message": str(exc),
                     "resource": exc.resource,
-                    "plan":     exc.plan,
-                    "used":     exc.current,
-                    "limit":    exc.limit,
+                    "plan": exc.plan,
+                    "used": exc.current,
+                    "limit": exc.limit,
                     "upgrade_url": "/billing",
                 },
             ) from exc

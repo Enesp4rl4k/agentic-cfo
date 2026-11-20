@@ -25,6 +25,7 @@ neither authenticated nor listed in `PUBLIC_ROUTES` with its reason, or takes
 an object id without going through this module. A route cannot be added that
 skips it without the test naming the route.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -87,7 +88,10 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/system/health"): "liveness probe",
     ("POST", "/api/v1/auth/register"): "creates the user",
     ("POST", "/api/v1/auth/login"): "issues the token",
-    ("POST", "/api/v1/demo/guest"): "mints an isolated demo session without signup (gated by demo_mode)",
+    (
+        "POST",
+        "/api/v1/demo/guest",
+    ): "mints an isolated demo session without signup (gated by demo_mode)",
     ("POST", "/api/v1/auth/refresh"): "exchanges a refresh token, which it verifies",
     ("GET", "/api/v1/auth/sso/providers"): "lists login options before login",
     ("GET", "/api/v1/auth/sso/{provider}/login"): "starts an SSO login",
@@ -103,8 +107,14 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/benchmark/sectors"): "static sector list, no tenant data",
     ("GET", "/api/v1/agent-graph/topology"): "static agent graph, no tenant data",
     ("GET", "/api/v1/open-banking/banks"): "static list of supported banks",
-    ("POST", "/api/v1/email/inbound"): "mail provider webhook; verifies the shared secret, refuses all when unset",
-    ("GET", "/api/v1/erp/parasut/callback"): "Paraşüt OAuth redirect; verifies a signed, expiring, single-use state",
+    (
+        "POST",
+        "/api/v1/email/inbound",
+    ): "mail provider webhook; verifies the shared secret, refuses all when unset",
+    (
+        "GET",
+        "/api/v1/erp/parasut/callback",
+    ): "Paraşüt OAuth redirect; verifies a signed, expiring, single-use state",
     # FastAPI's own schema and docs pages: the route list, no data. Candidates
     # for docs_url=None in production; that is a deployment decision.
     ("GET", "/openapi.json"): "API schema, no data",
@@ -139,7 +149,10 @@ def issue_stream_ticket(job_id: str, user_id: str) -> tuple[str, int]:
     import time
 
     expires = int(time.time()) + STREAM_TICKET_TTL_SECONDS
-    return f"{user_id}.{expires}.{_ticket_signature(job_id, user_id, expires)}", STREAM_TICKET_TTL_SECONDS
+    return (
+        f"{user_id}.{expires}.{_ticket_signature(job_id, user_id, expires)}",
+        STREAM_TICKET_TTL_SECONDS,
+    )
 
 
 async def stream_ticket_user(

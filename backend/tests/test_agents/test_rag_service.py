@@ -1,6 +1,7 @@
 """
 Tests for RAG v1 service helpers.
 """
+
 import app.services.rag_service as rag
 from app.services.rag_service import _chunk_text, _tfidf_similarity
 from tests.db_helpers import gecici_oturum
@@ -62,8 +63,6 @@ async def test_embedding_runs_before_the_transaction_opens(monkeypatch) -> None:
         )
         await db.rollback()
 
-
     assert written >= 1
-    assert order[0] == "embed"      # BEFORE any statement touches the txn
-    assert "db" in order            # the delete still ran afterwards
-
+    assert order[0] == "embed"  # BEFORE any statement touches the txn
+    assert "db" in order  # the delete still ran afterwards

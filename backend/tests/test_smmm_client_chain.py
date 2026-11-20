@@ -14,6 +14,7 @@ The fields stay unwritten on purpose. A cache drifts from what it caches, and
 this codebase has spent a lot of this work unpicking values that drifted
 silently. Status is derived from the jobs, which cannot.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -81,6 +82,7 @@ def _job(client_id: str | None, *, status: str, minutes_ago: int = 0) -> Analysi
 
 # ── Derived status ───────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_a_client_with_no_jobs_reads_as_having_no_data(db_session, book) -> None:
     _user, _m, clients = book
@@ -138,8 +140,10 @@ async def test_pending_approvals_are_counted_per_client(db_session, book) -> Non
         )
     db_session.add(
         SMMMOnayKaydi(
-            job_id=job.id, kayit_id="onaylanan",
-            durum=OnayDurumu.ONAYLANDI, orijinal_kayit={},
+            job_id=job.id,
+            kayit_id="onaylanan",
+            durum=OnayDurumu.ONAYLANDI,
+            orijinal_kayit={},
         )
     )
     await db_session.flush()
@@ -157,9 +161,7 @@ async def test_a_sealed_packet_moves_the_client_to_done(db_session, book) -> Non
     job = _job(target, status=JobStatus.COMPLETED)
     db_session.add(job)
     await db_session.flush()
-    db_session.add(
-        DefensibilityPacket(job_id=job.id, status="finalized", summary={}, payload={})
-    )
+    db_session.add(DefensibilityPacket(job_id=job.id, status="finalized", summary={}, payload={}))
     await db_session.flush()
 
     s = (await status_for_clients(db_session, [target]))[target]
@@ -199,6 +201,7 @@ async def test_no_clients_is_not_an_error(db_session) -> None:
 
 # ── Ownership ────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_an_accountant_may_name_their_own_client(db_session, book) -> None:
     user, _m, clients = book
@@ -237,12 +240,13 @@ async def test_a_deactivated_client_cannot_receive_new_work(db_session, book) ->
 
 # ── The dashboard must not go back to the dead cache ─────────────────────────
 
+
 def test_the_portal_no_longer_reads_fields_nobody_writes() -> None:
     from pathlib import Path
 
-    src = (
-        Path(__file__).resolve().parents[1] / "app" / "api" / "smmm_benchmark.py"
-    ).read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parents[1] / "app" / "api" / "smmm_benchmark.py").read_text(
+        encoding="utf-8"
+    )
     for dead in ("c.health_score", "c.health_label", "c.last_job_id"):
         assert dead not in src, (
             f"{dead} hiçbir kod tarafından yazılmıyor — panel onu okursa "

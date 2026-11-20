@@ -9,6 +9,7 @@ behind empty tables.
 
 Wrap any datetime that came out of the DB in `as_utc()` before arithmetic.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

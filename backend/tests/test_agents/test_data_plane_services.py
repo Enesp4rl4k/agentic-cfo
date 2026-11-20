@@ -125,4 +125,3 @@ def test_github_overlay_from_activity() -> None:
     live_ids = {c["id"] for c in list_connectors(live_only=True)}
     assert "github_activity" in live_ids
     assert "hr_export" in live_ids
-

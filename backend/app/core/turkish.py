@@ -12,19 +12,34 @@ about where the money went.
 Fold both sides before comparing. Never fold for display: the company's name is
 "Yıldız Tekstil", not "Yildiz Tekstil".
 """
+
 from __future__ import annotations
 
 # Both cases, and the combining dot that `"İ".lower()` leaves behind.
-_FOLD = str.maketrans({
-    "ı": "i", "İ": "i", "I": "i",
-    "ğ": "g", "Ğ": "g",
-    "ş": "s", "Ş": "s",
-    "ö": "o", "Ö": "o",
-    "ü": "u", "Ü": "u",
-    "ç": "c", "Ç": "c",
-    "â": "a", "Â": "a", "î": "i", "Î": "i", "û": "u", "Û": "u",  # kâr, hâlâ
-    "̇": "",
-})
+_FOLD = str.maketrans(
+    {
+        "ı": "i",
+        "İ": "i",
+        "I": "i",
+        "ğ": "g",
+        "Ğ": "g",
+        "ş": "s",
+        "Ş": "s",
+        "ö": "o",
+        "Ö": "o",
+        "ü": "u",
+        "Ü": "u",
+        "ç": "c",
+        "Ç": "c",
+        "â": "a",
+        "Â": "a",
+        "î": "i",
+        "Î": "i",
+        "û": "u",
+        "Û": "u",  # kâr, hâlâ
+        "̇": "",
+    }
+)
 
 
 def fold(text: str | None) -> str:

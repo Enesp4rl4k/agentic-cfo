@@ -24,6 +24,7 @@ Kullanim:
     # Scheduler'dan tetikleme
     await orchestrator.run_scheduled_scan()
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,40 +40,43 @@ logger = logging.getLogger(__name__)
 
 # ── Alert event (immutable) ───────────────────────────────────────────────────
 
+
 @dataclass
 class AlertEvent:
     """
     Olusturulan alert'in immutable kaydi.
     DDIA: event sourcing — ne oldugunu degistirme, yeni event ekle.
     """
-    alert_id:    str
-    org_id:      str
-    trigger:     str          # "kri_breach" | "cascade_risk" | "regime_change"
-    severity:    str          # "critical" | "high" | "medium"
-    title:       str
-    body:        str          # Turkce ozet
-    metadata:    dict[str, Any]
-    channels:    list[str]    # ["slack", "email", "in_app"]
-    created_at:  float        # Unix timestamp
-    dispatched:  bool = False
+
+    alert_id: str
+    org_id: str
+    trigger: str  # "kri_breach" | "cascade_risk" | "regime_change"
+    severity: str  # "critical" | "high" | "medium"
+    title: str
+    body: str  # Turkce ozet
+    metadata: dict[str, Any]
+    channels: list[str]  # ["slack", "email", "in_app"]
+    created_at: float  # Unix timestamp
+    dispatched: bool = False
     dispatch_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "alert_id":   self.alert_id,
-            "org_id":     self.org_id,
-            "trigger":    self.trigger,
-            "severity":   self.severity,
-            "title":      self.title,
-            "body":       self.body,
-            "metadata":   self.metadata,
-            "channels":   self.channels,
+            "alert_id": self.alert_id,
+            "org_id": self.org_id,
+            "trigger": self.trigger,
+            "severity": self.severity,
+            "title": self.title,
+            "body": self.body,
+            "metadata": self.metadata,
+            "channels": self.channels,
             "created_at": self.created_at,
             "dispatched": self.dispatched,
         }
 
 
 # ── Proactive Alert Orchestrator ──────────────────────────────────────────────
+
 
 class ProactiveAlertOrchestrator:
     """
@@ -84,11 +88,11 @@ class ProactiveAlertOrchestrator:
     - Idempotency: ayni KRI ihlali icin 1 saatte max 1 alert
     """
 
-    ALERT_COOLDOWN_SECONDS = 3600   # 1 saat: ayni KRI icin tekrar alert yok
-    MAX_CASCADES_PER_SCAN  = 3      # Performans: scan basina max cascade sim
+    ALERT_COOLDOWN_SECONDS = 3600  # 1 saat: ayni KRI icin tekrar alert yok
+    MAX_CASCADES_PER_SCAN = 3  # Performans: scan basina max cascade sim
 
     def __init__(self, db: Any = None, redis: Any = None) -> None:
-        self.db    = db
+        self.db = db
         self.redis = redis
 
     # ── Ana tarama dongusu ─────────────────────────────────────────────────────
@@ -109,13 +113,13 @@ class ProactiveAlertOrchestrator:
             if not kri_result:
                 return {"alerts_created": 0, "reason": "KRI verisi yok"}
 
-            posture    = kri_result.get("posture", {})
-            red_kris   = posture.get("red_kris", [])
+            posture = kri_result.get("posture", {})
+            red_kris = posture.get("red_kris", [])
             posture.get("amber_kris", [])
-            upcoming   = posture.get("upcoming_red", [])
+            upcoming = posture.get("upcoming_red", [])
 
             # 2. Kritik KRI'lar icin alert olustur
-            for kri in red_kris[:self.MAX_CASCADES_PER_SCAN]:
+            for kri in red_kris[: self.MAX_CASCADES_PER_SCAN]:
                 if await self._is_cooldown_active(org_id, kri.get("name", "")):
                     continue
 
@@ -126,7 +130,7 @@ class ProactiveAlertOrchestrator:
 
             # 3. Cascade tetikleyebilecek KRI'lar icin simülasyon
             cascade_kris = posture.get("cascade_ready", [])
-            for kri in cascade_kris[:self.MAX_CASCADES_PER_SCAN]:
+            for kri in cascade_kris[: self.MAX_CASCADES_PER_SCAN]:
                 if not kri.get("cascade_trigger"):
                     continue
                 if await self._is_cooldown_active(org_id, f"cascade:{kri.get('name', '')}"):
@@ -148,9 +152,9 @@ class ProactiveAlertOrchestrator:
 
             return {
                 "alerts_created": alerts_created,
-                "red_kris":       len(red_kris),
-                "cascade_kris":   len(cascade_kris),
-                "errors":         errors,
+                "red_kris": len(red_kris),
+                "cascade_kris": len(cascade_kris),
+                "errors": errors,
             }
 
         except Exception as exc:
@@ -176,19 +180,19 @@ class ProactiveAlertOrchestrator:
 
             results = await asyncio.gather(*[scan_one(o) for o in org_ids], return_exceptions=True)
 
-            total_alerts = sum(
-                r.get("alerts_created", 0) for r in results if isinstance(r, dict)
-            )
+            total_alerts = sum(r.get("alerts_created", 0) for r in results if isinstance(r, dict))
             errors = [str(r) for r in results if isinstance(r, Exception)]
 
             logger.info(
                 "Scheduled scan tamamlandi: orgs=%d alerts=%d errors=%d",
-                len(org_ids), total_alerts, len(errors),
+                len(org_ids),
+                total_alerts,
+                len(errors),
             )
             return {
-                "scanned":      len(org_ids),
+                "scanned": len(org_ids),
                 "total_alerts": total_alerts,
-                "errors":       errors[:5],
+                "errors": errors[:5],
             }
 
         except Exception as exc:
@@ -226,13 +230,13 @@ class ProactiveAlertOrchestrator:
     async def _create_kri_alert(
         self, org_id: str, kri: dict[str, Any], severity: str
     ) -> AlertEvent | None:
-        name  = kri.get("name", "Bilinmeyen KRI")
-        val   = kri.get("current_value", 0)
-        unit  = kri.get("unit", "")
-        ev    = kri.get("evidence", "")
+        name = kri.get("name", "Bilinmeyen KRI")
+        val = kri.get("current_value", 0)
+        unit = kri.get("unit", "")
+        ev = kri.get("evidence", "")
 
         title = f"🚨 {name}: {val} {unit} — Kırmızı Eşik Aşıldı"
-        body  = (
+        body = (
             f"**{name}** metrigi kritik seviyeye ulasti.\n\n"
             f"Mevcut Deger: **{val} {unit}**\n"
             f"Kanit: {ev}\n\n"
@@ -246,23 +250,22 @@ class ProactiveAlertOrchestrator:
                 body += f"{i}. {m}\n"
 
         return AlertEvent(
-            alert_id   = str(uuid.uuid4()),
-            org_id     = org_id,
-            trigger    = "kri_breach",
-            severity   = severity,
-            title      = title,
-            body       = body,
-            metadata   = {"kri": kri},
-            channels   = await self._get_alert_channels(org_id, severity),
-            created_at = time.time(),
+            alert_id=str(uuid.uuid4()),
+            org_id=org_id,
+            trigger="kri_breach",
+            severity=severity,
+            title=title,
+            body=body,
+            metadata={"kri": kri},
+            channels=await self._get_alert_channels(org_id, severity),
+            created_at=time.time(),
         )
 
-    async def _run_cascade_and_alert(
-        self, org_id: str, kri: dict[str, Any]
-    ) -> AlertEvent | None:
+    async def _run_cascade_and_alert(self, org_id: str, kri: dict[str, Any]) -> AlertEvent | None:
         """KRI icin cascade simülasyonu calistir, alert olustur."""
         try:
             from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+
             trigger_str = kri.get("cascade_trigger", "")
             try:
                 trigger = TriggerType(trigger_str)
@@ -271,72 +274,71 @@ class ProactiveAlertOrchestrator:
 
             # CompanyContext'ten veri al
             from app.services.company_context import get_company_context
-            ctx      = await get_company_context(org_id) or {}
-            results  = ctx.get("agent_results") or {}
-            cfo_r    = results.get("cfo") or {}
-            sim      = get_cascade_simulator(
-                pnl      = cfo_r.get("pnl"),
-                cashflow = cfo_r.get("cashflow"),
-                forecast = cfo_r.get("forecast"),
-                chro_data = results.get("chro"),
-                cto_data  = results.get("cto"),
-                cmo_data  = results.get("cmo"),
-                coo_data  = results.get("coo"),
+
+            ctx = await get_company_context(org_id) or {}
+            results = ctx.get("agent_results") or {}
+            cfo_r = results.get("cfo") or {}
+            sim = get_cascade_simulator(
+                pnl=cfo_r.get("pnl"),
+                cashflow=cfo_r.get("cashflow"),
+                forecast=cfo_r.get("forecast"),
+                chro_data=results.get("chro"),
+                cto_data=results.get("cto"),
+                cmo_data=results.get("cmo"),
+                coo_data=results.get("coo"),
             )
-            params   = kri.get("cascade_params") or {}
-            cascade  = sim.simulate(trigger, **params)
-            base_sc  = cascade.base_scenario
+            params = kri.get("cascade_params") or {}
+            cascade = sim.simulate(trigger, **params)
+            base_sc = cascade.base_scenario
 
             if base_sc.overall_risk_score < 40:
                 return None  # Dusuk risk → alert olusturma
 
             title = f"⚡ Zincirleme Risk: {kri.get('name', '')} → {', '.join(cascade.affected_domains[:3])}"
-            body  = cascade.executive_summary + "\n\n**Acil Aksiyonlar:**\n"
+            body = cascade.executive_summary + "\n\n**Acil Aksiyonlar:**\n"
             for a in cascade.immediate_actions[:3]:
                 body += f"• {a}\n"
 
             return AlertEvent(
-                alert_id   = str(uuid.uuid4()),
-                org_id     = org_id,
-                trigger    = "cascade_risk",
-                severity   = "critical" if base_sc.overall_risk_score > 70 else "high",
-                title      = title,
-                body       = body,
-                metadata   = {
-                    "kri":           kri,
+                alert_id=str(uuid.uuid4()),
+                org_id=org_id,
+                trigger="cascade_risk",
+                severity="critical" if base_sc.overall_risk_score > 70 else "high",
+                title=title,
+                body=body,
+                metadata={
+                    "kri": kri,
                     "cascade_score": base_sc.overall_risk_score,
-                    "affected":      cascade.affected_domains,
+                    "affected": cascade.affected_domains,
                 },
-                channels   = await self._get_alert_channels(org_id, "high"),
-                created_at = time.time(),
+                channels=await self._get_alert_channels(org_id, "high"),
+                created_at=time.time(),
             )
         except Exception as exc:
             logger.debug("Cascade alert olusturma hatasi: %s", exc)
             return None
 
-    async def _create_upcoming_alert(
-        self, org_id: str, kri: dict[str, Any]
-    ) -> AlertEvent | None:
-        name       = kri.get("name", "")
+    async def _create_upcoming_alert(self, org_id: str, kri: dict[str, Any]) -> AlertEvent | None:
+        name = kri.get("name", "")
         trajectory = kri.get("trajectory_months", 0)
 
         title = f"⚠ {name}: {trajectory:.1f} ay içinde kritik seviyeye ulaşabilir"
-        body  = (
+        body = (
             f"**{name}** metrigi mevcut trendde **{trajectory:.1f} ay** icinde "
             f"kirmizi esigi asabilir.\n\n"
             f"Simdiden onlem almak icin zaman var."
         )
 
         return AlertEvent(
-            alert_id   = str(uuid.uuid4()),
-            org_id     = org_id,
-            trigger    = "kri_upcoming",
-            severity   = "medium",
-            title      = title,
-            body       = body,
-            metadata   = {"kri": kri},
-            channels   = await self._get_alert_channels(org_id, "medium"),
-            created_at = time.time(),
+            alert_id=str(uuid.uuid4()),
+            org_id=org_id,
+            trigger="kri_upcoming",
+            severity="medium",
+            title=title,
+            body=body,
+            metadata={"kri": kri},
+            channels=await self._get_alert_channels(org_id, "medium"),
+            created_at=time.time(),
         )
 
     # ── Dispatch ───────────────────────────────────────────────────────────────
@@ -354,10 +356,12 @@ class ProactiveAlertOrchestrator:
 
         if dispatch_tasks:
             results = await asyncio.gather(*dispatch_tasks, return_exceptions=True)
-            errors  = [str(r) for r in results if isinstance(r, Exception)]
+            errors = [str(r) for r in results if isinstance(r, Exception)]
             if errors:
                 alert.dispatch_errors.extend(errors)
-                logger.warning("Alert dispatch hatalari: alert=%s errors=%s", alert.alert_id, errors)
+                logger.warning(
+                    "Alert dispatch hatalari: alert=%s errors=%s", alert.alert_id, errors
+                )
 
         alert.dispatched = True
         await self._save_alert(alert)
@@ -367,12 +371,13 @@ class ProactiveAlertOrchestrator:
         """In-app notification olustur."""
         try:
             from app.services.notification_service import create_notification
+
             await create_notification(
-                org_id   = alert.org_id,
-                title    = alert.title,
-                body     = alert.body,
-                severity = alert.severity,
-                metadata = alert.metadata,
+                org_id=alert.org_id,
+                title=alert.title,
+                body=alert.body,
+                severity=alert.severity,
+                metadata=alert.metadata,
             )
         except Exception as exc:
             logger.debug("In-app dispatch hatasi (non-fatal): %s", exc)
@@ -381,10 +386,11 @@ class ProactiveAlertOrchestrator:
         """Slack webhook'a gonder."""
         try:
             from app.services.alert_router import AlertRouter
+
             router = AlertRouter()
             await router._send_slack_message(
-                webhook_url = await self._get_slack_webhook(alert.org_id),
-                text        = f"*{alert.title}*\n{alert.body[:500]}",
+                webhook_url=await self._get_slack_webhook(alert.org_id),
+                text=f"*{alert.title}*\n{alert.body[:500]}",
             )
         except Exception as exc:
             logger.debug("Slack dispatch hatasi (non-fatal): %s", exc)
@@ -393,13 +399,14 @@ class ProactiveAlertOrchestrator:
         """Email gonder."""
         try:
             from app.services.alert_router import AlertRouter
+
             router = AlertRouter()
             emails = await self._get_alert_emails(alert.org_id)
             for email in emails[:3]:
                 await router._send_email(
-                    to_email = email,
-                    subject  = alert.title,
-                    body     = alert.body,
+                    to_email=email,
+                    subject=alert.title,
+                    body=alert.body,
                 )
         except Exception as exc:
             logger.debug("Email dispatch hatasi (non-fatal): %s", exc)
@@ -410,7 +417,7 @@ class ProactiveAlertOrchestrator:
         """Son 1 saatte bu KRI icin alert gonderildi mi?"""
         if self.redis:
             try:
-                key   = f"alert_cooldown:{org_id}:{kri_name}"
+                key = f"alert_cooldown:{org_id}:{kri_name}"
                 exists = await self.redis.exists(key)
                 return bool(exists)
             except Exception:
@@ -435,6 +442,7 @@ class ProactiveAlertOrchestrator:
                 from app.models.alert_preference import (
                     AlertPreference,  # type: ignore[attr-defined]
                 )
+
                 stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
                 pref = (await self.db.execute(stmt)).scalar_one_or_none()
                 if pref:
@@ -454,6 +462,7 @@ class ProactiveAlertOrchestrator:
                 from app.models.alert_preference import (
                     AlertPreference,  # type: ignore[attr-defined]
                 )
+
                 stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
                 pref = (await self.db.execute(stmt)).scalar_one_or_none()
                 return pref.slack_webhook if pref else None
@@ -468,6 +477,7 @@ class ProactiveAlertOrchestrator:
                 from app.models.alert_preference import (
                     AlertPreference,  # type: ignore[attr-defined]
                 )
+
                 stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
                 pref = (await self.db.execute(stmt)).scalar_one_or_none()
                 if pref and pref.email_addresses:
@@ -521,18 +531,20 @@ class ProactiveAlertOrchestrator:
         try:
             if await self.db.get(ProactiveAlert, alert.alert_id) is not None:
                 return
-            self.db.add(ProactiveAlert(
-                alert_id=alert.alert_id,
-                org_id=alert.org_id,
-                trigger=alert.trigger,
-                severity=alert.severity,
-                title=alert.title,
-                body=alert.body,
-                metadata_json=json.dumps(alert.metadata),
-                channels=json.dumps(alert.channels),
-                created_at=alert.created_at,
-                dispatched=alert.dispatched,
-            ))
+            self.db.add(
+                ProactiveAlert(
+                    alert_id=alert.alert_id,
+                    org_id=alert.org_id,
+                    trigger=alert.trigger,
+                    severity=alert.severity,
+                    title=alert.title,
+                    body=alert.body,
+                    metadata_json=json.dumps(alert.metadata),
+                    channels=json.dumps(alert.channels),
+                    created_at=alert.created_at,
+                    dispatched=alert.dispatched,
+                )
+            )
             await self.db.commit()
         except Exception as exc:
             await self.db.rollback()
@@ -541,8 +553,9 @@ class ProactiveAlertOrchestrator:
 
 # ── Public factory ─────────────────────────────────────────────────────────────
 
+
 def get_proactive_orchestrator(
-    db:    Any = None,
+    db: Any = None,
     redis: Any = None,
 ) -> ProactiveAlertOrchestrator:
     return ProactiveAlertOrchestrator(db=db, redis=redis)

@@ -22,6 +22,7 @@ Tam pipeline:
 Non-fatal nodes: failure does not halt the pipeline.
 Fatal nodes: data_ingestion, pnl — without these, nothing else can run.
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,7 +45,7 @@ from app.agents.state import (
 # Additional routing constants for mid-pipeline halt gates
 ROUTE_CASHFLOW = "cashflow"
 ROUTE_FORECAST = "forecast"
-ROUTE_ANOMALY  = "anomaly"
+ROUTE_ANOMALY = "anomaly"
 from app.agents.alert_agent import run_alerts
 from app.agents.anomaly_agent import run_anomaly_detection
 from app.agents.budget_agent import run_budget
@@ -66,12 +67,13 @@ from app.services.reflection_agent import get_reflection_agent
 logger = logging.getLogger(__name__)
 
 # Module-level kernel service instances (singleton pattern)
-_router    = get_capability_router()
+_router = get_capability_router()
 _reflector = get_reflection_agent(pass_threshold=0.55)
-_memory    = get_memory_store()   # auto-configured from settings: sqlite in dev, postgresql in prod
+_memory = get_memory_store()  # auto-configured from settings: sqlite in dev, postgresql in prod
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+
 
 def _append_log(state: CFOState, log: StepLog) -> dict[str, Any]:
     existing = list(state.get("logs") or [])
@@ -87,6 +89,7 @@ def _run_config(config: dict) -> AgentRunConfig:
 
 
 # ── Routing skip helper ───────────────────────────────────────────────────────
+
 
 def _is_skipped(state: CFOState, agent_name: str) -> bool:
     """
@@ -119,11 +122,15 @@ def _update_reflection(state: CFOState, agent: str, narrative: str, context: dic
 # ── Node builders ─────────────────────────────────────────────────────────────
 # Fatal nodes (halt on failure)
 
+
 async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
     result = await run_data_ingestion(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="data_ingestion", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(
+            step="data_ingestion", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
 
     # The org's own corrections outrank the heuristics, and must land before
@@ -135,7 +142,8 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
             patch["category_rule_hits"] = dict(hits)
             logger.info(
                 "data_ingestion: %d transaction(s) categorised by %d user rule(s)",
-                sum(hits.values()), len(hits),
+                sum(hits.values()),
+                len(hits),
             )
 
     if not result.ok:
@@ -168,9 +176,9 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
 
 async def node_pnl(state: CFOState, config: dict) -> CFOState:
     result = await run_pnl(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="pnl", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state, StepLog(step="pnl", ok=result.ok, detail=result.detail, confidence=result.confidence)
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -187,9 +195,10 @@ async def node_pnl(state: CFOState, config: dict) -> CFOState:
 
 async def node_cashflow(state: CFOState, config: dict) -> CFOState:
     result = await run_cashflow(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="cashflow", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(step="cashflow", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -205,9 +214,10 @@ async def node_cashflow(state: CFOState, config: dict) -> CFOState:
 
 async def node_forecast(state: CFOState, config: dict) -> CFOState:
     result = await run_forecast(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="forecast", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(step="forecast", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -224,14 +234,16 @@ async def node_forecast(state: CFOState, config: dict) -> CFOState:
 # Non-fatal nodes (failure → log + continue)
 # Each checks routing plan before running — if skipped, returns state unchanged.
 
+
 async def node_anomaly(state: CFOState, config: dict) -> CFOState:
     if _is_skipped(state, "anomaly_agent"):
         logger.debug("Skipping anomaly_agent (routing plan)")
         return state
     result = await run_anomaly_detection(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="anomaly", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(step="anomaly", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -243,9 +255,12 @@ async def node_multi_period(state: CFOState, config: dict) -> CFOState:
         logger.debug("Skipping multi_period_agent (routing plan)")
         return state
     result = await run_multi_period(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="multi_period", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(
+            step="multi_period", ok=result.ok, detail=result.detail, confidence=result.confidence
+        ),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -257,9 +272,9 @@ async def node_tax(state: CFOState, config: dict) -> CFOState:
         logger.debug("Skipping tax_agent (routing plan)")
         return state
     result = await run_tax(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="tax", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state, StepLog(step="tax", ok=result.ok, detail=result.detail, confidence=result.confidence)
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -271,9 +286,10 @@ async def node_budget(state: CFOState, config: dict) -> CFOState:
         logger.debug("Skipping budget_agent (routing plan)")
         return state
     result = await run_budget(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="budget", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(step="budget", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -282,9 +298,10 @@ async def node_budget(state: CFOState, config: dict) -> CFOState:
 
 async def node_alert(state: CFOState, config: dict) -> CFOState:
     result = await run_alerts(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="alert", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(step="alert", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if result.needs_review:
         patch["awaiting_review"] = True
@@ -293,9 +310,10 @@ async def node_alert(state: CFOState, config: dict) -> CFOState:
 
 async def node_report(state: CFOState, config: dict) -> CFOState:
     result = await run_report(state, _run_config(config))
-    patch = _append_log(state, StepLog(
-        step="report", ok=result.ok, detail=result.detail, confidence=result.confidence
-    ))
+    patch = _append_log(
+        state,
+        StepLog(step="report", ok=result.ok, detail=result.detail, confidence=result.confidence),
+    )
     patch.update(result.patch)
     if not result.ok:
         patch["error"] = result.detail
@@ -303,14 +321,17 @@ async def node_report(state: CFOState, config: dict) -> CFOState:
 
 
 async def node_hold_for_review(state: CFOState, config: dict) -> CFOState:
-    patch = _append_log(state, StepLog(
-        step="review_gate",
-        ok=True,
-        detail=(
-            f"Held for review — confidence={state.get('min_confidence', 0):.2f}, "
-            f"awaiting_review={state.get('awaiting_review')}"
+    patch = _append_log(
+        state,
+        StepLog(
+            step="review_gate",
+            ok=True,
+            detail=(
+                f"Held for review — confidence={state.get('min_confidence', 0):.2f}, "
+                f"awaiting_review={state.get('awaiting_review')}"
+            ),
         ),
-    ))
+    )
     patch["awaiting_review"] = True
     return {**state, **patch}  # type: ignore[return-value]
 
@@ -351,32 +372,35 @@ def _route_fatal_node(next_node: str) -> Callable[[CFOState], str]:
     If halted → END; otherwise → next_node.
     Used to break the silent failure chain: if cashflow halts, forecast never runs.
     """
+
     def _route(state: CFOState) -> str:
         if state.get("halted"):
             return ROUTE_END
         return next_node
+
     _route.__name__ = f"route_to_{next_node}"
     return _route
 
 
 # ── Graph assembly ────────────────────────────────────────────────────────────
 
+
 def build_cfo_graph() -> StateGraph:
     graph = StateGraph(CFOState)
 
     # Register all nodes (suffixed with _node to avoid collision with state field keys in LangGraph)
-    graph.add_node("data_ingestion_node",  node_data_ingestion)
-    graph.add_node("pnl_node",             node_pnl)
-    graph.add_node("cashflow_node",        node_cashflow)
-    graph.add_node("forecast_node",        node_forecast)
-    graph.add_node("anomaly_node",         node_anomaly)
-    graph.add_node("multi_period_node",    node_multi_period)
-    graph.add_node("tax_node",             node_tax)
-    graph.add_node("budget_node",          node_budget)
-    graph.add_node("alert_node",           node_alert)
-    graph.add_node("reconcile_node",       node_reconcile)
-    graph.add_node("verifier_node",        node_verifier)
-    graph.add_node("report_node",          node_report)
+    graph.add_node("data_ingestion_node", node_data_ingestion)
+    graph.add_node("pnl_node", node_pnl)
+    graph.add_node("cashflow_node", node_cashflow)
+    graph.add_node("forecast_node", node_forecast)
+    graph.add_node("anomaly_node", node_anomaly)
+    graph.add_node("multi_period_node", node_multi_period)
+    graph.add_node("tax_node", node_tax)
+    graph.add_node("budget_node", node_budget)
+    graph.add_node("alert_node", node_alert)
+    graph.add_node("reconcile_node", node_reconcile)
+    graph.add_node("verifier_node", node_verifier)
+    graph.add_node("report_node", node_report)
     graph.add_node("hold_for_review_node", node_hold_for_review)
 
     graph.set_entry_point("data_ingestion_node")
@@ -386,8 +410,8 @@ def build_cfo_graph() -> StateGraph:
         "data_ingestion_node",
         route_after_ingestion,
         {
-            ROUTE_PNL:  "pnl_node",
-            ROUTE_END:  END,
+            ROUTE_PNL: "pnl_node",
+            ROUTE_END: END,
         },
     )
 
@@ -414,21 +438,21 @@ def build_cfo_graph() -> StateGraph:
     )
 
     # ── Non-fatal nodes: always continue (failure logged, pipeline proceeds) ──
-    graph.add_edge("anomaly_node",      "multi_period_node")
+    graph.add_edge("anomaly_node", "multi_period_node")
     graph.add_edge("multi_period_node", "tax_node")
-    graph.add_edge("tax_node",          "budget_node")
-    graph.add_edge("budget_node",       "alert_node")
+    graph.add_edge("tax_node", "budget_node")
+    graph.add_edge("budget_node", "alert_node")
     # Independent numeric reconciliation runs before the verifier: it can halt
     # the run (broken arithmetic identity) or flag it for review (ungrounded
     # figure in a narrative). The verifier then sees the resulting state.
-    graph.add_edge("alert_node",        "reconcile_node")
-    graph.add_edge("reconcile_node",    "verifier_node")
+    graph.add_edge("alert_node", "reconcile_node")
+    graph.add_edge("reconcile_node", "verifier_node")
     graph.add_conditional_edges(
         "verifier_node",
         route_after_verifier,
         {
             ROUTE_REPORT: "report_node",
-            ROUTE_END:    END,
+            ROUTE_END: END,
         },
     )
     graph.add_conditional_edges(
@@ -436,13 +460,12 @@ def build_cfo_graph() -> StateGraph:
         route_after_report,
         {
             ROUTE_HOLD: "hold_for_review_node",
-            ROUTE_END:  END,
+            ROUTE_END: END,
         },
     )
     graph.add_edge("hold_for_review_node", END)
 
     return graph
-
 
 
 # Compiled graph — reused across requests (thread-safe)
@@ -461,6 +484,7 @@ cfo_graph = _compile_cfo_graph()
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
+
 
 async def run_cfo_pipeline(
     job_id: str,
@@ -544,19 +568,19 @@ async def run_cfo_pipeline(
     if org_id and not result.get("halted"):
         try:
             pnl = result.get("pnl") or {}
-            cf  = result.get("cashflow") or {}
+            cf = result.get("cashflow") or {}
             episode = EpisodeRecord(
                 org_id=org_id,
                 agent="cfo_pipeline",
                 period=period or job_id[:8],
                 job_id=job_id,
                 summary={
-                    "revenue":        pnl.get("revenue"),
-                    "net_income":     pnl.get("net_income"),
-                    "net_margin":     pnl.get("net_margin"),
-                    "net_cashflow":   cf.get("net_change"),
-                    "anomaly_count":  len(result.get("anomalies") or []),
-                    "alert_count":    len(result.get("triggered_alerts") or []),
+                    "revenue": pnl.get("revenue"),
+                    "net_income": pnl.get("net_income"),
+                    "net_margin": pnl.get("net_margin"),
+                    "net_cashflow": cf.get("net_change"),
+                    "anomaly_count": len(result.get("anomalies") or []),
+                    "alert_count": len(result.get("triggered_alerts") or []),
                     "min_confidence": result.get("min_confidence"),
                 },
                 narrative=(pnl.get("narrative") or "")[:300],

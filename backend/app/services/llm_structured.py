@@ -24,6 +24,7 @@ Desteklenen agent'lar:
   - Tax (vergi takvimi özeti)
   - Anomaly (anormal işlem özeti)
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,28 +39,27 @@ logger = logging.getLogger(__name__)
 
 class ActionItem(BaseModel):
     """Single actionable item for executive."""
+
     action: str = Field(description="Yapılması gereken eylem (fiil ile başlar)")
     urgency: str = Field(
         default="normal",
-        description="Aciliyet: 'immediate' | 'this_week' | 'this_month' | 'normal'"
+        description="Aciliyet: 'immediate' | 'this_week' | 'this_month' | 'normal'",
     )
-    impact: str = Field(
-        default="medium",
-        description="Etki: 'high' | 'medium' | 'low'"
-    )
+    impact: str = Field(default="medium", description="Etki: 'high' | 'medium' | 'low'")
 
 
 class RiskItem(BaseModel):
     """Single identified risk."""
+
     risk: str = Field(description="Risk açıklaması (1-2 cümle)")
     severity: str = Field(
-        default="medium",
-        description="Seviye: 'critical' | 'high' | 'medium' | 'low'"
+        default="medium", description="Seviye: 'critical' | 'high' | 'medium' | 'low'"
     )
 
 
 class PnLNarrative(BaseModel):
     """Structured P&L narrative from CFO perspective."""
+
     summary: str = Field(
         description="Finansal durumun genel değerlendirmesi (2-3 cümle, sektör kıyaslamasıyla)"
     )
@@ -80,8 +80,7 @@ class PnLNarrative(BaseModel):
         max_length=4,
     )
     benchmark_note: str | None = Field(
-        default=None,
-        description="Sektör karşılaştırması notu (varsa)"
+        default=None, description="Sektör karşılaştırması notu (varsa)"
     )
 
     def to_text(self) -> str:
@@ -102,9 +101,8 @@ class PnLNarrative(BaseModel):
 
 class CashFlowNarrative(BaseModel):
     """Structured Cash Flow narrative."""
-    summary: str = Field(
-        description="Nakit akışının 2-3 cümlelik özeti"
-    )
+
+    summary: str = Field(description="Nakit akışının 2-3 cümlelik özeti")
     liquidity_assessment: str = Field(
         description="Likidite durumu değerlendirmesi (güvenli/dikkatli/riskli)"
     )
@@ -118,10 +116,7 @@ class CashFlowNarrative(BaseModel):
         description="Nakit yönetimi önerileri (1-3 eylem)",
         max_length=3,
     )
-    runway_comment: str | None = Field(
-        default=None,
-        description="Nakit pisti yorumu (varsa)"
-    )
+    runway_comment: str | None = Field(default=None, description="Nakit pisti yorumu (varsa)")
 
     def to_text(self) -> str:
         parts = [self.summary, self.liquidity_assessment]
@@ -140,12 +135,9 @@ class CashFlowNarrative(BaseModel):
 
 class ForecastNarrative(BaseModel):
     """Structured Forecast narrative."""
-    summary: str = Field(
-        description="12 aylık tahmin özeti (2-3 cümle)"
-    )
-    base_scenario_comment: str = Field(
-        description="Baz senaryonun yorumu"
-    )
+
+    summary: str = Field(description="12 aylık tahmin özeti (2-3 cümle)")
+    base_scenario_comment: str = Field(description="Baz senaryonun yorumu")
     key_assumptions: list[str] = Field(
         default_factory=list,
         description="Kritik varsayımlar (en fazla 3)",
@@ -181,6 +173,7 @@ class ForecastNarrative(BaseModel):
 
 # ── Template-based fallback (no LLM key needed) ───────────────────────────────
 
+
 def _pnl_narrative_template(pnl: dict[str, Any]) -> PnLNarrative:
     """
     Deterministic narrative based on P&L data.
@@ -197,82 +190,100 @@ def _pnl_narrative_template(pnl: dict[str, Any]) -> PnLNarrative:
     if net_income > 0 and net_margin > 0.10:
         summary = (
             f"Gelir tablosu güçlü görünüm sergilemektedir. "
-            f"₺{revenue:,.0f} gelir üzerinden %{net_margin*100:.1f} net marj elde edilmiştir. "
-            f"EBITDA marjı %{ebitda_margin*100:.1f} ile sektör ortalamasının yakınındadır."
+            f"₺{revenue:,.0f} gelir üzerinden %{net_margin * 100:.1f} net marj elde edilmiştir. "
+            f"EBITDA marjı %{ebitda_margin * 100:.1f} ile sektör ortalamasının yakınındadır."
         )
     elif net_income > 0:
         summary = (
             f"₺{revenue:,.0f} gelirle kârlı bir dönem geçirilmiştir. "
-            f"Net marj %{net_margin*100:.1f} ile kabul edilebilir aralıktadır. "
-            f"Brüt kâr marjının %{gross_margin*100:.1f} ile iyileştirme potansiyeli taşıdığı değerlendirilmektedir."
+            f"Net marj %{net_margin * 100:.1f} ile kabul edilebilir aralıktadır. "
+            f"Brüt kâr marjının %{gross_margin * 100:.1f} ile iyileştirme potansiyeli taşıdığı değerlendirilmektedir."
         )
     else:
         summary = (
-            f"₺{revenue:,.0f} gelire karşın zarar edilmiştir (net marj: %{net_margin*100:.1f}). "
+            f"₺{revenue:,.0f} gelire karşın zarar edilmiştir (net marj: %{net_margin * 100:.1f}). "
             f"Gider yapısının acil olarak gözden geçirilmesi önerilmektedir."
         )
 
     # Risks
     risks = []
     if gross_margin < 0.20:
-        risks.append(RiskItem(
-            risk=f"Brüt marj %{gross_margin*100:.1f} ile kritik düzeyde düşük — satış fiyatlaması veya tedarik maliyetleri gözden geçirilmeli.",
-            severity="critical"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"Brüt marj %{gross_margin * 100:.1f} ile kritik düzeyde düşük — satış fiyatlaması veya tedarik maliyetleri gözden geçirilmeli.",
+                severity="critical",
+            )
+        )
     elif gross_margin < 0.35:
-        risks.append(RiskItem(
-            risk=f"Brüt marj %{gross_margin*100:.1f} ile ortalamanın altında — rekabetçi fiyatlandırma baskısı olabilir.",
-            severity="high"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"Brüt marj %{gross_margin * 100:.1f} ile ortalamanın altında — rekabetçi fiyatlandırma baskısı olabilir.",
+                severity="high",
+            )
+        )
 
     if net_margin < 0:
-        risks.append(RiskItem(
-            risk=f"İşletme zararla kapanmaktadır (%{net_margin*100:.1f}) — acil maliyet optimizasyonu gereklidir.",
-            severity="critical"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"İşletme zararla kapanmaktadır (%{net_margin * 100:.1f}) — acil maliyet optimizasyonu gereklidir.",
+                severity="critical",
+            )
+        )
     elif net_margin < 0.05:
-        risks.append(RiskItem(
-            risk=f"Net marj %{net_margin*100:.1f} ile çok düşük — herhangi bir negatif şok zarara neden olabilir.",
-            severity="high"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"Net marj %{net_margin * 100:.1f} ile çok düşük — herhangi bir negatif şok zarara neden olabilir.",
+                severity="high",
+            )
+        )
 
     opex = pnl.get("opex", {})
     salary_ratio = (opex.get("salary", 0) / pnl["revenue"]) if pnl.get("revenue") else 0
     if salary_ratio > 0.50:
-        risks.append(RiskItem(
-            risk=f"Personel giderleri gelirin %{salary_ratio*100:.0f}'ini oluşturuyor — verimlilik artışı veya otomasyonu değerlendirin.",
-            severity="medium"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"Personel giderleri gelirin %{salary_ratio * 100:.0f}'ini oluşturuyor — verimlilik artışı veya otomasyonu değerlendirin.",
+                severity="medium",
+            )
+        )
 
     # Actions
     actions = []
     if net_margin < 0.05:
-        actions.append(ActionItem(
-            action="Operasyonel giderlerin kategori bazında detaylı analizini yapın ve en büyük 3 kalem için tasarruf hedefi belirleyin.",
-            urgency="immediate",
-            impact="high"
-        ))
+        actions.append(
+            ActionItem(
+                action="Operasyonel giderlerin kategori bazında detaylı analizini yapın ve en büyük 3 kalem için tasarruf hedefi belirleyin.",
+                urgency="immediate",
+                impact="high",
+            )
+        )
     if gross_margin < 0.30:
-        actions.append(ActionItem(
-            action="Tedarikçi fiyatlarını yeniden müzakere edin veya yüksek maliyetli ürün/hizmetlerin fiyatını gözden geçirin.",
-            urgency="this_week",
-            impact="high"
-        ))
-    actions.append(ActionItem(
-        action="Aylık P&L takibini otomatikleştirin ve kritik marj eşiklerine uyarı kuralları tanımlayın.",
-        urgency="this_month",
-        impact="medium"
-    ))
+        actions.append(
+            ActionItem(
+                action="Tedarikçi fiyatlarını yeniden müzakere edin veya yüksek maliyetli ürün/hizmetlerin fiyatını gözden geçirin.",
+                urgency="this_week",
+                impact="high",
+            )
+        )
+    actions.append(
+        ActionItem(
+            action="Aylık P&L takibini otomatikleştirin ve kritik marj eşiklerine uyarı kuralları tanımlayın.",
+            urgency="this_month",
+            impact="medium",
+        )
+    )
 
     return PnLNarrative(
         summary=summary,
         highlights=[
             f"Toplam gelir: ₺{revenue:,.0f}",
-            f"Brüt kâr marjı: %{gross_margin*100:.1f}",
-        ] if net_income > 0 else [],
+            f"Brüt kâr marjı: %{gross_margin * 100:.1f}",
+        ]
+        if net_income > 0
+        else [],
         risks=risks[:3],
         actions=actions[:4],
-        benchmark_note="Türk KOBİ sektörü median brüt marjı ~%35-40, net marjı ~%5-10 aralığındadır."
+        benchmark_note="Türk KOBİ sektörü median brüt marjı ~%35-40, net marjı ~%5-10 aralığındadır.",
     )
 
 
@@ -312,16 +323,20 @@ def _cashflow_narrative_template(cashflow: dict[str, Any]) -> CashFlowNarrative:
 
     actions = []
     if operating < 0:
-        actions.append(ActionItem(
-            action="Gecikmiş alacakların tahsili için acil aksiyon planı oluşturun.",
-            urgency="immediate",
-            impact="high"
-        ))
-    actions.append(ActionItem(
-        action="Haftalık nakit akış tahmini yaparak 4 haftalık likidite pozisyonunu izleyin.",
-        urgency="this_week",
-        impact="medium"
-    ))
+        actions.append(
+            ActionItem(
+                action="Gecikmiş alacakların tahsili için acil aksiyon planı oluşturun.",
+                urgency="immediate",
+                impact="high",
+            )
+        )
+    actions.append(
+        ActionItem(
+            action="Haftalık nakit akış tahmini yaparak 4 haftalık likidite pozisyonunu izleyin.",
+            urgency="this_week",
+            impact="medium",
+        )
+    )
 
     return CashFlowNarrative(
         summary=summary,
@@ -352,30 +367,36 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
             f"Baz senaryoda 12 aylık net nakit akışı ₺{base_net:,.0f} ile negatif öngörülmektedir. "
             f"Mevcut gider yapısında köklü değişiklikler yapılmazsa zorluklar beklenmektedir."
         )
-        base_comment = "Baz senaryoda yapısal iyileştirmeler yapılmazsa sürdürülebilirlik riski mevcuttur."
+        base_comment = (
+            "Baz senaryoda yapısal iyileştirmeler yapılmazsa sürdürülebilirlik riski mevcuttur."
+        )
 
     risks = []
     if pess_runway and pess_runway <= 6:
-        risks.append(RiskItem(
-            risk=f"Kötümser senaryoda nakit pisti {pess_runway} ay — acil finansman veya maliyet azaltımı planı hazırlayın.",
-            severity="critical" if pess_runway <= 3 else "high"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"Kötümser senaryoda nakit pisti {pess_runway} ay — acil finansman veya maliyet azaltımı planı hazırlayın.",
+                severity="critical" if pess_runway <= 3 else "high",
+            )
+        )
     if base_runway and base_runway <= 12:
-        risks.append(RiskItem(
-            risk=f"Baz senaryoda nakit pisti {base_runway} ay — büyüme yatırımları için dış finansman araştırın.",
-            severity="medium"
-        ))
+        risks.append(
+            RiskItem(
+                risk=f"Baz senaryoda nakit pisti {base_runway} ay — büyüme yatırımları için dış finansman araştırın.",
+                severity="medium",
+            )
+        )
 
     actions = [
         ActionItem(
             action="Aylık gerçekleşmeleri tahminle karşılaştırarak sapma analizi yapın.",
             urgency="this_month",
-            impact="medium"
+            impact="medium",
         ),
         ActionItem(
             action="Kötümser senaryo için acil eylem planı hazırlayın (hangi giderler kesilecek, hangi gelirler öne alınacak).",
             urgency="this_week",
-            impact="high"
+            impact="high",
         ),
     ]
 
@@ -393,6 +414,7 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
 
 
 # ── LLM-powered structured output ─────────────────────────────────────────────
+
 
 async def _structured(
     *,
@@ -458,6 +480,7 @@ def _router_model_for(task: str) -> str:
     """
     try:
         from app.services.llm_router import get_llm_router
+
         cfg = get_llm_router().select_model(task)
         return cfg.model_id
     except Exception:
@@ -486,15 +509,15 @@ async def get_pnl_narrative(
 
         summary_text = (
             f"Gelir: ₺{revenue:,.0f}\n"
-            f"Brüt Marj: %{gross_margin*100:.1f}\n"
-            f"EBITDA Marjı: %{ebitda_margin*100:.1f}\n"
-            f"Net Kâr: ₺{net_income:,.0f} (%{net_margin*100:.1f})\n"
+            f"Brüt Marj: %{gross_margin * 100:.1f}\n"
+            f"EBITDA Marjı: %{ebitda_margin * 100:.1f}\n"
+            f"Net Kâr: ₺{net_income:,.0f} (%{net_margin * 100:.1f})\n"
         )
 
         opex = pnl.get("opex", {})
         if opex:
             opex_lines = "\n".join(
-                f"  - {k.replace('_', ' ').title()}: ₺{v/100:,.0f}"
+                f"  - {k.replace('_', ' ').title()}: ₺{v / 100:,.0f}"
                 for k, v in opex.items()
                 if v and v > 0
             )
@@ -604,6 +627,7 @@ async def get_forecast_narrative(
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
+
 def _is_placeholder_key(api_key: str) -> bool:
     """Return True if the API key is a placeholder (dev mode)."""
     if not api_key:
@@ -615,5 +639,3 @@ def _is_placeholder_key(api_key: str) -> bool:
         "",
     }
     return api_key in placeholders or api_key.startswith("llm-placeholder-")
-
-

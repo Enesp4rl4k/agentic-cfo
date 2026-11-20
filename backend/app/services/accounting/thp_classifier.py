@@ -31,6 +31,7 @@ Usage:
     print(result.hesap_adi)    # "Genel Yönetim Giderleri"
     print(result.confidence)   # 0.95
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,134 +46,318 @@ logger = logging.getLogger(__name__)
 
 # ── THP Hesap kodu tanımları ──────────────────────────────────────────────────
 
+
 @dataclass
 class THPHesap:
-    kod: str                    # Hesap kodu (ör. "770")
-    adi: str                    # Hesap adı (ör. "Genel Yönetim Giderleri")
-    ana_grup: str               # Ana grup (ör. "7 - Maliyet Hesapları")
-    normal_bakiye: str          # "borç" veya "alacak"
-    tip: str                    # "gider" | "gelir" | "varlık" | "borç" | "özkaynak"
+    kod: str  # Hesap kodu (ör. "770")
+    adi: str  # Hesap adı (ör. "Genel Yönetim Giderleri")
+    ana_grup: str  # Ana grup (ör. "7 - Maliyet Hesapları")
+    normal_bakiye: str  # "borç" veya "alacak"
+    tip: str  # "gider" | "gelir" | "varlık" | "borç" | "özkaynak"
     anahtar_kelimeler: list[str] = field(default_factory=list)
 
 
 # Türkiye THP'nin en sık kullanılan hesapları
 THP_HESAPLARI: dict[str, THPHesap] = {
     # ── Dönen Varlıklar (1xx) ─────────────────────────────────────────────────
-    "100": THPHesap("100", "Kasa", "1 - Dönen Varlıklar", "borç", "varlık",
-                    ["kasa", "nakit", "cash", "para"]),
-    "102": THPHesap("102", "Bankalar", "1 - Dönen Varlıklar", "borç", "varlık",
-                    ["banka", "bank", "hesap", "eft", "havale", "swift", "transfer"]),
-    "120": THPHesap("120", "Alıcılar", "1 - Dönen Varlıklar", "borç", "varlık",
-                    ["alacak", "alıcı", "müşteri", "tahsilat", "fatura alacak"]),
-    "153": THPHesap("153", "Ticari Mallar", "1 - Dönen Varlıklar", "borç", "varlık",
-                    ["stok", "mal alış", "ticari mal", "ürün alım"]),
-
+    "100": THPHesap(
+        "100", "Kasa", "1 - Dönen Varlıklar", "borç", "varlık", ["kasa", "nakit", "cash", "para"]
+    ),
+    "102": THPHesap(
+        "102",
+        "Bankalar",
+        "1 - Dönen Varlıklar",
+        "borç",
+        "varlık",
+        ["banka", "bank", "hesap", "eft", "havale", "swift", "transfer"],
+    ),
+    "120": THPHesap(
+        "120",
+        "Alıcılar",
+        "1 - Dönen Varlıklar",
+        "borç",
+        "varlık",
+        ["alacak", "alıcı", "müşteri", "tahsilat", "fatura alacak"],
+    ),
+    "153": THPHesap(
+        "153",
+        "Ticari Mallar",
+        "1 - Dönen Varlıklar",
+        "borç",
+        "varlık",
+        ["stok", "mal alış", "ticari mal", "ürün alım"],
+    ),
     # ── Duran Varlıklar (2xx) ─────────────────────────────────────────────────
-    "253": THPHesap("253", "Tesis, Makine ve Cihazlar", "2 - Duran Varlıklar", "borç", "varlık",
-                    # "demirbaş" 255'in adıdır; burada da durunca eşleşme
-                    # sözlük sırasına kalıyordu.
-                    ["makine", "ekipman", "cihaz", "donanım"]),
-    "255": THPHesap("255", "Demirbaşlar", "2 - Duran Varlıklar", "borç", "varlık",
-                    ["demirbaş", "ofis ekipman", "mobilya", "bilgisayar alım"]),
-    "260": THPHesap("260", "Haklar", "2 - Duran Varlıklar", "borç", "varlık",
-                    ["lisans", "patent", "marka", "yazılım lisans", "franchise"]),
-
+    "253": THPHesap(
+        "253",
+        "Tesis, Makine ve Cihazlar",
+        "2 - Duran Varlıklar",
+        "borç",
+        "varlık",
+        # "demirbaş" 255'in adıdır; burada da durunca eşleşme
+        # sözlük sırasına kalıyordu.
+        ["makine", "ekipman", "cihaz", "donanım"],
+    ),
+    "255": THPHesap(
+        "255",
+        "Demirbaşlar",
+        "2 - Duran Varlıklar",
+        "borç",
+        "varlık",
+        ["demirbaş", "ofis ekipman", "mobilya", "bilgisayar alım"],
+    ),
+    "260": THPHesap(
+        "260",
+        "Haklar",
+        "2 - Duran Varlıklar",
+        "borç",
+        "varlık",
+        ["lisans", "patent", "marka", "yazılım lisans", "franchise"],
+    ),
     # ── Kısa Vadeli Yabancı Kaynaklar (3xx) ──────────────────────────────────
-    "320": THPHesap("320", "Satıcılar", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
-                    ["satıcı", "tedarikçi", "supplier", "borç fatura", "alım borcu"]),
-    "360": THPHesap("360", "Ödenecek Vergi ve Fonlar", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
-                    # "sgk" ve "bağkur" buradan çıkarıldı: sosyal güvenlik
-                    # kesintisi 361'e ait. İki hesapta birden bulundukları için
-                    # "SGK primi ödemesi" eşit puan alıp sözlük sırasıyla vergi
-                    # hesabına yazılıyordu.
-                    ["kdv", "stopaj", "gelir vergisi ödeme", "kurumlar vergisi", "muhtasar",
-                     "vergi öde"]),
-    "361": THPHesap("361", "Ödenecek Sosyal Güvenlik Kesintileri", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
-                    ["sgk", "bağkur", "sigorta primi", "sosyal güvenlik", "işçi sigortası"]),
-
+    "320": THPHesap(
+        "320",
+        "Satıcılar",
+        "3 - Kısa Vadeli Yabancı Kaynaklar",
+        "alacak",
+        "borç",
+        ["satıcı", "tedarikçi", "supplier", "borç fatura", "alım borcu"],
+    ),
+    "360": THPHesap(
+        "360",
+        "Ödenecek Vergi ve Fonlar",
+        "3 - Kısa Vadeli Yabancı Kaynaklar",
+        "alacak",
+        "borç",
+        # "sgk" ve "bağkur" buradan çıkarıldı: sosyal güvenlik
+        # kesintisi 361'e ait. İki hesapta birden bulundukları için
+        # "SGK primi ödemesi" eşit puan alıp sözlük sırasıyla vergi
+        # hesabına yazılıyordu.
+        ["kdv", "stopaj", "gelir vergisi ödeme", "kurumlar vergisi", "muhtasar", "vergi öde"],
+    ),
+    "361": THPHesap(
+        "361",
+        "Ödenecek Sosyal Güvenlik Kesintileri",
+        "3 - Kısa Vadeli Yabancı Kaynaklar",
+        "alacak",
+        "borç",
+        ["sgk", "bağkur", "sigorta primi", "sosyal güvenlik", "işçi sigortası"],
+    ),
     # ── Gelir Tablosu — Satışlar (6xx) ────────────────────────────────────────
-    "600": THPHesap("600", "Yurt İçi Satışlar", "6 - Gelir Tablosu", "alacak", "gelir",
-                    # "tahsilat" 120'ye ait: tahsilat alacağı kapatır, geliri
-                    # fatura kesildiğinde tanıdık. İkisinde birden durması
-                    # geliri iki kez yazma riski taşıyordu.
-                    ["satış", "gelir", "hizmet bedeli", "fatura gelir",
-                     "revenue", "income", "ciro", "satıştan gelir"]),
-    "601": THPHesap("601", "Yurt Dışı Satışlar", "6 - Gelir Tablosu", "alacak", "gelir",
-                    ["ihracat", "export", "döviz gelir", "yurt dışı satış"]),
-    "602": THPHesap("602", "Diğer Gelirler", "6 - Gelir Tablosu", "alacak", "gelir",
-                    ["faiz gelir", "kira gelir", "komisyon gelir", "diğer gelir",
-                     "other income", "temettü"]),
-
+    "600": THPHesap(
+        "600",
+        "Yurt İçi Satışlar",
+        "6 - Gelir Tablosu",
+        "alacak",
+        "gelir",
+        # "tahsilat" 120'ye ait: tahsilat alacağı kapatır, geliri
+        # fatura kesildiğinde tanıdık. İkisinde birden durması
+        # geliri iki kez yazma riski taşıyordu.
+        [
+            "satış",
+            "gelir",
+            "hizmet bedeli",
+            "fatura gelir",
+            "revenue",
+            "income",
+            "ciro",
+            "satıştan gelir",
+        ],
+    ),
+    "601": THPHesap(
+        "601",
+        "Yurt Dışı Satışlar",
+        "6 - Gelir Tablosu",
+        "alacak",
+        "gelir",
+        ["ihracat", "export", "döviz gelir", "yurt dışı satış"],
+    ),
+    "602": THPHesap(
+        "602",
+        "Diğer Gelirler",
+        "6 - Gelir Tablosu",
+        "alacak",
+        "gelir",
+        ["faiz gelir", "kira gelir", "komisyon gelir", "diğer gelir", "other income", "temettü"],
+    ),
     # ── Satışların Maliyeti (62x) ─────────────────────────────────────────────
-    "620": THPHesap("620", "Satılan Mamüller Maliyeti", "6 - Gelir Tablosu", "borç", "gider",
-                    ["üretim maliyet", "mamül maliyet", "cogs", "cost of goods"]),
-    "621": THPHesap("621", "Satılan Ticari Mallar Maliyeti", "6 - Gelir Tablosu", "borç", "gider",
-                    ["ticari mal maliyet", "satın alma", "mal alış gider"]),
-
+    "620": THPHesap(
+        "620",
+        "Satılan Mamüller Maliyeti",
+        "6 - Gelir Tablosu",
+        "borç",
+        "gider",
+        ["üretim maliyet", "mamül maliyet", "cogs", "cost of goods"],
+    ),
+    "621": THPHesap(
+        "621",
+        "Satılan Ticari Mallar Maliyeti",
+        "6 - Gelir Tablosu",
+        "borç",
+        "gider",
+        ["ticari mal maliyet", "satın alma", "mal alış gider"],
+    ),
     # ── Faaliyet Giderleri (77x) ──────────────────────────────────────────────
-    "740": THPHesap("740", "Hizmet Üretim Maliyeti", "7 - Maliyet Hesapları", "borç", "gider",
-                    ["hizmet üretim", "servis maliyeti"]),
-    "770": THPHesap("770", "Genel Yönetim Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
-                    ["kira", "rent", "ofis", "yönetim gider", "muhasebe ücreti",
-                     "danışmanlık", "elektrik", "su", "doğalgaz", "internet",
-                     "telefon", "posta", "kırtasiye", "temizlik", "güvenlik"]),
+    "740": THPHesap(
+        "740",
+        "Hizmet Üretim Maliyeti",
+        "7 - Maliyet Hesapları",
+        "borç",
+        "gider",
+        ["hizmet üretim", "servis maliyeti"],
+    ),
+    "770": THPHesap(
+        "770",
+        "Genel Yönetim Giderleri",
+        "7 - Maliyet Hesapları",
+        "borç",
+        "gider",
+        [
+            "kira",
+            "rent",
+            "ofis",
+            "yönetim gider",
+            "muhasebe ücreti",
+            "danışmanlık",
+            "elektrik",
+            "su",
+            "doğalgaz",
+            "internet",
+            "telefon",
+            "posta",
+            "kırtasiye",
+            "temizlik",
+            "güvenlik",
+        ],
+    ),
     # 7/A: 750 AR-GE, 760 Pazarlama Satış Dağıtım, 770 Genel Yönetim. These
     # were filed under 771 and 772 — the 770 group's transfer (yansıtma) and
     # variance accounts — so marketing reached the e-Defter on a transfer
     # account (plan v8 §A4).
-    "760": THPHesap("760", "Pazarlama Satış ve Dağıtım Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
-                    ["reklam", "marketing", "pazarlama", "satış gider", "komisyon",
-                     "dağıtım", "lojistik", "kargo", "sosyal medya", "google ads",
-                     "facebook ads", "dijital pazarlama", "pr "]),
-    "750": THPHesap("750", "Araştırma ve Geliştirme Giderleri", "7 - Maliyet Hesapları", "borç", "gider",
-                    ["ar-ge", "r&d", "araştırma", "geliştirme", "prototip",
-                     "yazılım geliştirme", "inovasyon"]),
-
+    "760": THPHesap(
+        "760",
+        "Pazarlama Satış ve Dağıtım Giderleri",
+        "7 - Maliyet Hesapları",
+        "borç",
+        "gider",
+        [
+            "reklam",
+            "marketing",
+            "pazarlama",
+            "satış gider",
+            "komisyon",
+            "dağıtım",
+            "lojistik",
+            "kargo",
+            "sosyal medya",
+            "google ads",
+            "facebook ads",
+            "dijital pazarlama",
+            "pr ",
+        ],
+    ),
+    "750": THPHesap(
+        "750",
+        "Araştırma ve Geliştirme Giderleri",
+        "7 - Maliyet Hesapları",
+        "borç",
+        "gider",
+        ["ar-ge", "r&d", "araştırma", "geliştirme", "prototip", "yazılım geliştirme", "inovasyon"],
+    ),
     # ── Personel (7x) ─────────────────────────────────────────────────────────
-    "730": THPHesap("730", "Genel Üretim Giderleri - Personel", "7 - Maliyet Hesapları", "borç", "gider",
-                    ["maaş", "salary", "ücret", "personel", "bordro", "ikramiye",
-                     "prim", "izin ücreti", "kıdem tazminat"]),
-
+    "730": THPHesap(
+        "730",
+        "Genel Üretim Giderleri - Personel",
+        "7 - Maliyet Hesapları",
+        "borç",
+        "gider",
+        [
+            "maaş",
+            "salary",
+            "ücret",
+            "personel",
+            "bordro",
+            "ikramiye",
+            "prim",
+            "izin ücreti",
+            "kıdem tazminat",
+        ],
+    ),
     # ── Finansman (65x) ───────────────────────────────────────────────────────
-    "657": THPHesap("657", "Reeskont Faiz Giderleri", "6 - Gelir Tablosu", "borç", "gider",
-                    ["faiz gider", "kredi faiz", "loan interest", "interest expense",
-                     "banka faiz", "finansman gider"]),
+    "657": THPHesap(
+        "657",
+        "Reeskont Faiz Giderleri",
+        "6 - Gelir Tablosu",
+        "borç",
+        "gider",
+        [
+            "faiz gider",
+            "kredi faiz",
+            "loan interest",
+            "interest expense",
+            "banka faiz",
+            "finansman gider",
+        ],
+    ),
     # Anahtar kelimesi yok, bilerek: 644 konusu kalmayan karşılıkların
     # iptalidir, faizle ilgisi yoktur. "faiz gelir" / "mevduat faiz" burada
     # yanlış hesaba iliştirilmişti; faiz geliri 602'ye gider. Açıklamadan
     # otomatik atanmaması gereken bir hesap.
-    "644": THPHesap("644", "Konusu Kalmayan Karşılıklar", "6 - Gelir Tablosu", "alacak", "gelir",
-                    []),
-
+    "644": THPHesap(
+        "644", "Konusu Kalmayan Karşılıklar", "6 - Gelir Tablosu", "alacak", "gelir", []
+    ),
     # ── Vergiler (69x) ───────────────────────────────────────────────────────
-    "690": THPHesap("690", "Dönem Karı veya Zararı", "6 - Gelir Tablosu", "borç", "gider",
-                    # "kurumlar vergisi" 360'a ait: ekstredeki ödeme borcu
-                    # kapatır. 690 dönem sonunda karşılığın kapatıldığı yerdir.
-                    ["gelir vergisi yıllık", "vergi karşılık"]),
-    "193": THPHesap("193", "Peşin Ödenen Vergi ve Fonlar", "1 - Dönen Varlıklar", "borç", "varlık",
-                    ["geçici vergi", "peşin vergi", "vergi avans"]),
-
+    "690": THPHesap(
+        "690",
+        "Dönem Karı veya Zararı",
+        "6 - Gelir Tablosu",
+        "borç",
+        "gider",
+        # "kurumlar vergisi" 360'a ait: ekstredeki ödeme borcu
+        # kapatır. 690 dönem sonunda karşılığın kapatıldığı yerdir.
+        ["gelir vergisi yıllık", "vergi karşılık"],
+    ),
+    "193": THPHesap(
+        "193",
+        "Peşin Ödenen Vergi ve Fonlar",
+        "1 - Dönen Varlıklar",
+        "borç",
+        "varlık",
+        ["geçici vergi", "peşin vergi", "vergi avans"],
+    ),
     # ── Kredi / Finansman (3xx) ────────────────────────────────────────────────
-    "300": THPHesap("300", "Banka Kredileri", "3 - Kısa Vadeli Yabancı Kaynaklar", "alacak", "borç",
-                    ["kredi çekim", "banka kredisi", "loan", "kredi kullanım",
-                     "borçlanma"]),
-    "400": THPHesap("400", "Uzun Vadeli Banka Kredileri", "4 - Uzun Vadeli Yabancı Kaynaklar", "alacak", "borç",
-                    ["uzun vadeli kredi", "yatırım kredisi", "mortgage"]),
+    "300": THPHesap(
+        "300",
+        "Banka Kredileri",
+        "3 - Kısa Vadeli Yabancı Kaynaklar",
+        "alacak",
+        "borç",
+        ["kredi çekim", "banka kredisi", "loan", "kredi kullanım", "borçlanma"],
+    ),
+    "400": THPHesap(
+        "400",
+        "Uzun Vadeli Banka Kredileri",
+        "4 - Uzun Vadeli Yabancı Kaynaklar",
+        "alacak",
+        "borç",
+        ["uzun vadeli kredi", "yatırım kredisi", "mortgage"],
+    ),
 }
 
 
 # ── Sınıflandırma sonucu ──────────────────────────────────────────────────────
+
 
 @dataclass
 class THPSonucu:
     hesap_kodu: str
     hesap_adi: str
     ana_grup: str
-    normal_bakiye: str      # "borç" | "alacak"
-    tip: str                # "gelir" | "gider" | "varlık" | "borç" | "özkaynak"
-    confidence: float       # 0.0 – 1.0 — measured, see app/services/accounting/guven.py
-    yontem: str             # "kural" | "llm" | "varsayılan"
-    aciklama: str           # neden bu hesap seçildi
+    normal_bakiye: str  # "borç" | "alacak"
+    tip: str  # "gelir" | "gider" | "varlık" | "borç" | "özkaynak"
+    confidence: float  # 0.0 – 1.0 — measured, see app/services/accounting/guven.py
+    yontem: str  # "kural" | "llm" | "varsayılan"
+    aciklama: str  # neden bu hesap seçildi
     # What the choice rests on. `guven_seviyesi` names the kind of evidence
     # (guven.SEVIYELER); `kanit` is the evidence itself, e.g. "'kira' → 770".
     # Empty for results that did not come from this classifier (another
@@ -228,11 +413,24 @@ def kaynak_sonucu(account_code: str | None) -> THPSonucu | None:
 
 # ── Kural motoru ──────────────────────────────────────────────────────────────
 
+
 def _normalize(text: str) -> str:
     """Lowercase, Türkçe karakter normalize, noktalama temizle."""
     text = text.lower().strip()
-    replacements = {"ı": "i", "ğ": "g", "ü": "u", "ş": "s", "ö": "o", "ç": "c",
-                    "İ": "i", "Ğ": "g", "Ü": "u", "Ş": "s", "Ö": "o", "Ç": "c"}
+    replacements = {
+        "ı": "i",
+        "ğ": "g",
+        "ü": "u",
+        "ş": "s",
+        "ö": "o",
+        "ç": "c",
+        "İ": "i",
+        "Ğ": "g",
+        "Ü": "u",
+        "Ş": "s",
+        "Ö": "o",
+        "Ç": "c",
+    }
     for k, v in replacements.items():
         text = text.replace(k, v)
     return re.sub(r"[^\w\s]", " ", text)
@@ -268,8 +466,8 @@ class KuralEslesmesi:
     """The rule engine's pick, and the evidence it rests on."""
 
     hesap_kodu: str
-    anahtar: str        # the keyword that won, as written in the chart
-    tam: bool           # matched as a whole word, not inside another word
+    anahtar: str  # the keyword that won, as written in the chart
+    tam: bool  # matched as a whole word, not inside another word
     kelime_sayisi: int  # words in the keyword
 
     @property
@@ -342,9 +540,9 @@ def _kural_motoru_siniflandir(
         # hem 360 hem 361 için aynı puanı alıyor, 360 sadece önce tanımlandığı
         # için kazanıyordu — SGK kesintisi vergi hesabına yazılıyordu.
         # Eşitlik hâlâ mümkün; en azından tekrarlanabilir olsun.
-        if score > best_score or (score == best_score and score > 0 and (
-            best_kod is None or kod < best_kod
-        )):
+        if score > best_score or (
+            score == best_score and score > 0 and (best_kod is None or kod < best_kod)
+        ):
             best_score = score
             best_kod = kod
             best_match = match
@@ -361,6 +559,7 @@ def _kural_motoru_siniflandir(
 
 # ── LLM fallback ──────────────────────────────────────────────────────────────
 
+
 async def _llm_siniflandir(
     description: str,
     vendor: str | None,
@@ -374,9 +573,7 @@ async def _llm_siniflandir(
     try:
         from app.platform.model_gateway import complete_text
 
-        hesap_listesi = "\n".join(
-            f"{kod}: {h.adi}" for kod, h in THP_HESAPLARI.items()
-        )
+        hesap_listesi = "\n".join(f"{kod}: {h.adi}" for kod, h in THP_HESAPLARI.items())
 
         prompt = (
             f"Türkiye Tekdüzen Hesap Planı'na göre aşağıdaki işlemi sınıflandır.\n\n"
@@ -407,6 +604,7 @@ async def _llm_siniflandir(
 
 
 # ── Ana sınıflandırıcı ────────────────────────────────────────────────────────
+
 
 class THPClassifier:
     """
@@ -506,7 +704,7 @@ class THPClassifier:
                 ana_grup=hesap.ana_grup,
                 normal_bakiye=hesap.normal_bakiye,
                 tip=hesap.tip,
-                confidence=0.0,   # a fallback is not evidence
+                confidence=0.0,  # a fallback is not evidence
                 yontem="varsayılan",
                 aciklama="Sınıflandırılamadı — Diğer Gelirler hesabına atandı",
                 guven_seviyesi="varsayilan",
@@ -520,7 +718,7 @@ class THPClassifier:
                 ana_grup=hesap.ana_grup,
                 normal_bakiye=hesap.normal_bakiye,
                 tip=hesap.tip,
-                confidence=0.0,   # a fallback is not evidence
+                confidence=0.0,  # a fallback is not evidence
                 yontem="varsayılan",
                 aciklama="Sınıflandırılamadı — Genel Yönetim Giderleri hesabına atandı",
                 guven_seviyesi="varsayilan",

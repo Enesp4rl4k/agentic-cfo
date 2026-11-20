@@ -1,4 +1,5 @@
 """ORM model for agent_conflicts (migration 016)."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -42,6 +43,4 @@ class AgentConflict(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
-    resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

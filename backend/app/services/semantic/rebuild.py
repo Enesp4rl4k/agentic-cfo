@@ -1,4 +1,5 @@
 """Rebuild CompanySemanticSnapshot from CompanyContext + canonical transactions."""
+
 from __future__ import annotations
 
 import logging
@@ -153,9 +154,7 @@ async def rebuild_semantic_snapshot(
             project_from_risk(ctx.last_risk_result),
         )
 
-        rows, quality = await _load_canonical(
-            org_id, db, period_start=p_start, period_end=p_end
-        )
+        rows, quality = await _load_canonical(org_id, db, period_start=p_start, period_end=p_end)
         sync_quality = await _latest_sync_quality(org_id, db)
         if sync_quality is not None:
             quality = sync_quality if quality is None else max(quality, sync_quality)

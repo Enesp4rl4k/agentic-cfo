@@ -12,6 +12,7 @@ ordinary Python and mean the wrong thing inside a query:
 The sweep catches these by running the route. These tests catch them in CI,
 before anyone has to.
 """
+
 from __future__ import annotations
 
 import ast
@@ -29,11 +30,7 @@ _MODEL_NAME = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 
 
 def _python_files() -> list[Path]:
-    return [
-        p
-        for p in APP.rglob("*.py")
-        if "__pycache__" not in p.parts
-    ]
+    return [p for p in APP.rglob("*.py") if "__pycache__" not in p.parts]
 
 
 def _rel(path: Path) -> str:
@@ -61,9 +58,7 @@ def test_no_python_truthiness_on_model_columns(path: Path) -> None:
             )
 
         # Model.col is None / is not None
-        if isinstance(node, ast.Compare) and isinstance(
-            node.ops[0], (ast.Is, ast.IsNot)
-        ):
+        if isinstance(node, ast.Compare) and isinstance(node.ops[0], (ast.Is, ast.IsNot)):
             left = node.left
             if (
                 isinstance(left, ast.Attribute)
@@ -180,9 +175,7 @@ _BRAND_LITERALS = (
 )
 
 
-def _brand_offenders(
-    root: Path, suffixes: tuple[str, ...], skip: tuple[str, ...]
-) -> list[str]:
+def _brand_offenders(root: Path, suffixes: tuple[str, ...], skip: tuple[str, ...]) -> list[str]:
     found: list[str] = []
     for path in sorted(root.rglob("*")):
         if not path.is_file() or path.suffix not in suffixes:
@@ -214,9 +207,8 @@ def test_no_hardcoded_brand_in_frontend() -> None:
     if not frontend.is_dir():  # pragma: no cover - backend-only checkouts
         pytest.skip("frontend not present")
     offenders = _brand_offenders(frontend, (".ts", ".tsx"), ("branding.ts",))
-    assert not offenders, (
-        "brand name hard-coded — read it from @/lib/branding:\n  "
-        + "\n  ".join(offenders)
+    assert not offenders, "brand name hard-coded — read it from @/lib/branding:\n  " + "\n  ".join(
+        offenders
     )
 
 
@@ -231,11 +223,11 @@ def test_no_hardcoded_brand_in_frontend() -> None:
 # stack drags in the whole application, and the ordering is a property of how it
 # is written.
 
+
 def test_cors_middleware_is_registered_last() -> None:
     src = (APP / "main.py").read_text(encoding="utf-8")
     registrations = [
-        (m.start(), m.group(1))
-        for m in re.finditer(r"app\.add_middleware\(\s*\n?\s*(\w+)", src)
+        (m.start(), m.group(1)) for m in re.finditer(r"app\.add_middleware\(\s*\n?\s*(\w+)", src)
     ]
     assert registrations, "no add_middleware calls found — did main.py move?"
     names = [name for _, name in registrations]
@@ -276,8 +268,10 @@ def _direction_offenders(tree: ast.AST, rel: str) -> list[str]:
             continue
         left = node.left
         name = (
-            left.id if isinstance(left, ast.Name)
-            else left.attr if isinstance(left, ast.Attribute)
+            left.id
+            if isinstance(left, ast.Name)
+            else left.attr
+            if isinstance(left, ast.Attribute)
             else ""
         )
         if name not in ("invoice_type", "inv_type"):
@@ -307,8 +301,7 @@ def test_direction_is_not_inferred_from_invoice_type() -> None:
         offenders.extend(_direction_offenders(tree, rel))
     assert not offenders, (
         "fatura yönü fatura tipinden çıkarılamaz — VKN karşılaştırması kullanın "
-        "(UBLTRInvoiceParser.parse_xml(..., own_vkn=...)):\n  "
-        + "\n  ".join(offenders)
+        "(UBLTRInvoiceParser.parse_xml(..., own_vkn=...)):\n  " + "\n  ".join(offenders)
     )
 
 
@@ -363,6 +356,7 @@ def test_every_upload_path_enqueues_the_analysis() -> None:
 # (a second THP classifier nothing ran, and an e-Defter writer that disagreed
 # with the audited journal), so the shape is worth a guard rather than a memo.
 
+
 def _parser_logic(path: Path) -> list[str]:
     """Source with docstrings, comments and bank identity stripped out."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -384,12 +378,11 @@ def test_no_two_bank_parsers_share_their_logic() -> None:
     import difflib
 
     banks = sorted(
-        p for p in (APP / "parsers" / "banks").glob("*.py")
-        if p.stem not in ("__init__", "_shapes")
+        p for p in (APP / "parsers" / "banks").glob("*.py") if p.stem not in ("__init__", "_shapes")
     )
     duplicates: list[str] = []
     for i, a in enumerate(banks):
-        for b in banks[i + 1:]:
+        for b in banks[i + 1 :]:
             la, lb = _parser_logic(a), _parser_logic(b)
             if not la or not lb:
                 continue  # a parser with no logic of its own — that is the point

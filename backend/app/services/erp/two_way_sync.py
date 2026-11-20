@@ -4,6 +4,7 @@ Two-Way ERP Sync Engine (Roadmap 2.0 - Epic 1).
 Synchronizes financial records and pushes approved SMMM/TDHP journal entries
 (Yevmiye Maddeleri) directly into ERP systems (Logo Go/Tiger, Mikro Fly/Jump, Paraşüt, Bizmu).
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,13 +21,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ERPPushResult:
     sync_id: str
-    erp_type: str              # "logo", "mikro", "parasut", "bizmu"
-    voucher_no: str            # Yevmiye Fiş No
+    erp_type: str  # "logo", "mikro", "parasut", "bizmu"
+    voucher_no: str  # Yevmiye Fiş No
     voucher_date: str
     total_debit_cents: int
     total_credit_cents: int
     line_count: int
-    status: str                # "synced", "pending", "failed"
+    status: str  # "synced", "pending", "failed"
     remote_id: str | None = None
     error_message: str | None = None
     synced_at: str = ""

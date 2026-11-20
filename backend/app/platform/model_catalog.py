@@ -6,6 +6,7 @@ I/O and no dependencies on other app layers. Both the LLM router
 (`app.services.llm_router`) and the Model Gateway (`app.platform.model_gateway`)
 import from here so the boundary test can keep `platform` below `services`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -51,7 +52,7 @@ class ModelConfig:
     model_id: str
     max_tokens: int
     temperature: float
-    cost_per_1k_in: float   # USD / 1K input tokens
+    cost_per_1k_in: float  # USD / 1K input tokens
     cost_per_1k_out: float  # USD / 1K output tokens
     supports_vision: bool = False
     context_window: int = 8192
@@ -60,8 +61,12 @@ class ModelConfig:
 MODELS: dict[str, ModelConfig] = {
     "gpt-3.5-turbo": ModelConfig("gpt-3.5-turbo", 1000, 0.2, 0.0005, 0.0015, context_window=16385),
     "gpt-4o-mini": ModelConfig("gpt-4o-mini", 2000, 0.3, 0.00015, 0.0006, context_window=128000),
-    "gpt-4o": ModelConfig("gpt-4o", 4000, 0.3, 0.0025, 0.010, supports_vision=True, context_window=128000),
-    "gpt-4o-high": ModelConfig("gpt-4o", 8000, 0.1, 0.0025, 0.010, supports_vision=True, context_window=128000),
+    "gpt-4o": ModelConfig(
+        "gpt-4o", 4000, 0.3, 0.0025, 0.010, supports_vision=True, context_window=128000
+    ),
+    "gpt-4o-high": ModelConfig(
+        "gpt-4o", 8000, 0.1, 0.0025, 0.010, supports_vision=True, context_window=128000
+    ),
 }
 
 TASK_TO_MODEL: dict[str, str] = {
@@ -91,8 +96,7 @@ def select_model(task: str, prompt_length: int = 0) -> ModelConfig:
     """Pure task→model resolution. Raises ValueError for deterministic tasks."""
     if task in DETERMINISTIC_TASKS:
         raise ValueError(
-            f"Task '{task}' LLM gerektirmiyor — deterministik hesapla "
-            "(does not need an LLM)"
+            f"Task '{task}' LLM gerektirmiyor — deterministik hesapla (does not need an LLM)"
         )
     if prompt_length > LONG_PROMPT_CHAR_THRESHOLD:
         return MODELS["gpt-4o"]  # 128K context

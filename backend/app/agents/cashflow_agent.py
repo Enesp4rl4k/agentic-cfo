@@ -7,6 +7,7 @@ Generates rule-based alerts when cash position is critical.
 
 done_when: state['cashflow'] contains operating, investing, financing, net_change (cents integers).
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,10 +22,18 @@ from app.services.telemetry import trace_agent
 logger = logging.getLogger(__name__)
 
 OPERATING_CATEGORIES = {
-    "revenue", "cogs", "salary", "rent", "utilities",
-    "marketing", "technology", "tax", "other_expense", "other_income",
+    "revenue",
+    "cogs",
+    "salary",
+    "rent",
+    "utilities",
+    "marketing",
+    "technology",
+    "tax",
+    "other_expense",
+    "other_income",
 }
-INVESTING_CATEGORIES: set[str] = set()   # extend when asset purchases are added
+INVESTING_CATEGORIES: set[str] = set()  # extend when asset purchases are added
 FINANCING_CATEGORIES = {"loan"}
 
 
@@ -129,14 +138,23 @@ def _compute_ccc(
     """
 
     if not transactions or total_revenue_cents == 0:
-        return {"dso_days": None, "dpo_days": None, "ccc_days": None,
-                "olcum": "veri_yok", "dayanak": None, "interpretation": "Yetersiz veri"}
+        return {
+            "dso_days": None,
+            "dpo_days": None,
+            "ccc_days": None,
+            "olcum": "veri_yok",
+            "dayanak": None,
+            "interpretation": "Yetersiz veri",
+        }
 
     # Estimate DSO: average lag between income transactions and month start
     # As a proxy: if revenue arrives in clumps vs. uniformly → high DSO
     income_txs = [t for t in transactions if t.get("type") == "income"]
-    expense_txs = [t for t in transactions if t.get("type") == "expense"
-                   and t.get("category") in ("cogs", "other_expense")]
+    expense_txs = [
+        t
+        for t in transactions
+        if t.get("type") == "expense" and t.get("category") in ("cogs", "other_expense")
+    ]
 
     # Simple proxy: annualized revenue / 365 gives daily revenue
     # DSO = avg days until payment collected (use 30 as baseline for invoice businesses)
@@ -152,7 +170,7 @@ def _compute_ccc(
     elif avg_invoice_size > 1_000_00:  # 1,000 TRY
         dso_days = 20  # mixed
     else:
-        dso_days = 7   # retail/subscription
+        dso_days = 7  # retail/subscription
 
     # DPO proxy: how spread out are expense payments
     n_expense_txs = max(1, len(expense_txs))
@@ -165,18 +183,25 @@ def _compute_ccc(
     ccc_days = dso_days - dpo_days  # DIO = 0 for service companies
 
     interpretation = (
-        "Tahmini CCC negatif — tahsilat ödemeden önce geliyor" if ccc_days < 0 else
-        f"Tahmini CCC {ccc_days} gün — tahsilat gecikiyor, nakit sıkışıklığı riski" if ccc_days > 45 else
-        f"Tahmini CCC {ccc_days} gün"
-    ) + " (ekstredeki işlem büyüklüklerinden tahmin; gerçek gün sayısı için alacak/borç bakiyesi gerekir)"
+        (
+            "Tahmini CCC negatif — tahsilat ödemeden önce geliyor"
+            if ccc_days < 0
+            else f"Tahmini CCC {ccc_days} gün — tahsilat gecikiyor, nakit sıkışıklığı riski"
+            if ccc_days > 45
+            else f"Tahmini CCC {ccc_days} gün"
+        )
+        + " (ekstredeki işlem büyüklüklerinden tahmin; gerçek gün sayısı için alacak/borç bakiyesi gerekir)"
+    )
 
     return {
         "dso_days": dso_days,
         "dpo_days": dpo_days,
         "ccc_days": ccc_days,
         "olcum": "tahmin",
-        "dayanak": (f"Ortalama tahsilat {avg_invoice_size / 100:,.0f} TL, ortalama ödeme "
-                    f"{avg_expense_size / 100:,.0f} TL; gün sayıları bu büyüklüklere göre seçilen bantlar."),
+        "dayanak": (
+            f"Ortalama tahsilat {avg_invoice_size / 100:,.0f} TL, ortalama ödeme "
+            f"{avg_expense_size / 100:,.0f} TL; gün sayıları bu büyüklüklere göre seçilen bantlar."
+        ),
         "interpretation": interpretation,
     }
 
@@ -186,16 +211,20 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
     alerts: list[dict[str, str]] = []
 
     if cashflow["net_change"] < 0:
-        alerts.append({
-            "level": "warning",
-            "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'])}. Nakit dengesini izleyin.",
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'])}. Nakit dengesini izleyin.",
+            }
+        )
 
     if cashflow["operating"] < 0:
-        alerts.append({
-            "level": "critical",
-            "message": "Faaliyet nakit akışı negatif — işletme, faaliyetlerini kendi nakit akışıyla finanse edemiyor. Acil önlem gerekiyor.",
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": "Faaliyet nakit akışı negatif — işletme, faaliyetlerini kendi nakit akışıyla finanse edemiyor. Acil önlem gerekiyor.",
+            }
+        )
 
     series = cashflow.get("monthly_series", [])
     neg_streak = 0
@@ -205,10 +234,12 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
         else:
             neg_streak = 0
         if neg_streak >= 2:
-            alerts.append({
-                "level": "critical",
-                "message": f"Art arda 2+ ay negatif nakit akışı tespit edildi ({entry['month']} dahil). Gider kontrolü yapılmalı.",
-            })
+            alerts.append(
+                {
+                    "level": "critical",
+                    "message": f"Art arda 2+ ay negatif nakit akışı tespit edildi ({entry['month']} dahil). Gider kontrolü yapılmalı.",
+                }
+            )
             break
 
     return alerts
@@ -233,6 +264,7 @@ async def _generate_cashflow_narrative(
     # Attach context metadata via ContextBuilder
     if state is not None:
         from app.services.context_builder import get_context_builder
+
         ctx = get_context_builder(budget=3072)
         context_result = ctx.build_cashflow_context(
             state={**state, "cashflow": cashflow_with_alerts}
@@ -263,20 +295,30 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         # a "cash flow" that is really profit, so the result says which it is.
         if any(t.get("basis") == "tahakkuk" for t in transactions):
             cashflow["esas"] = "tahakkuk"
-            alerts.insert(0, {
-                "level": "warning",
-                "message": ("Bu tablo e-Defter yevmiyesinin gelir/gider kayıtlarından (tahakkuk "
-                            "esası) türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
-                            "içerir, gerçek nakit hareketi değildir. Nakit için banka ekstresini yükleyin."),
-            })
+            alerts.insert(
+                0,
+                {
+                    "level": "warning",
+                    "message": (
+                        "Bu tablo e-Defter yevmiyesinin gelir/gider kayıtlarından (tahakkuk "
+                        "esası) türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
+                        "içerir, gerçek nakit hareketi değildir. Nakit için banka ekstresini yükleyin."
+                    ),
+                },
+            )
         if any(t.get("ledger_basis") == BOOK for t in transactions):
             cashflow["esas"] = "tahakkuk"
-            alerts.insert(0, {
-                "level": "warning",
-                "message": ("Banka ekstresi olmayan aylarda bu tablo muhasebe kayıtlarından "
-                            "türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
-                            "içerebilir. Gerçek nakit için banka ekstresi yükleyin."),
-            })
+            alerts.insert(
+                0,
+                {
+                    "level": "warning",
+                    "message": (
+                        "Banka ekstresi olmayan aylarda bu tablo muhasebe kayıtlarından "
+                        "türetildi: tahsil edilmemiş satışları ve ödenmemiş giderleri "
+                        "içerebilir. Gerçek nakit için banka ekstresi yükleyin."
+                    ),
+                },
+            )
         narrative = await _generate_cashflow_narrative(cashflow, alerts, settings, state=state)
 
         cashflow["alerts"] = alerts
@@ -288,6 +330,7 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         # S3-3: Attach cashflow evidence
         try:
             from app.services.evidence_builder import get_evidence_builder
+
             cashflow = get_evidence_builder().attach_cashflow_evidence(cashflow, transactions)
         except Exception as ev_exc:
             logger.debug("Evidence builder (non-fatal): %s", ev_exc)

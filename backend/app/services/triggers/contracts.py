@@ -4,6 +4,7 @@ Storage (trigger_definition / trigger_run tables), the action registry and
 the /tetikler router land in P4-1 against these types; this module pins the
 shape now so the API, the DB row and the evaluator agree from day one.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal

@@ -7,6 +7,7 @@ whether a human reviewed it (approved / corrected / rejected) or the AI posted i
 automatically, plus the run's independent-reconciliation verdict and confidence
 decomposition. Once `finalized` the payload is frozen and `content_hash` locks it.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -24,13 +25,9 @@ def _utcnow() -> datetime:
 
 class DefensibilityPacket(Base):
     __tablename__ = "defensibility_packets"
-    __table_args__ = (
-        UniqueConstraint("org_id", "job_id", name="uq_defensibility_org_job"),
-    )
+    __table_args__ = (UniqueConstraint("org_id", "job_id", name="uq_defensibility_org_job"),)
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     job_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     period: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
@@ -47,9 +44,7 @@ class DefensibilityPacket(Base):
 
     smmm_statement: Mapped[str | None] = mapped_column(Text, nullable=True)
     finalized_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    finalized_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow

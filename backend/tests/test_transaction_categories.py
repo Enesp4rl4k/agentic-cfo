@@ -11,6 +11,7 @@ nothing downstream that groups on category could see those rows. It sat there
 because the P&L computes revenue from `type == "income"` rather than from the
 category, so the number that would have exposed it stayed right.
 """
+
 from __future__ import annotations
 
 import ast
@@ -29,9 +30,7 @@ def test_the_vocabulary_is_what_we_think_it_is() -> None:
     """A guard on the guard: if the categories change, the tests below stop
     meaning what they claim."""
     assert "revenue" in VOCABULARY
-    assert "sales" not in VOCABULARY, (
-        '"sales" is a keyword inside the revenue rule, not a category'
-    )
+    assert "sales" not in VOCABULARY, '"sales" is a keyword inside the revenue rule, not a category'
     assert "cogs" in VOCABULARY and "other_expense" in VOCABULARY
 
 
@@ -44,10 +43,7 @@ def test_guess_category_can_only_return_a_known_category(description: str) -> No
 
 
 def _dict_keys(node: ast.Dict) -> set[str]:
-    return {
-        k.value for k in node.keys
-        if isinstance(k, ast.Constant) and isinstance(k.value, str)
-    }
+    return {k.value for k in node.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)}
 
 
 def _hardcoded_categories() -> dict[str, str]:
@@ -140,9 +136,7 @@ def test_an_unrecognised_response_produces_no_phantom_rows() -> None:
     from app.services.gib_efatura import EFaturaClient
 
     client = EFaturaClient.__new__(EFaturaClient)
-    rows = client._parse_invoice_list(
-        [{"someOtherShape": 1}, {"alsoUnknown": "x"}], "inbound"
-    )
+    rows = client._parse_invoice_list([{"someOtherShape": 1}, {"alsoUnknown": "x"}], "inbound")
     assert rows == []
 
 
@@ -177,6 +171,7 @@ def test_an_uploaded_category_column_is_checked_against_the_vocabulary() -> None
 # keyword list spelled only one way matches half of them, and a payroll line
 # that misses `salary` lands in other_expense — where every report that groups
 # by category is then quietly wrong about where the money went.
+
 
 @pytest.mark.parametrize(
     ("description", "expected"),

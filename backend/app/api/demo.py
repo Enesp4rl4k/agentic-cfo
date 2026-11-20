@@ -9,6 +9,7 @@ POST /demo/seed      → Create a demo analysis job using logo_tiger_2024.csv
 GET  /demo/status    → Check if org already has demo data loaded
 DELETE /demo/reset   → Remove demo job from context (org can start fresh)
 """
+
 from __future__ import annotations
 
 import logging
@@ -152,16 +153,16 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
     logger.info("Demo guest: org=%s user=%s", org.id, user.id)
     return {
         "data": {
-            "access_token":  access_token,
+            "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type":    "bearer",
-            "expires_in":    1800,
+            "token_type": "bearer",
+            "expires_in": 1800,
             "user": {
-                "user_id":   user.id,
-                "email":     user.email,
+                "user_id": user.id,
+                "email": user.email,
                 "full_name": user.full_name,
-                "role":      user.role,
-                "org_id":    user.org_id,
+                "role": user.role,
+                "org_id": user.org_id,
             },
         },
         "error": None,
@@ -213,10 +214,10 @@ async def seed_demo(
             logger.info("Demo seed: existing demo job=%s for org=%s", existing.id, org_id)
             return {
                 "data": {
-                    "job_id":   existing.id,
-                    "status":   existing.status,
-                    "message":  "Mevcut demo analizi kullanılıyor.",
-                    "is_new":   False,
+                    "job_id": existing.id,
+                    "status": existing.status,
+                    "message": "Mevcut demo analizi kullanılıyor.",
+                    "is_new": False,
                 },
                 "error": None,
             }
@@ -227,11 +228,11 @@ async def seed_demo(
     # There is no `upload_dir` setting — the hasattr guard silently sent every
     # demo file to a bare "/tmp/uploads", which on Windows is a stray C:	mp.
     demo_content = await _get_demo_csv_content()
-    upload_dir   = Path(settings.storage_local_path)
+    upload_dir = Path(settings.storage_local_path)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    job_id    = str(uuid.uuid4())
-    filename  = "logo_tiger_2024_demo.csv"
+    job_id = str(uuid.uuid4())
+    filename = "logo_tiger_2024_demo.csv"
     file_path = upload_dir / f"{job_id}_{filename}"
     from app.core.atomic_io import atomic_write_bytes
 
@@ -239,13 +240,13 @@ async def seed_demo(
 
     # ── Create analysis job ───────────────────────────────────────────────────
     job = AnalysisJob(
-        id        = job_id,
-        status    = JobStatus.PENDING,
-        filename  = filename,
-        file_path = str(file_path),
-        file_type = "csv",   # NOT NULL — omitting it made every seed 500
-        org_id    = org_id,
-        user_id   = str(current_user.id),
+        id=job_id,
+        status=JobStatus.PENDING,
+        filename=filename,
+        file_path=str(file_path),
+        file_type="csv",  # NOT NULL — omitting it made every seed 500
+        org_id=org_id,
+        user_id=str(current_user.id),
     )
     db.add(job)
     await db.commit()
@@ -265,10 +266,10 @@ async def seed_demo(
     logger.info("Demo seed: created job=%s for org=%s", job_id, org_id)
     return {
         "data": {
-            "job_id":  job_id,
-            "status":  "pending",
+            "job_id": job_id,
+            "status": "pending",
             "message": "Demo analizi başlatıldı! Logo Tiger 2024 verisiyle CFO ve tüm C-Suite ajanları çalışacak.",
-            "is_new":  True,
+            "is_new": True,
         },
         "error": None,
     }
@@ -295,9 +296,7 @@ async def reset_demo(
     from app.services.demo_template import GOLDEN_SLUG, purge_demo_workspace
 
     if not get_settings().demo_mode:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Demo modu kapalı."
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo modu kapalı.")
 
     org_id = str(current_user.org_id) if current_user.org_id else str(current_user.id)
 
@@ -350,9 +349,9 @@ async def get_demo_status(
 
     return {
         "data": {
-            "has_demo":  job is not None,
-            "job_id":    job.id if job else None,
-            "status":    job.status if job else None,
+            "has_demo": job is not None,
+            "job_id": job.id if job else None,
+            "status": job.status if job else None,
         },
         "error": None,
     }

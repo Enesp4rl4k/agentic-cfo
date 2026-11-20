@@ -3,6 +3,7 @@
 Runs without an LLM. Golden answers are scored by the same validator
 that gates production chat.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -166,6 +167,7 @@ def run_grounding_eval(cases: list[GoldenCase] | None = None) -> EvalReport:
 # result on the labeled set. Recall is reported, not gated (a strict gate that
 # holds some good runs for review is acceptable; letting a bad one through is not).
 
+
 @dataclass(frozen=True)
 class ConfidenceObservation:
     label: str
@@ -179,10 +181,10 @@ class ConfidenceObservation:
 @dataclass
 class CalibrationReport:
     threshold: float
-    proceeded_total: int          # runs with confidence >= threshold
+    proceeded_total: int  # runs with confidence >= threshold
     proceeded_correct: int
-    held_total: int               # runs with confidence < threshold
-    held_correct: int             # correct runs the gate held back (recall loss)
+    held_total: int  # runs with confidence < threshold
+    held_correct: int  # correct runs the gate held back (recall loss)
     observations: list[ConfidenceObservation]
 
     @property

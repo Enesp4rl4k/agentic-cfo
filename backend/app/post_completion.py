@@ -9,6 +9,7 @@ Redis pool the trend alert is written to.
 `worker.run_cfo_analysis` and `services.review_continuation` call
 `continue_after_completion`; the company-view endpoints call `apply_company_view`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,12 +28,14 @@ async def saved_result(job_id: str, db: Any) -> dict[str, Any]:
     from app.models.anomaly import Anomaly
     from app.models.report import Report, ReportFormat
 
-    report = (await db.execute(
-        select(Report)
-        .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
-        .order_by(desc(Report.created_at))
-        .limit(1)
-    )).scalar_one_or_none()
+    report = (
+        await db.execute(
+            select(Report)
+            .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
+            .order_by(desc(Report.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     anomalies = (await db.execute(select(Anomaly).where(Anomaly.job_id == job_id))).scalars().all()
     return {
         "dashboard_json": (report.data if report is not None else None) or {},
@@ -55,13 +58,13 @@ def cfo_chain_result(job_id: str, result: dict[str, Any]) -> dict[str, Any]:
     """The CFO result as the company context stores it."""
     dashboard = result.get("dashboard_json") or {}
     return {
-        "job_id":     job_id,
+        "job_id": job_id,
         "min_confidence": dashboard.get("min_confidence"),
-        "dashboard":  dashboard,
-        "anomalies":  result.get("anomalies") or [],
-        "forecast":   dashboard.get("forecast"),
-        "pnl":        dashboard.get("pnl"),
-        "cashflow":   dashboard.get("cashflow"),
+        "dashboard": dashboard,
+        "anomalies": result.get("anomalies") or [],
+        "forecast": dashboard.get("forecast"),
+        "pnl": dashboard.get("pnl"),
+        "cashflow": dashboard.get("cashflow"),
     }
 
 
@@ -84,7 +87,9 @@ async def continue_after_completion(
 
         await append_job(db, job_id)
     except Exception:
-        logger.exception("Ledger append failed for job=%s", str(job_id).replace("\r", "").replace("\n", ""))
+        logger.exception(
+            "Ledger append failed for job=%s", str(job_id).replace("\r", "").replace("\n", "")
+        )
         await db.rollback()
 
     # Plan v9 §K1: the company's picture is read from its ledger, so one upload
@@ -118,11 +123,19 @@ async def _settle_held_views(db: Any, org_id: str, signature: str) -> bool:
 
     from app.models.agent_job import AgentJob, AgentJobStatus
 
-    held = (await db.execute(select(AgentJob).where(
-        AgentJob.org_id == org_id,
-        AgentJob.agent_type == "cfo",
-        AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
-    ))).scalars().all()
+    held = (
+        (
+            await db.execute(
+                select(AgentJob).where(
+                    AgentJob.org_id == org_id,
+                    AgentJob.agent_type == "cfo",
+                    AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     waiting = False
     for job in held:
         if (job.result_json or {}).get("ledger_signature") == signature:
@@ -163,21 +176,36 @@ async def _publish_ledger_view(
     from app.services.company_context import get_company_context
     from app.services.context_persist import persist_agent_completion
 
-    result["dashboard_json"] = {**result["dashboard_json"], "source": "ledger", "period": view.period}
+    result["dashboard_json"] = {
+        **result["dashboard_json"],
+        "source": "ledger",
+        "period": view.period,
+    }
     chain = {**cfo_chain_result(active or "", result), "ledger_signature": view.signature}
     decision = await persist_agent_completion(
-        org_id, "cfo",
+        org_id,
+        "cfo",
         # The gate reads how the run went, so what it held can say why.
-        {**chain, "logs": result.get("logs") or [], "min_confidence": result.get("min_confidence"),
-         "awaiting_review": result.get("awaiting_review"), "error": result.get("error")},
-        db, job_id=active, trigger_auto_chain=False, force_rebuild=True,
+        {
+            **chain,
+            "logs": result.get("logs") or [],
+            "min_confidence": result.get("min_confidence"),
+            "awaiting_review": result.get("awaiting_review"),
+            "error": result.get("error"),
+        },
+        db,
+        job_id=active,
+        trigger_auto_chain=False,
+        force_rebuild=True,
     )
     if decision.get("awaiting_review"):
         return "ledger_view_held", chain
     written = (await get_company_context(org_id, db)).last_cfo_result or {}
     # persist_agent_completion logs a failed save and returns; a chain run on a
     # context that was not written would synthesise the old view as if new.
-    return ("ledger" if written.get("ledger_signature") == view.signature else "ledger_view_failed"), chain
+    return (
+        "ledger" if written.get("ledger_signature") == view.signature else "ledger_view_failed"
+    ), chain
 
 
 async def _ledger_view_reason(
@@ -323,6 +351,7 @@ def _job_side_effects(job_id: str, org_id: str, result: dict[str, Any]) -> None:
     async def _invalidate_analytics_cache(org_id: str) -> None:
         try:
             from app.services.cache_service import invalidate_org_analytics
+
             count = await invalidate_org_analytics(org_id)
             if count:
                 logger.debug("Cache invalidated: org=%s keys=%d", org_id, count)
@@ -389,11 +418,14 @@ async def _save_to_memory_and_trend(
             agent="pnl_agent",
             period=period,
             summary={
-                "revenue":      pnl.get("revenue"),
-                "net_income":   pnl.get("net_income"),
-                "net_margin":   pnl.get("net_margin"),
-                "ebitda":       pnl.get("ebitda"),
-                "anomalies":    [{"anomaly_type": a.get("anomaly_type"), "severity": a.get("severity")} for a in anomalies[:10]],
+                "revenue": pnl.get("revenue"),
+                "net_income": pnl.get("net_income"),
+                "net_margin": pnl.get("net_margin"),
+                "ebitda": pnl.get("ebitda"),
+                "anomalies": [
+                    {"anomaly_type": a.get("anomaly_type"), "severity": a.get("severity")}
+                    for a in anomalies[:10]
+                ],
             },
             narrative=pnl.get("narrative", ""),
             job_id=job_id,

@@ -1,4 +1,5 @@
 """Deterministic Decision Brief builder from semantic snapshot."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -184,9 +185,7 @@ def build_from_snapshot(
                 severity="high",
                 domain="risk",
                 statement=(
-                    "Kurumsal risk skoru yüksek."
-                    if tr
-                    else "Enterprise risk score is elevated."
+                    "Kurumsal risk skoru yüksek." if tr else "Enterprise risk score is elevated."
                 ),
                 metric_ids=["risk.overall_score"],
                 confidence=float(mmap["risk.overall_score"].confidence)

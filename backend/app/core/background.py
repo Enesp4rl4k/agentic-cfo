@@ -14,6 +14,7 @@
 `spawn` holds the task until it ends and logs its failure under its name.
 `with_session` gives the work a session of its own.
 """
+
 from __future__ import annotations
 
 import asyncio

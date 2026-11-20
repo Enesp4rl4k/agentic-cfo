@@ -3,6 +3,7 @@
 These pin behaviour BEFORE the P4-1 engine exists — the evaluator is pure, so
 the contract is testable without a database, a router or a single cron job.
 """
+
 import pytest
 from pydantic import ValidationError
 
@@ -51,9 +52,7 @@ class TestParsing:
 
     def test_rejects_extra_fields(self) -> None:
         with pytest.raises(ValidationError):
-            parse_condition(
-                {"metric": "finance.ebitda", "op": "gt", "value": 1, "window": "30d"}
-            )
+            parse_condition({"metric": "finance.ebitda", "op": "gt", "value": 1, "window": "30d"})
 
     def test_rejects_empty_metric(self) -> None:
         with pytest.raises(ValidationError):
@@ -83,9 +82,9 @@ class TestOperators:
     @pytest.mark.parametrize(
         ("op", "actual", "threshold", "expected"),
         [
-            ("gt", 5.0, 5.0, False),      # gt is strict
+            ("gt", 5.0, 5.0, False),  # gt is strict
             ("gt", 5.01, 5.0, True),
-            ("gte", 5.0, 5.0, True),      # gte is inclusive
+            ("gte", 5.0, 5.0, True),  # gte is inclusive
             ("lt", 4.99, 5.0, True),
             ("lt", 5.0, 5.0, False),
             ("lte", 5.0, 5.0, True),
@@ -93,7 +92,7 @@ class TestOperators:
             ("eq", 5.0, 5.0001, False),
             ("ne", 5.0, 5.0, False),
             ("ne", 5.0, 6.0, True),
-            ("abs_gt", 9.0, 8.0, True),   # magnitude on both signs
+            ("abs_gt", 9.0, 8.0, True),  # magnitude on both signs
             ("abs_gt", -9.0, 8.0, True),
             ("abs_gt", -8.0, 8.0, False),
         ],
@@ -107,9 +106,7 @@ class TestOperators:
     def test_kurus_thresholds_stay_raw(self) -> None:
         # finance.revenue is unit="cents" in the catalog; the evaluator is
         # unit-agnostic — a 1M-lira month is 100_000_000 kuruş.
-        condition = parse_condition(
-            {"metric": "finance.revenue", "op": "lt", "value": 100_000_000}
-        )
+        condition = parse_condition({"metric": "finance.revenue", "op": "lt", "value": 100_000_000})
         assert evaluate(condition, {"finance.revenue": 99_999_999}) is True
         assert evaluate(condition, {"finance.revenue": 100_000_000}) is False
 

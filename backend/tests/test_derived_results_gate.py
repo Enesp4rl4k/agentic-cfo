@@ -9,6 +9,7 @@ inherits it. A parent whose confidence is unknown makes the child's unknown, and
 confidence is held (`platform.run_gate`: unknown is not calm). A confident parent writes,
 and the written result carries the gate's decision.
 """
+
 from __future__ import annotations
 
 import re
@@ -37,7 +38,9 @@ async def ortam():
 async def _context_with_cfo(client, org_id: str, confidence: float | None) -> Any:
     async with client._maker() as db:
         ctx = await get_company_context(org_id, db)
-        ctx.update_agent_result("cfo", {"job_id": "J1", "dashboard": {}, "min_confidence": confidence})
+        ctx.update_agent_result(
+            "cfo", {"job_id": "J1", "dashboard": {}, "min_confidence": confidence}
+        )
         await save_company_context(ctx, db)
 
 
@@ -48,10 +51,19 @@ async def _stored(client, org_id: str, agent: str) -> dict | None:
 
 async def _held(client, org_id: str, agent: str) -> list[AgentJob]:
     async with client._maker() as db:
-        return list((await db.execute(select(AgentJob).where(
-            AgentJob.org_id == org_id, AgentJob.agent_type == agent,
-            AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
-        ))).scalars().all())
+        return list(
+            (
+                await db.execute(
+                    select(AgentJob).where(
+                        AgentJob.org_id == org_id,
+                        AgentJob.agent_type == agent,
+                        AgentJob.status == AgentJobStatus.AWAITING_REVIEW,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
 
 async def _derive(client, org_id: str, agent: str, confidence: float | None) -> None:
@@ -59,8 +71,14 @@ async def _derive(client, org_id: str, agent: str, confidence: float | None) -> 
 
     await _context_with_cfo(client, org_id, confidence)
     async with client._maker() as db:
-        await write_derived_result(db, org_id, agent, {"summary": "x", "auto_generated": True},
-                                   parent_agent="cfo", job_id="J1")
+        await write_derived_result(
+            db,
+            org_id,
+            agent,
+            {"summary": "x", "auto_generated": True},
+            parent_agent="cfo",
+            job_id="J1",
+        )
 
 
 @pytest.mark.parametrize("agent", ["risk", "audit", "compliance", "ceo"])
@@ -100,7 +118,9 @@ async def test_a_parent_that_never_ran_holds_the_result_too(ortam):
 
     client, org_id = ortam
     async with client._maker() as db:
-        await write_derived_result(db, org_id, "risk", {"summary": "x"}, parent_agent="cfo", job_id="J1")
+        await write_derived_result(
+            db, org_id, "risk", {"summary": "x"}, parent_agent="cfo", job_id="J1"
+        )
     assert await _stored(client, org_id, "risk") is None
     assert len(await _held(client, org_id, "risk")) == 1
 
@@ -140,7 +160,9 @@ async def test_the_auto_chained_audit_and_compliance_runs_go_through_the_gate(or
         return {"compliance_summary": {"ok": True}}
 
     monkeypatch.setattr("app.agents.audit.orchestrator.run_audit_pipeline", fake_audit)
-    monkeypatch.setattr("app.agents.compliance.orchestrator.run_compliance_pipeline", fake_compliance)
+    monkeypatch.setattr(
+        "app.agents.compliance.orchestrator.run_compliance_pipeline", fake_compliance
+    )
     monkeypatch.setattr(auto_chain, "_build_audit_findings_from_cfo", lambda cfo: "findings")
 
     async with client._maker() as db:

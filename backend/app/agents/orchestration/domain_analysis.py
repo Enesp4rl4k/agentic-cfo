@@ -18,6 +18,7 @@ This module is the one entry point for every domain:
 
 Nothing is estimated here. A page with no data says it has no data.
 """
+
 from __future__ import annotations
 
 import csv
@@ -67,17 +68,28 @@ _NASIL: dict[str, str] = {
 }
 
 _ETIKET: dict[str, str] = {
-    DataSourceType.CLOUD_BILLING: "Bulut faturası", DataSourceType.GIT_LOG: "Kod geçmişi (git log)",
-    DataSourceType.INCIDENT_LOG: "Olay kayıtları", DataSourceType.SPRINT_DATA: "Sprint verisi",
-    DataSourceType.HEADCOUNT: "Personel listesi", DataSourceType.ATTRITION: "Ayrılan çalışanlar",
-    DataSourceType.COMPENSATION: "Ücret listesi", DataSourceType.CAMPAIGN: "Reklam kampanyaları",
-    DataSourceType.FUNNEL: "Satış hunisi", DataSourceType.COHORT: "Müşteri tutma",
-    DataSourceType.PROCESS: "Süreç süreleri", DataSourceType.RESOURCE: "Kaynak kullanımı",
-    DataSourceType.SLA: "SLA raporu", DataSourceType.RISK_REGISTER: "Risk kayıt defteri",
-    DataSourceType.LOSS_EVENTS: "Kayıp olayları", DataSourceType.KRI: "Risk göstergeleri",
-    DataSourceType.FINDINGS: "Denetim bulguları", DataSourceType.CONTROLS: "Kontrol matrisi",
-    DataSourceType.COVERAGE: "Denetim kapsamı", DataSourceType.POLICIES: "Politikalar",
-    DataSourceType.VIOLATIONS: "Uyumsuzluklar", DataSourceType.REGULATIONS: "Mevzuat",
+    DataSourceType.CLOUD_BILLING: "Bulut faturası",
+    DataSourceType.GIT_LOG: "Kod geçmişi (git log)",
+    DataSourceType.INCIDENT_LOG: "Olay kayıtları",
+    DataSourceType.SPRINT_DATA: "Sprint verisi",
+    DataSourceType.HEADCOUNT: "Personel listesi",
+    DataSourceType.ATTRITION: "Ayrılan çalışanlar",
+    DataSourceType.COMPENSATION: "Ücret listesi",
+    DataSourceType.CAMPAIGN: "Reklam kampanyaları",
+    DataSourceType.FUNNEL: "Satış hunisi",
+    DataSourceType.COHORT: "Müşteri tutma",
+    DataSourceType.PROCESS: "Süreç süreleri",
+    DataSourceType.RESOURCE: "Kaynak kullanımı",
+    DataSourceType.SLA: "SLA raporu",
+    DataSourceType.RISK_REGISTER: "Risk kayıt defteri",
+    DataSourceType.LOSS_EVENTS: "Kayıp olayları",
+    DataSourceType.KRI: "Risk göstergeleri",
+    DataSourceType.FINDINGS: "Denetim bulguları",
+    DataSourceType.CONTROLS: "Kontrol matrisi",
+    DataSourceType.COVERAGE: "Denetim kapsamı",
+    DataSourceType.POLICIES: "Politikalar",
+    DataSourceType.VIOLATIONS: "Uyumsuzluklar",
+    DataSourceType.REGULATIONS: "Mevzuat",
 }
 
 
@@ -86,30 +98,70 @@ class Alan:
     kod: str
     ad: str
     kaynaklar: tuple[str, ...]
-    hepsi_gerekli: bool          # the orchestrator needs every file, not just one
+    hepsi_gerekli: bool  # the orchestrator needs every file, not just one
     cfo_kategorileri: tuple[str, ...] = ()
 
 
 ALANLAR: dict[str, Alan] = {
-    "cto": Alan("cto", "Teknoloji (CTO)", (DataSourceType.CLOUD_BILLING, DataSourceType.GIT_LOG,
-                DataSourceType.INCIDENT_LOG, DataSourceType.SPRINT_DATA), False, ("technology",)),
-    "cmo": Alan("cmo", "Pazarlama (CMO)", (DataSourceType.CAMPAIGN, DataSourceType.FUNNEL,
-                DataSourceType.COHORT), False, ("marketing",)),
-    "coo": Alan("coo", "Operasyon (COO)", (DataSourceType.PROCESS, DataSourceType.RESOURCE,
-                DataSourceType.SLA), False, ("rent", "utilities")),
-    "chro": Alan("chro", "İnsan Kaynakları (CHRO)", (DataSourceType.HEADCOUNT, DataSourceType.ATTRITION,
-                 DataSourceType.COMPENSATION), True, ("salary",)),
-    "risk": Alan("risk", "Risk", (DataSourceType.RISK_REGISTER, DataSourceType.LOSS_EVENTS,
-                 DataSourceType.KRI), True),
-    "audit": Alan("audit", "İç Denetim", (DataSourceType.FINDINGS, DataSourceType.CONTROLS,
-                  DataSourceType.COVERAGE), True),
-    "compliance": Alan("compliance", "Uyum", (DataSourceType.POLICIES, DataSourceType.VIOLATIONS,
-                       DataSourceType.REGULATIONS), False),
+    "cto": Alan(
+        "cto",
+        "Teknoloji (CTO)",
+        (
+            DataSourceType.CLOUD_BILLING,
+            DataSourceType.GIT_LOG,
+            DataSourceType.INCIDENT_LOG,
+            DataSourceType.SPRINT_DATA,
+        ),
+        False,
+        ("technology",),
+    ),
+    "cmo": Alan(
+        "cmo",
+        "Pazarlama (CMO)",
+        (DataSourceType.CAMPAIGN, DataSourceType.FUNNEL, DataSourceType.COHORT),
+        False,
+        ("marketing",),
+    ),
+    "coo": Alan(
+        "coo",
+        "Operasyon (COO)",
+        (DataSourceType.PROCESS, DataSourceType.RESOURCE, DataSourceType.SLA),
+        False,
+        ("rent", "utilities"),
+    ),
+    "chro": Alan(
+        "chro",
+        "İnsan Kaynakları (CHRO)",
+        (DataSourceType.HEADCOUNT, DataSourceType.ATTRITION, DataSourceType.COMPENSATION),
+        True,
+        ("salary",),
+    ),
+    "risk": Alan(
+        "risk",
+        "Risk",
+        (DataSourceType.RISK_REGISTER, DataSourceType.LOSS_EVENTS, DataSourceType.KRI),
+        True,
+    ),
+    "audit": Alan(
+        "audit",
+        "İç Denetim",
+        (DataSourceType.FINDINGS, DataSourceType.CONTROLS, DataSourceType.COVERAGE),
+        True,
+    ),
+    "compliance": Alan(
+        "compliance",
+        "Uyum",
+        (DataSourceType.POLICIES, DataSourceType.VIOLATIONS, DataSourceType.REGULATIONS),
+        False,
+    ),
 }
 
 _KATEGORI_ETIKETI = {
-    "technology": "teknoloji", "marketing": "pazarlama", "salary": "maaş",
-    "rent": "kira", "utilities": "elektrik-su-internet",
+    "technology": "teknoloji",
+    "marketing": "pazarlama",
+    "salary": "maaş",
+    "rent": "kira",
+    "utilities": "elektrik-su-internet",
 }
 
 
@@ -172,8 +224,11 @@ def _json_safe(obj: Any) -> Any:
         return _json_safe(obj.model_dump())
     if isinstance(obj, dict):
         # The inputs are the user's own files; echoing them back adds nothing.
-        return {str(k): _json_safe(v) for k, v in obj.items()
-                if not (str(k).endswith("_csv") or k in ("git_log_text", "settings"))}
+        return {
+            str(k): _json_safe(v)
+            for k, v in obj.items()
+            if not (str(k).endswith("_csv") or k in ("git_log_text", "settings"))
+        }
     if isinstance(obj, (list, tuple, set)):
         return [_json_safe(v) for v in obj]
     if isinstance(obj, (datetime, date)):
@@ -188,12 +243,16 @@ async def _cfo_gercek(db: AsyncSession, job_id: str, alan: Alan) -> dict[str, An
     from app.models.report import Report, ReportFormat
 
     rep = (
-        await db.execute(
-            select(Report)
-            .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
-            .order_by(desc(Report.created_at))
+        (
+            await db.execute(
+                select(Report)
+                .where(Report.job_id == job_id, Report.report_format == ReportFormat.JSON)
+                .order_by(desc(Report.created_at))
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     data = (rep.data if rep else None) or {}
     pnl = data.get("pnl") or {}
     opex = pnl.get("opex") or {}
@@ -202,39 +261,54 @@ async def _cfo_gercek(db: AsyncSession, job_id: str, alan: Alan) -> dict[str, An
     for kat in alan.cfo_kategorileri:
         if kat in opex:
             tutar = int(opex.get(kat) or 0)
-            kalemler.append({
-                "kategori": kat,
-                "etiket": f"Banka hareketlerindeki {_KATEGORI_ETIKETI.get(kat, kat)} harcaması",
-                "tutar_lira": tutar,   # Report.data stores lira (report_agent._fmt)
-                "gelire_orani": round(tutar / revenue, 4) if revenue else None,
-                "kaynak": f"CFO raporu — '{kat}' kategorisindeki işlemlerin toplamı",
-            })
+            kalemler.append(
+                {
+                    "kategori": kat,
+                    "etiket": f"Banka hareketlerindeki {_KATEGORI_ETIKETI.get(kat, kat)} harcaması",
+                    "tutar_lira": tutar,  # Report.data stores lira (report_agent._fmt)
+                    "gelire_orani": round(tutar / revenue, 4) if revenue else None,
+                    "kaynak": f"CFO raporu — '{kat}' kategorisindeki işlemlerin toplamı",
+                }
+            )
     if alan.kod == "risk":
         forecast = data.get("forecast") or {}
-        base = ((forecast.get("scenarios") or {}).get("base") or {})
+        base = (forecast.get("scenarios") or {}).get("base") or {}
         if base.get("runway_months") is not None:
-            kalemler.append({
-                "kategori": "runway", "etiket": "Nakit ömrü (baz senaryo)",
-                "deger": base.get("runway_months"), "birim": "ay",
-                "kaynak": "CFO tahmini — bu işin nakit akışından",
-            })
-        alerts = ((data.get("cashflow") or {}).get("alerts") or [])
+            kalemler.append(
+                {
+                    "kategori": "runway",
+                    "etiket": "Nakit ömrü (baz senaryo)",
+                    "deger": base.get("runway_months"),
+                    "birim": "ay",
+                    "kaynak": "CFO tahmini — bu işin nakit akışından",
+                }
+            )
+        alerts = (data.get("cashflow") or {}).get("alerts") or []
         if alerts:
-            kalemler.append({
-                "kategori": "nakit_uyarilari", "etiket": "Nakit akışı uyarıları",
-                "deger": len(alerts), "birim": "adet", "kaynak": "CFO nakit akışı analizi",
-            })
+            kalemler.append(
+                {
+                    "kategori": "nakit_uyarilari",
+                    "etiket": "Nakit akışı uyarıları",
+                    "deger": len(alerts),
+                    "birim": "adet",
+                    "kaynak": "CFO nakit akışı analizi",
+                }
+            )
     return {"var": bool(rep), "kalemler": kalemler}
 
 
 async def _sources(db: AsyncSession, job_id: str, alan: Alan) -> dict[str, DataSource]:
     rows = (
-        await db.execute(
-            select(DataSource)
-            .where(DataSource.job_id == job_id, DataSource.domain == alan.kod)
-            .order_by(desc(DataSource.created_at))
+        (
+            await db.execute(
+                select(DataSource)
+                .where(DataSource.job_id == job_id, DataSource.domain == alan.kod)
+                .order_by(desc(DataSource.created_at))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     latest: dict[str, DataSource] = {}
     for r in rows:
         latest.setdefault(str(r.source_type), r)
@@ -248,8 +322,13 @@ async def durum(db: AsyncSession, job: AnalysisJob, alan_kodu: str) -> dict[str,
         raise AlanBilinmiyor(alan_kodu)
     mevcut = await _sources(db, job.id, alan)
     kaynaklar = [
-        {"tip": str(t), "etiket": _ETIKET[t], "yuklendi": str(t) in mevcut, "nasil": _NASIL[t],
-         "dosya": mevcut[str(t)].filename if str(t) in mevcut else None}
+        {
+            "tip": str(t),
+            "etiket": _ETIKET[t],
+            "yuklendi": str(t) in mevcut,
+            "nasil": _NASIL[t],
+            "dosya": mevcut[str(t)].filename if str(t) in mevcut else None,
+        }
         for t in alan.kaynaklar
     ]
     eksik = [k["tip"] for k in kaynaklar if not k["yuklendi"]]
@@ -286,7 +365,8 @@ async def analiz_et(db: AsyncSession, job: AnalysisJob, alan_kodu: str) -> dict[
     if out["durum"] != "hazir":
         out["sonuc"] = None
         out["neden"] = (
-            "Bu alan için gerekli dosyaların hepsi yok." if out["hepsi_gerekli"] and out["durum"] == EKSIK_VERI
+            "Bu alan için gerekli dosyaların hepsi yok."
+            if out["hepsi_gerekli"] and out["durum"] == EKSIK_VERI
             else "Bu alan için yüklenmiş veri yok."
         )
         return out
@@ -310,28 +390,38 @@ async def analiz_et(db: AsyncSession, job: AnalysisJob, alan_kodu: str) -> dict[
     result: Any
     if alan_kodu == "cto":
         from app.agents.cto.orchestrator import run_cto_pipeline
+
         result = await run_cto_pipeline(job_id=job.id, org_id=org_id, **kwargs)
     elif alan_kodu == "cmo":
         from app.agents.cmo.orchestrator import run_cmo_pipeline
+
         result = await run_cmo_pipeline(job_id=job.id, org_id=org_id, **kwargs)
     elif alan_kodu == "coo":
         from app.agents.coo.orchestrator import run_coo_pipeline
+
         result = await run_coo_pipeline(job_id=job.id, org_id=org_id, **kwargs)
     elif alan_kodu == "chro":
         from app.agents.chro.orchestrator import run_chro_pipeline
+
         result = await run_chro_pipeline(org_id=org_id, **kwargs)
     elif alan_kodu == "risk":
         from app.agents.risk.orchestrator import run_risk_pipeline
+
         result = await run_risk_pipeline(**kwargs)
     elif alan_kodu == "audit":
         from app.agents.audit.orchestrator import run_audit_pipeline
+
         result = await run_audit_pipeline(org_id=org_id, **kwargs)
     else:
         from app.agents.compliance.orchestrator import run_compliance_pipeline
+
         result = await run_compliance_pipeline(job_id=job.id, org_id=org_id, **kwargs)
 
     out["durum"] = ANALIZ_EDILDI
     out["sonuc"] = _json_safe(dict(result))
-    out["provenance"] = {"data_source": "real", "synthetic": False,
-                         "basis": "yüklenen dosyalar: " + ", ".join(s.filename for s in mevcut.values())}
+    out["provenance"] = {
+        "data_source": "real",
+        "synthetic": False,
+        "basis": "yüklenen dosyalar: " + ", ".join(s.filename for s in mevcut.values()),
+    }
     return out

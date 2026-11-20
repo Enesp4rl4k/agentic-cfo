@@ -13,6 +13,7 @@ Endpoints:
   GET  /smmm/onay/stats          → Onay istatistikleri
   POST /smmm/onay/toplu-onayla   → Birden fazla kaydı toplu onayla
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,14 +43,15 @@ def _user_id(user: User) -> str:
 
 # ── Request schemas ──────────────────────────────────────────────────────────
 
+
 class OnaylaRequest(BaseModel):
     onay_notu: str | None = Field(None, description="Opsiyonel onay notu")
 
 
 class DuzelRequest(BaseModel):
-    hesap_kodu:  str = Field(..., description="Yeni hesap kodu (örn: 320)")
-    hesap_adi:   str = Field(..., description="Yeni hesap adı")
-    aciklama:    str | None = Field(None, description="Düzeltme gerekçesi")
+    hesap_kodu: str = Field(..., description="Yeni hesap kodu (örn: 320)")
+    hesap_adi: str = Field(..., description="Yeni hesap adı")
+    aciklama: str | None = Field(None, description="Düzeltme gerekçesi")
 
 
 class ReddetRequest(BaseModel):
@@ -58,49 +60,51 @@ class ReddetRequest(BaseModel):
 
 class TopluOnayRequest(BaseModel):
     kayit_idler: list[str] = Field(..., description="Onaylanacak kayıt ID'leri")
-    onay_notu:   str | None = None
+    onay_notu: str | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _kayit_to_dict(k: SMMMOnayKaydi) -> dict[str, Any]:
     return {
-        "id":                    k.id,
-        "job_id":                k.job_id,
-        "org_id":                k.org_id,
-        "kayit_id":              k.kayit_id,
-        "durum":                 k.durum,
-        "tx_description":        k.tx_description,
-        "tx_amount_try":         float(k.tx_amount_try) if k.tx_amount_try else None,
-        "tx_tarih":              k.tx_tarih.isoformat() if k.tx_tarih else None,
-        "otomatik_hesap_kodu":   k.otomatik_hesap_kodu,
-        "otomatik_confidence":   float(k.otomatik_confidence) if k.otomatik_confidence else None,
-        "otomatik_yontem":       k.otomatik_yontem,
-        "onay_neden":            k.onay_neden,
+        "id": k.id,
+        "job_id": k.job_id,
+        "org_id": k.org_id,
+        "kayit_id": k.kayit_id,
+        "durum": k.durum,
+        "tx_description": k.tx_description,
+        "tx_amount_try": float(k.tx_amount_try) if k.tx_amount_try else None,
+        "tx_tarih": k.tx_tarih.isoformat() if k.tx_tarih else None,
+        "otomatik_hesap_kodu": k.otomatik_hesap_kodu,
+        "otomatik_confidence": float(k.otomatik_confidence) if k.otomatik_confidence else None,
+        "otomatik_yontem": k.otomatik_yontem,
+        "onay_neden": k.onay_neden,
         # Evidence level, what matched and the measured accuracy behind the
         # confidence number. None for entries journalled before it existed.
-        "guven":                 (k.orijinal_kayit or {}).get("guven") or None,
-        "orijinal_kayit":        k.orijinal_kayit,
+        "guven": (k.orijinal_kayit or {}).get("guven") or None,
+        "orijinal_kayit": k.orijinal_kayit,
         "duzeltilmis_hesap_kodu": k.duzeltilmis_hesap_kodu,
         "duzeltilmis_hesap_adi": k.duzeltilmis_hesap_adi,
-        "duzeltme_aciklama":     k.duzeltme_aciklama,
-        "onaylayan_user_id":     k.onaylayan_user_id,
-        "onay_zamani":           k.onay_zamani.isoformat() if k.onay_zamani else None,
-        "onay_notu":             k.onay_notu,
-        "created_at":            k.created_at.isoformat(),
-        "updated_at":            k.updated_at.isoformat(),
+        "duzeltme_aciklama": k.duzeltme_aciklama,
+        "onaylayan_user_id": k.onaylayan_user_id,
+        "onay_zamani": k.onay_zamani.isoformat() if k.onay_zamani else None,
+        "onay_notu": k.onay_notu,
+        "created_at": k.created_at.isoformat(),
+        "updated_at": k.updated_at.isoformat(),
     }
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/smmm/onay/queue")
 async def get_onay_queue(
-    durum:        str = "bekliyor",
-    limit:        int = 50,
-    offset:       int = 0,
+    durum: str = "bekliyor",
+    limit: int = 50,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Bekleyen (veya belirli durumdaki) onay kuyruğunu listele.
@@ -133,10 +137,10 @@ async def get_onay_queue(
 
     return {
         "data": {
-            "total":   total,
-            "limit":   limit,
-            "offset":  offset,
-            "durum":   durum,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "durum": durum,
             "kayitlar": [_kayit_to_dict(k) for k in kayitlar],
         },
         "error": None,
@@ -145,26 +149,28 @@ async def get_onay_queue(
 
 @router.get("/smmm/onay/queue/{job_id}")
 async def get_onay_queue_for_job(
-    job_id:       str,
-    job:          AnalysisJob = Depends(owned_job),
-    db:           AsyncSession = Depends(get_db),
+    job_id: str,
+    job: AnalysisJob = Depends(owned_job),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Belirli bir analiz işi için bekleyen onayları listele."""
     result = await db.execute(
         select(SMMMOnayKaydi)
-        .where(and_(
-            SMMMOnayKaydi.job_id == job_id,
-            SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
-        ))
+        .where(
+            and_(
+                SMMMOnayKaydi.job_id == job_id,
+                SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
+            )
+        )
         .order_by(SMMMOnayKaydi.tx_amount_try.desc())  # Yüksek tutarlı önce
     )
     kayitlar = result.scalars().all()
 
     return {
         "data": {
-            "job_id":    job_id,
-            "bekleyen":  len(kayitlar),
-            "kayitlar":  [_kayit_to_dict(k) for k in kayitlar],
+            "job_id": job_id,
+            "bekleyen": len(kayitlar),
+            "kayitlar": [_kayit_to_dict(k) for k in kayitlar],
         },
         "error": None,
     }
@@ -172,10 +178,10 @@ async def get_onay_queue_for_job(
 
 @router.post("/smmm/onay/{kayit_id}/onayla")
 async def onayla(
-    kayit_id:     str,
-    req:          OnaylaRequest,
+    kayit_id: str,
+    req: OnaylaRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Kaydı onayla — hesap kodu değişmez, sadece onay damgası."""
     kayit = await db.get(SMMMOnayKaydi, kayit_id)
@@ -187,11 +193,11 @@ async def onayla(
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
 
-    kayit.durum            = OnayDurumu.ONAYLANDI
+    kayit.durum = OnayDurumu.ONAYLANDI
     kayit.onaylayan_user_id = _user_id(current_user)
-    kayit.onay_zamani      = datetime.now(UTC)
-    kayit.onay_notu        = req.onay_notu
-    kayit.updated_at       = datetime.now(UTC)
+    kayit.onay_zamani = datetime.now(UTC)
+    kayit.onay_notu = req.onay_notu
+    kayit.updated_at = datetime.now(UTC)
 
     await db.commit()
     logger.info("SMMM onay: kayit=%s user=%s", kayit_id, _user_id(current_user))
@@ -201,10 +207,10 @@ async def onayla(
 
 @router.post("/smmm/onay/{kayit_id}/duzeltle")
 async def duzeltle(
-    kayit_id:     str,
-    req:          DuzelRequest,
+    kayit_id: str,
+    req: DuzelRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Hesap kodunu düzelterek onayla. Orijinal otomatik sınıflandırma korunur."""
     kayit = await db.get(SMMMOnayKaydi, kayit_id)
@@ -216,18 +222,20 @@ async def duzeltle(
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
 
-    kayit.durum                  = OnayDurumu.DUZELTILDI
-    kayit.onaylayan_user_id      = _user_id(current_user)
-    kayit.onay_zamani            = datetime.now(UTC)
+    kayit.durum = OnayDurumu.DUZELTILDI
+    kayit.onaylayan_user_id = _user_id(current_user)
+    kayit.onay_zamani = datetime.now(UTC)
     kayit.duzeltilmis_hesap_kodu = req.hesap_kodu
-    kayit.duzeltilmis_hesap_adi  = req.hesap_adi
-    kayit.duzeltme_aciklama      = req.aciklama
-    kayit.updated_at             = datetime.now(UTC)
+    kayit.duzeltilmis_hesap_adi = req.hesap_adi
+    kayit.duzeltme_aciklama = req.aciklama
+    kayit.updated_at = datetime.now(UTC)
 
     await db.commit()
     logger.info(
         "SMMM düzeltme: kayit=%s user=%s yeni_hesap=%s",
-        kayit_id, _user_id(current_user), req.hesap_kodu
+        kayit_id,
+        _user_id(current_user),
+        req.hesap_kodu,
     )
 
     return {"data": _kayit_to_dict(kayit), "error": None}
@@ -235,10 +243,10 @@ async def duzeltle(
 
 @router.post("/smmm/onay/{kayit_id}/reddet")
 async def reddet(
-    kayit_id:     str,
-    req:          ReddetRequest,
+    kayit_id: str,
+    req: ReddetRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Kaydı reddet. Gerekçe zorunlu."""
     kayit = await db.get(SMMMOnayKaydi, kayit_id)
@@ -250,11 +258,11 @@ async def reddet(
     if kayit.durum != OnayDurumu.BEKLIYOR:
         raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
 
-    kayit.durum            = OnayDurumu.REDDEDILDI
+    kayit.durum = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = _user_id(current_user)
-    kayit.onay_zamani      = datetime.now(UTC)
-    kayit.onay_notu        = req.neden
-    kayit.updated_at       = datetime.now(UTC)
+    kayit.onay_zamani = datetime.now(UTC)
+    kayit.onay_notu = req.neden
+    kayit.updated_at = datetime.now(UTC)
 
     await db.commit()
     logger.info("SMMM red: kayit=%s user=%s neden=%s", kayit_id, _user_id(current_user), req.neden)
@@ -264,9 +272,9 @@ async def reddet(
 
 @router.post("/smmm/onay/toplu-onayla")
 async def toplu_onayla(
-    req:          TopluOnayRequest,
+    req: TopluOnayRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Birden fazla bekleyen kaydı tek seferde onayla (düşük riskli toplu işlem)."""
     if not req.kayit_idler:
@@ -287,12 +295,19 @@ async def toplu_onayla(
     # Only entries whose job this user owns; the rest are skipped exactly as
     # an id that does not exist is, so the response says nothing about them.
     job_ids = {k.job_id for k in kayitlar}
-    jobs = {
-        j.id: j
-        for j in (await db.execute(select(AnalysisJob).where(AnalysisJob.id.in_(job_ids)))).scalars()
-    } if job_ids else {}
+    jobs = (
+        {
+            j.id: j
+            for j in (
+                await db.execute(select(AnalysisJob).where(AnalysisJob.id.in_(job_ids)))
+            ).scalars()
+        }
+        if job_ids
+        else {}
+    )
     kayitlar = [
-        k for k in kayitlar
+        k
+        for k in kayitlar
         if k.job_id in jobs
         and can_access(current_user, org_id=jobs[k.job_id].org_id, user_id=jobs[k.job_id].user_id)
     ]
@@ -300,11 +315,11 @@ async def toplu_onayla(
     now = datetime.now(UTC)
     approved_ids = []
     for kayit in kayitlar:
-        kayit.durum             = OnayDurumu.ONAYLANDI
+        kayit.durum = OnayDurumu.ONAYLANDI
         kayit.onaylayan_user_id = _user_id(current_user)
-        kayit.onay_zamani       = now
-        kayit.onay_notu         = req.onay_notu
-        kayit.updated_at        = now
+        kayit.onay_zamani = now
+        kayit.onay_notu = req.onay_notu
+        kayit.updated_at = now
         # Marked so it is not counted as evidence that the classifier is right
         # (guven.gecmisten_olc). Approving a page at once is how a reviewer
         # clears a queue, not a judgement on each account — and counted, it
@@ -318,9 +333,9 @@ async def toplu_onayla(
     return {
         "data": {
             "onaylandi_count": len(approved_ids),
-            "onaylandi_ids":   approved_ids,
-            "requested":       len(req.kayit_idler),
-            "skipped":         len(req.kayit_idler) - len(approved_ids),
+            "onaylandi_ids": approved_ids,
+            "requested": len(req.kayit_idler),
+            "skipped": len(req.kayit_idler) - len(approved_ids),
         },
         "error": None,
     }
@@ -328,9 +343,9 @@ async def toplu_onayla(
 
 @router.get("/smmm/onay/package/{job_id}")
 async def get_onay_package(
-    job_id:       str,
+    job_id: str,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     SMMM onay paketi özeti: awaiting_review + failed + canonical count.
@@ -363,8 +378,10 @@ async def get_onay_package(
 
     canonical_count = 0
     try:
-        cq = select(func.count()).select_from(CanonicalTransaction).where(
-            CanonicalTransaction.org_id == str(job.org_id)
+        cq = (
+            select(func.count())
+            .select_from(CanonicalTransaction)
+            .where(CanonicalTransaction.org_id == str(job.org_id))
         )
         if sync_run_id:
             cq = cq.where(CanonicalTransaction.sync_run_id == str(sync_run_id))
@@ -392,10 +409,7 @@ async def get_onay_package(
             "quality_score": meta.get("quality_score"),
             "sync_fingerprint": meta.get("sync_fingerprint"),
             "ready_for_export": (
-                not failed
-                and bekleyen == 0
-                and not awaiting_review
-                and canonical_count > 0
+                not failed and bekleyen == 0 and not awaiting_review and canonical_count > 0
             ),
         },
         "error": None,
@@ -405,13 +419,18 @@ async def get_onay_package(
 @router.get("/smmm/onay/stats")
 async def onay_stats(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Onay kuyruğu istatistikleri."""
     org_id = getattr(current_user, "org_id", None) or getattr(current_user, "organization_id", None)
 
     counts: dict[str, int] = {}
-    for durum in [OnayDurumu.BEKLIYOR, OnayDurumu.ONAYLANDI, OnayDurumu.DUZELTILDI, OnayDurumu.REDDEDILDI]:
+    for durum in [
+        OnayDurumu.BEKLIYOR,
+        OnayDurumu.ONAYLANDI,
+        OnayDurumu.DUZELTILDI,
+        OnayDurumu.REDDEDILDI,
+    ]:
         q = select(func.count()).where(SMMMOnayKaydi.durum == durum)
         if org_id:
             q = q.where(SMMMOnayKaydi.org_id == str(org_id))
@@ -433,16 +452,16 @@ async def onay_stats(
 
     return {
         "data": {
-            "bekliyor":         counts[OnayDurumu.BEKLIYOR],
-            "onaylandi":        counts[OnayDurumu.ONAYLANDI],
-            "duzeltildi":       counts[OnayDurumu.DUZELTILDI],
-            "reddedildi":       counts[OnayDurumu.REDDEDILDI],
-            "toplam":           sum(counts.values()),
-            "avg_confidence":   round(float(avg_confidence), 3) if avg_confidence else None,
-            "onay_orani":       round(
-                (counts[OnayDurumu.ONAYLANDI] + counts[OnayDurumu.DUZELTILDI]) /
-                max(1, sum(counts.values()) - counts[OnayDurumu.BEKLIYOR]),
-                3
+            "bekliyor": counts[OnayDurumu.BEKLIYOR],
+            "onaylandi": counts[OnayDurumu.ONAYLANDI],
+            "duzeltildi": counts[OnayDurumu.DUZELTILDI],
+            "reddedildi": counts[OnayDurumu.REDDEDILDI],
+            "toplam": sum(counts.values()),
+            "avg_confidence": round(float(avg_confidence), 3) if avg_confidence else None,
+            "onay_orani": round(
+                (counts[OnayDurumu.ONAYLANDI] + counts[OnayDurumu.DUZELTILDI])
+                / max(1, sum(counts.values()) - counts[OnayDurumu.BEKLIYOR]),
+                3,
             ),
         },
         "error": None,

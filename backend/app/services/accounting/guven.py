@@ -23,6 +23,7 @@ So "%30" becomes, for example, "Tek kelime eşleşmesi — 'kira' → 770 · tes
 setinde 26/29 doğru", and the number under it is honest about how much
 evidence stands behind it.
 """
+
 from __future__ import annotations
 
 import math
@@ -115,12 +116,12 @@ class Guven:
     kanit: str
     dogru: int
     toplam: int
-    kaynak: str          # "korpus" | "kurum" | "olculmedi" | "belge"
+    kaynak: str  # "korpus" | "kurum" | "olculmedi" | "belge"
 
     @property
     def skor(self) -> float:
         if self.kaynak == "belge":
-            return 1.0   # the source's own account — copied, not inferred
+            return 1.0  # the source's own account — copied, not inferred
         return round(wilson_alt_sinir(self.dogru, self.toplam), 3)
 
     @property

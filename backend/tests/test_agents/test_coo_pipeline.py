@@ -58,6 +58,7 @@ T008,p2,2024-01-08 10:00:00,2024-01-08 13:00:00,2024-01-09 10:00:00,7,technical
 
 # ── Process Agent Tests ────────────────────────────────────────────────────────
 
+
 def test_process_parse_returns_list():
     rows = _parse_process_csv(PROCESS_CSV)
     assert isinstance(rows, list)
@@ -141,6 +142,7 @@ def test_process_metrics_wip_estimated_when_missing():
 
 # ── Resource Agent Tests ───────────────────────────────────────────────────────
 
+
 def test_resource_parse_returns_list():
     rows = _parse_resource_csv(RESOURCE_CSV)
     assert isinstance(rows, list)
@@ -213,6 +215,7 @@ def test_resource_empty_csv():
 
 
 # ── SLA Agent Tests ────────────────────────────────────────────────────────────
+
 
 def test_sla_parse_returns_list():
     rows = _parse_sla_csv(SLA_CSV)
@@ -301,6 +304,7 @@ def test_sla_empty_csv():
 # ── Ops Efficiency Logic Tests ─────────────────────────────────────────────────
 # Pure logic mirroring orchestrator._compute_ops_efficiency (no orchestrator import)
 
+
 def _compute_ops_efficiency(processes, resources, sla) -> float:
     """Mirror of orchestrator._compute_ops_efficiency for test isolation."""
     scores = []
@@ -326,8 +330,8 @@ def _compute_ops_efficiency(processes, resources, sla) -> float:
 def test_ops_efficiency_ideal_utilization():
     """70-85% utilization + good SLA + low process inefficiency = high score."""
     procs = {"efficiency_score": 2.0}
-    res   = {"avg_utilization_rate": 0.78}
-    sla   = {"sla_breach_rate": 0.05}
+    res = {"avg_utilization_rate": 0.78}
+    sla = {"sla_breach_rate": 0.05}
     score = _compute_ops_efficiency(procs, res, sla)
     assert score >= 7.0
 
@@ -335,8 +339,8 @@ def test_ops_efficiency_ideal_utilization():
 def test_ops_efficiency_bad_utilization():
     """110%+ utilization = low efficiency score."""
     procs = {"efficiency_score": 8.0}
-    res   = {"avg_utilization_rate": 1.15}
-    sla   = {"sla_breach_rate": 0.35}
+    res = {"avg_utilization_rate": 1.15}
+    sla = {"sla_breach_rate": 0.35}
     score = _compute_ops_efficiency(procs, res, sla)
     assert score < 5.0
 
@@ -347,10 +351,10 @@ def test_ops_efficiency_empty_inputs():
 
 
 def test_fallback_narrative_is_string():
-    eff    = 4.0
-    util   = 0.80
+    eff = 4.0
+    util = 0.80
     breach = 0.10
-    score  = 5.0
+    score = 5.0
     narrative = (
         f"Operations health score: {score}/10. "
         f"Process efficiency {eff}/10, resource utilization {util:.0%}, "
@@ -361,6 +365,7 @@ def test_fallback_narrative_is_string():
 
 
 # ── CEO Synthesis COO Cross-Risk Tests ────────────────────────────────────────
+
 
 def test_cross_coo_sla_revenue_detected():
     fin = {

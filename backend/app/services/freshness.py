@@ -11,6 +11,7 @@ estimated, because a freshness signal that guesses is worse than none: it
 manufactures trust. Timestamps are UTC; SQLite hands datetimes back naive,
 so `_as_utc` normalises before any age maths.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -132,12 +133,16 @@ async def org_freshness(db: AsyncSession, org_id: str | None) -> list[dict[str, 
 
     # 3. Connector syncs (org-wide) — one chip per connected source.
     conns = (
-        await db.execute(
-            select(ConnectorConnection)
-            .where(ConnectorConnection.org_id == org_id)
-            .order_by(ConnectorConnection.connector)
+        (
+            await db.execute(
+                select(ConnectorConnection)
+                .where(ConnectorConnection.org_id == org_id)
+                .order_by(ConnectorConnection.connector)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for c in conns:
         items.append(
             _item(
@@ -150,10 +155,10 @@ async def org_freshness(db: AsyncSession, org_id: str | None) -> list[dict[str, 
 
     # 4. ERP integrations — provider sync timestamps (Pararaşüt/Logo/...).
     erps = (
-        await db.execute(
-            select(ERPIntegration).where(ERPIntegration.org_id == org_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ERPIntegration).where(ERPIntegration.org_id == org_id)))
+        .scalars()
+        .all()
+    )
     for e in erps:
         items.append(
             _item(
@@ -175,8 +180,7 @@ async def org_freshness(db: AsyncSession, org_id: str | None) -> list[dict[str, 
         ).scalar_one_or_none()
         if log is not None:
             items.append(
-                _item("erp:log", "ERP senkron kaydı", _as_utc(log.started_at),
-                      detail=log.status)
+                _item("erp:log", "ERP senkron kaydı", _as_utc(log.started_at), detail=log.status)
             )
 
     # 5. Scheduled sync runs (DQ pipelines) — the most recent one.
@@ -190,8 +194,12 @@ async def org_freshness(db: AsyncSession, org_id: str | None) -> list[dict[str, 
     ).scalar_one_or_none()
     if run is not None:
         items.append(
-            _item("sync_run", "Planlı senkron (son çalıştırma)",
-                  _as_utc(run.started_at), detail=run.status)
+            _item(
+                "sync_run",
+                "Planlı senkron (son çalıştırma)",
+                _as_utc(run.started_at),
+                detail=run.status,
+            )
         )
 
     return items
@@ -205,9 +213,7 @@ async def collect_freshness(db: AsyncSession, job: AnalysisJob) -> list[dict[str
     return items
 
 
-async def org_overview_freshness(
-    db: AsyncSession, org_id: str | None
-) -> list[dict[str, Any]]:
+async def org_overview_freshness(db: AsyncSession, org_id: str | None) -> list[dict[str, Any]]:
     """Org-level strip: latest job's file + coverage, then the org sources."""
     if not org_id:
         return []

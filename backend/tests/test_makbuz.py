@@ -11,6 +11,7 @@ are assembled from what it does publish, and checked against it:
   test validates it against that schema. If the fixture drifts from what GİB
   accepts, that test fails before any parser test can pass on it.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -22,14 +23,19 @@ from app.parsers.invoice.makbuz import NotAMakbuzError, parse_makbuz
 
 XSD = Path(__file__).resolve().parent / "fixtures" / "gib_corpus" / "e_arsiv" / "eArsivVeri.xsd"
 
-BUYER = "1234567890"        # the guide's supplier party: issues the receipt
-FARMER = "14604153088"      # the guide's customer party: the producer
+BUYER = "1234567890"  # the guide's supplier party: issues the receipt
+FARMER = "14604153088"  # the guide's customer party: the producer
 PROFESSIONAL = "9876543210"
 CLIENT = "1234567808"
 
 
-def _mm(*, type_code: str | None = "MUSTAHSILMAKBUZ", profile: str = "EARSIVBELGE",
-        extra_tax: str = "", payable: str = "17150") -> str:
+def _mm(
+    *,
+    type_code: str | None = "MUSTAHSILMAKBUZ",
+    profile: str = "EARSIVBELGE",
+    extra_tax: str = "",
+    payable: str = "17150",
+) -> str:
     tc = f"<cbc:CreditNoteTypeCode>{type_code}</cbc:CreditNoteTypeCode>" if type_code else ""
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
@@ -138,6 +144,7 @@ def _lines(m) -> dict[str, tuple[Decimal, Decimal]]:
 
 # ── e-SMM fixture is what GİB's schema accepts ───────────────────────────────
 
+
 def test_the_smm_fixture_passes_gibs_earsiv_schema() -> None:
     etree = pytest.importorskip("lxml.etree")
     if not XSD.is_file():
@@ -148,6 +155,7 @@ def test_the_smm_fixture_passes_gibs_earsiv_schema() -> None:
 
 
 # ── e-Müstahsil ──────────────────────────────────────────────────────────────
+
 
 def test_the_buyer_books_produce_stopaj_and_the_farmer_payable() -> None:
     m = parse_makbuz(_mm(), own_vkn=BUYER)
@@ -202,6 +210,7 @@ def test_a_receipt_that_does_not_add_up_is_held() -> None:
 
 # ── e-SMM ────────────────────────────────────────────────────────────────────
 
+
 def test_the_client_books_the_fee_kdv_stopaj_and_the_net_payable() -> None:
     m = parse_makbuz(_smm(), own_vkn=CLIENT)
     assert m.kind == "serbest_meslek" and m.direction == "purchase"
@@ -238,12 +247,18 @@ def test_a_foreign_currency_receipt_is_not_booked_in_lira() -> None:
 
 # ── Ingestion: the upload no longer disappears ──────────────────────────────
 
-@pytest.mark.parametrize(("doc", "own", "typ", "category", "cents"), [
-    (_mm, BUYER, "expense", "cogs", 1_715_000),
-    (_smm, CLIENT, "expense", "other_expense", 100_000),
-    (_smm, PROFESSIONAL, "income", "revenue", 100_000),
-])
-def test_ingestion_turns_a_receipt_into_a_transaction(monkeypatch, doc, own, typ, category, cents) -> None:
+
+@pytest.mark.parametrize(
+    ("doc", "own", "typ", "category", "cents"),
+    [
+        (_mm, BUYER, "expense", "cogs", 1_715_000),
+        (_smm, CLIENT, "expense", "other_expense", 100_000),
+        (_smm, PROFESSIONAL, "income", "revenue", 100_000),
+    ],
+)
+def test_ingestion_turns_a_receipt_into_a_transaction(
+    monkeypatch, doc, own, typ, category, cents
+) -> None:
     """Both used to reach the UBL path, fail the Invoice check, and be logged
     as "not an invoice, skipped" — the uploaded document produced nothing."""
     from app.agents.data_ingestion import KNOWN_CATEGORIES, _try_parse_ubl_xml
@@ -268,7 +283,7 @@ def test_an_esmm_pdf_is_read_from_its_attachment(tmp_path, monkeypatch) -> None:
     pdf = tmp_path / "SerbestMeslekMakbuz_CDE2026000000001.pdf"
     doc = pymupdf.open()
     doc.new_page().insert_text((72, 72), "Serbest Meslek Makbuzu - görüntü")
-    doc.embfile_add("makbuz.xslt", b"<xsl:stylesheet/>")          # not a document
+    doc.embfile_add("makbuz.xslt", b"<xsl:stylesheet/>")  # not a document
     doc.embfile_add("CDE2026000000001.xml", _smm().encode("utf-8"))
     doc.save(str(pdf))
     doc.close()

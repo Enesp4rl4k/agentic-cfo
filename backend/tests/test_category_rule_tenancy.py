@@ -4,6 +4,7 @@ Rules were saved with no organisation and the upsert matched by vendor name
 alone, so company A correcting "Migros" to `food` rewrote company B's rule for
 Migros; and the rule lookup read every company's rules.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio

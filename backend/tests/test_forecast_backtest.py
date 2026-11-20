@@ -13,6 +13,7 @@ Pinned:
 
 No LLM and no API key is needed anywhere in this file.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -130,6 +131,7 @@ async def _get_backtest(client, headers) -> dict:
 
 # ── 1. Üç kapanmış çift → dürüst metrikler ───────────────────────────────────
 
+
 async def test_three_pairs_yield_honest_metrics(client):
     headers, org_id, _ = await _user(client, "metrik@example.com")
 
@@ -170,6 +172,7 @@ async def test_three_pairs_yield_honest_metrics(client):
 
 # ── 2. Üçten az çift → metrik uydurma ────────────────────────────────────────
 
+
 async def test_two_pairs_refuse_to_guess(client):
     headers, org_id, _ = await _user(client, "ikili@example.com")
     await _seed_claim(client, org_id, days_ago=1095, base=1_000_000, pess=800_000, opt=1_200_000)
@@ -195,15 +198,18 @@ async def test_unclosed_window_is_not_a_pair(client):
 
 # ── 3. Kuruluş sınırları ve erişim ───────────────────────────────────────────
 
+
 async def test_other_orgs_claims_do_not_leak(client):
     headers, _org_id, _ = await _user(client, "dar@example.com")
     _, other_org, _ = await _user(client, "baska@example.com")
     await _seed_claim(client, other_org, days_ago=1095, base=1_000_000, pess=800_000, opt=1_200_000)
-    await _seed_claim(client, other_org, days_ago=730, base=2_000_000, pess=1_800_000, opt=2_500_000)
-    await _seed_claim(client, other_org, days_ago=400, base=3_000_000, pess=2_000_000, opt=3_300_000)
-    await _seed_data_job(
-        client, other_org, txns=((500, "income", 200_000_000),)
+    await _seed_claim(
+        client, other_org, days_ago=730, base=2_000_000, pess=1_800_000, opt=2_500_000
     )
+    await _seed_claim(
+        client, other_org, days_ago=400, base=3_000_000, pess=2_000_000, opt=3_300_000
+    )
+    await _seed_data_job(client, other_org, txns=((500, "income", 200_000_000),))
 
     data = await _get_backtest(client, headers)
     assert data == {"status": "yeterli veri yok", "pairs": 0}
@@ -224,9 +230,12 @@ async def test_user_without_org_is_refused(client):
 
 # ── 4. Paket calibration satırını taşır ──────────────────────────────────────
 
+
 async def test_packet_carries_calibration(client):
     headers, org_id, _ = await _user(client, "paket@example.com")
-    job_id = await _seed_claim(client, org_id, days_ago=1095, base=1_000_000, pess=800_000, opt=1_200_000)
+    job_id = await _seed_claim(
+        client, org_id, days_ago=1095, base=1_000_000, pess=800_000, opt=1_200_000
+    )
     await _seed_claim(client, org_id, days_ago=730, base=2_000_000, pess=1_800_000, opt=2_500_000)
     await _seed_claim(client, org_id, days_ago=400, base=3_000_000, pess=2_000_000, opt=3_300_000)
     await _seed_data_job(
@@ -242,9 +251,7 @@ async def test_packet_carries_calibration(client):
         ),
     )
 
-    r = await client.get(
-        f"/api/v1/analysis/{job_id}/decision-packet", headers=headers
-    )
+    r = await client.get(f"/api/v1/analysis/{job_id}/decision-packet", headers=headers)
     assert r.status_code == 200, r.text
     cal = r.json()["data"]["calibration"]
     assert cal["status"] == "ok"

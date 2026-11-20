@@ -444,11 +444,22 @@ def test_risk_benchmark_kri_thresholds():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.parametrize("sector", [
-    "retail", "manufacturing", "technology", "construction",
-    "services", "food_beverage", "logistics", "banking",
-    "insurance", "leasing", "default"
-])
+@pytest.mark.parametrize(
+    "sector",
+    [
+        "retail",
+        "manufacturing",
+        "technology",
+        "construction",
+        "services",
+        "food_beverage",
+        "logistics",
+        "banking",
+        "insurance",
+        "leasing",
+        "default",
+    ],
+)
 def test_all_sectors_supported(sector):
     """Test all sectors are supported."""
     engine = get_benchmark_engine()
@@ -459,12 +470,24 @@ def test_all_sectors_supported(sector):
     assert "median" in benchmark
 
 
-@pytest.mark.parametrize("metric", [
-    "gross_margin", "net_margin", "ebitda_margin", "opex_to_revenue",
-    "revenue_growth_yoy", "roa", "roe", "debt_to_equity", "current_ratio",
-    "headcount_growth_yoy", "revenue_per_headcount", "cac_payback_months",
-    "ltv_to_cac_ratio"
-])
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "gross_margin",
+        "net_margin",
+        "ebitda_margin",
+        "opex_to_revenue",
+        "revenue_growth_yoy",
+        "roa",
+        "roe",
+        "debt_to_equity",
+        "current_ratio",
+        "headcount_growth_yoy",
+        "revenue_per_headcount",
+        "cac_payback_months",
+        "ltv_to_cac_ratio",
+    ],
+)
 def test_all_metrics_supported(metric):
     """Test all metrics are supported."""
     engine = get_benchmark_engine()

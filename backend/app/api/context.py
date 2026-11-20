@@ -11,6 +11,7 @@ endpoint let any member write an unverified "agent result" that the CEO
 synthesis, the semantic snapshot and the triggers then read — and nothing in
 the UI called it (plan v6 §S0).
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _resolve_org_id(org_id: str, current_user: User) -> str:
     """
@@ -58,6 +60,7 @@ def _resolve_org_id(org_id: str, current_user: User) -> str:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/context/{org_id}")
 async def get_context(
@@ -111,10 +114,10 @@ async def get_context_summary(
             "updated_at": ctx.updated_at,
             "agents": ctx.agent_summary(),
             "active_jobs": {
-                "cfo":  ctx.active_cfo_job_id,
-                "cto":  ctx.active_cto_job_id,
-                "cmo":  ctx.active_cmo_job_id,
-                "coo":  ctx.active_coo_job_id,
+                "cfo": ctx.active_cfo_job_id,
+                "cto": ctx.active_cto_job_id,
+                "cmo": ctx.active_cmo_job_id,
+                "coo": ctx.active_coo_job_id,
                 "chro": ctx.active_chro_job_id,
             },
         },
@@ -141,18 +144,27 @@ async def get_context_cache_stats(
 
 # ── F5: Per-agent lazy result endpoint ────────────────────────────────────────
 
-_VALID_AGENTS = frozenset({
-    "cfo", "cto", "cmo", "coo", "chro",
-    "risk", "audit", "compliance", "ceo",
-})
+_VALID_AGENTS = frozenset(
+    {
+        "cfo",
+        "cto",
+        "cmo",
+        "coo",
+        "chro",
+        "risk",
+        "audit",
+        "compliance",
+        "ceo",
+    }
+)
 
 
 @router.get("/context/{org_id}/agent/{agent}")
 async def get_agent_result(
     org_id: str,
-    agent:  str,
+    agent: str,
     current_user: User = Depends(get_current_user),
-    db:     AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Return a single agent's last result from CompanyContext.
@@ -177,10 +189,10 @@ async def get_agent_result(
 
     return {
         "data": {
-            "org_id":     resolved_id,
-            "agent":      agent.lower(),
+            "org_id": resolved_id,
+            "agent": agent.lower(),
             "has_result": result is not None,
-            "result":     result,
+            "result": result,
             "updated_at": ctx.updated_at,
         },
         "error": None,
@@ -191,7 +203,7 @@ async def get_agent_result(
 async def get_context_payload_size(
     org_id: str,
     current_user: User = Depends(get_current_user),
-    db:     AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Return payload size breakdown for the context — useful for debugging
@@ -208,7 +220,7 @@ async def get_context_payload_size(
     ctx = await get_company_context(resolved_id, db)
 
     full_payload = _json.dumps(ctx.to_dict())
-    total_bytes  = len(full_payload.encode("utf-8"))
+    total_bytes = len(full_payload.encode("utf-8"))
 
     agents = ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit", "compliance", "ceo"]
     per_agent: dict[str, int] = {}
@@ -217,20 +229,18 @@ async def get_context_payload_size(
         if result is not None:
             per_agent[a] = len(_json.dumps(result).encode("utf-8"))
 
-    per_agent_sorted = dict(
-        sorted(per_agent.items(), key=lambda x: -x[1])
-    )
+    per_agent_sorted = dict(sorted(per_agent.items(), key=lambda x: -x[1]))
 
     return {
         "data": {
-            "org_id":                resolved_id,
-            "total_bytes":           total_bytes,
-            "total_kb":              round(total_bytes / 1024, 1),
-            "per_agent_bytes":       per_agent_sorted,
-            "trim_threshold_bytes":  2 * 1024 * 1024,
-            "warn_threshold_bytes":  512 * 1024,
-            "exceeds_warn":          total_bytes >= 512 * 1024,
-            "exceeds_trim":          total_bytes >= 2 * 1024 * 1024,
+            "org_id": resolved_id,
+            "total_bytes": total_bytes,
+            "total_kb": round(total_bytes / 1024, 1),
+            "per_agent_bytes": per_agent_sorted,
+            "trim_threshold_bytes": 2 * 1024 * 1024,
+            "warn_threshold_bytes": 512 * 1024,
+            "exceeds_warn": total_bytes >= 512 * 1024,
+            "exceeds_trim": total_bytes >= 2 * 1024 * 1024,
         },
         "error": None,
     }

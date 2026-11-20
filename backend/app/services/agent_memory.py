@@ -33,6 +33,7 @@ Usage:
     past = await store.retrieve(org_id="org-123", agent="pnl_agent", top_k=3)
     context_hint = store.format_for_context(past)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -49,14 +50,16 @@ logger = logging.getLogger(__name__)
 
 # ── Episode record ────────────────────────────────────────────────────────────
 
+
 @dataclass
 class EpisodeRecord:
     """One memory entry — the output of a completed agent run."""
+
     org_id: str
-    agent: str                          # e.g. "pnl_agent", "forecast_agent"
-    period: str                         # e.g. "2024-Q4", "2024-12"
-    summary: dict[str, Any]            # key metrics (serialisable)
-    narrative: str = ""                 # the generated narrative text
+    agent: str  # e.g. "pnl_agent", "forecast_agent"
+    period: str  # e.g. "2024-Q4", "2024-12"
+    summary: dict[str, Any]  # key metrics (serialisable)
+    narrative: str = ""  # the generated narrative text
     confidence: float = 1.0
     job_id: str = ""
     tags: list[str] = field(default_factory=list)
@@ -88,9 +91,11 @@ class EpisodeRecord:
 
 # ── TF-IDF similarity (no external ML library needed) ─────────────────────────
 
+
 def _tokenise(text: str) -> list[str]:
     """Simple whitespace + punctuation tokeniser."""
     import re
+
     return re.findall(r"\w+", text.lower())
 
 
@@ -151,6 +156,7 @@ def _tfidf_similarity(query: str, docs: list[str]) -> list[float]:
 
 # ── In-memory backend ─────────────────────────────────────────────────────────
 
+
 class _InMemoryBackend:
     def __init__(self) -> None:
         self._store: list[EpisodeRecord] = []
@@ -166,6 +172,7 @@ class _InMemoryBackend:
 
 
 # ── PostgreSQL async backend ──────────────────────────────────────────────────
+
 
 class _PostgreSQLBackend:
     """
@@ -190,8 +197,10 @@ class _PostgreSQLBackend:
         created_at  REAL NOT NULL
     )
     """
-    _CREATE_IDX_ORG   = "CREATE INDEX IF NOT EXISTS idx_ame_org   ON agent_memory_episodes(org_id)"
-    _CREATE_IDX_AGENT = "CREATE INDEX IF NOT EXISTS idx_ame_agent ON agent_memory_episodes(org_id, agent)"
+    _CREATE_IDX_ORG = "CREATE INDEX IF NOT EXISTS idx_ame_org   ON agent_memory_episodes(org_id)"
+    _CREATE_IDX_AGENT = (
+        "CREATE INDEX IF NOT EXISTS idx_ame_agent ON agent_memory_episodes(org_id, agent)"
+    )
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
@@ -201,6 +210,7 @@ class _PostgreSQLBackend:
         if self._pool is None:
             try:
                 import asyncpg
+
                 self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
                 async with self._pool.acquire() as conn:
                     await conn.execute(self._CREATE)
@@ -215,6 +225,7 @@ class _PostgreSQLBackend:
     def save(self, record: EpisodeRecord) -> None:
         """Sync wrapper — schedules the async save on the running event loop."""
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -241,14 +252,22 @@ class _PostgreSQLBackend:
                     narrative = EXCLUDED.narrative,
                     confidence= EXCLUDED.confidence
                 """,
-                d["id"], d["org_id"], d["agent"], d["period"],
-                d["summary"], d["narrative"], d["confidence"],
-                d["job_id"], d["tags"], d["created_at"],
+                d["id"],
+                d["org_id"],
+                d["agent"],
+                d["period"],
+                d["summary"],
+                d["narrative"],
+                d["confidence"],
+                d["job_id"],
+                d["tags"],
+                d["created_at"],
             )
 
     def all(self) -> list[EpisodeRecord]:
         """Sync wrapper — runs async query in event loop."""
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -264,9 +283,7 @@ class _PostgreSQLBackend:
     async def _async_all(self) -> list[EpisodeRecord]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM agent_memory_episodes ORDER BY created_at DESC"
-            )
+            rows = await conn.fetch("SELECT * FROM agent_memory_episodes ORDER BY created_at DESC")
         return [EpisodeRecord.from_dict(dict(r)) for r in rows]
 
     async def async_retrieve(
@@ -285,7 +302,10 @@ class _PostgreSQLBackend:
                 WHERE org_id=$1 AND agent=$2 AND confidence>=$3
                 ORDER BY created_at DESC LIMIT $4
                 """,
-                org_id, agent, min_confidence, top_k,
+                org_id,
+                agent,
+                min_confidence,
+                top_k,
             )
         else:
             rows = await pool.fetch(
@@ -294,12 +314,15 @@ class _PostgreSQLBackend:
                 WHERE org_id=$1 AND confidence>=$2
                 ORDER BY created_at DESC LIMIT $3
                 """,
-                org_id, min_confidence, top_k,
+                org_id,
+                min_confidence,
+                top_k,
             )
         return [EpisodeRecord.from_dict(dict(r)) for r in rows]
 
     def clear(self) -> None:
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
             if not loop.is_running():
@@ -314,6 +337,7 @@ class _PostgreSQLBackend:
 
 
 # ── SQLite backend ────────────────────────────────────────────────────────────
+
 
 class _SQLiteBackend:
     _CREATE = """
@@ -352,9 +376,7 @@ class _SQLiteBackend:
     def all(self) -> list[EpisodeRecord]:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM agent_memory ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM agent_memory ORDER BY created_at DESC").fetchall()
         conn.close()
         return [EpisodeRecord.from_dict(dict(r)) for r in rows]
 
@@ -366,6 +388,7 @@ class _SQLiteBackend:
 
 
 # ── AgentMemoryStore ──────────────────────────────────────────────────────────
+
 
 class AgentMemoryStore:
     """
@@ -397,9 +420,7 @@ class AgentMemoryStore:
         self._backend_name = backend
         if backend == "postgresql":
             if not pg_dsn:
-                logger.warning(
-                    "AgentMemory: pg_dsn not set — falling back to in-memory backend"
-                )
+                logger.warning("AgentMemory: pg_dsn not set — falling back to in-memory backend")
                 self._backend = _InMemoryBackend()  # type: ignore[assignment]
             else:
                 self._backend = _PostgreSQLBackend(pg_dsn)  # type: ignore[assignment]
@@ -441,7 +462,8 @@ class AgentMemoryStore:
 
         # Filter
         filtered = [
-            e for e in all_episodes
+            e
+            for e in all_episodes
             if e.org_id == org_id
             and (agent is None or e.agent == agent)
             and e.confidence >= min_confidence
@@ -478,9 +500,7 @@ class AgentMemoryStore:
 
         for ep in episodes:
             ts = datetime.fromtimestamp(ep.created_at, tz=UTC).strftime("%Y-%m-%d")
-            summary_str = ", ".join(
-                f"{k}: {v}" for k, v in list(ep.summary.items())[:4]
-            )
+            summary_str = ", ".join(f"{k}: {v}" for k, v in list(ep.summary.items())[:4])
             line = f"- [{ts}] {ep.agent} / {ep.period}: {summary_str}"
             if ep.narrative:
                 line += f" | '{ep.narrative[:80]}...'"
@@ -547,31 +567,24 @@ def get_memory_store(
     if _default_store is None:
         if backend is not None:
             # Explicit override (tests, CLI tools)
-            _default_store = AgentMemoryStore(
-                backend=backend, db_path=db_path, pg_dsn=pg_dsn
-            )
+            _default_store = AgentMemoryStore(backend=backend, db_path=db_path, pg_dsn=pg_dsn)
         else:
             # Auto-detect from settings
             try:
                 from app.config import get_settings
+
                 s = get_settings()
                 if not s.use_sqlite:
                     # Production: PostgreSQL — derive sync DSN from database_url
                     # asyncpg needs "postgresql://" not "postgresql+asyncpg://"
                     dsn = s.database_url_sync  # already plain postgresql://
-                    _default_store = AgentMemoryStore(
-                        backend="postgresql", pg_dsn=dsn
-                    )
+                    _default_store = AgentMemoryStore(backend="postgresql", pg_dsn=dsn)
                     logger.info("AgentMemory: using PostgreSQL backend")
                 else:
-                    _default_store = AgentMemoryStore(
-                        backend="sqlite", db_path="./agent_memory.db"
-                    )
+                    _default_store = AgentMemoryStore(backend="sqlite", db_path="./agent_memory.db")
                     logger.info("AgentMemory: using SQLite backend (dev)")
             except Exception as exc:
-                logger.warning(
-                    "AgentMemory: settings load failed (%s) — using in-memory", exc
-                )
+                logger.warning("AgentMemory: settings load failed (%s) — using in-memory", exc)
                 _default_store = AgentMemoryStore(backend="memory")
 
     return _default_store

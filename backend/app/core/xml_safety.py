@@ -10,6 +10,7 @@ the process with it. A stated size limit does not help — the file is small.
 Nothing GİB publishes declares a DTD or an entity, so a document that does is
 refused before it is parsed, which costs one substring search.
 """
+
 from __future__ import annotations
 
 import re

@@ -5,6 +5,7 @@ holding only the company name, a page reading "WeasyPrint yüklü değil" (even
 when it was installed and had failed on this report), or a blank page. The
 download looked like it had worked.
 """
+
 from __future__ import annotations
 
 import sys

@@ -8,6 +8,7 @@ That is the worse half of the same bug: no error to notice.
 
 Columns mirror migration 018 exactly; no schema change.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -26,9 +27,7 @@ class AlertRule(Base):
     __tablename__ = "alert_rules"
     __table_args__ = (Index("ix_alert_rules_org_enabled", "org_id", "enabled"),)
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: uuid.uuid4().hex
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     # e.g. cash_runway_months, anomaly_count_critical
@@ -69,9 +68,7 @@ class AlertHistory(Base):
     __tablename__ = "alert_history"
     __table_args__ = (Index("ix_alert_history_org_created", "org_id", "created_at"),)
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: uuid.uuid4().hex
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     # Nullable on purpose: not every alert comes from a rule.
     rule_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -81,9 +78,7 @@ class AlertHistory(Base):
     channels_sent: Mapped[str | None] = mapped_column(Text, nullable=True)
     acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     acknowledged_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    acknowledged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -104,8 +99,6 @@ class AlertHistory(Base):
             "channels_sent": channels,
             "acknowledged": bool(self.acknowledged),
             "acknowledged_by": self.acknowledged_by,
-            "acknowledged_at": (
-                self.acknowledged_at.isoformat() if self.acknowledged_at else None
-            ),
+            "acknowledged_at": (self.acknowledged_at.isoformat() if self.acknowledged_at else None),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

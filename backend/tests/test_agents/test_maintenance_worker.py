@@ -54,10 +54,7 @@ async def test_enqueue_maintenance_job_uses_lock_and_queue() -> None:
     assert result is True
     mock_pool.set.assert_awaited_once()
     mock_pool.enqueue_job.assert_awaited_once()
-    assert (
-        mock_pool.enqueue_job.await_args.kwargs["_queue_name"]
-        == "arq:queue:maintenance"
-    )
+    assert mock_pool.enqueue_job.await_args.kwargs["_queue_name"] == "arq:queue:maintenance"
 
 
 @pytest.mark.asyncio
@@ -78,6 +75,7 @@ async def test_enqueue_maintenance_skips_when_lock_held() -> None:
 # The upload -> analysis path must not silently drop work on a machine with no
 # Redis. It degrades to an inline run, loudly, and only for connection errors.
 
+
 @pytest.mark.asyncio
 async def test_enqueue_analysis_runs_inline_when_broker_unreachable() -> None:
     import app.worker as worker
@@ -94,9 +92,7 @@ async def test_enqueue_analysis_runs_inline_when_broker_unreachable() -> None:
 
     with (
         patch.object(worker, "get_settings", return_value=mock_settings),
-        patch.object(
-            worker, "get_arq_pool", AsyncMock(side_effect=OSError("Connection refused"))
-        ),
+        patch.object(worker, "get_arq_pool", AsyncMock(side_effect=OSError("Connection refused"))),
         patch.object(worker, "run_cfo_analysis", _fake_run),
     ):
         await worker.enqueue_analysis("job-1", {"revenue": 1})
@@ -117,9 +113,7 @@ async def test_enqueue_analysis_inline_fallback_can_be_disabled() -> None:
 
     with (
         patch.object(worker, "get_settings", return_value=mock_settings),
-        patch.object(
-            worker, "get_arq_pool", AsyncMock(side_effect=OSError("Connection refused"))
-        ),
+        patch.object(worker, "get_arq_pool", AsyncMock(side_effect=OSError("Connection refused"))),
         pytest.raises(OSError, match="Connection refused"),
     ):
         await worker.enqueue_analysis("job-1")

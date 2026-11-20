@@ -39,6 +39,7 @@ LLM cache decorator:
     async def my_llm_call(prompt: str) -> str:
         return await openai_call(prompt)
 """
+
 from __future__ import annotations
 
 import functools
@@ -56,11 +57,11 @@ logger = logging.getLogger(__name__)
 
 # ── TTL constants ──────────────────────────────────────────────────────────────
 
-TTL_ANALYTICS  = 15 * 60      # 15 minutes
-TTL_LLM        = 60 * 60      # 60 minutes
-TTL_CONTEXT    = 5  * 60      # 5 minutes
-TTL_BENCHMARK  = 24 * 60 * 60 # 24 hours
-TTL_TCMB       = 6  * 60 * 60 # 6 hours
+TTL_ANALYTICS = 15 * 60  # 15 minutes
+TTL_LLM = 60 * 60  # 60 minutes
+TTL_CONTEXT = 5 * 60  # 5 minutes
+TTL_BENCHMARK = 24 * 60 * 60  # 24 hours
+TTL_TCMB = 6 * 60 * 60  # 6 hours
 
 
 # ── Redis singleton ────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ async def _get_redis() -> Any | None:
 
 # ── Key builder ────────────────────────────────────────────────────────────────
 
+
 def _make_key(namespace: str, *parts: str) -> str:
     return f"cache:{namespace}:{':'.join(str(p) for p in parts)}"
 
@@ -94,6 +96,7 @@ def _hash_prompt(args: tuple, kwargs: dict) -> str:
 
 
 # ── CacheService ──────────────────────────────────────────────────────────────
+
 
 class CacheService:
     """
@@ -180,6 +183,7 @@ class CacheService:
         deleted = 0
         # Invalidate in memory
         import fnmatch
+
         memory_keys = list(self._memory_cache.keys())
         for k in memory_keys:
             if fnmatch.fnmatch(k, pattern):
@@ -251,6 +255,7 @@ class CacheService:
 
 # ── Singleton factory ─────────────────────────────────────────────────────────
 
+
 def get_cache_service() -> CacheService:
     global _cache_service_instance
     if _cache_service_instance is None:
@@ -259,6 +264,7 @@ def get_cache_service() -> CacheService:
 
 
 # ── LLM cache decorator ───────────────────────────────────────────────────────
+
 
 def llm_cached(ttl: int = TTL_LLM):
     """
@@ -270,12 +276,13 @@ def llm_cached(ttl: int = TTL_LLM):
         async def analyze_pnl(prompt: str, context: dict) -> str:
             return await openai_call(prompt)
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            cache    = get_cache_service()
+            cache = get_cache_service()
             prompt_hash = _hash_prompt(args, kwargs)
-            cache_key   = _make_key("llm", func.__name__, prompt_hash)
+            cache_key = _make_key("llm", func.__name__, prompt_hash)
 
             # Try cache first
             cached = await cache.get(cache_key)
@@ -293,10 +300,12 @@ def llm_cached(ttl: int = TTL_LLM):
             return result
 
         return wrapper
+
     return decorator
 
 
 # ── Analytics response cache helper ──────────────────────────────────────────
+
 
 async def get_cached_analytics(
     org_id: str,
@@ -307,10 +316,10 @@ async def get_cached_analytics(
     Get cached analytics response.
     Cache key: org_id:endpoint:sorted_query_params hash
     """
-    cache  = get_cache_service()
+    cache = get_cache_service()
     params_str = json.dumps(query_params, sort_keys=True)
     param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
-    key    = _make_key("analytics", org_id, endpoint.replace("/", "_"), param_hash)
+    key = _make_key("analytics", org_id, endpoint.replace("/", "_"), param_hash)
     return await cache.get(key)
 
 
@@ -322,10 +331,10 @@ async def set_cached_analytics(
     ttl: int = TTL_ANALYTICS,
 ) -> None:
     """Cache an analytics response."""
-    cache  = get_cache_service()
+    cache = get_cache_service()
     params_str = json.dumps(query_params, sort_keys=True)
     param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
-    key    = _make_key("analytics", org_id, endpoint.replace("/", "_"), param_hash)
+    key = _make_key("analytics", org_id, endpoint.replace("/", "_"), param_hash)
     await cache.set(key, data, ttl)
 
 

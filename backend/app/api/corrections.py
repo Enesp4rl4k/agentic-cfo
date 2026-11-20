@@ -6,6 +6,7 @@ User corrects a transaction's category. We:
 2. Persist a CategoryRule (learn from correction)
 3. Return the updated transaction
 """
+
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,15 +23,25 @@ from app.services.classifier import learn
 router = APIRouter()
 
 VALID_CATEGORIES = {
-    "revenue", "cogs", "salary", "rent", "utilities",
-    "marketing", "technology", "tax", "loan",
-    "other_expense", "other_income", "tax_payment", "transfer",
+    "revenue",
+    "cogs",
+    "salary",
+    "rent",
+    "utilities",
+    "marketing",
+    "technology",
+    "tax",
+    "loan",
+    "other_expense",
+    "other_income",
+    "tax_payment",
+    "transfer",
 }
 
 
 class CategoryCorrectionRequest(BaseModel):
     category: str
-    apply_always: bool = False   # "Apply this rule for all future transactions from this vendor"
+    apply_always: bool = False  # "Apply this rule for all future transactions from this vendor"
 
 
 @router.patch("/transactions/{transaction_id}/category")
@@ -104,10 +115,14 @@ async def _jobs_matching_rule(db: AsyncSession, org_id: str, rule: Any) -> list[
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.services.classifier import RuleSpec, match_rule
 
-    spec = [RuleSpec(
-        id=str(rule.id), category=rule.category,
-        vendor=rule.vendor_match or None, keyword=rule.keyword_match or None,
-    )]
+    spec = [
+        RuleSpec(
+            id=str(rule.id),
+            category=rule.category,
+            vendor=rule.vendor_match or None,
+            keyword=rule.keyword_match or None,
+        )
+    ]
     rows = (
         await db.execute(
             select(Transaction.job_id, Transaction.vendor, Transaction.description)
@@ -120,8 +135,7 @@ async def _jobs_matching_rule(db: AsyncSession, org_id: str, rule: Any) -> list[
         )
     ).all()
     jobs = {
-        job_id for job_id, vendor, desc in rows
-        if match_rule(spec, vendor=vendor, description=desc)
+        job_id for job_id, vendor, desc in rows if match_rule(spec, vendor=vendor, description=desc)
     }
     return sorted(jobs)
 

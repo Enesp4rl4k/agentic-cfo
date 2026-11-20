@@ -13,6 +13,7 @@ when no broker answers, and marks `devam = "tamam"` when it finishes. The
 stuck-job reaper re-dispatches any approval still "bekliyor" past a grace
 period, so a crash anywhere in between is recovered, broker or not.
 """
+
 from __future__ import annotations
 
 import logging
@@ -96,7 +97,9 @@ async def devam_et(job_id: str) -> dict[str, Any]:
 
         await db.refresh(job)
         try:
-            await continue_after_completion(job_id, str(job.org_id), await saved_result(job_id, db), db)
+            await continue_after_completion(
+                job_id, str(job.org_id), await saved_result(job_id, db), db
+            )
         except Exception:
             await db.refresh(job)
             await _devam_yaz(db, job, devam=BEKLIYOR)
@@ -128,7 +131,8 @@ async def _kuyruga_koy(job_id: str) -> None:
     pool = await asyncio.wait_for(get_arq_pool(), KUYRUK_ZAMAN_ASIMI)
     await asyncio.wait_for(
         pool.enqueue_job(
-            "run_review_continuation", job_id,
+            "run_review_continuation",
+            job_id,
             _queue_name=get_settings().arq_maintenance_queue_name,
             # One run per job however many times it is dispatched (approval,
             # then the reaper) while the first is still queued or running.
@@ -161,12 +165,16 @@ async def yarim_kalanlari_bul(db: Any, now: datetime | None = None) -> list[str]
     now = now or datetime.now(UTC)
     # JSON-key filters differ between SQLite and Postgres; a bounded window of
     # recently completed jobs filtered here is portable and cheap.
-    rows = (await db.execute(
-        select(AnalysisJob.id, AnalysisJob.result_metadata)
-        .where(AnalysisJob.status == JobStatus.COMPLETED,
-               AnalysisJob.updated_at >= now - timedelta(days=7))
-        .limit(500)
-    )).all()
+    rows = (
+        await db.execute(
+            select(AnalysisJob.id, AnalysisJob.result_metadata)
+            .where(
+                AnalysisJob.status == JobStatus.COMPLETED,
+                AnalysisJob.updated_at >= now - timedelta(days=7),
+            )
+            .limit(500)
+        )
+    ).all()
     yarim: list[str] = []
     for job_id, meta in rows:
         review = (meta or {}).get("review") or {}

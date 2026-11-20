@@ -1,4 +1,5 @@
 """The persisted dashboard is read one way (plan v6 §S0/§S4)."""
+
 from app.services.dashboard_contract import period_opex, revenue
 
 

@@ -8,6 +8,7 @@ and the event loop thread deadlocked on itself: every request that touched the
 database hung forever while /health kept answering. Found by the CI load
 baseline, the first time the API ran against Postgres.
 """
+
 from __future__ import annotations
 
 import threading

@@ -11,6 +11,7 @@ POST /negotiation/cash-crisis           -- Nakit krizi protokolu
 POST /negotiation/budget-revision       -- Butce revizyon protokolu
 POST /negotiation/ask                   -- Tek agent'a soru sor
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _get_org_id(user: User) -> str:
     org_id = getattr(user, "org_id", None) or getattr(user, "organization_id", None)
     if not org_id:
@@ -39,37 +41,39 @@ def _get_org_id(user: User) -> str:
 
 # ── Temporal Request Schemas ──────────────────────────────────────────────────
 
+
 class RecordAnalysisRequest(BaseModel):
-    agent:       str = Field(..., description="cfo|cto|cmo|chro|coo|risk")
-    period:      str = Field(..., description="2024-12 veya 2024-Q4")
+    agent: str = Field(..., description="cfo|cto|cmo|chro|coo|risk")
+    period: str = Field(..., description="2024-12 veya 2024-Q4")
     period_type: str = Field("monthly", description="monthly|quarterly|weekly")
-    metrics:     dict[str, Any]
-    narrative:   str = ""
-    confidence:  float = Field(0.8, ge=0, le=1)
+    metrics: dict[str, Any]
+    narrative: str = ""
+    confidence: float = Field(0.8, ge=0, le=1)
     data_source: str = "manual"
 
 
 class DeltaRequest(BaseModel):
-    agent:           str
+    agent: str
     current_metrics: dict[str, Any]
-    current_period:  str = "current"
+    current_period: str = "current"
 
 
 class TrendRequest(BaseModel):
-    agent:   str
-    window:  int = Field(6, ge=2, le=24)
+    agent: str
+    window: int = Field(6, ge=2, le=24)
     metrics: list[str] | None = None
 
 
 # ── Temporal Endpoints ────────────────────────────────────────────────────────
 
+
 @router.get("/temporal/history/{agent}")
 async def get_analysis_history(
-    agent:        str,
-    limit:        int = 12,
+    agent: str,
+    limit: int = 12,
     min_confidence: float = 0.5,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Organizasyonun belirli bir agent icin gecmis analizlerini getir.
@@ -86,10 +90,10 @@ async def get_analysis_history(
             org_id=org_id, agent=agent, limit=limit, min_confidence=min_confidence
         )
         return {
-            "org_id":  org_id,
-            "agent":   agent,
-            "count":   len(history),
-            "events":  [e.to_dict() for e in history],
+            "org_id": org_id,
+            "agent": agent,
+            "count": len(history),
+            "events": [e.to_dict() for e in history],
         }
     except Exception as exc:
         logger.exception("Temporal history hatasi: %s", exc)
@@ -98,9 +102,9 @@ async def get_analysis_history(
 
 @router.post("/temporal/record")
 async def record_analysis(
-    req:          RecordAnalysisRequest,
+    req: RecordAnalysisRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Yeni bir analiz sonucunu immutable event olarak kaydet.
@@ -115,24 +119,27 @@ async def record_analysis(
 
     try:
         event = await engine.record_analysis(
-            org_id      = org_id,
-            agent       = req.agent,
-            period      = req.period,
-            metrics     = req.metrics,
-            narrative   = req.narrative,
-            confidence  = req.confidence,
-            data_source = req.data_source,
+            org_id=org_id,
+            agent=req.agent,
+            period=req.period,
+            metrics=req.metrics,
+            narrative=req.narrative,
+            confidence=req.confidence,
+            data_source=req.data_source,
         )
-        return {"data": {"event_id": event.event_id, "recorded_at": event.recorded_at}, "error": None}
+        return {
+            "data": {"event_id": event.event_id, "recorded_at": event.recorded_at},
+            "error": None,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/temporal/delta")
 async def compute_delta(
-    req:          DeltaRequest,
+    req: DeltaRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Mevcut metrikler ile son kayitli analiz arasindaki delta hesapla.
@@ -145,10 +152,10 @@ async def compute_delta(
 
     try:
         delta = await engine.compute_delta(
-            org_id          = org_id,
-            agent           = req.agent,
-            current_metrics = req.current_metrics,
-            current_period  = req.current_period,
+            org_id=org_id,
+            agent=req.agent,
+            current_metrics=req.current_metrics,
+            current_period=req.current_period,
         )
         if delta is None:
             return {"data": None, "error": "Karsilastirilacak gecmis veri bulunamadi"}
@@ -159,9 +166,9 @@ async def compute_delta(
 
 @router.post("/temporal/trends")
 async def detect_trends(
-    req:          TrendRequest,
+    req: TrendRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Son N analizden trend cikar. Her metrik icin:
@@ -174,24 +181,24 @@ async def detect_trends(
 
     try:
         trends = await engine.detect_trends(
-            org_id  = org_id,
-            agent   = req.agent,
-            window  = req.window,
-            metrics = req.metrics,
+            org_id=org_id,
+            agent=req.agent,
+            window=req.window,
+            metrics=req.metrics,
         )
         return {
             "data": {
-                "agent":  req.agent,
+                "agent": req.agent,
                 "window": req.window,
                 "trends": [
                     {
-                        "metric":           t.metric,
-                        "trend":            t.trend,
-                        "slope":            t.slope,
-                        "r_squared":        t.r_squared,
+                        "metric": t.metric,
+                        "trend": t.trend,
+                        "slope": t.slope,
+                        "r_squared": t.r_squared,
                         "seasonal_pattern": t.seasonal_pattern,
-                        "values":           t.values,
-                        "periods":          t.periods,
+                        "values": t.values,
+                        "periods": t.periods,
                     }
                     for t in trends
                 ],
@@ -204,9 +211,9 @@ async def detect_trends(
 
 @router.get("/temporal/health-timeline")
 async def health_timeline(
-    limit:        int = 12,
+    limit: int = 12,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Tum agent'larin gecmisini birlestirerek sirket saglik zaman serisini donder.
@@ -225,29 +232,31 @@ async def health_timeline(
 
 # ── Negotiation Request Schemas ───────────────────────────────────────────────
 
+
 class CashCrisisRequest(BaseModel):
     runway_months: float = Field(..., gt=0, le=60)
-    job_id:        str | None = None
+    job_id: str | None = None
 
 
 class BudgetRevisionRequest(BaseModel):
     cut_target_pct: float = Field(..., gt=0, le=0.5)
-    job_id:         str | None = None
+    job_id: str | None = None
 
 
 class AskAgentRequest(BaseModel):
-    to_agent:   str
+    to_agent: str
     query_type: str
-    payload:    dict[str, Any] = Field(default_factory=dict)
-    timeout:    float = Field(10.0, gt=0, le=30)
-    job_id:     str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    timeout: float = Field(10.0, gt=0, le=30)
+    job_id: str | None = None
 
 
 # ── Negotiation Endpoints ──────────────────────────────────────────────────────
 
+
 @router.post("/negotiation/cash-crisis")
 async def negotiation_cash_crisis(
-    req:          CashCrisisRequest,
+    req: CashCrisisRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
@@ -262,7 +271,7 @@ async def negotiation_cash_crisis(
     """
     from app.services.agent_negotiation import get_negotiation_session
 
-    org_id  = _get_org_id(current_user)
+    org_id = _get_org_id(current_user)
     session = get_negotiation_session(org_id=org_id, job_id=req.job_id)
 
     try:
@@ -275,7 +284,7 @@ async def negotiation_cash_crisis(
 
 @router.post("/negotiation/budget-revision")
 async def negotiation_budget_revision(
-    req:          BudgetRevisionRequest,
+    req: BudgetRevisionRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
@@ -286,7 +295,7 @@ async def negotiation_budget_revision(
     """
     from app.services.agent_negotiation import get_negotiation_session
 
-    org_id  = _get_org_id(current_user)
+    org_id = _get_org_id(current_user)
     session = get_negotiation_session(org_id=org_id, job_id=req.job_id)
 
     try:
@@ -298,7 +307,7 @@ async def negotiation_budget_revision(
 
 @router.post("/negotiation/ask")
 async def negotiation_ask(
-    req:          AskAgentRequest,
+    req: AskAgentRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
@@ -310,22 +319,28 @@ async def negotiation_ask(
     from app.services.agent_bus import get_agent_bus
 
     org_id = _get_org_id(current_user)
-    bus    = get_agent_bus()
+    bus = get_agent_bus()
 
     try:
         response = await bus.ask(
-            from_agent = "user",
-            to_agent   = req.to_agent,
-            query_type = req.query_type,
-            payload    = req.payload,
-            org_id     = org_id,
-            job_id     = req.job_id,
-            timeout    = req.timeout,
+            from_agent="user",
+            to_agent=req.to_agent,
+            query_type=req.query_type,
+            payload=req.payload,
+            org_id=org_id,
+            job_id=req.job_id,
+            timeout=req.timeout,
         )
         if response:
-            return {"data": {"response": response.payload, "from_agent": response.from_agent}, "error": None}
+            return {
+                "data": {"response": response.payload, "from_agent": response.from_agent},
+                "error": None,
+            }
         else:
-            return {"data": None, "error": f"Agent '{req.to_agent}' yanit vermedi (timeout {req.timeout}s)"}
+            return {
+                "data": None,
+                "error": f"Agent '{req.to_agent}' yanit vermedi (timeout {req.timeout}s)",
+            }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -339,36 +354,52 @@ async def list_negotiable_agents(
 
     return {
         "agents": {
-            "cfo":  {
-                "label":    "CFO Agent",
-                "queries":  [QueryType.HIRING_PLAN, QueryType.TECH_BUDGET_CUT, QueryType.MARKETING_ROI],
+            "cfo": {
+                "label": "CFO Agent",
+                "queries": [
+                    QueryType.HIRING_PLAN,
+                    QueryType.TECH_BUDGET_CUT,
+                    QueryType.MARKETING_ROI,
+                ],
                 "protocols": ["cash_crisis", "budget_revision"],
             },
             "chro": {
-                "label":   "CHRO Agent",
-                "queries": [QueryType.HIRING_PLAN, QueryType.SALARY_FORECAST, QueryType.ATTRITION_RISK],
+                "label": "CHRO Agent",
+                "queries": [
+                    QueryType.HIRING_PLAN,
+                    QueryType.SALARY_FORECAST,
+                    QueryType.ATTRITION_RISK,
+                ],
             },
-            "cto":  {
-                "label":   "CTO Agent",
-                "queries": [QueryType.TECH_BUDGET_CUT, QueryType.VELOCITY_IMPACT, QueryType.CLOUD_SAVINGS],
+            "cto": {
+                "label": "CTO Agent",
+                "queries": [
+                    QueryType.TECH_BUDGET_CUT,
+                    QueryType.VELOCITY_IMPACT,
+                    QueryType.CLOUD_SAVINGS,
+                ],
             },
-            "cmo":  {
-                "label":   "CMO Agent",
-                "queries": [QueryType.MARKETING_ROI, QueryType.CAC_TREND, QueryType.REVENUE_FORECAST],
+            "cmo": {
+                "label": "CMO Agent",
+                "queries": [
+                    QueryType.MARKETING_ROI,
+                    QueryType.CAC_TREND,
+                    QueryType.REVENUE_FORECAST,
+                ],
             },
         },
         "protocols": [
             {
-                "id":          "cash_crisis",
-                "label":       "Nakit Krizi Protokolu",
+                "id": "cash_crisis",
+                "label": "Nakit Krizi Protokolu",
                 "description": "Nakit ömrü kritik oldugunda tüm C-Suite ile revize senaryo muzakeresi",
-                "endpoint":    "/negotiation/cash-crisis",
+                "endpoint": "/negotiation/cash-crisis",
             },
             {
-                "id":          "budget_revision",
-                "label":       "Butce Revizyon Protokolu",
+                "id": "budget_revision",
+                "label": "Butce Revizyon Protokolu",
                 "description": "Hedeflenen tasarrufun tüm domainlere birleşik etkisi",
-                "endpoint":    "/negotiation/budget-revision",
+                "endpoint": "/negotiation/budget-revision",
             },
         ],
     }

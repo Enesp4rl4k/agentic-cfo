@@ -14,6 +14,7 @@ Usage:
     ctx.last_cfo_result = {...}
     await save_company_context(ctx, db)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Optional Redis import — falls back silently if not available
 try:
     import redis.asyncio as aioredis  # type: ignore[import]
+
     _REDIS_AVAILABLE = True
 except ImportError:
     _REDIS_AVAILABLE = False
@@ -53,6 +55,7 @@ async def _get_redis() -> Any | None:
             return None
         try:
             from app.config import get_settings
+
             settings = get_settings()
             _redis_client = aioredis.from_url(
                 settings.redis_url,
@@ -80,6 +83,7 @@ def _redis_key(org_id: str) -> str:
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CompanyContext:
     """
@@ -88,6 +92,7 @@ class CompanyContext:
     Each agent writes its last result here; the CEO synthesis
     and cross-domain correlator read from here.
     """
+
     org_id: str
 
     # Active job tracking
@@ -102,34 +107,34 @@ class CompanyContext:
     reporting_period: str | None = None
 
     # Last agent results (JSON-serialisable dicts)
-    last_cfo_result:        dict[str, Any] | None = field(default=None)
-    last_cto_result:        dict[str, Any] | None = field(default=None)
-    last_cmo_result:        dict[str, Any] | None = field(default=None)
-    last_coo_result:        dict[str, Any] | None = field(default=None)
-    last_chro_result:       dict[str, Any] | None = field(default=None)
-    last_risk_result:       dict[str, Any] | None = field(default=None)
-    last_audit_result:      dict[str, Any] | None = field(default=None)
+    last_cfo_result: dict[str, Any] | None = field(default=None)
+    last_cto_result: dict[str, Any] | None = field(default=None)
+    last_cmo_result: dict[str, Any] | None = field(default=None)
+    last_coo_result: dict[str, Any] | None = field(default=None)
+    last_chro_result: dict[str, Any] | None = field(default=None)
+    last_risk_result: dict[str, Any] | None = field(default=None)
+    last_audit_result: dict[str, Any] | None = field(default=None)
     last_compliance_result: dict[str, Any] | None = field(default=None)
-    last_ceo_result:        dict[str, Any] | None = field(default=None)
+    last_ceo_result: dict[str, Any] | None = field(default=None)
 
     # Timestamps (ISO strings)
-    created_at:  str = field(default_factory=lambda: datetime.now(UTC).isoformat())
-    updated_at:  str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def update_agent_result(self, agent: str, result: dict[str, Any]) -> None:
         """Write agent result and touch updated_at."""
         mapping = {
-            "cfo":        "last_cfo_result",
-            "cto":        "last_cto_result",
-            "cmo":        "last_cmo_result",
-            "coo":        "last_coo_result",
-            "chro":       "last_chro_result",
-            "risk":       "last_risk_result",
-            "audit":      "last_audit_result",
+            "cfo": "last_cfo_result",
+            "cto": "last_cto_result",
+            "cmo": "last_cmo_result",
+            "coo": "last_coo_result",
+            "chro": "last_chro_result",
+            "risk": "last_risk_result",
+            "audit": "last_audit_result",
             "compliance": "last_compliance_result",
-            "ceo":        "last_ceo_result",
+            "ceo": "last_ceo_result",
         }
         attr = mapping.get(agent.lower())
         if attr:
@@ -141,10 +146,10 @@ class CompanyContext:
     def set_active_job(self, agent: str, job_id: str) -> None:
         """Track the currently running job for an agent."""
         mapping = {
-            "cfo":  "active_cfo_job_id",
-            "cto":  "active_cto_job_id",
-            "cmo":  "active_cmo_job_id",
-            "coo":  "active_coo_job_id",
+            "cfo": "active_cfo_job_id",
+            "cto": "active_cto_job_id",
+            "cmo": "active_cmo_job_id",
+            "coo": "active_coo_job_id",
             "chro": "active_chro_job_id",
         }
         attr = mapping.get(agent.lower())
@@ -157,10 +162,10 @@ class CompanyContext:
         Used by auto_chain to decide whether to enqueue follow-on agents.
         """
         requirements: dict[str, list[str]] = {
-            "risk":       ["last_cfo_result"],
-            "audit":      ["last_cfo_result"],
+            "risk": ["last_cfo_result"],
+            "audit": ["last_cfo_result"],
             "compliance": ["last_cfo_result"],
-            "ceo":        ["last_cfo_result"],
+            "ceo": ["last_cfo_result"],
         }
         required_fields = requirements.get(agent.lower(), [])
         return all(getattr(self, f, None) is not None for f in required_fields)
@@ -187,6 +192,7 @@ class CompanyContext:
 
 
 # ── Storage helpers ───────────────────────────────────────────────────────────
+
 
 @asynccontextmanager
 async def _session(db: Any):
@@ -230,10 +236,9 @@ async def get_company_context(
             from sqlalchemy import select
 
             from app.models.company_context import CompanyContextSnapshot
+
             result = await sess.execute(
-                select(CompanyContextSnapshot).where(
-                    CompanyContextSnapshot.org_id == org_id
-                )
+                select(CompanyContextSnapshot).where(CompanyContextSnapshot.org_id == org_id)
             )
             snapshot = result.scalar_one_or_none()
             if snapshot:
@@ -261,7 +266,7 @@ async def get_company_context(
 
 # Each agent result is trimmed if the full context exceeds this threshold.
 # Prevents unbounded growth when many agents accumulate large result dicts.
-_MAX_CONTEXT_BYTES      = 512 * 1024   # 512 KB — warn threshold
+_MAX_CONTEXT_BYTES = 512 * 1024  # 512 KB — warn threshold
 _CRITICAL_CONTEXT_BYTES = 2 * 1024 * 1024  # 2 MB — trim threshold
 
 # Keys trimmed when context exceeds critical size (keep metadata, drop large payloads)
@@ -300,14 +305,20 @@ def _trim_context_payload(data: dict[str, Any]) -> dict[str, Any]:
             if isinstance(value, dict):
                 lightweight: dict[str, Any] = {}
                 for k, v in value.items():
-                    if isinstance(v, (str, int, float, bool)) or v is None or (isinstance(v, dict) and len(json.dumps(v)) < 2000):
+                    if (
+                        isinstance(v, (str, int, float, bool))
+                        or v is None
+                        or (isinstance(v, dict) and len(json.dumps(v)) < 2000)
+                    ):
                         lightweight[k] = v
                     else:
                         lightweight[k] = f"[trimmed — {len(json.dumps(v))} chars]"
                 trimmed[field_name] = lightweight
                 logger.debug(
                     "Context payload: trimmed %s from %d to %d chars",
-                    field_name, len(serialized), len(json.dumps(lightweight))
+                    field_name,
+                    len(serialized),
+                    len(json.dumps(lightweight)),
                 )
     return trimmed
 
@@ -332,19 +343,23 @@ async def save_company_context(
     if raw_size >= _CRITICAL_CONTEXT_BYTES:
         logger.warning(
             "CompanyContext payload for org=%s is %d bytes (>2 MB) — trimming large fields",
-            ctx.org_id, raw_size,
+            ctx.org_id,
+            raw_size,
         )
         trimmed_data = _trim_context_payload(raw_data)
         payload = json.dumps(trimmed_data)
         trimmed_size = len(payload.encode("utf-8"))
         logger.info(
             "CompanyContext trimmed: %d → %d bytes for org=%s",
-            raw_size, trimmed_size, ctx.org_id,
+            raw_size,
+            trimmed_size,
+            ctx.org_id,
         )
     elif raw_size >= _MAX_CONTEXT_BYTES:
         logger.warning(
             "CompanyContext payload for org=%s is %d bytes (>512 KB) — consider cleanup",
-            ctx.org_id, raw_size,
+            ctx.org_id,
+            raw_size,
         )
         payload = raw_payload
     else:
@@ -364,10 +379,9 @@ async def save_company_context(
             from sqlalchemy import select
 
             from app.models.company_context import CompanyContextSnapshot
+
             result = await sess.execute(
-                select(CompanyContextSnapshot).where(
-                    CompanyContextSnapshot.org_id == ctx.org_id
-                )
+                select(CompanyContextSnapshot).where(CompanyContextSnapshot.org_id == ctx.org_id)
             )
             snapshot = result.scalar_one_or_none()
             if snapshot:
@@ -398,10 +412,9 @@ async def invalidate_company_context(org_id: str, db: Any = None) -> None:
             from sqlalchemy import select
 
             from app.models.company_context import CompanyContextSnapshot
+
             result = await sess.execute(
-                select(CompanyContextSnapshot).where(
-                    CompanyContextSnapshot.org_id == org_id
-                )
+                select(CompanyContextSnapshot).where(CompanyContextSnapshot.org_id == org_id)
             )
             snapshot = result.scalar_one_or_none()
             if snapshot:
@@ -435,6 +448,7 @@ async def get_cache_stats(org_id: str) -> dict:
 
 
 # ── CompanyContextService singleton (for WebSocket/streaming contexts) ─────────
+
 
 class CompanyContextService:
     """

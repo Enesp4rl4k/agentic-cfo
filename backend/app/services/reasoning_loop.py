@@ -51,6 +51,7 @@ Usage
     print(result.think.observations)  # reasoning trace
     print(result.plan.steps)     # execution plan
 """
+
 from __future__ import annotations
 
 import json
@@ -63,13 +64,15 @@ logger = logging.getLogger(__name__)
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
 
+
 @dataclass
 class ThinkResult:
     """Output of the THINK phase."""
-    observations: list[str]        # key facts extracted from context
-    uncertainties: list[str]       # what we don't know / data gaps
+
+    observations: list[str]  # key facts extracted from context
+    uncertainties: list[str]  # what we don't know / data gaps
     relevant_data: dict[str, Any]  # extracted numeric values
-    domain_focus: str              # "cfo" | "cto" | "cross-domain" etc.
+    domain_focus: str  # "cfo" | "cto" | "cross-domain" etc.
     duration_ms: int = 0
 
     def to_prompt_block(self) -> str:
@@ -91,17 +94,19 @@ class ThinkResult:
 @dataclass
 class PlanStep:
     """A single planned action."""
+
     step_id: int
     description: str
-    tool: str | None = None        # "calculate" | "lookup" | "llm" | "summarise"
+    tool: str | None = None  # "calculate" | "lookup" | "llm" | "summarise"
     input_keys: list[str] = field(default_factory=list)
 
 
 @dataclass
 class PlanResult:
     """Output of the PLAN phase."""
+
     steps: list[PlanStep]
-    reasoning_approach: str        # brief description of strategy
+    reasoning_approach: str  # brief description of strategy
     duration_ms: int = 0
 
     def to_prompt_block(self) -> str:
@@ -115,6 +120,7 @@ class PlanResult:
 @dataclass
 class ActionResult:
     """Output of a single ACT step."""
+
     step_id: int
     description: str
     output: str
@@ -131,6 +137,7 @@ class ActionResult:
 @dataclass
 class ReasoningResult:
     """Complete output of a full reasoning loop."""
+
     question: str
     answer: str
     think: ThinkResult
@@ -152,8 +159,10 @@ class ReasoningResult:
             },
             "plan": {
                 "reasoning_approach": self.plan.reasoning_approach,
-                "steps": [{"id": s.step_id, "desc": s.description, "tool": s.tool}
-                          for s in self.plan.steps],
+                "steps": [
+                    {"id": s.step_id, "desc": s.description, "tool": s.tool}
+                    for s in self.plan.steps
+                ],
             },
             "actions": [
                 {"step_id": a.step_id, "ok": a.ok, "output_preview": a.output[:100]}
@@ -166,6 +175,7 @@ class ReasoningResult:
 
 
 # ── Reasoning Loop ────────────────────────────────────────────────────────────
+
 
 class ReasoningLoop:
     """
@@ -183,6 +193,7 @@ class ReasoningLoop:
         if self._llm is None:
             try:
                 from app.services.llm_router import get_llm_router
+
                 self._llm = get_llm_router()
             except Exception:
                 pass
@@ -363,11 +374,13 @@ JSON formatında 2-4 adımlık plan:
                     parsed = json.loads(raw[json_start:json_end])
                     approach = parsed.get("reasoning_approach", approach)
                     for s in parsed.get("steps", []):
-                        steps.append(PlanStep(
-                            step_id=s.get("step_id", len(steps) + 1),
-                            description=s.get("description", ""),
-                            tool=s.get("tool"),
-                        ))
+                        steps.append(
+                            PlanStep(
+                                step_id=s.get("step_id", len(steps) + 1),
+                                description=s.get("description", ""),
+                                tool=s.get("tool"),
+                            )
+                        )
             except Exception:
                 pass
 
@@ -479,7 +492,9 @@ Yanıt kriterleri:
         if not llm:
             # Fallback: concatenate action outputs
             outputs = [a.output for a in actions if a.ok and a.output]
-            return "\n\n".join(outputs) if outputs else "Analiz tamamlandı, ancak LLM yanıt üretemedi."
+            return (
+                "\n\n".join(outputs) if outputs else "Analiz tamamlandı, ancak LLM yanıt üretemedi."
+            )
 
         try:
             answer = await llm.complete(
@@ -492,10 +507,13 @@ Yanıt kriterleri:
             logger.warning("Synthesize phase failed: %s", e)
             # Fallback: join action outputs
             outputs = [a.output for a in actions if a.ok and a.output]
-            return "\n\n".join(outputs) if outputs else "Analiz yürütüldü ancak sonuç sentezlenemedi."
+            return (
+                "\n\n".join(outputs) if outputs else "Analiz yürütüldü ancak sonuç sentezlenemedi."
+            )
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
+
 
 def _extract_relevant_data(context: dict[str, Any], domain: str) -> dict[str, Any]:
     """Extract domain-specific numeric data from context dict."""
@@ -517,7 +535,7 @@ def _extract_relevant_data(context: dict[str, Any], domain: str) -> dict[str, An
         result["net_cashflow"] = cf.get("net")
 
     # Forecast
-    scenarios = (forecast.get("scenarios") or {})
+    scenarios = forecast.get("scenarios") or {}
     base = scenarios.get("base") or {}
     if base:
         result["runway_months"] = base.get("runway_months")
@@ -618,6 +636,7 @@ def get_reasoning_loop() -> ReasoningLoop:
     if _reasoning_loop is None:
         try:
             from app.config import get_settings
+
             _reasoning_loop = ReasoningLoop(settings=get_settings())
         except Exception:
             _reasoning_loop = ReasoningLoop()

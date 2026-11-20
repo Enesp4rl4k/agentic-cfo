@@ -14,6 +14,7 @@ All agents gracefully skip when their input is absent.
 
 Compliance health score: 0–100 (100 = fully compliant, no violations).
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,10 +34,11 @@ logger = logging.getLogger(__name__)
 
 # Routing constants
 _ROUTE_SUMMARY = "compliance_summary"
-_ROUTE_END     = "__end__"
+_ROUTE_END = "__end__"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _append_log(state: ComplianceState, log: ComplianceStepLog) -> dict[str, Any]:
     existing = list(state.get("logs") or [])
@@ -46,20 +48,27 @@ def _append_log(state: ComplianceState, log: ComplianceStepLog) -> dict[str, Any
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
+
 async def node_policies(state: ComplianceState, config: dict) -> ComplianceState:
     if not state.get("policy_csv", "").strip():
-        patch = _append_log(state, ComplianceStepLog(
-            node="policies_agent",
-            status="skipped",
-            message="No policy_csv provided — PoliciesAgent skipped.",
-        ))
+        patch = _append_log(
+            state,
+            ComplianceStepLog(
+                node="policies_agent",
+                status="skipped",
+                message="No policy_csv provided — PoliciesAgent skipped.",
+            ),
+        )
         patch["policies"] = None
         return {**state, **patch}  # type: ignore[return-value]
 
     result = await run_policies_agent(state, config)
-    patch  = _append_log(state, result["logs"][-1] if result.get("logs") else ComplianceStepLog(
-        node="policies_agent", status="completed", message="done"
-    ))
+    patch = _append_log(
+        state,
+        result["logs"][-1]
+        if result.get("logs")
+        else ComplianceStepLog(node="policies_agent", status="completed", message="done"),
+    )
     patch["policies"] = result.get("policies")
     if result.get("error"):
         patch["error"] = result["error"]
@@ -68,18 +77,24 @@ async def node_policies(state: ComplianceState, config: dict) -> ComplianceState
 
 async def node_violations(state: ComplianceState, config: dict) -> ComplianceState:
     if not state.get("violations_csv", "").strip():
-        patch = _append_log(state, ComplianceStepLog(
-            node="violations_agent",
-            status="skipped",
-            message="No violations_csv provided — ViolationsAgent skipped.",
-        ))
+        patch = _append_log(
+            state,
+            ComplianceStepLog(
+                node="violations_agent",
+                status="skipped",
+                message="No violations_csv provided — ViolationsAgent skipped.",
+            ),
+        )
         patch["violations"] = None
         return {**state, **patch}  # type: ignore[return-value]
 
     result = await run_violations_agent(state, config)
-    patch  = _append_log(state, result["logs"][-1] if result.get("logs") else ComplianceStepLog(
-        node="violations_agent", status="completed", message="done"
-    ))
+    patch = _append_log(
+        state,
+        result["logs"][-1]
+        if result.get("logs")
+        else ComplianceStepLog(node="violations_agent", status="completed", message="done"),
+    )
     patch["violations"] = result.get("violations")
     if result.get("error"):
         patch["error"] = result["error"]
@@ -88,18 +103,24 @@ async def node_violations(state: ComplianceState, config: dict) -> ComplianceSta
 
 async def node_regulations(state: ComplianceState, config: dict) -> ComplianceState:
     if not state.get("regulations_csv", "").strip():
-        patch = _append_log(state, ComplianceStepLog(
-            node="regulations_agent",
-            status="skipped",
-            message="No regulations_csv provided — RegulationsAgent skipped.",
-        ))
+        patch = _append_log(
+            state,
+            ComplianceStepLog(
+                node="regulations_agent",
+                status="skipped",
+                message="No regulations_csv provided — RegulationsAgent skipped.",
+            ),
+        )
         patch["regulations"] = None
         return {**state, **patch}  # type: ignore[return-value]
 
     result = await run_regulations_agent(state, config)
-    patch  = _append_log(state, result["logs"][-1] if result.get("logs") else ComplianceStepLog(
-        node="regulations_agent", status="completed", message="done"
-    ))
+    patch = _append_log(
+        state,
+        result["logs"][-1]
+        if result.get("logs")
+        else ComplianceStepLog(node="regulations_agent", status="completed", message="done"),
+    )
     patch["regulations"] = result.get("regulations")
     if result.get("error"):
         patch["error"] = result["error"]
@@ -111,7 +132,7 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
     Synthesize all three skill outputs into a unified compliance health score
     and actionable risk list. Pure calculation — no LLM required.
     """
-    policies   = state.get("policies")   or {}
+    policies = state.get("policies") or {}
     violations = state.get("violations") or {}
     regulations = state.get("regulations") or {}
 
@@ -125,7 +146,7 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
 
     # Policies score (based on active policies, no stale reviews)
     if policies:
-        total_p  = policies.get("total_policies", 0)
+        total_p = policies.get("total_policies", 0)
         active_p = policies.get("active_policies", 0)
         overdue_p = policies.get("policies_needing_review", 0)
         if total_p > 0:
@@ -139,18 +160,16 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
 
     # Violations score (based on open/overdue violations)
     if violations:
-        total_v   = violations.get("total_violations", 0)
+        total_v = violations.get("total_violations", 0)
         overdue_v = violations.get("overdue_violations", 0)
-        critical  = violations.get("critical_open", 0)
-        rem_rate  = violations.get("remediation_rate", 100.0)
+        critical = violations.get("critical_open", 0)
+        rem_rate = violations.get("remediation_rate", 100.0)
 
         if total_v > 0:
             # Heavily penalise critical open and overdue
-            viol_score = min(100.0, max(0.0,
-                rem_rate
-                - (critical * 15)
-                - (overdue_v / max(total_v, 1) * 30)
-            ))
+            viol_score = min(
+                100.0, max(0.0, rem_rate - (critical * 15) - (overdue_v / max(total_v, 1) * 30))
+            )
         else:
             viol_score = 100.0  # no violations = perfect
         scores["violations"] = round(viol_score, 1)
@@ -163,9 +182,7 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
         # Add penalty for critical non-compliant frameworks
         fw_scores = regulations.get("framework_scores", {})
         critical_fw_penalty = sum(
-            max(0, 70 - score) * 0.3
-            for score in fw_scores.values()
-            if score < 70
+            max(0, 70 - score) * 0.3 for score in fw_scores.values() if score < 70
         )
         reg_score = max(0.0, min(100.0, coverage - critical_fw_penalty))
         scores["regulations"] = round(reg_score, 1)
@@ -184,7 +201,7 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
     # ── Risk classification ───────────────────────────────────────────────────
 
     critical_alerts = [a for a in all_alerts if a.get("level") == "critical"]
-    warning_alerts  = [a for a in all_alerts if a.get("level") == "warning"]
+    warning_alerts = [a for a in all_alerts if a.get("level") == "warning"]
 
     if overall_health >= 90:
         health_status = "excellent"
@@ -204,39 +221,47 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
     if violations:
         crit_open = violations.get("critical_open", 0)
         if crit_open > 0:
-            top_risks.append({
-                "domain": "İhlaller",
-                "severity": "critical",
-                "message": f"{crit_open} kritik ihlal açık — acil giderim gerekiyor.",
-            })
+            top_risks.append(
+                {
+                    "domain": "İhlaller",
+                    "severity": "critical",
+                    "message": f"{crit_open} kritik ihlal açık — acil giderim gerekiyor.",
+                }
+            )
         overdue_v = violations.get("overdue_violations", 0)
         if overdue_v > 0:
-            top_risks.append({
-                "domain": "İhlaller",
-                "severity": "high",
-                "message": f"{overdue_v} ihlal vadesi geçmiş — sorumluya eskalasyon gerekli.",
-            })
+            top_risks.append(
+                {
+                    "domain": "İhlaller",
+                    "severity": "high",
+                    "message": f"{overdue_v} ihlal vadesi geçmiş — sorumluya eskalasyon gerekli.",
+                }
+            )
 
     if regulations:
         non_comp = regulations.get("non_compliant_count", 0)
         if non_comp > 0:
-            top_risks.append({
-                "domain": "Mevzuat",
-                "severity": "high" if non_comp < 5 else "critical",
-                "message": (
-                    f"{non_comp} mevzuat gereksinimi uyumsuz — "
-                    f"{len(regulations.get('frameworks', []))} çerçevede."
-                ),
-            })
+            top_risks.append(
+                {
+                    "domain": "Mevzuat",
+                    "severity": "high" if non_comp < 5 else "critical",
+                    "message": (
+                        f"{non_comp} mevzuat gereksinimi uyumsuz — "
+                        f"{len(regulations.get('frameworks', []))} çerçevede."
+                    ),
+                }
+            )
 
     if policies:
         overdue_p = policies.get("policies_needing_review", 0)
         if overdue_p > 0:
-            top_risks.append({
-                "domain": "Politikalar",
-                "severity": "medium",
-                "message": f"{overdue_p} politika gözden geçirilmeli (>1 yıl eski).",
-            })
+            top_risks.append(
+                {
+                    "domain": "Politikalar",
+                    "severity": "medium",
+                    "message": f"{overdue_p} politika gözden geçirilmeli (>1 yıl eski).",
+                }
+            )
 
     # ── Türkiye regulatory mapping ────────────────────────────────────────────
     turkey_reg_mapping: dict[str, Any] | None = None
@@ -248,7 +273,7 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
 
         # Check against existing violations/frameworks
         existing_violation_regs = set()
-        for v in (violations.get("violations_list") or []):
+        for v in violations.get("violations_list") or []:
             reg = v.get("framework") or v.get("regulation", "")
             if reg:
                 existing_violation_regs.add(reg.upper())
@@ -259,34 +284,38 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
             reg_key = req["regulation"].upper()
             # If no data about this regulation AND it's critical, flag as unchecked
             if reg_key not in existing_violation_regs and req["severity"] == "critical":
-                unchecked.append({
-                    "id":          req["id"],
-                    "regulation":  req["regulation"],
-                    "requirement": req["requirement"],
-                    "penalty":     req["penalty"],
-                    "checklist":   req["checklist"],
-                })
+                unchecked.append(
+                    {
+                        "id": req["id"],
+                        "regulation": req["regulation"],
+                        "requirement": req["requirement"],
+                        "penalty": req["penalty"],
+                        "checklist": req["checklist"],
+                    }
+                )
 
         turkey_reg_mapping = {
             "applicable_requirements": len(applicable),
-            "unchecked_critical":      unchecked[:5],
+            "unchecked_critical": unchecked[:5],
             "message": (
                 f"{len(unchecked)} kritik yasal gereksinim kontrol edilmedi."
-                if unchecked else
-                "Temel yasal gereksinimler kapsanmış görünüyor."
+                if unchecked
+                else "Temel yasal gereksinimler kapsanmış görünüyor."
             ),
         }
 
         # Add Turkey-specific risks to top risks
         if unchecked:
-            top_risks.append({
-                "domain": "Türkiye Mevzuatı",
-                "severity": "critical",
-                "message": (
-                    f"{len(unchecked)} kritik yasal gereksinim ({', '.join(r['regulation'] for r in unchecked[:3])}) "
-                    f"kontrol edilmemiş — cezai risk: {unchecked[0]['penalty']}"
-                ),
-            })
+            top_risks.append(
+                {
+                    "domain": "Türkiye Mevzuatı",
+                    "severity": "critical",
+                    "message": (
+                        f"{len(unchecked)} kritik yasal gereksinim ({', '.join(r['regulation'] for r in unchecked[:3])}) "
+                        f"kontrol edilmemiş — cezai risk: {unchecked[0]['penalty']}"
+                    ),
+                }
+            )
     except Exception as tr_exc:
         logger.debug("Turkey regulatory mapping skipped: %s", tr_exc)
 
@@ -307,10 +336,10 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
     # ── Executive narrative (Türkçe + LLM) ────────────────────────────────────
     health_tr = {
         "excellent": "MÜKEMMEL",
-        "good":      "İYİ",
-        "fair":      "ORTA",
-        "poor":      "ZAYIF",
-        "critical":  "KRİTİK",
+        "good": "İYİ",
+        "fair": "ORTA",
+        "poor": "ZAYIF",
+        "critical": "KRİTİK",
     }.get(health_status, health_status.upper())
 
     narrative = (
@@ -330,66 +359,72 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
             reqs = [r["regulation"] for r in turkey_reg_mapping["unchecked_critical"][:3]]
             turkey_context = f"\nKontrol edilmemiş kritik yasal gereksinimler: {', '.join(reqs)}"
 
-        narrative = (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir Compliance Yöneticisisin. Uyum verilerini analiz et ve "
-                "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
-                "Yanıt yapısı:\n"
-                "1. Genel uyum durumunun 1-2 cümlelik değerlendirmesi (Türkiye mevzuatı odaklı)\n"
-                "2. En kritik 1-2 uyum riski (KVKK, SGK, Vergi vb.)\n"
-                "3. Ekibin hemen yapması gereken 2-3 somut eylem\n"
-                "Türkiye mevzuatına özgü riskler varsa özellikle vurgula."
-            ),
-            prompt=narrative + turkey_context,
-            max_tokens=700,
-        )).strip()
+        narrative = (
+            await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir Compliance Yöneticisisin. Uyum verilerini analiz et ve "
+                    "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
+                    "Yanıt yapısı:\n"
+                    "1. Genel uyum durumunun 1-2 cümlelik değerlendirmesi (Türkiye mevzuatı odaklı)\n"
+                    "2. En kritik 1-2 uyum riski (KVKK, SGK, Vergi vb.)\n"
+                    "3. Ekibin hemen yapması gereken 2-3 somut eylem\n"
+                    "Türkiye mevzuatına özgü riskler varsa özellikle vurgula."
+                ),
+                prompt=narrative + turkey_context,
+                max_tokens=700,
+            )
+        ).strip()
     except Exception as llm_exc:
         logger.debug("Compliance narrative LLM failed: %s", llm_exc)
 
     # ── Assemble summary ──────────────────────────────────────────────────────
     summary: dict[str, Any] = {
-        "overall_health_score":    overall_health,
-        "health_status":           health_status,
-        "health_status_tr":        health_tr,
-        "component_scores":        scores,
-        "top_risks":               top_risks[:6],
-        "critical_alert_count":    len(critical_alerts),
-        "warning_alert_count":     len(warning_alerts),
-        "all_alerts":              all_alerts,
-        "recommendations":         deduped_recs,
-        "narrative":               narrative,
-        "turkey_reg_mapping":      turkey_reg_mapping,
+        "overall_health_score": overall_health,
+        "health_status": health_status,
+        "health_status_tr": health_tr,
+        "component_scores": scores,
+        "top_risks": top_risks[:6],
+        "critical_alert_count": len(critical_alerts),
+        "warning_alert_count": len(warning_alerts),
+        "all_alerts": all_alerts,
+        "recommendations": deduped_recs,
+        "narrative": narrative,
+        "turkey_reg_mapping": turkey_reg_mapping,
     }
 
-    patch = _append_log(state, ComplianceStepLog(
-        node="compliance_summary",
-        status="completed",
-        message=(
-            f"Health: {overall_health:.1f}/100 ({health_status}), "
-            f"risks: {len(top_risks)}, "
-            f"critical_alerts: {len(critical_alerts)}"
+    patch = _append_log(
+        state,
+        ComplianceStepLog(
+            node="compliance_summary",
+            status="completed",
+            message=(
+                f"Health: {overall_health:.1f}/100 ({health_status}), "
+                f"risks: {len(top_risks)}, "
+                f"critical_alerts: {len(critical_alerts)}"
+            ),
+            metrics={"overall_health_score": overall_health},
         ),
-        metrics={"overall_health_score": overall_health},
-    ))
+    )
     patch["compliance_summary"] = summary
     return {**state, **patch}  # type: ignore[return-value]
 
 
 # ── Graph assembly ─────────────────────────────────────────────────────────────
 
+
 def build_compliance_graph() -> StateGraph:
     graph = StateGraph(ComplianceState)
 
-    graph.add_node("node_policies",            node_policies)
-    graph.add_node("node_violations",          node_violations)
-    graph.add_node("node_regulations",         node_regulations)
-    graph.add_node("node_compliance_summary",  node_compliance_summary)
+    graph.add_node("node_policies", node_policies)
+    graph.add_node("node_violations", node_violations)
+    graph.add_node("node_regulations", node_regulations)
+    graph.add_node("node_compliance_summary", node_compliance_summary)
 
     graph.set_entry_point("node_policies")
 
     # Linear pipeline — all non-fatal
-    graph.add_edge("node_policies",   "node_violations")
+    graph.add_edge("node_policies", "node_violations")
     graph.add_edge("node_violations", "node_regulations")
     graph.add_edge("node_regulations", "node_compliance_summary")
     graph.add_edge("node_compliance_summary", END)
@@ -403,6 +438,7 @@ compliance_graph = build_compliance_graph().compile()
 
 # ── Public entry point ─────────────────────────────────────────────────────────
 
+
 async def run_compliance_pipeline(
     job_id: str,
     policy_csv: str | None = None,
@@ -410,7 +446,7 @@ async def run_compliance_pipeline(
     regulations_csv: str | None = None,
     company_name: str | None = None,
     audit_period: str | None = None,
-    org_id: str | None = None,   # S2-5: cross-domain context
+    org_id: str | None = None,  # S2-5: cross-domain context
 ) -> ComplianceState:
     """
     Run the full Compliance analysis pipeline.
@@ -423,28 +459,28 @@ async def run_compliance_pipeline(
     """
     if not any([policy_csv, violations_csv, regulations_csv]):
         raise ValueError(
-            "At least one data source required: "
-            "policy_csv, violations_csv, or regulations_csv."
+            "At least one data source required: policy_csv, violations_csv, or regulations_csv."
         )
 
     base: ComplianceState = {
-        "policy_csv":      policy_csv or "",
-        "violations_csv":  violations_csv or "",
+        "policy_csv": policy_csv or "",
+        "violations_csv": violations_csv or "",
         "regulations_csv": regulations_csv or "",
-        "company_name":    company_name,
-        "audit_period":    audit_period,
-        "policies":        None,
-        "violations":      None,
-        "regulations":     None,
+        "company_name": company_name,
+        "audit_period": audit_period,
+        "policies": None,
+        "violations": None,
+        "regulations": None,
         "compliance_summary": None,
-        "logs":            [],
-        "error":           None,
+        "logs": [],
+        "error": None,
     }
 
     initial_state = base
     if org_id:
         try:
             from app.services.cross_context_enricher import enrich_initial_state
+
             base = await enrich_initial_state("compliance", base, org_id=org_id)  # type: ignore[assignment]
             initial_state = base  # type: ignore[assignment]
         except Exception:

@@ -15,6 +15,7 @@ the Phase-1 migration backlog.  This test fails if:
 Removing an entry from ``_ALLOWLIST`` (after migrating that module to the
 gateway) is always safe and expected.
 """
+
 from __future__ import annotations
 
 import re

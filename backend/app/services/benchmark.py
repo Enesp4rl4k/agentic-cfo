@@ -23,6 +23,7 @@ Not: Bu client kamuya açık verileri çeker. Şirket verisi paylaşılmaz.
 API anahtarı .env dosyasına TCMB_API_KEY olarak eklenmeli.
 Demo modda statik benchmark verileri kullanılır (API key gerektirmez).
 """
+
 from __future__ import annotations
 
 import json
@@ -50,167 +51,167 @@ UNVERIFIED_SOURCE = "Örnek varsayım: kaynağı doğrulanmadı"
 
 _STATIC_BENCHMARKS: dict[str, dict[str, float]] = {
     "gross_margin": {
-        "retail":        0.28,   # Perakende
-        "manufacturing": 0.32,   # Üretim
-        "technology":    0.58,   # Teknoloji/Yazılım
-        "construction":  0.22,   # İnşaat
-        "services":      0.45,   # Hizmet
-        "food_beverage": 0.35,   # Yiyecek-İçecek
-        "logistics":     0.25,   # Lojistik
-        "banking":       0.68,   # BDDK: Bankacılık
-        "insurance":     0.55,   # BDDK: Sigorta
-        "leasing":       0.48,   # BDDK: Finansal Kiralama
-        "default":       0.35,
+        "retail": 0.28,  # Perakende
+        "manufacturing": 0.32,  # Üretim
+        "technology": 0.58,  # Teknoloji/Yazılım
+        "construction": 0.22,  # İnşaat
+        "services": 0.45,  # Hizmet
+        "food_beverage": 0.35,  # Yiyecek-İçecek
+        "logistics": 0.25,  # Lojistik
+        "banking": 0.68,  # BDDK: Bankacılık
+        "insurance": 0.55,  # BDDK: Sigorta
+        "leasing": 0.48,  # BDDK: Finansal Kiralama
+        "default": 0.35,
     },
     "net_margin": {
-        "retail":        0.04,
+        "retail": 0.04,
         "manufacturing": 0.06,
-        "technology":    0.15,
-        "construction":  0.05,
-        "services":      0.08,
+        "technology": 0.15,
+        "construction": 0.05,
+        "services": 0.08,
         "food_beverage": 0.05,
-        "logistics":     0.04,
-        "banking":       0.08,   # BDDK: %8 ortalama
-        "insurance":     0.12,   # BDDK: %12 ortalama
-        "leasing":       0.10,   # BDDK: %10 ortalama
-        "default":       0.06,
+        "logistics": 0.04,
+        "banking": 0.08,  # BDDK: %8 ortalama
+        "insurance": 0.12,  # BDDK: %12 ortalama
+        "leasing": 0.10,  # BDDK: %10 ortalama
+        "default": 0.06,
     },
     "ebitda_margin": {
-        "retail":        0.08,
+        "retail": 0.08,
         "manufacturing": 0.12,
-        "technology":    0.22,
-        "construction":  0.10,
-        "services":      0.15,
+        "technology": 0.22,
+        "construction": 0.10,
+        "services": 0.15,
         "food_beverage": 0.11,
-        "logistics":     0.09,
-        "banking":       0.12,   # BDDK: FAVÖK marjı
-        "insurance":     0.18,   # BDDK: FAVÖK marjı
-        "leasing":       0.14,   # BDDK: FAVÖK marjı
-        "default":       0.12,
+        "logistics": 0.09,
+        "banking": 0.12,  # BDDK: FAVÖK marjı
+        "insurance": 0.18,  # BDDK: FAVÖK marjı
+        "leasing": 0.14,  # BDDK: FAVÖK marjı
+        "default": 0.12,
     },
     "opex_to_revenue": {
-        "retail":        0.22,
+        "retail": 0.22,
         "manufacturing": 0.18,
-        "technology":    0.38,
-        "construction":  0.16,
-        "services":      0.32,
+        "technology": 0.38,
+        "construction": 0.16,
+        "services": 0.32,
         "food_beverage": 0.28,
-        "logistics":     0.20,
-        "banking":       0.28,   # BDDK: Faaliyet giderleri
-        "insurance":     0.32,   # BDDK: Faaliyet giderleri
-        "leasing":       0.35,   # BDDK: Faaliyet giderleri
-        "default":       0.25,
+        "logistics": 0.20,
+        "banking": 0.28,  # BDDK: Faaliyet giderleri
+        "insurance": 0.32,  # BDDK: Faaliyet giderleri
+        "leasing": 0.35,  # BDDK: Faaliyet giderleri
+        "default": 0.25,
     },
     "revenue_growth_yoy": {
-        "retail":        0.18,   # Türkiye enflasyon baskısı altında nominal büyüme
+        "retail": 0.18,  # Türkiye enflasyon baskısı altında nominal büyüme
         "manufacturing": 0.22,
-        "technology":    0.35,
-        "construction":  0.25,
-        "services":      0.20,
+        "technology": 0.35,
+        "construction": 0.25,
+        "services": 0.20,
         "food_beverage": 0.24,
-        "logistics":     0.19,
-        "banking":       0.32,   # BDDK: 2024 tahmin
-        "insurance":     0.28,   # BDDK: 2024 tahmin
-        "leasing":       0.26,   # BDDK: 2024 tahmin
-        "default":       0.22,
+        "logistics": 0.19,
+        "banking": 0.32,  # BDDK: 2024 tahmin
+        "insurance": 0.28,  # BDDK: 2024 tahmin
+        "leasing": 0.26,  # BDDK: 2024 tahmin
+        "default": 0.22,
     },
     "roa": {  # Return on Assets
-        "retail":        0.08,
+        "retail": 0.08,
         "manufacturing": 0.10,
-        "technology":    0.18,
-        "construction":  0.08,
-        "services":      0.12,
+        "technology": 0.18,
+        "construction": 0.08,
+        "services": 0.12,
         "food_beverage": 0.09,
-        "logistics":     0.07,
-        "banking":       0.015,  # BDDK: %1.5 ortalama
-        "insurance":     0.08,
-        "leasing":       0.06,
-        "default":       0.10,
+        "logistics": 0.07,
+        "banking": 0.015,  # BDDK: %1.5 ortalama
+        "insurance": 0.08,
+        "leasing": 0.06,
+        "default": 0.10,
     },
     "roe": {  # Return on Equity
-        "retail":        0.15,
+        "retail": 0.15,
         "manufacturing": 0.18,
-        "technology":    0.28,
-        "construction":  0.12,
-        "services":      0.20,
+        "technology": 0.28,
+        "construction": 0.12,
+        "services": 0.20,
         "food_beverage": 0.16,
-        "logistics":     0.14,
-        "banking":       0.12,   # BDDK: %12 ortalama
-        "insurance":     0.18,
-        "leasing":       0.15,
-        "default":       0.18,
+        "logistics": 0.14,
+        "banking": 0.12,  # BDDK: %12 ortalama
+        "insurance": 0.18,
+        "leasing": 0.15,
+        "default": 0.18,
     },
     "debt_to_equity": {  # Debt/Equity Ratio
-        "retail":        0.80,
+        "retail": 0.80,
         "manufacturing": 0.70,
-        "technology":    0.50,
-        "construction":  1.20,
-        "services":      0.60,
+        "technology": 0.50,
+        "construction": 1.20,
+        "services": 0.60,
         "food_beverage": 0.75,
-        "logistics":     0.85,
-        "banking":       8.50,   # BDDK: Yüksek leverage normal
-        "insurance":     2.50,
-        "leasing":       3.20,
-        "default":       0.75,
+        "logistics": 0.85,
+        "banking": 8.50,  # BDDK: Yüksek leverage normal
+        "insurance": 2.50,
+        "leasing": 3.20,
+        "default": 0.75,
     },
     "current_ratio": {  # Likidite
-        "retail":        1.50,
+        "retail": 1.50,
         "manufacturing": 1.40,
-        "technology":    1.80,
-        "construction":  1.30,
-        "services":      1.60,
+        "technology": 1.80,
+        "construction": 1.30,
+        "services": 1.60,
         "food_beverage": 1.45,
-        "logistics":     1.35,
-        "banking":       0.10,   # BDDK: Özel durum
-        "insurance":     0.50,
-        "leasing":       0.80,
-        "default":       1.50,
+        "logistics": 1.35,
+        "banking": 0.10,  # BDDK: Özel durum
+        "insurance": 0.50,
+        "leasing": 0.80,
+        "default": 1.50,
     },
     "headcount_growth_yoy": {
-        "retail":        0.08,
+        "retail": 0.08,
         "manufacturing": 0.12,
-        "technology":    0.22,
-        "construction":  0.05,
-        "services":      0.10,
+        "technology": 0.22,
+        "construction": 0.05,
+        "services": 0.10,
         "food_beverage": 0.09,
-        "logistics":     0.08,
-        "banking":       0.06,
-        "insurance":     0.04,
-        "leasing":       0.05,
-        "default":       0.10,
+        "logistics": 0.08,
+        "banking": 0.06,
+        "insurance": 0.04,
+        "leasing": 0.05,
+        "default": 0.10,
     },
     "revenue_per_headcount": {  # Annual revenue per employee in thousands TL
-        "retail":        150,    # 150K TL/kişi/yıl
+        "retail": 150,  # 150K TL/kişi/yıl
         "manufacturing": 280,
-        "technology":    450,
-        "construction":  200,
-        "services":      320,
+        "technology": 450,
+        "construction": 200,
+        "services": 320,
         "food_beverage": 180,
-        "logistics":     220,
-        "banking":       600,    # BDDK: Yüksek
-        "insurance":     550,
-        "leasing":       500,
-        "default":       250,
+        "logistics": 220,
+        "banking": 600,  # BDDK: Yüksek
+        "insurance": 550,
+        "leasing": 500,
+        "default": 250,
     },
     "cac_payback_months": {  # Customer Acquisition Cost payback
-        "retail":        6,
+        "retail": 6,
         "manufacturing": 12,
-        "technology":    8,
-        "construction":  18,
-        "services":      10,
+        "technology": 8,
+        "construction": 18,
+        "services": 10,
         "food_beverage": 5,
-        "logistics":     14,
-        "default":       10,
+        "logistics": 14,
+        "default": 10,
     },
     "ltv_to_cac_ratio": {  # Lifetime Value / Customer Acquisition Cost
-        "retail":        3.0,
+        "retail": 3.0,
         "manufacturing": 2.5,
-        "technology":    4.5,
-        "construction":  2.0,
-        "services":      3.5,
+        "technology": 4.5,
+        "construction": 2.0,
+        "services": 3.5,
         "food_beverage": 4.0,
-        "logistics":     2.8,
-        "default":       3.0,
+        "logistics": 2.8,
+        "default": 3.0,
     },
 }
 
@@ -218,68 +219,68 @@ _STATIC_BENCHMARKS: dict[str, dict[str, float]] = {
 # Source: BDDK sector analysis 2023-2024
 _PERCENTILE_BANDS: dict[str, dict[str, tuple[float, float, float]]] = {
     "gross_margin": {
-        "retail":        (0.18, 0.28, 0.40),
+        "retail": (0.18, 0.28, 0.40),
         "manufacturing": (0.20, 0.32, 0.45),
-        "technology":    (0.40, 0.58, 0.72),
-        "services":      (0.30, 0.45, 0.60),
-        "banking":       (0.55, 0.68, 0.78),
-        "insurance":     (0.45, 0.55, 0.65),
-        "leasing":       (0.38, 0.48, 0.58),
-        "default":       (0.20, 0.35, 0.50),
+        "technology": (0.40, 0.58, 0.72),
+        "services": (0.30, 0.45, 0.60),
+        "banking": (0.55, 0.68, 0.78),
+        "insurance": (0.45, 0.55, 0.65),
+        "leasing": (0.38, 0.48, 0.58),
+        "default": (0.20, 0.35, 0.50),
     },
     "net_margin": {
-        "retail":        (0.01, 0.04, 0.08),
+        "retail": (0.01, 0.04, 0.08),
         "manufacturing": (0.02, 0.06, 0.12),
-        "technology":    (0.05, 0.15, 0.25),
-        "services":      (0.03, 0.08, 0.15),
-        "banking":       (0.05, 0.08, 0.12),
-        "insurance":     (0.08, 0.12, 0.16),
-        "leasing":       (0.06, 0.10, 0.14),
-        "default":       (0.02, 0.06, 0.12),
+        "technology": (0.05, 0.15, 0.25),
+        "services": (0.03, 0.08, 0.15),
+        "banking": (0.05, 0.08, 0.12),
+        "insurance": (0.08, 0.12, 0.16),
+        "leasing": (0.06, 0.10, 0.14),
+        "default": (0.02, 0.06, 0.12),
     },
     "roa": {
-        "retail":        (0.05, 0.08, 0.12),
+        "retail": (0.05, 0.08, 0.12),
         "manufacturing": (0.07, 0.10, 0.15),
-        "technology":    (0.12, 0.18, 0.25),
-        "services":      (0.08, 0.12, 0.18),
-        "banking":       (0.008, 0.015, 0.022),
-        "insurance":     (0.05, 0.08, 0.12),
-        "leasing":       (0.04, 0.06, 0.09),
-        "default":       (0.07, 0.10, 0.15),
+        "technology": (0.12, 0.18, 0.25),
+        "services": (0.08, 0.12, 0.18),
+        "banking": (0.008, 0.015, 0.022),
+        "insurance": (0.05, 0.08, 0.12),
+        "leasing": (0.04, 0.06, 0.09),
+        "default": (0.07, 0.10, 0.15),
     },
     "roe": {
-        "retail":        (0.10, 0.15, 0.22),
+        "retail": (0.10, 0.15, 0.22),
         "manufacturing": (0.12, 0.18, 0.26),
-        "technology":    (0.20, 0.28, 0.38),
-        "services":      (0.14, 0.20, 0.28),
-        "banking":       (0.08, 0.12, 0.18),
-        "insurance":     (0.12, 0.18, 0.25),
-        "leasing":       (0.10, 0.15, 0.22),
-        "default":       (0.12, 0.18, 0.26),
+        "technology": (0.20, 0.28, 0.38),
+        "services": (0.14, 0.20, 0.28),
+        "banking": (0.08, 0.12, 0.18),
+        "insurance": (0.12, 0.18, 0.25),
+        "leasing": (0.10, 0.15, 0.22),
+        "default": (0.12, 0.18, 0.26),
     },
     "debt_to_equity": {
-        "retail":        (0.50, 0.80, 1.20),
+        "retail": (0.50, 0.80, 1.20),
         "manufacturing": (0.40, 0.70, 1.10),
-        "technology":    (0.30, 0.50, 0.80),
-        "services":      (0.40, 0.60, 0.90),
-        "banking":       (6.0, 8.50, 11.0),
-        "insurance":     (1.50, 2.50, 3.80),
-        "leasing":       (2.0, 3.20, 4.50),
-        "default":       (0.40, 0.75, 1.20),
+        "technology": (0.30, 0.50, 0.80),
+        "services": (0.40, 0.60, 0.90),
+        "banking": (6.0, 8.50, 11.0),
+        "insurance": (1.50, 2.50, 3.80),
+        "leasing": (2.0, 3.20, 4.50),
+        "default": (0.40, 0.75, 1.20),
     },
     "headcount_growth_yoy": {
-        "retail":        (0.03, 0.08, 0.15),
+        "retail": (0.03, 0.08, 0.15),
         "manufacturing": (0.05, 0.12, 0.20),
-        "technology":    (0.15, 0.22, 0.35),
-        "services":      (0.05, 0.10, 0.18),
-        "banking":       (0.02, 0.06, 0.12),
-        "default":       (0.05, 0.10, 0.18),
+        "technology": (0.15, 0.22, 0.35),
+        "services": (0.05, 0.10, 0.18),
+        "banking": (0.02, 0.06, 0.12),
+        "default": (0.05, 0.10, 0.18),
     },
     "cac_payback_months": {
-        "retail":        (4, 6, 9),
-        "technology":    (6, 8, 12),
-        "services":      (7, 10, 15),
-        "default":       (6, 10, 16),
+        "retail": (4, 6, 9),
+        "technology": (6, 8, 12),
+        "services": (7, 10, 15),
+        "default": (6, 10, 16),
     },
 }
 
@@ -355,7 +356,9 @@ class BenchmarkEngine:
     Caches results in Redis for 24 hours to improve performance.
     """
 
-    def __init__(self, tcmb_client: TCMBClient | None = None, redis_client: redis.Redis | None = None) -> None:
+    def __init__(
+        self, tcmb_client: TCMBClient | None = None, redis_client: redis.Redis | None = None
+    ) -> None:
         self._client = tcmb_client
         self._redis = redis_client
 
@@ -388,14 +391,14 @@ class BenchmarkEngine:
         p25, p50, p75 = sector_bands
 
         return {
-            "metric":       metric,
-            "sector":       sector,
-            "median":       round(median, 4),
-            "p25":          round(p25, 4),
-            "p50":          round(p50, 4),
-            "p75":          round(p75, 4),
-            "source":       UNVERIFIED_SOURCE,
-            "verified":     VERIFIED,
+            "metric": metric,
+            "sector": sector,
+            "median": round(median, 4),
+            "p25": round(p25, 4),
+            "p50": round(p50, 4),
+            "p75": round(p75, 4),
+            "source": UNVERIFIED_SOURCE,
+            "verified": VERIFIED,
             "last_updated": None,
         }
 
@@ -443,12 +446,12 @@ class BenchmarkEngine:
         )
 
         return {
-            "benchmark":           bm,
-            "company_value":       round(company_value, 4),
+            "benchmark": bm,
+            "company_value": round(company_value, 4),
             "percentile_position": position,
-            "vs_median_pct":       round(vs_median, 1),
-            "interpretation":      interpretation,
-            "recommendation":      recommendation,
+            "vs_median_pct": round(vs_median, 1),
+            "interpretation": interpretation,
+            "recommendation": recommendation,
         }
 
     def build_full_comparison(
@@ -463,11 +466,12 @@ class BenchmarkEngine:
         results: dict[str, Any] = {"sector": sector, "verified": VERIFIED, "metrics": {}}
 
         metric_map = {
-            "gross_margin":    pnl.get("gross_margin", 0),
-            "net_margin":      pnl.get("net_margin", 0),
-            "ebitda_margin":   pnl.get("ebitda_margin", 0),
+            "gross_margin": pnl.get("gross_margin", 0),
+            "net_margin": pnl.get("net_margin", 0),
+            "ebitda_margin": pnl.get("ebitda_margin", 0),
             "opex_to_revenue": (pnl.get("total_opex", 0) / pnl["revenue"])
-                               if pnl.get("revenue", 0) > 0 else 0,
+            if pnl.get("revenue", 0) > 0
+            else 0,
         }
 
         for metric, value in metric_map.items():
@@ -484,9 +488,11 @@ class BenchmarkEngine:
             avg_score = sum(positions) / len(positions)
             results["overall_score"] = round(avg_score, 2)
             results["overall_label"] = (
-                "Sektörün altında" if avg_score < 2 else
-                "Sektör ortalamasında" if avg_score < 3 else
-                "Sektörün üstünde"
+                "Sektörün altında"
+                if avg_score < 2
+                else "Sektör ortalamasında"
+                if avg_score < 3
+                else "Sektörün üstünde"
             )
 
         return results
@@ -503,7 +509,9 @@ class BenchmarkEngine:
             logger.warning(f"Redis cache get failed for {key}: {exc}")
         return None
 
-    async def _set_cached(self, key: str, value: dict[str, Any], ttl: int = BENCHMARK_CACHE_TTL) -> None:
+    async def _set_cached(
+        self, key: str, value: dict[str, Any], ttl: int = BENCHMARK_CACHE_TTL
+    ) -> None:
         """Set value in Redis cache."""
         if not self._redis:
             return
@@ -586,21 +594,25 @@ class BenchmarkEngine:
         """Return (interpretation, recommendation) in Turkish."""
 
         metric_names = {
-            "gross_margin":    "brüt kâr marjı",
-            "net_margin":      "net kâr marjı",
-            "ebitda_margin":   "FAVÖK marjı",
+            "gross_margin": "brüt kâr marjı",
+            "net_margin": "net kâr marjı",
+            "ebitda_margin": "FAVÖK marjı",
             "opex_to_revenue": "gider/ciro oranı",
             "revenue_growth_yoy": "yıllık büyüme oranı",
-            "roa":             "varlık getirisi (ROA)",
-            "roe":             "özsermaye getirisi (ROE)",
-            "debt_to_equity":  "borç/özsermaye oranı",
+            "roa": "varlık getirisi (ROA)",
+            "roe": "özsermaye getirisi (ROE)",
+            "debt_to_equity": "borç/özsermaye oranı",
             "headcount_growth_yoy": "yıllık personel büyümesi",
             "cac_payback_months": "müşteri edinim maliyeti geri dönüş süresi (aylar)",
         }
         name = metric_names.get(metric, metric)
 
-        val_fmt  = f"%{value*100:.1f}" if isinstance(value, float) and value < 10 else f"{value:.2f}"
-        med_fmt  = f"%{median*100:.1f}" if isinstance(median, float) and median < 10 else f"{median:.2f}"
+        val_fmt = (
+            f"%{value * 100:.1f}" if isinstance(value, float) and value < 10 else f"{value:.2f}"
+        )
+        med_fmt = (
+            f"%{median * 100:.1f}" if isinstance(median, float) and median < 10 else f"{median:.2f}"
+        )
         diff_fmt = f"%{abs(vs_median):.0f}"
 
         if position == "bottom_25":
@@ -620,7 +632,9 @@ class BenchmarkEngine:
                 f"{val_fmt} olan {name}ınız, sektör ortalamasının ({med_fmt}) "
                 f"{diff_fmt} üstünde. İyi performans."
             )
-            recommendation = f"Mevcut performansı koruyun, lider çeyreğe ({diff_fmt} daha) ulaşabilirsiniz."
+            recommendation = (
+                f"Mevcut performansı koruyun, lider çeyreğe ({diff_fmt} daha) ulaşabilirsiniz."
+            )
         else:
             interpretation = (
                 f"{val_fmt} olan {name}ınız sektörün en iyi %25'inde. "
@@ -642,6 +656,7 @@ async def get_redis_client() -> redis.Redis | None:
     if _redis_client is None:
         try:
             from app.config import get_settings
+
             settings = get_settings()
             _redis_client = await redis.from_url(
                 settings.redis_url,
@@ -661,6 +676,7 @@ def get_benchmark_engine() -> BenchmarkEngine:
     global _engine
     if _engine is None:
         from app.config import get_settings
+
         settings = get_settings()
         api_key = getattr(settings, "tcmb_api_key", None) or None
         client = TCMBClient(api_key=api_key) if api_key else None
@@ -673,6 +689,7 @@ async def get_benchmark_engine_async() -> BenchmarkEngine:
     global _engine
     if _engine is None:
         from app.config import get_settings
+
         settings = get_settings()
         api_key = getattr(settings, "tcmb_api_key", None) or None
         client = TCMBClient(api_key=api_key) if api_key else None

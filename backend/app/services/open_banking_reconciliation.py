@@ -7,6 +7,7 @@ Matches bank statement transactions with ERP/e-Fatura invoices using:
 3. Partial/Split Match: Aggregate multi-invoice payments.
 4. Unmatched: Flagged for manual review or automated THP accrual.
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,7 +79,9 @@ class BankReconciliationEngine:
                 if inv_id in matched_inv_ids:
                     continue
 
-                inv_cents = inv.get("amount_cents", 0) or round(float(inv.get("gross_amount", 0)) * 100)
+                inv_cents = inv.get("amount_cents", 0) or round(
+                    float(inv.get("gross_amount", 0)) * 100
+                )
                 inv_no = (inv.get("invoice_number") or "").lower()
                 inv_party = (inv.get("counterparty") or inv.get("vendor") or "").lower()
 
@@ -90,7 +93,9 @@ class BankReconciliationEngine:
                         best_confidence = 1.0
                         match_type = "exact"
                         break
-                    elif inv_party and (inv_party in tx_desc or inv_party in tx_vendor or tx_vendor in inv_party):
+                    elif inv_party and (
+                        inv_party in tx_desc or inv_party in tx_vendor or tx_vendor in inv_party
+                    ):
                         best_match = inv
                         best_confidence = 0.95
                         match_type = "high_confidence"
@@ -118,7 +123,9 @@ class BankReconciliationEngine:
                         difference_cents=0,
                         transaction_desc=tx.get("description", ""),
                         invoice_number=best_match.get("invoice_number"),
-                        counterparty=best_match.get("counterparty") or best_match.get("vendor") or "Bilinmeyen",
+                        counterparty=best_match.get("counterparty")
+                        or best_match.get("vendor")
+                        or "Bilinmeyen",
                         suggested_account_code=account_code,
                         status="matched",
                     )

@@ -20,7 +20,7 @@ from typing import Any, TypedDict
 @dataclass
 class AuditStepLog:
     node: str
-    status: str          # "started" | "completed" | "failed"
+    status: str  # "started" | "completed" | "failed"
     message: str
     metrics: dict[str, Any] | None = None
 

@@ -6,6 +6,7 @@ Endpoints:
   POST /webhooks/whatsapp  — Inbound WhatsApp messages
   POST /webhooks/slack     — Slack Events API + Interactive Actions
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # ── WhatsApp Hub Verification ─────────────────────────────────────────────────
 
+
 @router.get("/webhooks/whatsapp")
 async def whatsapp_verify(
     hub_mode: str = Query(None, alias="hub.mode"),
@@ -47,6 +49,7 @@ async def whatsapp_verify(
 
 # ── WhatsApp Inbound Messages ─────────────────────────────────────────────────
 
+
 @router.post("/webhooks/whatsapp", status_code=200)
 async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """
@@ -60,10 +63,13 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
     body_bytes = await request.body()
     if not settings.whatsapp_app_secret:
         # Closed, not open: an unconfigured secret is not permission to skip it.
-        raise HTTPException(status_code=503, detail="WhatsApp webhook yapılandırılmamış (WHATSAPP_APP_SECRET).")
-    expected = "sha256=" + hmac.new(
-        settings.whatsapp_app_secret.encode(), body_bytes, hashlib.sha256
-    ).hexdigest()
+        raise HTTPException(
+            status_code=503, detail="WhatsApp webhook yapılandırılmamış (WHATSAPP_APP_SECRET)."
+        )
+    expected = (
+        "sha256="
+        + hmac.new(settings.whatsapp_app_secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+    )
     if not hmac.compare_digest(expected, request.headers.get("X-Hub-Signature-256", "")):
         raise HTTPException(status_code=403, detail="Invalid WhatsApp signature.")
     import json as _json
@@ -118,7 +124,10 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
                 resp.raise_for_status()
             logger.info("WhatsApp reply sent to %s", sender_id)
         else:
-            logger.warning("WhatsApp credentials not configured — skipping send. Reply: %s", bot_response.reply_text)
+            logger.warning(
+                "WhatsApp credentials not configured — skipping send. Reply: %s",
+                bot_response.reply_text,
+            )
 
         return {"status": "handled"}
 
@@ -130,12 +139,13 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
 
 # ── Slack Events API ──────────────────────────────────────────────────────────
 
-def _verify_slack_signature(request_body: bytes, timestamp: str, signature: str, signing_secret: str) -> bool:
+
+def _verify_slack_signature(
+    request_body: bytes, timestamp: str, signature: str, signing_secret: str
+) -> bool:
     """Verify Slack request using HMAC-SHA256 signing secret."""
     base = f"v0:{timestamp}:{request_body.decode('utf-8')}"
-    expected = "v0=" + hmac.new(
-        signing_secret.encode(), base.encode(), hashlib.sha256
-    ).hexdigest()
+    expected = "v0=" + hmac.new(signing_secret.encode(), base.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -151,7 +161,9 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
     # Signature verification — required. It used to be skipped whenever the
     # secret was unset, which made an unconfigured deployment accept anything.
     if not settings.slack_signing_secret:
-        raise HTTPException(status_code=503, detail="Slack webhook yapılandırılmamış (SLACK_SIGNING_SECRET).")
+        raise HTTPException(
+            status_code=503, detail="Slack webhook yapılandırılmamış (SLACK_SIGNING_SECRET)."
+        )
     ts = request.headers.get("X-Slack-Request-Timestamp", "")
     sig = request.headers.get("X-Slack-Signature", "")
     if not _verify_slack_signature(body_bytes, ts, sig, settings.slack_signing_secret):
@@ -164,6 +176,7 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
     elif "application/x-www-form-urlencoded" in content_type:
         # Slack interactive actions send URL-encoded "payload" field
         from urllib.parse import parse_qs
+
         parsed = parse_qs(body_bytes.decode())
         payload = json.loads(parsed.get("payload", ["{}"])[0])
 

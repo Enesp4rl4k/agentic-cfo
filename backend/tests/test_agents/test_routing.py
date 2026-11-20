@@ -2,6 +2,7 @@
 Tests for CapabilityRouter — routing engineering layer.
 Pure tests, no LLM, no DB.
 """
+
 from app.services.capability_router import (
     AGENT_CAPABILITIES,
     AgentCapability,
@@ -13,6 +14,7 @@ from app.services.capability_router import (
 )
 
 # ── _has_data helper ──────────────────────────────────────────────────────────
+
 
 class TestHasData:
     def test_none_returns_false(self):
@@ -42,6 +44,7 @@ class TestHasData:
 
 # ── _transaction_quality helper ───────────────────────────────────────────────
 
+
 class TestTransactionQuality:
     def test_no_transactions_zero(self):
         assert _transaction_quality({}) == 0.0
@@ -62,11 +65,14 @@ class TestTransactionQuality:
 
 # ── CapabilityRouter ──────────────────────────────────────────────────────────
 
+
 def _make_full_state() -> dict:
     """State with all data present."""
     return {
         "file_path": "/tmp/test.csv",
-        "transactions": [{"id": f"tx-{i}", "type": "income", "amount_cents": 10000} for i in range(30)],
+        "transactions": [
+            {"id": f"tx-{i}", "type": "income", "amount_cents": 10000} for i in range(30)
+        ],
         "pnl": {"revenue": 480_000_00, "net_income": 144_000_00, "net_margin": 0.30},
         "cashflow": {
             "operating": 120_000_00,
@@ -230,7 +236,7 @@ class TestCapabilityRouter:
                 name="standalone",
                 requires_all=["transactions"],
                 produces=["result"],
-                depends_on=[],   # no deps
+                depends_on=[],  # no deps
                 priority=5,
             )
         }

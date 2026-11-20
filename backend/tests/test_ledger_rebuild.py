@@ -8,6 +8,7 @@ trusted to mean the same thing tomorrow.
 Expected figures come from `demo/data/logo_tiger_2024.csv` itself (`_file_revenue`) and
 from amounts written here by hand.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -35,8 +36,11 @@ async def _figures(client, org_id: str) -> dict:
         summary = await ledger_summary(db, org_id)
         view = await ledger_view(db, org_id)
     return {
-        "revenue": summary["revenue_cents"], "expense": summary["expense_cents"],
-        "rows": summary["rows"], "months": summary["months"], "period": summary["period"],
+        "revenue": summary["revenue_cents"],
+        "expense": summary["expense_cents"],
+        "rows": summary["rows"],
+        "months": summary["months"],
+        "period": summary["period"],
         "open_items": summary["open_items"],
         "possible_duplicates": summary["possible_duplicates"],
         "signature": view.signature if view else None,
@@ -53,13 +57,17 @@ async def _empty_the_ledger(client, org_id: str) -> None:
 async def _a_company_with_every_kind_of_row(client, email: str):
     _, org_id, _ = await kullanici(client, email)
     await _append(client, await _analysed(client, org_id, _demo_rows("01", "02")))
-    await _upload(client, org_id, _sale("F1", issued="2025-03-01", due="2025-03-31", no="GIB2025000000001"))
+    await _upload(
+        client, org_id, _sale("F1", issued="2025-03-01", due="2025-03-31", no="GIB2025000000001")
+    )
     await _upload(client, org_id, _bank("EFT GIB2025000000001 ODEME", 285_000_00, "2025-04-10"))
     await _upload(client, org_id, _bank("Tahsilat", 12_500_00, "2025-04-12"))
     return org_id
 
 
-async def test_throwing_the_ledger_away_and_reading_the_uploads_again_gives_the_same_figures(client):
+async def test_throwing_the_ledger_away_and_reading_the_uploads_again_gives_the_same_figures(
+    client,
+):
     org_id = await _a_company_with_every_kind_of_row(client, "yeniden@example.com")
     before = await _figures(client, org_id)
     assert before["revenue"] > 0 and before["open_items"]["receivable_cents"] >= 0
@@ -106,7 +114,15 @@ async def test_the_order_files_arrive_in_does_not_change_the_figures(client):
     await _append(client, await _analysed(client, second, _demo_rows("01")))
 
     a, b = await _figures(client, first), await _figures(client, second)
-    for key in ("revenue", "expense", "rows", "months", "period", "open_items", "possible_duplicates"):
+    for key in (
+        "revenue",
+        "expense",
+        "rows",
+        "months",
+        "period",
+        "open_items",
+        "possible_duplicates",
+    ):
         assert a[key] == b[key], key
     assert a["revenue"] == _file_revenue({"01"}) + 285_000_00
 

@@ -67,6 +67,7 @@ Customer Service,operational,2021-06-01,biennial,low,2023-06-01
 
 # ── Findings Agent Tests ──────────────────────────────────────────────────────
 
+
 class TestFindingsAgent:
     def test_parse_count(self):
         rows = _parse_findings_csv(FINDINGS_CSV)
@@ -77,8 +78,9 @@ class TestFindingsAgent:
 
     def test_parse_severity_normalised(self):
         rows = _parse_findings_csv(FINDINGS_CSV)
-        assert all(r["severity"] in ("critical", "high", "medium", "low", "informational")
-                   for r in rows)
+        assert all(
+            r["severity"] in ("critical", "high", "medium", "low", "informational") for r in rows
+        )
 
     def test_parse_repeat_flag(self):
         rows = _parse_findings_csv(FINDINGS_CSV)
@@ -134,6 +136,7 @@ class TestFindingsAgent:
 
 # ── Controls Agent Tests ──────────────────────────────────────────────────────
 
+
 class TestControlsAgent:
     def test_parse_count(self):
         rows = _parse_controls_csv(CONTROLS_CSV)
@@ -188,6 +191,7 @@ class TestControlsAgent:
 
 
 # ── Coverage Agent Tests ──────────────────────────────────────────────────────
+
 
 class TestCoverageAgent:
     def test_parse_count(self):
@@ -245,6 +249,7 @@ class TestCoverageAgent:
 
 # ── Audit Health Score Tests ──────────────────────────────────────────────────
 
+
 class TestAuditHealthScore:
     def test_perfect_audit_health(self):
         """All 100 inputs → health score = 100."""
@@ -258,10 +263,14 @@ class TestAuditHealthScore:
 
     def test_maturity_labels(self):
         def _maturity(score: float) -> str:
-            if score >= 80: return "optimised"
-            if score >= 65: return "managed"
-            if score >= 50: return "defined"
-            if score >= 35: return "developing"
+            if score >= 80:
+                return "optimised"
+            if score >= 65:
+                return "managed"
+            if score >= 50:
+                return "defined"
+            if score >= 35:
+                return "developing"
             return "initial"
 
         assert _maturity(85) == "optimised"
@@ -273,7 +282,7 @@ class TestAuditHealthScore:
     def test_realistic_score(self):
         """Realistic mixed inputs should produce a score in valid range."""
         findings_score = 70.0
-        control_score  = 65.0
+        control_score = 65.0
         coverage_score = 80.0
         result = round(findings_score * 0.35 + control_score * 0.40 + coverage_score * 0.25, 1)
         assert 0 <= result <= 100

@@ -20,6 +20,7 @@ Desteklenen hesap kodları:
   1xx → Dönen varlıklar (asset — skip veya cashflow)
   3xx → Kısa vadeli yükümlülükler (liability — skip)
 """
+
 from __future__ import annotations
 
 import csv
@@ -36,17 +37,26 @@ class LogoTigerParser(BankParser):
     bank_display_name = "Logo Tiger"
 
     _MARKERS = [
-        "LOGO", "Logo Tiger", "Tiger Muhasebe", "Fiş Listesi",
-        "Hesap Hareketleri", "LOGO YAZILIM", "LG YAZILIM",
-        "Mizan", "Fis No", "Fiş No", "BORÇ", "ALACAK",
+        "LOGO",
+        "Logo Tiger",
+        "Tiger Muhasebe",
+        "Fiş Listesi",
+        "Hesap Hareketleri",
+        "LOGO YAZILIM",
+        "LG YAZILIM",
+        "Mizan",
+        "Fis No",
+        "Fiş No",
+        "BORÇ",
+        "ALACAK",
     ]
 
     # Flexible column name variants
-    _DATE_COLS    = ["tarih", "date", "işlem tarihi", "islem tarihi", "belge tarihi"]
-    _DEBIT_COLS   = ["borç", "bor", "borç tutarı", "debit", "tutar (borç)"]
-    _CREDIT_COLS  = ["alacak", "alacak tutarı", "credit", "tutar (alacak)"]
-    _DESC_COLS    = ["açıklama", "aciklama", "description", "hareket açıklaması", "fiş açıklaması"]
-    _REF_COLS     = ["fiş no", "fis no", "belge no", "referans", "evrak no"]
+    _DATE_COLS = ["tarih", "date", "işlem tarihi", "islem tarihi", "belge tarihi"]
+    _DEBIT_COLS = ["borç", "bor", "borç tutarı", "debit", "tutar (borç)"]
+    _CREDIT_COLS = ["alacak", "alacak tutarı", "credit", "tutar (alacak)"]
+    _DESC_COLS = ["açıklama", "aciklama", "description", "hareket açıklaması", "fiş açıklaması"]
+    _REF_COLS = ["fiş no", "fis no", "belge no", "referans", "evrak no"]
     _ACCOUNT_COLS = ["hesap kodu", "hesap", "account code"]
 
     @classmethod
@@ -79,12 +89,14 @@ class LogoTigerParser(BankParser):
         if transactions:
             dates = [t.date for t in transactions]
             statement.statement_period_start = min(dates)
-            statement.statement_period_end   = max(dates)
+            statement.statement_period_end = max(dates)
 
         return statement
 
     def _extract_account(self, text: str) -> str | None:
-        m = re.search(r"(?:Hesap|HESAP)\s*(?:Kodu|No|Numarası)[:\s]*([A-Z0-9./\-]{3,20})", text, re.IGNORECASE)
+        m = re.search(
+            r"(?:Hesap|HESAP)\s*(?:Kodu|No|Numarası)[:\s]*([A-Z0-9./\-]{3,20})", text, re.IGNORECASE
+        )
         return m.group(1).strip() if m else None
 
     def _find_col(self, headers: list[str], candidates: list[str]) -> int | None:
@@ -132,17 +144,17 @@ class LogoTigerParser(BankParser):
 
         headers = rows[header_row_idx]
 
-        date_col    = self._find_col(headers, self._DATE_COLS)
-        debit_col   = self._find_col(headers, self._DEBIT_COLS)
-        credit_col  = self._find_col(headers, self._CREDIT_COLS)
-        desc_col    = self._find_col(headers, self._DESC_COLS)
-        ref_col     = self._find_col(headers, self._REF_COLS)
+        date_col = self._find_col(headers, self._DATE_COLS)
+        debit_col = self._find_col(headers, self._DEBIT_COLS)
+        credit_col = self._find_col(headers, self._CREDIT_COLS)
+        desc_col = self._find_col(headers, self._DESC_COLS)
+        ref_col = self._find_col(headers, self._REF_COLS)
         account_col = self._find_col(headers, self._ACCOUNT_COLS)
 
         if date_col is None or (debit_col is None and credit_col is None):
             return []
 
-        for row in rows[header_row_idx + 1:]:
+        for row in rows[header_row_idx + 1 :]:
             if len(row) <= max(c for c in [date_col, debit_col, credit_col] if c is not None):
                 continue
 
@@ -186,24 +198,24 @@ class LogoTigerParser(BankParser):
                         credit_cents = parsed
 
             # Determine tx type from amounts and account code
-            tx_type, amount = self._resolve_tx_type(
-                debit_cents, credit_cents, account_code
-            )
+            tx_type, amount = self._resolve_tx_type(debit_cents, credit_cents, account_code)
 
             if amount == 0:
                 continue
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description or f"Logo işlemi {date.strftime('%d.%m.%Y')}",
-                amount_cents=amount,
-                tx_type=tx_type,
-                currency="TRY",
-                vendor=self._extract_vendor(description),
-                reference=reference,
-                raw_row=delimiter.join(row),
-                account_code=tdhp.ana_hesap(account_code),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description or f"Logo işlemi {date.strftime('%d.%m.%Y')}",
+                    amount_cents=amount,
+                    tx_type=tx_type,
+                    currency="TRY",
+                    vendor=self._extract_vendor(description),
+                    reference=reference,
+                    raw_row=delimiter.join(row),
+                    account_code=tdhp.ana_hesap(account_code),
+                )
+            )
 
         return transactions
 
@@ -214,11 +226,11 @@ class LogoTigerParser(BankParser):
         """
         transactions: list[ParsedTransaction] = []
         date_amount_pattern = re.compile(
-            r"(\d{2}[./]\d{2}[./]\d{4})"       # date
+            r"(\d{2}[./]\d{2}[./]\d{4})"  # date
             r".*?"
-            r"([\d.,]+)\s*"                      # debit amount
-            r"([\d.,]*)\s*"                      # credit amount (optional)
-            r"([\d.,]*)"                         # balance (optional)
+            r"([\d.,]+)\s*"  # debit amount
+            r"([\d.,]*)\s*"  # credit amount (optional)
+            r"([\d.,]*)"  # balance (optional)
         )
         for line in text.splitlines():
             m = date_amount_pattern.search(line)
@@ -227,26 +239,26 @@ class LogoTigerParser(BankParser):
             date = self.parse_turkish_date(m.group(1))
             if not date:
                 continue
-            debit  = self.parse_turkish_amount(m.group(2)) or 0
+            debit = self.parse_turkish_amount(m.group(2)) or 0
             credit = self.parse_turkish_amount(m.group(3)) or 0
             tx_type, amount = self._resolve_tx_type(debit, credit, "")
             if amount <= 0:
                 continue
             desc = line[:80].strip()
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=desc,
-                amount_cents=amount,
-                tx_type=tx_type,
-                currency="TRY",
-                raw_row=line,
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=desc,
+                    amount_cents=amount,
+                    tx_type=tx_type,
+                    currency="TRY",
+                    raw_row=line,
+                )
+            )
         return transactions
 
     @staticmethod
-    def _resolve_tx_type(
-        debit: int, credit: int, account_code: str
-    ) -> tuple[str, int]:
+    def _resolve_tx_type(debit: int, credit: int, account_code: str) -> tuple[str, int]:
         """Type and amount from the account (app.core.tdhp); a transfer or
         closing posting comes back as zero and is skipped."""
         return hesap.hareket(debit, credit, account_code) or ("expense", 0)

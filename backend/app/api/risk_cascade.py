@@ -10,6 +10,7 @@ does not have, so /from-job always answered 404; the org loader read a context
 field that does not exist. Both fed the risk kernel's invented KRIs. See
 app/agents/risk/gercek_kri.py.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,24 +31,24 @@ logger = logging.getLogger(__name__)
 
 
 class RiskCascadeRequest(BaseModel):
-    pnl:          dict[str, Any] | None = None
-    cashflow:     dict[str, Any] | None = None
-    forecast:     dict[str, Any] | None = None
-    risk_result:  dict[str, Any] | None = None
+    pnl: dict[str, Any] | None = None
+    cashflow: dict[str, Any] | None = None
+    forecast: dict[str, Any] | None = None
+    risk_result: dict[str, Any] | None = None
     max_cascades: int = Field(5, ge=1, le=10)
-    only_red:     bool = False
+    only_red: bool = False
 
 
 class RiskCascadeFromJobRequest(BaseModel):
-    job_id:       str
+    job_id: str
     max_cascades: int = Field(5, ge=1, le=10)
-    only_red:     bool = False
+    only_red: bool = False
 
 
 class RiskCascadeFromOrgRequest(BaseModel):
-    org_id:       str
+    org_id: str
     max_cascades: int = Field(5, ge=1, le=10)
-    only_red:     bool = False
+    only_red: bool = False
 
 
 async def _cfo_report(job_id: str, db: AsyncSession) -> dict[str, Any]:
@@ -64,7 +65,9 @@ async def _cfo_report(job_id: str, db: AsyncSession) -> dict[str, Any]:
     return row.data if row and isinstance(row.data, dict) else {}
 
 
-async def _org_context(org_id: str, db: AsyncSession) -> tuple[dict[str, Any], dict[str, Any] | None]:
+async def _org_context(
+    org_id: str, db: AsyncSession
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     from app.services.company_context import get_company_context
 
     ctx = await get_company_context(org_id, db)
@@ -79,8 +82,12 @@ async def risk_cascade_analyze(
     from app.agents.orchestration.risk_cascade_bridge import run_risk_cascade_analysis
 
     return await run_risk_cascade_analysis(
-        pnl=req.pnl, cashflow=req.cashflow, forecast=req.forecast, risk_result=req.risk_result,
-        max_cascades=req.max_cascades, only_red=req.only_red,
+        pnl=req.pnl,
+        cashflow=req.cashflow,
+        forecast=req.forecast,
+        risk_result=req.risk_result,
+        max_cascades=req.max_cascades,
+        only_red=req.only_red,
     )
 
 
@@ -98,8 +105,12 @@ async def risk_cascade_from_job(
         raise HTTPException(status_code=404, detail=f"Job {req.job_id} için CFO raporu yok")
     risk_result = (await _org_context(str(job.org_id), db))[1] if job.org_id else None
     return await run_risk_cascade_analysis(
-        pnl=data.get("pnl"), cashflow=data.get("cashflow"), forecast=data.get("forecast"),
-        risk_result=risk_result, max_cascades=req.max_cascades, only_red=req.only_red,
+        pnl=data.get("pnl"),
+        cashflow=data.get("cashflow"),
+        forecast=data.get("forecast"),
+        risk_result=risk_result,
+        max_cascades=req.max_cascades,
+        only_red=req.only_red,
     )
 
 
@@ -115,6 +126,10 @@ async def risk_cascade_from_org(
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     cfo, risk_result = await _org_context(req.org_id, db)
     return await run_risk_cascade_analysis(
-        pnl=cfo.get("pnl"), cashflow=cfo.get("cashflow"), forecast=cfo.get("forecast"),
-        risk_result=risk_result, max_cascades=req.max_cascades, only_red=req.only_red,
+        pnl=cfo.get("pnl"),
+        cashflow=cfo.get("cashflow"),
+        forecast=cfo.get("forecast"),
+        risk_result=risk_result,
+        max_cascades=req.max_cascades,
+        only_red=req.only_red,
     )

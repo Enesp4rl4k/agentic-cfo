@@ -7,6 +7,7 @@ action registry with ``alert.dispatch`` (``actions.ACTION_REGISTRY``).
 P4-2: the remaining concrete actions (analysis.start, cascade.simulate,
 report.generate, webhook.call). P4-3: event sources. P4-4: /tetikler UI.
 """
+
 from app.services.triggers.actions import ACTION_REGISTRY
 from app.services.triggers.conditions import (
     AllCondition,

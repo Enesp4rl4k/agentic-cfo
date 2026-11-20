@@ -12,6 +12,7 @@ Birden fazla aylık veri varsa karşılaştırma yapılır.
 
 done_when: state['multi_period'] contains mom, trend_direction
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,18 +27,27 @@ logger = logging.getLogger(__name__)
 
 # ── Monthly aggregation ───────────────────────────────────────────────────────
 
-def _aggregate_by_month(
-    transactions: list[dict[str, Any]]
-) -> dict[str, dict[str, int]]:
+
+def _aggregate_by_month(transactions: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     """
     Returns dict: month_key → {revenue, expenses, net, opex, salary, ...}
     """
-    monthly: dict[str, dict[str, int]] = defaultdict(lambda: {
-        "revenue": 0, "expenses": 0, "net": 0,
-        "salary": 0, "rent": 0, "utilities": 0,
-        "marketing": 0, "technology": 0, "cogs": 0,
-        "other_expense": 0, "tax": 0, "loan": 0,
-    })
+    monthly: dict[str, dict[str, int]] = defaultdict(
+        lambda: {
+            "revenue": 0,
+            "expenses": 0,
+            "net": 0,
+            "salary": 0,
+            "rent": 0,
+            "utilities": 0,
+            "marketing": 0,
+            "technology": 0,
+            "cogs": 0,
+            "other_expense": 0,
+            "tax": 0,
+            "loan": 0,
+        }
+    )
 
     for tx in transactions:
         date = tx.get("transaction_date", "")
@@ -55,9 +65,7 @@ def _aggregate_by_month(
             if cat in monthly[month_key]:
                 monthly[month_key][cat] += amount
 
-        monthly[month_key]["net"] = (
-            monthly[month_key]["revenue"] - monthly[month_key]["expenses"]
-        )
+        monthly[month_key]["net"] = monthly[month_key]["revenue"] - monthly[month_key]["expenses"]
 
     return dict(monthly)
 
@@ -68,9 +76,7 @@ def _pct_change(current: int, previous: int) -> float | None:
     return round((current - previous) / previous * 100, 1)
 
 
-def _compute_mom(
-    monthly: dict[str, dict[str, int]]
-) -> dict[str, Any] | None:
+def _compute_mom(monthly: dict[str, dict[str, int]]) -> dict[str, Any] | None:
     """Month-over-Month comparison for the two most recent months."""
     if len(monthly) < 2:
         return None
@@ -95,9 +101,7 @@ def _compute_mom(
     }
 
 
-def _compute_yoy(
-    monthly: dict[str, dict[str, int]]
-) -> dict[str, Any] | None:
+def _compute_yoy(monthly: dict[str, dict[str, int]]) -> dict[str, Any] | None:
     """Year-over-Year: most recent month vs same month last year."""
     if not monthly:
         return None
@@ -163,9 +167,7 @@ def _compute_trend(
         return "stable"
 
 
-def _compute_kpi_trends(
-    monthly: dict[str, dict[str, int]]
-) -> dict[str, str]:
+def _compute_kpi_trends(monthly: dict[str, dict[str, int]]) -> dict[str, str]:
     """Trend direction for each major KPI."""
     return {
         "revenue_trend": _compute_trend(monthly, "revenue"),
@@ -174,9 +176,7 @@ def _compute_kpi_trends(
     }
 
 
-async def _generate_multiperiod_narrative(
-    multi: dict[str, Any], settings
-) -> str:
+async def _generate_multiperiod_narrative(multi: dict[str, Any], settings) -> str:
     from app.platform.model_gateway import LLMUnavailable, complete_text
 
     mom = multi.get("mom") or {}
@@ -186,12 +186,13 @@ async def _generate_multiperiod_narrative(
     mom_text = (
         f"MoM: revenue {mom.get('revenue_change_pct', 'N/A')}%, "
         f"net {mom.get('net_change_pct', 'N/A')}%"
-        if mom else "MoM: insufficient data"
+        if mom
+        else "MoM: insufficient data"
     )
     yoy_text = (
-        f"YoY: revenue {yoy.get('revenue_yoy_pct', 'N/A')}%, "
-        f"net {yoy.get('net_yoy_pct', 'N/A')}%"
-        if yoy else "YoY: insufficient data"
+        f"YoY: revenue {yoy.get('revenue_yoy_pct', 'N/A')}%, net {yoy.get('net_yoy_pct', 'N/A')}%"
+        if yoy
+        else "YoY: insufficient data"
     )
     trend_text = (
         f"Trends (3-month): revenue={trends.get('revenue_trend')}, "
@@ -217,6 +218,7 @@ async def _generate_multiperiod_narrative(
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+
 async def run_multi_period(
     state: CFOState,
     config: AgentRunConfig,
@@ -236,6 +238,7 @@ async def run_multi_period(
 
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         monthly = _aggregate_by_month(transactions)
@@ -275,7 +278,9 @@ async def run_multi_period(
 
         logger.info(
             "Multi-period analysis: job=%s months=%d trend=%s",
-            state.get("job_id"), len(monthly), overall_trend,
+            state.get("job_id"),
+            len(monthly),
+            overall_trend,
         )
 
         return SkillResult(

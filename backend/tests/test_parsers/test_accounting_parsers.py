@@ -2,6 +2,7 @@
 Tests for accounting parsers: Logo Tiger, Paraşüt.
 Uses synthetic CSV fixtures — no real files needed.
 """
+
 from app.parsers.accounting.logo_tiger import LogoTigerParser
 from app.parsers.accounting.parasut import ParasutParser
 
@@ -48,8 +49,8 @@ Tarih,Fatura No,Müşteri/Tedarikçi,Açıklama,Tutar,KDV,Toplam,Durum
 
 # ── LogoTigerParser — Detection ───────────────────────────────────────────────
 
-class TestLogoTigerDetection:
 
+class TestLogoTigerDetection:
     def test_detects_logo_marker(self):
         assert LogoTigerParser.can_parse("LOGO YAZILIM raporları") is True
 
@@ -75,14 +76,15 @@ class TestLogoTigerDetection:
 
 # ── LogoTigerParser — Parsing ─────────────────────────────────────────────────
 
-class TestLogoTigerParsing:
 
+class TestLogoTigerParsing:
     def setup_method(self):
         self.parser = LogoTigerParser()
         self.result = self.parser.parse(LOGO_TIGER_CSV)
 
     def test_returns_parsed_statement(self):
         from app.parsers.base import ParsedStatement
+
         assert isinstance(self.result, ParsedStatement)
 
     def test_has_transactions(self):
@@ -120,8 +122,8 @@ class TestLogoTigerParsing:
 
 # ── ParasutParser — Detection ─────────────────────────────────────────────────
 
-class TestParasutDetection:
 
+class TestParasutDetection:
     def test_detects_parasut_header(self):
         assert ParasutParser.can_parse("Paraşüt - İşlem Raporu") is True
 
@@ -141,14 +143,15 @@ class TestParasutDetection:
 
 # ── ParasutParser — Parsing ───────────────────────────────────────────────────
 
-class TestParasutParsing:
 
+class TestParasutParsing:
     def setup_method(self):
         self.parser = ParasutParser()
         self.result = self.parser.parse(PARASUT_TRANSACTION_CSV)
 
     def test_returns_parsed_statement(self):
         from app.parsers.base import ParsedStatement
+
         assert isinstance(self.result, ParsedStatement)
 
     def test_has_transactions(self):
@@ -198,17 +201,16 @@ class TestParasutParsing:
 
 # ── ParserRegistry integration ────────────────────────────────────────────────
 
-class TestParserRegistryAccounting:
 
+class TestParserRegistryAccounting:
     def test_logo_tiger_registered(self):
         """Registry.detect() returns a class, check with issubclass."""
         from app.parsers.registry import ParserRegistry
+
         parser_cls = ParserRegistry.detect(LOGO_TIGER_CSV)
         assert parser_cls is not None
         # detect() returns the class itself, not an instance
-        assert parser_cls is LogoTigerParser or (
-            isinstance(parser_cls, LogoTigerParser)
-        )
+        assert parser_cls is LogoTigerParser or (isinstance(parser_cls, LogoTigerParser))
 
     def test_parasut_can_parse_its_own_fixture(self):
         """Paraşüt CSV contains 'Paraşüt' marker — direct can_parse check."""
@@ -272,17 +274,15 @@ class TestLogoTigerDemoFixture:
 
     def test_income_vs_expense_split(self):
         """7xx = income, 6xx/7xx borç = expense in Turkish accounting."""
-        income_txs  = [t for t in self.result.transactions if t.tx_type == "income"]
+        income_txs = [t for t in self.result.transactions if t.tx_type == "income"]
         expense_txs = [t for t in self.result.transactions if t.tx_type == "expense"]
-        assert len(income_txs)  >= 6, f"Expected ≥6 income txs, got {len(income_txs)}"
+        assert len(income_txs) >= 6, f"Expected ≥6 income txs, got {len(income_txs)}"
         assert len(expense_txs) >= 8, f"Expected ≥8 expense txs, got {len(expense_txs)}"
 
     def test_turkish_amount_parsing(self):
         """Amounts like '285000,00' must parse to correct cents."""
         # First row: Alacak 285000,00 → 28_500_000 kuruş
-        first_income = next(
-            (t for t in self.result.transactions if t.tx_type == "income"), None
-        )
+        first_income = next((t for t in self.result.transactions if t.tx_type == "income"), None)
         assert first_income is not None
         assert first_income.amount_cents == 28_500_000, (
             f"Expected 28500000 kuruş, got {first_income.amount_cents}"
@@ -305,8 +305,7 @@ class TestLogoTigerDemoFixture:
     def test_no_fatal_parse_warnings(self):
         """Parser should run without fatal errors."""
         fatal_warnings = [
-            w for w in self.result.parse_warnings
-            if "error" in w.lower() or "failed" in w.lower()
+            w for w in self.result.parse_warnings if "error" in w.lower() or "failed" in w.lower()
         ]
         assert not fatal_warnings, f"Fatal parse warnings: {fatal_warnings}"
 
@@ -320,14 +319,16 @@ class TestLogoTigerDemoFixture:
     def test_descriptions_not_empty(self):
         """Description field must be populated for most transactions."""
         empty_desc = [t for t in self.result.transactions if not t.description.strip()]
-        assert len(empty_desc) == 0, (
-            f"{len(empty_desc)} transactions have empty descriptions"
-        )
+        assert len(empty_desc) == 0, f"{len(empty_desc)} transactions have empty descriptions"
 
     def test_total_income_greater_than_total_expense(self):
         """TechNova is a profitable company — total income > total expenses."""
-        total_income  = sum(t.amount_cents for t in self.result.transactions if t.tx_type == "income")
-        total_expense = sum(t.amount_cents for t in self.result.transactions if t.tx_type == "expense")
+        total_income = sum(
+            t.amount_cents for t in self.result.transactions if t.tx_type == "income"
+        )
+        total_expense = sum(
+            t.amount_cents for t in self.result.transactions if t.tx_type == "expense"
+        )
         assert total_income > 0
         assert total_expense > 0
         # Not asserting income > expense for the partial fixture, just that both exist
@@ -335,9 +336,6 @@ class TestLogoTigerDemoFixture:
 
     def test_multi_month_data(self):
         """Demo fixture spans January and February — both months should appear."""
-        months = {
-            t.date.month for t in self.result.transactions
-            if t.date
-        }
+        months = {t.date.month for t in self.result.transactions if t.date}
         assert 1 in months, "January transactions expected"
         assert 2 in months, "February transactions expected"

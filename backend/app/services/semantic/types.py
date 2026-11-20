@@ -1,4 +1,5 @@
 """Canonical semantic types — period, money, metrics, decision brief."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -75,8 +76,7 @@ class MetricPoint:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> MetricPoint:
         refs = [
-            EvidenceRef(**r) if isinstance(r, dict) else r
-            for r in (raw.get("evidence_refs") or [])
+            EvidenceRef(**r) if isinstance(r, dict) else r for r in (raw.get("evidence_refs") or [])
         ]
         return cls(
             metric_id=str(raw["metric_id"]),
@@ -264,13 +264,11 @@ class CompanySemanticSnapshot:
             period=period,
             currency=str(raw.get("currency") or "USD"),
             locale=str(raw.get("locale") or "en-US"),
-            metrics=[MetricPoint.from_dict(m) for m in (raw.get("metrics") or []) if isinstance(m, dict)],
-            drivers=[
-                DriverLink(**d) for d in (raw.get("drivers") or []) if isinstance(d, dict)
+            metrics=[
+                MetricPoint.from_dict(m) for m in (raw.get("metrics") or []) if isinstance(m, dict)
             ],
-            evidence=[
-                EvidenceRef(**e) for e in (raw.get("evidence") or []) if isinstance(e, dict)
-            ],
+            drivers=[DriverLink(**d) for d in (raw.get("drivers") or []) if isinstance(d, dict)],
+            evidence=[EvidenceRef(**e) for e in (raw.get("evidence") or []) if isinstance(e, dict)],
             brief=brief,
             source_job_ids=list(raw.get("source_job_ids") or []),
             schema_version=str(raw.get("schema_version") or SCHEMA_VERSION),

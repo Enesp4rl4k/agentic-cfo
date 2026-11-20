@@ -7,6 +7,7 @@ Handles:
   - Error handling + exponential backoff retry
   - Rate limiting (Paraşüt: 100 req/min)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -146,13 +147,11 @@ class ParasutClient:
                     # Check rate limit headers
                     if "X-RateLimit-Reset" in resp.headers:
                         reset_epoch = int(resp.headers["X-RateLimit-Reset"])
-                        self._rate_limit_reset = datetime.fromtimestamp(
-                            reset_epoch, tz=UTC
-                        )
+                        self._rate_limit_reset = datetime.fromtimestamp(reset_epoch, tz=UTC)
 
                     if resp.status_code == 429:
                         # Rate limited — exponential backoff
-                        backoff = 2 ** attempt
+                        backoff = 2**attempt
                         logger.warning(
                             f"Rate limited (attempt {attempt + 1}), backing off {backoff}s"
                         )
@@ -166,7 +165,7 @@ class ParasutClient:
                 if attempt == retry_count - 1:
                     logger.error(f"API call failed after {retry_count} retries: {e}")
                     raise
-                backoff = 2 ** attempt
+                backoff = 2**attempt
                 logger.warning(f"Request failed, retrying in {backoff}s: {e}")
                 await asyncio.sleep(backoff)
 
@@ -211,7 +210,11 @@ class ParasutClient:
                         # Map Paraşüt fields to SyncTransaction
                         amount_cents = int(float(tx.get("amount", 0)) * 100)
                         tx_type_str = tx.get("transaction_type", "expense").lower()
-                        tx_type = TransactionType.INCOME if "income" in tx_type_str else TransactionType.EXPENSE
+                        tx_type = (
+                            TransactionType.INCOME
+                            if "income" in tx_type_str
+                            else TransactionType.EXPENSE
+                        )
 
                         transaction = SyncTransaction(
                             date=datetime.fromisoformat(tx["date"]),
@@ -289,7 +292,9 @@ class ParasutClient:
                             amount_cents=amount_cents,
                             tx_type=TransactionType.INCOME,
                             currency=inv.get("currency_code", "TRY"),
-                            vendor=inv.get("customer_name")[:200] if inv.get("customer_name") else None,
+                            vendor=inv.get("customer_name")[:200]
+                            if inv.get("customer_name")
+                            else None,
                             reference=inv.get("id"),
                             source_type=SyncSourceType.PARASUT,
                             source_id=inv.get("id"),
@@ -320,7 +325,9 @@ class ParasutClient:
                             amount_cents=amount_cents,
                             tx_type=TransactionType.EXPENSE,
                             currency=inv.get("currency_code", "TRY"),
-                            vendor=inv.get("supplier_name")[:200] if inv.get("supplier_name") else None,
+                            vendor=inv.get("supplier_name")[:200]
+                            if inv.get("supplier_name")
+                            else None,
                             reference=inv.get("id"),
                             source_type=SyncSourceType.PARASUT,
                             source_id=inv.get("id"),

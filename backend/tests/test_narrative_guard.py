@@ -1,4 +1,5 @@
 """Her açıklama üreticisi ya korumalı ya da kendi yedeği var."""
+
 from __future__ import annotations
 
 import ast
@@ -15,7 +16,11 @@ def test_every_narrative_function_survives_an_llm_failure() -> None:
     unguarded = []
     for p in AGENTS.rglob("*.py"):
         for n in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
-            if isinstance(n, ast.AsyncFunctionDef) and n.name.startswith("_generate_") and n.name.endswith("_narrative"):
+            if (
+                isinstance(n, ast.AsyncFunctionDef)
+                and n.name.startswith("_generate_")
+                and n.name.endswith("_narrative")
+            ):
                 guarded = any(getattr(d, "id", None) == "narrative_guard" for d in n.decorator_list)
                 own_fallback = any(isinstance(x, ast.Try) for x in ast.walk(n))
                 if not (guarded or own_fallback):

@@ -3,6 +3,7 @@ Actions & Execution API
 
 CEO Onay Paneli (Human-in-the-Loop) ve Otonom Eylemleri yöneten API.
 """
+
 from __future__ import annotations
 
 import logging

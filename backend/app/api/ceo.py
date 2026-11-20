@@ -7,6 +7,7 @@ GET  /ceo/status/{job_id}          → poll async job status from Redis
 POST /ceo/export-pdf               → render board_deck + OKR to PDF (WeasyPrint)
 GET  /ceo/health-check             → verify CEO pipeline is importable
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,12 +44,13 @@ class CEOAnalyzeRequest(BaseModel):
 
     CTO inputs: cloud_billing_csv / git_log_text / incident_csv / sprint_csv
     """
+
     company_name: str | None = None
-    period: str | None = None          # e.g. "2024-Q2"
+    period: str | None = None  # e.g. "2024-Q2"
 
     # CFO inputs — file-based
-    cfo_file_path: str | None = None   # path on server (from prior upload)
-    cfo_file_type: str | None = None   # pdf | xlsx | csv
+    cfo_file_path: str | None = None  # path on server (from prior upload)
+    cfo_file_type: str | None = None  # pdf | xlsx | csv
 
     # CFO inputs — direct JSON (alternative to file)
     transactions: list[dict[str, Any]] | None = None
@@ -83,16 +85,17 @@ async def run_ceo_analysis(
             detail="cfo_file_path kabul edilmiyor — yüklenen dosya için POST /ceo/analyze-from-job/{job_id} kullanın.",
         )
 
-
     has_cfo_file = bool(body.cfo_file_path and body.cfo_file_type)
     has_cfo_json = bool(body.transactions)
     has_cfo = has_cfo_file or has_cfo_json
-    has_cto = any([
-        body.cloud_billing_csv,
-        body.git_log_text,
-        body.incident_csv,
-        body.sprint_csv,
-    ])
+    has_cto = any(
+        [
+            body.cloud_billing_csv,
+            body.git_log_text,
+            body.incident_csv,
+            body.sprint_csv,
+        ]
+    )
 
     if not has_cfo and not has_cto:
         raise HTTPException(
@@ -123,9 +126,9 @@ async def run_ceo_analysis(
 
         logs_serializable = [
             {
-                "step":       lg.step,
-                "ok":         lg.ok,
-                "detail":     lg.detail,
+                "step": lg.step,
+                "ok": lg.ok,
+                "detail": lg.detail,
                 "confidence": lg.confidence,
             }
             for lg in (result.get("logs") or [])
@@ -136,18 +139,18 @@ async def run_ceo_analysis(
 
         return {
             "data": {
-                "job_id":               job_id,
-                "awaiting_review":      result.get("awaiting_review", False),
-                "min_confidence":       result.get("min_confidence"),
+                "job_id": job_id,
+                "awaiting_review": result.get("awaiting_review", False),
+                "min_confidence": result.get("min_confidence"),
                 "overall_health_score": overall_health_score,
-                "financial_summary":    result.get("financial_summary"),
-                "tech_summary":         result.get("tech_summary"),
-                "cross_risks":          result.get("cross_risks") or [],
+                "financial_summary": result.get("financial_summary"),
+                "tech_summary": result.get("tech_summary"),
+                "cross_risks": result.get("cross_risks") or [],
                 "strategic_priorities": result.get("strategic_priorities") or [],
-                "board_deck":           result.get("board_deck"),
-                "okr_status":           result.get("okr_status"),
-                "logs":                 logs_serializable,
-                "error":                result.get("error"),
+                "board_deck": result.get("board_deck"),
+                "okr_status": result.get("okr_status"),
+                "logs": logs_serializable,
+                "error": result.get("error"),
             },
             "error": None,
         }
@@ -224,16 +227,17 @@ async def run_ceo_analysis_async(
             detail="cfo_file_path kabul edilmiyor — yüklenen dosya için POST /ceo/analyze-from-job/{job_id} kullanın.",
         )
 
-
     has_cfo_file = bool(body.cfo_file_path and body.cfo_file_type)
     has_cfo_json = bool(body.transactions)
     has_cfo = has_cfo_file or has_cfo_json
-    has_cto = any([
-        body.cloud_billing_csv,
-        body.git_log_text,
-        body.incident_csv,
-        body.sprint_csv,
-    ])
+    has_cto = any(
+        [
+            body.cloud_billing_csv,
+            body.git_log_text,
+            body.incident_csv,
+            body.sprint_csv,
+        ]
+    )
 
     if not has_cfo and not has_cto:
         raise HTTPException(
@@ -336,6 +340,7 @@ class CEOExportRequest(BaseModel):
     okr_status is optional — if provided, an OKR appendix slide is included.
     company_name and period are used for the PDF filename.
     """
+
     board_deck: dict[str, Any]
     okr_status: dict[str, Any] | None = None
     company_name: str | None = None
@@ -368,7 +373,7 @@ async def export_board_deck_pdf(
         raise HTTPException(status_code=500, detail=str(exc))
 
     company = (body.company_name or "board-deck").lower().replace(" ", "-")
-    period  = (body.period or "current").replace(" ", "-")
+    period = (body.period or "current").replace(" ", "-")
     filename = f"{company}-{period}.pdf"
 
     return Response(
@@ -413,9 +418,7 @@ async def run_ceo_from_job(
     job = await load_owned_job(db, job_id, current_user)
 
     # ── Load all data sources for this job ────────────────────────────────────
-    result = await db.execute(
-        select(DataSource).where(DataSource.job_id == job_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.job_id == job_id))
     sources = result.scalars().all()
 
     # ── Build pipeline kwargs from files on disk ──────────────────────────────
@@ -490,24 +493,24 @@ async def run_ceo_from_job(
 
     return {
         "data": {
-            "job_id":               job_id,
-            "awaiting_review":      ceo_result.get("awaiting_review", False),
-            "min_confidence":       ceo_result.get("min_confidence"),
+            "job_id": job_id,
+            "awaiting_review": ceo_result.get("awaiting_review", False),
+            "min_confidence": ceo_result.get("min_confidence"),
             "overall_health_score": _compute_overall_health(ceo_result),
-            "financial_summary":    ceo_result.get("financial_summary"),
-            "tech_summary":         ceo_result.get("tech_summary"),
-            "marketing_summary":    ceo_result.get("marketing_summary"),
-            "ops_summary":          ceo_result.get("ops_summary"),
-            "hr_summary":           ceo_result.get("hr_summary"),
-            "cross_risks":          ceo_result.get("cross_risks") or [],
+            "financial_summary": ceo_result.get("financial_summary"),
+            "tech_summary": ceo_result.get("tech_summary"),
+            "marketing_summary": ceo_result.get("marketing_summary"),
+            "ops_summary": ceo_result.get("ops_summary"),
+            "hr_summary": ceo_result.get("hr_summary"),
+            "cross_risks": ceo_result.get("cross_risks") or [],
             "strategic_priorities": ceo_result.get("strategic_priorities") or [],
-            "board_deck":           ceo_result.get("board_deck"),
-            "okr_status":           ceo_result.get("okr_status"),
-            "sources_used":         [
+            "board_deck": ceo_result.get("board_deck"),
+            "okr_status": ceo_result.get("okr_status"),
+            "sources_used": [
                 {"domain": s.domain, "source_type": s.source_type, "filename": s.filename}
                 for s in sources
             ],
-            "logs":  logs_serializable,
+            "logs": logs_serializable,
             "error": ceo_result.get("error"),
         },
         "error": None,
@@ -552,8 +555,7 @@ async def synthesize_ceo_from_context(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"No agent results found for org '{org_id}'. "
-                "Run CFO and/or CTO analysis first."
+                f"No agent results found for org '{org_id}'. Run CFO and/or CTO analysis first."
             ),
         )
 
@@ -568,13 +570,13 @@ async def synthesize_ceo_from_context(
         "min_confidence": 1.0,
         "awaiting_review": False,
         # Inject all available agent results
-        "_cfo_result":        ctx.last_cfo_result  or {},
-        "_cto_result":        ctx.last_cto_result  or {},
-        "_cmo_result":        ctx.last_cmo_result  or {},
-        "_coo_result":        ctx.last_coo_result  or {},
-        "_chro_result":       ctx.last_chro_result or {},
-        "_risk_result":       ctx.last_risk_result or {},
-        "_audit_result":      ctx.last_audit_result or {},
+        "_cfo_result": ctx.last_cfo_result or {},
+        "_cto_result": ctx.last_cto_result or {},
+        "_cmo_result": ctx.last_cmo_result or {},
+        "_coo_result": ctx.last_coo_result or {},
+        "_chro_result": ctx.last_chro_result or {},
+        "_risk_result": ctx.last_risk_result or {},
+        "_audit_result": ctx.last_audit_result or {},
         "_compliance_result": ctx.last_compliance_result or {},
     }
 
@@ -604,23 +606,28 @@ async def synthesize_ceo_from_context(
         # The same gate as every other write of a derived result (plan v10 G1); it also
         # rebuilds the semantic snapshot.
         await write_derived_result(
-            db, org_id, "ceo",
+            db,
+            org_id,
+            "ceo",
             {
-                "financial_summary":    state.get("financial_summary"),
-                "tech_summary":         state.get("tech_summary"),
-                "marketing_summary":    state.get("marketing_summary"),
-                "ops_summary":          state.get("ops_summary"),
-                "hr_summary":           state.get("hr_summary"),
-                "cross_risks":          state.get("cross_risks") or [],
+                "financial_summary": state.get("financial_summary"),
+                "tech_summary": state.get("tech_summary"),
+                "marketing_summary": state.get("marketing_summary"),
+                "ops_summary": state.get("ops_summary"),
+                "hr_summary": state.get("hr_summary"),
+                "cross_risks": state.get("cross_risks") or [],
                 "strategic_priorities": state.get("strategic_priorities") or [],
-                "board_deck":           state.get("board_deck"),
+                "board_deck": state.get("board_deck"),
                 "sources": "company_context",
                 "agents_used": [
-                    a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
+                    a
+                    for a in ["cfo", "cto", "cmo", "coo", "chro", "risk", "audit"]
                     if getattr(ctx, f"last_{a}_result", None) is not None
                 ],
             },
-            parent_agent="cfo", job_id=job_id, own_confidence=state.get("min_confidence"),
+            parent_agent="cfo",
+            job_id=job_id,
+            own_confidence=state.get("min_confidence"),
         )
     except Exception as exc:
         logger.warning("Failed to save CEO synthesis to context: %s", exc)
@@ -632,28 +639,29 @@ async def synthesize_ceo_from_context(
     ]
 
     agents_used = [
-        a for a in ["cfo", "cto", "cmo", "coo", "chro", "risk"]
+        a
+        for a in ["cfo", "cto", "cmo", "coo", "chro", "risk"]
         if getattr(ctx, f"last_{a}_result", None) is not None
     ]
 
     return {
         "data": {
-            "job_id":               job_id,
-            "org_id":               org_id,
-            "agents_used":          agents_used,
-            "awaiting_review":      state.get("awaiting_review", False),
-            "min_confidence":       state.get("min_confidence"),
+            "job_id": job_id,
+            "org_id": org_id,
+            "agents_used": agents_used,
+            "awaiting_review": state.get("awaiting_review", False),
+            "min_confidence": state.get("min_confidence"),
             "overall_health_score": _compute_overall_health(dict(state)),
-            "financial_summary":    state.get("financial_summary"),
-            "tech_summary":         state.get("tech_summary"),
-            "marketing_summary":    state.get("marketing_summary"),
-            "ops_summary":          state.get("ops_summary"),
-            "hr_summary":           state.get("hr_summary"),
-            "cross_risks":          state.get("cross_risks") or [],
+            "financial_summary": state.get("financial_summary"),
+            "tech_summary": state.get("tech_summary"),
+            "marketing_summary": state.get("marketing_summary"),
+            "ops_summary": state.get("ops_summary"),
+            "hr_summary": state.get("hr_summary"),
+            "cross_risks": state.get("cross_risks") or [],
             "strategic_priorities": state.get("strategic_priorities") or [],
-            "board_deck":           state.get("board_deck"),
-            "logs":                 logs_serializable,
-            "error":                state.get("error"),
+            "board_deck": state.get("board_deck"),
+            "logs": logs_serializable,
+            "error": state.get("error"),
         },
         "error": None,
     }
@@ -663,6 +671,7 @@ async def synthesize_ceo_from_context(
 async def ceo_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     """Verify CEO pipeline agents are importable and graph compiles."""
     from app.agents.ceo.orchestrator import ceo_graph
+
     return {
         "data": {
             "status": "ok",

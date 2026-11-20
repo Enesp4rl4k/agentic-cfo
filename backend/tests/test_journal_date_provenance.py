@@ -13,6 +13,7 @@ The period an entry belongs to is exactly the kind of fact a reviewer can
 settle from the source document and the machine cannot, so the entry is kept,
 marked, and held — and the ledger refuses to carry it until someone has looked.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -53,6 +54,7 @@ def clf():
 
 # ── Where the date came from ─────────────────────────────────────────────────
 
+
 def test_a_real_date_is_kept_and_marked_as_the_transaction_s_own(engine, clf) -> None:
     kayit = _entry(engine, clf, "2024-01-20T00:00:00+00:00")
     assert kayit.tarih.date().isoformat() == "2024-01-20"
@@ -76,15 +78,13 @@ def test_the_authority_rationale_is_kept_alongside_the_date_note(engine, clf) ->
     """The matrix may already have a reason; the date note is added, not
     substituted, or a reviewer loses half the story."""
     tx = {
-        "amount_kurus": 5_000_000_00,   # far over the approval limit
+        "amount_kurus": 5_000_000_00,  # far over the approval limit
         "type": "expense",
         "description": "Bilinmeyen buyuk odeme",
         "id": "tx-2",
         "transaction_date": None,
     }
-    kayit = engine.create_entry(
-        tx, clf.classify(tx["description"], tx["amount_kurus"], tx["type"])
-    )
+    kayit = engine.create_entry(tx, clf.classify(tx["description"], tx["amount_kurus"], tx["type"]))
     assert kayit.onay_gerekli
     assert "tarih" in kayit.onay_neden.lower()
     assert ";" in kayit.onay_neden, "matrisin kendi gerekçesi de kalmalı"
@@ -94,38 +94,43 @@ def test_the_provenance_survives_serialisation(engine, clf) -> None:
     """The journal is persisted as a report and read back by the packet and the
     ledger, so the flag has to travel with it."""
     assert _entry(engine, clf, None).to_dict()["tarih_kaynagi"] == "belirsiz"
-    assert _entry(engine, clf, "2024-01-20T00:00:00+00:00").to_dict()[
-        "tarih_kaynagi"
-    ] == "islem"
+    assert _entry(engine, clf, "2024-01-20T00:00:00+00:00").to_dict()["tarih_kaynagi"] == "islem"
 
 
 # ── The ledger refuses to file one ───────────────────────────────────────────
 
+
 def _rows(tarih_kaynagi: str) -> list[dict]:
-    return [{
-        "kayit_id": "e1",
-        "tarih": datetime(2024, 1, 15, tzinfo=UTC).isoformat(),
-        "aciklama": "Ocak kirasi",
-        "kaynak_islem_id": "tx-1",
-        "tarih_kaynagi": tarih_kaynagi,
-        "satirlar": [
-            {"hesap_kodu": "770.01", "hesap_adi": "Genel Yönetim", "borc": 2_850_000, "alacak": 0},
-            {"hesap_kodu": "102.01", "hesap_adi": "Bankalar", "borc": 0, "alacak": 2_850_000},
-        ],
-    }]
+    return [
+        {
+            "kayit_id": "e1",
+            "tarih": datetime(2024, 1, 15, tzinfo=UTC).isoformat(),
+            "aciklama": "Ocak kirasi",
+            "kaynak_islem_id": "tx-1",
+            "tarih_kaynagi": tarih_kaynagi,
+            "satirlar": [
+                {
+                    "hesap_kodu": "770.01",
+                    "hesap_adi": "Genel Yönetim",
+                    "borc": 2_850_000,
+                    "alacak": 0,
+                },
+                {"hesap_kodu": "102.01", "hesap_adi": "Bankalar", "borc": 0, "alacak": 2_850_000},
+            ],
+        }
+    ]
 
 
 def test_a_certain_date_files_normally() -> None:
-    pkg = EDefterXBRLGenerator.generate_journal(
-        _rows("islem"), period="2024-01", owner=OWNER
-    )
+    pkg = EDefterXBRLGenerator.generate_journal(_rows("islem"), period="2024-01", owner=OWNER)
     assert ">2024-01-15<" in pkg.xml
 
 
 @pytest.mark.parametrize("kind", ["journal", "ledger"])
 def test_neither_ledger_will_carry_an_invented_posting_date(kind: str) -> None:
     build = (
-        EDefterXBRLGenerator.generate_journal if kind == "journal"
+        EDefterXBRLGenerator.generate_journal
+        if kind == "journal"
         else EDefterXBRLGenerator.generate_ledger
     )
     with pytest.raises(EDefterError, match="belirsiz"):
@@ -159,9 +164,7 @@ def test_a_database_row_flagged_as_estimated_is_believed(engine, clf) -> None:
         "transaction_date": "2026-09-10T21:00:00+00:00",
         "date_is_estimated": True,
     }
-    kayit = engine.create_entry(
-        tx, clf.classify(tx["description"], tx["amount_kurus"], tx["type"])
-    )
+    kayit = engine.create_entry(tx, clf.classify(tx["description"], tx["amount_kurus"], tx["type"]))
     assert kayit.tarih_kaynagi == "belirsiz"
     assert kayit.onay_gerekli
 

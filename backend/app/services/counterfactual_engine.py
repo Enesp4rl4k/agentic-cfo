@@ -31,6 +31,7 @@ Kullanım:
     print(result.breakeven_months)
     print(result.recommendation)
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,36 +43,39 @@ logger = logging.getLogger(__name__)
 
 # ── Simülasyon sonucu ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class SimulationScenario:
-    name: str          # "iyimser" | "baz" | "kötümser"
-    net_impact_try: float    # 12 aylık net etki (TRY)
+    name: str  # "iyimser" | "baz" | "kötümser"
+    net_impact_try: float  # 12 aylık net etki (TRY)
     cashflow_impact_monthly: float  # aylık nakit etkisi
     breakeven_months: float | None  # None = hiç break-even olmaz
 
 
 @dataclass
 class CounterfactualResult:
-    action:            str                          # Alınan aksiyon
-    description:       str                          # Detaylı açıklama
-    scenarios:         list[SimulationScenario]     # 3 senaryo
-    base_net_impact:   float                        # Baz senaryo 12ay net etki (TRY)
-    breakeven_months:  float | None                 # Baz senaryo break-even
-    cashflow_risk:     str                          # "low" | "medium" | "high" | "critical"
-    recommendation:    str                          # Türkçe tavsiye
-    assumptions:       list[str]                    # Varsayımlar
-    sensitivity:       dict[str, float]             # Parametre değişimine duyarlılık
+    action: str  # Alınan aksiyon
+    description: str  # Detaylı açıklama
+    scenarios: list[SimulationScenario]  # 3 senaryo
+    base_net_impact: float  # Baz senaryo 12ay net etki (TRY)
+    breakeven_months: float | None  # Baz senaryo break-even
+    cashflow_risk: str  # "low" | "medium" | "high" | "critical"
+    recommendation: str  # Türkçe tavsiye
+    assumptions: list[str]  # Varsayımlar
+    sensitivity: dict[str, float]  # Parametre değişimine duyarlılık
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "action":           self.action,
-            "description":      self.description,
+            "action": self.action,
+            "description": self.description,
             "scenarios": [
                 {
-                    "name":                     s.name,
-                    "net_impact_try":           round(s.net_impact_try),
-                    "cashflow_impact_monthly":  round(s.cashflow_impact_monthly),
-                    "breakeven_months":         round(s.breakeven_months, 1) if s.breakeven_months else None,
+                    "name": s.name,
+                    "net_impact_try": round(s.net_impact_try),
+                    "cashflow_impact_monthly": round(s.cashflow_impact_monthly),
+                    "breakeven_months": round(s.breakeven_months, 1)
+                    if s.breakeven_months
+                    else None,
                 }
                 for s in self.scenarios
             ],
@@ -79,16 +83,17 @@ class CounterfactualResult:
             # kuruş (decisionPacket.ts documents kuruş, the panel's fmtTL
             # divides, the ledger stores it beside kuruş figures).
             # `net_impact_try` keeps lira — its `_try` name says so.
-            "base_net_impact":   round(self.base_net_impact * 100),
-            "breakeven_months":  round(self.breakeven_months, 1) if self.breakeven_months else None,
-            "cashflow_risk":     self.cashflow_risk,
-            "recommendation":    self.recommendation,
-            "assumptions":       self.assumptions,
-            "sensitivity":       {k: round(v, 2) for k, v in self.sensitivity.items()},
+            "base_net_impact": round(self.base_net_impact * 100),
+            "breakeven_months": round(self.breakeven_months, 1) if self.breakeven_months else None,
+            "cashflow_risk": self.cashflow_risk,
+            "recommendation": self.recommendation,
+            "assumptions": self.assumptions,
+            "sensitivity": {k: round(v, 2) for k, v in self.sensitivity.items()},
         }
 
 
 # ── Counterfactual Engine ─────────────────────────────────────────────────────
+
 
 class CounterfactualEngine:
     """
@@ -103,14 +108,14 @@ class CounterfactualEngine:
         cashflow: dict[str, Any] | None = None,
         forecast: dict[str, Any] | None = None,
     ) -> None:
-        self.pnl      = pnl or {}
+        self.pnl = pnl or {}
         self.cashflow = cashflow or {}
         self.forecast = forecast or {}
 
         # Temel metrikler (kuruş → TRY dönüşümü)
-        self.monthly_revenue  = (self.pnl.get("revenue", 0) or 0) / 100 / 12
-        self.monthly_opex     = (self.pnl.get("total_opex", 0) or 0) / 100 / 12
-        self.net_margin       = self.pnl.get("net_margin", 0) or 0
+        self.monthly_revenue = (self.pnl.get("revenue", 0) or 0) / 100 / 12
+        self.monthly_opex = (self.pnl.get("total_opex", 0) or 0) / 100 / 12
+        self.net_margin = self.pnl.get("net_margin", 0) or 0
         self.monthly_net_cash = (self.cashflow.get("net_change", 0) or 0) / 100 / 12
 
         # Nakit ömrü (runway)
@@ -121,10 +126,10 @@ class CounterfactualEngine:
 
     def simulate_headcount_change(
         self,
-        delta: int,                        # pozitif = artış, negatif = azaltım
-        avg_monthly_salary_try: float,     # brüt aylık maaş
+        delta: int,  # pozitif = artış, negatif = azaltım
+        avg_monthly_salary_try: float,  # brüt aylık maaş
         productivity_gain_pct: float = 0.10,  # verimlilik/gelir artışı tahmini
-        onboarding_months: int = 2,        # tam verime ulaşma süresi
+        onboarding_months: int = 2,  # tam verime ulaşma süresi
         horizon_months: int = 12,
     ) -> CounterfactualResult:
         """
@@ -145,11 +150,15 @@ class CounterfactualEngine:
 
         # Gelir etkisi (verimlilik)
         if delta > 0:
-            revenue_gain_monthly = self.monthly_revenue * productivity_gain_pct * ramp_factor * abs(delta)
+            revenue_gain_monthly = (
+                self.monthly_revenue * productivity_gain_pct * ramp_factor * abs(delta)
+            )
             total_revenue_gain = revenue_gain_monthly * horizon_months
         else:
             # Azaltımda: risk olarak velosity kaybı, tam kazanç değil
-            revenue_gain_monthly = -(self.monthly_revenue * productivity_gain_pct * 0.5 * abs(delta))
+            revenue_gain_monthly = -(
+                self.monthly_revenue * productivity_gain_pct * 0.5 * abs(delta)
+            )
             total_revenue_gain = revenue_gain_monthly * horizon_months
 
         # Baz senaryo net etki
@@ -157,7 +166,11 @@ class CounterfactualEngine:
 
         # Break-even
         if monthly_cost > 0 and revenue_gain_monthly > 0:
-            be_months = monthly_cost / revenue_gain_monthly if revenue_gain_monthly > monthly_cost / horizon_months else None
+            be_months = (
+                monthly_cost / revenue_gain_monthly
+                if revenue_gain_monthly > monthly_cost / horizon_months
+                else None
+            )
             if be_months and be_months > 0:
                 be_months = monthly_cost / max(revenue_gain_monthly - monthly_cost, 0.01)
         elif delta < 0:
@@ -230,15 +243,25 @@ class CounterfactualEngine:
             recommendation=recommendation,
             assumptions=[
                 f"Brüt maaş: ₺{avg_monthly_salary_try:,.0f}/ay",
-                f"SGK işveren payı: %{SGK_RATE*100:.0f}",
-                f"Verimlilik etkisi: %{productivity_gain_pct*100:.0f}",
+                f"SGK işveren payı: %{SGK_RATE * 100:.0f}",
+                f"Verimlilik etkisi: %{productivity_gain_pct * 100:.0f}",
                 f"Onboarding süresi: {onboarding_months} ay",
                 f"Ramp-up faktörü: {ramp_factor:.2f}",
             ],
             sensitivity={
-                "salary_+10pct":       round((total_cost_12m * 1.1 - total_revenue_gain) * -1),
-                "productivity_+5pct":  round(self.monthly_revenue * (productivity_gain_pct + 0.05) * ramp_factor * abs(delta) * horizon_months - total_cost_12m),
-                "horizon_6m":          round(self.monthly_revenue * productivity_gain_pct * ramp_factor * abs(delta) * 6 - monthly_cost * 6),
+                "salary_+10pct": round((total_cost_12m * 1.1 - total_revenue_gain) * -1),
+                "productivity_+5pct": round(
+                    self.monthly_revenue
+                    * (productivity_gain_pct + 0.05)
+                    * ramp_factor
+                    * abs(delta)
+                    * horizon_months
+                    - total_cost_12m
+                ),
+                "horizon_6m": round(
+                    self.monthly_revenue * productivity_gain_pct * ramp_factor * abs(delta) * 6
+                    - monthly_cost * 6
+                ),
             },
         )
 
@@ -247,8 +270,8 @@ class CounterfactualEngine:
     def simulate_cost_reduction(
         self,
         target_category: str,
-        reduction_pct: float,              # kesinti yüzdesi (0.0-1.0)
-        one_time_cost_try: float = 0.0,    # geçiş maliyeti (varsa)
+        reduction_pct: float,  # kesinti yüzdesi (0.0-1.0)
+        one_time_cost_try: float = 0.0,  # geçiş maliyeti (varsa)
         horizon_months: int = 12,
     ) -> CounterfactualResult:
         """
@@ -256,7 +279,7 @@ class CounterfactualEngine:
 
         Örnek: Kira maliyetini %30 düşürme (ofis küçültme)
         """
-        category_costs = (self.pnl.get("opex") or {})
+        category_costs = self.pnl.get("opex") or {}
         category_cost_monthly = (category_costs.get(target_category, 0) or 0) / 100 / 12
 
         if category_cost_monthly == 0:
@@ -267,7 +290,11 @@ class CounterfactualEngine:
         total_saving_12m = monthly_saving * horizon_months - one_time_cost_try
 
         # Break-even (eğer geçiş maliyeti varsa)
-        be_months = one_time_cost_try / monthly_saving if monthly_saving > 0 and one_time_cost_try > 0 else 0.0
+        be_months = (
+            one_time_cost_try / monthly_saving
+            if monthly_saving > 0 and one_time_cost_try > 0
+            else 0.0
+        )
 
         scenarios = [
             SimulationScenario(
@@ -294,20 +321,27 @@ class CounterfactualEngine:
         cf_risk = "low" if monthly_saving > 0 else "medium"
 
         category_tr = {
-            "rent": "kira", "salary": "personel", "marketing": "pazarlama",
-            "technology": "teknoloji", "utilities": "faturalar",
+            "rent": "kira",
+            "salary": "personel",
+            "marketing": "pazarlama",
+            "technology": "teknoloji",
+            "utilities": "faturalar",
         }.get(target_category, target_category)
 
         recommendation = (
-            f"{category_tr.title()} giderlerinde %{reduction_pct*100:.0f} kesinti "
+            f"{category_tr.title()} giderlerinde %{reduction_pct * 100:.0f} kesinti "
             f"aylık ₺{monthly_saving:,.0f} tasarruf sağlar. "
             f"12 aylık net etki: ₺{total_saving_12m:,.0f}. "
-            + (f"Geçiş maliyeti {be_months:.1f} ayda geri dönüşü sağlanır." if one_time_cost_try > 0 else "Anlık tasarruf başlar.")
+            + (
+                f"Geçiş maliyeti {be_months:.1f} ayda geri dönüşü sağlanır."
+                if one_time_cost_try > 0
+                else "Anlık tasarruf başlar."
+            )
         )
 
         return CounterfactualResult(
-            action=f"{target_category.title()} Maliyet Kesintisi (%{reduction_pct*100:.0f})",
-            description=f"Aylık ₺{category_cost_monthly:,.0f} → ₺{category_cost_monthly*(1-reduction_pct):,.0f}",
+            action=f"{target_category.title()} Maliyet Kesintisi (%{reduction_pct * 100:.0f})",
+            description=f"Aylık ₺{category_cost_monthly:,.0f} → ₺{category_cost_monthly * (1 - reduction_pct):,.0f}",
             scenarios=scenarios,
             base_net_impact=total_saving_12m,
             breakeven_months=be_months if be_months > 0 else None,
@@ -315,21 +349,23 @@ class CounterfactualEngine:
             recommendation=recommendation,
             assumptions=[
                 f"Mevcut {target_category} maliyeti: aylık ₺{category_cost_monthly:,.0f}",
-                f"Kesinti oranı: %{reduction_pct*100:.0f}",
+                f"Kesinti oranı: %{reduction_pct * 100:.0f}",
                 f"Geçiş maliyeti: ₺{one_time_cost_try:,.0f}",
                 "Kesintinin diğer giderlere yansıması modellenmedi",
             ],
             sensitivity={
-                "reduction_-5pct":     round(monthly_saving * 0.95 * horizon_months - one_time_cost_try),
+                "reduction_-5pct": round(
+                    monthly_saving * 0.95 * horizon_months - one_time_cost_try
+                ),
                 "one_time_cost_+20pct": round(total_saving_12m - one_time_cost_try * 0.2),
-                "horizon_6m":          round(monthly_saving * 6 - one_time_cost_try),
+                "horizon_6m": round(monthly_saving * 6 - one_time_cost_try),
             },
         )
 
     def simulate_price_increase(
         self,
-        increase_pct: float,               # fiyat artışı (0.0-1.0)
-        churn_rate_increase: float = 0.05, # beklenen müşteri kaybı
+        increase_pct: float,  # fiyat artışı (0.0-1.0)
+        churn_rate_increase: float = 0.05,  # beklenen müşteri kaybı
         horizon_months: int = 12,
     ) -> CounterfactualResult:
         """Fiyat artışı simülasyonu — gelir artışı vs. müşteri kaybı dengesi."""
@@ -344,25 +380,25 @@ class CounterfactualEngine:
 
         scenarios = [
             SimulationScenario("iyimser", total_net_gain * 1.2, monthly_net_gain * 1.2, None),
-            SimulationScenario("baz",     total_net_gain,       monthly_net_gain,       None),
+            SimulationScenario("baz", total_net_gain, monthly_net_gain, None),
             SimulationScenario("kötümser", total_net_gain * 0.6, monthly_net_gain * 0.6, None),
         ]
 
         if monthly_net_gain > 0:
             recommendation = (
-                f"%{increase_pct*100:.0f} fiyat artışı tavsiye edilir. "
-                f"Beklenen {churn_rate_increase*100:.0f}% müşteri kaybına rağmen "
+                f"%{increase_pct * 100:.0f} fiyat artışı tavsiye edilir. "
+                f"Beklenen {churn_rate_increase * 100:.0f}% müşteri kaybına rağmen "
                 f"aylık ₺{monthly_net_gain:,.0f} net kazanç sağlanır."
             )
         else:
             recommendation = (
-                f"%{increase_pct*100:.0f} fiyat artışı riskli. "
+                f"%{increase_pct * 100:.0f} fiyat artışı riskli. "
                 f"Müşteri kaybı gelir artışını aşıyor. "
-                f"Daha küçük bir artış (%{increase_pct*50:.0f}) veya değer paketi artırımı önerin."
+                f"Daha küçük bir artış (%{increase_pct * 50:.0f}) veya değer paketi artırımı önerin."
             )
 
         return CounterfactualResult(
-            action=f"Fiyat Artışı (%{increase_pct*100:.0f})",
+            action=f"Fiyat Artışı (%{increase_pct * 100:.0f})",
             description=f"Net gelir faktörü: {net_revenue_factor:+.1%}",
             scenarios=scenarios,
             base_net_impact=total_net_gain,
@@ -370,19 +406,22 @@ class CounterfactualEngine:
             cashflow_risk="low" if monthly_net_gain > 0 else "medium",
             recommendation=recommendation,
             assumptions=[
-                f"Fiyat artışı: %{increase_pct*100:.0f}",
-                f"Beklenen churn artışı: %{churn_rate_increase*100:.0f}",
+                f"Fiyat artışı: %{increase_pct * 100:.0f}",
+                f"Beklenen churn artışı: %{churn_rate_increase * 100:.0f}",
                 "Mevcut müşteri tabanı korunuyor varsayıldı",
                 "Rekabet tepkisi modellenmedi",
             ],
             sensitivity={
-                "churn_+5pct":     round((1 + increase_pct) * (1 - churn_rate_increase - 0.05) - 1) * int(current_monthly_revenue * horizon_months),
-                "increase_-5pct":  round((1 + increase_pct - 0.05) * (1 - churn_rate_increase) - 1) * int(current_monthly_revenue * horizon_months),
+                "churn_+5pct": round((1 + increase_pct) * (1 - churn_rate_increase - 0.05) - 1)
+                * int(current_monthly_revenue * horizon_months),
+                "increase_-5pct": round((1 + increase_pct - 0.05) * (1 - churn_rate_increase) - 1)
+                * int(current_monthly_revenue * horizon_months),
             },
         )
 
 
 # ── API giriş noktası ──────────────────────────────────────────────────────────
+
 
 def get_counterfactual_engine(
     pnl: dict[str, Any] | None = None,
@@ -427,9 +466,7 @@ def compute_preset_results(
         ),
         (
             f"{top_cat.title()} %20 Kesinti",
-            lambda: engine.simulate_cost_reduction(
-                target_category=top_cat, reduction_pct=0.20
-            ),
+            lambda: engine.simulate_cost_reduction(target_category=top_cat, reduction_pct=0.20),
         ),
         ("%10 Fiyat Artışı", lambda: engine.simulate_price_increase(increase_pct=0.10)),
     ]

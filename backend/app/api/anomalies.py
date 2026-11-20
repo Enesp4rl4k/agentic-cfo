@@ -5,6 +5,7 @@ Anomalies API — GET /anomalies/{job_id}, POST /anomalies/scan/{job_id},
 Kullanıcı muhasebe verisini yükleyip analiz ettikten sonra
 bu endpoint'ler anomali sonuçlarını döner ve manuel tarama başlatır.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -34,6 +35,7 @@ def _check_job_access(job: AnalysisJob, user: User) -> None:
 
 # ── Response helpers ──────────────────────────────────────────────────────────
 
+
 def _anomaly_dict(a: Anomaly) -> dict:
     return {
         "id": a.id,
@@ -52,6 +54,7 @@ def _anomaly_dict(a: Anomaly) -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/anomalies/{job_id}")
 async def list_anomalies(
@@ -116,9 +119,7 @@ async def scan_anomalies(
         )
 
     # Load transactions
-    result = await db.execute(
-        select(Transaction).where(Transaction.job_id == job_id)
-    )
+    result = await db.execute(select(Transaction).where(Transaction.job_id == job_id))
     txs = result.scalars().all()
     if not txs:
         raise HTTPException(status_code=404, detail="No transactions found for this job.")
@@ -143,6 +144,7 @@ async def scan_anomalies(
     from sqlalchemy import select as sa_select
 
     from app.models.report import Report, ReportFormat
+
     report_result = await db.execute(
         sa_select(Report).where(
             Report.job_id == job_id,
@@ -252,6 +254,7 @@ async def acknowledge_anomaly(
 
 # ── GET /anomalies/explain/{anomaly_id} — Streaming RCA ──────────────────────
 
+
 @router.get("/anomalies/explain/{anomaly_id}", response_model=None)
 async def explain_anomaly(
     anomaly_id: str,
@@ -274,37 +277,41 @@ async def explain_anomaly(
         try:
             await load_owned_job(db, anomaly.job_id, current_user)
         except HTTPException:
-            anomaly = None      # someone else's: answered exactly like a missing one
+            anomaly = None  # someone else's: answered exactly like a missing one
     if not anomaly:
+
         async def _not_found():
             yield "data: Anomali bulunamadı.\n\n"
             yield "data: [DONE]\n\n"
+
         return StreamingResponse(_not_found(), media_type="text/event-stream")
 
     # Load related transactions for context
     tx_ids = anomaly.transaction_ids or []
     related_txs: list[dict[str, Any]] = []
     if tx_ids:
-        tx_result = await db.execute(
-            select(Transaction).where(Transaction.id.in_(tx_ids[:10]))
-        )
+        tx_result = await db.execute(select(Transaction).where(Transaction.id.in_(tx_ids[:10])))
         for tx in tx_result.scalars().all():
-            related_txs.append({
-                "id": str(tx.id),
-                "amount": tx.amount_kurus / 100 if tx.amount_kurus else 0,
-                "vendor": tx.vendor or "",
-                "category": tx.category or "",
-                "description": tx.description or "",
-                "date": tx.transaction_date.isoformat() if tx.transaction_date else "",
-            })
+            related_txs.append(
+                {
+                    "id": str(tx.id),
+                    "amount": tx.amount_kurus / 100 if tx.amount_kurus else 0,
+                    "vendor": tx.vendor or "",
+                    "category": tx.category or "",
+                    "description": tx.description or "",
+                    "date": tx.transaction_date.isoformat() if tx.transaction_date else "",
+                }
+            )
 
     evidence = anomaly.evidence or {}
     evidence_text = ", ".join(f"{k}: {v}" for k, v in evidence.items() if k not in ("detectors",))
-    tx_text = "\n".join(
-        f"  - {t['date']} | {t['vendor']} | {t['category']} | {t['amount']:,.2f} TL | {t['description']}"
-        for t in related_txs
-    ) or "  (ilgili işlem bulunamadı)"
-
+    tx_text = (
+        "\n".join(
+            f"  - {t['date']} | {t['vendor']} | {t['category']} | {t['amount']:,.2f} TL | {t['description']}"
+            for t in related_txs
+        )
+        or "  (ilgili işlem bulunamadı)"
+    )
 
     async def _generate():
         try:

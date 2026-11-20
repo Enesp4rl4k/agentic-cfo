@@ -1,4 +1,5 @@
 """Locale helpers for agent system prompts."""
+
 from __future__ import annotations
 
 

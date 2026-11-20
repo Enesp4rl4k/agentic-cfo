@@ -73,29 +73,34 @@ async def stream_job_events(
     async def _already_done_stream():
         import json
         from datetime import datetime
+
         logs = job.logs or []
         for log in logs:
             yield (
                 "data: "
-                + json.dumps({
-                    "event": "step",
-                    "job_id": job_id,
-                    "step": log.get("step", ""),
-                    "ok": log.get("ok", True),
-                    "detail": log.get("detail"),
-                    "confidence": log.get("confidence"),
-                    "ts": datetime.now(UTC).isoformat(),
-                })
+                + json.dumps(
+                    {
+                        "event": "step",
+                        "job_id": job_id,
+                        "step": log.get("step", ""),
+                        "ok": log.get("ok", True),
+                        "detail": log.get("detail"),
+                        "confidence": log.get("confidence"),
+                        "ts": datetime.now(UTC).isoformat(),
+                    }
+                )
                 + "\n\n"
             )
         yield (
             "data: "
-            + json.dumps({
-                "event": "done",
-                "job_id": job_id,
-                "status": str(job.status),
-                "ts": datetime.now(UTC).isoformat(),
-            })
+            + json.dumps(
+                {
+                    "event": "done",
+                    "job_id": job_id,
+                    "status": str(job.status),
+                    "ts": datetime.now(UTC).isoformat(),
+                }
+            )
             + "\n\n"
         )
 

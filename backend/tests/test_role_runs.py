@@ -1,4 +1,5 @@
 """Plan v9 §K0 / §V6 S2 — every role run leaves a durable record; a dead one is noticed."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -12,8 +13,14 @@ from app.models.agent_job import AgentJob, AgentJobStatus
 from app.models.agent_run import AgentRun
 from tests.api_helpers import arka_plan_bitsin, bellek_istemcisi, kullanici
 
-_TEMIZ: dict[str, Any] = {"cmo_summary": {"x": 1}, "logs": [{"step": "a", "ok": True, "confidence": 0.9}]}
-_ZAYIF: dict[str, Any] = {"cmo_summary": {"x": 2}, "logs": [{"step": "a", "ok": True, "confidence": 0.5}]}
+_TEMIZ: dict[str, Any] = {
+    "cmo_summary": {"x": 1},
+    "logs": [{"step": "a", "ok": True, "confidence": 0.9}],
+}
+_ZAYIF: dict[str, Any] = {
+    "cmo_summary": {"x": 2},
+    "logs": [{"step": "a", "ok": True, "confidence": 0.5}],
+}
 
 
 @pytest_asyncio.fixture
@@ -36,7 +43,9 @@ async def _job(client, org_id: str, status: str = AgentJobStatus.PENDING, **kw: 
 
 async def _runs(client, pipeline: str) -> list[AgentRun]:
     async with client._maker() as db:
-        return list((await db.execute(select(AgentRun).where(AgentRun.pipeline == pipeline))).scalars())
+        return list(
+            (await db.execute(select(AgentRun).where(AgentRun.pipeline == pipeline))).scalars()
+        )
 
 
 async def _status(client, job_id: str) -> str:
@@ -103,15 +112,26 @@ async def test_the_cfo_worker_leaves_a_run(client, monkeypatch):
 
     _, org_id, _ = await kullanici(client, "cfo@example.com", role="owner")
     async with client._maker() as db:
-        job = AnalysisJob(filename="x.csv", file_path="/x.csv", file_type="csv", org_id=org_id,
-                          status=JobStatus.PENDING)
+        job = AnalysisJob(
+            filename="x.csv",
+            file_path="/x.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.PENDING,
+        )
         db.add(job)
         await db.commit()
         job_id = job.id
 
     async def sahte(**kw: Any) -> dict:
-        return {"transactions": [], "dashboard_json": {"pnl": {"revenue": 0}}, "anomalies": [], "logs": [],
-                "awaiting_review": False, "min_confidence": 0.95}
+        return {
+            "transactions": [],
+            "dashboard_json": {"pnl": {"revenue": 0}},
+            "anomalies": [],
+            "logs": [],
+            "awaiting_review": False,
+            "min_confidence": 0.95,
+        }
 
     monkeypatch.setattr("app.agents.orchestrator.run_cfo_pipeline", sahte)
     assert (await run_cfo_analysis({}, job_id)).get("ok") is True
@@ -125,8 +145,13 @@ async def test_a_duplicate_delivery_is_not_a_run(client, monkeypatch):
 
     _, org_id, _ = await kullanici(client, "cift@example.com", role="owner")
     async with client._maker() as db:
-        job = AnalysisJob(filename="x.csv", file_path="/x.csv", file_type="csv", org_id=org_id,
-                          status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="x.csv",
+            file_path="/x.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.COMPLETED,
+        )
         db.add(job)
         await db.commit()
         job_id = job.id
@@ -137,7 +162,7 @@ async def test_a_duplicate_delivery_is_not_a_run(client, monkeypatch):
 
 _AUDIT_BODY = {
     "findings_csv": "finding_id,title,severity,status,area,owner,opened_date,due_date,closed_date\n"
-                    "F1,Yetki,high,open,IT,Ali,2024-01-01,2024-02-01,\n",
+    "F1,Yetki,high,open,IT,Ali,2024-01-01,2024-02-01,\n",
     "controls_csv": "control_id,name,area,effectiveness,last_tested\nC1,Erisim,IT,effective,2024-01-01\n",
     "coverage_csv": "area,risk_rating,last_audit_date,planned\nIT,high,2024-01-01,true\n",
 }
@@ -175,12 +200,16 @@ async def test_a_run_waiting_for_a_person_does_not_lower_the_success_rate(client
 async def test_a_role_endpoint_tells_the_page_its_result_is_held(client):
     """The CHRO page showed a held result as if it were the company's."""
     headers, _, _ = await kullanici(client, "chro@example.com", role="owner")
-    res = await client.post("/api/v1/chro/analyze", headers=headers, json={
-        "headcount_csv": "employee_id,name,department,level,role,location,fte,start_date\n"
-                         "1,A,Eng,L1,Dev,IST,1,2024-01-01\n",
-        "attrition_csv": "employee_id,department,exit_date,reason\n",
-        "compensation_csv": "employee_id,base_salary\n1,1000\n",
-    })
+    res = await client.post(
+        "/api/v1/chro/analyze",
+        headers=headers,
+        json={
+            "headcount_csv": "employee_id,name,department,level,role,location,fte,start_date\n"
+            "1,A,Eng,L1,Dev,IST,1,2024-01-01\n",
+            "attrition_csv": "employee_id,department,exit_date,reason\n",
+            "compensation_csv": "employee_id,base_salary\n1,1000\n",
+        },
+    )
     assert res.status_code == 200, res.text
     assert res.json()["inceleme"]["awaiting_review"] is True
 

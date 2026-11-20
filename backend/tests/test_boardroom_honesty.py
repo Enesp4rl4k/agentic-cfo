@@ -4,6 +4,7 @@
 consensus ("pazarlama bütçesi bu ay %15 artırılacak", confidence 0.85) and saved
 it to the company's memory with action items an owner could approve.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,8 +17,10 @@ from app.services.negotiation import boardroom, boardroom_memory
 from app.services.negotiation.boardroom_memory import BoardroomMemoryService
 from tests.api_helpers import bellek_istemcisi, kullanici
 
-_SAHTE = ("Pazarlama bütçesi bu ay %15 oranında artırılacak ve bütçe yüksek ROI sağlayan "
-          "Google Ads kampanyalarına yönlendirilecek.")
+_SAHTE = (
+    "Pazarlama bütçesi bu ay %15 oranında artırılacak ve bütçe yüksek ROI sağlayan "
+    "Google Ads kampanyalarına yönlendirilecek."
+)
 
 
 @pytest.fixture
@@ -39,21 +42,45 @@ async def test_no_model_means_no_debate_and_nothing_saved(hafiza):
 async def test_the_endpoint_says_503_llm_unavailable(hafiza):
     async with bellek_istemcisi() as client:
         headers, _, _ = await kullanici(client, "kurul@example.com")
-        res = await client.post("/api/v1/negotiation/boardroom/debate", headers=headers,
-                                json={"topic": "Yeni depo", "context": "bağlam"})
+        res = await client.post(
+            "/api/v1/negotiation/boardroom/debate",
+            headers=headers,
+            json={"topic": "Yeni depo", "context": "bağlam"},
+        )
     assert res.status_code == 503, res.text
     assert res.json()["error_code"] == "llm_unavailable"
 
 
 def test_a_canned_decision_saved_earlier_is_no_precedent_and_cannot_be_approved(tmp_path):
     path = tmp_path / "debates.json"
-    path.write_text(json.dumps([{
-        "id": "d1", "topic": "Yeni depo", "context": "", "participating_agents": ["CFO", "CMO"],
-        "resolution_status": "Uzlaşıldı", "final_decision": _SAHTE, "confidence_score": 0.85,
-        "action_items": [{"id": "a1", "debate_id": "d1", "description": "CFO: Bütçe artışı",
-                          "responsible_agent": "CFO", "status": "pending", "org_id": "org-1"}],
-        "transcript": {}, "org_id": "org-1",
-    }]), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "d1",
+                    "topic": "Yeni depo",
+                    "context": "",
+                    "participating_agents": ["CFO", "CMO"],
+                    "resolution_status": "Uzlaşıldı",
+                    "final_decision": _SAHTE,
+                    "confidence_score": 0.85,
+                    "action_items": [
+                        {
+                            "id": "a1",
+                            "debate_id": "d1",
+                            "description": "CFO: Bütçe artışı",
+                            "responsible_agent": "CFO",
+                            "status": "pending",
+                            "org_id": "org-1",
+                        }
+                    ],
+                    "transcript": {},
+                    "org_id": "org-1",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     svc = BoardroomMemoryService(storage_path=path)
 

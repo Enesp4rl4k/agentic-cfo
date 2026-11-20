@@ -28,6 +28,7 @@ Slides:
 
 done_when: state['board_deck']['slides'] has >= 4 items with benchmarks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,15 +44,16 @@ logger = logging.getLogger(__name__)
 # Formatting & Impact Quantification
 # ---------------------------------------------------------------------------
 
+
 def _fmt_currency(cents: int | None, currency: str = "₺") -> str:
     """Format currency with proper notation."""
     if cents is None or cents == 0:
         return "—"
     value = cents / 100
     if abs(value) >= 1_000_000:
-        return f"{currency}{value/1_000_000:.1f}M"
+        return f"{currency}{value / 1_000_000:.1f}M"
     elif abs(value) >= 1_000:
-        return f"{currency}{value/1_000:.0f}K"
+        return f"{currency}{value / 1_000:.0f}K"
     return f"{currency}{value:.0f}"
 
 
@@ -60,7 +62,7 @@ def _fmt_pct(value: float | None, show_sign: bool = False) -> str:
     if value is None:
         return "—"
     sign = f"{'+' if value > 0 else ''}" if show_sign else ""
-    return f"{sign}{value*100:.1f}%"
+    return f"{sign}{value * 100:.1f}%"
 
 
 def _trend_arrow(current: float | None, previous: float | None) -> str:
@@ -131,10 +133,10 @@ def _quantify_impact(
     noun = "Tasarruf" if is_cost else "Fırsat"
 
     if gap >= 1_000_000:
-        opp = f"{noun}: {gap/1_000_000:.1f}M {unit} {direction}"
+        opp = f"{noun}: {gap / 1_000_000:.1f}M {unit} {direction}"
         conf = 0.85
     elif gap >= 100_000:
-        opp = f"{noun}: {gap/1_000:.0f}K {unit} {direction}"
+        opp = f"{noun}: {gap / 1_000:.0f}K {unit} {direction}"
         conf = 0.80
     elif gap >= 10_000:
         opp = f"{noun}: {gap:.0f} {unit} {direction}"
@@ -149,6 +151,7 @@ def _quantify_impact(
 # ---------------------------------------------------------------------------
 # Benchmark helpers — overlay sector comparisons on board deck
 # ---------------------------------------------------------------------------
+
 
 def _add_benchmark_overlay(
     metric_value: float | None,
@@ -195,6 +198,7 @@ def _add_benchmark_overlay(
 # Slide builders — exec-ready with impact quantification
 # ---------------------------------------------------------------------------
 
+
 def _build_slides(
     fin: dict[str, Any],
     tech: dict[str, Any],
@@ -234,106 +238,112 @@ def _build_slides(
     momentum_margin = _trend_arrow(net_margin, fin.get("prev_net_margin"))
     momentum_health = (
         _trend_arrow(health_score, tech.get("prev_health_score"))
-        if health_score is not None else None
+        if health_score is not None
+        else None
     )
     health_value, health_label = _score_cell(health_score)
 
-    slides.append({
-        "slide_number": 1,
-        "title": "Şirket Sağlık Gösterge Tablosu",
-        "subtitle": f"{period} — Anlık Durum",
-        "chart_type": "scorecard",
-        "key_metrics": [
-            {
-                "label": "Gelir",
-                "value": _fmt_currency(revenue),
-                "momentum": momentum_revenue,
-                "confidence": 0.95,
-            },
-            {
-                "label": "Net Gelir",
-                "value": _fmt_currency(net_income),
-                "momentum": momentum_revenue,
-                "sub": _fmt_pct(net_margin),
-                "confidence": 0.92,
-            },
-            {
-                "label": "Nakit Pisti",
-                "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
-                "momentum": _runway_momentum(runway),
-                "alert": "critical" if runway is not None and runway < 6 else None,
-                "confidence": 0.88,
-            },
-            {
-                "label": "Teknoloji Sağlığı",
-                "value": health_value,
-                "label_detail": health_label,
-                "momentum": momentum_health,
-                "alert": "high" if health_score is not None and health_score > 6.5 else None,
-                "confidence": 0.85,
-            },
-            {
-                "label": "Çapraz Riskler",
-                "value": str(len(cross_risks)),
-                "alert": "high" if len(cross_risks) > 2 else None,
-                "confidence": 1.0,
-            },
-        ],
-        "narrative": (
-            f"{company} {period} döneminde "
-            f"{'pozitif' if net_income > 0 else 'negatif'} finansal performans gösteriyor "
-            f"({_fmt_pct(net_margin)} net marj). "
-            + (
-                f"Teknoloji sağlığı skoru {health_value} ({health_label.lower()}). "
-                if health_score is not None else "Teknoloji sağlığı ölçülmedi (CTO verisi yok). "
-            )
-            + f"{len(cross_risks)} çapraz alan riski Denetim Komitesi'nin dikkatini gerektiriyor."
-        ),
-    })
+    slides.append(
+        {
+            "slide_number": 1,
+            "title": "Şirket Sağlık Gösterge Tablosu",
+            "subtitle": f"{period} — Anlık Durum",
+            "chart_type": "scorecard",
+            "key_metrics": [
+                {
+                    "label": "Gelir",
+                    "value": _fmt_currency(revenue),
+                    "momentum": momentum_revenue,
+                    "confidence": 0.95,
+                },
+                {
+                    "label": "Net Gelir",
+                    "value": _fmt_currency(net_income),
+                    "momentum": momentum_revenue,
+                    "sub": _fmt_pct(net_margin),
+                    "confidence": 0.92,
+                },
+                {
+                    "label": "Nakit Pisti",
+                    "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
+                    "momentum": _runway_momentum(runway),
+                    "alert": "critical" if runway is not None and runway < 6 else None,
+                    "confidence": 0.88,
+                },
+                {
+                    "label": "Teknoloji Sağlığı",
+                    "value": health_value,
+                    "label_detail": health_label,
+                    "momentum": momentum_health,
+                    "alert": "high" if health_score is not None and health_score > 6.5 else None,
+                    "confidence": 0.85,
+                },
+                {
+                    "label": "Çapraz Riskler",
+                    "value": str(len(cross_risks)),
+                    "alert": "high" if len(cross_risks) > 2 else None,
+                    "confidence": 1.0,
+                },
+            ],
+            "narrative": (
+                f"{company} {period} döneminde "
+                f"{'pozitif' if net_income > 0 else 'negatif'} finansal performans gösteriyor "
+                f"({_fmt_pct(net_margin)} net marj). "
+                + (
+                    f"Teknoloji sağlığı skoru {health_value} ({health_label.lower()}). "
+                    if health_score is not None
+                    else "Teknoloji sağlığı ölçülmedi (CTO verisi yok). "
+                )
+                + f"{len(cross_risks)} çapraz alan riski Denetim Komitesi'nin dikkatini gerektiriyor."
+            ),
+        }
+    )
 
     # ── Slide 2: Financial Performance ───────────────────────────────────────
-    gross_impact = _quantify_impact(
-        "Brüt Marj", gross_margin, 0.40, "%", is_cost=False
-    )
+    gross_impact = _quantify_impact("Brüt Marj", gross_margin, 0.40, "%", is_cost=False)
     net_impact = _quantify_impact("Net Marj", net_margin, 0.15, "%", is_cost=False)
 
-    slides.append({
-        "slide_number": 2,
-        "title": "Finansal Performans & Marj Trajektörü",
-        "subtitle": "P&L Özeti + 12 Aylık Tahmin",
-        "chart_type": "bar_chart",
-        "key_metrics": [
-            {
-                "label": "Gelir",
-                "value": _fmt_currency(revenue),
-                "momentum": momentum_revenue,
-            },
-            {
-                "label": "Brüt Marj",
-                "value": _fmt_pct(gross_margin),
-                "sub": gross_impact.get("opportunity", ""),
-                "confidence": gross_impact.get("confidence", 0.75),
-            },
-            {
-                "label": "Net Marj",
-                "value": _fmt_pct(net_margin),
-                "momentum": momentum_margin,
-                "sub": net_impact.get("opportunity", ""),
-                "confidence": net_impact.get("confidence", 0.75),
-            },
-            {
-                "label": "İşletme CF",
-                "value": _fmt_currency(fin.get("cash_flow_net_cents")),
-            },
-            {
-                "label": "12 Aylık Tahmin",
-                "value": _fmt_currency(forecast_12m),
-                "sub": f"vs. Cari: {_fmt_pct((forecast_12m / revenue - 1) if revenue else 0, show_sign=True)}",
-            },
-        ],
-        "narrative": fin.get("narrative", "Finansal veriler mevcut. Detaylı analiz için CFO raporuna bakınız."),
-        "top_alerts": fin.get("top_alerts", [])[:2],
-    })
+    slides.append(
+        {
+            "slide_number": 2,
+            "title": "Finansal Performans & Marj Trajektörü",
+            "subtitle": "P&L Özeti + 12 Aylık Tahmin",
+            "chart_type": "bar_chart",
+            "key_metrics": [
+                {
+                    "label": "Gelir",
+                    "value": _fmt_currency(revenue),
+                    "momentum": momentum_revenue,
+                },
+                {
+                    "label": "Brüt Marj",
+                    "value": _fmt_pct(gross_margin),
+                    "sub": gross_impact.get("opportunity", ""),
+                    "confidence": gross_impact.get("confidence", 0.75),
+                },
+                {
+                    "label": "Net Marj",
+                    "value": _fmt_pct(net_margin),
+                    "momentum": momentum_margin,
+                    "sub": net_impact.get("opportunity", ""),
+                    "confidence": net_impact.get("confidence", 0.75),
+                },
+                {
+                    "label": "İşletme CF",
+                    "value": _fmt_currency(fin.get("cash_flow_net_cents")),
+                },
+                {
+                    "label": "12 Aylık Tahmin",
+                    "value": _fmt_currency(forecast_12m),
+                    "sub": f"vs. Cari: {_fmt_pct((forecast_12m / revenue - 1) if revenue else 0, show_sign=True)}",
+                },
+            ],
+            "narrative": fin.get(
+                "narrative", "Finansal veriler mevcut. Detaylı analiz için CFO raporuna bakınız."
+            ),
+            "top_alerts": fin.get("top_alerts", [])[:2],
+        }
+    )
 
     # ── Slide 3: Technology Health & Risk Matrix ────────────────────────────
     infra_waste = tech.get("infra_waste_cents") or 0
@@ -342,140 +352,152 @@ def _build_slides(
         "Cloud Tasarrufu", infra_waste, infra_cost * 0.05, "₺", is_cost=True
     )
 
-    slides.append({
-        "slide_number": 3,
-        "title": "Teknoloji Sağlığı & Risk-Ödül Matrisi",
-        "subtitle": "CTO İletişimi",
-        "chart_type": "risk_matrix",
-        "key_metrics": [
-            {
-                "label": "Sağlık Skoru",
-                "value": health_value,
-                "label_detail": health_label,
-            },
-            {
-                "label": "Cloud Harcaması",
-                "value": _fmt_currency(infra_cost),
-            },
-            {
-                "label": "Cloud Israfı",
-                "value": _fmt_currency(infra_waste),
-                "sub": waste_opp.get("opportunity", ""),
-                "confidence": waste_opp.get("confidence", 0.82),
-            },
-            {
-                "label": "Teknik Borç",
-                "value": f"{tech.get('debt_score', 5.0):.1f}/10",
-            },
-            {
-                "label": "MTTR",
-                "value": f"{tech.get('mttr_hours', 0):.1f}s",
-            },
-            {
-                "label": "Hız Trendi",
-                "value": tech.get("velocity_trend", "—").title(),
-            },
-        ],
-        "narrative": tech.get("narrative", "Teknoloji verileri mevcut. CTO raporuna bakınız."),
-        "top_risks": tech.get("top_risks", [])[:3],
-    })
+    slides.append(
+        {
+            "slide_number": 3,
+            "title": "Teknoloji Sağlığı & Risk-Ödül Matrisi",
+            "subtitle": "CTO İletişimi",
+            "chart_type": "risk_matrix",
+            "key_metrics": [
+                {
+                    "label": "Sağlık Skoru",
+                    "value": health_value,
+                    "label_detail": health_label,
+                },
+                {
+                    "label": "Cloud Harcaması",
+                    "value": _fmt_currency(infra_cost),
+                },
+                {
+                    "label": "Cloud Israfı",
+                    "value": _fmt_currency(infra_waste),
+                    "sub": waste_opp.get("opportunity", ""),
+                    "confidence": waste_opp.get("confidence", 0.82),
+                },
+                {
+                    "label": "Teknik Borç",
+                    "value": f"{tech.get('debt_score', 5.0):.1f}/10",
+                },
+                {
+                    "label": "MTTR",
+                    "value": f"{tech.get('mttr_hours', 0):.1f}s",
+                },
+                {
+                    "label": "Hız Trendi",
+                    "value": tech.get("velocity_trend", "—").title(),
+                },
+            ],
+            "narrative": tech.get("narrative", "Teknoloji verileri mevcut. CTO raporuna bakınız."),
+            "top_risks": tech.get("top_risks", [])[:3],
+        }
+    )
 
     # ── Slide 4: Cross-Domain Risk Register (Impact-Likelihood) ──────────────
     critical_count = len([r for r in cross_risks if r.get("severity") == "critical"])
     high_count = len([r for r in cross_risks if r.get("severity") == "high"])
 
-    slides.append({
-        "slide_number": 4,
-        "title": "Çapraz Alan Risk Envanteri",
-        "subtitle": f"{critical_count} Kritik + {high_count} Yüksek Risk",
-        "chart_type": "risk_matrix",
-        "risks": [
-            {
-                "id": r.get("risk_id", f"R{i+1}"),
-                "title": r["title"],
-                "severity": r["severity"],
-                "urgency": r.get("urgency", "90 gün"),
-                "domains": r.get("domains", []),
-                "financial_impact": _fmt_currency(r.get("financial_impact_cents", 0)),
-                "action": r.get("recommended_action", "")[:120],
-                "confidence": r.get("confidence", 0.75),
-            }
-            for i, r in enumerate(cross_risks[:6])
-        ],
-        "narrative": (
-            f"{critical_count} kritik ve {high_count} yüksek riskli; "
-            f"finansal ve teknoloji alanlarını kaplayan riskleri gösteren matris."
-            if cross_risks
-            else "Bu dönemde çapraz alan riski tespit edilmemiştir."
-        ),
-    })
+    slides.append(
+        {
+            "slide_number": 4,
+            "title": "Çapraz Alan Risk Envanteri",
+            "subtitle": f"{critical_count} Kritik + {high_count} Yüksek Risk",
+            "chart_type": "risk_matrix",
+            "risks": [
+                {
+                    "id": r.get("risk_id", f"R{i + 1}"),
+                    "title": r["title"],
+                    "severity": r["severity"],
+                    "urgency": r.get("urgency", "90 gün"),
+                    "domains": r.get("domains", []),
+                    "financial_impact": _fmt_currency(r.get("financial_impact_cents", 0)),
+                    "action": r.get("recommended_action", "")[:120],
+                    "confidence": r.get("confidence", 0.75),
+                }
+                for i, r in enumerate(cross_risks[:6])
+            ],
+            "narrative": (
+                f"{critical_count} kritik ve {high_count} yüksek riskli; "
+                f"finansal ve teknoloji alanlarını kaplayan riskleri gösteren matris."
+                if cross_risks
+                else "Bu dönemde çapraz alan riski tespit edilmemiştir."
+            ),
+        }
+    )
 
     # ── Slide 5: Strategic Priorities (Quantified ROI) ──────────────────────
-    slides.append({
-        "slide_number": 5,
-        "title": "Stratejik Öncelikler — İlk 5 (Nicel Etki)",
-        "subtitle": "Aciliyet ve Mali Etki ile Sıralandı",
-        "chart_type": "priority_matrix",
-        "priorities": [
-            {
-                "rank": p.get("rank", i+1),
-                "title": p["title"],
-                "owner": p.get("owner_role", "CEO"),
-                "timeline": p.get("urgency", "90 gün"),
-                "effort": p.get("effort", "orta"),
-                "impact": p.get("impact", "orta"),
-                "financial_impact": _fmt_currency(p.get("financial_impact_cents", 0)),
-                "rationale": p.get("rationale", "")[:150],
-                "confidence": p.get("confidence", 0.80),
-            }
-            for i, p in enumerate(priorities[:5])
-        ],
-        "narrative": f"İlk {min(5, len(priorities))} öncelik aciliyet ve mali etki ile sıralandı; "
-                     f"toplam tahmini etki: {_fmt_currency(sum(p.get('financial_impact_cents', 0) for p in priorities[:5]))}.",
-    })
+    slides.append(
+        {
+            "slide_number": 5,
+            "title": "Stratejik Öncelikler — İlk 5 (Nicel Etki)",
+            "subtitle": "Aciliyet ve Mali Etki ile Sıralandı",
+            "chart_type": "priority_matrix",
+            "priorities": [
+                {
+                    "rank": p.get("rank", i + 1),
+                    "title": p["title"],
+                    "owner": p.get("owner_role", "CEO"),
+                    "timeline": p.get("urgency", "90 gün"),
+                    "effort": p.get("effort", "orta"),
+                    "impact": p.get("impact", "orta"),
+                    "financial_impact": _fmt_currency(p.get("financial_impact_cents", 0)),
+                    "rationale": p.get("rationale", "")[:150],
+                    "confidence": p.get("confidence", 0.80),
+                }
+                for i, p in enumerate(priorities[:5])
+            ],
+            "narrative": f"İlk {min(5, len(priorities))} öncelik aciliyet ve mali etki ile sıralandı; "
+            f"toplam tahmini etki: {_fmt_currency(sum(p.get('financial_impact_cents', 0) for p in priorities[:5]))}.",
+        }
+    )
 
     # ── Slide 6: 12-Month Outlook (Scenario Bands) ───────────────────────────
-    slides.append({
-        "slide_number": 6,
-        "title": "12 Aylık Görünüm — Senaryo Bantları",
-        "subtitle": "Temel Durum, Iyimser ve Kötümser Tahminler",
-        "chart_type": "scenario_chart",
-        "key_metrics": [
-            {
-                "label": "Temel Durum Net",
-                "value": _fmt_currency(forecast_12m),
-            },
-            {
-                "label": "Iyimser Senaryo",
-                "value": _fmt_currency(int(forecast_12m * 1.20)),
-                "sub": "(+20% if all priorities succeed)",
-            },
-            {
-                "label": "Kötümser Senaryo",
-                "value": _fmt_currency(int(forecast_12m * 0.80)),
-                "sub": "(-20% if risks materialize)",
-            },
-            {
-                "label": "Nakit Pisti",
-                "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
-                "alert": _runway_alert(runway),
-            },
-            {
-                "label": "Aylık Kullanım",
-                "value": _fmt_currency(fin.get("monthly_burn_cents")),
-            },
-            {
-                "label": "Cloud Tasarrufu Potansiyeli",
-                "value": _fmt_currency(infra_waste),
-                **({"sub": f"Pisti +{runway_gain_months} ay getirir"} if runway_gain_months else {}),
-            },
-        ],
-        "narrative": (
-            f"12 aylık temel tahmin: {_fmt_currency(forecast_12m)}. "
-            f"{'Pisti kısıtı birinci dereceden risk.' if runway and runway <= 6 else 'Finansal trajektori stabil.'} "
-            f"{f'Cloud optimizasyonu pistiye {runway_gain_months} ay ekleyebilir.' if runway_gain_months else ''}"
-        ).strip(),
-    })
+    slides.append(
+        {
+            "slide_number": 6,
+            "title": "12 Aylık Görünüm — Senaryo Bantları",
+            "subtitle": "Temel Durum, Iyimser ve Kötümser Tahminler",
+            "chart_type": "scenario_chart",
+            "key_metrics": [
+                {
+                    "label": "Temel Durum Net",
+                    "value": _fmt_currency(forecast_12m),
+                },
+                {
+                    "label": "Iyimser Senaryo",
+                    "value": _fmt_currency(int(forecast_12m * 1.20)),
+                    "sub": "(+20% if all priorities succeed)",
+                },
+                {
+                    "label": "Kötümser Senaryo",
+                    "value": _fmt_currency(int(forecast_12m * 0.80)),
+                    "sub": "(-20% if risks materialize)",
+                },
+                {
+                    "label": "Nakit Pisti",
+                    "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
+                    "alert": _runway_alert(runway),
+                },
+                {
+                    "label": "Aylık Kullanım",
+                    "value": _fmt_currency(fin.get("monthly_burn_cents")),
+                },
+                {
+                    "label": "Cloud Tasarrufu Potansiyeli",
+                    "value": _fmt_currency(infra_waste),
+                    **(
+                        {"sub": f"Pisti +{runway_gain_months} ay getirir"}
+                        if runway_gain_months
+                        else {}
+                    ),
+                },
+            ],
+            "narrative": (
+                f"12 aylık temel tahmin: {_fmt_currency(forecast_12m)}. "
+                f"{'Pisti kısıtı birinci dereceden risk.' if runway and runway <= 6 else 'Finansal trajektori stabil.'} "
+                f"{f'Cloud optimizasyonu pistiye {runway_gain_months} ay ekleyebilir.' if runway_gain_months else ''}"
+            ).strip(),
+        }
+    )
 
     return slides
 
@@ -525,7 +547,9 @@ def _build_one_page_summary(
     for p in priorities[:5]:
         roi = p.get("financial_impact_cents", 0)
         total_roi += roi
-        lines.append(f"  {p.get('rank', 0)}. [{p.get('owner_role','CEO'):^6}] {p['title']} → {_fmt_currency(roi)}")
+        lines.append(
+            f"  {p.get('rank', 0)}. [{p.get('owner_role', 'CEO'):^6}] {p['title']} → {_fmt_currency(roi)}"
+        )
 
     lines += [
         "",
@@ -547,12 +571,12 @@ async def run_board_deck_agent(
     BoardDeck Skill — quantified impact + exec-ready Turkish.
     done_when: state['board_deck']['slides'] has >= 4 items.
     """
-    fin         = state.get("financial_summary") or {}
-    tech        = state.get("tech_summary") or {}
+    fin = state.get("financial_summary") or {}
+    tech = state.get("tech_summary") or {}
     cross_risks = state.get("cross_risks") or []
-    priorities  = state.get("strategic_priorities") or []
-    period      = state.get("period") or datetime.now(UTC).strftime("%Y-%m")
-    company     = state.get("company_name") or "Şirket"
+    priorities = state.get("strategic_priorities") or []
+    period = state.get("period") or datetime.now(UTC).strftime("%Y-%m")
+    company = state.get("company_name") or "Şirket"
 
     try:
         slides = _build_slides(fin, tech, cross_risks, priorities, period, company)
@@ -571,7 +595,9 @@ async def run_board_deck_agent(
 
         logger.info(
             "CEO BoardDeck: slides=%d period=%s company=%s",
-            len(slides), period, company,
+            len(slides),
+            period,
+            company,
         )
 
         return CEOSkillResult(

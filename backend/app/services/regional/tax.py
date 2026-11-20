@@ -1,4 +1,5 @@
 """Pack-aware tax rate tables (international core + TR pack)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -31,7 +32,9 @@ TR_TAX_RATES: list[dict[str, Any]] = [
 ]
 
 
-def tax_rates_for_org(*, country_code: str, regional_packs: list[str] | None = None) -> dict[str, Any]:
+def tax_rates_for_org(
+    *, country_code: str, regional_packs: list[str] | None = None
+) -> dict[str, Any]:
     packs = [p.lower() for p in (regional_packs or [])]
     cc = (country_code or "US").upper()
     if "tr" in packs or cc == "TR":

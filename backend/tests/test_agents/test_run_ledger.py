@@ -1,4 +1,5 @@
 """Durable run ledger (Faz 14) — bookkeeping, failure capture, resume."""
+
 from __future__ import annotations
 
 import pytest

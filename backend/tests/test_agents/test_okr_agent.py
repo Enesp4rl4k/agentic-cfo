@@ -7,6 +7,7 @@ Tests cover:
   - _overall_status: aggregate scoring
   - _infer_okrs: full OKR inference from financial + tech signals
 """
+
 from __future__ import annotations
 
 from app.agents.ceo.okr_agent import (
@@ -17,6 +18,7 @@ from app.agents.ceo.okr_agent import (
 )
 
 # ── _score_kr ─────────────────────────────────────────────────────────────────
+
 
 class TestScoreKr:
     def test_higher_is_better_at_target(self):
@@ -57,6 +59,7 @@ class TestScoreKr:
 
 # ── _status_from_score ────────────────────────────────────────────────────────
 
+
 class TestStatusFromScore:
     def test_achieved(self):
         assert _status_from_score(1.0) == "achieved"
@@ -75,6 +78,7 @@ class TestStatusFromScore:
 
 
 # ── _overall_status ───────────────────────────────────────────────────────────
+
 
 class TestOverallStatus:
     def _make_krs(self, pcts: list[int]) -> list[dict]:
@@ -105,6 +109,7 @@ class TestOverallStatus:
 
 # ── _infer_okrs ───────────────────────────────────────────────────────────────
 
+
 class TestInferOkrs:
     def _fin(self, net_margin=0.12, runway=8.0, revenue=1_000_000, forecast=1_100_000):
         return {
@@ -114,8 +119,9 @@ class TestInferOkrs:
             "forecast_base_12m_cents": forecast,
         }
 
-    def _tech(self, health=5.0, mttr=3.0, debt=5.0, velocity=35.0,
-              infra_waste=50_000, infra_cost=500_000):
+    def _tech(
+        self, health=5.0, mttr=3.0, debt=5.0, velocity=35.0, infra_waste=50_000, infra_cost=500_000
+    ):
         return {
             "overall_health_score": health,
             "mttr_hours": mttr,
@@ -133,8 +139,11 @@ class TestInferOkrs:
         objs = _infer_okrs(self._fin(), self._tech(), [], None)
         ids = {o["id"] for o in objs}
         assert ids == {
-            "fin_profitability", "fin_growth",
-            "tech_reliability", "tech_efficiency", "team_velocity",
+            "fin_profitability",
+            "fin_growth",
+            "tech_reliability",
+            "tech_efficiency",
+            "team_velocity",
         }
 
     def test_each_objective_has_required_fields(self):
@@ -188,7 +197,12 @@ class TestInferOkrs:
         rel = next(o for o in objs if o["id"] == "tech_reliability")
         # KR text is in Turkish: "Sıfır kritik çapraz alan riski"
         zero_risk_kr = next(
-            (kr for kr in rel["key_results"] if "sıfır" in kr["kr"].lower() or "kritik" in kr["kr"].lower()), None
+            (
+                kr
+                for kr in rel["key_results"]
+                if "sıfır" in kr["kr"].lower() or "kritik" in kr["kr"].lower()
+            ),
+            None,
         )
         assert zero_risk_kr is not None
         # 2 critical risks → off_track
@@ -199,7 +213,12 @@ class TestInferOkrs:
         rel = next(o for o in objs if o["id"] == "tech_reliability")
         # KR text is in Turkish: "Sıfır kritik çapraz alan riski"
         zero_risk_kr = next(
-            (kr for kr in rel["key_results"] if "sıfır" in kr["kr"].lower() or "kritik" in kr["kr"].lower()), None
+            (
+                kr
+                for kr in rel["key_results"]
+                if "sıfır" in kr["kr"].lower() or "kritik" in kr["kr"].lower()
+            ),
+            None,
         )
         assert zero_risk_kr is not None
         assert zero_risk_kr["status"] == "achieved"
@@ -214,16 +233,19 @@ class TestInferOkrs:
     def test_okr_definitions_override_target(self):
         # Override net margin target to 0.05 (easier to achieve)
         # KR text must match the Turkish key used in defaults: "Net marj ≥ 15%"
-        overrides = [{
-            "id": "fin_profitability",
-            "key_results": [{"kr": "Net marj ≥ 15%", "target": 0.05}],
-        }]
+        overrides = [
+            {
+                "id": "fin_profitability",
+                "key_results": [{"kr": "Net marj ≥ 15%", "target": 0.05}],
+            }
+        ]
         fin = self._fin(net_margin=0.06)
         objs = _infer_okrs(fin, self._tech(), [], None, okr_definitions=overrides)
         prof = next(o for o in objs if o["id"] == "fin_profitability")
         # Match by "marj" (Turkish) or "margin" (English) to be locale-agnostic
         margin_kr = next(
-            kr for kr in prof["key_results"]
+            kr
+            for kr in prof["key_results"]
             if "marj" in kr["kr"].lower() or "margin" in kr["kr"].lower()
         )
         assert margin_kr["target"] == 0.05

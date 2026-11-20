@@ -101,7 +101,9 @@ class ManagementConductor:
 
             if forced or has_data:
                 depth: RoleDepthLevel = max_depth  # type: ignore[assignment]
-                reason = "forced" if forced else f"signals={sorted(set(signals) & available_signals)}"
+                reason = (
+                    "forced" if forced else f"signals={sorted(set(signals) & available_signals)}"
+                )
                 plans.append(
                     RoleExecutionPlan(
                         role=role,

@@ -7,6 +7,7 @@ but adapted to Python and LangGraph.
 An Agent is a LangGraph StateGraph. Each node is one Skill.
 The confidence gate is a conditional edge before the first effect node.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -17,6 +18,7 @@ from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
 # ---------------------------------------------------------------------------
 # Shared audit type (one entry per skill run)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class StepLog:
@@ -30,11 +32,12 @@ class StepLog:
 # CFO Run State — threaded through all LangGraph nodes
 # ---------------------------------------------------------------------------
 
+
 class CFOState(TypedDict, total=False):
     # ── Input ─────────────────────────────────────────────────────────────────
     job_id: str
     file_path: str
-    file_type: str          # pdf | xlsx | csv
+    file_type: str  # pdf | xlsx | csv
     # More documents of the same analysis: [{"path": ..., "type": ..., "ad": ...}].
     # Several invoices dropped together are one analysis, not one each.
     ek_belgeler: list[dict[str, str]]
@@ -85,10 +88,10 @@ class CFOState(TypedDict, total=False):
 
     # Run control
     logs: list[StepLog]
-    min_confidence: float           # lowest confidence seen so far (starts at 1.0)
-    awaiting_review: bool           # True → hold; needs human approval before effects
-    halted: bool                    # True → stopped by error or explicit halt
-    error: str | None               # last error message if halted
+    min_confidence: float  # lowest confidence seen so far (starts at 1.0)
+    awaiting_review: bool  # True → hold; needs human approval before effects
+    halted: bool  # True → stopped by error or explicit halt
+    error: str | None  # last error message if halted
 
     # ── Kernel engineering metadata ───────────────────────────────────────────
     # CapabilityRouter: which agents to run (serialised RoutingPlan summary)
@@ -120,6 +123,7 @@ class CFOState(TypedDict, total=False):
 # Skill result — what each node returns as a state patch
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SkillResult:
     ok: bool
@@ -133,6 +137,7 @@ class SkillResult:
 # ---------------------------------------------------------------------------
 # Run config — injected into every node via LangGraph config
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AgentRunConfig:

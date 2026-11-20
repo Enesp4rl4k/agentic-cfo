@@ -26,6 +26,7 @@ Usage:
     await manager.broadcast_alert(org_id, alert_dict)
     await manager.disconnect(org_id, websocket)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,12 +42,14 @@ logger = logging.getLogger(__name__)
 
 try:
     from fastapi import WebSocket as _WebSocket
+
     WebSocket = _WebSocket
 except ImportError:
     WebSocket = Any  # type: ignore[assignment]
 
 
 # ── WSAlertManager ────────────────────────────────────────────────────────────
+
 
 class WSAlertManager:
     """
@@ -77,12 +80,16 @@ class WSAlertManager:
 
         # Send welcome heartbeat
         try:
-            await ws.send_text(json.dumps({
-                "type":    "connected",
-                "org_id":  org_id,
-                "message": "Real-time alert channel hazır",
-                "ts":      datetime.now(UTC).isoformat(),
-            }))
+            await ws.send_text(
+                json.dumps(
+                    {
+                        "type": "connected",
+                        "org_id": org_id,
+                        "message": "Real-time alert channel hazır",
+                        "ts": datetime.now(UTC).isoformat(),
+                    }
+                )
+            )
         except Exception:
             pass
 
@@ -109,38 +116,44 @@ class WSAlertManager:
         if org_id not in self._connections:
             return
 
-        message = json.dumps({
-            "type":  "new_alert",
-            "alert": alert,
-            "ts":    datetime.now(UTC).isoformat(),
-        })
+        message = json.dumps(
+            {
+                "type": "new_alert",
+                "alert": alert,
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        )
 
         await self._broadcast(org_id, message)
 
     async def broadcast_acknowledgement(
         self,
-        org_id:   str,
+        org_id: str,
         alert_id: str,
-        by_user:  str,
+        by_user: str,
     ) -> None:
         """
         Broadcast alert acknowledgement to all org members.
         Ensures all users see the alert as acknowledged in real-time.
         """
-        message = json.dumps({
-            "type":     "alert_acknowledged",
-            "alert_id": alert_id,
-            "by":       by_user,
-            "ts":       datetime.now(UTC).isoformat(),
-        })
+        message = json.dumps(
+            {
+                "type": "alert_acknowledged",
+                "alert_id": alert_id,
+                "by": by_user,
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        )
         await self._broadcast(org_id, message)
 
     async def send_heartbeat(self, org_id: str) -> None:
         """Send a heartbeat ping to keep connections alive."""
-        message = json.dumps({
-            "type": "heartbeat",
-            "ts":   datetime.now(UTC).isoformat(),
-        })
+        message = json.dumps(
+            {
+                "type": "heartbeat",
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        )
         await self._broadcast(org_id, message)
 
     async def _broadcast(self, org_id: str, message: str) -> None:

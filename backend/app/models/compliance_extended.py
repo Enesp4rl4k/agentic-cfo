@@ -9,6 +9,7 @@ declared them, `create_all` never created them on SQLite — so every route in
 Columns mirror migration 017 exactly; no schema change, so no new migration is
 needed for existing PostgreSQL deployments.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -25,13 +26,9 @@ class ComplianceCertification(Base):
     """One signed SOX/GDPR certification for an org and period."""
 
     __tablename__ = "compliance_certifications"
-    __table_args__ = (
-        Index("ix_compliance_certifications_org", "org_id", "framework"),
-    )
+    __table_args__ = (Index("ix_compliance_certifications_org", "org_id", "framework"),)
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: uuid.uuid4().hex
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     framework: Mapped[str] = mapped_column(String(20), nullable=False)
     period: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -60,13 +57,9 @@ class BreachNotification(Base):
     """A personal-data breach and its 72-hour KVKK/GDPR notification deadline."""
 
     __tablename__ = "breach_notifications"
-    __table_args__ = (
-        Index("ix_breach_notifications_org_status", "org_id", "status"),
-    )
+    __table_args__ = (Index("ix_breach_notifications_org_status", "org_id", "status"),)
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: uuid.uuid4().hex
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")

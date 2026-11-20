@@ -6,6 +6,7 @@ Chat API — POST /chat/job/{job_id}    CFO chat (finansal veriler)
 Finansal + teknoloji verileri üzerinde doğal dil soru-cevap.
 Streaming ve tek seferlik iki mod desteklenir.
 """
+
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -107,14 +108,19 @@ async def chat(
         if answer is None:
             raise LLMUnavailable("openai_api_key is a placeholder")
         if body.stream:
+
             async def _tek_cevap():
                 yield f"data: {answer}\n\n"
                 yield "data: [DONE]\n\n"
 
             return StreamingResponse(_tek_cevap(), media_type="text/event-stream")
-        return {"data": {"answer": answer, "job_id": job_id, "source": "stored_analysis"}, "error": None}
+        return {
+            "data": {"answer": answer, "job_id": job_id, "source": "stored_analysis"},
+            "error": None,
+        }
 
     if body.stream:
+
         async def _generate():
             async for chunk in stream_chat_with_cfo(
                 question=body.question,
@@ -206,12 +212,15 @@ async def chat_ceo(
                     "type": tx.type,
                     "category": tx.category,
                     "description": tx.description,
-                    "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+                    "transaction_date": tx.transaction_date.isoformat()
+                    if tx.transaction_date
+                    else None,
                 }
                 for tx in txs
             ]
 
     if body.stream:
+
         async def _generate():
             async for chunk in stream_chat_with_ceo(
                 question=body.question,
@@ -245,6 +254,7 @@ async def chat_ceo(
 
 
 # ── NL Query Engine — Phase 6.1 ──────────────────────────────────────────────
+
 
 class NLQueryRequest(BaseModel):
     query: str
@@ -297,9 +307,7 @@ async def natural_language_query(
 
     # Load recent transactions
     tx_result = await db.execute(
-        select(Transaction)
-        .where(Transaction.job_id == body.job_id)
-        .limit(50)
+        select(Transaction).where(Transaction.job_id == body.job_id).limit(50)
     )
     txs = tx_result.scalars().all()
     tx_dicts = [
@@ -333,17 +341,18 @@ async def natural_language_query(
 
     return {
         "data": {
-            "query":      body.query,
-            "intent":     result["intent"],
-            "answer":     result["answer"],
+            "query": body.query,
+            "intent": result["intent"],
+            "answer": result["answer"],
             "follow_ups": result["follow_ups"],
-            "value":      result.get("value"),
+            "value": result.get("value"),
         },
         "error": None,
     }
 
 
 # ── POST /query/stream — Streaming NL Query (for Omnibar AI mode) ─────────────
+
 
 @router.post("/query/stream", response_model=None)
 async def natural_language_query_stream(
@@ -377,9 +386,11 @@ async def natural_language_query_stream(
     )
     report = report_result.scalar_one_or_none()
     if not report or not report.data:
+
         async def _not_found():
             yield "data: Analiz verisi bulunamadı. Önce bir CSV yükleyip analiz çalıştırın.\n\n"
             yield "data: [DONE]\n\n"
+
         return StreamingResponse(_not_found(), media_type="text/event-stream")
 
     dashboard = report.data
@@ -426,6 +437,7 @@ async def natural_language_query_stream(
 
 # ── Universal Agent Chat — CompanyContext aware ───────────────────────────────
 
+
 class AgentChatRequest(BaseModel):
     """
     Universal chat request — any C-Suite agent can answer.
@@ -444,12 +456,13 @@ class AgentChatRequest(BaseModel):
     generating the final answer. Higher quality but ~2-3x slower.
     Recommended for complex multi-step questions.
     """
+
     question: str
-    agent_filter: str = "all"   # "all" | "cfo" | "cto" | "cmo" | "coo" | "chro" | "risk" | "audit"
-    conversation_history: list[dict] = []   # kept for backwards compat (client-side fallback)
-    session_id: str | None = None           # server-side session identifier
+    agent_filter: str = "all"  # "all" | "cfo" | "cto" | "cmo" | "coo" | "chro" | "risk" | "audit"
+    conversation_history: list[dict] = []  # kept for backwards compat (client-side fallback)
+    session_id: str | None = None  # server-side session identifier
     stream: bool = False
-    use_reasoning: bool = False             # AGENT-3: Think→Plan→Act loop
+    use_reasoning: bool = False  # AGENT-3: Think→Plan→Act loop
 
 
 def _build_agent_system_prompt(
@@ -479,9 +492,9 @@ def _build_agent_system_prompt(
         lines += [
             "=== CFO — FİNANSAL DURUM ===",
             f"Gelir: {pnl.get('revenue', 0):,.0f} TRY",
-            f"Brüt Marj: {pnl.get('gross_margin', 0)*100:.1f}%",
-            f"Net Marj: {pnl.get('net_margin', 0)*100:.1f}%",
-            f"FAVÖK: {pnl.get('ebitda', 0):,.0f} TRY ({pnl.get('ebitda_margin', 0)*100:.1f}%)",
+            f"Brüt Marj: {pnl.get('gross_margin', 0) * 100:.1f}%",
+            f"Net Marj: {pnl.get('net_margin', 0) * 100:.1f}%",
+            f"FAVÖK: {pnl.get('ebitda', 0):,.0f} TRY ({pnl.get('ebitda_margin', 0) * 100:.1f}%)",
             f"Nakit Akışı (İşletme): {cashflow.get('operating', 0):,.0f} TRY",
         ]
         base_fc = (forecast.get("scenarios") or {}).get("base", {})
@@ -491,7 +504,7 @@ def _build_agent_system_prompt(
         if alerts:
             lines.append(f"Aktif Uyarılar: {len(alerts)} adet")
             for a in alerts[:3]:
-                lines.append(f"  • [{a.get('level','?').upper()}] {a.get('message','')}")
+                lines.append(f"  • [{a.get('level', '?').upper()}] {a.get('message', '')}")
         lines.append("")
 
     # CTO data
@@ -504,12 +517,12 @@ def _build_agent_system_prompt(
             if summary.get("overall_health_score"):
                 lines.append(f"Teknoloji Sağlık Skoru: {summary['overall_health_score']:.1f}/10")
             if infra.get("total_cost_cents"):
-                lines.append(f"Bulut Maliyeti: {infra['total_cost_cents']/100:,.0f} TRY")
+                lines.append(f"Bulut Maliyeti: {infra['total_cost_cents'] / 100:,.0f} TRY")
             if infra.get("waste_estimate_cents"):
-                lines.append(f"Tahmini İsraf: {infra['waste_estimate_cents']/100:,.0f} TRY")
+                lines.append(f"Tahmini İsraf: {infra['waste_estimate_cents'] / 100:,.0f} TRY")
             if summary.get("quick_wins"):
                 for w in summary["quick_wins"][:2]:
-                    lines.append(f"  • Hızlı Kazanım: {w.get('action','')}")
+                    lines.append(f"  • Hızlı Kazanım: {w.get('action', '')}")
             lines.append("")
 
     # CMO data
@@ -524,7 +537,7 @@ def _build_agent_system_prompt(
             if campaigns.get("overall_roas"):
                 lines.append(f"ROAS: {campaigns['overall_roas']:.2f}x")
             if campaigns.get("blended_cac_cents"):
-                lines.append(f"CAC: {campaigns['blended_cac_cents']/100:,.0f} TRY")
+                lines.append(f"CAC: {campaigns['blended_cac_cents'] / 100:,.0f} TRY")
             lines.append("")
 
     # COO data
@@ -537,7 +550,7 @@ def _build_agent_system_prompt(
                 lines.append(f"Operasyon Skoru: {summary['overall_ops_score']:.1f}/10")
             sla = coo.get("sla", {})
             if sla.get("breach_rate") is not None:
-                lines.append(f"SLA İhlal Oranı: {sla['breach_rate']*100:.1f}%")
+                lines.append(f"SLA İhlal Oranı: {sla['breach_rate'] * 100:.1f}%")
             lines.append("")
 
     # CHRO data
@@ -553,7 +566,9 @@ def _build_agent_system_prompt(
             if headcount.get("total_headcount"):
                 lines.append(f"Toplam Çalışan: {headcount['total_headcount']}")
             if attrition.get("annualized_attrition_rate") is not None:
-                lines.append(f"Yıllık Attrition: {attrition['annualized_attrition_rate']*100:.1f}%")
+                lines.append(
+                    f"Yıllık Attrition: {attrition['annualized_attrition_rate'] * 100:.1f}%"
+                )
             lines.append("")
 
     # Risk data
@@ -566,7 +581,7 @@ def _build_agent_system_prompt(
                 lines.append(f"Risk Skoru: {summary['overall_risk_score']:.0f}/100")
             if summary.get("top_risks"):
                 for r in (summary.get("top_risks") or [])[:2]:
-                    lines.append(f"  • [{r.get('severity','?').upper()}] {r.get('message','')}")
+                    lines.append(f"  • [{r.get('severity', '?').upper()}] {r.get('message', '')}")
             lines.append("")
 
     if not any([cfo, cto, cmo, coo, chro, risk]):
@@ -644,7 +659,9 @@ async def chat_with_agent(
     if not conversation_history and body.conversation_history:
         conversation_history = body.conversation_history
 
-    active_cfo_job_id = (ctx.active_cfo_job_id or None) if hasattr(ctx, "active_cfo_job_id") else None
+    active_cfo_job_id = (
+        (ctx.active_cfo_job_id or None) if hasattr(ctx, "active_cfo_job_id") else None
+    )
     pack = await prepare_grounded_chat(
         db=db,
         org_id=org_id,
@@ -727,6 +744,7 @@ async def chat_with_agent(
 
     if body.use_reasoning:
         from app.services.reasoning_loop import get_reasoning_loop
+
         loop = get_reasoning_loop()
         result = await loop.run(
             question=body.question,
@@ -762,11 +780,11 @@ async def chat_with_agent(
         "data": {
             "answer": answer,
             "agent_filter": body.agent_filter,
-            "session_id": session_id,               # return so client can reuse
+            "session_id": session_id,  # return so client can reuse
             "context_agents": context_agents,
             "company_name": ctx.company_name,
             "used_reasoning": body.use_reasoning,
-            "reasoning_trace": reasoning_trace,     # None unless use_reasoning=True
+            "reasoning_trace": reasoning_trace,  # None unless use_reasoning=True
             "evidence_found": evidence_found,
             "evidence_job_scope": job_scope,
             "evidence_retriever_version": pack.retriever_version,
@@ -836,10 +854,7 @@ async def chat_sse(
     """Fallback GET endpoint for SSE when WebSockets are blocked."""
     # Build a pseudo request body to reuse the chat_with_agent logic
     req = AgentChatRequest(
-        question=question,
-        session_id=session_id,
-        agent_filter=agent_filter,
-        stream=True
+        question=question, session_id=session_id, agent_filter=agent_filter, stream=True
     )
     # Re-use the existing universal chat function
     response = await chat_with_agent(body=req, user=user, db=db)
@@ -851,4 +866,5 @@ async def chat_sse(
     async def _fail():
         yield "data: Error: Could not start SSE stream\n\n"
         yield "data: [DONE]\n\n"
+
     return StreamingResponse(_fail(), media_type="text/event-stream")

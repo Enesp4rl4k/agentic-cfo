@@ -228,17 +228,17 @@ Normalized transaction from any source:
 
 ```python
 class SyncTransaction(BaseModel):
-    date: datetime                      # Transaction date (UTC)
-    description: str                    # Human-readable description
-    amount_cents: int                   # Always positive; sign in tx_type
-    tx_type: TransactionType            # "income" | "expense"
-    currency: str = "TRY"               # 3-letter code
-    vendor: Optional[str] = None        # Counterparty name
-    balance_cents: Optional[int] = None # Running balance
-    reference: Optional[str] = None     # External transaction ID
-    source_type: SyncSourceType         # Which source this came from
-    source_id: Optional[str] = None     # Unique ID in source system
-    raw_row: str = ""                   # Original data for audit
+    date: datetime  # Transaction date (UTC)
+    description: str  # Human-readable description
+    amount_cents: int  # Always positive; sign in tx_type
+    tx_type: TransactionType  # "income" | "expense"
+    currency: str = "TRY"  # 3-letter code
+    vendor: Optional[str] = None  # Counterparty name
+    balance_cents: Optional[int] = None  # Running balance
+    reference: Optional[str] = None  # External transaction ID
+    source_type: SyncSourceType  # Which source this came from
+    source_id: Optional[str] = None  # Unique ID in source system
+    raw_row: str = ""  # Original data for audit
 ```
 
 ## SyncBatch
@@ -247,12 +247,12 @@ Result of one sync operation:
 
 ```python
 class SyncBatch(BaseModel):
-    source_type: SyncSourceType         # Which source
-    sync_timestamp: datetime            # When sync ran
-    transactions: list[SyncTransaction] # Normalized transactions
-    warnings: list[str]                 # Data quality warnings
-    error_count: int                    # Failed transaction count
-    total_processed: int                # Total attempted
+    source_type: SyncSourceType  # Which source
+    sync_timestamp: datetime  # When sync ran
+    transactions: list[SyncTransaction]  # Normalized transactions
+    warnings: list[str]  # Data quality warnings
+    error_count: int  # Failed transaction count
+    total_processed: int  # Total attempted
 ```
 
 ## SyncJobLog
@@ -262,7 +262,7 @@ Immutable audit trail entry:
 ```python
 class SyncJobLog(BaseModel):
     source_type: SyncSourceType
-    status: SyncStatus                  # success | partial_failure | failed
+    status: SyncStatus  # success | partial_failure | failed
     started_at: datetime
     ended_at: Optional[datetime]
     duration_ms: Optional[int]
@@ -271,7 +271,7 @@ class SyncJobLog(BaseModel):
     conflict_count: int
     warnings: list[str]
     error_message: Optional[str]
-    data_hash: str                      # SHA256 for integrity verification
+    data_hash: str  # SHA256 for integrity verification
 ```
 
 # ═══════════════════════════════════════════════════════════════════════════════

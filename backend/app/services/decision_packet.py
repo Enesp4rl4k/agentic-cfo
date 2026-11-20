@@ -29,6 +29,7 @@ Money fields follow the report's convention — kuruş (integer minor unit);
 the UI divides. Timestamps are UTC; age maths live in `services/freshness.py`,
 which normalises SQLite's naive datetimes before any comparison.
 """
+
 from __future__ import annotations
 
 import logging
@@ -103,6 +104,7 @@ def _forecast_to_kurus(forecast: dict[str, Any]) -> dict[str, Any]:
 
 # ── Report access (shared with api/counterfactual) ───────────────────────────
 
+
 async def load_pnl_cashflow_forecast(
     db: AsyncSession, job_id: str
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -132,9 +134,8 @@ async def load_pnl_cashflow_forecast(
     )
 
 
-
-
 # ── Situation ────────────────────────────────────────────────────────────────
+
 
 async def build_situation(
     db: AsyncSession,
@@ -155,9 +156,7 @@ async def build_situation(
     top_cat = max(opex, key=lambda k: opex[k], default=None)
     base = (forecast.get("scenarios") or {}).get("base") or {}
     anomaly_count = (
-        await db.execute(
-            select(func.count(Anomaly.id)).where(Anomaly.job_id == job.id)
-        )
+        await db.execute(select(func.count(Anomaly.id)).where(Anomaly.job_id == job.id))
     ).scalar_one()
 
     return {
@@ -169,13 +168,12 @@ async def build_situation(
         "runway_months": base.get("runway_months"),
         "forecast_12m_net": base.get("twelve_month_net"),
         "anomaly_count": int(anomaly_count),
-        "min_confidence": (
-            float(job.min_confidence) if job.min_confidence is not None else None
-        ),
+        "min_confidence": (float(job.min_confidence) if job.min_confidence is not None else None),
     }
 
 
 # ── Options ──────────────────────────────────────────────────────────────────
+
 
 def build_preset_options(
     pnl: dict[str, Any],
@@ -202,8 +200,7 @@ def build_preset_options(
             "id": "baseline",
             "label": "Hiçbir şey yapma",
             "description": (
-                "Mevcut planla devam et: baz senaryo tahmini olduğu gibi "
-                "geçerli kalır."
+                "Mevcut planla devam et: baz senaryo tahmini olduğu gibi geçerli kalır."
             ),
             "baseline": True,
             "base_net_impact": 0,
@@ -242,6 +239,7 @@ def build_preset_options(
 
 # ── Precedent ────────────────────────────────────────────────────────────────
 
+
 async def build_precedent(db: AsyncSession, job: AnalysisJob) -> dict[str, Any]:
     """This org's recorded decisions + open actions.
 
@@ -259,13 +257,17 @@ async def build_precedent(db: AsyncSession, job: AnalysisJob) -> dict[str, Any]:
         from app.models.decision_log import DecisionLog
 
         rows = (
-            await db.execute(
-                select(DecisionLog)
-                .where(DecisionLog.org_id == job.org_id)
-                .order_by(desc(DecisionLog.created_at))
-                .limit(3)
+            (
+                await db.execute(
+                    select(DecisionLog)
+                    .where(DecisionLog.org_id == job.org_id)
+                    .order_by(desc(DecisionLog.created_at))
+                    .limit(3)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         ledger = [
             {
                 "id": r.id,
@@ -300,9 +302,7 @@ async def build_precedent(db: AsyncSession, job: AnalysisJob) -> dict[str, Any]:
     return {"decisions": merged, "pending_actions": pending_actions}
 
 
-async def build_evidence(
-    db: AsyncSession, job: AnalysisJob, top_opex_category: str | None
-) -> str:
+async def build_evidence(db: AsyncSession, job: AnalysisJob, top_opex_category: str | None) -> str:
     """Best-effort RAG snippets for the situation — "" on any failure."""
     if not job.org_id:
         return ""
@@ -310,9 +310,7 @@ async def build_evidence(
 
     query = " ".join(p for p in (top_opex_category, "gider", "nakit", "gelir") if p)
     try:
-        return await retrieve_evidence(
-            db, org_id=job.org_id, query=query, job_id=job.id, top_k=3
-        )
+        return await retrieve_evidence(db, org_id=job.org_id, query=query, job_id=job.id, top_k=3)
     except Exception as exc:
         logger.debug("Decision packet: evidence unavailable: %s", exc)
         return ""
@@ -320,23 +318,21 @@ async def build_evidence(
 
 # ── Gate ─────────────────────────────────────────────────────────────────────
 
+
 def build_gate(job: AnalysisJob) -> dict[str, Any]:
     """Why a human is looking at this at all — stated, not implied."""
     held = bool(job.awaiting_review)
     return {
         "held_for_review": held,
-        "min_confidence": (
-            float(job.min_confidence) if job.min_confidence is not None else None
-        ),
+        "min_confidence": (float(job.min_confidence) if job.min_confidence is not None else None),
         "reason": (
-            "Analiz güven eşiğinin altında sonuç üretti — insan onayı bekleniyor."
-            if held
-            else None
+            "Analiz güven eşiğinin altında sonuç üretti — insan onayı bekleniyor." if held else None
         ),
     }
 
 
 # ── Assembly ─────────────────────────────────────────────────────────────────
+
 
 async def build_decision_packet(db: AsyncSession, job: AnalysisJob) -> dict[str, Any]:
     """The full packet. Read-only, deterministic, safe to call repeatedly
@@ -355,7 +351,5 @@ async def build_decision_packet(db: AsyncSession, job: AnalysisJob) -> dict[str,
         "precedent": await build_precedent(db, job),
         # "Tahminleriniz tuttu mu?" — org-wide, honest about thin data.
         "calibration": await build_backtest(db, org_id=job.org_id),
-        "evidence": await build_evidence(
-            db, job, situation.get("top_opex_category")
-        ),
+        "evidence": await build_evidence(db, job, situation.get("top_opex_category")),
     }

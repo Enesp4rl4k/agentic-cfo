@@ -21,6 +21,7 @@ It is small. The published numbers say "test setinde x/n" precisely so nobody
 reads them as a guarantee on their own books; an organisation's own SMMM
 decisions replace them once there are enough (guven.GECMIS_ESIGI).
 """
+
 from __future__ import annotations
 
 from tests.fixtures.tr_corpus.thp_cases import THP_GOLDEN_CASES
@@ -31,7 +32,12 @@ _TECHNOVA: list[tuple[str, str, str, str]] = [
     ("Danışmanlık Hizmet Bedeli - DEF Ltd", "income", "600", "verilen hizmet hasılattır"),
     ("Ocak Ofis Kirası - Levent İstanbul", "expense", "770", "ofis kirası genel yönetim gideri"),
     ("Ocak Elektrik Faturası - İGDAŞ", "expense", "770", "ofis enerjisi genel yönetim gideri"),
-    ("Ocak İnternet - Turkcell Superonline", "expense", "770", "ofis iletişimi genel yönetim gideri"),
+    (
+        "Ocak İnternet - Turkcell Superonline",
+        "expense",
+        "770",
+        "ofis iletişimi genel yönetim gideri",
+    ),
     ("Ocak Maaş Ödemeleri - Mühendislik Ekibi", "expense", "730", "ücret personel hesabına"),
     ("Ocak Maaş Ödemeleri - Satış Ekibi", "expense", "730", "satış ekibinin ücreti de ücrettir"),
     ("Google Ads Ocak Kampanyası", "expense", "760", "reklam pazarlama gideri"),
@@ -42,12 +48,27 @@ _TECHNOVA: list[tuple[str, str, str, str]] = [
     ("Şubat Küçük Satış - Tek Müşteri", "income", "600", "satış hasılatı"),
     ("Şubat Ofis Kirası - Levent İstanbul", "expense", "770", "ofis kirası"),
     ("Şubat Maaş Ödemeleri - Tüm Ekip", "expense", "730", "ücret"),
-    ("Aşırı Pazarlama Harcaması - Ajans Kampanyası", "expense", "760", "ajans kampanyası pazarlama gideri"),
-    ("Tekrar Eden Tedarikçi Ödemesi - XYZ Bilişim", "expense", "320", "tedarikçiye ödeme satıcı borcunu kapatır"),
+    (
+        "Aşırı Pazarlama Harcaması - Ajans Kampanyası",
+        "expense",
+        "760",
+        "ajans kampanyası pazarlama gideri",
+    ),
+    (
+        "Tekrar Eden Tedarikçi Ödemesi - XYZ Bilişim",
+        "expense",
+        "320",
+        "tedarikçiye ödeme satıcı borcunu kapatır",
+    ),
 ]
 
 _BANKA_EKSTRESI: list[tuple[str, str, str, str]] = [
-    ("Müşteri tahsilatı - Fatura No 2024/118", "income", "120", "faturası daha önce kesilmiş alacağın tahsili"),
+    (
+        "Müşteri tahsilatı - Fatura No 2024/118",
+        "income",
+        "120",
+        "faturası daha önce kesilmiş alacağın tahsili",
+    ),
     ("Kira geliri - Depo", "income", "602", "esas faaliyet dışı kira geliri"),
     ("Mevduat faiz geliri", "income", "602", "faiz geliri diğer gelir"),
     ("Kredi faiz ödemesi - Yapı Kredi", "expense", "657", "kredi faizi finansman gideri"),

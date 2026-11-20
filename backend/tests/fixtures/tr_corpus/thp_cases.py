@@ -24,57 +24,56 @@ Only the rule engine is exercised: the LLM path needs a live key and would make
 the eval non-deterministic. Cases are therefore phrased the way a Turkish bank
 statement or invoice line actually reads.
 """
+
 from __future__ import annotations
 
 # (description, transaction_type, expected THP account, why)
 THP_GOLDEN_CASES: list[tuple[str, str, str, str]] = [
     # ── Personnel ─────────────────────────────────────────────────────────────
-    ("Ocak ayi personel maas odemesi", "expense", "730",
-     "Ücret gideri personel hesabına"),
-    ("SGK primi odemesi", "expense", "361",
-     "Sosyal güvenlik kesintisi 361'e; 360 vergi hesabıdır"),
-
+    ("Ocak ayi personel maas odemesi", "expense", "730", "Ücret gideri personel hesabına"),
+    ("SGK primi odemesi", "expense", "361", "Sosyal güvenlik kesintisi 361'e; 360 vergi hesabıdır"),
     # ── Operating expenses ────────────────────────────────────────────────────
-    ("Ofis kira odemesi", "expense", "770",
-     "Kira genel yönetim gideri"),
-    ("Elektrik faturasi odemesi", "expense", "770",
-     "Genel yönetim gideri"),
-    ("Google Ads reklam harcamasi", "expense", "760",
-     "Reklam pazarlama-satış-dağıtım giderine"),
-    ("Ar-Ge prototip gideri", "expense", "750",
-     "Ar-Ge ayrı bir gider hesabıdır"),
-
+    ("Ofis kira odemesi", "expense", "770", "Kira genel yönetim gideri"),
+    ("Elektrik faturasi odemesi", "expense", "770", "Genel yönetim gideri"),
+    ("Google Ads reklam harcamasi", "expense", "760", "Reklam pazarlama-satış-dağıtım giderine"),
+    ("Ar-Ge prototip gideri", "expense", "750", "Ar-Ge ayrı bir gider hesabıdır"),
     # ── Taxes ─────────────────────────────────────────────────────────────────
-    ("KDV beyannamesi odemesi", "expense", "360",
-     "Ödenecek vergi ve fonlar"),
-
+    ("KDV beyannamesi odemesi", "expense", "360", "Ödenecek vergi ve fonlar"),
     # ── Financing ─────────────────────────────────────────────────────────────
-    ("Banka kredi faizi gideri", "expense", "657",
-     "Faiz gideri; 102 Bankalar bir varlık hesabıdır"),
-
+    (
+        "Banka kredi faizi gideri",
+        "expense",
+        "657",
+        "Faiz gideri; 102 Bankalar bir varlık hesabıdır",
+    ),
     # ── Assets ────────────────────────────────────────────────────────────────
-    ("Bilgisayar alimi demirbas", "expense", "255",
-     "Demirbaş, gider değil duran varlık"),
-    ("Yazilim lisans bedeli", "expense", "260",
-     "Lisans bir haktır"),
-    ("Ticari mal alisi stok girisi", "expense", "153",
-     "Stok girişi"),
-
+    ("Bilgisayar alimi demirbas", "expense", "255", "Demirbaş, gider değil duran varlık"),
+    ("Yazilim lisans bedeli", "expense", "260", "Lisans bir haktır"),
+    ("Ticari mal alisi stok girisi", "expense", "153", "Stok girişi"),
     # ── Revenue ───────────────────────────────────────────────────────────────
-    ("Yurt ici satis faturasi", "income", "600",
-     "Yurt içi satış"),
-    ("Ihracat bedeli doviz geliri", "income", "601",
-     "İhracat yurt dışı satışa"),
-    ("Musteri tahsilati havale", "income", "120",
-     "Tahsilat alacağı azaltır; gelir fatura kesildiğinde tanınmıştı"),
-
+    ("Yurt ici satis faturasi", "income", "600", "Yurt içi satış"),
+    ("Ihracat bedeli doviz geliri", "income", "601", "İhracat yurt dışı satışa"),
+    (
+        "Musteri tahsilati havale",
+        "income",
+        "120",
+        "Tahsilat alacağı azaltır; gelir fatura kesildiğinde tanınmıştı",
+    ),
     # ── Direction ─────────────────────────────────────────────────────────────
     # Both came from a live run on the TechNova fixture. The classifier ignored
     # which way the money moved and let one keyword decide.
-    ("Ocak Yazılım Lisans Geliri - ABC Holding", "income", "600",
-     "Lisans *geliri* hasılattır; 260 Haklar bir varlık alımıdır, gelir değil"),
-    ("Ocak Maaş Ödemeleri - Satış Ekibi", "expense", "730",
-     "Satış ekibinin maaşı bir giderdir; çıkan para 600 hasılata yazılamaz"),
+    (
+        "Ocak Yazılım Lisans Geliri - ABC Holding",
+        "income",
+        "600",
+        "Lisans *geliri* hasılattır; 260 Haklar bir varlık alımıdır, gelir değil",
+    ),
+    (
+        "Ocak Maaş Ödemeleri - Satış Ekibi",
+        "expense",
+        "730",
+        "Satış ekibinin maaşı bir giderdir; çıkan para 600 hasılata yazılamaz",
+    ),
 ]
 
 # Accounts `double_entry` supplies structurally as the cash side of every entry.

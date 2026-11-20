@@ -19,6 +19,7 @@ Kullanım:
     pnl_with_evidence = eb.attach_pnl_evidence(pnl, transactions)
     anomaly_with_evidence = eb.attach_anomaly_evidence(anomaly, transactions)
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,26 +31,28 @@ logger = logging.getLogger(__name__)
 
 # ── Kanıt yapısı ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Evidence:
     """Tek bir analiz sonucu için kanıt zinciri."""
-    method: str                         # "deterministic" | "llm" | "hybrid"
-    confidence: float                   # 0.0 – 1.0
-    formula: str = ""                   # Hesaplama formülü (örn. "Gelir - COGS = Brüt Kâr")
+
+    method: str  # "deterministic" | "llm" | "hybrid"
+    confidence: float  # 0.0 – 1.0
+    formula: str = ""  # Hesaplama formülü (örn. "Gelir - COGS = Brüt Kâr")
     transaction_ids: list[str] = field(default_factory=list)  # Kaynak işlem ID'leri
-    data_points: int = 0                # Kullanılan veri noktası sayısı
-    audit_trail: list[str] = field(default_factory=list)      # Adım adım iz
-    assumptions: list[str] = field(default_factory=list)      # Varsayımlar
+    data_points: int = 0  # Kullanılan veri noktası sayısı
+    audit_trail: list[str] = field(default_factory=list)  # Adım adım iz
+    assumptions: list[str] = field(default_factory=list)  # Varsayımlar
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "method":          self.method,
-            "confidence":      round(self.confidence, 3),
-            "formula":         self.formula,
+            "method": self.method,
+            "confidence": round(self.confidence, 3),
+            "formula": self.formula,
             "transaction_ids": self.transaction_ids[:20],  # max 20 ID frontend'de
-            "data_points":     self.data_points,
-            "audit_trail":     self.audit_trail,
-            "assumptions":     self.assumptions,
+            "data_points": self.data_points,
+            "audit_trail": self.audit_trail,
+            "assumptions": self.assumptions,
         }
 
 
@@ -61,6 +64,7 @@ def _tx_ids(transactions: list[dict[str, Any]], filter_fn=None) -> list[str]:
 
 
 # ── EvidenceBuilder ───────────────────────────────────────────────────────────
+
 
 class EvidenceBuilder:
     """
@@ -79,23 +83,23 @@ class EvidenceBuilder:
         S3-2: Attach evidence to P&L result.
         Shows which transactions contributed to revenue, COGS, each opex category.
         """
-        income_txs  = [t for t in transactions if t.get("type") == "income"]
+        income_txs = [t for t in transactions if t.get("type") == "income"]
         expense_txs = [t for t in transactions if t.get("type") == "expense"]
-        cogs_txs    = [t for t in expense_txs if t.get("category") == "cogs"]
-        salary_txs  = [t for t in expense_txs if t.get("category") == "salary"]
+        cogs_txs = [t for t in expense_txs if t.get("category") == "cogs"]
+        salary_txs = [t for t in expense_txs if t.get("category") == "salary"]
 
         revenue = pnl.get("revenue", 0)
-        cogs    = pnl.get("cogs", 0)
-        gp      = pnl.get("gross_profit", 0)
-        ebitda  = pnl.get("ebitda", 0)
-        net     = pnl.get("net_income", 0)
+        cogs = pnl.get("cogs", 0)
+        gp = pnl.get("gross_profit", 0)
+        ebitda = pnl.get("ebitda", 0)
+        net = pnl.get("net_income", 0)
 
         audit_trail = [
-            f"Gelir: {len(income_txs)} işlem toplandı → ₺{revenue/100:,.0f}",
-            f"SMM: {len(cogs_txs)} işlem → ₺{cogs/100:,.0f}",
-            f"Brüt Kâr: ₺{revenue/100:,.0f} - ₺{cogs/100:,.0f} = ₺{gp/100:,.0f}",
-            f"EBITDA: Brüt Kâr - OpEx toplamı = ₺{ebitda/100:,.0f}",
-            f"Net Gelir: EBITDA - Vergi - Kredi = ₺{net/100:,.0f}",
+            f"Gelir: {len(income_txs)} işlem toplandı → ₺{revenue / 100:,.0f}",
+            f"SMM: {len(cogs_txs)} işlem → ₺{cogs / 100:,.0f}",
+            f"Brüt Kâr: ₺{revenue / 100:,.0f} - ₺{cogs / 100:,.0f} = ₺{gp / 100:,.0f}",
+            f"EBITDA: Brüt Kâr - OpEx toplamı = ₺{ebitda / 100:,.0f}",
+            f"Net Gelir: EBITDA - Vergi - Kredi = ₺{net / 100:,.0f}",
         ]
 
         mom = pnl.get("revenue_mom_pct")
@@ -127,8 +131,11 @@ class EvidenceBuilder:
         transactions: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Attach evidence to cash flow result."""
-        operating_txs = [t for t in transactions
-                         if t.get("category") not in ("loan",) and t.get("type") in ("income", "expense")]
+        operating_txs = [
+            t
+            for t in transactions
+            if t.get("category") not in ("loan",) and t.get("type") in ("income", "expense")
+        ]
         financing_txs = [t for t in transactions if t.get("category") == "loan"]
 
         ccc = cashflow.get("ccc_days")
@@ -137,7 +144,8 @@ class EvidenceBuilder:
         _olcum = "tahmin" if cashflow.get("ccc_olcum") == "tahmin" else "hesap"
         ccc_trail = (
             f"CCC ({_olcum}): DSO({cashflow.get('dso_days', '?')}) - DPO({cashflow.get('dpo_days', '?')}) = {ccc} gün"
-            if ccc is not None else ""
+            if ccc is not None
+            else ""
         )
 
         evidence = Evidence(
@@ -149,12 +157,17 @@ class EvidenceBuilder:
             audit_trail=[
                 f"Faaliyet işlemleri: {len(operating_txs)} adet",
                 f"Finansman işlemleri: {len(financing_txs)} adet",
-                f"Net CF: ₺{cashflow.get('net_change', 0)/100:,.0f}",
-            ] + ([ccc_trail] if ccc_trail else []),
-            assumptions=["Yatırım işlemleri (demirbaş) ayrıca tanımlanmamıştır"] + (
-                ["DSO/DPO gün sayıları ekstredeki işlem büyüklüklerinden tahmindir; "
-                 "fatura tarihlerinden ölçülmemiştir"]
-                if cashflow.get("ccc_olcum") == "tahmin" else []
+                f"Net CF: ₺{cashflow.get('net_change', 0) / 100:,.0f}",
+            ]
+            + ([ccc_trail] if ccc_trail else []),
+            assumptions=["Yatırım işlemleri (demirbaş) ayrıca tanımlanmamıştır"]
+            + (
+                [
+                    "DSO/DPO gün sayıları ekstredeki işlem büyüklüklerinden tahmindir; "
+                    "fatura tarihlerinden ölçülmemiştir"
+                ]
+                if cashflow.get("ccc_olcum") == "tahmin"
+                else []
             ),
         )
 
@@ -177,7 +190,7 @@ class EvidenceBuilder:
         for t in related[:5]:
             evidence_details.append(
                 f"İşlem {t.get('id', '?')[:8]}: "
-                f"₺{t.get('amount_cents', 0)/100:,.0f} "
+                f"₺{t.get('amount_cents', 0) / 100:,.0f} "
                 f"({t.get('category', '?')}, {str(t.get('transaction_date', ''))[:10]})"
             )
 
@@ -191,7 +204,9 @@ class EvidenceBuilder:
             transaction_ids=tx_ids[:20],
             data_points=len(transactions),
             audit_trail=evidence_details or ["İlgili işlem detayları mevcut değil"],
-            assumptions=["Sektör ortalaması verileri kullanılmadı — sadece bu şirkete özgü pattern"],
+            assumptions=[
+                "Sektör ortalaması verileri kullanılmadı — sadece bu şirkete özgü pattern"
+            ],
         )
 
         return {**anomaly, "_evidence": evidence.to_dict()}
@@ -208,7 +223,9 @@ class EvidenceBuilder:
 
         audit_trail = [
             f"Geçmiş veri: {n_months} aylık seri kullanıldı",
-            f"Monte Carlo: {n_simulations} simülasyon çalıştırıldı" if n_simulations else "Monte Carlo çalıştırılmadı (yetersiz veri)",
+            f"Monte Carlo: {n_simulations} simülasyon çalıştırıldı"
+            if n_simulations
+            else "Monte Carlo çalıştırılmadı (yetersiz veri)",
         ]
 
         if forecast.get("seasonality_applied"):
@@ -252,7 +269,7 @@ class EvidenceBuilder:
         for item in over_budget[:3]:
             audit_trail.append(
                 f"⚠️ {item['category']}: %{item['variance_pct']:+.1f} aşım "
-                f"(₺{item['actual']/100:,.0f} / ₺{item['budgeted']/100:,.0f})"
+                f"(₺{item['actual'] / 100:,.0f} / ₺{item['budgeted'] / 100:,.0f})"
             )
 
         expense_txs = [t for t in transactions if t.get("type") == "expense"]
@@ -273,11 +290,11 @@ class EvidenceBuilder:
 def _anomaly_formula(anomaly_type: str) -> str:
     """Return the detection formula for each anomaly type."""
     formulas = {
-        "duplicate":              "Hash karşılaştırması: (tarih, tutar, tedarikçi) üçlüsü eşleşmesi",
-        "unusual_amount":         "Z-score: |x - μ| / σ > 3.0 → olağandışı tutar",
-        "vendor_concentration":   "Herfindahl-Hirschman Index > 0.5 → tedarikçi yoğunlaşması",
-        "expense_spike":          "MoM değişim: %30+ artış → gider artışı",
-        "round_number":           "Tutar tam yüz veya bin: kural tabanlı pattern",
+        "duplicate": "Hash karşılaştırması: (tarih, tutar, tedarikçi) üçlüsü eşleşmesi",
+        "unusual_amount": "Z-score: |x - μ| / σ > 3.0 → olağandışı tutar",
+        "vendor_concentration": "Herfindahl-Hirschman Index > 0.5 → tedarikçi yoğunlaşması",
+        "expense_spike": "MoM değişim: %30+ artış → gider artışı",
+        "round_number": "Tutar tam yüz veya bin: kural tabanlı pattern",
         "negative_cashflow_streak": "Art arda 2+ ay negatif nakit akışı",
     }
     return formulas.get(anomaly_type, "İstatistiksel anomali tespiti")

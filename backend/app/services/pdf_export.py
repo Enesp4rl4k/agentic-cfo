@@ -7,6 +7,7 @@ Design:
   - CSS is embedded for self-contained output
   - No external font dependencies (uses system fonts / sans-serif fallback)
 """
+
 from __future__ import annotations
 
 import logging
@@ -241,7 +242,12 @@ def _severity_badge(severity: str) -> str:
 
 def _okr_status_badge(status: str) -> str:
     cls = f"okr-status-badge badge-{status}"
-    labels = {"achieved": "Achieved", "on_track": "On Track", "at_risk": "At Risk", "off_track": "Off Track"}
+    labels = {
+        "achieved": "Achieved",
+        "on_track": "On Track",
+        "at_risk": "At Risk",
+        "off_track": "Off Track",
+    }
     return f'<span class="{cls}">{labels.get(status, status)}</span>'
 
 
@@ -255,7 +261,7 @@ def _render_slide(slide: dict[str, Any], index: int) -> str:
         '  <div class="slide-header">',
         f'    <span class="slide-number">Slide {num}</span>',
         f'    <span class="slide-title">{title}</span>',
-        '  </div>',
+        "  </div>",
     ]
 
     if narrative:
@@ -275,29 +281,29 @@ def _render_slide(slide: dict[str, Any], index: int) -> str:
                 f'    <div class="metric-card">'
                 f'<div class="metric-label">{m["label"]}</div>'
                 f'<div class="metric-value{trend_cls}">{m["value"]}</div>'
-                f'</div>'
+                f"</div>"
             )
-        parts.append('  </div>')
+        parts.append("  </div>")
 
     # Risk table
     risks = slide.get("risks") or []
     if risks:
         parts.append(
             '  <table class="risk-table">'
-            '<tr><th>Risk</th><th>Severity</th><th>Domains</th><th>Action</th><th>Impact</th></tr>'
+            "<tr><th>Risk</th><th>Severity</th><th>Domains</th><th>Action</th><th>Impact</th></tr>"
         )
         for r in risks:
             domains = ", ".join(r.get("domains") or [])
             parts.append(
-                f'    <tr>'
-                f'<td><strong>{r.get("title","")}</strong></td>'
-                f'<td>{_severity_badge(r.get("severity","low"))}</td>'
-                f'<td>{domains}</td>'
-                f'<td>{r.get("action","")}</td>'
-                f'<td>{r.get("financial_impact","Indirect")}</td>'
-                f'</tr>'
+                f"    <tr>"
+                f"<td><strong>{r.get('title', '')}</strong></td>"
+                f"<td>{_severity_badge(r.get('severity', 'low'))}</td>"
+                f"<td>{domains}</td>"
+                f"<td>{r.get('action', '')}</td>"
+                f"<td>{r.get('financial_impact', 'Indirect')}</td>"
+                f"</tr>"
             )
-        parts.append('  </table>')
+        parts.append("  </table>")
 
     # Priorities
     priorities = slide.get("priorities") or []
@@ -308,13 +314,13 @@ def _render_slide(slide: dict[str, Any], index: int) -> str:
                 f'  <li class="priority-item">'
                 f'<span class="priority-rank">{p["rank"]}</span>'
                 f'<div class="priority-body">'
-                f'<div class="priority-title">{p.get("title","")}</div>'
-                f'<div class="priority-meta">Owner: {p.get("owner","CEO")} · Timeline: {p.get("timeline","TBD")} · Effort: {p.get("effort","medium")}</div>'
-                f'</div></li>'
+                f'<div class="priority-title">{p.get("title", "")}</div>'
+                f'<div class="priority-meta">Owner: {p.get("owner", "CEO")} · Timeline: {p.get("timeline", "TBD")} · Effort: {p.get("effort", "medium")}</div>'
+                f"</div></li>"
             )
-        parts.append('  </ul>')
+        parts.append("  </ul>")
 
-    parts.append('</div>')
+    parts.append("</div>")
     return "\n".join(parts)
 
 
@@ -328,7 +334,7 @@ def _render_okr_section(okr_status: dict[str, Any]) -> str:
         '  <div class="slide-header">',
         '    <span class="slide-number">Appendix</span>',
         '    <span class="slide-title">OKR Tracking</span>',
-        '  </div>',
+        "  </div>",
     ]
 
     if narrative:
@@ -339,29 +345,31 @@ def _render_okr_section(okr_status: dict[str, Any]) -> str:
         status = obj.get("overall_status", "off_track")
         score_pct = round(obj.get("score", 0) * 100)
         bar_color = {
-            "achieved": "#16a34a", "on_track": "#2563eb",
-            "at_risk": "#ca8a04", "off_track": "#dc2626",
+            "achieved": "#16a34a",
+            "on_track": "#2563eb",
+            "at_risk": "#ca8a04",
+            "off_track": "#dc2626",
         }.get(status, "#2563eb")
 
         krs_html = ""
         for kr in obj.get("key_results") or []:
             krs_html += (
                 f'<div class="kr-item">• {kr["kr"]}: '
-                f'{kr["actual"] if kr["actual"] is not None else "—"}/{kr["target"]} {kr["unit"]} '
-                f'({kr["progress_pct"]}%)</div>'
+                f"{kr['actual'] if kr['actual'] is not None else '—'}/{kr['target']} {kr['unit']} "
+                f"({kr['progress_pct']}%)</div>"
             )
 
         parts.append(
             f'  <div class="okr-card">'
-            f'<div class="okr-title">{obj.get("title","")}</div>'
-            f'{_okr_status_badge(status)}'
+            f'<div class="okr-title">{obj.get("title", "")}</div>'
+            f"{_okr_status_badge(status)}"
             f'<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:{score_pct}%;background:{bar_color}"></div></div>'
-            f'{krs_html}'
-            f'</div>'
+            f"{krs_html}"
+            f"</div>"
         )
 
-    parts.append('  </div>')
-    parts.append('</div>')
+    parts.append("  </div>")
+    parts.append("</div>")
     return "\n".join(parts)
 
 
@@ -437,8 +445,7 @@ def board_deck_to_pdf(
         from weasyprint import HTML  # type: ignore[import]
     except ImportError as exc:
         raise ImportError(
-            "weasyprint is required for PDF export. "
-            "Install it: pip install weasyprint==62.3"
+            "weasyprint is required for PDF export. Install it: pip install weasyprint==62.3"
         ) from exc
 
     html_content = render_board_deck_html(board_deck, okr_status)

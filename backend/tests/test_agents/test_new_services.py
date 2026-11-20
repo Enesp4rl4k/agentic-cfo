@@ -8,6 +8,7 @@ Unit tests for new services:
 
 All tests are fully deterministic — no LLM calls, no DB, no network.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -19,16 +20,18 @@ import pytest
 # CascadeSimulator
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestCascadeSimulator:
     """CascadeSimulator — deterministic risk propagation tests."""
 
     def _make_simulator(self, **kwargs):
         from app.services.cascade_simulator import CascadeSimulator
+
         defaults = {
-            "revenue_monthly": 1_000_000_00,   # 1M TL in cents
+            "revenue_monthly": 1_000_000_00,  # 1M TL in cents
             "headcount": 50,
-            "cash_balance": 6_000_000_00,       # 6M TL
-            "monthly_burn": 500_000_00,          # 500K TL
+            "cash_balance": 6_000_000_00,  # 6M TL
+            "monthly_burn": 500_000_00,  # 500K TL
             "monthly_revenue": 1_000_000_00,
             "gross_margin": 0.60,
         }
@@ -37,6 +40,7 @@ class TestCascadeSimulator:
 
     def test_cash_crisis_trigger_produces_result(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.CASH_CRISIS, runway_months=2.0)
         assert result is not None
@@ -46,12 +50,14 @@ class TestCascadeSimulator:
 
     def test_cash_crisis_generates_three_scenarios(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.CASH_CRISIS, runway_months=2.0)
         assert len(result.scenarios) == 3
 
     def test_revenue_drop_trigger(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.REVENUE_DROP, drop_pct=0.30)
         assert result is not None
@@ -60,6 +66,7 @@ class TestCascadeSimulator:
 
     def test_key_person_loss_trigger(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.KEY_PERSON_LOSS, role="cto")
         assert result is not None
@@ -67,23 +74,28 @@ class TestCascadeSimulator:
 
     def test_market_shock_trigger(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.MARKET_SHOCK, shock_type="fx_crisis", severity=0.4)
         assert result is not None
 
     def test_high_runway_means_low_severity(self):
         from app.services.cascade_simulator import ImpactLevel, TriggerType
+
         sim = self._make_simulator()
         # 12+ months runway should have lower overall severity than 1 month
-        result_low  = sim.simulate(TriggerType.CASH_CRISIS, runway_months=12.0)
+        result_low = sim.simulate(TriggerType.CASH_CRISIS, runway_months=12.0)
         result_high = sim.simulate(TriggerType.CASH_CRISIS, runway_months=1.0)
         # Critical count should be higher for low runway
-        critical_low  = sum(1 for i in result_low.domain_impacts  if i.level == ImpactLevel.CRITICAL)
-        critical_high = sum(1 for i in result_high.domain_impacts if i.level == ImpactLevel.CRITICAL)
+        critical_low = sum(1 for i in result_low.domain_impacts if i.level == ImpactLevel.CRITICAL)
+        critical_high = sum(
+            1 for i in result_high.domain_impacts if i.level == ImpactLevel.CRITICAL
+        )
         assert critical_high >= critical_low
 
     def test_to_dict_serializable(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.CASH_CRISIS, runway_months=3.0)
         d = result.to_dict()
@@ -95,6 +107,7 @@ class TestCascadeSimulator:
 
     def test_singleton_factory(self):
         from app.services.cascade_simulator import get_cascade_simulator
+
         s1 = get_cascade_simulator()
         s2 = get_cascade_simulator()
         assert s1 is s2  # Same instance
@@ -104,11 +117,13 @@ class TestCascadeSimulator:
 # BenchmarkIntelligenceService
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBenchmarkIntelligenceService:
     """BenchmarkIntelligenceService — sector comparison tests."""
 
     def _make_svc(self):
         from app.services.benchmark_intelligence import BenchmarkIntelligenceService
+
         return BenchmarkIntelligenceService()
 
     def test_compare_cfo_returns_report(self):
@@ -186,15 +201,18 @@ class TestBenchmarkIntelligenceService:
 # LLMTaskRouter
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestLLMTaskRouter:
     """LLMTaskRouter — model selection and cost tracking tests."""
 
     def _make_router(self):
         from app.services.llm_router import LLMTaskRouter
+
         return LLMTaskRouter()
 
     def test_classify_intent_uses_cheap_model(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         cfg = router.select_model(TaskType.CLASSIFY_INTENT)
         # Should be gpt-4o-mini (cheap), not gpt-4o
@@ -202,18 +220,21 @@ class TestLLMTaskRouter:
 
     def test_deep_analysis_uses_powerful_model(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         cfg = router.select_model(TaskType.DEEP_ANALYSIS)
         assert "gpt-4o" in cfg.model_id
 
     def test_deterministic_task_raises(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         with pytest.raises(ValueError, match="deterministik"):
             router.select_model(TaskType.CALCULATION)
 
     def test_long_prompt_upgrades_model(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         # Very long prompt (>8000 chars) should use gpt-4o for context window
         cfg = router.select_model(TaskType.SHORT_NARRATIVE, prompt_length=9000)
@@ -221,12 +242,14 @@ class TestLLMTaskRouter:
 
     def test_cost_estimate_positive(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         cost = router.cost_estimate(TaskType.DEEP_ANALYSIS, estimated_tokens=1000)
         assert cost > 0
 
     def test_cost_estimate_calculation_is_zero(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         cost = router.cost_estimate(TaskType.CALCULATION, estimated_tokens=1000)
         assert cost == 0.0
@@ -239,6 +262,7 @@ class TestLLMTaskRouter:
 
     def test_singleton_returns_same_instance(self):
         from app.services.llm_router import get_llm_router
+
         r1 = get_llm_router()
         r2 = get_llm_router()
         assert r1 is r2
@@ -246,6 +270,7 @@ class TestLLMTaskRouter:
     @pytest.mark.asyncio
     async def test_complete_with_placeholder_key_returns_error_gracefully(self):
         from app.services.llm_router import LLMTaskRouter, TaskType
+
         router = LLMTaskRouter()
         # Mock _call_llm to raise to simulate no API key
         router._call_llm = AsyncMock(side_effect=RuntimeError("No API key"))
@@ -254,6 +279,7 @@ class TestLLMTaskRouter:
 
     def test_cheap_model_lower_cost_than_expensive(self):
         from app.services.llm_router import TaskType
+
         router = self._make_router()
         cheap_cost = router.cost_estimate(TaskType.CLASSIFY_INTENT, 500)
         expensive_cost = router.cost_estimate(TaskType.DEEP_ANALYSIS, 500)
@@ -264,11 +290,13 @@ class TestLLMTaskRouter:
 # NLSimulationBridge
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestNLSimulationBridge:
     """NLSimulationBridge — intent classification and entity extraction."""
 
     def _make_bridge(self):
         from app.services.nl_simulation_bridge import NLSimulationBridge
+
         return NLSimulationBridge()
 
     def test_headcount_intent_detected(self):
@@ -328,11 +356,13 @@ class TestNLSimulationBridge:
 # TemporalIntelligenceEngine (DDIA append-only)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestTemporalIntelligenceEngine:
     """TemporalIntelligenceEngine — DDIA append-only event log tests."""
 
     def _make_engine(self):
         from app.services.temporal_intelligence import TemporalIntelligenceEngine
+
         return TemporalIntelligenceEngine()
 
     def test_record_event_creates_immutable_record(self):
@@ -418,17 +448,20 @@ class TestTemporalIntelligenceEngine:
 # BenchmarkIntelligence edge cases
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBenchmarkEdgeCases:
     """Edge cases for BenchmarkIntelligenceService."""
 
     def test_empty_cfo_data_does_not_crash(self):
         from app.services.benchmark_intelligence import BenchmarkIntelligenceService
+
         svc = BenchmarkIntelligenceService()
         report = svc.compare_cfo({}, sector="saas")
         assert report is not None
 
     def test_none_values_handled(self):
         from app.services.benchmark_intelligence import BenchmarkIntelligenceService
+
         svc = BenchmarkIntelligenceService()
         report = svc.compare_cfo({"net_margin": None, "gross_margin": None}, sector="saas")
         assert report is not None
@@ -438,6 +471,7 @@ class TestBenchmarkEdgeCases:
 
     def test_negative_margin_handled(self):
         from app.services.benchmark_intelligence import BenchmarkIntelligenceService
+
         svc = BenchmarkIntelligenceService()
         # Negative margin is below P25
         report = svc.compare_cfo({"net_margin": -0.20}, sector="saas")
@@ -450,11 +484,13 @@ class TestBenchmarkEdgeCases:
 # CascadeSimulator edge cases
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestCascadeEdgeCases:
     """Edge cases and boundary conditions for CascadeSimulator."""
 
     def _make_simulator(self):
         from app.services.cascade_simulator import CascadeSimulator
+
         return CascadeSimulator(
             revenue_monthly=500_000_00,
             headcount=20,
@@ -466,6 +502,7 @@ class TestCascadeEdgeCases:
 
     def test_zero_runway_is_handled(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         # Should not raise
         result = sim.simulate(TriggerType.CASH_CRISIS, runway_months=0.0)
@@ -473,6 +510,7 @@ class TestCascadeEdgeCases:
 
     def test_scenarios_have_increasing_severity(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.REVENUE_DROP, drop_pct=0.25)
         assert len(result.scenarios) == 3
@@ -484,6 +522,7 @@ class TestCascadeEdgeCases:
 
     def test_domain_impacts_have_required_fields(self):
         from app.services.cascade_simulator import TriggerType
+
         sim = self._make_simulator()
         result = sim.simulate(TriggerType.CASH_CRISIS, runway_months=2.0)
         for impact in result.domain_impacts:

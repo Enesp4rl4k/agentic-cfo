@@ -7,6 +7,7 @@ Covers the Faz 12 "honesty pass" wiring in
   - `on_agent_complete` holds CEO synthesis when the completing agent's result
     is synthetic, and still runs it when the result is real.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -57,15 +58,22 @@ async def test_synthetic_cto_result_does_not_trigger_ceo_synthesis():
         ceo_calls.append("ceo")
 
     with (
-        patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+        patch(
+            "app.agents.orchestration.auto_chain.get_company_context",
+            new=AsyncMock(return_value=ctx),
+        ),
         patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
         patch("app.agents.orchestration.auto_chain._run_chained_agent", new=AsyncMock()),
         patch("app.agents.orchestration.auto_chain._run_ceo_synthesis", new=_mock_ceo),
     ):
         await on_agent_complete(
-            "cto", "org-test",
-            {"ok": True, "output": {"data_source": "benchmark"},
-             "provenance": {"synthetic": True, "data_source": "benchmark"}},
+            "cto",
+            "org-test",
+            {
+                "ok": True,
+                "output": {"data_source": "benchmark"},
+                "provenance": {"synthetic": True, "data_source": "benchmark"},
+            },
             db=None,
         )
 
@@ -81,15 +89,22 @@ async def test_real_cto_result_still_triggers_ceo_synthesis():
         ceo_calls.append("ceo")
 
     with (
-        patch("app.agents.orchestration.auto_chain.get_company_context", new=AsyncMock(return_value=ctx)),
+        patch(
+            "app.agents.orchestration.auto_chain.get_company_context",
+            new=AsyncMock(return_value=ctx),
+        ),
         patch("app.agents.orchestration.auto_chain.save_company_context", new=AsyncMock()),
         patch("app.agents.orchestration.auto_chain._run_chained_agent", new=AsyncMock()),
         patch("app.agents.orchestration.auto_chain._run_ceo_synthesis", new=_mock_ceo),
     ):
         await on_agent_complete(
-            "cto", "org-test",
-            {"ok": True, "output": {"data_source": "real"},
-             "provenance": {"synthetic": False, "data_source": "real"}},
+            "cto",
+            "org-test",
+            {
+                "ok": True,
+                "output": {"data_source": "real"},
+                "provenance": {"synthetic": False, "data_source": "real"},
+            },
             db=None,
         )
 

@@ -6,6 +6,7 @@ resolution and per-command reads were unbounded), so with Redis down a single
 contract now: every Redis step costs ≤2s, and a failed connect enters a 30s
 cooldown so the penalty is paid once per window, not on every request.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,7 +43,9 @@ async def test_hanging_redis_read_falls_back_within_bounds(monkeypatch: pytest.M
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(not cc._REDIS_AVAILABLE, reason="redis package not installed")
-async def test_redis_init_ping_is_bounded_and_marks_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_redis_init_ping_is_bounded_and_marks_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _SlowClient:
         async def ping(self) -> bool:
             await asyncio.sleep(6)

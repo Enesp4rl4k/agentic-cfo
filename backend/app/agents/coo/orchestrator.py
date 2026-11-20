@@ -6,6 +6,7 @@ Graph:
 
 Each node runs its skill independently; coo_summary synthesizes all three.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # -- Helpers ------------------------------------------------------------------
 
+
 def _append_log(state: COOState, log: COOStepLog) -> dict[str, Any]:
     existing = list(state.get("logs") or [])
     existing.append(log)
@@ -35,36 +37,46 @@ def _append_log(state: COOState, log: COOStepLog) -> dict[str, Any]:
 
 # -- LangGraph Nodes ----------------------------------------------------------
 
+
 async def node_process(state: COOState, config: dict) -> COOState:
     result = await run_process_agent(state, config)
-    proc   = result.get("processes")
-    patch  = _append_log(state, COOStepLog(
-        step="process",
-        ok=proc is not None,
-        detail=f"efficiency={proc and proc.get('efficiency_score')}",
-    ))
+    proc = result.get("processes")
+    patch = _append_log(
+        state,
+        COOStepLog(
+            step="process",
+            ok=proc is not None,
+            detail=f"efficiency={proc and proc.get('efficiency_score')}",
+        ),
+    )
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
 async def node_resource(state: COOState, config: dict) -> COOState:
     result = await run_resource_agent(state, config)
-    res    = result.get("resources")
-    patch  = _append_log(state, COOStepLog(
-        step="resource",
-        ok=res is not None,
-        detail=f"utilization={res and res.get('avg_utilization_rate')}",
-    ))
+    res = result.get("resources")
+    patch = _append_log(
+        state,
+        COOStepLog(
+            step="resource",
+            ok=res is not None,
+            detail=f"utilization={res and res.get('avg_utilization_rate')}",
+        ),
+    )
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
 async def node_sla(state: COOState, config: dict) -> COOState:
     result = await run_sla_agent(state, config)
-    sla    = result.get("sla")
-    patch  = _append_log(state, COOStepLog(
-        step="sla",
-        ok=sla is not None,
-        detail=f"breach_rate={sla and sla.get('sla_breach_rate')}",
-    ))
+    sla = result.get("sla")
+    patch = _append_log(
+        state,
+        COOStepLog(
+            step="sla",
+            ok=sla is not None,
+            detail=f"breach_rate={sla and sla.get('sla_breach_rate')}",
+        ),
+    )
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
@@ -75,7 +87,7 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
     """
     processes = state.get("processes") or {}
     resources = state.get("resources") or {}
-    sla       = state.get("sla") or {}
+    sla = state.get("sla") or {}
 
     scores: dict[str, float] = {}
     top_risks: list[dict[str, str]] = []
@@ -86,11 +98,13 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
         scores["process"] = round(eff_score, 1)
         for alert in processes.get("alerts") or []:
             if alert["level"] in ("critical", "high"):
-                top_risks.append({
-                    "domain":   "Process",
-                    "severity": alert["level"],
-                    "message":  alert["message"],
-                })
+                top_risks.append(
+                    {
+                        "domain": "Process",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # -- Resource score --------------------------------------------------------
     if resources:
@@ -109,33 +123,35 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
         scores["resource"] = round(min(10.0, max(0.0, res_score)), 1)
         for alert in resources.get("alerts") or []:
             if alert["level"] in ("critical", "high"):
-                top_risks.append({
-                    "domain":   "Resource",
-                    "severity": alert["level"],
-                    "message":  alert["message"],
-                })
+                top_risks.append(
+                    {
+                        "domain": "Resource",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # -- SLA score -------------------------------------------------------------
     if sla:
-        breach   = sla.get("sla_breach_rate", 0.0)
-        nps      = sla.get("avg_nps_score", 50.0)
+        breach = sla.get("sla_breach_rate", 0.0)
+        nps = sla.get("avg_nps_score", 50.0)
         # Score: breach 0% + NPS 70+ = 0, breach 30%+ + NPS negative = 10
         sla_score = min(10.0, (breach * 20) + max(0.0, (0 - nps) / 10))
         scores["sla"] = round(sla_score, 1)
         for alert in sla.get("alerts") or []:
             if alert["level"] in ("critical", "high"):
-                top_risks.append({
-                    "domain":   "SLA",
-                    "severity": alert["level"],
-                    "message":  alert["message"],
-                })
+                top_risks.append(
+                    {
+                        "domain": "SLA",
+                        "severity": alert["level"],
+                        "message": alert["message"],
+                    }
+                )
 
     # 0-10, higher = worse. None when no component was measured — 0.0 meant
     # "ideal operations" on this scale, a calm result nobody measured
     # (plan v6 §S0).
-    overall_score: float | None = (
-        round(sum(scores.values()) / len(scores), 1) if scores else None
-    )
+    overall_score: float | None = round(sum(scores.values()) / len(scores), 1) if scores else None
     ops_efficiency = _compute_ops_efficiency(processes, resources, sla)
 
     # Sort critical first
@@ -144,37 +160,45 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
     # -- Quick wins ------------------------------------------------------------
     quick_wins: list[dict[str, str]] = []
 
-    overloaded = (processes.get("overloaded_processes") or [])
+    overloaded = processes.get("overloaded_processes") or []
     if overloaded:
-        quick_wins.append({
-            "action":           f"Reduce WIP in {len(overloaded)} overloaded process(es)",
-            "estimated_impact": "Improve throughput and reduce cycle time 15-25%",
-            "effort":           "medium",
-        })
+        quick_wins.append(
+            {
+                "action": f"Reduce WIP in {len(overloaded)} overloaded process(es)",
+                "estimated_impact": "Improve throughput and reduce cycle time 15-25%",
+                "effort": "medium",
+            }
+        )
 
-    over_teams = (resources.get("overutilized_teams") or [])
-    under_teams = (resources.get("underutilized_teams") or [])
+    over_teams = resources.get("overutilized_teams") or []
+    under_teams = resources.get("underutilized_teams") or []
     if over_teams and under_teams:
-        quick_wins.append({
-            "action":           f"Kapasite yeniden dengele: {under_teams[0]['team']} ekibini {over_teams[0]['team']} ekibine yönlendir",
-            "estimated_impact": "Burnout riskini azalt ve genel verimliliği artır",
-            "effort":           "düşük",
-        })
+        quick_wins.append(
+            {
+                "action": f"Kapasite yeniden dengele: {under_teams[0]['team']} ekibini {over_teams[0]['team']} ekibine yönlendir",
+                "estimated_impact": "Burnout riskini azalt ve genel verimliliği artır",
+                "effort": "düşük",
+            }
+        )
 
     if sla.get("trend") == "degrading":
-        quick_wins.append({
-            "action":           "En sık tekrarlayan SLA ihlal kategorileri için kök neden analizi yap",
-            "estimated_impact": "İhlal oranını %20-30 azalt",
-            "effort":           "orta",
-        })
+        quick_wins.append(
+            {
+                "action": "En sık tekrarlayan SLA ihlal kategorileri için kök neden analizi yap",
+                "estimated_impact": "İhlal oranını %20-30 azalt",
+                "effort": "orta",
+            }
+        )
 
     bn = processes.get("bottleneck_process")
     if bn:
-        quick_wins.append({
-            "action":           f"Darboğazı çöz: '{bn}' (Kısıtlar Teorisi)",
-            "estimated_impact": "Sistem genelinde iş akışını iyileştir",
-            "effort":           "yüksek",
-        })
+        quick_wins.append(
+            {
+                "action": f"Darboğazı çöz: '{bn}' (Kısıtlar Teorisi)",
+                "estimated_impact": "Sistem genelinde iş akışını iyileştir",
+                "effort": "yüksek",
+            }
+        )
 
     # ── LLM Narrative (Türkçe + actionable) ──────────────────────────────────
     narrative = _build_fallback_narrative(overall_score, processes, resources, sla)
@@ -185,48 +209,53 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
             # Nothing measured: a model asked to assess nothing invents.
             raise _NothingToNarrate
 
-        narrative = (await complete_text(
-            task="short_narrative",
-            system_prompt=(
-                "Sen deneyimli bir COO'sun. Operasyonel sağlık verilerini analiz et ve "
-                "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
-                "Yanıt şu yapıda olsun:\n"
-                "1. Operasyonel verimliliğin 1-2 cümlelik değerlendirmesi (SLA ihlali ve kaynak kullanımı odaklı)\n"
-                "2. En kritik 1-2 operasyonel sorun (darboğaz, aşırı kullanım, NPS düşüklüğü)\n"
-                "3. Operasyon ekibinin hemen yapması gereken 2-3 somut iyileştirme (öncelik sırasıyla)\n"
-                "Lean operasyon perspektifinden pratik öneriler ekle."
-            ),
-            prompt=(
-                f"Operasyon Risk Skoru (0 iyi, 10 kötü): {overall_score}/10\n"
-                + _measured_lines(processes, resources, sla)
-                + f"\nÖnemli Risk Sayısı: {len(top_risks)}"
-            ),
-            max_tokens=700,
-        )).strip()
+        narrative = (
+            await complete_text(
+                task="short_narrative",
+                system_prompt=(
+                    "Sen deneyimli bir COO'sun. Operasyonel sağlık verilerini analiz et ve "
+                    "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz. "
+                    "Yanıt şu yapıda olsun:\n"
+                    "1. Operasyonel verimliliğin 1-2 cümlelik değerlendirmesi (SLA ihlali ve kaynak kullanımı odaklı)\n"
+                    "2. En kritik 1-2 operasyonel sorun (darboğaz, aşırı kullanım, NPS düşüklüğü)\n"
+                    "3. Operasyon ekibinin hemen yapması gereken 2-3 somut iyileştirme (öncelik sırasıyla)\n"
+                    "Lean operasyon perspektifinden pratik öneriler ekle."
+                ),
+                prompt=(
+                    f"Operasyon Risk Skoru (0 iyi, 10 kötü): {overall_score}/10\n"
+                    + _measured_lines(processes, resources, sla)
+                    + f"\nÖnemli Risk Sayısı: {len(top_risks)}"
+                ),
+                max_tokens=700,
+            )
+        ).strip()
     except _NothingToNarrate:
         pass
     except Exception as exc:
         logger.warning("COO summary narrative failed: %s", exc)
 
     summary = {
-        "overall_ops_score":           overall_score,
+        "overall_ops_score": overall_score,
         "operational_efficiency_score": ops_efficiency,
-        "component_scores":            scores,
-        "top_risks":                   top_risks[:8],
-        "quick_wins":                  quick_wins[:5],
-        "narrative":                   narrative,
+        "component_scores": scores,
+        "top_risks": top_risks[:8],
+        "quick_wins": quick_wins[:5],
+        "narrative": narrative,
     }
 
-    patch = _append_log(state, COOStepLog(
-        step="coo_summary",
-        ok=True,
-        detail=(
-            "Ops score: not measured (no process, resource or SLA input)"
-            if overall_score is None
-            else f"Ops score: {overall_score}/10, risks: {len(top_risks)}"
+    patch = _append_log(
+        state,
+        COOStepLog(
+            step="coo_summary",
+            ok=True,
+            detail=(
+                "Ops score: not measured (no process, resource or SLA input)"
+                if overall_score is None
+                else f"Ops score: {overall_score}/10, risks: {len(top_risks)}"
+            ),
+            confidence=0.88,
         ),
-        confidence=0.88,
-    ))
+    )
     patch["coo_summary"] = summary
     return {**state, **patch}  # type: ignore[return-value]
 
@@ -276,12 +305,17 @@ def _measured_lines(
 ) -> str:
     """Only what was measured; a missing input is named, never shown as 0%."""
     parts = [
-        f"Süreç Verimliliği: {processes.get('efficiency_score')}/10" if processes
+        f"Süreç Verimliliği: {processes.get('efficiency_score')}/10"
+        if processes
         else "Süreç verisi: ölçülmedi",
-        f"Kaynak Kullanımı: %{resources.get('avg_utilization_rate', 0) * 100:.0f}" if resources
+        f"Kaynak Kullanımı: %{resources.get('avg_utilization_rate', 0) * 100:.0f}"
+        if resources
         else "Kaynak verisi: ölçülmedi",
-        (f"SLA İhlal Oranı: %{sla.get('sla_breach_rate', 0) * 100:.0f} | "
-         f"NPS: {sla.get('avg_nps_score', 0):.0f}") if sla
+        (
+            f"SLA İhlal Oranı: %{sla.get('sla_breach_rate', 0) * 100:.0f} | "
+            f"NPS: {sla.get('avg_nps_score', 0):.0f}"
+        )
+        if sla
         else "SLA verisi: ölçülmedi",
     ]
     return " | ".join(parts)
@@ -303,19 +337,20 @@ def _build_fallback_narrative(
 
 # -- Graph Builder ------------------------------------------------------------
 
+
 def build_coo_graph() -> StateGraph:
     g = StateGraph(COOState)
 
-    g.add_node("process_agent",  node_process)
+    g.add_node("process_agent", node_process)
     g.add_node("resource_agent", node_resource)
-    g.add_node("sla_agent",      node_sla)
-    g.add_node("summary_agent",  node_coo_summary)
+    g.add_node("sla_agent", node_sla)
+    g.add_node("summary_agent", node_coo_summary)
 
     g.set_entry_point("process_agent")
-    g.add_edge("process_agent",  "resource_agent")
+    g.add_edge("process_agent", "resource_agent")
     g.add_edge("resource_agent", "sla_agent")
-    g.add_edge("sla_agent",      "summary_agent")
-    g.add_edge("summary_agent",  "__end__")
+    g.add_edge("sla_agent", "summary_agent")
+    g.add_edge("summary_agent", "__end__")
 
     return g.compile()
 
@@ -325,6 +360,7 @@ _coo_graph = build_coo_graph()
 
 # -- Public Entry Point -------------------------------------------------------
 
+
 async def run_coo_pipeline(
     job_id: str,
     company_name: str | None = None,
@@ -332,7 +368,7 @@ async def run_coo_pipeline(
     process_csv: str | None = None,
     resource_csv: str | None = None,
     sla_csv: str | None = None,
-    org_id: str | None = None,   # S2-4: cross-domain context
+    org_id: str | None = None,  # S2-4: cross-domain context
 ) -> COOState:
     """
     Run the full COO pipeline.
@@ -341,27 +377,26 @@ async def run_coo_pipeline(
     Returns the final COOState.
     """
     if not any([process_csv, resource_csv, sla_csv]):
-        raise ValueError(
-            "At least one of process_csv, resource_csv, or sla_csv is required."
-        )
+        raise ValueError("At least one of process_csv, resource_csv, or sla_csv is required.")
 
     base: COOState = {
-        "job_id":       job_id,
+        "job_id": job_id,
         "company_name": company_name,
-        "period":       period,
-        "process_csv":  process_csv,
+        "period": period,
+        "process_csv": process_csv,
         "resource_csv": resource_csv,
-        "sla_csv":      sla_csv,
-        "logs":         [],
+        "sla_csv": sla_csv,
+        "logs": [],
         "min_confidence": DEFAULT_COO_RUN_CONFIG.auto_proceed_min_confidence,
         "awaiting_review": False,
-        "halted":       False,
-        "error":        None,
+        "halted": False,
+        "error": None,
     }
 
     if org_id:
         try:
             from app.services.cross_context_enricher import enrich_initial_state
+
             base = await enrich_initial_state("coo", base, org_id=org_id)  # type: ignore[assignment]
         except Exception:
             pass

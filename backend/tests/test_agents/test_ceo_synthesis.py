@@ -5,6 +5,7 @@ Tests for CEO pipeline pure functions:
 
 No LLM, no DB — deterministic rule-based logic only.
 """
+
 from app.agents.ceo.strategic_priorities_agent import (
     SEVERITY_SCORE,
     URGENCY_SCORE,
@@ -14,6 +15,7 @@ from app.agents.ceo.strategic_priorities_agent import (
 from app.agents.ceo.synthesis_agent import _detect_cross_risks
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _fin(
     cash_runway_months: float | None = 12.0,
@@ -45,8 +47,12 @@ def _tech(
     }
 
 
-def _cross_risk(title: str = "Risk", severity: str = "high",
-                urgency: str = "now", financial_impact: int = 500_000) -> dict:
+def _cross_risk(
+    title: str = "Risk",
+    severity: str = "high",
+    urgency: str = "now",
+    financial_impact: int = 500_000,
+) -> dict:
     return {
         "title": title,
         "recommended_action": "Act now",
@@ -59,8 +65,8 @@ def _cross_risk(title: str = "Risk", severity: str = "high",
 
 # ── _detect_cross_risks ───────────────────────────────────────────────────────
 
-class TestDetectCrossRisks:
 
+class TestDetectCrossRisks:
     def test_returns_list(self):
         result = _detect_cross_risks(_fin(), _tech())
         assert isinstance(result, list)
@@ -86,7 +92,7 @@ class TestDetectCrossRisks:
     def test_high_tech_debt_with_negative_income_triggers_risk(self):
         """debt_score >= 7 AND net_income_cents < 0 → Risk 2."""
         result = _detect_cross_risks(
-            _fin(net_income_cents=-500_000),   # must be negative
+            _fin(net_income_cents=-500_000),  # must be negative
             _tech(debt_score=8),
         )
         assert len(result) > 0
@@ -147,19 +153,19 @@ class TestDetectCrossRisks:
         assert len(result) > 0
 
     def test_combined_bad_signals_more_risks(self):
-        bad_fin  = _fin(cash_runway_months=1, net_margin=-0.20)
+        bad_fin = _fin(cash_runway_months=1, net_margin=-0.20)
         bad_tech = _tech(debt_score=9, infra_waste_cents=400_000, infra_cost_cents=1_000_000)
-        good_fin  = _fin(cash_runway_months=18, net_margin=0.20)
+        good_fin = _fin(cash_runway_months=18, net_margin=0.20)
         good_tech = _tech(debt_score=2)
-        result_bad  = _detect_cross_risks(bad_fin, bad_tech)
+        result_bad = _detect_cross_risks(bad_fin, bad_tech)
         result_good = _detect_cross_risks(good_fin, good_tech)
         assert len(result_bad) > len(result_good)
 
 
 # ── _score_priority ────────────────────────────────────────────────────────────
 
-class TestScorePriority:
 
+class TestScorePriority:
     def test_returns_float(self):
         risk = _cross_risk(urgency="now", severity="critical")
         assert isinstance(_score_priority(risk), float)
@@ -171,12 +177,12 @@ class TestScorePriority:
 
     def test_critical_severity_higher_than_low(self):
         critical = _cross_risk(urgency="30d", severity="critical")
-        low      = _cross_risk(urgency="30d", severity="low")
+        low = _cross_risk(urgency="30d", severity="low")
         assert _score_priority(critical) > _score_priority(low)
 
     def test_financial_impact_increases_score(self):
         high_impact = _cross_risk(urgency="90d", severity="low", financial_impact=1_000_000_00)
-        no_impact   = _cross_risk(urgency="90d", severity="low", financial_impact=0)
+        no_impact = _cross_risk(urgency="90d", severity="low", financial_impact=0)
         assert _score_priority(high_impact) > _score_priority(no_impact)
 
     def test_unknown_urgency_uses_default(self):
@@ -191,17 +197,15 @@ class TestScorePriority:
 
 # ── _build_priorities_from_risks ──────────────────────────────────────────────
 
-class TestBuildPrioritiesFromRisks:
 
+class TestBuildPrioritiesFromRisks:
     def test_returns_list(self):
         result = _build_priorities_from_risks([], _fin(), _tech())
         assert isinstance(result, list)
 
     def test_empty_risks_returns_domain_priorities(self):
         """Even without cross_risks, domain signals may add priorities."""
-        result = _build_priorities_from_risks(
-            [], _fin(cash_runway_months=18), _tech(debt_score=2)
-        )
+        result = _build_priorities_from_risks([], _fin(cash_runway_months=18), _tech(debt_score=2))
         assert isinstance(result, list)
 
     def test_cross_risk_becomes_priority(self):
@@ -212,18 +216,20 @@ class TestBuildPrioritiesFromRisks:
 
     def test_priorities_sorted_by_score_descending(self):
         risks = [
-            _cross_risk("Low Priority",  severity="low",      urgency="90d"),
+            _cross_risk("Low Priority", severity="low", urgency="90d"),
             _cross_risk("High Priority", severity="critical", urgency="now"),
-            _cross_risk("Mid Priority",  severity="medium",   urgency="30d"),
+            _cross_risk("Mid Priority", severity="medium", urgency="30d"),
         ]
         result = _build_priorities_from_risks(risks, _fin(), _tech())
         if len(result) >= 2:
             # First entry should have equal or higher score than last
             first_title = result[0]["title"]
-            last_title  = result[-1]["title"]
-            first_score = _score_priority(next(r for r in risks if r["title"] == first_title)
-                                           if first_title in [r["title"] for r in risks]
-                                           else result[0])
+            last_title = result[-1]["title"]
+            first_score = _score_priority(
+                next(r for r in risks if r["title"] == first_title)
+                if first_title in [r["title"] for r in risks]
+                else result[0]
+            )
             assert isinstance(first_score, float)  # Just check it's computable
 
     def test_each_priority_has_required_keys(self):
@@ -246,8 +252,7 @@ class TestBuildPrioritiesFromRisks:
             _tech(),
         )
         titles = [p["title"] for p in result]
-        assert any("profitability" in t.lower() or "profit" in t.lower()
-                   for t in titles)
+        assert any("profitability" in t.lower() or "profit" in t.lower() for t in titles)
 
     def test_high_tech_health_score_adds_cto_priority(self):
         """overall_health_score >= 7 → tech health priority added."""
@@ -255,14 +260,13 @@ class TestBuildPrioritiesFromRisks:
         tech["overall_health_score"] = 8.0
         result = _build_priorities_from_risks([], _fin(), tech)
         titles = [p["title"] for p in result]
-        assert any("tech" in t.lower() or "technology" in t.lower()
-                   for t in titles)
+        assert any("tech" in t.lower() or "technology" in t.lower() for t in titles)
 
 
 # ── Constants sanity ──────────────────────────────────────────────────────────
 
-class TestConstants:
 
+class TestConstants:
     def test_urgency_scores_descending(self):
         assert URGENCY_SCORE["now"] > URGENCY_SCORE["30d"] > URGENCY_SCORE["90d"]
 

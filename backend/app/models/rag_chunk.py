@@ -13,7 +13,6 @@ except Exception:  # pragma: no cover - dependency/import edge
     Vector = None
 
 if TYPE_CHECKING:
-
     # job_id FK is best-effort for now (CFO pipeline uses analysis_jobs.id)
     pass
 
@@ -32,9 +31,7 @@ class RagChunk(Base):
 
     __tablename__ = "rag_chunks"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     org_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
@@ -45,7 +42,9 @@ class RagChunk(Base):
         String(36), ForeignKey("analysis_jobs.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
-    source_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # e.g. "cfo_transactions_raw"
+    source_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # e.g. "cfo_transactions_raw"
 
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -60,6 +59,7 @@ class RagChunk(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("org_id", "job_id", "source_type", "chunk_index", name="uq_rag_chunks_job"),
+        UniqueConstraint(
+            "org_id", "job_id", "source_type", "chunk_index", name="uq_rag_chunks_job"
+        ),
     )
-

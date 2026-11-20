@@ -1,4 +1,5 @@
 """Chart of Accounts adapters — international core + regional packs."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -48,7 +49,12 @@ class GenericCoaAdapter:
 
     _RULES: list[tuple[str, str, list[str], str]] = [
         ("1000", "Cash & Cash Equivalents", ["cash", "bank", "transfer", "wire", "ach"], "asset"),
-        ("1100", "Accounts Receivable", ["receivable", "invoice paid", "customer payment"], "asset"),
+        (
+            "1100",
+            "Accounts Receivable",
+            ["receivable", "invoice paid", "customer payment"],
+            "asset",
+        ),
         ("1200", "Inventory", ["inventory", "stock", "goods"], "asset"),
         ("1500", "Fixed Assets", ["equipment", "laptop", "furniture", "capex"], "asset"),
         ("2000", "Accounts Payable", ["payable", "vendor bill", "supplier"], "liability"),
@@ -57,7 +63,12 @@ class GenericCoaAdapter:
         ("5000", "Cost of Goods Sold", ["cogs", "cost of sales", "fulfillment"], "expense"),
         ("6100", "Payroll Expense", ["salary", "payroll", "wage", "contractor"], "expense"),
         ("6200", "Rent Expense", ["rent", "lease", "office space"], "expense"),
-        ("6300", "Software & SaaS", ["saas", "software", "aws", "cloud", "subscription fee"], "expense"),
+        (
+            "6300",
+            "Software & SaaS",
+            ["saas", "software", "aws", "cloud", "subscription fee"],
+            "expense",
+        ),
         ("6400", "Marketing Expense", ["ads", "marketing", "advertising", "campaign"], "expense"),
         ("6500", "Travel & Entertainment", ["travel", "flight", "hotel", "uber"], "expense"),
         ("6900", "General & Administrative", ["office", "admin", "legal", "insurance"], "expense"),

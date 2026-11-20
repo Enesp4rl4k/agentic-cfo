@@ -4,6 +4,7 @@ Cryptographic Immutable Audit Trail Engine (Phase 4).
 Provides tamper-evident SHA-256 hash chaining of every CFO agent action,
 SMMM human approval, and financial adjustment for SOC2, KVKK, and MASAK compliance.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -23,8 +24,8 @@ class AuditBlock:
     sequence_id: int
     timestamp: str
     org_id: str
-    actor_id: str         # "agent:cfo", "user:smmm-123", "system:cron"
-    action: str           # "APPROVE_JOURNAL", "RUN_PIPELINE", "OVERRIDE_TAX"
+    actor_id: str  # "agent:cfo", "user:smmm-123", "system:cron"
+    action: str  # "APPROVE_JOURNAL", "RUN_PIPELINE", "OVERRIDE_TAX"
     payload_hash: str
     previous_hash: str
     current_hash: str
@@ -80,12 +81,16 @@ class ImmutableAuditTrail:
         prev = GENESIS_HASH
         for block in self._chain:
             if block.previous_hash != prev:
-                logger.error("Audit chain violation at sequence %d: prev hash mismatch", block.sequence_id)
+                logger.error(
+                    "Audit chain violation at sequence %d: prev hash mismatch", block.sequence_id
+                )
                 return False
             header = f"{block.sequence_id}|{block.timestamp}|{block.org_id}|{block.actor_id}|{block.action}|{block.payload_hash}|{block.previous_hash}"
             expected = hashlib.sha256(header.encode("utf-8")).hexdigest()
             if block.current_hash != expected:
-                logger.error("Audit chain violation at sequence %d: hash mismatch", block.sequence_id)
+                logger.error(
+                    "Audit chain violation at sequence %d: hash mismatch", block.sequence_id
+                )
                 return False
             prev = block.current_hash
         return True

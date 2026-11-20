@@ -23,6 +23,7 @@ Now:
   with fewer than two there is no score.
 - No financial impact is invented. None is computed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,22 +63,66 @@ def _sla_uyumu(r: dict[str, Any]) -> float | None:
 # orchestrators' real output, not from the kernels' vocabulary.
 METRIKLER: dict[str, tuple[str, Callable[[dict[str, Any]], float | None], str]] = {
     "ayrilma_orani": ("chro", _ayrilma, "Ayrılan çalışan / toplam personel"),
-    "teknik_borc": ("cto", lambda r: _num(_get(r, "tech_debt", "debt_score")), "Teknik borç skoru (0-10)"),
+    "teknik_borc": (
+        "cto",
+        lambda r: _num(_get(r, "tech_debt", "debt_score")),
+        "Teknik borç skoru (0-10)",
+    ),
     "roas": ("cmo", lambda r: _num(_get(r, "campaigns", "overall_roas")), "Reklam getirisi (ROAS)"),
     "churn": ("cmo", lambda r: _num(_get(r, "cohorts", "churn_rate")), "Müşteri kaybı oranı"),
     "sla_uyumu": ("coo", _sla_uyumu, "SLA'ya uyan talep oranı"),
-    "denetim_kritik": ("audit", lambda r: _num(_get(r, "findings", "open_critical")), "Açık kritik denetim bulgusu"),
-    "uyum_kritik": ("compliance", lambda r: _num(_get(r, "violations", "critical_open")), "Açık kritik uyumsuzluk"),
+    "denetim_kritik": (
+        "audit",
+        lambda r: _num(_get(r, "findings", "open_critical")),
+        "Açık kritik denetim bulgusu",
+    ),
+    "uyum_kritik": (
+        "compliance",
+        lambda r: _num(_get(r, "violations", "critical_open")),
+        "Açık kritik uyumsuzluk",
+    ),
 }
 
 # Component health scores the orchestrators publish, normalised to 0-100.
 SAGLIK_BILESENLERI: dict[str, tuple[Callable[[dict[str, Any]], float | None], str]] = {
-    "cmo": (lambda r: (v * 10 if (v := _num(_get(r, "cmo_summary", "overall_marketing_score"))) is not None else None), "Pazarlama skoru"),
-    "coo": (lambda r: (v * 10 if (v := _num(_get(r, "coo_summary", "overall_ops_score"))) is not None else None), "Operasyon skoru"),
-    "chro": (lambda r: (v * 10 if (v := _num(_get(r, "chro_summary", "chro_health_score"))) is not None else None), "İK sağlık skoru"),
-    "audit": (lambda r: _num(_get(r, "audit_summary", "audit_health_score")), "Denetim sağlık skoru"),
-    "compliance": (lambda r: _num(_get(r, "compliance_summary", "overall_health_score")), "Uyum sağlık skoru"),
-    "risk": (lambda r: (100 - v * 10 if (v := _num(_get(r, "risk_summary", "enterprise_risk_score"))) is not None else None), "100 − kurumsal risk skoru×10"),
+    "cmo": (
+        lambda r: (
+            v * 10
+            if (v := _num(_get(r, "cmo_summary", "overall_marketing_score"))) is not None
+            else None
+        ),
+        "Pazarlama skoru",
+    ),
+    "coo": (
+        lambda r: (
+            v * 10 if (v := _num(_get(r, "coo_summary", "overall_ops_score"))) is not None else None
+        ),
+        "Operasyon skoru",
+    ),
+    "chro": (
+        lambda r: (
+            v * 10
+            if (v := _num(_get(r, "chro_summary", "chro_health_score"))) is not None
+            else None
+        ),
+        "İK sağlık skoru",
+    ),
+    "audit": (
+        lambda r: _num(_get(r, "audit_summary", "audit_health_score")),
+        "Denetim sağlık skoru",
+    ),
+    "compliance": (
+        lambda r: _num(_get(r, "compliance_summary", "overall_health_score")),
+        "Uyum sağlık skoru",
+    ),
+    "risk": (
+        lambda r: (
+            100 - v * 10
+            if (v := _num(_get(r, "risk_summary", "enterprise_risk_score"))) is not None
+            else None
+        ),
+        "100 − kurumsal risk skoru×10",
+    ),
 }
 
 
@@ -86,12 +131,12 @@ class CrossDomainInsight:
     id: str
     title: str
     domains: list[str]
-    severity: str           # critical | high | medium | low
-    insight_type: str       # risk | opportunity | correlation | warning
+    severity: str  # critical | high | medium | low
+    insight_type: str  # risk | opportunity | correlation | warning
     description: str
     evidence: list[str]
     actions: list[str]
-    financial_impact_try: float | None = None   # never estimated here
+    financial_impact_try: float | None = None  # never estimated here
 
 
 @dataclass
@@ -135,7 +180,7 @@ class CrossDomainHub:
         self.results = {k: v for k, v in (domain_results or {}).items() if k in ALANLAR and v}
         self.pnl = pnl or {}
         runway = _get(forecast or {}, "scenarios", "base", "runway_months")
-        self.runway_months = _num(runway)   # unknown stays unknown
+        self.runway_months = _num(runway)  # unknown stays unknown
 
     def metrics(self) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -157,38 +202,81 @@ class CrossDomainHub:
         def has(*names: str) -> bool:
             return all(n in m for n in names)
 
-        if self.runway_months is not None and has("ayrilma_orani") \
-                and self.runway_months < 4 and m["ayrilma_orani"] > 0.20:
-            out.append(CrossDomainInsight(
-                id="talent_cash_cascade", title="Nakit sıkışıyor, çalışanlar ayrılıyor",
-                domains=["cfo", "chro"], severity="critical", insight_type="risk",
-                description=(f"Nakit ömrü {self.runway_months:.1f} ay ve personelin "
-                             f"%{m['ayrilma_orani']*100:.0f}'i ayrılmış."),
-                evidence=[f"CFO tahmini: nakit ömrü {self.runway_months:.1f} ay",
-                          f"İK dosyası: ayrılma oranı %{m['ayrilma_orani']*100:.0f}"],
-                actions=["Kritik ekip üyeleri için tutma planı", "Nakit durumunu ekiple açıkça paylaşın"],
-            ))
+        if (
+            self.runway_months is not None
+            and has("ayrilma_orani")
+            and self.runway_months < 4
+            and m["ayrilma_orani"] > 0.20
+        ):
+            out.append(
+                CrossDomainInsight(
+                    id="talent_cash_cascade",
+                    title="Nakit sıkışıyor, çalışanlar ayrılıyor",
+                    domains=["cfo", "chro"],
+                    severity="critical",
+                    insight_type="risk",
+                    description=(
+                        f"Nakit ömrü {self.runway_months:.1f} ay ve personelin "
+                        f"%{m['ayrilma_orani'] * 100:.0f}'i ayrılmış."
+                    ),
+                    evidence=[
+                        f"CFO tahmini: nakit ömrü {self.runway_months:.1f} ay",
+                        f"İK dosyası: ayrılma oranı %{m['ayrilma_orani'] * 100:.0f}",
+                    ],
+                    actions=[
+                        "Kritik ekip üyeleri için tutma planı",
+                        "Nakit durumunu ekiple açıkça paylaşın",
+                    ],
+                )
+            )
         if has("teknik_borc", "roas") and m["teknik_borc"] > 6 and m["roas"] > 2.5:
-            out.append(CrossDomainInsight(
-                id="delivery_risk_revenue", title="Teknik borç büyümeyi taşıyamayabilir",
-                domains=["cto", "cmo"], severity="high", insight_type="risk",
-                description=f"Teknik borç {m['teknik_borc']:.1f}/10 iken reklamlar {m['roas']:.1f}x getiriyor.",
-                evidence=[f"Kod geçmişi: teknik borç {m['teknik_borc']:.1f}/10",
-                          f"Kampanya verisi: ROAS {m['roas']:.1f}x"],
-                actions=["Sprint kapasitesinin bir kısmını borç azaltmaya ayırın",
-                         "Pazarlama vaatlerini ürün yol haritasıyla hizalayın"],
-            ))
-        if has("sla_uyumu", "ayrilma_orani") and m["sla_uyumu"] < 0.90 and m["ayrilma_orani"] > 0.22:
-            out.append(CrossDomainInsight(
-                id="ops_degradation_spiral", title="Operasyonel bozulma sarmalı",
-                domains=["coo", "chro"], severity="high", insight_type="risk",
-                description=(f"Taleplerin %{m['sla_uyumu']*100:.0f}'i SLA içinde ve personelin "
-                             f"%{m['ayrilma_orani']*100:.0f}'i ayrılmış."),
-                evidence=[f"SLA raporu: uyum %{m['sla_uyumu']*100:.0f}",
-                          f"İK dosyası: ayrılma oranı %{m['ayrilma_orani']*100:.0f}"],
-                actions=["Kritik süreçleri belgeleyin", "SLA ihlallerinin kök nedenini analiz edin"],
-            ))
-        if (has("uyum_kritik") and m["uyum_kritik"] >= 1) or (has("denetim_kritik") and m["denetim_kritik"] >= 1):
+            out.append(
+                CrossDomainInsight(
+                    id="delivery_risk_revenue",
+                    title="Teknik borç büyümeyi taşıyamayabilir",
+                    domains=["cto", "cmo"],
+                    severity="high",
+                    insight_type="risk",
+                    description=f"Teknik borç {m['teknik_borc']:.1f}/10 iken reklamlar {m['roas']:.1f}x getiriyor.",
+                    evidence=[
+                        f"Kod geçmişi: teknik borç {m['teknik_borc']:.1f}/10",
+                        f"Kampanya verisi: ROAS {m['roas']:.1f}x",
+                    ],
+                    actions=[
+                        "Sprint kapasitesinin bir kısmını borç azaltmaya ayırın",
+                        "Pazarlama vaatlerini ürün yol haritasıyla hizalayın",
+                    ],
+                )
+            )
+        if (
+            has("sla_uyumu", "ayrilma_orani")
+            and m["sla_uyumu"] < 0.90
+            and m["ayrilma_orani"] > 0.22
+        ):
+            out.append(
+                CrossDomainInsight(
+                    id="ops_degradation_spiral",
+                    title="Operasyonel bozulma sarmalı",
+                    domains=["coo", "chro"],
+                    severity="high",
+                    insight_type="risk",
+                    description=(
+                        f"Taleplerin %{m['sla_uyumu'] * 100:.0f}'i SLA içinde ve personelin "
+                        f"%{m['ayrilma_orani'] * 100:.0f}'i ayrılmış."
+                    ),
+                    evidence=[
+                        f"SLA raporu: uyum %{m['sla_uyumu'] * 100:.0f}",
+                        f"İK dosyası: ayrılma oranı %{m['ayrilma_orani'] * 100:.0f}",
+                    ],
+                    actions=[
+                        "Kritik süreçleri belgeleyin",
+                        "SLA ihlallerinin kök nedenini analiz edin",
+                    ],
+                )
+            )
+        if (has("uyum_kritik") and m["uyum_kritik"] >= 1) or (
+            has("denetim_kritik") and m["denetim_kritik"] >= 1
+        ):
             uyum = int(m.get("uyum_kritik", 0))
             denetim = int(m.get("denetim_kritik", 0))
             ev = []
@@ -196,23 +284,44 @@ class CrossDomainHub:
                 ev.append(f"Uyumsuzluk listesi: {uyum} açık kritik")
             if "denetim_kritik" in m:
                 ev.append(f"Denetim bulguları: {denetim} açık kritik")
-            out.append(CrossDomainInsight(
-                id="regulatory_exposure", title="Açık kritik uyum ve denetim bulguları",
-                domains=[d for d, k in (("compliance", "uyum_kritik"), ("audit", "denetim_kritik")) if k in m],
-                severity="critical" if uyum >= 1 else "high", insight_type="warning",
-                description=f"{uyum} kritik uyumsuzluk ve {denetim} kritik denetim bulgusu açık.",
-                evidence=ev,
-                actions=["Hukuk danışmanını devreye alın", "Kritik bulguları 7 gün içinde kapatma planı yapın"],
-            ))
+            out.append(
+                CrossDomainInsight(
+                    id="regulatory_exposure",
+                    title="Açık kritik uyum ve denetim bulguları",
+                    domains=[
+                        d
+                        for d, k in (("compliance", "uyum_kritik"), ("audit", "denetim_kritik"))
+                        if k in m
+                    ],
+                    severity="critical" if uyum >= 1 else "high",
+                    insight_type="warning",
+                    description=f"{uyum} kritik uyumsuzluk ve {denetim} kritik denetim bulgusu açık.",
+                    evidence=ev,
+                    actions=[
+                        "Hukuk danışmanını devreye alın",
+                        "Kritik bulguları 7 gün içinde kapatma planı yapın",
+                    ],
+                )
+            )
         if has("churn", "roas") and m["churn"] > 0.05 and m["roas"] > 2.0:
-            out.append(CrossDomainInsight(
-                id="growth_churn_imbalance", title="Kazanılan müşteri, kaybedileni karşılamıyor",
-                domains=["cmo"], severity="medium", insight_type="correlation",
-                description=f"Reklamlar {m['roas']:.1f}x getiriyor ama müşteri kaybı %{m['churn']*100:.0f}.",
-                evidence=[f"Müşteri tutma verisi: kayıp %{m['churn']*100:.0f}",
-                          f"Kampanya verisi: ROAS {m['roas']:.1f}x"],
-                actions=["En çok kaybedilen müşteri grubunu inceleyin", "Müşteri başarı programı başlatın"],
-            ))
+            out.append(
+                CrossDomainInsight(
+                    id="growth_churn_imbalance",
+                    title="Kazanılan müşteri, kaybedileni karşılamıyor",
+                    domains=["cmo"],
+                    severity="medium",
+                    insight_type="correlation",
+                    description=f"Reklamlar {m['roas']:.1f}x getiriyor ama müşteri kaybı %{m['churn'] * 100:.0f}.",
+                    evidence=[
+                        f"Müşteri tutma verisi: kayıp %{m['churn'] * 100:.0f}",
+                        f"Kampanya verisi: ROAS {m['roas']:.1f}x",
+                    ],
+                    actions=[
+                        "En çok kaybedilen müşteri grubunu inceleyin",
+                        "Müşteri başarı programı başlatın",
+                    ],
+                )
+            )
         order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         out.sort(key=lambda i: order.get(i.severity, 4))
         return out
@@ -225,11 +334,18 @@ class CrossDomainHub:
                 continue
             v = read(r)
             if v is not None:
-                comps.append({"alan": domain, "etiket": label, "skor": round(max(0.0, min(100.0, v)), 1)})
+                comps.append(
+                    {"alan": domain, "etiket": label, "skor": round(max(0.0, min(100.0, v)), 1)}
+                )
         margin = _num(self.pnl.get("net_margin")) if self.pnl.get("revenue") else None
         if margin is not None:
-            comps.append({"alan": "cfo", "etiket": "Net kâr marjı (50 + marj×200)",
-                          "skor": round(max(0.0, min(100.0, 50 + margin * 200)), 1)})
+            comps.append(
+                {
+                    "alan": "cfo",
+                    "etiket": "Net kâr marjı (50 + marj×200)",
+                    "skor": round(max(0.0, min(100.0, 50 + margin * 200)), 1),
+                }
+            )
         if len(comps) < 2:
             return None, comps
         return round(sum(c["skor"] for c in comps) / len(comps), 1), comps
@@ -245,16 +361,29 @@ class CrossDomainHub:
         if not analyzed:
             summary = "Henüz hiçbir alan gerçek veriyle analiz edilmedi; çapraz bulgu üretilemez."
         else:
-            summary = (f"{len(analyzed)} alan gerçek veriyle analiz edildi ({', '.join(analyzed)}). "
-                       f"{len(insights)} çapraz bulgu ({critical} kritik, {high} yüksek).")
-            summary += (f" Genel sağlık {score:.0f}/100, {len(comps)} bileşenden." if score is not None
-                        else " Sağlık skoru için en az iki alanın skoru gerekir.")
+            summary = (
+                f"{len(analyzed)} alan gerçek veriyle analiz edildi ({', '.join(analyzed)}). "
+                f"{len(insights)} çapraz bulgu ({critical} kritik, {high} yüksek)."
+            )
+            summary += (
+                f" Genel sağlık {score:.0f}/100, {len(comps)} bileşenden."
+                if score is not None
+                else " Sağlık skoru için en az iki alanın skoru gerekir."
+            )
         return CrossDomainReport(
-            analyzed_domains=analyzed, missing_domains=missing, metrics=m,
-            insights=insights, critical_count=critical, high_count=high,
-            overall_health_score=score, health_label=_label(score) if score is not None else None,
-            health_components=comps, executive_summary=summary,
-            top_priorities=[f"[{i.severity.upper()}] {i.actions[0]}" for i in insights[:3] if i.actions],
+            analyzed_domains=analyzed,
+            missing_domains=missing,
+            metrics=m,
+            insights=insights,
+            critical_count=critical,
+            high_count=high,
+            overall_health_score=score,
+            health_label=_label(score) if score is not None else None,
+            health_components=comps,
+            executive_summary=summary,
+            top_priorities=[
+                f"[{i.severity.upper()}] {i.actions[0]}" for i in insights[:3] if i.actions
+            ],
         )
 
 

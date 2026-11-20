@@ -17,6 +17,7 @@ Usage:
     async with session_factory()() as db:
         ...
 """
+
 from __future__ import annotations
 
 import threading
@@ -97,6 +98,7 @@ def session_factory():
 
 
 # ── Public helpers ────────────────────────────────────────────────────────────
+
 
 def get_engine():
     """Alias for engine() — kept for backward compatibility."""

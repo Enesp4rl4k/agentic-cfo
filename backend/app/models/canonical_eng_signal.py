@@ -9,6 +9,7 @@ provider-specific payloads.
 matters per type (commit → additions+deletions, pull_request → cycle-time hours,
 issue/incident → comment count) and `attributes` carries the long tail.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -36,14 +37,14 @@ class CanonicalEngSignal(Base):
     __tablename__ = "canonical_eng_signals"
     __table_args__ = (
         UniqueConstraint(
-            "org_id", "source", "source_record_id",
+            "org_id",
+            "source",
+            "source_record_id",
             name="uq_canonical_eng_org_source_record",
         ),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(40), nullable=False, index=True)  # "github"
     source_record_id: Mapped[str] = mapped_column(String(160), nullable=False)

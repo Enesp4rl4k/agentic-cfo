@@ -4,6 +4,7 @@ Live audit 2026-10-24: `/chat/job/{id}` with no LLM key and
 `/reports/{id}/executive-pdf` with no Pango/GObject both returned an unhandled
 500 ("İç sunucu hatası"). The numbers were fine; only the service was missing.
 """
+
 from __future__ import annotations
 
 import builtins
@@ -18,12 +19,23 @@ async def _job_with_dashboard(client, org_id: str) -> str:
     from app.models.report import Report, ReportFormat, ReportType
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="x.csv", file_path="/x.csv", file_type="csv",
-                          org_id=org_id, status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="x.csv",
+            file_path="/x.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.COMPLETED,
+        )
         db.add(job)
         await db.flush()
-        db.add(Report(job_id=job.id, report_type=ReportType.FULL,
-                      report_format=ReportFormat.JSON, data=ornek_rapor()))
+        db.add(
+            Report(
+                job_id=job.id,
+                report_type=ReportType.FULL,
+                report_format=ReportFormat.JSON,
+                data=ornek_rapor(),
+            )
+        )
         await db.commit()
         return job.id
 
@@ -39,8 +51,11 @@ async def test_chat_without_an_llm_is_503_llm_unavailable(monkeypatch):
     async with bellek_istemcisi() as client:
         headers, org_id, _ = await kullanici(client, "sohbet@example.com")
         job_id = await _job_with_dashboard(client, org_id)
-        res = await client.post(f"/api/v1/chat/job/{job_id}", headers=headers,
-                                json={"question": "Bu yıl hangi pazara açılmalıyız, neden?"})
+        res = await client.post(
+            f"/api/v1/chat/job/{job_id}",
+            headers=headers,
+            json={"question": "Bu yıl hangi pazara açılmalıyız, neden?"},
+        )
     assert res.status_code == 503, res.text
     body = res.json()
     assert body["error_code"] == "llm_unavailable"
@@ -74,8 +89,11 @@ async def test_chat_without_an_llm_still_answers_what_the_analysis_settles(monke
     async with bellek_istemcisi() as client:
         headers, org_id, _ = await kullanici(client, "sayi@example.com")
         job_id = await _job_with_dashboard(client, org_id)
-        res = await client.post(f"/api/v1/chat/job/{job_id}", headers=headers,
-                                json={"question": "Toplam gelirim ne kadar?"})
+        res = await client.post(
+            f"/api/v1/chat/job/{job_id}",
+            headers=headers,
+            json={"question": "Toplam gelirim ne kadar?"},
+        )
     assert res.status_code == 200, res.text
     body = res.json()["data"]
     assert body["source"] == "stored_analysis"

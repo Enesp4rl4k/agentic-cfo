@@ -6,6 +6,7 @@ Provides:
   - decrypt_field: Decrypts ciphertext (backward compatible with unencrypted plaintext)
   - EncryptedString: SQLAlchemy TypeDecorator for transparent field-level encryption
 """
+
 from __future__ import annotations
 
 import base64

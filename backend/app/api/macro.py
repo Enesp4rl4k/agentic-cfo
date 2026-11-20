@@ -5,6 +5,7 @@ Endpoints:
   GET  /macro/tcmb     → Live/cached macroeconomic snapshot from TCMB EVDS (USD/TRY, EUR/TRY, Policy Rate, Inflation)
   POST /macro/simulate → Stress testing simulation under FX and interest rate shock scenarios
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,10 +27,18 @@ logger = logging.getLogger(__name__)
 
 
 class MacroSimulationRequest(BaseModel):
-    usd_shock_pct: float = Field(default=15.0, ge=-50.0, le=200.0, description="Beklenen USD/TRY % değişimi")
-    eur_shock_pct: float = Field(default=15.0, ge=-50.0, le=200.0, description="Beklenen EUR/TRY % değişimi")
-    interest_rate_delta_bp: float = Field(default=500.0, ge=-3000.0, le=5000.0, description="Faiz değişimi (baz puan, 500 = %5)")
-    payment_delay_days: int = Field(default=15, ge=0, le=180, description="Alacak tahsilat gecikmesi (gün)")
+    usd_shock_pct: float = Field(
+        default=15.0, ge=-50.0, le=200.0, description="Beklenen USD/TRY % değişimi"
+    )
+    eur_shock_pct: float = Field(
+        default=15.0, ge=-50.0, le=200.0, description="Beklenen EUR/TRY % değişimi"
+    )
+    interest_rate_delta_bp: float = Field(
+        default=500.0, ge=-3000.0, le=5000.0, description="Faiz değişimi (baz puan, 500 = %5)"
+    )
+    payment_delay_days: int = Field(
+        default=15, ge=0, le=180, description="Alacak tahsilat gecikmesi (gün)"
+    )
 
 
 @router.get("/tcmb")

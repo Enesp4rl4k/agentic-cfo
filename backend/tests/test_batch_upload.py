@@ -7,6 +7,7 @@ a live instance: three files in, three jobs out, all "awaiting_review".
 The first financial document opens the analysis, the rest attach to it, and the
 run is started once every file is in place.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -54,7 +55,8 @@ def baslatilanlar(monkeypatch):
 
 async def test_three_invoices_become_one_analysis_started_once(db, baslatilanlar):
     out = await ekle.dosyalari_ekle(
-        db, ekle.Sahip(org_id="org-1", user_id="u1"),
+        db,
+        ekle.Sahip(org_id="org-1", user_id="u1"),
         [("f1.xml", _fatura(1)), ("f2.xml", _fatura(2)), ("f3.xml", _fatura(3))],
     )
     assert [d["durum"] for d in out["dosyalar"]] == [ekle.EKLENDI] * 3
@@ -64,9 +66,11 @@ async def test_three_invoices_become_one_analysis_started_once(db, baslatilanlar
     assert len(jobs) == 1
     assert jobs[0].filename == "f1.xml"
 
-    ekler = (await db.execute(
-        select(DataSource).where(DataSource.domain == DataSourceDomain.CFO)
-    )).scalars().all()
+    ekler = (
+        (await db.execute(select(DataSource).where(DataSource.domain == DataSourceDomain.CFO)))
+        .scalars()
+        .all()
+    )
     assert sorted(e.filename for e in ekler) == ["f2.xml", "f3.xml"]
     assert {e.source_type for e in ekler} == {DataSourceType.FINANCIAL_DOCUMENT}
 
@@ -76,7 +80,8 @@ async def test_three_invoices_become_one_analysis_started_once(db, baslatilanlar
 
 async def test_the_same_file_twice_in_one_request_is_added_once(db, baslatilanlar):
     out = await ekle.dosyalari_ekle(
-        db, ekle.Sahip(org_id="org-1", user_id="u1"),
+        db,
+        ekle.Sahip(org_id="org-1", user_id="u1"),
         [("f1.xml", _fatura(1)), ("kopya.xml", _fatura(1))],
     )
     durumlar = [d["durum"] for d in out["dosyalar"]]
@@ -88,7 +93,9 @@ async def test_the_same_file_twice_in_one_request_is_added_once(db, baslatilanla
 
 async def test_a_single_document_still_starts_its_own_analysis(db, baslatilanlar):
     out = await ekle.dosyalari_ekle(
-        db, ekle.Sahip(org_id="org-1", user_id="u1"), [("tek.xml", _fatura(9))],
+        db,
+        ekle.Sahip(org_id="org-1", user_id="u1"),
+        [("tek.xml", _fatura(9))],
     )
     d = out["dosyalar"][0]
     assert d["durum"] == ekle.EKLENDI

@@ -1,11 +1,13 @@
 """
 Tests for report_agent.py — pure function _build_dashboard_json (no LLM, no disk I/O).
 """
+
 import pytest
 
 from app.agents.report_agent import _build_dashboard_json, _fmt
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _make_state(
     revenue: int = 2_000_000,
@@ -62,8 +64,8 @@ def _make_state(
 
 # ── _fmt ──────────────────────────────────────────────────────────────────────
 
-class TestFmt:
 
+class TestFmt:
     def test_converts_cents_to_currency_units(self):
         assert _fmt(1_000_000) == pytest.approx(10_000.0)
 
@@ -76,16 +78,23 @@ class TestFmt:
 
 # ── _build_dashboard_json ─────────────────────────────────────────────────────
 
-class TestBuildDashboardJson:
 
+class TestBuildDashboardJson:
     def test_returns_dict(self):
         result = _build_dashboard_json(_make_state())
         assert isinstance(result, dict)
 
     def test_required_top_level_keys(self):
         result = _build_dashboard_json(_make_state())
-        for key in ("generated_at", "kpis", "pnl", "cashflow",
-                    "forecast", "recent_transactions", "transaction_count"):
+        for key in (
+            "generated_at",
+            "kpis",
+            "pnl",
+            "cashflow",
+            "forecast",
+            "recent_transactions",
+            "transaction_count",
+        ):
             assert key in result
 
     def test_generated_at_is_iso_string(self):
@@ -150,9 +159,18 @@ class TestBuildDashboardJson:
 
     def test_pnl_required_keys(self):
         result = _build_dashboard_json(_make_state())
-        for key in ("revenue", "cogs", "gross_profit", "gross_margin",
-                    "ebitda", "ebitda_margin", "net_income", "net_margin",
-                    "opex", "narrative"):
+        for key in (
+            "revenue",
+            "cogs",
+            "gross_profit",
+            "gross_margin",
+            "ebitda",
+            "ebitda_margin",
+            "net_income",
+            "net_margin",
+            "opex",
+            "narrative",
+        ):
             assert key in result["pnl"]
 
     # ── Cash Flow ─────────────────────────────────────────────────────────────

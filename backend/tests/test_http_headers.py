@@ -10,6 +10,7 @@ company name. What makes it easy to miss is that latin-1 *does* contain ö, ü
 and ç — so "Öztürk Holding" downloads fine and "Yıldız Tekstil" returns a 500,
 from the same line.
 """
+
 from __future__ import annotations
 
 import ast
@@ -24,10 +25,10 @@ APP = Path(__file__).resolve().parents[1] / "app"
 
 # Names a Turkish family business actually has. The first three broke.
 COMPANY_NAMES = [
-    "Yıldız Tekstil",           # ı — U+0131
-    "Çağdaş Gıda",              # ğ — U+011F
-    "Demir İnşaat A.Ş.",        # İ, ş
-    "Öztürk Holding",           # ö, ü — these latin-1 *can* carry
+    "Yıldız Tekstil",  # ı — U+0131
+    "Çağdaş Gıda",  # ğ — U+011F
+    "Demir İnşaat A.Ş.",  # İ, ş
+    "Öztürk Holding",  # ö, ü — these latin-1 *can* carry
     "ACME Ltd",
 ]
 
@@ -86,6 +87,7 @@ def test_empty_name_still_produces_a_usable_header() -> None:
 # literal-only scan finds nothing. Every Content-Disposition in the API layer
 # must go through the helper.
 
+
 def test_no_route_builds_content_disposition_by_hand() -> None:
     offenders: list[str] = []
     for path in sorted((APP / "api").rglob("*.py")):
@@ -137,12 +139,11 @@ def test_no_route_puts_turkish_prose_in_a_custom_header() -> None:
                             sub.value.encode("latin-1")
                         except UnicodeEncodeError:
                             offenders.append(f"{rel}:{sub.lineno}: {key.value}")
-    assert not offenders, (
-        "özel başlıkta latin-1'e sığmayan metin:\n  " + "\n  ".join(offenders)
-    )
+    assert not offenders, "özel başlıkta latin-1'e sığmayan metin:\n  " + "\n  ".join(offenders)
 
 
 # ── Through Starlette's own encoder, not a simulation of it ──────────────────
+
 
 @pytest.mark.parametrize("company", COMPANY_NAMES)
 def test_a_real_response_can_be_constructed(company: str) -> None:

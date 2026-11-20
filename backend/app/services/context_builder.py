@@ -23,6 +23,7 @@ Usage:
     prompt = result.text  # ready to send to LLM
     print(result.token_count, result.truncated)
 """
+
 from __future__ import annotations
 
 import json
@@ -36,18 +37,21 @@ logger = logging.getLogger(__name__)
 
 try:
     import tiktoken
+
     _ENC = tiktoken.get_encoding("cl100k_base")
 
     def _count_tokens(text: str) -> int:
         return len(_ENC.encode(text))
 
 except ImportError:
+
     def _count_tokens(text: str) -> int:
         # Safe fallback: 1 token ≈ 4 characters
         return max(1, len(text) // 4)
 
 
 # ── Result type ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ContextResult:
@@ -72,6 +76,7 @@ class ContextResult:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _fmt_currency(cents: int | float | None) -> str:
     if cents is None:
@@ -118,9 +123,7 @@ def _summarise_pnl(pnl: dict[str, Any]) -> str:
     if not pnl:
         return "(no P&L data)"
     opex_lines = "\n".join(
-        f"  {k}: {_fmt_currency(v)}"
-        for k, v in (pnl.get("opex") or {}).items()
-        if v
+        f"  {k}: {_fmt_currency(v)}" for k, v in (pnl.get("opex") or {}).items() if v
     )
     return (
         f"Revenue:      {_fmt_currency(pnl.get('revenue'))}\n"
@@ -194,6 +197,7 @@ def _summarise_alerts(alerts: list[dict[str, Any]], max_items: int = 8) -> str:
 
 # ── ContextBuilder ────────────────────────────────────────────────────────────
 
+
 class ContextBuilder:
     """
     Assembles a token-budgeted LLM prompt context from CFOState.
@@ -264,11 +268,14 @@ class ContextBuilder:
         pnl_summary = _summarise_pnl(pnl)
 
         slices: list[tuple[str, str]] = [
-            ("system_role", (
-                "You are a Chief Financial Officer (CFO). "
-                "Provide a concise, data-driven financial narrative in Turkish. "
-                f"Industry sector: {sector}."
-            )),
+            (
+                "system_role",
+                (
+                    "You are a Chief Financial Officer (CFO). "
+                    "Provide a concise, data-driven financial narrative in Turkish. "
+                    f"Industry sector: {sector}."
+                ),
+            ),
             ("pnl_summary", f"## P&L Summary\n{pnl_summary}"),
         ]
 
@@ -276,11 +283,16 @@ class ContextBuilder:
             slices.append(("benchmark", f"## Industry Benchmarks\n{benchmark_lines}"))
 
         slices.append(("transactions_sample", f"## Top Transactions (by amount)\n{tx_summary}"))
-        slices.append(("instruction", (
-            "Write a 3-4 sentence CFO commentary covering: "
-            "revenue quality, margin health, key risks, and one recommendation. "
-            "Use specific numbers. Respond in Turkish."
-        )))
+        slices.append(
+            (
+                "instruction",
+                (
+                    "Write a 3-4 sentence CFO commentary covering: "
+                    "revenue quality, margin health, key risks, and one recommendation. "
+                    "Use specific numbers. Respond in Turkish."
+                ),
+            )
+        )
 
         result = self._assemble(slices)
         logger.debug("PnL context: %s", result)
@@ -292,18 +304,24 @@ class ContextBuilder:
         txs = state.get("transactions") or []
 
         slices: list[tuple[str, str]] = [
-            ("system_role", (
-                "You are a CFO analyzing cash flow. "
-                "Provide a concise Turkish narrative."
-            )),
+            (
+                "system_role",
+                ("You are a CFO analyzing cash flow. Provide a concise Turkish narrative."),
+            ),
             ("cashflow_summary", f"## Cash Flow Summary\n{_summarise_cashflow(cf)}"),
             ("alerts", f"## Cash Flow Alerts\n{_summarise_alerts(cf.get('alerts') or [])}"),
-            ("transactions_sample", f"## Top Cash Transactions\n{_summarise_transactions(txs, max_rows=20)}"),
-            ("instruction", (
-                "Write a 3-4 sentence CFO commentary on: "
-                "operating cash generation, liquidity risk, burn rate trend. "
-                "Respond in Turkish."
-            )),
+            (
+                "transactions_sample",
+                f"## Top Cash Transactions\n{_summarise_transactions(txs, max_rows=20)}",
+            ),
+            (
+                "instruction",
+                (
+                    "Write a 3-4 sentence CFO commentary on: "
+                    "operating cash generation, liquidity risk, burn rate trend. "
+                    "Respond in Turkish."
+                ),
+            ),
         ]
 
         result = self._assemble(slices)
@@ -317,18 +335,24 @@ class ContextBuilder:
         pnl = state.get("pnl") or {}
 
         slices: list[tuple[str, str]] = [
-            ("system_role", (
-                "You are a CFO providing a forward-looking financial assessment. "
-                "Respond in Turkish."
-            )),
+            (
+                "system_role",
+                (
+                    "You are a CFO providing a forward-looking financial assessment. "
+                    "Respond in Turkish."
+                ),
+            ),
             ("pnl_snapshot", f"## Current P&L Snapshot\n{_summarise_pnl(pnl)}"),
             ("cashflow_snapshot", f"## Current Cash Position\n{_summarise_cashflow(cf)}"),
             ("forecast_scenarios", f"## 12-Month Forecast Scenarios\n{_summarise_forecast(fc)}"),
-            ("instruction", (
-                "Write a 3-4 sentence executive forecast commentary covering: "
-                "base case outlook, key upside risk, key downside risk, cash runway. "
-                "Respond in Turkish."
-            )),
+            (
+                "instruction",
+                (
+                    "Write a 3-4 sentence executive forecast commentary covering: "
+                    "base case outlook, key upside risk, key downside risk, cash runway. "
+                    "Respond in Turkish."
+                ),
+            ),
         ]
 
         result = self._assemble(slices)
@@ -351,11 +375,11 @@ class ContextBuilder:
         anomaly_detail = json.dumps(
             [
                 {
-                    "type":        a.get("anomaly_type"),
-                    "severity":    a.get("severity"),
-                    "title":       a.get("title"),
+                    "type": a.get("anomaly_type"),
+                    "severity": a.get("severity"),
+                    "title": a.get("title"),
                     "description": a.get("description"),
-                    "confidence":  a.get("confidence"),
+                    "confidence": a.get("confidence"),
                 }
                 for a in top_anomalies
             ],
@@ -367,11 +391,14 @@ class ContextBuilder:
             ("system_role", "You are a CFO reviewing financial anomalies. Respond in Turkish."),
             ("pnl_snapshot", f"## Financial Context\n{_summarise_pnl(pnl)}"),
             ("anomaly_summary", f"## Anomalies (top 15)\n{anomaly_detail}"),
-            ("instruction", (
-                "Write a 3-4 sentence risk commentary covering: "
-                "most critical anomalies, financial exposure estimate, immediate actions. "
-                "Respond in Turkish."
-            )),
+            (
+                "instruction",
+                (
+                    "Write a 3-4 sentence risk commentary covering: "
+                    "most critical anomalies, financial exposure estimate, immediate actions. "
+                    "Respond in Turkish."
+                ),
+            ),
         ]
 
         result = self._assemble(slices)
@@ -384,20 +411,26 @@ class ContextBuilder:
         Highest-level summary across all domains — most aggressive truncation.
         """
         slices: list[tuple[str, str]] = [
-            ("system_role", (
-                "You are a CEO AI advisor. Synthesize financial intelligence into "
-                "executive-level strategic insights. Respond in Turkish."
-            )),
+            (
+                "system_role",
+                (
+                    "You are a CEO AI advisor. Synthesize financial intelligence into "
+                    "executive-level strategic insights. Respond in Turkish."
+                ),
+            ),
             ("pnl", f"## P&L\n{_summarise_pnl(state.get('pnl') or {})}"),
             ("cashflow", f"## Cash Flow\n{_summarise_cashflow(state.get('cashflow') or {})}"),
             ("forecast", f"## Forecast\n{_summarise_forecast(state.get('forecast') or {})}"),
             ("anomalies", f"## Anomalies\n{_summarise_anomalies(state.get('anomalies') or [])}"),
             ("alerts", f"## Alerts\n{_summarise_alerts(state.get('triggered_alerts') or [])}"),
-            ("instruction", (
-                "Write a 5-6 sentence CEO board briefing covering: "
-                "financial health, key risks, strategic opportunities, recommended priorities. "
-                "Respond in Turkish."
-            )),
+            (
+                "instruction",
+                (
+                    "Write a 5-6 sentence CEO board briefing covering: "
+                    "financial health, key risks, strategic opportunities, recommended priorities. "
+                    "Respond in Turkish."
+                ),
+            ),
         ]
 
         result = self._assemble(slices)

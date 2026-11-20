@@ -25,6 +25,7 @@ What is read, and what is not:
   read. An income-statement account this map does not know is reported, and
   holds the analysis for review rather than being guessed.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -89,7 +90,9 @@ def yevmiye_oku(xml: bytes) -> YevmiyeSonucu:
     for kayit in kok.iter(f"{_GL}entryHeader"):
         kayitlar += 1
         satirlar = list(kayit.iter(f"{_GL}entryDetail"))
-        hesaplar = [(s.findtext(f"{_GL}account/{_GL}accountMainID") or "").strip() for s in satirlar]
+        hesaplar = [
+            (s.findtext(f"{_GL}account/{_GL}accountMainID") or "").strip() for s in satirlar
+        ]
         if any(h[:3] in _YANSITMA or h[:3] in _KAPANIS for h in hesaplar):
             atlanan += 1
             continue
@@ -132,20 +135,24 @@ def yevmiye_oku(xml: bytes) -> YevmiyeSonucu:
             except ValueError:
                 pass
             aciklama = (satir.findtext(f"{_GL}detailComment") or kayit_yorum).strip()
-            islemler.append({
-                "amount_cents": kurus,
-                "currency": "TRY",
-                "type": tip,
-                "category": kategori,
-                "description": f"Yevmiye {no}: {aciklama}" if aciklama else f"Yevmiye {no}",
-                "vendor": None,
-                "transaction_date": tarih[:10] or None,
-                "raw_text": (f"e-Defter yevmiye | kayıt {no} | hesap {hesap} "
-                             f"| {'borç' if borc else 'alacak'} {tutar} TL | tahakkuk esası"),
-                "confidence": 0.95,
-                "basis": "tahakkuk",
-                "account_code": hesap,
-            })
+            islemler.append(
+                {
+                    "amount_cents": kurus,
+                    "currency": "TRY",
+                    "type": tip,
+                    "category": kategori,
+                    "description": f"Yevmiye {no}: {aciklama}" if aciklama else f"Yevmiye {no}",
+                    "vendor": None,
+                    "transaction_date": tarih[:10] or None,
+                    "raw_text": (
+                        f"e-Defter yevmiye | kayıt {no} | hesap {hesap} "
+                        f"| {'borç' if borc else 'alacak'} {tutar} TL | tahakkuk esası"
+                    ),
+                    "confidence": 0.95,
+                    "basis": "tahakkuk",
+                    "account_code": hesap,
+                }
+            )
 
     return YevmiyeSonucu(
         islemler=islemler,

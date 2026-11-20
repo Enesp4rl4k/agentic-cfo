@@ -10,6 +10,7 @@ POST /integrations/webhook/test         → Webhook bağlantısını test et
 GET  /integrations/webhook/config       → Webhook ayarlarını oku
 PUT  /integrations/webhook/config       → Webhook ayarlarını güncelle
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,50 +31,52 @@ logger = logging.getLogger(__name__)
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class OpenBankingConnectRequest(BaseModel):
-    bank:          str = Field(..., description="isbank|garanti|akbank|yapikredi")
-    client_id:     str
+    bank: str = Field(..., description="isbank|garanti|akbank|yapikredi")
+    client_id: str
     client_secret: str
-    sandbox:       bool = True
+    sandbox: bool = True
 
 
 class EcommerceSyncRequest(BaseModel):
-    channel:    str  = Field(..., description="shopify|trendyol|hepsiburada")
-    from_date:  str
-    to_date:    str
+    channel: str = Field(..., description="shopify|trendyol|hepsiburada")
+    from_date: str
+    to_date: str
     # Channel-specific credentials
     credentials: dict[str, str]
 
 
 class SheetsExportRequest(BaseModel):
-    spreadsheet_id:  str
-    job_id:          str | None = None
-    range_name:      str = "CFO!A1"
+    spreadsheet_id: str
+    job_id: str | None = None
+    range_name: str = "CFO!A1"
 
 
 class SheetsImportRequest(BaseModel):
     spreadsheet_id: str
-    range_name:     str = "Sheet1!A1:Z1000"
+    range_name: str = "Sheet1!A1:Z1000"
     column_mapping: dict[str, str] | None = None  # spreadsheet col → CFO field
 
 
 class WebhookConfig(BaseModel):
-    slack_webhook_url:  str | None = None
-    teams_webhook_url:  str | None = None
+    slack_webhook_url: str | None = None
+    teams_webhook_url: str | None = None
     custom_webhook_url: str | None = None
-    email_recipients:   list[str]  = Field(default_factory=list)
-    enabled_events:     list[str]  = Field(
+    email_recipients: list[str] = Field(default_factory=list)
+    enabled_events: list[str] = Field(
         default_factory=lambda: ["analysis_complete", "kri_breach", "anomaly_detected"]
     )
 
 
 class WebhookTestRequest(BaseModel):
-    channel:  str   = Field(..., description="slack|teams|custom|email")
-    target:   str   = Field(..., description="Webhook URL veya email adresi")
-    message:  str   = "Agentic CFO — Test mesajı"
+    channel: str = Field(..., description="slack|teams|custom|email")
+    target: str = Field(..., description="Webhook URL veya email adresi")
+    message: str = "Agentic CFO — Test mesajı"
 
 
 # ── Channels endpoint ─────────────────────────────────────────────────────────
+
 
 @router.get("/integrations/channels")
 async def list_integration_channels(
@@ -81,6 +84,7 @@ async def list_integration_channels(
 ) -> dict[str, Any]:
     """Yapılandırılmış entegrasyon kanallarını listele."""
     from app.config import get_settings
+
     settings = get_settings()
 
     channels = []
@@ -88,14 +92,23 @@ async def list_integration_channels(
     # Open Banking
     ob_banks = []
     for bank in ["akbank", "garanti", "isbank", "yapikredi"]:
-        key   = f"openbanking_{bank}_client_id"
+        key = f"openbanking_{bank}_client_id"
         value = getattr(settings, key, "")
         if value:
             ob_banks.append(bank)
     if ob_banks:
-        channels.append({"id": "open_banking", "name": "Open Banking", "banks": ob_banks, "active": True})
+        channels.append(
+            {"id": "open_banking", "name": "Open Banking", "banks": ob_banks, "active": True}
+        )
     else:
-        channels.append({"id": "open_banking", "name": "Open Banking", "active": False, "setup_url": "/settings/integrations"})
+        channels.append(
+            {
+                "id": "open_banking",
+                "name": "Open Banking",
+                "active": False,
+                "setup_url": "/settings/integrations",
+            }
+        )
 
     # E-ticaret
     ecom = []
@@ -103,34 +116,40 @@ async def list_integration_channels(
         ecom.append("shopify")
     if getattr(settings, "trendyol_api_key", ""):
         ecom.append("trendyol")
-    channels.append({
-        "id": "ecommerce", "name": "E-Ticaret", "active": bool(ecom), "channels": ecom
-    })
+    channels.append(
+        {"id": "ecommerce", "name": "E-Ticaret", "active": bool(ecom), "channels": ecom}
+    )
 
     # Google Sheets
-    channels.append({
-        "id": "google_sheets",
-        "name": "Google Sheets",
-        "active": bool(getattr(settings, "google_sheets_service_account", "")),
-    })
+    channels.append(
+        {
+            "id": "google_sheets",
+            "name": "Google Sheets",
+            "active": bool(getattr(settings, "google_sheets_service_account", "")),
+        }
+    )
 
     # Webhooks
-    channels.append({
-        "id": "webhook",
-        "name": "Webhook / Bildirimler",
-        "active": bool(
-            getattr(settings, "slack_webhook_url", "") or
-            getattr(settings, "teams_webhook_url", "")
-        ),
-    })
+    channels.append(
+        {
+            "id": "webhook",
+            "name": "Webhook / Bildirimler",
+            "active": bool(
+                getattr(settings, "slack_webhook_url", "")
+                or getattr(settings, "teams_webhook_url", "")
+            ),
+        }
+    )
 
     # GİB e-Fatura (already existing)
-    channels.append({
-        "id": "efatura",
-        "name": "GİB e-Fatura",
-        "active": bool(getattr(settings, "gib_vkn", "")),
-        "sandbox": getattr(settings, "gib_sandbox", True),
-    })
+    channels.append(
+        {
+            "id": "efatura",
+            "name": "GİB e-Fatura",
+            "active": bool(getattr(settings, "gib_vkn", "")),
+            "sandbox": getattr(settings, "gib_sandbox", True),
+        }
+    )
 
     return {"data": {"channels": channels}, "error": None}
 
@@ -147,9 +166,10 @@ async def list_integration_channels(
 
 # ── E-ticaret ─────────────────────────────────────────────────────────────────
 
+
 @router.post("/integrations/ecommerce/sync")
 async def sync_ecommerce(
-    req:          EcommerceSyncRequest,
+    req: EcommerceSyncRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """E-ticaret kanalından siparişleri çek."""
@@ -157,20 +177,20 @@ async def sync_ecommerce(
 
     orders = []
     if req.channel == "shopify":
-        token  = req.credentials.get("access_token") or req.credentials.get("api_key", "")
+        token = req.credentials.get("access_token") or req.credentials.get("api_key", "")
         domain = req.credentials.get("shop_domain", "")
         if not token or not domain:
             raise HTTPException(400, "Shopify için shop_domain ve access_token gerekli")
-        conn   = ShopifyConnector(domain, token)
+        conn = ShopifyConnector(domain, token)
         orders = await conn.get_orders(req.from_date, req.to_date)
 
     elif req.channel == "trendyol":
-        sid    = req.credentials.get("supplier_id", "")
-        key    = req.credentials.get("api_key", "")
+        sid = req.credentials.get("supplier_id", "")
+        key = req.credentials.get("api_key", "")
         secret = req.credentials.get("api_secret", "")
         if not sid or not key:
             raise HTTPException(400, "Trendyol için supplier_id, api_key ve api_secret gerekli")
-        conn   = TrendyolConnector(sid, key, secret)
+        conn = TrendyolConnector(sid, key, secret)
         orders = await conn.get_orders(req.from_date, req.to_date)
 
     else:
@@ -178,10 +198,10 @@ async def sync_ecommerce(
 
     return {
         "data": {
-            "channel":     req.channel,
+            "channel": req.channel,
             "order_count": len(orders),
             "total_revenue": sum(o.get("amount_try", 0) for o in orders),
-            "orders":      orders[:200],
+            "orders": orders[:200],
         },
         "error": None,
     }
@@ -189,20 +209,23 @@ async def sync_ecommerce(
 
 # ── Google Sheets ─────────────────────────────────────────────────────────────
 
+
 @router.post("/integrations/sheets/export")
 async def export_to_sheets(
-    req:          SheetsExportRequest,
+    req: SheetsExportRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """CFO analiz sonuçlarını Google Sheets'e gönder."""
     from app.config import get_settings
-    settings  = get_settings()
-    sa_json   = getattr(settings, "google_sheets_service_account", "")
+
+    settings = get_settings()
+    sa_json = getattr(settings, "google_sheets_service_account", "")
     if not sa_json:
         raise HTTPException(400, "Google Sheets service account yapılandırılmamış")
 
     from app.services.integrations import GoogleSheetsConnector
+
     conn = GoogleSheetsConnector(sa_json)
 
     # Get CFO results if job_id provided
@@ -210,6 +233,7 @@ async def export_to_sheets(
     if req.job_id:
         try:
             from app.models.analysis_job import AnalysisJob
+
             job = await db.get(AnalysisJob, req.job_id)
             # Exported to a spreadsheet the caller chooses — another
             # organisation's results included, before this check.
@@ -232,17 +256,19 @@ async def export_to_sheets(
 
 @router.post("/integrations/sheets/import")
 async def import_from_sheets(
-    req:          SheetsImportRequest,
+    req: SheetsImportRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Google Sheets'ten finansal veri çek."""
     from app.config import get_settings
+
     settings = get_settings()
-    sa_json  = getattr(settings, "google_sheets_service_account", "")
+    sa_json = getattr(settings, "google_sheets_service_account", "")
     if not sa_json:
         raise HTTPException(400, "Google Sheets service account yapılandırılmamış")
 
     from app.services.integrations import GoogleSheetsConnector
+
     conn = GoogleSheetsConnector(sa_json)
 
     try:
@@ -250,8 +276,8 @@ async def import_from_sheets(
         return {
             "data": {
                 "row_count": len(rows),
-                "columns":   rows[0] if rows else [],
-                "rows":      rows[1:100] if len(rows) > 1 else [],
+                "columns": rows[0] if rows else [],
+                "rows": rows[1:100] if len(rows) > 1 else [],
             },
             "error": None,
         }
@@ -261,31 +287,39 @@ async def import_from_sheets(
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
+
 @router.post("/integrations/webhook/test")
 async def test_webhook(
-    req:          WebhookTestRequest,
+    req: WebhookTestRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Webhook bağlantısını test et."""
     from app.services.integrations import get_webhook_dispatcher
+
     dispatcher = get_webhook_dispatcher()
 
     success = False
     if req.channel == "slack":
-        success = await dispatcher.send_slack(req.target, req.message, {"Test": "✓ Bağlantı başarılı"})
+        success = await dispatcher.send_slack(
+            req.target, req.message, {"Test": "✓ Bağlantı başarılı"}
+        )
     elif req.channel == "teams":
         success = await dispatcher.send_teams(req.target, "Agentic CFO Test", req.message)
     elif req.channel == "custom":
-        success = await dispatcher.send_custom(req.target, {"message": req.message, "source": "agentic_cfo"})
+        success = await dispatcher.send_custom(
+            req.target, {"message": req.message, "source": "agentic_cfo"}
+        )
     elif req.channel == "email":
-        success = await dispatcher.send_email(req.target, "Agentic CFO — Test", f"<p>{req.message}</p>")
+        success = await dispatcher.send_email(
+            req.target, "Agentic CFO — Test", f"<p>{req.message}</p>"
+        )
     else:
         raise HTTPException(400, f"Bilinmeyen kanal: {req.channel}")
 
     return {
         "data": {
             "channel": req.channel,
-            "target":  req.target,
+            "target": req.target,
             "success": success,
             "message": "Webhook başarıyla gönderildi" if success else "Webhook gönderilemedi",
         },
@@ -299,6 +333,7 @@ async def get_webhook_config(
 ) -> dict[str, Any]:
     """Mevcut webhook ayarlarını oku (URL'leri maskele)."""
     from app.config import get_settings
+
     settings = get_settings()
 
     def mask(url: str) -> str | None:
@@ -308,11 +343,11 @@ async def get_webhook_config(
 
     return {
         "data": {
-            "slack_configured":  bool(getattr(settings, "slack_webhook_url", "")),
-            "teams_configured":  bool(getattr(settings, "teams_webhook_url", "")),
+            "slack_configured": bool(getattr(settings, "slack_webhook_url", "")),
+            "teams_configured": bool(getattr(settings, "teams_webhook_url", "")),
             "custom_configured": bool(getattr(settings, "custom_webhook_url", "")),
-            "slack_preview":     mask(getattr(settings, "slack_webhook_url", "")),
-            "teams_preview":     mask(getattr(settings, "teams_webhook_url", "")),
+            "slack_preview": mask(getattr(settings, "slack_webhook_url", "")),
+            "teams_preview": mask(getattr(settings, "teams_webhook_url", "")),
         },
         "error": None,
     }

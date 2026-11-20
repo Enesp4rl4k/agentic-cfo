@@ -14,6 +14,7 @@ Kullanım:
     entries = engine.create_entries(transaction, thp_result)
     is_balanced = engine.verify_balance(entries)  # her zaman True olmalı
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,13 +30,15 @@ logger = logging.getLogger(__name__)
 
 # ── Kayıt satırı ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class KayitSatiri:
     """Tek bir borç veya alacak satırı."""
+
     hesap_kodu: str
     hesap_adi: str
-    borc: int = 0       # kuruş cinsinden
-    alacak: int = 0     # kuruş cinsinden
+    borc: int = 0  # kuruş cinsinden
+    alacak: int = 0  # kuruş cinsinden
     aciklama: str = ""
 
     @property
@@ -47,11 +50,12 @@ class KayitSatiri:
 @dataclass
 class YevmiyeKaydi:
     """Tam bir yevmiye kaydı (birden fazla satırdan oluşabilir)."""
+
     kayit_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     tarih: datetime = field(default_factory=lambda: datetime.now(UTC))
     aciklama: str = ""
     satirlar: list[KayitSatiri] = field(default_factory=list)
-    kaynak_islem_id: str = ""       # Transaction.id
+    kaynak_islem_id: str = ""  # Transaction.id
     # Did `tarih` come from the transaction, or did we have to invent it?
     # "islem" = the transaction's own date; "belirsiz" = unparseable or absent,
     # so the value above is a placeholder and the entry must not be filed on it.
@@ -67,7 +71,7 @@ class YevmiyeKaydi:
     guven: dict[str, Any] = field(default_factory=dict)
     thp_hesap_kodu: str = ""
     confidence: float = 1.0
-    onay_gerekli: bool = False      # SMMM onayı gerekiyor mu?
+    onay_gerekli: bool = False  # SMMM onayı gerekiyor mu?
     onay_neden: str = ""
     authority: dict[str, Any] = field(default_factory=dict)  # Yetki Matrisi kararı
 
@@ -85,28 +89,28 @@ class YevmiyeKaydi:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "kayit_id":          self.kayit_id,
-            "tarih":             self.tarih.isoformat(),
-            "aciklama":          self.aciklama,
-            "toplam_borc":       self.toplam_borc,
-            "toplam_alacak":     self.toplam_alacak,
-            "dengeli":           self.dengeli,
-            "confidence":        self.confidence,
-            "onay_gerekli":      self.onay_gerekli,
-            "onay_neden":        self.onay_neden,
-            "authority":         self.authority,
-            "thp_hesap_kodu":    self.thp_hesap_kodu,
-            "kaynak_islem_id":   self.kaynak_islem_id,
-            "tarih_kaynagi":     self.tarih_kaynagi,
-            "kdv_durumu":        self.kdv_durumu,
-            "guven":             self.guven,
+            "kayit_id": self.kayit_id,
+            "tarih": self.tarih.isoformat(),
+            "aciklama": self.aciklama,
+            "toplam_borc": self.toplam_borc,
+            "toplam_alacak": self.toplam_alacak,
+            "dengeli": self.dengeli,
+            "confidence": self.confidence,
+            "onay_gerekli": self.onay_gerekli,
+            "onay_neden": self.onay_neden,
+            "authority": self.authority,
+            "thp_hesap_kodu": self.thp_hesap_kodu,
+            "kaynak_islem_id": self.kaynak_islem_id,
+            "tarih_kaynagi": self.tarih_kaynagi,
+            "kdv_durumu": self.kdv_durumu,
+            "guven": self.guven,
             "satirlar": [
                 {
                     "hesap_kodu": s.hesap_kodu,
-                    "hesap_adi":  s.hesap_adi,
-                    "borc":       s.borc,
-                    "alacak":     s.alacak,
-                    "aciklama":   s.aciklama,
+                    "hesap_adi": s.hesap_adi,
+                    "borc": s.borc,
+                    "alacak": s.alacak,
+                    "aciklama": s.aciklama,
                 }
                 for s in self.satirlar
             ],
@@ -116,8 +120,9 @@ class YevmiyeKaydi:
 # ── Karşı hesap belirleme ─────────────────────────────────────────────────────
 
 # Gider/gelir işlemlerinin karşı hesabı genellikle banka veya kasa
-_KARSIHESAP_BANKA = "102"   # Bankalar
-_KARSIHESAP_KASA  = "100"   # Kasa
+_KARSIHESAP_BANKA = "102"  # Bankalar
+_KARSIHESAP_KASA = "100"  # Kasa
+
 
 def _karsi_hesap_belirle(tx: dict[str, Any]) -> str:
     """
@@ -146,16 +151,25 @@ def _karsi_hesap_belirle(tx: dict[str, Any]) -> str:
 # Accounts whose movements normally carry KDV. Salaries, SGK, tax payments,
 # exports (601, exempt) and interest/other income (602) are left out.
 KDV_TASIYAN_GELIR = frozenset({"600"})
-KDV_TASIYAN_GIDER = frozenset({
-    "153", "253", "255", "260", "620", "621", "740", "750", "760", "770",
-})
+KDV_TASIYAN_GIDER = frozenset(
+    {
+        "153",
+        "253",
+        "255",
+        "260",
+        "620",
+        "621",
+        "740",
+        "750",
+        "760",
+        "770",
+    }
+)
 _HESAPLANAN_KDV = ("391", "Hesaplanan KDV")
 _INDIRILECEK_KDV = ("191", "İndirilecek KDV")
 
 
-def _kdv_bol(
-    satirlar: list[KayitSatiri], ana_hesap: str, kdv: int, aciklama: str
-) -> bool:
+def _kdv_bol(satirlar: list[KayitSatiri], ana_hesap: str, kdv: int, aciklama: str) -> bool:
     """Move a stated `kdv` off the main line: 391 on the income side, 191 on
     the cost side. The side is read from the line, not from the account list —
     a document that states its KDV is right about it even when the classifier
@@ -183,9 +197,7 @@ _ODENECEK_STOPAJ = ("360", "Ödenecek Vergi ve Fonlar (gelir vergisi stopajı)")
 _PESIN_ODENEN = ("193", "Peşin Ödenen Vergiler ve Fonlar")
 
 
-def _stopaj_ekle(
-    satirlar: list[KayitSatiri], ana_hesap: str, stopaj: int, aciklama: str
-) -> bool:
+def _stopaj_ekle(satirlar: list[KayitSatiri], ana_hesap: str, stopaj: int, aciklama: str) -> bool:
     for i, s in enumerate(satirlar):
         if s.hesap_kodu != ana_hesap:
             continue
@@ -202,6 +214,7 @@ def _stopaj_ekle(
 
 
 # ── Double-entry engine ───────────────────────────────────────────────────────
+
 
 class DoubleEntryEngine:
     """
@@ -267,8 +280,8 @@ class DoubleEntryEngine:
         tarih_kaynagi = "belirsiz" if transaction.get("date_is_estimated") else "islem"
         if tarih_kaynagi == "belirsiz":
             logger.warning(
-                "İşlem tarihi kaynakta okunamamıştı (işlem=%s) — kayıt onaya "
-                "gönderildi", tx_id,
+                "İşlem tarihi kaynakta okunamamıştı (işlem=%s) — kayıt onaya gönderildi",
+                tx_id,
             )
         if isinstance(tx_date, str):
             try:
@@ -277,14 +290,16 @@ class DoubleEntryEngine:
                 logger.warning(
                     "İşlem tarihi okunamadı (işlem=%s, değer=%r) — kayıt "
                     "belirsiz tarihle işaretlendi ve onaya gönderildi",
-                    tx_id, tx_date,
+                    tx_id,
+                    tx_date,
                 )
                 tx_date = datetime.now(UTC)
                 tarih_kaynagi = "belirsiz"
         elif tx_date is None:
             logger.warning(
                 "İşlem tarihi yok (işlem=%s) — kayıt belirsiz tarihle "
-                "işaretlendi ve onaya gönderildi", tx_id,
+                "işaretlendi ve onaya gönderildi",
+                tx_id,
             )
             tx_date = datetime.now(UTC)
             tarih_kaynagi = "belirsiz"
@@ -301,15 +316,19 @@ class DoubleEntryEngine:
         if thp_result.tip == "gider":
             # Gider: BORÇ gider hesabı, ALACAK banka
             satirlar = [
-                KayitSatiri(thp_result.hesap_kodu, ana_hesap_adi, borc=amount,  aciklama=description),
-                KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
+                KayitSatiri(
+                    thp_result.hesap_kodu, ana_hesap_adi, borc=amount, aciklama=description
+                ),
+                KayitSatiri(karsi_hesap_kodu, karsi_hesap_adi, alacak=amount, aciklama=description),
             ]
 
         elif thp_result.tip == "gelir":
             # Gelir: BORÇ banka, ALACAK gelir hesabı
             satirlar = [
-                KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, borc=amount,  aciklama=description),
-                KayitSatiri(thp_result.hesap_kodu, ana_hesap_adi, alacak=amount, aciklama=description),
+                KayitSatiri(karsi_hesap_kodu, karsi_hesap_adi, borc=amount, aciklama=description),
+                KayitSatiri(
+                    thp_result.hesap_kodu, ana_hesap_adi, alacak=amount, aciklama=description
+                ),
             ]
 
         elif thp_result.tip == "varlık":
@@ -317,38 +336,53 @@ class DoubleEntryEngine:
             if tx_type == "expense":
                 # Satın alma
                 satirlar = [
-                    KayitSatiri(thp_result.hesap_kodu, ana_hesap_adi, borc=amount,  aciklama=description),
-                    KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
+                    KayitSatiri(
+                        thp_result.hesap_kodu, ana_hesap_adi, borc=amount, aciklama=description
+                    ),
+                    KayitSatiri(
+                        karsi_hesap_kodu, karsi_hesap_adi, alacak=amount, aciklama=description
+                    ),
                 ]
             else:
                 # Tahsilat (alacak tahsilatı gibi)
                 satirlar = [
-                    KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, borc=amount,  aciklama=description),
-                    KayitSatiri(thp_result.hesap_kodu, ana_hesap_adi, alacak=amount, aciklama=description),
+                    KayitSatiri(
+                        karsi_hesap_kodu, karsi_hesap_adi, borc=amount, aciklama=description
+                    ),
+                    KayitSatiri(
+                        thp_result.hesap_kodu, ana_hesap_adi, alacak=amount, aciklama=description
+                    ),
                 ]
 
         elif thp_result.tip == "borç":
             # Borç: BORÇ borç hesabı (azalma), ALACAK banka
             satirlar = [
-                KayitSatiri(thp_result.hesap_kodu, ana_hesap_adi, borc=amount,  aciklama=description),
-                KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
+                KayitSatiri(
+                    thp_result.hesap_kodu, ana_hesap_adi, borc=amount, aciklama=description
+                ),
+                KayitSatiri(karsi_hesap_kodu, karsi_hesap_adi, alacak=amount, aciklama=description),
             ]
 
         else:
             # Bilinmeyen tip — varsayılan gider gibi davran
             satirlar = [
-                KayitSatiri(thp_result.hesap_kodu, ana_hesap_adi, borc=amount,  aciklama=description),
-                KayitSatiri(karsi_hesap_kodu,       karsi_hesap_adi, alacak=amount, aciklama=description),
+                KayitSatiri(
+                    thp_result.hesap_kodu, ana_hesap_adi, borc=amount, aciklama=description
+                ),
+                KayitSatiri(karsi_hesap_kodu, karsi_hesap_adi, alacak=amount, aciklama=description),
             ]
 
         # A correction posted in the source books (a debit on a sales account)
         # carries a negative amount: book it the other way round, or it would
         # add to what it corrects.
-        if thp_result.yontem == "kaynak" and int(
-            transaction.get("amount_kurus") or transaction.get("amount_cents") or 0
-        ) < 0:
+        if (
+            thp_result.yontem == "kaynak"
+            and int(transaction.get("amount_kurus") or transaction.get("amount_cents") or 0) < 0
+        ):
             satirlar = [
-                KayitSatiri(s.hesap_kodu, s.hesap_adi, borc=s.alacak, alacak=s.borc, aciklama=s.aciklama)
+                KayitSatiri(
+                    s.hesap_kodu, s.hesap_adi, borc=s.alacak, alacak=s.borc, aciklama=s.aciklama
+                )
                 for s in satirlar
             ]
 
@@ -454,7 +488,9 @@ class DoubleEntryEngine:
         if not kayit.dengeli:
             logger.error(
                 "DENGE HATASI: işlem=%s borç=%d alacak=%d",
-                tx_id, kayit.toplam_borc, kayit.toplam_alacak,
+                tx_id,
+                kayit.toplam_borc,
+                kayit.toplam_alacak,
             )
 
         return kayit
@@ -500,10 +536,10 @@ class DoubleEntryEngine:
                 if satir.hesap_kodu not in mizan:
                     mizan[satir.hesap_kodu] = {
                         "hesap_adi": satir.hesap_adi,
-                        "borc":      0,
-                        "alacak":    0,
+                        "borc": 0,
+                        "alacak": 0,
                     }
-                mizan[satir.hesap_kodu]["borc"]   += satir.borc
+                mizan[satir.hesap_kodu]["borc"] += satir.borc
                 mizan[satir.hesap_kodu]["alacak"] += satir.alacak
 
         for hesap in mizan.values():

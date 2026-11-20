@@ -5,6 +5,7 @@ Unit and integration tests for Performance & Security upgrades:
   - Rate Limiting Middleware
   - GZip Compression and response headers
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,6 +26,7 @@ from app.services.cache_service import (
 )
 
 # ── Test Security Headers ─────────────────────────────────────────────────────
+
 
 def test_security_headers_injected():
     """Verify OWASP security headers are present on all responses."""
@@ -49,7 +51,7 @@ def test_security_headers_custom_override():
     app = FastAPI()
     app.add_middleware(
         SecurityHeadersMiddleware,
-        custom_headers={"X-Frame-Options": "SAMEORIGIN", "X-Custom-Sec": "enabled"}
+        custom_headers={"X-Frame-Options": "SAMEORIGIN", "X-Custom-Sec": "enabled"},
     )
 
     @app.get("/test-custom-sec")
@@ -64,6 +66,7 @@ def test_security_headers_custom_override():
 
 
 # ── Test Rate Limiting ────────────────────────────────────────────────────────
+
 
 def test_rate_limit_sliding_window_unit():
     """Check sliding window algorithm directly."""
@@ -110,6 +113,7 @@ def test_rate_limit_middleware_headers():
 
 
 # ── Test Cache Service ────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_cache_service_in_memory_get_set():

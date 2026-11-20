@@ -7,6 +7,7 @@ into an `except: pass` (plan v6 §S0). The columns mirror migration 009 exactly;
 `created_at` is a Unix timestamp (float), as the orchestrator has always
 written it.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import Boolean, Float, Index, String, Text

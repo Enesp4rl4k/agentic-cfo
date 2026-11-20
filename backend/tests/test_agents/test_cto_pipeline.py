@@ -82,6 +82,7 @@ Sprint 4,40,30,2024-06-12,2024-06-25
 
 # ── InfraAgent tests ──────────────────────────────────────────────────────────
 
+
 def test_billing_parse_returns_list():
     rows = _parse_billing_csv(BILLING_CSV)
     assert isinstance(rows, list)
@@ -142,6 +143,7 @@ def test_infra_alerts_clean():
 
 # ── TechDebtAgent tests ───────────────────────────────────────────────────────
 
+
 def test_git_parse_returns_dict():
     result = _parse_git_log(GIT_LOG)
     assert isinstance(result, dict)
@@ -168,7 +170,7 @@ def test_git_parse_contributors():
     result = _parse_git_log(GIT_LOG)
     commits = result.get("commits", [])
     authors = {c["author"] for c in commits if c.get("author")}
-    assert len(authors) == 2   # alice and bob
+    assert len(authors) == 2  # alice and bob
 
 
 def test_git_debt_score_range():
@@ -204,6 +206,7 @@ def test_git_empty_input():
 
 
 # ── IncidentAgent tests ───────────────────────────────────────────────────────
+
 
 def test_incident_parse_count():
     incidents = _parse_incident_csv(INCIDENT_CSV)
@@ -269,6 +272,7 @@ def test_incident_empty_csv():
 
 # ── VelocityAgent tests ───────────────────────────────────────────────────────
 
+
 def test_sprint_parse_count():
     sprints = _parse_sprint_csv(SPRINT_CSV)
     assert len(sprints) == 4
@@ -314,6 +318,7 @@ def test_sprint_empty():
 
 # ── CEO SynthesisAgent cross-risk tests ──────────────────────────────────────
 
+
 def test_cross_risk_infra_cash_runway():
     fin = {
         "cash_runway_months": 3,
@@ -343,8 +348,14 @@ def test_cross_risk_severity_critical_when_runway_under_3():
         "net_margin": -0.05,
         "top_alerts": [],
     }
-    tech = {"infra_waste_cents": 100_000, "infra_cost_cents": 500_000,
-            "debt_score": 0, "mttr_hours": None, "velocity_trend": "flat", "top_risks": []}
+    tech = {
+        "infra_waste_cents": 100_000,
+        "infra_cost_cents": 500_000,
+        "debt_score": 0,
+        "mttr_hours": None,
+        "velocity_trend": "flat",
+        "top_risks": [],
+    }
     risks = _detect_cross_risks(fin, tech)
     infra_risk = next((r for r in risks if r["risk_id"] == "cross-infra-cash-runway"), None)
     assert infra_risk is not None
@@ -407,7 +418,9 @@ def test_cross_risk_dual_critical():
         "debt_score": 0,
         "mttr_hours": None,
         "velocity_trend": "flat",
-        "top_risks": [{"severity": "critical", "message": "Infra down", "domain": "Infrastructure"}],
+        "top_risks": [
+            {"severity": "critical", "message": "Infra down", "domain": "Infrastructure"}
+        ],
     }
     risks = _detect_cross_risks(fin, tech)
     ids = [r["risk_id"] for r in risks]

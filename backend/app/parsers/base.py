@@ -5,6 +5,7 @@ Each bank parser produces a list of ParsedTransaction objects.
 The LLM is only used as a fallback (GenericParser) when no bank-specific
 parser matches. Structured parsers are faster and more reliable.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -16,15 +17,16 @@ from typing import ClassVar
 @dataclass
 class ParsedTransaction:
     """Normalised transaction extracted from a bank statement."""
+
     date: datetime
     description: str
-    amount_cents: int          # Positive, sign by tx_type; negative only for a correction posted to an income-statement account
-    tx_type: str               # "income" | "expense"
+    amount_cents: int  # Positive, sign by tx_type; negative only for a correction posted to an income-statement account
+    tx_type: str  # "income" | "expense"
     currency: str = "TRY"
     vendor: str | None = None
-    balance_cents: int | None = None   # Running balance if available
-    reference: str | None = None       # Bank reference / cheque number
-    raw_row: str = ""                  # Original text row for audit
+    balance_cents: int | None = None  # Running balance if available
+    reference: str | None = None  # Bank reference / cheque number
+    raw_row: str = ""  # Original text row for audit
     # How sure the parser is about THIS row. The invoice parser has always
     # computed a confidence and had nowhere to put it, so a row whose direction
     # was guessed off the page reached the ledger indistinguishable from one
@@ -40,6 +42,7 @@ class ParsedTransaction:
 @dataclass
 class ParsedStatement:
     """Full parsed bank statement."""
+
     bank_name: str
     account_number: str | None
     statement_period_start: datetime | None
@@ -113,6 +116,7 @@ class BankParser(ABC):
           "1234.56"     → 123456      US format fallback
         """
         import re
+
         cleaned = raw.strip().replace(" ", "").replace("\xa0", "")
         # Remove currency symbols
         cleaned = re.sub(r"[TL₺$€£+]", "", cleaned)
@@ -162,9 +166,14 @@ class BankParser(ABC):
 
         # Standard numeric formats
         numeric_formats = [
-            "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d",
-            "%d.%m.%y", "%d-%m-%Y", "%d %m %Y",
-            "%d/%m/%y", "%Y/%m/%d",
+            "%d.%m.%Y",
+            "%d/%m/%Y",
+            "%Y-%m-%d",
+            "%d.%m.%y",
+            "%d-%m-%Y",
+            "%d %m %Y",
+            "%d/%m/%y",
+            "%Y/%m/%d",
         ]
         for fmt in numeric_formats:
             try:
@@ -174,15 +183,34 @@ class BankParser(ABC):
 
         # Turkish month names → number mapping
         _TR_MONTHS = {
-            "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
-            "mayıs": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
-            "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+            "ocak": 1,
+            "şubat": 2,
+            "mart": 3,
+            "nisan": 4,
+            "mayıs": 5,
+            "haziran": 6,
+            "temmuz": 7,
+            "ağustos": 8,
+            "eylül": 9,
+            "ekim": 10,
+            "kasım": 11,
+            "aralık": 12,
             # Common abbreviations
-            "oca": 1, "şub": 2, "mar": 3, "nis": 4,
-            "may": 5, "haz": 6, "tem": 7, "ağu": 8,
-            "eyl": 9, "eki": 10, "kas": 11, "ara": 12,
+            "oca": 1,
+            "şub": 2,
+            "mar": 3,
+            "nis": 4,
+            "may": 5,
+            "haz": 6,
+            "tem": 7,
+            "ağu": 8,
+            "eyl": 9,
+            "eki": 10,
+            "kas": 11,
+            "ara": 12,
         }
         import re as _re
+
         # "15 Mart 2024" or "15-Mart-2024" or "15.Mart.2024"
         m = _re.match(r"(\d{1,2})[\s.\-/]([A-Za-zğüşıöçĞÜŞİÖÇ]+)[\s.\-/](\d{2,4})", raw)
         if m:

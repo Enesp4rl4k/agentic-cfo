@@ -8,6 +8,7 @@ forever; an enqueued-but-never-picked-up job fails instead of sitting
 job nobody enqueued — are left alone; a human at the review gate is never
 reaped; a crashed run's ledger row is closed.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -173,9 +174,7 @@ class TestStaleLedgerRows:
         assert counts["stale_runs"] == 1
 
         async with maker() as db:
-            run = (
-                await db.execute(select(AgentRun).where(AgentRun.job_id == "j1"))
-            ).scalar_one()
+            run = (await db.execute(select(AgentRun).where(AgentRun.job_id == "j1"))).scalar_one()
         assert run.status == "failed"
         assert run.finished_at is not None
         assert "expired" in (run.error or "").lower()

@@ -1,4 +1,5 @@
 """Plan v8 §A1 — what an account code says, for every source that names one."""
+
 from __future__ import annotations
 
 import pytest
@@ -8,22 +9,25 @@ from app.parsers.accounting.logo_tiger import LogoTigerParser
 from app.parsers.accounting.netsis import NetsisParser
 
 
-@pytest.mark.parametrize(("kod", "rol", "kategori"), [
-    ("600", "gelir", "revenue"),
-    ("600.01.001", "gelir", "revenue"),
-    ("610", "gelir_indirimi", "revenue"),
-    ("642", "gelir", "other_income"),
-    ("622", "gider", "cogs"),
-    ("770", "gider", "other_expense"),
-    ("691", "gider", "tax"),
-    ("771", "yansitma", "transfer"),
-    ("690", "kapanis", "transfer"),
-    ("191", "bilanco", "tax_payment"),
-    ("360", "bilanco", "tax_payment"),
-    ("193", "bilanco", "tax_payment"),
-    ("300", "bilanco", "transfer"),
-    ("255", "bilanco", "transfer"),
-])
+@pytest.mark.parametrize(
+    ("kod", "rol", "kategori"),
+    [
+        ("600", "gelir", "revenue"),
+        ("600.01.001", "gelir", "revenue"),
+        ("610", "gelir_indirimi", "revenue"),
+        ("642", "gelir", "other_income"),
+        ("622", "gider", "cogs"),
+        ("770", "gider", "other_expense"),
+        ("691", "gider", "tax"),
+        ("771", "yansitma", "transfer"),
+        ("690", "kapanis", "transfer"),
+        ("191", "bilanco", "tax_payment"),
+        ("360", "bilanco", "tax_payment"),
+        ("193", "bilanco", "tax_payment"),
+        ("300", "bilanco", "transfer"),
+        ("255", "bilanco", "transfer"),
+    ],
+)
 def test_the_account_decides_the_role(kod, rol, kategori):
     h = tdhp.hesap(kod)
     assert h is not None

@@ -7,6 +7,7 @@ Usage:
 The registry tries each registered parser's can_parse() heuristic in order.
 First match wins. Falls back to GenericParser (LLM-based) if nothing matches.
 """
+
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,5 @@
 """Negotiation services package."""
+
 from app.services.negotiation.consensus_engine import (
     TOPIC_WEIGHTS,
     AgentClaim,

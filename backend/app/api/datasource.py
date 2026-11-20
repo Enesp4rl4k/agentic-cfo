@@ -16,6 +16,7 @@ Endpoints:
   DELETE /api/v1/datasource/{job_id}/{source_id}
       Remove a specific data source.
 """
+
 from __future__ import annotations
 
 import os
@@ -41,12 +42,12 @@ router = APIRouter()
 # ── Validation maps ────────────────────────────────────────────────────────────
 
 _VALID_DOMAINS: set[str] = {d.value for d in DataSourceDomain}
-_VALID_TYPES: set[str]   = {t.value for t in DataSourceType}
+_VALID_TYPES: set[str] = {t.value for t in DataSourceType}
 
 # Which source_types belong to which domain
 _DOMAIN_TYPES: dict[str, set[str]] = {
-    DataSourceDomain.CFO:  {DataSourceType.BANK_STATEMENT},
-    DataSourceDomain.CTO:  {
+    DataSourceDomain.CFO: {DataSourceType.BANK_STATEMENT},
+    DataSourceDomain.CTO: {
         DataSourceType.CLOUD_BILLING,
         DataSourceType.GIT_LOG,
         DataSourceType.INCIDENT_LOG,
@@ -57,12 +58,12 @@ _DOMAIN_TYPES: dict[str, set[str]] = {
         DataSourceType.ATTRITION,
         DataSourceType.COMPENSATION,
     },
-    DataSourceDomain.CMO:  {
+    DataSourceDomain.CMO: {
         DataSourceType.CAMPAIGN,
         DataSourceType.FUNNEL,
         DataSourceType.COHORT,
     },
-    DataSourceDomain.COO:  {
+    DataSourceDomain.COO: {
         DataSourceType.SLA,
         DataSourceType.PROCESS,
         DataSourceType.RESOURCE,
@@ -92,6 +93,7 @@ def _ext(filename: str) -> str:
 
 
 # ── POST /datasource/{job_id}/{domain}/{source_type} ──────────────────────────
+
 
 @router.post("/datasource/{job_id}/{domain}/{source_type}")
 async def upload_datasource(
@@ -156,9 +158,7 @@ async def upload_datasource(
 
     # ── Persist file ──────────────────────────────────────────────────────────
     source_id = str(uuid.uuid4())
-    upload_dir = os.path.join(
-        settings.storage_local_path, "uploads", job_id, "datasources", domain
-    )
+    upload_dir = os.path.join(settings.storage_local_path, "uploads", job_id, "datasources", domain)
     os.makedirs(upload_dir, exist_ok=True)
     safe_name = f"{source_type}_{source_id[:8]}.{ext}"
     file_path = os.path.join(upload_dir, safe_name)
@@ -199,6 +199,7 @@ async def upload_datasource(
 
 # ── GET /datasource/{job_id} ──────────────────────────────────────────────────
 
+
 @router.get("/datasource/{job_id}")
 async def list_datasources(
     job_id: str,
@@ -211,23 +212,23 @@ async def list_datasources(
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
 
-    result = await db.execute(
-        select(DataSource).where(DataSource.job_id == job_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.job_id == job_id))
     sources = result.scalars().all()
 
     # Group by domain for easier frontend consumption
     grouped: dict[str, list[dict]] = {}
     for s in sources:
-        grouped.setdefault(s.domain, []).append({
-            "source_id": s.id,
-            "source_type": s.source_type,
-            "filename": s.filename,
-            "file_size_bytes": s.file_size_bytes,
-            "label": s.label,
-            "pipeline_kwarg": s.pipeline_kwarg(),
-            "created_at": s.created_at.isoformat(),
-        })
+        grouped.setdefault(s.domain, []).append(
+            {
+                "source_id": s.id,
+                "source_type": s.source_type,
+                "filename": s.filename,
+                "file_size_bytes": s.file_size_bytes,
+                "label": s.label,
+                "pipeline_kwarg": s.pipeline_kwarg(),
+                "created_at": s.created_at.isoformat(),
+            }
+        )
 
     return {
         "data": {
@@ -240,6 +241,7 @@ async def list_datasources(
 
 
 # ── DELETE /datasource/{job_id}/{source_id} ───────────────────────────────────
+
 
 @router.delete("/datasource/{job_id}/{source_id}")
 async def delete_datasource(

@@ -18,6 +18,7 @@ Usage
     pdf_bytes = await engine.render("cfo_summary", context_dict)
     # Returns bytes ready to stream as response
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -220,6 +221,7 @@ _EXECUTIVE_BRIEF_TEMPLATE = """
 
 # ── PDF Engine ────────────────────────────────────────────────────────────────
 
+
 class PDFRenderError(RuntimeError):
     """The report could not be rendered. Never answered with a stand-in PDF."""
 
@@ -254,7 +256,7 @@ class PDFEngine:
     def _render_html(self, template_name: str, context: dict[str, Any]) -> str:
         """Render HTML from template + context using Jinja2."""
         template_map = {
-            "cfo_summary":    _CFO_SUMMARY_TEMPLATE,
+            "cfo_summary": _CFO_SUMMARY_TEMPLATE,
             "executive_brief": _EXECUTIVE_BRIEF_TEMPLATE,
         }
 
@@ -266,6 +268,7 @@ class PDFEngine:
 
         try:
             from jinja2 import Template
+
             tmpl = Template(template_str)
             return tmpl.render(**context)
         except ImportError as exc:
@@ -301,34 +304,39 @@ class PDFEngine:
 
 # ── Context builders from CFO result ─────────────────────────────────────────
 
+
 def build_cfo_summary_context(
     dashboard_json: dict[str, Any],
-    company_name:   str = "",
-    period:         str = "",
+    company_name: str = "",
+    period: str = "",
 ) -> dict[str, Any]:
     """Build template context from CFO pipeline result dashboard JSON."""
     from datetime import datetime
 
-    pnl      = dashboard_json.get("pnl") or {}
+    pnl = dashboard_json.get("pnl") or {}
     cashflow = dashboard_json.get("cashflow") or {}
     forecast = dashboard_json.get("forecast") or {}
-    alerts   = dashboard_json.get("alerts") or []
+    alerts = dashboard_json.get("alerts") or []
     anomalies = dashboard_json.get("anomalies") or []
 
     def fmt_money(val: Any) -> str:
-        if val is None: return "—"
+        if val is None:
+            return "—"
         try:
             v = float(val)
-            if abs(v) >= 1_000_000: return f"₺{v/1_000_000:.1f}M"
-            if abs(v) >= 1_000:     return f"₺{v/1_000:.0f}K"
+            if abs(v) >= 1_000_000:
+                return f"₺{v / 1_000_000:.1f}M"
+            if abs(v) >= 1_000:
+                return f"₺{v / 1_000:.0f}K"
             return f"₺{v:.0f}"
         except Exception:
             return str(val)
 
     def fmt_pct(val: Any) -> str:
-        if val is None: return "—"
+        if val is None:
+            return "—"
         try:
-            return f"{float(val)*100:.1f}%"
+            return f"{float(val) * 100:.1f}%"
         except Exception:
             return str(val)
 
@@ -340,26 +348,26 @@ def build_cfo_summary_context(
     recommendations = forecast.get("recommendations") or pnl.get("recommendations") or []
 
     return {
-        "company_name":   company_name,
-        "period":         period,
-        "generated_at":   datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC"),
-        "revenue":        fmt_money(pnl.get("revenue")),
-        "net_margin":     fmt_pct(pnl.get("net_margin")),
+        "company_name": company_name,
+        "period": period,
+        "generated_at": datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC"),
+        "revenue": fmt_money(pnl.get("revenue")),
+        "net_margin": fmt_pct(pnl.get("net_margin")),
         "net_margin_str": fmt_pct(pnl.get("net_margin")),
         "gross_margin_str": fmt_pct(pnl.get("gross_margin")),
-        "ebitda":         fmt_money(pnl.get("ebitda")),
-        "cash_flow":      fmt_money(cashflow.get("operating_cash_flow")),
-        "runway":         f"{runway_months:.1f} ay" if runway_months is not None else "—",
-        "risk_level":     "Kritik" if any(a.get("level") == "critical" for a in alerts) else "Normal",
-        "alerts":         alerts,
-        "anomalies":      anomalies,
-        "pnl":            {
-            "narrative":  pnl.get("narrative"),
-            "revenue":    fmt_money(pnl.get("revenue")),
+        "ebitda": fmt_money(pnl.get("ebitda")),
+        "cash_flow": fmt_money(cashflow.get("operating_cash_flow")),
+        "runway": f"{runway_months:.1f} ay" if runway_months is not None else "—",
+        "risk_level": "Kritik" if any(a.get("level") == "critical" for a in alerts) else "Normal",
+        "alerts": alerts,
+        "anomalies": anomalies,
+        "pnl": {
+            "narrative": pnl.get("narrative"),
+            "revenue": fmt_money(pnl.get("revenue")),
             "gross_profit": fmt_money(pnl.get("gross_profit")),
-            "opex":       fmt_money(pnl.get("opex")),
+            "opex": fmt_money(pnl.get("opex")),
             "net_income": fmt_money(pnl.get("net_income")),
         },
-        "forecast":       {"narrative": forecast.get("narrative")},
+        "forecast": {"narrative": forecast.get("narrative")},
         "recommendations": recommendations if isinstance(recommendations, list) else [],
     }

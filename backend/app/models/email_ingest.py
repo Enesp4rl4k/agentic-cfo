@@ -6,6 +6,7 @@ app. The address carries a random code: knowing it is what lets mail in, so it
 can be replaced, and every message that came through it is kept on record
 where the organisation can see it.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -34,11 +35,16 @@ class EmailIngestAddress(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
-    kod: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True, default=yeni_kod)
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kod: Mapped[str] = mapped_column(
+        String(32), nullable=False, unique=True, index=True, default=yeni_kod
+    )
     # Jobs started from mail are filed under the person who set the address up.
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -48,7 +54,9 @@ class EmailIngestMessage(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     address_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
     sender: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     subject: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     message_id: Mapped[str | None] = mapped_column(String(500), nullable=True)

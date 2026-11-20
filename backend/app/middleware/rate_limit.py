@@ -34,6 +34,7 @@ HTTP 429 response includes:
   X-RateLimit-Remaining:   <remaining>
   X-RateLimit-Reset:       <unix_timestamp>
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,25 +52,25 @@ logger = logging.getLogger(__name__)
 
 _ROUTE_LIMITS: list[tuple[str, int, int]] = [
     # (path_prefix, max_requests, window_seconds)
-    ("/api/v1/auth/login",    5,   60),
-    ("/api/v1/auth/register", 5,   60),
-    ("/api/v1/upload",        10,  60),
-    ("/api/v1/chat",          30,  60),
-    ("/api/v1/analysis",      20,  60),
+    ("/api/v1/auth/login", 5, 60),
+    ("/api/v1/auth/register", 5, 60),
+    ("/api/v1/upload", 10, 60),
+    ("/api/v1/chat", 30, 60),
+    ("/api/v1/analysis", 20, 60),
     # D4: demo seed = tam pipeline tetikler; konuk başına günde N (kullanıcı JWT'si
     # veya IP ile sayılır — idempotent tekrarlar da sayılır, bilinçli kural).
-    ("/api/v1/demo/seed",     5,   86400),
-    ("/api/v1",               120, 60),   # default API limit
+    ("/api/v1/demo/seed", 5, 86400),
+    ("/api/v1", 120, 60),  # default API limit
 ]
 
 # Expensive endpoints: count as multiple requests against the per-user limit
 # Multiplier < 1.0 means each call consumes 1/multiplier "slots"
 _ENDPOINT_COST: dict[str, float] = {
-    "/api/v1/analytics/advanced-anomaly": 5.0,   # 5x cost
-    "/api/v1/analytics/forecast-v2":      5.0,
-    "/api/v1/reports/pdf":                10.0,  # 10x cost
-    "/api/v1/negotiation/debate":         10.0,
-    "/api/v1/analytics/monte-carlo":      5.0,
+    "/api/v1/analytics/advanced-anomaly": 5.0,  # 5x cost
+    "/api/v1/analytics/forecast-v2": 5.0,
+    "/api/v1/reports/pdf": 10.0,  # 10x cost
+    "/api/v1/negotiation/debate": 10.0,
+    "/api/v1/analytics/monte-carlo": 5.0,
 }
 
 # Paths that are never rate-limited
@@ -101,6 +102,7 @@ def _get_client_key(request: Request) -> str:
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             from app.services.auth import decode_token
+
             payload = decode_token(auth[7:])
             uid = payload.get("sub")
             if uid:
@@ -110,8 +112,10 @@ def _get_client_key(request: Request) -> str:
 
     # Fall back to IP
     forwarded = request.headers.get("X-Forwarded-For")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
+    ip = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else (request.client.host if request.client else "unknown")
     )
     return f"ip:{ip}"
 
@@ -192,8 +196,13 @@ async def _check_rate_limit_redis(
     member = f"{time.time_ns()}:{_uuid.uuid4().hex}"  # unique even same-µs hits
     try:
         raw = await client.eval(
-            _REDIS_WINDOW_LUA, 1, f"rl:{key}", window, max_requests,
-            time.time(), member,
+            _REDIS_WINDOW_LUA,
+            1,
+            f"rl:{key}",
+            window,
+            max_requests,
+            time.time(),
+            member,
         )
     except Exception as exc:
         mark_unavailable(exc)
@@ -237,9 +246,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # behaviour, single-process correct.
         verdict = await _check_rate_limit_redis(client_key, max_requests, window)
         if verdict is None:
-            allowed, remaining, retry_after = _check_rate_limit(
-                client_key, max_requests, window
-            )
+            allowed, remaining, retry_after = _check_rate_limit(client_key, max_requests, window)
         else:
             allowed, remaining, retry_after = verdict
 
@@ -249,26 +256,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not allowed:
             logger.warning(
                 "Rate limit exceeded: key=%s path=%s limit=%d",
-                client_key, path, max_requests,
+                client_key,
+                path,
+                max_requests,
             )
             return JSONResponse(
                 status_code=429,
                 content={
-                    "error":        "İstek limitine ulaşıldı. Lütfen kısa bir süre bekleyin.",
-                    "retry_after":  retry_after,
-                    "upgrade_url":  "/billing",
-                    "message":      f"{retry_after} saniye sonra tekrar deneyin.",
+                    "error": "İstek limitine ulaşıldı. Lütfen kısa bir süre bekleyin.",
+                    "retry_after": retry_after,
+                    "upgrade_url": "/billing",
+                    "message": f"{retry_after} saniye sonra tekrar deneyin.",
                 },
                 headers={
-                    "Retry-After":           str(retry_after),
-                    "X-RateLimit-Limit":     str(max_requests),
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Limit": str(max_requests),
                     "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset":     str(reset_at),
+                    "X-RateLimit-Reset": str(reset_at),
                 },
             )
 
         response = await call_next(request)
-        response.headers["X-RateLimit-Limit"]     = str(max_requests)
+        response.headers["X-RateLimit-Limit"] = str(max_requests)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Reset"]     = str(reset_at)
+        response.headers["X-RateLimit-Reset"] = str(reset_at)
         return response

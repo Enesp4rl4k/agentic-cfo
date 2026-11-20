@@ -23,6 +23,7 @@ Usage:
     )
     # result.trend_alerts, result.seasonal_context, result.recurring_anomalies
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,28 +36,32 @@ logger = logging.getLogger(__name__)
 
 # ── Sonuç yapısı ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TrendAnalysisResult:
     org_id: str
     trend_alerts: list[dict[str, str]] = field(default_factory=list)
-    seasonal_context: dict[str, Any]   = field(default_factory=dict)
-    recurring_anomalies: list[dict]    = field(default_factory=list)
-    growth_trajectory: str             = "insufficient_data"  # "accelerating"|"stable"|"decelerating"|"declining"
-    revenue_trend_summary: str         = ""
-    episodes_analyzed: int             = 0
+    seasonal_context: dict[str, Any] = field(default_factory=dict)
+    recurring_anomalies: list[dict] = field(default_factory=list)
+    growth_trajectory: str = (
+        "insufficient_data"  # "accelerating"|"stable"|"decelerating"|"declining"
+    )
+    revenue_trend_summary: str = ""
+    episodes_analyzed: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "trend_alerts":        self.trend_alerts,
-            "seasonal_context":    self.seasonal_context,
+            "trend_alerts": self.trend_alerts,
+            "seasonal_context": self.seasonal_context,
             "recurring_anomalies": self.recurring_anomalies,
-            "growth_trajectory":   self.growth_trajectory,
+            "growth_trajectory": self.growth_trajectory,
             "revenue_trend_summary": self.revenue_trend_summary,
-            "episodes_analyzed":   self.episodes_analyzed,
+            "episodes_analyzed": self.episodes_analyzed,
         }
 
 
 # ── TrendDetector ─────────────────────────────────────────────────────────────
+
 
 class TrendDetector:
     """
@@ -109,14 +114,16 @@ class TrendDetector:
             return result
 
         if not past_episodes:
-            result.revenue_trend_summary = "Önceki analiz bulunamadı — karşılaştırma için yeterli veri yok"
+            result.revenue_trend_summary = (
+                "Önceki analiz bulunamadı — karşılaştırma için yeterli veri yok"
+            )
             return result
 
         result.episodes_analyzed = len(past_episodes)
 
         # ── S5-1: Revenue trend analizi ────────────────────────────────────────
         revenues = []
-        margins  = []
+        margins = []
         for ep in past_episodes:
             s = ep.summary or {}
             if s.get("revenue") is not None:
@@ -143,25 +150,31 @@ class TrendDetector:
 
             # Trend uyarıları
             if result.growth_trajectory == "declining" and change_pct < -10:
-                result.trend_alerts.append({
-                    "level":   "critical",
-                    "message": f"Gelir {len(revenues)} dönemdir düşüş trendinde. "
-                               f"Son dönem: {change_pct:+.1f}%.",
-                })
+                result.trend_alerts.append(
+                    {
+                        "level": "critical",
+                        "message": f"Gelir {len(revenues)} dönemdir düşüş trendinde. "
+                        f"Son dönem: {change_pct:+.1f}%.",
+                    }
+                )
             elif result.growth_trajectory == "decelerating":
-                result.trend_alerts.append({
-                    "level":   "warning",
-                    "message": f"Gelir büyümesi yavaşlıyor ({len(revenues)} dönem analizi).",
-                })
+                result.trend_alerts.append(
+                    {
+                        "level": "warning",
+                        "message": f"Gelir büyümesi yavaşlıyor ({len(revenues)} dönem analizi).",
+                    }
+                )
 
         # Margin trend
         if len(margins) >= 3:
             margin_trend = _classify_trajectory(margins)
             if margin_trend == "declining" and margins[-1] < 0.10:
-                result.trend_alerts.append({
-                    "level":   "warning",
-                    "message": f"Net kâr marjı son dönemde %{margins[-1]*100:.1f} — azalış trendinde.",
-                })
+                result.trend_alerts.append(
+                    {
+                        "level": "warning",
+                        "message": f"Net kâr marjı son dönemde %{margins[-1] * 100:.1f} — azalış trendinde.",
+                    }
+                )
 
         # ── S5-2: Sezonsal pattern detection ──────────────────────────────────
         monthly_by_month: dict[int, list[float]] = {}
@@ -190,9 +203,9 @@ class TrendDetector:
 
             result.seasonal_context = {
                 "seasonal_indices": seasonal_indices,
-                "peak_month":       peak_month,
-                "trough_month":     trough_month,
-                "peak_multiplier":  seasonal_indices.get(peak_month, 1.0),
+                "peak_month": peak_month,
+                "trough_month": trough_month,
+                "peak_multiplier": seasonal_indices.get(peak_month, 1.0),
                 "trough_multiplier": seasonal_indices.get(trough_month, 1.0),
                 "note": (
                     f"Ay {peak_month} en yüksek ({seasonal_indices.get(peak_month, 1):.1f}x ortalama), "
@@ -211,12 +224,14 @@ class TrendDetector:
             for anomaly in current_anomalies:
                 atype = anomaly.get("anomaly_type", "")
                 if past_anomaly_types.get(atype, 0) >= 2:
-                    result.recurring_anomalies.append({
-                        "anomaly_type":   atype,
-                        "current":        anomaly,
-                        "past_count":     past_anomaly_types[atype],
-                        "warning":        f"Bu anomali türü geçmişte {past_anomaly_types[atype]} kez de görüldü — trend olabilir.",
-                    })
+                    result.recurring_anomalies.append(
+                        {
+                            "anomaly_type": atype,
+                            "current": anomaly,
+                            "past_count": past_anomaly_types[atype],
+                            "warning": f"Bu anomali türü geçmişte {past_anomaly_types[atype]} kez de görüldü — trend olabilir.",
+                        }
+                    )
 
         return result
 
@@ -252,6 +267,7 @@ def _classify_trajectory(values: list[float]) -> str:
 
 # ── Convenience function ──────────────────────────────────────────────────────
 
+
 async def run_trend_analysis(
     org_id: str,
     current_pnl: dict[str, Any] | None = None,
@@ -266,6 +282,7 @@ async def run_trend_analysis(
     """
     try:
         from app.services.agent_memory import AgentMemoryStore
+
         store = AgentMemoryStore(backend="sqlite")
     except Exception as exc:
         logger.debug("AgentMemoryStore init failed: %s", exc)

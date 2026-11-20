@@ -10,6 +10,7 @@ tests hold the replacement to three promises:
 3. The only figures shown without domain data are ones the CFO report really
    contains, each with its source.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -35,19 +36,35 @@ async def _job(db, *, pnl: dict | None = None):
     db.add(job)
     await db.flush()
     if pnl is not None:
-        db.add(Report(job_id=job.id, report_type="dashboard", report_format=ReportFormat.JSON,
-                      data={"pnl": pnl}))
+        db.add(
+            Report(
+                job_id=job.id,
+                report_type="dashboard",
+                report_format=ReportFormat.JSON,
+                data={"pnl": pnl},
+            )
+        )
     await db.commit()
     return job
 
 
-async def _attach(db, tmp_path, job, domain: str, source_type: str, content: str, name: str = "f.csv"):
+async def _attach(
+    db, tmp_path, job, domain: str, source_type: str, content: str, name: str = "f.csv"
+):
     from app.models.data_source import DataSource
 
     p = tmp_path / f"{domain}-{source_type}-{name}"
     p.write_text(content, encoding="utf-8")
-    db.add(DataSource(job_id=job.id, domain=domain, source_type=source_type,
-                      filename=name, file_path=str(p), file_size_bytes=p.stat().st_size))
+    db.add(
+        DataSource(
+            job_id=job.id,
+            domain=domain,
+            source_type=source_type,
+            filename=name,
+            file_path=str(p),
+            file_size_bytes=p.stat().st_size,
+        )
+    )
     await db.commit()
 
 
@@ -79,13 +96,15 @@ async def test_without_data_it_says_what_to_upload_and_how(db) -> None:
 async def test_the_cfo_books_real_spend_is_shown_with_its_source(db) -> None:
     job = await _job(db, pnl=PNL)
     kalemler = (await da.durum(db, job, "cto"))["cfo_gercek"]["kalemler"]
-    assert kalemler == [{
-        "kategori": "technology",
-        "etiket": "Banka hareketlerindeki teknoloji harcaması",
-        "tutar_lira": 80_000,
-        "gelire_orani": 0.08,
-        "kaynak": "CFO raporu — 'technology' kategorisindeki işlemlerin toplamı",
-    }]
+    assert kalemler == [
+        {
+            "kategori": "technology",
+            "etiket": "Banka hareketlerindeki teknoloji harcaması",
+            "tutar_lira": 80_000,
+            "gelire_orani": 0.08,
+            "kaynak": "CFO raporu — 'technology' kategorisindeki işlemlerin toplamı",
+        }
+    ]
 
 
 @pytest.mark.asyncio

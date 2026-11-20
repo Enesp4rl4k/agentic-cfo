@@ -5,6 +5,7 @@ source_config:
   csv_url: str       — fetch CSV over HTTP(S)
   csv_base64: str    — inline CSV (manual schedule / staging)
 """
+
 from __future__ import annotations
 
 import base64
@@ -30,7 +31,15 @@ _WON_STAGES = {
 
 _AMOUNT_HEADERS = ("amount", "deal amount", "amount_usd", "deal_value", "value", "tutar")
 _DATE_HEADERS = ("close date", "closedate", "close_date", "date", "createdate", "created_at")
-_NAME_HEADERS = ("deal name", "opportunity name", "name", "deal_name", "title", "açıklama", "description")
+_NAME_HEADERS = (
+    "deal name",
+    "opportunity name",
+    "name",
+    "deal_name",
+    "title",
+    "açıklama",
+    "description",
+)
 _STAGE_HEADERS = ("deal stage", "stagename", "stage", "status", "dealstage")
 _ID_HEADERS = ("deal id", "id", "opportunity id", "record_id", "reference")
 
@@ -54,7 +63,9 @@ def _is_won(stage: str) -> bool:
     if not token:
         return True
     compact = token.replace("_", " ")
-    return compact in _WON_STAGES or token.replace(" ", "") in {s.replace(" ", "") for s in _WON_STAGES}
+    return compact in _WON_STAGES or token.replace(" ", "") in {
+        s.replace(" ", "") for s in _WON_STAGES
+    }
 
 
 def normalize_crm_deals_csv(raw: bytes) -> bytes:

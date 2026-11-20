@@ -1,4 +1,5 @@
 """DB-backed tests for semantic rebuild, conflicts, and trailing debounce."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -44,15 +45,20 @@ async def db_session(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("app.services.company_context._get_redis", _no_redis)
 
-    async with gecici_veritabani(tables=[
-        Organization.__table__,
-        User.__table__,
-        CompanyContextSnapshot.__table__,
-        CompanySemanticSnapshotRow.__table__,
-        SyncRun.__table__,
-        CanonicalTransaction.__table__,
-        AgentConflict.__table__,
-    ]) as factory, factory() as session:
+    async with (
+        gecici_veritabani(
+            tables=[
+                Organization.__table__,
+                User.__table__,
+                CompanyContextSnapshot.__table__,
+                CompanySemanticSnapshotRow.__table__,
+                SyncRun.__table__,
+                CanonicalTransaction.__table__,
+                AgentConflict.__table__,
+            ]
+        ) as factory,
+        factory() as session,
+    ):
         yield session
 
 
@@ -143,7 +149,9 @@ async def test_rebuild_writes_snapshot_brief_and_conflicts(db_session: AsyncSess
     from sqlalchemy import func, select
 
     count = await db_session.scalar(
-        select(func.count()).select_from(CompanySemanticSnapshotRow).where(
+        select(func.count())
+        .select_from(CompanySemanticSnapshotRow)
+        .where(
             CompanySemanticSnapshotRow.org_id == ORG_ID,
             CompanySemanticSnapshotRow.period_key == PERIOD_KEY,
         )
@@ -159,7 +167,9 @@ async def test_strict_rebuild_does_not_return_none(db_session: AsyncSession) -> 
 
 
 @pytest.mark.asyncio
-async def test_trailing_rebuild_includes_both_agent_blobs(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_trailing_rebuild_includes_both_agent_blobs(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Two persist calls 1s apart: trailing job reflects CFO + CMO metrics."""
     from app.services import context_persist
 
@@ -194,7 +204,7 @@ async def test_trailing_rebuild_includes_both_agent_blobs(db_session: AsyncSessi
             ctx.last_cfo_result,
             db_session,
             trigger_auto_chain=False,
-            approved=True,   # what is under test is the rebuild, past the gate
+            approved=True,  # what is under test is the rebuild, past the gate
         )
         await persist_agent_completion(
             ORG_ID,
@@ -202,7 +212,7 @@ async def test_trailing_rebuild_includes_both_agent_blobs(db_session: AsyncSessi
             {"campaigns": {"overall_roas": 4.0}},
             db_session,
             trigger_auto_chain=False,
-            approved=True,   # what is under test is the rebuild, past the gate
+            approved=True,  # what is under test is the rebuild, past the gate
         )
         assert rebuild_mock.await_count == 1
         assert enqueued == [ORG_ID]

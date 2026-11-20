@@ -10,6 +10,7 @@ POST /api/v1/analysis/{job_id}/sensitivity/variable
 GET  /api/v1/analysis/{job_id}/sensitivity/variables
     List available variables and their default ranges
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,10 +77,7 @@ async def _get_pnl_for_job(job_id: str, db: AsyncSession) -> dict[str, Any]:
     if not report or not report.data:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"No P&L data found for job '{job_id}'. "
-                "Run the CFO analysis pipeline first."
-            ),
+            detail=(f"No P&L data found for job '{job_id}'. Run the CFO analysis pipeline first."),
         )
     pnl = report.data.get("pnl")
     if not pnl:
@@ -98,6 +96,7 @@ async def list_sensitivity_variables(
 ) -> dict[str, Any]:
     """List all available sensitivity variables and their default ranges."""
     from app.agents.sensitivity_agent import DEFAULT_RANGES, VARIABLE_LABELS
+
     return {
         "data": {
             "variables": [

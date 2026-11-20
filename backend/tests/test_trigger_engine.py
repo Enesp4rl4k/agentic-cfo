@@ -6,6 +6,7 @@ window suppresses a second firing, that every decision lands in trigger_runs as
 an audit row, and that each ``ActionKind`` runs (or fails) the way its handler
 promises.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,8 +59,7 @@ async def _mk_trigger(
         name=name,
         events=json.dumps(events or ["job.completed"]),
         condition=json.dumps(
-            condition
-            or {"metric": "finance.runway_months", "op": "lt", "value": 3}
+            condition or {"metric": "finance.runway_months", "op": "lt", "value": 3}
         ),
         action_kind=action_kind,
         action_params=json.dumps(action_params or {"severity": "critical"}),
@@ -110,7 +110,10 @@ async def test_alert_dispatch_respects_message_and_severity(db):
         action_params={"message": "Nakit 3 aydan az", "severity": "warning"},
     )
     await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     alert = (await db.execute(select(AlertHistory))).scalar_one()
@@ -126,11 +129,17 @@ async def test_same_event_ref_fires_once(db):
     values = {"finance.runway_months": 2.0}
 
     first = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-42",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-42",
         values=values,
     )
     second = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-42",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-42",
         values=values,
     )
 
@@ -220,7 +229,10 @@ async def test_missing_snapshot_never_fires(db):
 async def test_disabled_trigger_is_skipped(db):
     await _mk_trigger(db, enabled=False)
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes == []
@@ -230,7 +242,10 @@ async def test_disabled_trigger_is_skipped(db):
 async def test_event_kind_mismatch_is_skipped(db):
     await _mk_trigger(db, events=["schedule"])
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes == []
@@ -241,7 +256,10 @@ async def test_only_matching_triggers_are_considered(db):
     await _mk_trigger(db, name="on job", events=["job.completed", "schedule"])
 
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert [o.name for o in outcomes] == ["on job"]
@@ -258,7 +276,10 @@ async def test_unregistered_action_kind_reports_error(db, monkeypatch):
     monkeypatch.delitem(ACTION_REGISTRY, "report.generate")
     await _mk_trigger(db, action_kind="report.generate")
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR
@@ -272,12 +293,17 @@ async def test_unregistered_action_kind_reports_error(db, monkeypatch):
 
 async def test_webhook_call_posts_to_url(db):
     await _mk_trigger(
-        db, action_kind="webhook.call",
+        db,
+        action_kind="webhook.call",
         action_params={"url": "https://dummy-webhook"},
     )
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
-        values={"finance.runway_months": 1.0}, payload={"message": "hi"},
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
+        values={"finance.runway_months": 1.0},
+        payload={"message": "hi"},
     )
     assert outcomes[0].status == FIRED
     # https://dummy… is treated as delivered without a real network call.
@@ -288,7 +314,10 @@ async def test_webhook_call_posts_to_url(db):
 async def test_webhook_call_requires_url(db):
     await _mk_trigger(db, action_kind="webhook.call", action_params={})
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR
@@ -306,8 +335,12 @@ async def test_analysis_start_enqueues_job_id_from_payload(db, monkeypatch):
     await _mk_trigger(db, action_kind="analysis.start", action_params={})
 
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-99",
-        values={"finance.runway_months": 1.0}, payload={"job_id": "job-99"},
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-99",
+        values={"finance.runway_months": 1.0},
+        payload={"job_id": "job-99"},
     )
     assert outcomes[0].status == FIRED
     assert calls == ["job-99"]
@@ -318,7 +351,10 @@ async def test_analysis_start_enqueues_job_id_from_payload(db, monkeypatch):
 async def test_analysis_start_requires_job_id(db):
     await _mk_trigger(db, action_kind="analysis.start", action_params={})
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR
@@ -344,12 +380,16 @@ async def test_cascade_simulate_runs_and_returns_scenario(db, monkeypatch):
 
     monkeypatch.setattr("app.services.company_context.get_company_context", _fake_ctx)
     await _mk_trigger(
-        db, action_kind="cascade.simulate",
+        db,
+        action_kind="cascade.simulate",
         action_params={"trigger": "cash_crisis", "runway_months": 2.0},
     )
 
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == FIRED
@@ -359,11 +399,12 @@ async def test_cascade_simulate_runs_and_returns_scenario(db, monkeypatch):
 
 
 async def test_cascade_simulate_rejects_unknown_trigger(db):
-    await _mk_trigger(
-        db, action_kind="cascade.simulate", action_params={"trigger": "nope"}
-    )
+    await _mk_trigger(db, action_kind="cascade.simulate", action_params={"trigger": "nope"})
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR
@@ -403,9 +444,7 @@ async def test_report_generate_writes_pdf_and_report_row(db, tmp_path, monkeypat
         assert period == "2026-09"
         return b"%PDF-1.4 fake"
 
-    monkeypatch.setattr(
-        "app.services.executive_report_pdf.generate_executive_report", _fake_pdf
-    )
+    monkeypatch.setattr("app.services.executive_report_pdf.generate_executive_report", _fake_pdf)
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
     await _mk_trigger(
         db,
@@ -418,7 +457,10 @@ async def test_report_generate_writes_pdf_and_report_row(db, tmp_path, monkeypat
     )
 
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-r1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-r1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == FIRED
@@ -429,10 +471,10 @@ async def test_report_generate_writes_pdf_and_report_row(db, tmp_path, monkeypat
     assert expected.read_bytes() == b"%PDF-1.4 fake"
 
     pdf_rows = (
-        await db.execute(
-            select(Report).where(Report.report_format == ReportFormat.PDF)
-        )
-    ).scalars().all()
+        (await db.execute(select(Report).where(Report.report_format == ReportFormat.PDF)))
+        .scalars()
+        .all()
+    )
     assert len(pdf_rows) == 1
     assert pdf_rows[0].job_id == "job-r1"
     assert pdf_rows[0].file_path == str(expected)
@@ -448,8 +490,12 @@ async def test_report_generate_takes_job_id_from_payload(db, tmp_path, monkeypat
     await _mk_trigger(db, action_kind="report.generate", action_params={})
 
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-r2",
-        values={"finance.runway_months": 1.0}, payload={"job_id": "job-r2"},
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-r2",
+        values={"finance.runway_months": 1.0},
+        payload={"job_id": "job-r2"},
     )
     assert outcomes[0].status == FIRED
     assert outcomes[0].action_result["job_id"] == "job-r2"
@@ -458,7 +504,10 @@ async def test_report_generate_takes_job_id_from_payload(db, tmp_path, monkeypat
 async def test_report_generate_requires_job_id(db):
     await _mk_trigger(db, action_kind="report.generate", action_params={})
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-1",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR
@@ -467,11 +516,12 @@ async def test_report_generate_requires_job_id(db):
 
 async def test_report_generate_rejects_foreign_org_job(db):
     await _seed_job_with_dashboard(db, job_id="job-other", org_id="org-someone-else")
-    await _mk_trigger(
-        db, action_kind="report.generate", action_params={"job_id": "job-other"}
-    )
+    await _mk_trigger(db, action_kind="report.generate", action_params={"job_id": "job-other"})
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-other",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-other",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR
@@ -489,11 +539,12 @@ async def test_report_generate_requires_dashboard_json(db):
         )
     )
     await db.flush()
-    await _mk_trigger(
-        db, action_kind="report.generate", action_params={"job_id": "job-bare"}
-    )
+    await _mk_trigger(db, action_kind="report.generate", action_params={"job_id": "job-bare"})
     outcomes = await handle_event(
-        db, org_id=ORG, event_kind="job.completed", event_ref="job-bare",
+        db,
+        org_id=ORG,
+        event_kind="job.completed",
+        event_ref="job-bare",
         values={"finance.runway_months": 1.0},
     )
     assert outcomes[0].status == ERROR

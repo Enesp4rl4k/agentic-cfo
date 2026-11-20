@@ -1,4 +1,5 @@
 """Background work is held until it ends, its failure is logged, and it never borrows a request's session."""
+
 from __future__ import annotations
 
 import ast
@@ -65,8 +66,11 @@ def test_nothing_fires_and_forgets():
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
-                    and isinstance(node.value.func, ast.Attribute)
-                    and node.value.func.attr in ("create_task", "ensure_future")):
+            if (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr in ("create_task", "ensure_future")
+            ):
                 offenders.append(f"{path.relative_to(_APP.parent)}:{node.lineno}")
     assert offenders == [], "use app.core.background.spawn: " + ", ".join(offenders)

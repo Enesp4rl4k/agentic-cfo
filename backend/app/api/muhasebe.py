@@ -9,6 +9,7 @@ Endpoint'ler:
   POST /muhasebe/reddet/{id}   — Kaydı reddet
   GET  /muhasebe/mizan/{job_id}— Job için mizan özeti
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -75,19 +76,21 @@ async def _enqueue_smmm_review(
         return 0
     added = 0
     for onay_item in items:
-        db.add(SMMMOnayKaydi(
-            job_id=job_id,
-            org_id=org_id,
-            created_by_user_id=user_id,
-            kayit_id=onay_item["kayit_id"],
-            orijinal_kayit=onay_item,
-            durum=OnayDurumu.BEKLIYOR,
-            otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
-            otomatik_confidence=onay_item.get("confidence"),
-            onay_neden=onay_item.get("onay_neden"),
-            tx_description=onay_item.get("tx_description"),
-            tx_amount_try=onay_item.get("tx_amount_try"),
-        ))
+        db.add(
+            SMMMOnayKaydi(
+                job_id=job_id,
+                org_id=org_id,
+                created_by_user_id=user_id,
+                kayit_id=onay_item["kayit_id"],
+                orijinal_kayit=onay_item,
+                durum=OnayDurumu.BEKLIYOR,
+                otomatik_hesap_kodu=onay_item.get("thp_hesap_kodu"),
+                otomatik_confidence=onay_item.get("confidence"),
+                onay_neden=onay_item.get("onay_neden"),
+                tx_description=onay_item.get("tx_description"),
+                tx_amount_try=onay_item.get("tx_amount_try"),
+            )
+        )
         added += 1
     return added
 
@@ -113,14 +116,16 @@ async def _guven_gecmisi(db: AsyncSession, org_id: str | None) -> dict[str, tupl
             .limit(5000)
         )
     ).all()
-    return gecmisten_olc([
-        (
-            ((kayit or {}).get("guven") or {}).get("seviye"),
-            str(durum),
-            (kayit or {}).get("karar_turu") == "toplu",
-        )
-        for kayit, durum in rows
-    ])
+    return gecmisten_olc(
+        [
+            (
+                ((kayit or {}).get("guven") or {}).get("seviye"),
+                str(durum),
+                (kayit or {}).get("karar_turu") == "toplu",
+            )
+            for kayit, durum in rows
+        ]
+    )
 
 
 async def _persist_muhasebe_journal(
@@ -155,6 +160,7 @@ async def _persist_muhasebe_journal(
 
 # ── Pydantic şemaları ─────────────────────────────────────────────────────────
 
+
 class MuhasebeAnalizRequest(BaseModel):
     job_id: str
     company_name: str | None = None
@@ -184,6 +190,7 @@ class ReddetRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.post("/muhasebe/analiz", status_code=status.HTTP_201_CREATED)
 async def muhasebe_analiz(
     body: MuhasebeAnalizRequest,
@@ -202,9 +209,7 @@ async def muhasebe_analiz(
     job = await load_owned_job(db, body.job_id, current_user)
 
     # İşlemleri yükle
-    tx_result = await db.execute(
-        select(Transaction).where(Transaction.job_id == body.job_id)
-    )
+    tx_result = await db.execute(select(Transaction).where(Transaction.job_id == body.job_id))
     txs = tx_result.scalars().all()
 
     if not txs:
@@ -215,11 +220,11 @@ async def muhasebe_analiz(
 
     tx_dicts = [
         {
-            "id":               tx.id,
-            "amount_kurus":     tx.amount_kurus,
-            "type":             tx.type,
-            "description":      tx.description,
-            "vendor":           tx.vendor,
+            "id": tx.id,
+            "amount_kurus": tx.amount_kurus,
+            "type": tx.type,
+            "description": tx.description,
+            "vendor": tx.vendor,
             "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
             # The column is not nullable, so a row whose date could not be read
             # already holds a placeholder. Without this flag the engine sees a
@@ -247,9 +252,7 @@ async def muhasebe_analiz(
 
     from app.platform.authority_matrix import load_active_rules
 
-    authority_rules = await load_active_rules(
-        str(job.org_id) if job.org_id else None, db
-    )
+    authority_rules = await load_active_rules(str(job.org_id) if job.org_id else None, db)
 
     # İlişkili taraf sicili: eşleşen işlemler `is_related_party` ile
     # işaretlenir. Yetki matrisinin ilişkili-taraf kuralı bu bayrağı okur ama
@@ -301,7 +304,9 @@ async def muhasebe_analiz(
 
     logger.info(
         "Muhasebe analizi tamamlandı: job=%s kayıt=%d onay=%d",
-        body.job_id, sonuc.kayit_sayisi, onay_eklendi,
+        body.job_id,
+        sonuc.kayit_sayisi,
+        onay_eklendi,
     )
 
     return {"data": result_dict, "error": None}
@@ -329,9 +334,7 @@ async def muhasebe_tr_vertical(
     from app.agents.run_ledger import agent_run
     from app.platform.authority_matrix import load_active_rules
 
-    authority_rules = await load_active_rules(
-        str(job.org_id) if job.org_id else None, db
-    )
+    authority_rules = await load_active_rules(str(job.org_id) if job.org_id else None, db)
 
     async with agent_run(
         db,
@@ -391,7 +394,8 @@ async def muhasebe_tr_vertical(
         if onay_eklendi:
             logger.info(
                 "tr-vertical: %d kayıt SMMM onayına düştü (job=%s)",
-                onay_eklendi, body.job_id,
+                onay_eklendi,
+                body.job_id,
             )
 
     # Record the generated board deck so it can be fetched later (GET below).
@@ -423,7 +427,9 @@ async def muhasebe_tr_vertical(
 
     logger.info(
         "TR vertical (API): job=%s stage=%s approval_required=%s",
-        body.job_id, result.stage, result.approval_required,
+        body.job_id,
+        result.stage,
+        result.approval_required,
     )
     return {
         "data": result.to_dict(),
@@ -540,10 +546,10 @@ async def muhasebe_yevmiye_dokumu(
     )
 
 
-
 # ── e-Defter (XBRL GL) ───────────────────────────────────────────────────────
 # The real thing: validated against the edefter.xsd GİB publishes, in the
 # format its own samples use. Still unsigned — see the response headers.
+
 
 async def _edefter_context(
     job_id: str, current_user: User, db: AsyncSession, donem: str | None = None
@@ -570,10 +576,7 @@ async def _edefter_context(
     except DefensibilityError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    org = (
-        await db.get(Organization, str(current_user.org_id))
-        if current_user.org_id else None
-    )
+    org = await db.get(Organization, str(current_user.org_id)) if current_user.org_id else None
     from app.services.edefter_xbrl import EDefterError, ledger_period
 
     # The period is the month the entries are in. It used to be read from a
@@ -646,9 +649,7 @@ async def muhasebe_edefter_yevmiye(
 
     entries, period, owner = await _edefter_context(job_id, current_user, db, donem)
     try:
-        pkg = EDefterXBRLGenerator.generate_journal(
-            entries, period=period, owner=owner
-        )
+        pkg = EDefterXBRLGenerator.generate_journal(entries, period=period, owner=owner)
     except EDefterError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _edefter_response(pkg, job_id)
@@ -686,7 +687,8 @@ async def _edefter_build(
         raise HTTPException(status_code=422, detail="kind yevmiye ya da kebir olmalı")
     entries, period, owner = await _edefter_context(job_id, current_user, db, donem)
     build = (
-        EDefterXBRLGenerator.generate_journal if kind == "yevmiye"
+        EDefterXBRLGenerator.generate_journal
+        if kind == "yevmiye"
         else EDefterXBRLGenerator.generate_ledger
     )
     try:
@@ -784,28 +786,62 @@ async def muhasebe_edefter_durum(
         defter_ok = False
         defter_detail = str(exc.detail)
 
-    steps.append({"key": "defter", "label": "Yevmiye ve kebir üretildi",
-                  "done": defter_ok, "detail": defter_detail})
-    steps.append({"key": "defter_imzasi", "label": "Defter mali mühürle imzalandı",
-                  "done": False,
-                  "detail": "Bu sunucuda imzalayıcı yok — mükellefin mali mührü gerekir."})
-    steps.append({"key": "berat", "label": "Berat üretildi",
-                  "done": False,
-                  "preview": berat_ok,
-                  "detail": (
-                      "Önizleme hazır; imzalı defterden yeniden üretilecek."
-                      if berat_ok else (locals().get("berat_detail") or "Defter olmadan berat olmaz.")
-                  )})
-    steps.append({"key": "berat_imzasi", "label": "Berat mali mühürle imzalandı",
-                  "done": False, "detail": "Defter imzasından sonra gelir."})
-    steps.append({"key": "paket", "label": "Yükleme paketi (VKN-YYYYAA-YB-000000.zip)",
-                  "done": False, "detail": "İki imza olmadan paket kurulmaz."})
-    steps.append({"key": "gonderim", "label": "GİB'e gönderildi",
-                  "done": False,
-                  "detail": (
-                      f"Web servis istemcisi hazır (ortam: {settings.gib_edefter_env}); "
-                      "WS-Security imzalayıcısı yok, gönderim yapılmaz."
-                  )})
+    steps.append(
+        {
+            "key": "defter",
+            "label": "Yevmiye ve kebir üretildi",
+            "done": defter_ok,
+            "detail": defter_detail,
+        }
+    )
+    steps.append(
+        {
+            "key": "defter_imzasi",
+            "label": "Defter mali mühürle imzalandı",
+            "done": False,
+            "detail": "Bu sunucuda imzalayıcı yok — mükellefin mali mührü gerekir.",
+        }
+    )
+    steps.append(
+        {
+            "key": "berat",
+            "label": "Berat üretildi",
+            "done": False,
+            "preview": berat_ok,
+            "detail": (
+                "Önizleme hazır; imzalı defterden yeniden üretilecek."
+                if berat_ok
+                else (locals().get("berat_detail") or "Defter olmadan berat olmaz.")
+            ),
+        }
+    )
+    steps.append(
+        {
+            "key": "berat_imzasi",
+            "label": "Berat mali mühürle imzalandı",
+            "done": False,
+            "detail": "Defter imzasından sonra gelir.",
+        }
+    )
+    steps.append(
+        {
+            "key": "paket",
+            "label": "Yükleme paketi (VKN-YYYYAA-YB-000000.zip)",
+            "done": False,
+            "detail": "İki imza olmadan paket kurulmaz.",
+        }
+    )
+    steps.append(
+        {
+            "key": "gonderim",
+            "label": "GİB'e gönderildi",
+            "done": False,
+            "detail": (
+                f"Web servis istemcisi hazır (ortam: {settings.gib_edefter_env}); "
+                "WS-Security imzalayıcısı yok, gönderim yapılmaz."
+            ),
+        }
+    )
     next_step = next((s for s in steps if not s["done"]), None)
     return {
         "data": {
@@ -837,16 +873,18 @@ async def onay_kuyrugu_listele(
     return {
         "data": [
             {
-                "id":                   k.id,
-                "job_id":               k.job_id,
-                "kayit_id":             k.kayit_id,
-                "durum":                k.durum,
-                "tx_description":       k.tx_description,
-                "tx_amount_try":        float(k.tx_amount_try) if k.tx_amount_try else None,
-                "otomatik_hesap_kodu":  k.otomatik_hesap_kodu,
-                "otomatik_confidence":  float(k.otomatik_confidence) if k.otomatik_confidence else None,
-                "onay_neden":           k.onay_neden,
-                "created_at":          k.created_at.isoformat(),
+                "id": k.id,
+                "job_id": k.job_id,
+                "kayit_id": k.kayit_id,
+                "durum": k.durum,
+                "tx_description": k.tx_description,
+                "tx_amount_try": float(k.tx_amount_try) if k.tx_amount_try else None,
+                "otomatik_hesap_kodu": k.otomatik_hesap_kodu,
+                "otomatik_confidence": float(k.otomatik_confidence)
+                if k.otomatik_confidence
+                else None,
+                "onay_neden": k.onay_neden,
+                "created_at": k.created_at.isoformat(),
             }
             for k in kayitlar
         ],
@@ -906,13 +944,16 @@ async def duzelt(
 
     logger.info(
         "SMMM düzeltme: id=%s %s→%s user=%s",
-        onay_id, kayit.otomatik_hesap_kodu, body.yeni_hesap_kodu, current_user.email,
+        onay_id,
+        kayit.otomatik_hesap_kodu,
+        body.yeni_hesap_kodu,
+        current_user.email,
     )
     return {
         "data": {
-            "duzeltildi":        True,
-            "eski_hesap_kodu":   kayit.otomatik_hesap_kodu,
-            "yeni_hesap_kodu":   body.yeni_hesap_kodu,
+            "duzeltildi": True,
+            "eski_hesap_kodu": kayit.otomatik_hesap_kodu,
+            "yeni_hesap_kodu": body.yeni_hesap_kodu,
         },
         "error": None,
     }

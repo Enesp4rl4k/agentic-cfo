@@ -4,6 +4,7 @@ Contract (see decisionPacket loader fix): Report.data scalars are LIRA
 (report_agent._fmt divides the pipeline's cents once); raw series
 (monthly_series, months) stay KURUŞ; `*_cents` fields are true cents.
 """
+
 from __future__ import annotations
 
 from app.services.executive_report_pdf import _build_html, _fmt, _fmt_lira
@@ -22,13 +23,13 @@ def test_formatters_disagree_only_on_the_unit() -> None:
 def test_pdf_html_keeps_lira_scalars_undivided() -> None:
     dash = {
         "pnl": {
-            "revenue": 1_000_000,          # lira
-            "net_income": 120_000,         # lira
+            "revenue": 1_000_000,  # lira
+            "net_income": 120_000,  # lira
             "opex": {"technology": 250_000},  # lira
         },
         "cashflow": {
-            "net_change": 75_000,          # lira
-            "monthly_series": [            # kuruş (raw passthrough)
+            "net_change": 75_000,  # lira
+            "monthly_series": [  # kuruş (raw passthrough)
                 {"month": "2026-01", "in": 500_000, "out": 300_000, "net": 200_000},
             ],
         },
@@ -64,20 +65,20 @@ def test_cascade_simulator_reads_report_scalars_as_lira() -> None:
 
     sim = CascadeSimulator(
         pnl={"revenue": 12_000_000, "total_opex": 6_000_000},  # LIRA
-        cashflow={"net_change": -300_000},                     # LIRA
+        cashflow={"net_change": -300_000},  # LIRA
         forecast={"scenarios": {"base": {"runway_months": 6}}},
     )
-    assert sim.monthly_revenue == 1_000_000      # 12M lira / 12 — not 10_000
-    assert sim.monthly_opex == 500_000           # 6M lira / 12 — not 5_000
-    assert sim.cash_balance == 1_800_000         # |−300k| × 6 ay, lira — not 18_000
+    assert sim.monthly_revenue == 1_000_000  # 12M lira / 12 — not 10_000
+    assert sim.monthly_opex == 500_000  # 6M lira / 12 — not 5_000
+    assert sim.cash_balance == 1_800_000  # |−300k| × 6 ay, lira — not 18_000
 
 
 def test_cascade_simulator_kwargs_are_kurus() -> None:
     from app.services.cascade_simulator import CascadeSimulator
 
     sim = CascadeSimulator(
-        revenue_monthly=500_000_00,   # 50M kuruş = 500k lira
-        cash_balance=1_000_000_00,    # 100M kuruş = 1M lira
+        revenue_monthly=500_000_00,  # 50M kuruş = 500k lira
+        cash_balance=1_000_000_00,  # 100M kuruş = 1M lira
     )
     assert sim.monthly_revenue == 500_000
-    assert sim.cash_balance == 1_000_000        # 100M kuruş = 1M lira
+    assert sim.cash_balance == 1_000_000  # 100M kuruş = 1M lira

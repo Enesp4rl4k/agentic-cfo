@@ -10,6 +10,7 @@ Contract edges:
     is not re-rewritable, or "what did we expect" loses its meaning);
   - another organisation's decision does not exist (404).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -75,9 +76,7 @@ def _serialize(d: DecisionLog) -> dict[str, Any]:
 
 
 def _http_error(exc: DecisionError) -> HTTPException:
-    return HTTPException(
-        status_code=_ERROR_STATUS.get(exc.code, 422), detail=exc.detail
-    )
+    return HTTPException(status_code=_ERROR_STATUS.get(exc.code, 422), detail=exc.detail)
 
 
 @router.post("/decisions")
@@ -113,9 +112,7 @@ async def list_decisions(
     limit: int = 50,
 ) -> dict[str, Any]:
     """This org's ledger, newest first (its own decisions when org-less)."""
-    q = select(DecisionLog).order_by(desc(DecisionLog.created_at)).limit(
-        max(1, min(limit, 200))
-    )
+    q = select(DecisionLog).order_by(desc(DecisionLog.created_at)).limit(max(1, min(limit, 200)))
     if current_user.org_id:
         q = q.where(DecisionLog.org_id == current_user.org_id)
     else:
@@ -154,9 +151,7 @@ async def post_outcome(
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     ensure_tenant(current_user, org_id=decision.org_id, user_id=decision.created_by)
     try:
-        await measure_outcome(
-            db, decision=decision, note=body.note if body else None
-        )
+        await measure_outcome(db, decision=decision, note=body.note if body else None)
         await db.commit()
     except DecisionError as exc:
         await db.rollback()

@@ -36,19 +36,23 @@ class RiskAnalyzeRequest(BaseModel):
 
 # ── Cascade Simulator ─────────────────────────────────────────────────────────
 
+
 class CascadeRequest(BaseModel):
     """
     Trigger event that starts the cascade simulation.
     At least one of the financial fields should be provided
     so the simulator can project realistic downstream effects.
     """
-    trigger_type: str          # e.g. "cash_crisis", "revenue_drop", "key_person_loss", "cyber_incident", "custom"
-    trigger_description: str   # Human-readable description of the trigger
-    severity: str = "high"     # "low" | "medium" | "high" | "critical"
+
+    trigger_type: (
+        str  # e.g. "cash_crisis", "revenue_drop", "key_person_loss", "cyber_incident", "custom"
+    )
+    trigger_description: str  # Human-readable description of the trigger
+    severity: str = "high"  # "low" | "medium" | "high" | "critical"
 
     # Optional financial context (from CompanyContext / CFO result)
-    monthly_burn_rate: float | None = None   # TRY / month
-    monthly_revenue: float | None = None     # TRY / month
+    monthly_burn_rate: float | None = None  # TRY / month
+    monthly_revenue: float | None = None  # TRY / month
     cash_runway_months: float | None = None  # Current runway
     headcount: int | None = None
     company_name: str | None = None
@@ -57,9 +61,9 @@ class CascadeRequest(BaseModel):
 
 class DomainImpact(BaseModel):
     domain: str
-    impact_level: str          # "none" | "low" | "medium" | "high" | "critical"
-    impact_score: int          # 0-100
-    primary_effect: str        # Short description
+    impact_level: str  # "none" | "low" | "medium" | "high" | "critical"
+    impact_score: int  # 0-100
+    primary_effect: str  # Short description
     secondary_effects: list[str]
     recommended_actions: list[str]
     time_to_impact_weeks: int  # How quickly this domain feels the effect
@@ -70,11 +74,11 @@ class CascadeResult(BaseModel):
     trigger_type: str
     trigger_description: str
     severity: str
-    overall_risk_score: int    # 0-100
-    overall_risk_level: str    # "low" | "medium" | "high" | "critical"
+    overall_risk_score: int  # 0-100
+    overall_risk_level: str  # "low" | "medium" | "high" | "critical"
     executive_summary: str
     domain_impacts: list[DomainImpact]
-    cascade_sequence: list[str]   # Ordered list of "domain → effect" steps
+    cascade_sequence: list[str]  # Ordered list of "domain → effect" steps
     recommended_priorities: list[str]
     estimated_recovery_weeks: int
 
@@ -84,10 +88,14 @@ def _severity_multiplier(severity: str) -> float:
 
 
 def _impact_level(score: int) -> str:
-    if score >= 80: return "critical"
-    if score >= 60: return "high"
-    if score >= 35: return "medium"
-    if score >= 10: return "low"
+    if score >= 80:
+        return "critical"
+    if score >= 60:
+        return "high"
+    if score >= 35:
+        return "medium"
+    if score >= 10:
+        return "low"
     return "none"
 
 
@@ -234,8 +242,11 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
                 domain="CFO / Finance",
                 impact_level=_impact_level(int(75 * mult)),
                 impact_score=int(75 * mult),
-                primary_effect=f"Gelirde tahmini %{int(drop_pct*100)} düşüş — nakit akışı bozuluyor",
-                secondary_effects=["Bütçe revizyonu gerekli", "Profitability hedefleri kaçırılabilir"],
+                primary_effect=f"Gelirde tahmini %{int(drop_pct * 100)} düşüş — nakit akışı bozuluyor",
+                secondary_effects=[
+                    "Bütçe revizyonu gerekli",
+                    "Profitability hedefleri kaçırılabilir",
+                ],
                 recommended_actions=["Gelir tahminini revize et", "Gider kısma planı hazırla"],
                 time_to_impact_weeks=2,
             ),
@@ -262,7 +273,10 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
                 impact_level=_impact_level(int(40 * mult)),
                 impact_score=int(40 * mult),
                 primary_effect="İşe alım planları tehlikeye giriyor",
-                secondary_effects=["Komisyon/prim hedefleri kaçırılabilir", "Satış ekibi motivasyonu düşer"],
+                secondary_effects=[
+                    "Komisyon/prim hedefleri kaçırılabilir",
+                    "Satış ekibi motivasyonu düşer",
+                ],
                 recommended_actions=["Satış ekibiyle şeffaf iletişim", "OKR revizyonu"],
                 time_to_impact_weeks=3,
             ),
@@ -292,7 +306,7 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
             "COO: Kapasite planı revize gerekiyor → Operasyonel uyarlama",
             "CTO: Yatırım öncelikleri değişiyor → Roadmap revizyonu",
         ]
-        exec_summary = f"Gelir düşüşü senaryosu: %{int(drop_pct*100)} gelir kaybı beklentisiyle CMO ve CFO en hızlı etkileniyor."
+        exec_summary = f"Gelir düşüşü senaryosu: %{int(drop_pct * 100)} gelir kaybı beklentisiyle CMO ve CFO en hızlı etkileniyor."
         recovery_weeks = 12
 
     else:
@@ -308,19 +322,26 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
                 recommended_actions=["Acil değerlendirme yapın", "Domain liderini devreye alın"],
                 time_to_impact_weeks=2 + i,
             )
-            for i, (d, offset) in enumerate([
-                ("CFO / Finance", 20), ("Risk / Compliance", 15),
-                ("COO / Operations", 5), ("CHRO / People", 0),
-                ("CTO / Technology", -5), ("CMO / Marketing", -10),
-            ])
+            for i, (d, offset) in enumerate(
+                [
+                    ("CFO / Finance", 20),
+                    ("Risk / Compliance", 15),
+                    ("COO / Operations", 5),
+                    ("CHRO / People", 0),
+                    ("CTO / Technology", -5),
+                    ("CMO / Marketing", -10),
+                ]
+            )
         ]
         cascade_seq = [f"{req.trigger_description} → Tüm domainler etkileniyor"]
-        exec_summary = f"Özel senaryo: {req.trigger_description}. Kapsamlı etki analizi yapılması önerilir."
+        exec_summary = (
+            f"Özel senaryo: {req.trigger_description}. Kapsamlı etki analizi yapılması önerilir."
+        )
         recovery_weeks = 16
 
     overall_score = max(d.impact_score for d in domains)
     priorities = [
-        f"#{i+1} {d.domain}: {d.recommended_actions[0]}"
+        f"#{i + 1} {d.domain}: {d.recommended_actions[0]}"
         for i, d in enumerate(sorted(domains, key=lambda x: x.impact_score, reverse=True)[:3])
     ]
 
@@ -340,7 +361,9 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
 
 
 @router.post("/risk/cascade")
-async def run_cascade_simulation(body: CascadeRequest, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
+async def run_cascade_simulation(
+    body: CascadeRequest, current_user: User = Depends(get_current_user)
+) -> dict[str, Any]:
     """
     Cascade Risk Simulator — "What if X happens?" → all domain impacts.
 
@@ -369,13 +392,19 @@ async def run_risk_analysis(
     """
     try:
         job_id = str(uuid.uuid4())
-        result = await recorded_run(db, "risk", current_user.org_id, job_id, run_risk_pipeline(
-            register_csv=body.register_csv,
-            loss_csv=body.loss_csv,
-            kri_csv=body.kri_csv,
-            company_name=body.company_name,
-            reporting_period=body.reporting_period,
-        ))
+        result = await recorded_run(
+            db,
+            "risk",
+            current_user.org_id,
+            job_id,
+            run_risk_pipeline(
+                register_csv=body.register_csv,
+                loss_csv=body.loss_csv,
+                kri_csv=body.kri_csv,
+                company_name=body.company_name,
+                reporting_period=body.reporting_period,
+            ),
+        )
 
         inceleme = None
         if current_user.org_id and not result.get("error"):
@@ -398,8 +427,8 @@ async def run_risk_analysis(
 
         logs_serializable = [
             {
-                "node":    log.node,
-                "status":  log.status,
+                "node": log.node,
+                "status": log.status,
                 "message": log.message,
                 "metrics": log.metrics,
             }
@@ -407,13 +436,13 @@ async def run_risk_analysis(
         ]
 
         return {
-            "job_id":       job_id,
-            "register":     result.get("register"),
-            "losses":       result.get("losses"),
-            "kris":         result.get("kris"),
+            "job_id": job_id,
+            "register": result.get("register"),
+            "losses": result.get("losses"),
+            "kris": result.get("kris"),
             "risk_summary": result.get("risk_summary"),
-            "logs":         logs_serializable,
-            "error":        result.get("error"),
+            "logs": logs_serializable,
+            "error": result.get("error"),
             "inceleme": inceleme,
         }
 

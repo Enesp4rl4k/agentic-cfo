@@ -59,7 +59,6 @@ async def get_dashboard(
         )
     data = dict(report.data or {})
     data["provenance"] = {
-        name: provenance_block(source, None)
-        for name, source in SECTION_PROVENANCE.items()
+        name: provenance_block(source, None) for name, source in SECTION_PROVENANCE.items()
     }
     return {"data": data, "error": None}

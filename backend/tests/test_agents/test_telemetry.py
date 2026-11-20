@@ -2,6 +2,7 @@
 Tests for telemetry.py — all tests run without OpenTelemetry installed.
 Covers: JSONFormatter, trace_agent decorator, AgentMetrics, helper functions.
 """
+
 import asyncio
 import json
 import logging
@@ -20,8 +21,8 @@ from app.services.telemetry import (
 
 # ── JSONFormatter ──────────────────────────────────────────────────────────────
 
-class TestJSONFormatter:
 
+class TestJSONFormatter:
     def setup_method(self):
         self.formatter = JSONFormatter()
         self.logger = logging.getLogger("test.json")
@@ -88,6 +89,7 @@ class TestJSONFormatter:
             raise ValueError("Test error")
         except ValueError:
             import sys
+
             record = self._make_record("Error occurred", exc_info=sys.exc_info())
             parsed = json.loads(self.formatter.format(record))
             assert "exc" in parsed
@@ -102,8 +104,8 @@ class TestJSONFormatter:
 
 # ── _NoOpSpan and _NoOpTracer ──────────────────────────────────────────────────
 
-class TestNoOpComponents:
 
+class TestNoOpComponents:
     def test_noop_span_context_manager(self):
         span = _NoOpSpan()
         with span as s:
@@ -124,18 +126,20 @@ class TestNoOpComponents:
 
 # ── trace_agent decorator ──────────────────────────────────────────────────────
 
-class TestTraceAgentDecorator:
 
+class TestTraceAgentDecorator:
     def test_decorator_preserves_function_name(self):
         @trace_agent("test_agent")
         async def my_run(state, config):
             pass
+
         assert my_run.__name__ == "my_run"
 
     def test_decorator_preserves_docstring(self):
         @trace_agent("test_agent")
         async def my_run(state, config):
             """My docstring."""
+
         assert my_run.__doc__ == "My docstring."
 
     def test_decorated_function_runs(self):
@@ -155,6 +159,7 @@ class TestTraceAgentDecorator:
         async def my_run(state, config):
             called_with.append(state)
             from app.agents.state import SkillResult
+
             return SkillResult(ok=True)
 
         asyncio.run(my_run({"job_id": "abc"}, None))
@@ -193,8 +198,8 @@ class TestTraceAgentDecorator:
 
 # ── AgentMetrics ──────────────────────────────────────────────────────────────
 
-class TestAgentMetrics:
 
+class TestAgentMetrics:
     def setup_method(self):
         # Clear metrics between tests
         AgentMetrics._runs.clear()
@@ -216,7 +221,7 @@ class TestAgentMetrics:
         AgentMetrics.record("cf_agent", "j2", 100, ok=True)
         AgentMetrics.record("cf_agent", "j3", 100, ok=False)
         summary = AgentMetrics.summary("cf_agent")
-        assert summary["cf_agent"]["success_rate"] == pytest.approx(2/3, abs=0.01)
+        assert summary["cf_agent"]["success_rate"] == pytest.approx(2 / 3, abs=0.01)
 
     def test_avg_duration_calculated(self):
         AgentMetrics.record("fc_agent", "j1", 100.0, ok=True)
@@ -254,6 +259,7 @@ class TestAgentMetrics:
 
 # ── get_logger ────────────────────────────────────────────────────────────────
 
+
 def test_get_logger_returns_logger():
     logger = get_logger("test.module")
     assert isinstance(logger, logging.Logger)
@@ -261,6 +267,7 @@ def test_get_logger_returns_logger():
 
 
 # ── initialize_telemetry ──────────────────────────────────────────────────────
+
 
 def test_initialize_telemetry_no_crash():
     """initialize_telemetry should not raise even with no OTEL packages."""

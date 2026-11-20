@@ -19,6 +19,7 @@ REST endpoints:
   POST /alerts/rules                   → Create alert rule
   DELETE /alerts/rules/{rule_id}       → Delete alert rule
 """
+
 from __future__ import annotations
 
 import json
@@ -43,14 +44,15 @@ logger = logging.getLogger(__name__)
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
+
 class AlertRuleCreate(BaseModel):
-    name:      str
-    metric:    str        # "cash_runway_months" | "anomaly_count_critical" | ...
-    operator:  str        # "<" | ">" | "==" | ">="
+    name: str
+    metric: str  # "cash_runway_months" | "anomaly_count_critical" | ...
+    operator: str  # "<" | ">" | "==" | ">="
     threshold: float
-    channels:  list[str] = ["in_app"]
-    severity:  str = "warning"
-    enabled:   bool = True
+    channels: list[str] = ["in_app"]
+    severity: str = "warning"
+    enabled: bool = True
 
 
 class AcknowledgeRequest(BaseModel):
@@ -59,11 +61,12 @@ class AcknowledgeRequest(BaseModel):
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
 
+
 @router.websocket("/ws/alerts/{org_id}")
 async def ws_alerts(
-    org_id:  str,
-    ws:      WebSocket,
-    token:   str | None = Query(None),   # JWT via query param
+    org_id: str,
+    ws: WebSocket,
+    token: str | None = Query(None),  # JWT via query param
 ) -> None:
     """
     Org-scoped WebSocket alert channel.
@@ -89,6 +92,7 @@ async def ws_alerts(
     if token:
         try:
             from app.services.auth import decode_token
+
             payload = decode_token(token)
             user_id = payload.get("sub", "unknown")
         except Exception:
@@ -124,12 +128,14 @@ async def ws_alerts(
 
                 if msg.get("type") == "ack" and msg.get("alert_id"):
                     await manager.broadcast_acknowledgement(
-                        org_id   = org_id,
-                        alert_id = msg["alert_id"],
-                        by_user  = user_id,
+                        org_id=org_id,
+                        alert_id=msg["alert_id"],
+                        by_user=user_id,
                     )
                 elif msg.get("type") == "ping":
-                    await ws.send_text(json.dumps({"type": "pong", "ts": datetime.now(UTC).isoformat()}))
+                    await ws.send_text(
+                        json.dumps({"type": "pong", "ts": datetime.now(UTC).isoformat()})
+                    )
 
             except WebSocketDisconnect:
                 break
@@ -146,14 +152,15 @@ async def ws_alerts(
 
 # ── Alert history (DB-backed) ─────────────────────────────────────────────────
 
+
 @router.get("/alerts/history/{org_id}")
 async def alert_history(
-    org_id:       str,
-    severity:     str | None = None,
-    days:         int = 7,
+    org_id: str,
+    severity: str | None = None,
+    days: int = 7,
     acknowledged: bool | None = None,
-    user:         User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Persistent alert history from DB.
@@ -167,9 +174,8 @@ async def alert_history(
         from datetime import timedelta
 
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        stmt = (
-            select(AlertHistory)
-            .where(AlertHistory.org_id == org_id, AlertHistory.created_at >= cutoff)
+        stmt = select(AlertHistory).where(
+            AlertHistory.org_id == org_id, AlertHistory.created_at >= cutoff
         )
         if severity:
             stmt = stmt.where(AlertHistory.severity == severity)
@@ -182,7 +188,7 @@ async def alert_history(
         alerts = [row.to_dict() for row in rows]
 
         return {
-            "data":  {"org_id": org_id, "alerts": alerts, "count": len(alerts)},
+            "data": {"org_id": org_id, "alerts": alerts, "count": len(alerts)},
             "error": None,
         }
 
@@ -193,12 +199,13 @@ async def alert_history(
 
 # ── Acknowledge endpoint ──────────────────────────────────────────────────────
 
+
 @router.patch("/alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: str,
-    body:     AcknowledgeRequest,
-    user:     User = Depends(get_current_user),
-    db:       AsyncSession = Depends(get_db),
+    body: AcknowledgeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Acknowledge an alert. Broadcasts to all org WS connections.
@@ -224,15 +231,15 @@ async def acknowledge_alert(
     if org_id:
         manager = get_ws_alert_manager()
         await manager.broadcast_acknowledgement(
-            org_id   = org_id,
-            alert_id = alert_id,
-            by_user  = str(user.id),
+            org_id=org_id,
+            alert_id=alert_id,
+            by_user=str(user.id),
         )
 
     return {
         "data": {
-            "alert_id":       alert_id,
-            "acknowledged":   True,
+            "alert_id": alert_id,
+            "acknowledged": True,
             "acknowledged_by": str(user.id),
         },
         "error": None,
@@ -241,11 +248,12 @@ async def acknowledge_alert(
 
 # ── Test channel endpoint ─────────────────────────────────────────────────────
 
+
 @router.post("/alerts/channels/test")
 async def test_alert_channel(
-    channel:     str = "in_app",
+    channel: str = "in_app",
     destination: str | None = None,
-    user:        User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Send a test alert to verify channel configuration.
@@ -258,11 +266,11 @@ async def test_alert_channel(
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
 
     test_alert = {
-        "id":       "test-alert",
-        "message":  "✅ Test alert — kanal bağlantısı başarılı",
+        "id": "test-alert",
+        "message": "✅ Test alert — kanal bağlantısı başarılı",
         "severity": "info",
-        "source":   "test",
-        "ts":       datetime.now(UTC).isoformat(),
+        "source": "test",
+        "ts": datetime.now(UTC).isoformat(),
     }
 
     if channel == "in_app":
@@ -273,10 +281,10 @@ async def test_alert_channel(
 
         return {
             "data": {
-                "channel":     "in_app",
-                "sent":        conn_count > 0,
+                "channel": "in_app",
+                "sent": conn_count > 0,
                 "connections": conn_count,
-                "message":     f"{conn_count} aktif bağlantıya gönderildi",
+                "message": f"{conn_count} aktif bağlantıya gönderildi",
             },
             "error": None,
         }
@@ -288,11 +296,14 @@ async def test_alert_channel(
             from app.services.notification_service import NotificationService
 
             alert = RawAlert(
-                level="info", message="Test alert — Slack kanal testi",
-                domain="system", source="test", job_id="test",
+                level="info",
+                message="Test alert — Slack kanal testi",
+                domain="system",
+                source="test",
+                job_id="test",
             )
             router_svc = AlertRouter(escalate_threshold=0.9)
-            decisions  = router_svc.process_alerts([alert])
+            decisions = router_svc.process_alerts([alert])
             svc = NotificationService()
             result = await svc.deliver(decisions, org_id=org_id, org_name="Test")
             return {"data": {"channel": "slack", "result": result}, "error": None}
@@ -307,10 +318,11 @@ async def test_alert_channel(
 
 # ── Alert rules ───────────────────────────────────────────────────────────────
 
+
 @router.get("/alerts/rules")
 async def list_alert_rules(
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """List custom alert rules for the org."""
     org_id = str(user.org_id) if user.org_id else None
@@ -334,7 +346,7 @@ async def list_alert_rules(
 async def create_alert_rule(
     body: AlertRuleCreate,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Create a custom alert rule."""
     org_id = str(user.org_id) if user.org_id else None
@@ -342,21 +354,24 @@ async def create_alert_rule(
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
 
     import uuid as _uuid
+
     rule_id = _uuid.uuid4().hex
 
     try:
-        db.add(AlertRule(
-            id        = rule_id,
-            org_id    = org_id,
-            name      = body.name,
-            metric    = body.metric,
-            operator  = body.operator,
-            threshold = body.threshold,
-            channels  = json.dumps(body.channels),
-            severity  = body.severity,
-            enabled   = body.enabled,
-            created_at = datetime.now(UTC),
-        ))
+        db.add(
+            AlertRule(
+                id=rule_id,
+                org_id=org_id,
+                name=body.name,
+                metric=body.metric,
+                operator=body.operator,
+                threshold=body.threshold,
+                channels=json.dumps(body.channels),
+                severity=body.severity,
+                enabled=body.enabled,
+                created_at=datetime.now(UTC),
+            )
+        )
         await db.commit()
     except Exception as exc:
         await db.rollback()
@@ -372,8 +387,8 @@ async def create_alert_rule(
 @router.delete("/alerts/rules/{rule_id}")
 async def delete_alert_rule(
     rule_id: str,
-    user:    User = Depends(get_current_user),
-    db:      AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Delete an alert rule."""
     # The raw DELETE was unscoped: any user could delete any org's rule.

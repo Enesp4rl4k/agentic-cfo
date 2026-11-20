@@ -81,9 +81,7 @@ def evaluate_cfo_state(
             soft_reasons.append(f"reflection warn {agent}={score_f:.2f}")
 
     if reflection_failures:
-        hard_reasons.append(
-            "reflection below hold threshold: " + ", ".join(reflection_failures)
-        )
+        hard_reasons.append("reflection below hold threshold: " + ", ".join(reflection_failures))
 
     if hard_reasons:
         return VerifierVerdict(
@@ -104,9 +102,7 @@ def evaluate_cfo_state(
             "Verifier: soft warnings only, require_review=False — proceeding (%s)",
             soft_reasons,
         )
-        return VerifierVerdict(
-            action="proceed", reasons=soft_reasons, confidence=min_conf
-        )
+        return VerifierVerdict(action="proceed", reasons=soft_reasons, confidence=min_conf)
 
     return VerifierVerdict(action="proceed", confidence=min_conf)
 

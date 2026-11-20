@@ -10,6 +10,7 @@ Input: regulations_csv
 
 done_when: state['regulations']['total_requirements'] is an int.
 """
+
 from __future__ import annotations
 
 import csv
@@ -25,25 +26,58 @@ logger = logging.getLogger(__name__)
 
 # Recognised compliance frameworks
 KNOWN_FRAMEWORKS = {
-    "soc2", "soc 2", "soc2 type ii", "soc 2 type ii",
-    "iso27001", "iso 27001", "iso 27001:2013", "iso 27001:2022",
-    "gdpr", "hipaa", "pci-dss", "pci dss",
-    "nist", "nist csf", "nist 800-53",
-    "ccpa", "fedramp", "cmmc",
-    "sox", "sarbanes-oxley",
-    "cis", "cis controls",
+    "soc2",
+    "soc 2",
+    "soc2 type ii",
+    "soc 2 type ii",
+    "iso27001",
+    "iso 27001",
+    "iso 27001:2013",
+    "iso 27001:2022",
+    "gdpr",
+    "hipaa",
+    "pci-dss",
+    "pci dss",
+    "nist",
+    "nist csf",
+    "nist 800-53",
+    "ccpa",
+    "fedramp",
+    "cmmc",
+    "sox",
+    "sarbanes-oxley",
+    "cis",
+    "cis controls",
 }
 
 COMPLIANT_STATUSES = {
-    "compliant", "met", "satisfied", "implemented", "yes", "pass", "passed", "full",
+    "compliant",
+    "met",
+    "satisfied",
+    "implemented",
+    "yes",
+    "pass",
+    "passed",
+    "full",
 }
 NON_COMPLIANT_STATUSES = {
-    "non-compliant", "non_compliant", "not met", "not implemented", "fail", "failed",
-    "no", "missing", "gap",
+    "non-compliant",
+    "non_compliant",
+    "not met",
+    "not implemented",
+    "fail",
+    "failed",
+    "no",
+    "missing",
+    "gap",
 }
 PARTIAL_STATUSES = {
-    "partial", "in progress", "partially met", "partially implemented",
-    "pending", "remediation in progress",
+    "partial",
+    "in progress",
+    "partially met",
+    "partially implemented",
+    "pending",
+    "remediation in progress",
 }
 
 
@@ -97,27 +131,31 @@ def _parse_regulations_csv(csv_text: str) -> list[dict[str, Any]]:
                 return fields_lower[c.lower()]
         return None
 
-    reg_col        = _col("regulation", "framework", "standard", "source")
-    req_col        = _col("requirement", "control", "control_id", "requirement_id", "item")
-    status_col     = _col("compliance_status", "status", "compliance", "state")
+    reg_col = _col("regulation", "framework", "standard", "source")
+    req_col = _col("requirement", "control", "control_id", "requirement_id", "item")
+    status_col = _col("compliance_status", "status", "compliance", "state")
     last_audit_col = _col("last_audit", "last_audit_date", "audited_at", "audit_date")
     next_audit_col = _col("next_audit", "next_audit_date", "review_date")
-    owner_col      = _col("control_owner", "owner", "responsible", "assignee")
-    evidence_col   = _col("evidence_status", "evidence", "documentation")
-    risk_col       = _col("risk_level", "risk", "severity", "impact")
+    owner_col = _col("control_owner", "owner", "responsible", "assignee")
+    evidence_col = _col("evidence_status", "evidence", "documentation")
+    risk_col = _col("risk_level", "risk", "severity", "impact")
 
     rows: list[dict[str, Any]] = []
     today = datetime.now()
 
     for i, row in enumerate(reader, start=1):
         try:
-            regulation  = (row.get(reg_col) or "Unknown").strip() if reg_col else "Unknown"
-            requirement = (row.get(req_col) or f"Requirement {i}").strip() if req_col else f"Requirement {i}"
-            status_raw  = (row.get(status_col, "unknown") if status_col else "unknown")
-            status      = _norm_compliance_status(status_raw)
-            owner       = (row.get(owner_col, "unassigned") if owner_col else "unassigned").strip()
-            evidence    = (row.get(evidence_col, "unknown") if evidence_col else "unknown").strip().lower()
-            risk        = _norm_risk(row.get(risk_col, "medium") if risk_col else "medium")
+            regulation = (row.get(reg_col) or "Unknown").strip() if reg_col else "Unknown"
+            requirement = (
+                (row.get(req_col) or f"Requirement {i}").strip() if req_col else f"Requirement {i}"
+            )
+            status_raw = row.get(status_col, "unknown") if status_col else "unknown"
+            status = _norm_compliance_status(status_raw)
+            owner = (row.get(owner_col, "unassigned") if owner_col else "unassigned").strip()
+            evidence = (
+                (row.get(evidence_col, "unknown") if evidence_col else "unknown").strip().lower()
+            )
+            risk = _norm_risk(row.get(risk_col, "medium") if risk_col else "medium")
 
             last_audit = _parse_datetime(row.get(last_audit_col, "") if last_audit_col else "")
             next_audit = _parse_datetime(row.get(next_audit_col, "") if next_audit_col else "")
@@ -133,23 +171,23 @@ def _parse_regulations_csv(csv_text: str) -> list[dict[str, Any]]:
             ) or (last_audit is None)
 
             # Next audit upcoming check (within 30 days)
-            audit_due_soon = (
-                next_audit is not None and 0 <= (next_audit - today).days <= 30
-            )
+            audit_due_soon = next_audit is not None and 0 <= (next_audit - today).days <= 30
 
-            rows.append({
-                "regulation": regulation,
-                "requirement": requirement,
-                "status": status,
-                "owner": owner,
-                "evidence": evidence,
-                "risk": risk,
-                "last_audit": last_audit.isoformat() if last_audit else None,
-                "next_audit": next_audit.isoformat() if next_audit else None,
-                "days_since_audit": days_since_audit,
-                "audit_overdue": audit_overdue,
-                "audit_due_soon": audit_due_soon,
-            })
+            rows.append(
+                {
+                    "regulation": regulation,
+                    "requirement": requirement,
+                    "status": status,
+                    "owner": owner,
+                    "evidence": evidence,
+                    "risk": risk,
+                    "last_audit": last_audit.isoformat() if last_audit else None,
+                    "next_audit": next_audit.isoformat() if next_audit else None,
+                    "days_since_audit": days_since_audit,
+                    "audit_overdue": audit_overdue,
+                    "audit_due_soon": audit_due_soon,
+                }
+            )
         except Exception:
             logger.debug("Skipping regulation row %d", i)
 
@@ -175,11 +213,11 @@ def _compute_regulations_metrics(reqs: list[dict[str, Any]]) -> dict[str, Any]:
             "framework_scores": {},
         }
 
-    total        = len(reqs)
-    compliant    = [r for r in reqs if r["status"] == "compliant"]
+    total = len(reqs)
+    compliant = [r for r in reqs if r["status"] == "compliant"]
     non_compliant = [r for r in reqs if r["status"] == "non_compliant"]
-    partial      = [r for r in reqs if r["status"] == "partial"]
-    unknown      = [r for r in reqs if r["status"] == "unknown"]
+    partial = [r for r in reqs if r["status"] == "partial"]
+    unknown = [r for r in reqs if r["status"] == "unknown"]
 
     # Coverage: compliant + partial (partial counts as 0.5)
     effective_compliant = len(compliant) + len(partial) * 0.5
@@ -249,67 +287,79 @@ def _build_regulations_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     alerts: list[dict[str, str]] = []
 
     coverage = metrics.get("compliance_coverage_pct", 100.0)
-    total    = metrics.get("total_requirements", 0)
+    total = metrics.get("total_requirements", 0)
 
     if total == 0:
         return alerts
 
     if coverage < 70:
         level = "critical" if coverage < 50 else "warning"
-        alerts.append({
-            "level": level,
-            "message": (
-                f"Compliance coverage only {coverage:.0f}% — "
-                f"{metrics['non_compliant_count']} requirements non-compliant, "
-                f"{metrics['partial_count']} partial. Immediate remediation required."
-            ),
-        })
+        alerts.append(
+            {
+                "level": level,
+                "message": (
+                    f"Compliance coverage only {coverage:.0f}% — "
+                    f"{metrics['non_compliant_count']} requirements non-compliant, "
+                    f"{metrics['partial_count']} partial. Immediate remediation required."
+                ),
+            }
+        )
     elif coverage < 85:
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"Compliance coverage {coverage:.0f}% — "
-                f"below 85% target. Address {metrics['non_compliant_count']} gaps."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"Compliance coverage {coverage:.0f}% — "
+                    f"below 85% target. Address {metrics['non_compliant_count']} gaps."
+                ),
+            }
+        )
 
     # Framework-specific alerts
     fw_scores = metrics.get("framework_scores", {})
     for fw, score in fw_scores.items():
         if score < 60:
-            alerts.append({
-                "level": "critical",
-                "message": (
-                    f"{fw} compliance score {score:.0f}% — critical gaps requiring urgent attention."
-                ),
-            })
+            alerts.append(
+                {
+                    "level": "critical",
+                    "message": (
+                        f"{fw} compliance score {score:.0f}% — critical gaps requiring urgent attention."
+                    ),
+                }
+            )
         elif score < 80:
-            alerts.append({
-                "level": "warning",
-                "message": f"{fw} compliance score {score:.0f}% — below acceptable threshold.",
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"{fw} compliance score {score:.0f}% — below acceptable threshold.",
+                }
+            )
 
     # Audit overdue
     overdue_count = metrics.get("audit_overdue_count", 0)
     if overdue_count > 0:
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"{overdue_count} requirement(s) not audited in over 12 months — "
-                "schedule audits to maintain evidence currency."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"{overdue_count} requirement(s) not audited in over 12 months — "
+                    "schedule audits to maintain evidence currency."
+                ),
+            }
+        )
 
     # Upcoming audits
     due_soon = metrics.get("audit_due_soon_count", 0)
     if due_soon > 0:
-        alerts.append({
-            "level": "info",
-            "message": (
-                f"{due_soon} audit(s) due within the next 30 days — "
-                "ensure evidence packages are complete."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "message": (
+                    f"{due_soon} audit(s) due within the next 30 days — "
+                    "ensure evidence packages are complete."
+                ),
+            }
+        )
 
     return alerts
 
@@ -324,65 +374,73 @@ def _build_compliance_recommendations(
     critical_gaps = [g for g in gaps if g["risk"] == "critical"]
 
     if critical_gaps:
-        recs.append({
-            "priority": "P1",
-            "action": f"Remediate {len(critical_gaps)} critical compliance gap(s) immediately",
-            "detail": (
-                f"Critical gaps: {', '.join(g['requirement'] for g in critical_gaps[:3])}. "
-                "Assign dedicated owners and set 2-week hard deadlines."
-            ),
-            "effort": "high",
-        })
+        recs.append(
+            {
+                "priority": "P1",
+                "action": f"Remediate {len(critical_gaps)} critical compliance gap(s) immediately",
+                "detail": (
+                    f"Critical gaps: {', '.join(g['requirement'] for g in critical_gaps[:3])}. "
+                    "Assign dedicated owners and set 2-week hard deadlines."
+                ),
+                "effort": "high",
+            }
+        )
 
     low_score_fw = [
-        (fw, score)
-        for fw, score in metrics.get("framework_scores", {}).items()
-        if score < 75
+        (fw, score) for fw, score in metrics.get("framework_scores", {}).items() if score < 75
     ]
     if low_score_fw:
         fw_name, score = low_score_fw[0]
-        recs.append({
-            "priority": "P2",
-            "action": f"Launch {fw_name} remediation sprint",
-            "detail": (
-                f"{fw_name} score is {score:.0f}%. Run a focused 4-week remediation sprint. "
-                "Use the framework's official control list to close each gap systematically."
-            ),
-            "effort": "high",
-        })
+        recs.append(
+            {
+                "priority": "P2",
+                "action": f"Launch {fw_name} remediation sprint",
+                "detail": (
+                    f"{fw_name} score is {score:.0f}%. Run a focused 4-week remediation sprint. "
+                    "Use the framework's official control list to close each gap systematically."
+                ),
+                "effort": "high",
+            }
+        )
 
     if metrics.get("audit_overdue_count", 0) > 0:
-        recs.append({
-            "priority": "P2",
-            "action": "Schedule overdue compliance audits",
-            "detail": (
-                f"{metrics['audit_overdue_count']} requirement(s) need re-audit. "
-                "Book audit dates now — stale evidence is a common reason for audit failures."
-            ),
-            "effort": "medium",
-        })
+        recs.append(
+            {
+                "priority": "P2",
+                "action": "Schedule overdue compliance audits",
+                "detail": (
+                    f"{metrics['audit_overdue_count']} requirement(s) need re-audit. "
+                    "Book audit dates now — stale evidence is a common reason for audit failures."
+                ),
+                "effort": "medium",
+            }
+        )
 
     if metrics.get("partial_count", 0) > 3:
-        recs.append({
-            "priority": "P3",
-            "action": "Convert partial compliance items to full compliance",
-            "detail": (
-                f"{metrics['partial_count']} requirements are partially met. "
-                "Prioritise high-risk partials — they count as half in coverage scoring."
-            ),
-            "effort": "medium",
-        })
+        recs.append(
+            {
+                "priority": "P3",
+                "action": "Convert partial compliance items to full compliance",
+                "detail": (
+                    f"{metrics['partial_count']} requirements are partially met. "
+                    "Prioritise high-risk partials — they count as half in coverage scoring."
+                ),
+                "effort": "medium",
+            }
+        )
 
     if metrics.get("compliance_coverage_pct", 100) >= 90:
-        recs.append({
-            "priority": "P4",
-            "action": "Automate compliance evidence collection",
-            "detail": (
-                "With high coverage, the next maturity step is continuous compliance monitoring. "
-                "Consider GRC tools (Vanta, Drata, Tugboat Logic) to automate evidence gathering."
-            ),
-            "effort": "medium",
-        })
+        recs.append(
+            {
+                "priority": "P4",
+                "action": "Automate compliance evidence collection",
+                "detail": (
+                    "With high coverage, the next maturity step is continuous compliance monitoring. "
+                    "Consider GRC tools (Vanta, Drata, Tugboat Logic) to automate evidence gathering."
+                ),
+                "effort": "medium",
+            }
+        )
 
     return recs
 
@@ -403,15 +461,15 @@ async def run_regulations_agent(
 
     try:
         csv_text = state.get("regulations_csv") or ""
-        rows     = _parse_regulations_csv(csv_text)
-        metrics  = _compute_regulations_metrics(rows)
-        alerts   = _build_regulations_alerts(metrics)
-        recs     = _build_compliance_recommendations(metrics)
+        rows = _parse_regulations_csv(csv_text)
+        metrics = _compute_regulations_metrics(rows)
+        alerts = _build_regulations_alerts(metrics)
+        recs = _build_compliance_recommendations(metrics)
 
         # Build narrative
-        total    = metrics["total_requirements"]
+        total = metrics["total_requirements"]
         coverage = metrics["compliance_coverage_pct"]
-        fws      = metrics["frameworks"]
+        fws = metrics["frameworks"]
 
         if total == 0:
             narrative = "No regulations data provided — regulatory tracking not available."
@@ -464,10 +522,12 @@ async def run_regulations_agent(
     except Exception as exc:
         logger.exception("RegulationsAgent failed")
         result["error"] = f"Regulations agent failed: {exc}"
-        result["logs"].append(ComplianceStepLog(
-            node="regulations_agent",
-            status="failed",
-            message=str(exc),
-        ))
+        result["logs"].append(
+            ComplianceStepLog(
+                node="regulations_agent",
+                status="failed",
+                message=str(exc),
+            )
+        )
 
     return result

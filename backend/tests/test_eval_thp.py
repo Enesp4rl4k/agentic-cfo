@@ -7,6 +7,7 @@ foot perfectly and still book social-security withholdings as tax.
 
 Marked `eval` so it runs in the same gate as the rest of the corpus.
 """
+
 from __future__ import annotations
 
 import pytest

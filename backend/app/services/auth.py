@@ -9,6 +9,7 @@ Token lifecycle:
   - Access token:  30 minutes (short-lived, used for API calls)
   - Refresh token: 7 days (long-lived, stored client-side)
 """
+
 from __future__ import annotations
 
 import secrets
@@ -22,12 +23,13 @@ from jose import jwt
 from app.config import get_settings
 
 # JWT constants
-ACCESS_TOKEN_EXPIRE_MINUTES  = 30
-REFRESH_TOKEN_EXPIRE_DAYS    = 7
-ALGORITHM                    = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+ALGORITHM = "HS256"
 
 
 # ── Password helpers ──────────────────────────────────────────────────────────
+
 
 def hash_password(password: str) -> str:
     """Hash password using bcrypt (with 72-byte max length safety)."""
@@ -46,6 +48,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 
+
 def _secret() -> str:
     settings = get_settings()
     # Use SECRET_KEY from settings if available, fall back to a fixed default for dev
@@ -58,17 +61,15 @@ def create_access_token(
     role: str,
     expires_delta: timedelta | None = None,
 ) -> str:
-    expire = datetime.now(UTC) + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     payload: dict[str, Any] = {
-        "sub":   user_id,
+        "sub": user_id,
         "email": email,
-        "role":  role,
-        "type":  "access",
-        "exp":   expire,
-        "iat":   datetime.now(UTC),
-        "jti":   str(uuid.uuid4()),
+        "role": role,
+        "type": "access",
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
@@ -76,11 +77,11 @@ def create_access_token(
 def create_refresh_token(user_id: str) -> str:
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload: dict[str, Any] = {
-        "sub":  user_id,
+        "sub": user_id,
         "type": "refresh",
-        "exp":  expire,
-        "iat":  datetime.now(UTC),
-        "jti":  str(uuid.uuid4()),
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
@@ -98,5 +99,5 @@ def generate_api_key() -> str:
 def hash_api_key(key: str) -> str:
     """Hash an API key using SHA-256 for secure storage."""
     import hashlib
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()

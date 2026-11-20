@@ -11,6 +11,7 @@ GET  /api/v1/alerts/digest/latest
 POST /api/v1/alerts/acknowledge/{job_id}/{alert_hash}
      Mark an alert as acknowledged (stores in Redis or DB).
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,58 +52,68 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
     # ── CFO pipeline alerts ────────────────────────────────────────────────
     cashflow = dashboard_data.get("cashflow") or {}
     for a in cashflow.get("alerts") or []:
-        raw.append(RawAlert(
-            level=a.get("level", "warning"),
-            message=a.get("message", ""),
-            domain="cfo",
-            source="cashflow",
-            job_id=job_id,
-            timestamp=ts,
-        ))
+        raw.append(
+            RawAlert(
+                level=a.get("level", "warning"),
+                message=a.get("message", ""),
+                domain="cfo",
+                source="cashflow",
+                job_id=job_id,
+                timestamp=ts,
+            )
+        )
 
     forecast = dashboard_data.get("forecast") or {}
     for a in forecast.get("alerts") or []:
-        raw.append(RawAlert(
-            level=a.get("level", "warning"),
-            message=a.get("message", ""),
-            domain="cfo",
-            source="forecast",
-            job_id=job_id,
-            timestamp=ts,
-        ))
+        raw.append(
+            RawAlert(
+                level=a.get("level", "warning"),
+                message=a.get("message", ""),
+                domain="cfo",
+                source="forecast",
+                job_id=job_id,
+                timestamp=ts,
+            )
+        )
 
     # Monte Carlo runway risk alert
     mc = forecast.get("monte_carlo") or {}
     if mc.get("runway_risk_pct", 0) > 30:
-        raw.append(RawAlert(
-            level="critical" if mc["runway_risk_pct"] > 60 else "warning",
-            # The share of simulations that go negative, said as that. It read
-            # "%X olasılıkla ... yaşanabilir", which states a probability the
-            # simulation does not produce on its own.
-            message=(
-                f"Simülasyonların %{mc['runway_risk_pct']:.0f}'inde ilk 6 ayda "
-                f"kümülatif nakit negatife düşüyor."
-            ),
-            domain="cfo",
-            source="monte_carlo",
-            job_id=job_id,
-            timestamp=ts,
-            evidence={"runway_risk_pct": mc["runway_risk_pct"],
-                      "n_simulations": mc.get("n_simulations"),
-                      "growth_basis": mc.get("growth_basis")},
-        ))
+        raw.append(
+            RawAlert(
+                level="critical" if mc["runway_risk_pct"] > 60 else "warning",
+                # The share of simulations that go negative, said as that. It read
+                # "%X olasılıkla ... yaşanabilir", which states a probability the
+                # simulation does not produce on its own.
+                message=(
+                    f"Simülasyonların %{mc['runway_risk_pct']:.0f}'inde ilk 6 ayda "
+                    f"kümülatif nakit negatife düşüyor."
+                ),
+                domain="cfo",
+                source="monte_carlo",
+                job_id=job_id,
+                timestamp=ts,
+                evidence={
+                    "runway_risk_pct": mc["runway_risk_pct"],
+                    "n_simulations": mc.get("n_simulations"),
+                    "growth_basis": mc.get("growth_basis"),
+                },
+            )
+        )
 
     # ── Job-level triggered alerts ─────────────────────────────────────────
     for a in job.logs or []:
         if not a.get("ok") and a.get("detail"):
-            raw.append(RawAlert(
-                level="warning",
-                message=f"Agent '{a.get('step')}' hatası: {a.get('detail')}",
-                domain="cfo",
-                source=a.get("step", "pipeline"),
-                job_id=job_id,
-                timestamp=ts,
-            ))
+            raw.append(
+                RawAlert(
+                    level="warning",
+                    message=f"Agent '{a.get('step')}' hatası: {a.get('detail')}",
+                    domain="cfo",
+                    source=a.get("step", "pipeline"),
+                    job_id=job_id,
+                    timestamp=ts,
+                )
+            )
 
     return raw
 
@@ -117,8 +128,8 @@ def _build_digest_response(
     digest = _alert_router.build_digest(decisions)
 
     return {
-        "job_id":   job_id,
-        "period":   period,
+        "job_id": job_id,
+        "period": period,
         "generated_at": datetime.now(UTC).isoformat(),
         "summary": (
             f"{len(digest['critical'])} kritik, "
@@ -300,14 +311,16 @@ async def get_top_alerts(
     for alert in raw_alerts:
         score = _LEVEL_SCORE.get(alert.level, 10)
         score += _SOURCE_BONUS.get(alert.source, 0)
-        scored.append({
-            "level": alert.level,
-            "message": alert.message,
-            "source": alert.source,
-            "domain": alert.domain,
-            "score": score,
-            "action": _suggest_action(alert),
-        })
+        scored.append(
+            {
+                "level": alert.level,
+                "message": alert.message,
+                "source": alert.source,
+                "domain": alert.domain,
+                "score": score,
+                "action": _suggest_action(alert),
+            }
+        )
 
     # Sort by score descending, take top N
     scored.sort(key=lambda x: -x["score"])
@@ -366,11 +379,13 @@ async def acknowledge_alert(
         ack_key = f"ack:{job_id}:{alert_fingerprint}"
         await pool.set(
             ack_key,
-            json.dumps({
-                "job_id": job_id,
-                "fingerprint": alert_fingerprint,
-                "acknowledged_at": datetime.now(UTC).isoformat(),
-            }),
+            json.dumps(
+                {
+                    "job_id": job_id,
+                    "fingerprint": alert_fingerprint,
+                    "acknowledged_at": datetime.now(UTC).isoformat(),
+                }
+            ),
             ex=86400,  # 24h
         )
         ack_stored = True

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 def _append_log(state: RiskState, log: RiskStepLog) -> dict[str, Any]:
     logs = list(state.get("logs") or [])
     logs.append(log)
@@ -29,22 +30,30 @@ def _append_log(state: RiskState, log: RiskStepLog) -> dict[str, Any]:
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
+
 async def node_register(state: RiskState, config: dict) -> RiskState:
     result = await run_register_agent(state, config)
-    return {**state, "register": result["register"],
-            "logs": result["logs"], "error": result.get("error")}
+    return {
+        **state,
+        "register": result["register"],
+        "logs": result["logs"],
+        "error": result.get("error"),
+    }
 
 
 async def node_loss(state: RiskState, config: dict) -> RiskState:
     result = await run_loss_agent(state, config)
-    return {**state, "losses": result["losses"],
-            "logs": result["logs"], "error": result.get("error")}
+    return {
+        **state,
+        "losses": result["losses"],
+        "logs": result["logs"],
+        "error": result.get("error"),
+    }
 
 
 async def node_kri(state: RiskState, config: dict) -> RiskState:
     result = await run_kri_agent(state, config)
-    return {**state, "kris": result["kris"],
-            "logs": result["logs"], "error": result.get("error")}
+    return {**state, "kris": result["kris"], "logs": result["logs"], "error": result.get("error")}
 
 
 async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
@@ -52,9 +61,9 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
     Synthesise register + loss + kri into enterprise risk posture.
     Enterprise Risk Score (0-10, higher = worse).
     """
-    reg  = state.get("register") or {}
-    loss = state.get("losses")   or {}
-    kri  = state.get("kris")     or {}
+    reg = state.get("register") or {}
+    loss = state.get("losses") or {}
+    kri = state.get("kris") or {}
     logs: list[RiskStepLog] = list(state.get("logs") or [])
 
     # ── Enterprise Risk Score ─────────────────────────────────────────────────
@@ -102,64 +111,78 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
 
     # From register — unmitigated critical
     for r in reg.get("unmitigated_critical", [])[:3]:
-        top_risks.append({
-            "source": "risk_register",
-            "title":  r.get("title", "Unknown risk"),
-            "severity": r.get("band", "critical"),
-            "recommended_action": "Assign owner and implement mitigation immediately.",
-        })
+        top_risks.append(
+            {
+                "source": "risk_register",
+                "title": r.get("title", "Unknown risk"),
+                "severity": r.get("band", "critical"),
+                "recommended_action": "Assign owner and implement mitigation immediately.",
+            }
+        )
 
     # From KRI — red breaches
     for k in kri.get("breached_red", [])[:2]:
-        top_risks.append({
-            "source": "kri",
-            "title":  f"KRI Breach: {k.get('name', 'Unknown KRI')}",
-            "severity": "critical",
-            "recommended_action": f"KRI value {k.get('value')} exceeds red threshold {k.get('threshold_red')} — escalate.",
-        })
+        top_risks.append(
+            {
+                "source": "kri",
+                "title": f"KRI Breach: {k.get('name', 'Unknown KRI')}",
+                "severity": "critical",
+                "recommended_action": f"KRI value {k.get('value')} exceeds red threshold {k.get('threshold_red')} — escalate.",
+            }
+        )
 
     # From losses — top loss event
     for ev in loss.get("top_loss_events", [])[:1]:
-        top_risks.append({
-            "source": "loss_events",
-            "title":  f"Loss Event: {ev.get('description', '')[:60]}",
-            "severity": "high",
-            "recommended_action": f"Root cause: {ev.get('root_cause', 'unknown')} — close and prevent recurrence.",
-        })
+        top_risks.append(
+            {
+                "source": "loss_events",
+                "title": f"Loss Event: {ev.get('description', '')[:60]}",
+                "severity": "high",
+                "recommended_action": f"Root cause: {ev.get('root_cause', 'unknown')} — close and prevent recurrence.",
+            }
+        )
 
     # ── Quick Wins (Türkçe) ───────────────────────────────────────────────────
     quick_wins: list[dict[str, str]] = []
 
     no_mitigation = len(reg.get("unmitigated_critical", []))
     if no_mitigation:
-        quick_wins.append({
-            "action": f"{no_mitigation} kritik risk için azaltım planı hazırla",
-            "effort": "düşük",
-            "impact": "Kurumsal risk skorunu hemen iyileştirir",
-        })
+        quick_wins.append(
+            {
+                "action": f"{no_mitigation} kritik risk için azaltım planı hazırla",
+                "effort": "düşük",
+                "impact": "Kurumsal risk skorunu hemen iyileştirir",
+            }
+        )
 
     amber_kris = len(kri.get("breached_amber", []))
     if amber_kris:
-        quick_wins.append({
-            "action": f"{amber_kris} amber KRI'yı kırmızıya dönmeden önce ele al",
-            "effort": "orta",
-            "impact": "Öncü göstergelerin kayba dönüşmesini önle",
-        })
+        quick_wins.append(
+            {
+                "action": f"{amber_kris} amber KRI'yı kırmızıya dönmeden önce ele al",
+                "effort": "orta",
+                "impact": "Öncü göstergelerin kayba dönüşmesini önle",
+            }
+        )
 
     if loss.get("open_events", 0):
-        quick_wins.append({
-            "action": f"{loss['open_events']} açık kayıp olayını kapat",
-            "effort": "orta",
-            "impact": "Kuyruk riskini azalt ve kurtarma oranını iyileştir",
-        })
+        quick_wins.append(
+            {
+                "action": f"{loss['open_events']} açık kayıp olayını kapat",
+                "effort": "orta",
+                "impact": "Kuyruk riskini azalt ve kurtarma oranını iyileştir",
+            }
+        )
 
     coverage = reg.get("mitigation_coverage", 1.0)
     if coverage < 0.70:
-        quick_wins.append({
-            "action": "Kapsama dışı orta riskler için kontrol geliştir",
-            "effort": "yüksek",
-            "impact": f"Azaltım kapsamını %{coverage*100:.0f}'dan %80 hedefine çıkar",
-        })
+        quick_wins.append(
+            {
+                "action": "Kapsama dışı orta riskler için kontrol geliştir",
+                "effort": "yüksek",
+                "impact": f"Azaltım kapsamını %{coverage * 100:.0f}'dan %80 hedefine çıkar",
+            }
+        )
 
     # ── Cross-KRI correlation analysis ───────────────────────────────────────
     cross_correlation: dict[str, Any] | None = None
@@ -167,6 +190,7 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
         kri_list = kri.get("kri_list") or kri.get("kris") or []
         if kri_list and len(kri_list) >= 2:
             from app.agents.risk.cross_correlation import CrossKRIAnalyzer
+
             analyzer = CrossKRIAnalyzer(kri_list)
             cross_correlation = analyzer.compute_cross_correlations()
 
@@ -175,21 +199,23 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
                 sys_names = ", ".join(
                     f"'{s['kri']}'" for s in cross_correlation["systemic_risks"][:2]
                 )
-                quick_wins.append({
-                    "action": f"Sistemik risk KRI'larını öncelikli izle: {sys_names}",
-                    "effort": "düşük",
-                    "impact": "Zincirleme risk etkisini erkenden tespit et",
-                })
+                quick_wins.append(
+                    {
+                        "action": f"Sistemik risk KRI'larını öncelikli izle: {sys_names}",
+                        "effort": "düşük",
+                        "impact": "Zincirleme risk etkisini erkenden tespit et",
+                    }
+                )
     except Exception as cross_exc:
         logger.debug("Cross-KRI correlation skipped: %s", cross_exc)
 
     # ── Narrative (Türkçe + LLM) ──────────────────────────────────────────────
     posture_tr = {
-        "critical":   "KRİTİK",
-        "elevated":   "YÜKSELMİŞ",
-        "moderate":   "ORTA",
+        "critical": "KRİTİK",
+        "elevated": "YÜKSELMİŞ",
+        "moderate": "ORTA",
         "acceptable": "KABUL EDİLEBİLİR",
-        "no_data":    "ÖLÇÜLMEDİ",
+        "no_data": "ÖLÇÜLMEDİ",
     }.get(posture, posture.upper())
 
     if enterprise_score is None:
@@ -226,45 +252,49 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
             # S4-3: Türkiye makro risk faktörleri
             try:
                 from app.agents.risk.turkey_macro_risks import build_macro_risk_prompt_block
+
                 macro_block = build_macro_risk_prompt_block(max_items=3)
                 cross_context += macro_block
             except Exception:
                 pass
 
-            narrative = (await complete_text(
-                task="short_narrative",
-                system_prompt=(
-                    "Sen deneyimli bir Risk Yöneticisisin. Kurumsal risk verilerini analiz et ve "
-                    "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
-                    "Yanıt yapısı:\n"
-                    "1. Genel risk duruşunun 1-2 cümlelik değerlendirmesi\n"
-                    "2. En kritik 1-2 risk (şirkete özgü + Türkiye makro riski varsa)\n"
-                    "3. Yönetimin hemen yapması gereken 2-3 somut eylem\n"
-                    "Risk profesyoneli bakışıyla pratik öneriler ekle."
-                ),
-                prompt=narrative + cross_context,
-                max_tokens=700,
-            )).strip()
+            narrative = (
+                await complete_text(
+                    task="short_narrative",
+                    system_prompt=(
+                        "Sen deneyimli bir Risk Yöneticisisin. Kurumsal risk verilerini analiz et ve "
+                        "Türkçe olarak kısa, eyleme dönüştürülebilir bir yönetici özeti yaz.\n"
+                        "Yanıt yapısı:\n"
+                        "1. Genel risk duruşunun 1-2 cümlelik değerlendirmesi\n"
+                        "2. En kritik 1-2 risk (şirkete özgü + Türkiye makro riski varsa)\n"
+                        "3. Yönetimin hemen yapması gereken 2-3 somut eylem\n"
+                        "Risk profesyoneli bakışıyla pratik öneriler ekle."
+                    ),
+                    prompt=narrative + cross_context,
+                    max_tokens=700,
+                )
+            ).strip()
         except Exception as llm_exc:
             logger.debug("Risk summary LLM failed: %s", llm_exc)
 
     summary = {
         "enterprise_risk_score": enterprise_score,
-        "risk_posture":          posture,
-        "risk_posture_tr":       posture_tr,
+        "risk_posture": posture,
+        "risk_posture_tr": posture_tr,
         # None = not measured (no input for that component), not zero risk.
         "component_scores": {
             name: (round(measured[name][0], 1) if name in measured else None)
             for name in ("register", "losses", "kri")
         },
-        "top_risks":        top_risks[:6],
-        "quick_wins":       quick_wins[:5],
-        "narrative":        narrative,
+        "top_risks": top_risks[:6],
+        "quick_wins": quick_wins[:5],
+        "narrative": narrative,
         "cross_correlation": cross_correlation,
     }
 
     log = RiskStepLog(
-        node="risk_summary", status="completed",
+        node="risk_summary",
+        status="completed",
         message=(
             "Risk posture: no_data (no register, loss or KRI input)"
             if enterprise_score is None
@@ -279,17 +309,18 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
 
 # ── Graph ──────────────────────────────────────────────────────────────────────
 
+
 def build_risk_graph() -> StateGraph:
     builder = StateGraph(RiskState)
     builder.add_node("register_agent", node_register)
-    builder.add_node("loss_agent",     node_loss)
-    builder.add_node("kri_agent",      node_kri)
-    builder.add_node("summary_agent",  node_risk_summary)
+    builder.add_node("loss_agent", node_loss)
+    builder.add_node("kri_agent", node_kri)
+    builder.add_node("summary_agent", node_risk_summary)
 
     builder.add_edge("register_agent", "loss_agent")
-    builder.add_edge("loss_agent",     "kri_agent")
-    builder.add_edge("kri_agent",      "summary_agent")
-    builder.add_edge("summary_agent",  END)
+    builder.add_edge("loss_agent", "kri_agent")
+    builder.add_edge("kri_agent", "summary_agent")
+    builder.add_edge("summary_agent", END)
 
     builder.set_entry_point("register_agent")
     return builder.compile()
@@ -299,6 +330,7 @@ _risk_graph = build_risk_graph()
 
 
 # ── Public Entry Point ─────────────────────────────────────────────────────────
+
 
 async def run_risk_pipeline(
     register_csv: str,
@@ -313,17 +345,17 @@ async def run_risk_pipeline(
     Returns: { register, losses, kris, risk_summary, logs, error }
     """
     initial: RiskState = {
-        "register_csv":     register_csv,
-        "loss_csv":         loss_csv,
-        "kri_csv":          kri_csv,
-        "company_name":     company_name,
+        "register_csv": register_csv,
+        "loss_csv": loss_csv,
+        "kri_csv": kri_csv,
+        "company_name": company_name,
         "reporting_period": reporting_period,
-        "register":         None,
-        "losses":           None,
-        "kris":             None,
-        "risk_summary":     None,
-        "logs":             [],
-        "error":            None,
+        "register": None,
+        "losses": None,
+        "kris": None,
+        "risk_summary": None,
+        "logs": [],
+        "error": None,
     }
 
     result: RiskState = await _risk_graph.ainvoke(
@@ -331,10 +363,10 @@ async def run_risk_pipeline(
     )
 
     return {
-        "register":     result.get("register"),
-        "losses":       result.get("losses"),
-        "kris":         result.get("kris"),
+        "register": result.get("register"),
+        "losses": result.get("losses"),
+        "kris": result.get("kris"),
         "risk_summary": result.get("risk_summary"),
-        "logs":         result.get("logs"),
-        "error":        result.get("error"),
+        "logs": result.get("logs"),
+        "error": result.get("error"),
     }

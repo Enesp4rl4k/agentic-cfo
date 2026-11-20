@@ -5,6 +5,7 @@ Every exporter, PDF builder and upload used to stream into the *final*
 path; a crash mid-write published a truncated file that no reader could
 distinguish from a complete one.
 """
+
 from __future__ import annotations
 
 import json

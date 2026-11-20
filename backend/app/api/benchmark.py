@@ -10,6 +10,7 @@ GET  /api/v1/benchmark/{job_id}/metric/{metric}
 GET  /api/v1/benchmark/sectors
      List available sectors and metrics.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,13 +30,22 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _VALID_METRICS = [
-    "gross_margin", "net_margin", "ebitda_margin",
-    "opex_to_revenue", "revenue_growth_yoy",
+    "gross_margin",
+    "net_margin",
+    "ebitda_margin",
+    "opex_to_revenue",
+    "revenue_growth_yoy",
 ]
 
 _VALID_SECTORS = [
-    "retail", "manufacturing", "technology", "construction",
-    "services", "food_beverage", "logistics", "default",
+    "retail",
+    "manufacturing",
+    "technology",
+    "construction",
+    "services",
+    "food_beverage",
+    "logistics",
+    "default",
 ]
 
 
@@ -64,20 +74,20 @@ async def list_sectors() -> dict[str, Any]:
     return {
         "data": {
             "sectors": [
-                {"key": "retail",        "label": "Perakende"},
+                {"key": "retail", "label": "Perakende"},
                 {"key": "manufacturing", "label": "Üretim / İmalat"},
-                {"key": "technology",    "label": "Teknoloji / Yazılım"},
-                {"key": "construction",  "label": "İnşaat / Gayrimenkul"},
-                {"key": "services",      "label": "Hizmet"},
+                {"key": "technology", "label": "Teknoloji / Yazılım"},
+                {"key": "construction", "label": "İnşaat / Gayrimenkul"},
+                {"key": "services", "label": "Hizmet"},
                 {"key": "food_beverage", "label": "Yiyecek-İçecek"},
-                {"key": "logistics",     "label": "Lojistik / Nakliye"},
-                {"key": "default",       "label": "Genel Ortalama"},
+                {"key": "logistics", "label": "Lojistik / Nakliye"},
+                {"key": "default", "label": "Genel Ortalama"},
             ],
             "metrics": [
-                {"key": "gross_margin",      "label": "Brüt Kâr Marjı", "unit": "%"},
-                {"key": "net_margin",        "label": "Net Kâr Marjı", "unit": "%"},
-                {"key": "ebitda_margin",     "label": "FAVÖK Marjı", "unit": "%"},
-                {"key": "opex_to_revenue",   "label": "Gider/Ciro Oranı", "unit": "%"},
+                {"key": "gross_margin", "label": "Brüt Kâr Marjı", "unit": "%"},
+                {"key": "net_margin", "label": "Net Kâr Marjı", "unit": "%"},
+                {"key": "ebitda_margin", "label": "FAVÖK Marjı", "unit": "%"},
+                {"key": "opex_to_revenue", "label": "Gider/Ciro Oranı", "unit": "%"},
                 {"key": "revenue_growth_yoy", "label": "Yıllık Büyüme", "unit": "%"},
             ],
             "source": UNVERIFIED_SOURCE,
@@ -112,6 +122,7 @@ async def get_full_benchmark(
     pnl = await _get_pnl(job_id, db)
 
     from app.services.benchmark import get_benchmark_engine
+
     engine = get_benchmark_engine()
     comparison = engine.build_full_comparison(pnl, sector=sector)
 
@@ -147,15 +158,18 @@ async def get_metric_benchmark(
 
     # Get metric value from P&L
     metric_value_map = {
-        "gross_margin":      pnl.get("gross_margin", 0),
-        "net_margin":        pnl.get("net_margin", 0),
-        "ebitda_margin":     pnl.get("ebitda_margin", 0),
-        "opex_to_revenue":   (pnl.get("total_opex", 0) / pnl["revenue"]) if pnl.get("revenue", 0) > 0 else 0,
+        "gross_margin": pnl.get("gross_margin", 0),
+        "net_margin": pnl.get("net_margin", 0),
+        "ebitda_margin": pnl.get("ebitda_margin", 0),
+        "opex_to_revenue": (pnl.get("total_opex", 0) / pnl["revenue"])
+        if pnl.get("revenue", 0) > 0
+        else 0,
         "revenue_growth_yoy": 0,  # Requires multi-period data
     }
     company_value = metric_value_map.get(metric, 0)
 
     from app.services.benchmark import get_benchmark_engine
+
     engine = get_benchmark_engine()
     result = engine.compare_to_benchmark(metric, company_value, sector)
 

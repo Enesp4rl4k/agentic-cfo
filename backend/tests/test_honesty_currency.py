@@ -33,9 +33,7 @@ SQL_PARAM_LINE = re.compile(r"\$\d+\$\{[a-z_]+\}")
 
 # `$1, $2, ...` placeholders — para değil, raw SQL (asyncpg).
 SQL_PLACEHOLDER = re.compile(r"\$\d+\b")
-SQL_KEYWORDS = re.compile(
-    r"\b(WHERE|VALUES|ORDER BY|LIMIT|SELECT|INSERT|UPDATE|DELETE|AND|OR)\b"
-)
+SQL_KEYWORDS = re.compile(r"\b(WHERE|VALUES|ORDER BY|LIMIT|SELECT|INSERT|UPDATE|DELETE|AND|OR)\b")
 
 
 def test_no_hardcoded_dollar_currency_in_app() -> None:
@@ -44,9 +42,7 @@ def test_no_hardcoded_dollar_currency_in_app() -> None:
         rel = path.relative_to(APP_DIR).as_posix()
         if rel in ALLOWLIST_FILES:
             continue
-        for lineno, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if "$" not in line:
                 continue
             if SQL_PARAM_LINE.search(line):

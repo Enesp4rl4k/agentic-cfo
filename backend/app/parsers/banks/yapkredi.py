@@ -1,4 +1,5 @@
 """Yapı Kredi statement parser."""
+
 from __future__ import annotations
 
 from app.parsers.banks._shapes import SingleSignedColumnParser

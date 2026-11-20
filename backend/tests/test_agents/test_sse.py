@@ -2,6 +2,7 @@
 Tests for sse.py — progress tracking and event publishing helpers.
 No real EventSource or network needed — tests pure functions only.
 """
+
 import asyncio
 
 from app.streaming.sse import (
@@ -14,14 +15,15 @@ from app.streaming.sse import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _clear_job(job_id: str):
     _completed_steps.pop(job_id, None)
 
 
 # ── _calc_progress_pct ────────────────────────────────────────────────────────
 
-class TestCalcProgressPct:
 
+class TestCalcProgressPct:
     def setup_method(self):
         _clear_job("test-job")
 
@@ -69,8 +71,8 @@ class TestCalcProgressPct:
 
 # ── publish_step_event ────────────────────────────────────────────────────────
 
-class TestPublishStepEvent:
 
+class TestPublishStepEvent:
     def setup_method(self):
         _clear_job("pub-job")
 
@@ -100,8 +102,8 @@ class TestPublishStepEvent:
 
 # ── SSEManager ────────────────────────────────────────────────────────────────
 
-class TestSSEManager:
 
+class TestSSEManager:
     def test_publish_with_no_subscribers_does_not_raise(self):
         manager = SSEManager()
         asyncio.run(manager.publish("no-subs", {"event": "test"}))
@@ -160,6 +162,7 @@ class TestSSEManager:
 
 
 # ── _PIPELINE_STEPS constants ─────────────────────────────────────────────────
+
 
 def test_pipeline_steps_not_empty():
     assert len(_PIPELINE_STEPS) >= 5

@@ -34,6 +34,7 @@ invoice parser settles direction. Nothing is posted when:
 Each of those returns the reason instead, and the ingestion path holds the row
 for a person.
 """
+
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
@@ -83,16 +84,16 @@ class ParsedMakbuz(BaseModel):
     # pays the farmer; for e-SMM the client pays the professional who issued it.
     payer: InvoiceParty
     payee: InvoiceParty
-    gross: Decimal = Decimal("0")          # before tax and deductions
+    gross: Decimal = Decimal("0")  # before tax and deductions
     kdv: Decimal = Decimal("0")
-    stopaj: Decimal = Decimal("0")         # gelir vergisi stopajı (0003)
+    stopaj: Decimal = Decimal("0")  # gelir vergisi stopajı (0003)
     other_taxes: dict[str, Decimal] = Field(default_factory=dict)
-    withholding: Decimal = Decimal("0")    # e-SMM `tevkifat`
+    withholding: Decimal = Decimal("0")  # e-SMM `tevkifat`
     payable: Decimal = Decimal("0")
     # What was sold or rendered, as the document names it. The classifier
     # downstream reads descriptions; a receipt number and a VKN give it nothing.
     items: list[str] = Field(default_factory=list)
-    direction: InvoiceDirection = "unknown"   # "purchase": we pay
+    direction: InvoiceDirection = "unknown"  # "purchase": we pay
     direction_basis: str = ""
     suggested_tdhp_entries: list[TDHPJournalEntry] = Field(default_factory=list)
     posting_note: str = ""
@@ -150,12 +151,19 @@ def _entries(m: ParsedMakbuz) -> tuple[list[TDHPJournalEntry], str]:
     desc = f"{'e-Müstahsil' if m.kind == 'mustahsil' else 'e-SMM'} No: {m.number}"
     out: list[TDHPJournalEntry] = []
 
-    def add(code: str, name: str, *, debit: Decimal = Decimal("0"), credit: Decimal = Decimal("0")) -> None:
+    def add(
+        code: str, name: str, *, debit: Decimal = Decimal("0"), credit: Decimal = Decimal("0")
+    ) -> None:
         if debit or credit:
-            out.append(TDHPJournalEntry(
-                account_code=code, account_name=name,
-                debit_amount=debit, credit_amount=credit, description=desc,
-            ))
+            out.append(
+                TDHPJournalEntry(
+                    account_code=code,
+                    account_name=name,
+                    debit_amount=debit,
+                    credit_amount=credit,
+                    description=desc,
+                )
+            )
 
     if m.direction == "purchase":
         if m.kind == "mustahsil":
@@ -187,6 +195,7 @@ def _entries(m: ParsedMakbuz) -> tuple[list[TDHPJournalEntry], str]:
 
 # ── e-Müstahsil (UBL-TR CreditNote) ──────────────────────────────────────────
 
+
 def _ubl_party(node: ET.Element | None) -> InvoiceParty:
     if node is None:
         return InvoiceParty()
@@ -203,7 +212,9 @@ def _parse_mustahsil(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
     profile = root.findtext("cbc:ProfileID", "", _NS).strip().upper()
     type_code = root.findtext("cbc:CreditNoteTypeCode", "", _NS).strip().upper()
     if profile != MUSTAHSIL_PROFILE:
-        raise NotAMakbuzError(f"CreditNote ama ProfileID {profile or 'yok'} — müstahsil makbuzu değil")
+        raise NotAMakbuzError(
+            f"CreditNote ama ProfileID {profile or 'yok'} — müstahsil makbuzu değil"
+        )
     if type_code and type_code != MUSTAHSIL_TYPE:
         # e-Adisyon is a CreditNote on the same profile. It is not a purchase.
         raise NotAMakbuzError(f"CreditNoteTypeCode {type_code} — müstahsil makbuzu değil")
@@ -225,12 +236,20 @@ def _parse_mustahsil(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
 
     totals = root.find("cac:LegalMonetaryTotal", _NS)
     line_sum = sum(
-        (_dec(line.findtext("cbc:LineExtensionAmount", "", _NS))
-         for line in root.findall("cac:CreditNoteLine", _NS)),
+        (
+            _dec(line.findtext("cbc:LineExtensionAmount", "", _NS))
+            for line in root.findall("cac:CreditNoteLine", _NS)
+        ),
         Decimal("0"),
     )
-    gross = _dec(totals.findtext("cbc:LineExtensionAmount", "", _NS)) if totals is not None else line_sum
-    payable = _dec(totals.findtext("cbc:PayableAmount", "", _NS)) if totals is not None else Decimal("0")
+    gross = (
+        _dec(totals.findtext("cbc:LineExtensionAmount", "", _NS))
+        if totals is not None
+        else line_sum
+    )
+    payable = (
+        _dec(totals.findtext("cbc:PayableAmount", "", _NS)) if totals is not None else Decimal("0")
+    )
 
     m = ParsedMakbuz(
         kind="mustahsil",
@@ -238,16 +257,26 @@ def _parse_mustahsil(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
         uuid=root.findtext("cbc:UUID", "", _NS).strip(),
         issue_date=_date(root.findtext("cbc:IssueDate", "", _NS)),
         currency=(root.findtext("cbc:DocumentCurrencyCode", "", _NS).strip() or "TRY"),
-        issuer=issuer, counterparty=farmer, payer=issuer, payee=farmer,
-        gross=gross, kdv=kdv, stopaj=stopaj, other_taxes=other, payable=payable,
+        issuer=issuer,
+        counterparty=farmer,
+        payer=issuer,
+        payee=farmer,
+        gross=gross,
+        kdv=kdv,
+        stopaj=stopaj,
+        other_taxes=other,
+        payable=payable,
         items=[
-            name for line in root.findall("cac:CreditNoteLine", _NS)
+            name
+            for line in root.findall("cac:CreditNoteLine", _NS)
             if (name := line.findtext("cac:Item/cbc:Name", "", _NS).strip())
         ],
     )
     m.direction, m.direction_basis = _side(own_vkn, m.payer, m.payee)
     if not type_code:
-        m.posting_note = "CreditNoteTypeCode yok — müstahsil makbuzu olduğu doğrulanamadı, kayıt üretilmedi"
+        m.posting_note = (
+            "CreditNoteTypeCode yok — müstahsil makbuzu olduğu doğrulanamadı, kayıt üretilmedi"
+        )
         return m
     if abs(line_sum - gross) > BALANCE_TOLERANCE:
         m.posting_note = f"kalemlerin toplamı ({line_sum}) makbuz toplamıyla ({gross}) tutmuyor — kayıt üretilmedi"
@@ -260,6 +289,7 @@ def _parse_mustahsil(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
 # eArsivVeri.xsd qualifies some local elements and not others, so these
 # lookups go by local name. A document cannot be half in the namespace and
 # half out of it in a way that changes what the fee is.
+
 
 def _local(el: ET.Element) -> str:
     return el.tag.rsplit("}", 1)[-1]
@@ -311,7 +341,9 @@ def _parse_smm(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
             kdv += amount
         else:
             other[code or "kodsuz"] = other.get(code or "kodsuz", Decimal("0")) + amount
-    withholding = sum((_dec(_text(t, "tevkifatTutari")) for t in _kids(vergi, "tevkifat")), Decimal("0"))
+    withholding = sum(
+        (_dec(_text(t, "tevkifatTutari")) for t in _kids(vergi, "tevkifat")), Decimal("0")
+    )
 
     m = ParsedMakbuz(
         kind="serbest_meslek",
@@ -319,12 +351,19 @@ def _parse_smm(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
         uuid=_text(smm, "ETTN"),
         issue_date=_date(_text(smm, "belgeTarihi")),
         currency=_text(smm, "paraBirimi") or "TRY",
-        issuer=professional, counterparty=client, payer=client, payee=professional,
+        issuer=professional,
+        counterparty=client,
+        payer=client,
+        payee=professional,
         gross=_dec(_text(smm, "toplamTutar")),
-        kdv=kdv, stopaj=stopaj, other_taxes=other, withholding=withholding,
+        kdv=kdv,
+        stopaj=stopaj,
+        other_taxes=other,
+        withholding=withholding,
         payable=_dec(_text(smm, "odenecekTutar")),
         items=[
-            name for mh in _kids(_kid(smm, "malHizmetBilgisi"), "malHizmet")
+            name
+            for mh in _kids(_kid(smm, "malHizmetBilgisi"), "malHizmet")
             if (name := _text(mh, "ad"))
         ],
     )

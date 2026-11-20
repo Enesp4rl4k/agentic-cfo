@@ -1,6 +1,7 @@
 """
 Tests for GİB UBL-TR e-Fatura / e-Arşiv XML ingestion and open banking reconciliation (Phase 1).
 """
+
 from __future__ import annotations
 
 import os
@@ -111,7 +112,9 @@ async def test_cfo_pipeline_runs_with_ubl_tr_xml(monkeypatch):
         xml_path = f.name
 
     try:
-        run_config = AgentRunConfig(dry_run=False, require_review=False, auto_proceed_min_confidence=0.0)
+        run_config = AgentRunConfig(
+            dry_run=False, require_review=False, auto_proceed_min_confidence=0.0
+        )
         result: CFOState = await run_cfo_pipeline(
             job_id="test-efatura-001",
             file_path=xml_path,
@@ -123,8 +126,8 @@ async def test_cfo_pipeline_runs_with_ubl_tr_xml(monkeypatch):
         txs = result.get("transactions") or []
         assert len(txs) >= 1
         assert txs[0]["amount_cents"] == 12000000  # 120,000 TRY = 12,000,000 cents
-        assert txs[0]["type"] == "income"      # we issued it
-        assert txs[0]["confidence"] == 0.95     # settled by VKN, not by type code
+        assert txs[0]["type"] == "income"  # we issued it
+        assert txs[0]["confidence"] == 0.95  # settled by VKN, not by type code
         assert "GIB2024000000042" in txs[0]["description"]
 
     finally:
@@ -143,9 +146,7 @@ async def test_ubl_invoice_from_a_stranger_is_held_for_review(monkeypatch):
 
     monkeypatch.setattr(get_settings(), "gib_vkn", "5555555555", raising=False)
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".xml", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False, encoding="utf-8") as f:
         f.write(SAMPLE_UBL_TR_XML)
         xml_path = f.name
 

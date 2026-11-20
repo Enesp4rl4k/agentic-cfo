@@ -13,6 +13,7 @@ Gates:
 5. tenant isolation      → guests never share orgs; demo job invisible cross-org
 6. /demo/seed            → 401 without token, 200 with guest token
 """
+
 from __future__ import annotations
 
 import pytest
@@ -103,9 +104,7 @@ async def test_guests_are_isolated(test_client):
 
 
 @pytest.mark.asyncio
-async def test_seed_requires_token_and_works_for_guest(
-    test_client, tmp_path, monkeypatch
-):
+async def test_seed_requires_token_and_works_for_guest(test_client, tmp_path, monkeypatch):
     """Auth wall on /demo/seed; a guest session may seed its own org only."""
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
 

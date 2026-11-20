@@ -6,6 +6,7 @@ they expected afterwards. Measuring later writes `actual` + `variance`
 and closes the row — the loop decision → expectation → outcome that the
 boardroom file never closed.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -28,9 +29,7 @@ def utcnow() -> datetime:
 class DecisionLog(Base):
     __tablename__ = "decision_logs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     # Nullable like AnalysisJob.org_id: an org-less job's decision still
     # belongs to the user who made it (access falls back to created_by).
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
@@ -53,9 +52,7 @@ class DecisionLog(Base):
     actual: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     variance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     outcome_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    measured_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -8,6 +8,7 @@ POST /reports/pdf/executive-brief   → Tek sayfa C-suite özet
 POST /reports/pdf/compliance-cert   → SOX/GDPR sertifikasyon belgesi
 GET  /reports/pdf/{report_id}/download → Oluşturulan raporu indir
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,32 +32,34 @@ logger = logging.getLogger(__name__)
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
+
 class CFOSummaryRequest(BaseModel):
-    job_id:      str
-    period:      str = ""
-    branding:    dict | None = None   # {"logo_url": ..., "company_color": ...}
+    job_id: str
+    period: str = ""
+    branding: dict | None = None  # {"logo_url": ..., "company_color": ...}
 
 
 class ExecutiveBriefRequest(BaseModel):
-    job_id:       str
-    max_pages:    int = 1
+    job_id: str
+    max_pages: int = 1
 
 
 class ComplianceCertRequest(BaseModel):
-    certification_id:  str
-    include_qr:        bool = True
+    certification_id: str
+    include_qr: bool = True
 
 
 # ── PDF streaming helper ──────────────────────────────────────────────────────
 
+
 def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
     return Response(
-        content          = pdf_bytes,
-        media_type       = "application/pdf",
-        headers          = {
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
             "Content-Disposition": content_disposition(f"{filename}"),
-            "Content-Length":      str(len(pdf_bytes)),
-            "X-PDF-Size-KB":       str(round(len(pdf_bytes) / 1024, 1)),
+            "Content-Length": str(len(pdf_bytes)),
+            "X-PDF-Size-KB": str(round(len(pdf_bytes) / 1024, 1)),
         },
     )
 
@@ -69,10 +72,13 @@ async def _load_dashboard_for_job(job_id: str, db: AsyncSession) -> dict[str, An
         from app.models.report import Report, ReportFormat
 
         result = await db.execute(
-            select(Report).where(
+            select(Report)
+            .where(
                 Report.job_id == job_id,
                 Report.report_format == ReportFormat.JSON,
-            ).order_by(desc(Report.created_at)).limit(1)
+            )
+            .order_by(desc(Report.created_at))
+            .limit(1)
         )
         report = result.scalar_one_or_none()
         if report and report.data:
@@ -88,6 +94,7 @@ async def _get_company_name(user: User, db: AsyncSession) -> str:
         org_id = str(user.org_id) if user.org_id else None
         if org_id:
             from app.services.company_context import get_company_context
+
             ctx = await get_company_context(org_id, db)
             if ctx.company_name:
                 return ctx.company_name
@@ -112,11 +119,12 @@ async def _render(coro: Any) -> bytes:
 
 # ── POST /reports/pdf/cfo-summary ────────────────────────────────────────────
 
+
 @router.post("/reports/pdf/cfo-summary")
 async def generate_cfo_summary_pdf(
     body: CFOSummaryRequest,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
     """
     Generate a comprehensive CFO Summary PDF (A4, ~7 pages).
@@ -148,12 +156,12 @@ async def generate_cfo_summary_pdf(
     company_name = await _get_company_name(user, db)
 
     context = build_cfo_summary_context(
-        dashboard_json = dashboard,
-        company_name   = company_name,
-        period         = body.period,
+        dashboard_json=dashboard,
+        company_name=company_name,
+        period=body.period,
     )
 
-    engine    = PDFEngine()
+    engine = PDFEngine()
     pdf_bytes = await _render(engine.render("cfo_summary", context))
 
     date_str = datetime.now(UTC).strftime("%Y%m%d")
@@ -161,7 +169,8 @@ async def generate_cfo_summary_pdf(
 
     logger.info(
         "PDF generated: cfo_summary job=%s size=%dKB",
-        body.job_id, len(pdf_bytes) // 1024,
+        body.job_id,
+        len(pdf_bytes) // 1024,
     )
 
     return _pdf_response(pdf_bytes, filename)
@@ -169,11 +178,12 @@ async def generate_cfo_summary_pdf(
 
 # ── POST /reports/pdf/executive-brief ────────────────────────────────────────
 
+
 @router.post("/reports/pdf/executive-brief")
 async def generate_executive_brief_pdf(
     body: ExecutiveBriefRequest,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
     """
     Generate a 1-page C-suite executive brief.
@@ -196,11 +206,11 @@ async def generate_executive_brief_pdf(
     company_name = await _get_company_name(user, db)
 
     context = build_cfo_summary_context(
-        dashboard_json = dashboard,
-        company_name   = company_name,
+        dashboard_json=dashboard,
+        company_name=company_name,
     )
 
-    engine    = PDFEngine()
+    engine = PDFEngine()
     pdf_bytes = await _render(engine.render("executive_brief", context))
 
     date_str = datetime.now(UTC).strftime("%Y%m%d")
@@ -208,7 +218,8 @@ async def generate_executive_brief_pdf(
 
     logger.info(
         "PDF generated: executive_brief job=%s size=%dKB",
-        body.job_id, len(pdf_bytes) // 1024,
+        body.job_id,
+        len(pdf_bytes) // 1024,
     )
 
     return _pdf_response(pdf_bytes, filename)
@@ -216,11 +227,12 @@ async def generate_executive_brief_pdf(
 
 # ── POST /reports/pdf/compliance-cert ────────────────────────────────────────
 
+
 @router.post("/reports/pdf/compliance-cert")
 async def generate_compliance_cert_pdf(
     body: ComplianceCertRequest,
     user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
     """
     Generate a compliance certification PDF (SOX 302 / GDPR DPA).
@@ -256,19 +268,19 @@ async def generate_compliance_cert_pdf(
 
     # Build simple compliance cert HTML
     cert_html = _build_compliance_cert_html(
-        company_name   = company_name,
-        framework      = cert.framework or "sox_302",
-        period         = cert.period or "",
-        certifier_name = cert.certifier_name or "",
-        certifier_role = cert.certifier_role or "",
-        signature_hash = cert.signature_hash or "",
-        certified_at   = (
+        company_name=company_name,
+        framework=cert.framework or "sox_302",
+        period=cert.period or "",
+        certifier_name=cert.certifier_name or "",
+        certifier_role=cert.certifier_role or "",
+        signature_hash=cert.signature_hash or "",
+        certified_at=(
             cert.certified_at.strftime("%d.%m.%Y %H:%M UTC") if cert.certified_at else ""
         ),
-        cert_id        = body.certification_id,
+        cert_id=body.certification_id,
     )
 
-    engine    = PDFEngine()
+    engine = PDFEngine()
     # `_html_to_pdf` is synchronous: awaiting its bytes raised TypeError, so
     # this route failed on every call that reached it.
     pdf_bytes = await _render(engine.render_html(cert_html))
@@ -278,14 +290,14 @@ async def generate_compliance_cert_pdf(
 
 
 def _build_compliance_cert_html(
-    company_name:   str,
-    framework:      str,
-    period:         str,
+    company_name: str,
+    framework: str,
+    period: str,
     certifier_name: str,
     certifier_role: str,
     signature_hash: str,
-    certified_at:   str,
-    cert_id:        str,
+    certified_at: str,
+    cert_id: str,
 ) -> str:
     framework_label = {
         "sox_302": "SOX Section 302 — CEO/CFO Sertifikasyonu",

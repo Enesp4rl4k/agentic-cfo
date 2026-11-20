@@ -10,6 +10,7 @@ using httpx.AsyncClient (ASGITransport) and in-memory test database:
 5. Authenticated profile endpoint
 6. Global 422 and 500 sanitized error handlers
 """
+
 from __future__ import annotations
 
 import pytest
@@ -187,7 +188,9 @@ async def _org_user(test_client, email: str, org_id: str | None = None) -> dict[
     from app.models.user import User
 
     pw = "StrongPassword123!"
-    await test_client.post("/api/v1/auth/register", json={"email": email, "password": pw, "full_name": "T"})
+    await test_client.post(
+        "/api/v1/auth/register", json={"email": email, "password": pw, "full_name": "T"}
+    )
     async with test_client._test_sessionmaker() as db:
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
         if org_id is None:
@@ -200,7 +203,9 @@ async def _org_user(test_client, email: str, org_id: str | None = None) -> dict[
             await db.flush()
         user.org_id = org_id
         await db.commit()
-    token = (await test_client.post("/api/v1/auth/login", json={"email": email, "password": pw})).json()["data"]["access_token"]
+    token = (
+        await test_client.post("/api/v1/auth/login", json={"email": email, "password": pw})
+    ).json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -233,14 +238,40 @@ async def test_llm_costs_endpoint_aggregates_rows(test_client):
     agen = override()
     db = await agen.__anext__()
     try:
-        db.add_all([
-            LLMCallLog(org_id="org-A", task_type="short_narrative", model="gpt-4o-mini",
-                       input_tokens=100, output_tokens=50, cost_usd=0.01, latency_ms=120, ok=True),
-            LLMCallLog(org_id="org-A", task_type="deep_analysis", model="gpt-4o",
-                       input_tokens=800, output_tokens=400, cost_usd=0.05, latency_ms=900, ok=True),
-            LLMCallLog(org_id="org-B", task_type="short_narrative", model="gpt-4o-mini",
-                       input_tokens=200, output_tokens=80, cost_usd=0.02, latency_ms=200, ok=False),
-        ])
+        db.add_all(
+            [
+                LLMCallLog(
+                    org_id="org-A",
+                    task_type="short_narrative",
+                    model="gpt-4o-mini",
+                    input_tokens=100,
+                    output_tokens=50,
+                    cost_usd=0.01,
+                    latency_ms=120,
+                    ok=True,
+                ),
+                LLMCallLog(
+                    org_id="org-A",
+                    task_type="deep_analysis",
+                    model="gpt-4o",
+                    input_tokens=800,
+                    output_tokens=400,
+                    cost_usd=0.05,
+                    latency_ms=900,
+                    ok=True,
+                ),
+                LLMCallLog(
+                    org_id="org-B",
+                    task_type="short_narrative",
+                    model="gpt-4o-mini",
+                    input_tokens=200,
+                    output_tokens=80,
+                    cost_usd=0.02,
+                    latency_ms=200,
+                    ok=False,
+                ),
+            ]
+        )
         await db.commit()
     finally:
         await agen.aclose()
@@ -276,22 +307,19 @@ async def test_tr_vertical_l3_endpoint_end_to_end(test_client, tmp_path, monkeyp
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "smmm@buro.com", "password": "StrongPassword123!",
-              "full_name": "SMMM"},
+        json={"email": "smmm@buro.com", "password": "StrongPassword123!", "full_name": "SMMM"},
     )
-    token = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "smmm@buro.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    token = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "smmm@buro.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
 
-    csv_path = str(
-        Path(__file__).parent / "fixtures" / "tr_corpus" / "technova_ocak_2024.csv"
-    )
+    csv_path = str(Path(__file__).parent / "fixtures" / "tr_corpus" / "technova_ocak_2024.csv")
 
     async with test_client._test_sessionmaker() as db:
-        user = (await db.execute(
-            select(User).where(User.email == "smmm@buro.com")
-        )).scalar_one()
+        user = (await db.execute(select(User).where(User.email == "smmm@buro.com"))).scalar_one()
         org = Organization(name="Büro A.Ş.", slug="buro-as", regional_packs=["tr"])
         db.add(org)
         await db.flush()
@@ -344,18 +372,17 @@ async def test_tr_vertical_board_deck_requires_tr_pack(test_client):
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "noPack@buro.com", "password": "StrongPassword123!",
-              "full_name": "No Pack"},
+        json={"email": "noPack@buro.com", "password": "StrongPassword123!", "full_name": "No Pack"},
     )
-    token = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "noPack@buro.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    token = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "noPack@buro.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
 
     async with test_client._test_sessionmaker() as db:
-        user = (await db.execute(
-            select(User).where(User.email == "noPack@buro.com")
-        )).scalar_one()
+        user = (await db.execute(select(User).where(User.email == "noPack@buro.com"))).scalar_one()
         org = Organization(name="No Pack Ltd", slug="no-pack-ltd", regional_packs=[])
         db.add(org)
         await db.flush()
@@ -399,6 +426,7 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
         def __init__(self, *a, **k): ...
         async def validate_token(self):
             return {"login": "octocat", "name": "Octo", "type": "User"}
+
         async def fetch(self, **k):
             return _FakeData()
 
@@ -406,23 +434,23 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "cto@startup.com", "password": "StrongPassword123!",
-              "full_name": "CTO"},
+        json={"email": "cto@startup.com", "password": "StrongPassword123!", "full_name": "CTO"},
     )
-    token = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "cto@startup.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    token = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "cto@startup.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     h = {"Authorization": f"Bearer {token}"}
 
     from sqlalchemy import select as _select
 
     from app.models.organization import Organization
     from app.models.user import User, UserRole
+
     async with test_client._test_sessionmaker() as db:
-        user = (await db.execute(
-            _select(User).where(User.email == "cto@startup.com")
-        )).scalar_one()
+        user = (await db.execute(_select(User).where(User.email == "cto@startup.com"))).scalar_one()
         org = Organization(name="Startup", slug="startup-co")
         db.add(org)
         await db.flush()
@@ -437,7 +465,8 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
 
     # connect
     conn = await test_client.post(
-        "/api/v1/connectors/github/connect", headers=h,
+        "/api/v1/connectors/github/connect",
+        headers=h,
         json={"config": {"owner": "acme", "repo": "api"}, "secret": {"token": "ghp_x"}},
     )
     assert conn.status_code == 201, conn.text
@@ -460,10 +489,17 @@ async def test_connector_github_connect_sync_and_cto_flip(test_client, monkeypat
     assert sync2.json()["data"]["sync"]["ok"] is True
 
     from app.models.canonical_eng_signal import CanonicalEngSignal
+
     async with test_client._test_sessionmaker() as db:
-        rows = (await db.execute(
-            _select(CanonicalEngSignal).where(CanonicalEngSignal.source == "github")
-        )).scalars().all()
+        rows = (
+            (
+                await db.execute(
+                    _select(CanonicalEngSignal).where(CanonicalEngSignal.source == "github")
+                )
+            )
+            .scalars()
+            .all()
+        )
     assert len(rows) == 8
 
 
@@ -483,27 +519,27 @@ async def test_agent_run_ledger_records_tr_vertical_and_slo(test_client, tmp_pat
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "runs@buro.com", "password": "StrongPassword123!",
-              "full_name": "R"},
+        json={"email": "runs@buro.com", "password": "StrongPassword123!", "full_name": "R"},
     )
-    token = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "runs@buro.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    token = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "runs@buro.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     h = {"Authorization": f"Bearer {token}"}
 
     csv_path = str(Path(__file__).parent / "fixtures" / "tr_corpus" / "technova_ocak_2024.csv")
     async with test_client._test_sessionmaker() as db:
-        user = (await db.execute(
-            select(User).where(User.email == "runs@buro.com")
-        )).scalar_one()
+        user = (await db.execute(select(User).where(User.email == "runs@buro.com"))).scalar_one()
         org = Organization(name="Runs Ltd", slug="runs-ltd", regional_packs=["tr"])
         db.add(org)
         await db.flush()
         user.org_id = org.id
         user.role = UserRole.OWNER
-        job = AnalysisJob(filename="a.csv", file_path=csv_path, file_type="csv",
-                          org_id=org.id, user_id=user.id)
+        job = AnalysisJob(
+            filename="a.csv", file_path=csv_path, file_type="csv", org_id=org.id, user_id=user.id
+        )
         db.add(job)
         await db.commit()
         job_id = job.id
@@ -545,44 +581,58 @@ async def test_smmm_defensibility_packet_build_and_export(test_client):
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "smmm2@buro.com", "password": "StrongPassword123!",
-              "full_name": "SM"},
+        json={"email": "smmm2@buro.com", "password": "StrongPassword123!", "full_name": "SM"},
     )
-    token = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "smmm2@buro.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    token = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "smmm2@buro.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     h = {"Authorization": f"Bearer {token}"}
 
     async with test_client._test_sessionmaker() as db:
-        user = (await db.execute(
-            select(User).where(User.email == "smmm2@buro.com")
-        )).scalar_one()
+        user = (await db.execute(select(User).where(User.email == "smmm2@buro.com"))).scalar_one()
         org = Organization(name="Def Ltd", slug="def-ltd", regional_packs=["tr"])
         db.add(org)
         await db.flush()
         user.org_id = org.id
         user.role = UserRole.OWNER
-        job = AnalysisJob(filename="j.csv", file_path="/x.csv", file_type="csv",
-                          org_id=org.id, user_id=user.id)
+        job = AnalysisJob(
+            filename="j.csv", file_path="/x.csv", file_type="csv", org_id=org.id, user_id=user.id
+        )
         db.add(job)
         await db.flush()
         job_id = job.id
-        db.add(Report(
-            job_id=job_id, report_type="tr_muhasebe_journal",
-            report_format=ReportFormat.JSON,
-            data={
-                "dengeli": True, "denge_hatalari": [], "ortalama_confidence": 0.9,
-                "thp_dagilim": {"770": 1},
-                "yevmiye_kayitlari": [{
-                    "kayit_id": "k1", "tarih": "2024-01-10T00:00:00+00:00",
-                    "aciklama": "kira gideri", "toplam_borc": 120000, "toplam_alacak": 120000,
-                    "dengeli": True, "confidence": 0.95, "onay_gerekli": False,
-                    "onay_neden": "", "thp_hesap_kodu": "770", "kaynak_islem_id": "tx1",
-                    "satirlar": [],
-                }],
-            },
-        ))
+        db.add(
+            Report(
+                job_id=job_id,
+                report_type="tr_muhasebe_journal",
+                report_format=ReportFormat.JSON,
+                data={
+                    "dengeli": True,
+                    "denge_hatalari": [],
+                    "ortalama_confidence": 0.9,
+                    "thp_dagilim": {"770": 1},
+                    "yevmiye_kayitlari": [
+                        {
+                            "kayit_id": "k1",
+                            "tarih": "2024-01-10T00:00:00+00:00",
+                            "aciklama": "kira gideri",
+                            "toplam_borc": 120000,
+                            "toplam_alacak": 120000,
+                            "dengeli": True,
+                            "confidence": 0.95,
+                            "onay_gerekli": False,
+                            "onay_neden": "",
+                            "thp_hesap_kodu": "770",
+                            "kaynak_islem_id": "tx1",
+                            "satirlar": [],
+                        }
+                    ],
+                },
+            )
+        )
         await db.commit()
 
     built = await test_client.post(
@@ -597,7 +647,8 @@ async def test_smmm_defensibility_packet_build_and_export(test_client):
     assert full["payload"]["entries"][0]["decision_source"] == "ai_auto_posted"
 
     fin = await test_client.post(
-        f"/api/v1/smmm/defensibility/{pid}/finalize", headers=h,
+        f"/api/v1/smmm/defensibility/{pid}/finalize",
+        headers=h,
         json={"statement": "2024/01 kayıtlarını inceledim, uygundur. SM. Test"},
     )
     assert fin.status_code == 200, fin.text
@@ -625,13 +676,14 @@ async def test_authority_matrix_policy_lifecycle(test_client):
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "owner@firma.com", "password": "StrongPassword123!",
-              "full_name": "Patron"},
+        json={"email": "owner@firma.com", "password": "StrongPassword123!", "full_name": "Patron"},
     )
-    otok = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "owner@firma.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    otok = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@firma.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     oh = {"Authorization": f"Bearer {otok}"}
 
     async with test_client._test_sessionmaker() as db:
@@ -650,16 +702,26 @@ async def test_authority_matrix_policy_lifecycle(test_client):
 
     # owner installs a custom matrix
     new_rules = [
-        {"id": "small", "domain": "spending", "when": {"amount_kurus_lt": 5_000_000},
-         "decision": "auto_approve", "note": "₺50k altı serbest"},
-        {"id": "big", "domain": "spending", "when": {"amount_kurus_gte": 5_000_000},
-         "decision": "require_approvals",
-         "approvals": [{"role": "finance_manager", "count": 1}, {"role": "owner", "count": 1}],
-         "note": "₺50k üzeri"},
+        {
+            "id": "small",
+            "domain": "spending",
+            "when": {"amount_kurus_lt": 5_000_000},
+            "decision": "auto_approve",
+            "note": "₺50k altı serbest",
+        },
+        {
+            "id": "big",
+            "domain": "spending",
+            "when": {"amount_kurus_gte": 5_000_000},
+            "decision": "require_approvals",
+            "approvals": [{"role": "finance_manager", "count": 1}, {"role": "owner", "count": 1}],
+            "note": "₺50k üzeri",
+        },
         {"id": "catch", "domain": "*", "when": {}, "decision": "auto_approve", "note": "-"},
     ]
-    put = await test_client.put("/api/v1/authority/policy", headers=oh,
-                                json={"rules": new_rules, "note": "ilk sürüm"})
+    put = await test_client.put(
+        "/api/v1/authority/policy", headers=oh, json={"rules": new_rules, "note": "ilk sürüm"}
+    )
     assert put.status_code == 200, put.text
     assert put.json()["data"]["version"] == 1
 
@@ -667,16 +729,22 @@ async def test_authority_matrix_policy_lifecycle(test_client):
     assert d2["is_default"] is False and d2["version"] == 1
 
     # dry-run: ₺80k spending → needs finance + owner
-    ev = (await test_client.post(
-        "/api/v1/authority/evaluate", headers=oh,
-        json={"domain": "spending", "amount_kurus": 8_000_000},
-    )).json()["data"]
+    ev = (
+        await test_client.post(
+            "/api/v1/authority/evaluate",
+            headers=oh,
+            json={"domain": "spending", "amount_kurus": 8_000_000},
+        )
+    ).json()["data"]
     assert ev["outcome"] == "needs_approval"
     assert [a["role"] for a in ev["required_approvals"]] == ["finance_manager", "owner"]
 
     # invalid policy is rejected
-    bad = await test_client.put("/api/v1/authority/policy", headers=oh,
-                                json={"rules": [{"id": "x", "decision": "nope", "when": {}, "domain": "*"}]})
+    bad = await test_client.put(
+        "/api/v1/authority/policy",
+        headers=oh,
+        json={"rules": [{"id": "x", "decision": "nope", "when": {}, "domain": "*"}]},
+    )
     assert bad.status_code == 422
 
     vers = (await test_client.get("/api/v1/authority/policy/versions", headers=oh)).json()["data"]
@@ -687,13 +755,18 @@ async def test_authority_matrix_policy_lifecycle(test_client):
 async def test_authority_matrix_put_requires_owner(test_client):
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "staff@firma.com", "password": "StrongPassword123!",
-              "full_name": "Personel"},
+        json={
+            "email": "staff@firma.com",
+            "password": "StrongPassword123!",
+            "full_name": "Personel",
+        },
     )
-    tok = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "staff@firma.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    tok = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "staff@firma.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     resp = await test_client.put(
         "/api/v1/authority/policy",
         headers={"Authorization": f"Bearer {tok}"},
@@ -712,13 +785,14 @@ async def test_institutionalization_index_compute_and_history(test_client):
 
     await test_client.post(
         "/api/v1/auth/register",
-        json={"email": "idx@firma.com", "password": "StrongPassword123!",
-              "full_name": "Idx"},
+        json={"email": "idx@firma.com", "password": "StrongPassword123!", "full_name": "Idx"},
     )
-    tok = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "idx@firma.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    tok = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "idx@firma.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     h = {"Authorization": f"Bearer {tok}"}
 
     async with test_client._test_sessionmaker() as db:
@@ -762,20 +836,41 @@ async def test_system_ops_handles_naive_db_timestamps(test_client):
     h = await _org_user(test_client, "ops@example.com", org_id="org-ops")
     async with test_client._test_sessionmaker() as db:
         old = datetime.now(UTC) - timedelta(hours=6)
-        db.add(AnalysisJob(
-            filename="pending.csv", file_path="/x.csv", file_type="csv",
-            status="pending", created_at=old, updated_at=old, org_id="org-ops",
-        ))
-        db.add(AnalysisJob(
-            filename="done.csv", file_path="/y.csv", file_type="csv",
-            status="completed", created_at=old,
-            completed_at=old + timedelta(minutes=3), updated_at=old, org_id="org-ops",
-        ))
+        db.add(
+            AnalysisJob(
+                filename="pending.csv",
+                file_path="/x.csv",
+                file_type="csv",
+                status="pending",
+                created_at=old,
+                updated_at=old,
+                org_id="org-ops",
+            )
+        )
+        db.add(
+            AnalysisJob(
+                filename="done.csv",
+                file_path="/y.csv",
+                file_type="csv",
+                status="completed",
+                created_at=old,
+                completed_at=old + timedelta(minutes=3),
+                updated_at=old,
+                org_id="org-ops",
+            )
+        )
         # Another organisation's stuck job must not appear in this one's report.
-        db.add(AnalysisJob(
-            filename="theirs.csv", file_path="/z.csv", file_type="csv",
-            status="pending", created_at=old, updated_at=old, org_id="org-other",
-        ))
+        db.add(
+            AnalysisJob(
+                filename="theirs.csv",
+                file_path="/z.csv",
+                file_type="csv",
+                status="pending",
+                created_at=old,
+                updated_at=old,
+                org_id="org-other",
+            )
+        )
         await db.commit()
 
     resp = await test_client.get("/api/v1/system/ops", headers=h)
@@ -805,10 +900,12 @@ async def test_api_key_survives_a_warm_user_cache(test_client):
             "full_name": "Warm Cache",
         },
     )
-    token = (await test_client.post(
-        "/api/v1/auth/login",
-        json={"email": "warm.cache@company.com", "password": "StrongPassword123!"},
-    )).json()["data"]["access_token"]
+    token = (
+        await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "warm.cache@company.com", "password": "StrongPassword123!"},
+        )
+    ).json()["data"]["access_token"]
     auth = {"Authorization": f"Bearer {token}"}
 
     # First authenticated call fills the cache.

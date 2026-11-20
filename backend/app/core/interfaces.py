@@ -6,46 +6,43 @@ DIP (Dependency Inversion Principle): High-level modules depend on abstractions.
 OCP (Open/Closed Principle): Extensible via polymorphism.
 LSP (Liskov Substitution Principle): Interchangeable implementations.
 """
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
 # ── 1. Cache Layer Protocols (ISP & LSP) ──────────────────────────────────────
 
+
 @runtime_checkable
 class ICacheReader(Protocol):
     """Read-only cache operations."""
 
-    async def get(self, key: str) -> Any | None:
-        ...
+    async def get(self, key: str) -> Any | None: ...
 
 
 @runtime_checkable
 class ICacheWriter(Protocol):
     """Write and invalidation cache operations."""
 
-    async def set(self, key: str, value: Any, ttl: int = 3600) -> None:
-        ...
+    async def set(self, key: str, value: Any, ttl: int = 3600) -> None: ...
 
-    async def delete(self, key: str) -> None:
-        ...
+    async def delete(self, key: str) -> None: ...
 
-    async def invalidate_pattern(self, pattern: str) -> int:
-        ...
+    async def invalidate_pattern(self, pattern: str) -> int: ...
 
 
 @runtime_checkable
 class ICacheProvider(ICacheReader, ICacheWriter, Protocol):
     """Full cache provider contract for Redis and In-Memory implementations (LSP)."""
 
-    async def get_stats(self) -> dict[str, Any]:
-        ...
+    async def get_stats(self) -> dict[str, Any]: ...
 
-    async def aclose(self) -> None:
-        ...
+    async def aclose(self) -> None: ...
 
 
 # ── 2. Report Exporter Protocols (SRP & OCP) ──────────────────────────────────
+
 
 @runtime_checkable
 class IReportExporter(Protocol):
@@ -67,6 +64,7 @@ class IReportExporter(Protocol):
 
 # ── 3. Transaction Parser Protocol (SRP & OCP) ────────────────────────────────
 
+
 @runtime_checkable
 class ITransactionParser(Protocol):
     """Contract for bank statement & structured file parsing."""
@@ -84,6 +82,7 @@ class ITransactionParser(Protocol):
 
 # ── 4. Narrative Generator Protocol (SRP & DIP) ──────────────────────────────
 
+
 @runtime_checkable
 class INarrativeGenerator(Protocol):
     """Contract for generating financial narratives and management commentary."""
@@ -93,11 +92,11 @@ class INarrativeGenerator(Protocol):
         context_type: str,
         data: dict[str, Any],
         fallback: str = "",
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 # ── 5. Agent Skill Protocol (OCP & DIP) ───────────────────────────────────────
+
 
 @runtime_checkable
 class IAgentSkill(Protocol):
@@ -118,15 +117,13 @@ class IAgentSkill(Protocol):
 
 # ── 6. Memory Store Protocol (LSP & DIP) ──────────────────────────────────────
 
+
 @runtime_checkable
 class IMemoryStore(Protocol):
     """Contract for long-term agent memory storage and retrieval."""
 
-    def save_episode(self, episode: Any) -> str:
-        ...
+    def save_episode(self, episode: Any) -> str: ...
 
-    def get_recent_episodes(self, org_id: str, limit: int = 5) -> list[Any]:
-        ...
+    def get_recent_episodes(self, org_id: str, limit: int = 5) -> list[Any]: ...
 
-    def clear(self) -> None:
-        ...
+    def clear(self) -> None: ...

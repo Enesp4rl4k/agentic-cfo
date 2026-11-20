@@ -16,9 +16,7 @@ def utcnow() -> datetime:
 class SyncRun(Base):
     __tablename__ = "sync_runs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     schedule_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
@@ -28,10 +26,13 @@ class SyncRun(Base):
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     triggered_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
-

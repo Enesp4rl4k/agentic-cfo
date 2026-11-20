@@ -4,6 +4,7 @@ Anomaly — detected financial anomalies for a job.
 Each row represents one anomalous pattern found in the transaction set.
 Severity: low | medium | high | critical
 """
+
 from __future__ import annotations
 
 import uuid
@@ -32,24 +33,22 @@ class AnomalySeverity(StrEnum):
 
 
 class AnomalyType(StrEnum):
-    DUPLICATE_PAYMENT   = "duplicate_payment"
-    UNUSUAL_AMOUNT      = "unusual_amount"
-    UNUSUAL_VENDOR      = "unusual_vendor"
+    DUPLICATE_PAYMENT = "duplicate_payment"
+    UNUSUAL_AMOUNT = "unusual_amount"
+    UNUSUAL_VENDOR = "unusual_vendor"
     VENDOR_CONCENTRATION = "vendor_concentration"
     NEGATIVE_CASHFLOW_STREAK = "negative_cashflow_streak"
-    EXPENSE_SPIKE       = "expense_spike"
-    MISSING_REVENUE     = "missing_revenue"
-    ROUND_NUMBER        = "round_number"   # fraud indicator
-    LATE_PAYMENT        = "late_payment"
-    FX_CONCENTRATION    = "fx_concentration"
+    EXPENSE_SPIKE = "expense_spike"
+    MISSING_REVENUE = "missing_revenue"
+    ROUND_NUMBER = "round_number"  # fraud indicator
+    LATE_PAYMENT = "late_payment"
+    FX_CONCENTRATION = "fx_concentration"
 
 
 class Anomaly(Base):
     __tablename__ = "anomalies"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     job_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
@@ -72,9 +71,7 @@ class Anomaly(Base):
 
     # Whether the user has acknowledged/dismissed this anomaly
     acknowledged: Mapped[bool] = mapped_column(default=False, nullable=False)
-    acknowledged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

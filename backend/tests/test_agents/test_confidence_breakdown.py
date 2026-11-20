@@ -1,4 +1,5 @@
 """Confidence decomposition (differentiator #6)."""
+
 from __future__ import annotations
 
 from app.agents.confidence_breakdown import build_confidence_breakdown
@@ -12,12 +13,14 @@ def _state(**kw):
 
 
 def test_identifies_binding_constraint():
-    state = _state(logs=[
-        StepLog(step="data_ingestion", ok=True, detail="12 rows", confidence=0.95),
-        StepLog(step="pnl", ok=True, detail="clean", confidence=0.9),
-        StepLog(step="forecast", ok=True, detail="only 3 months history", confidence=0.62),
-        StepLog(step="tax", ok=True, confidence=0.88),
-    ])
+    state = _state(
+        logs=[
+            StepLog(step="data_ingestion", ok=True, detail="12 rows", confidence=0.95),
+            StepLog(step="pnl", ok=True, detail="clean", confidence=0.9),
+            StepLog(step="forecast", ok=True, detail="only 3 months history", confidence=0.62),
+            StepLog(step="tax", ok=True, confidence=0.88),
+        ]
+    )
     b = build_confidence_breakdown(state, threshold=0.80)
 
     assert b["aggregate"] == 0.62
@@ -30,11 +33,13 @@ def test_identifies_binding_constraint():
 
 
 def test_echo_steps_excluded():
-    state = _state(logs=[
-        StepLog(step="pnl", ok=True, confidence=0.9),
-        StepLog(step="verifier", ok=True, confidence=0.9),   # echo — excluded
-        StepLog(step="report", ok=True, confidence=1.0),     # echo — excluded
-    ])
+    state = _state(
+        logs=[
+            StepLog(step="pnl", ok=True, confidence=0.9),
+            StepLog(step="verifier", ok=True, confidence=0.9),  # echo — excluded
+            StepLog(step="report", ok=True, confidence=1.0),  # echo — excluded
+        ]
+    )
     b = build_confidence_breakdown(state)
     assert [c["step"] for c in b["components"]] == ["pnl"]
 
@@ -43,8 +48,7 @@ def test_reflection_and_reconciliation_fold_in():
     state = _state(
         logs=[StepLog(step="pnl", ok=True, confidence=0.92)],
         reflection_scores={"forecast": {"overall_score": 0.4}},
-        reconciliation={"action": "halt",
-                        "identity_failures": ["revenue != sum(income)"]},
+        reconciliation={"action": "halt", "identity_failures": ["revenue != sum(income)"]},
     )
     b = build_confidence_breakdown(state, threshold=0.80)
     steps = {c["step"] for c in b["components"]}
@@ -55,10 +59,12 @@ def test_reflection_and_reconciliation_fold_in():
 
 
 def test_meets_threshold_when_all_high():
-    state = _state(logs=[
-        StepLog(step="pnl", ok=True, confidence=0.95),
-        StepLog(step="cashflow", ok=True, confidence=0.9),
-    ])
+    state = _state(
+        logs=[
+            StepLog(step="pnl", ok=True, confidence=0.95),
+            StepLog(step="cashflow", ok=True, confidence=0.9),
+        ]
+    )
     b = build_confidence_breakdown(state, threshold=0.80)
     assert b["meets_threshold"] is True
     assert "Eşiği geçiyor" in b["narrative"]

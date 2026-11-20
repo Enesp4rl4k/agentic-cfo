@@ -6,6 +6,7 @@ would fail on the first query naming it. These tests build such a database —
 an older `transactions` with rows in it — and check the startup sync repairs
 it by adding, and only by adding.
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -20,15 +21,18 @@ def _old_database(tmp_path) -> sa.Engine:
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}")
     old = sa.MetaData()
     sa.Table(
-        "transactions", old,
+        "transactions",
+        old,
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("job_id", sa.String(36), nullable=False),
         sa.Column("amount_kurus", sa.Integer, nullable=False),
-        sa.Column("legacy_note", sa.Text, nullable=True),   # not in the model any more
+        sa.Column("legacy_note", sa.Text, nullable=True),  # not in the model any more
     )
     old.create_all(engine)
     with engine.begin() as conn:
-        conn.execute(old.tables["transactions"].insert().values(id="t1", job_id="j1", amount_kurus=100))
+        conn.execute(
+            old.tables["transactions"].insert().values(id="t1", job_id="j1", amount_kurus=100)
+        )
     return engine
 
 

@@ -4,6 +4,7 @@ The account decides (app.core.tdhp). These parsers used to read 6xx as expense
 and 7xx as revenue — the Tekdüzen Hesap Planı has 60x as sales and 7xx as cost
 accounts — so a coded export came out with its direction guessed wrong.
 """
+
 from __future__ import annotations
 
 from app.core import tdhp

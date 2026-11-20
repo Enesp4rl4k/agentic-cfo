@@ -8,6 +8,7 @@ Contracts tested:
   - GET  /api/v1/negotiation/conflicts/{org_id} -> conflicts list
   - POST /api/v1/chat/agent          -> grounded answer with evidence / meta
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -129,9 +130,13 @@ async def test_chat_agent_runway_grounded():
         await client.post("/api/v1/semantic/me/rebuild", headers=headers)
 
         # Mock chat_with_cfo response
-        mock_llm_response = "Şirketinizin güncel finansal projeksiyonuna göre nakit pisti (runway) 3.0 aydır."
+        mock_llm_response = (
+            "Şirketinizin güncel finansal projeksiyonuna göre nakit pisti (runway) 3.0 aydır."
+        )
 
-        with patch("app.agents.chat_agent.chat_with_cfo", new=AsyncMock(return_value=mock_llm_response)):
+        with patch(
+            "app.agents.chat_agent.chat_with_cfo", new=AsyncMock(return_value=mock_llm_response)
+        ):
             res_chat = await client.post(
                 "/api/v1/chat/agent",
                 headers=headers,

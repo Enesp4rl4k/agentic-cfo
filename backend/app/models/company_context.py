@@ -13,6 +13,7 @@ Storage:
 Adding new fields to CompanyContext requires no schema migration —
 just update the dataclass in services/company_context.py.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -35,9 +36,11 @@ def _jsonb_or_text():
     """
     try:
         from app.config import get_settings
+
         s = get_settings()
         if not s.use_sqlite:
             from sqlalchemy.dialects.postgresql import JSONB
+
             return JSONB(astext_type=Text())
     except Exception:
         pass
@@ -47,19 +50,13 @@ def _jsonb_or_text():
 class CompanyContextSnapshot(Base):
     __tablename__ = "company_context_snapshots"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
-    org_id: Mapped[str] = mapped_column(
-        String(36), unique=True, nullable=False, index=True
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, index=True)
     # Full CompanyContext dataclass serialized as JSON.
     # Column type: JSONB on PostgreSQL (via migration 013), Text on SQLite.
     # Application-level payload trimming is applied before writes (see
     # services/company_context.py::save_company_context).
-    context_json: Mapped[str] = mapped_column(
-        _jsonb_or_text(), nullable=False, default="{}"
-    )
+    context_json: Mapped[str] = mapped_column(_jsonb_or_text(), nullable=False, default="{}")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False

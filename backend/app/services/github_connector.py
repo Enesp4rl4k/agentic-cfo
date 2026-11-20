@@ -15,6 +15,7 @@ Usage:
     data = await connector.fetch(owner="myorg", repo="myrepo", days=30)
     git_log_csv = data.to_git_log_csv()
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,9 +27,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Max items fetched per resource (avoid rate limit exhaustion)
-MAX_COMMITS  = 100
-MAX_PRS      = 50
-MAX_ISSUES   = 50
+MAX_COMMITS = 100
+MAX_PRS = 50
+MAX_ISSUES = 50
 
 
 @dataclass
@@ -99,8 +100,7 @@ class GitHubData:
         """Convert open issues labeled as bugs/incidents to incident CSV."""
         incident_labels = {"bug", "incident", "hotfix", "critical", "production"}
         incidents = [
-            i for i in self.issues
-            if any(lbl.lower() in incident_labels for lbl in i.labels)
+            i for i in self.issues if any(lbl.lower() in incident_labels for lbl in i.labels)
         ]
         if not incidents:
             return ""
@@ -126,7 +126,7 @@ class GitHubData:
             if pr.merged_at and pr.created_at:
                 try:
                     created = datetime.fromisoformat(pr.created_at.replace("Z", "+00:00"))
-                    merged  = datetime.fromisoformat(pr.merged_at.replace("Z", "+00:00"))
+                    merged = datetime.fromisoformat(pr.merged_at.replace("Z", "+00:00"))
                     cycle_time = str(round((merged - created).total_seconds() / 86400, 1))
                 except Exception:
                     pass
@@ -171,6 +171,7 @@ class GitHubConnector:
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """Make a single GET request. Returns parsed JSON or raises."""
         import httpx
+
         url = f"{self.BASE}{path}"
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url, headers=self._headers, params=params or {})
@@ -207,12 +208,14 @@ class GitHubConnector:
             )
 
             # Fetch in parallel
-            commits_task  = self._fetch_commits(owner, repo, since)
-            prs_task      = self._fetch_prs(owner, repo, since)
-            issues_task   = self._fetch_issues(owner, repo, since)
+            commits_task = self._fetch_commits(owner, repo, since)
+            prs_task = self._fetch_prs(owner, repo, since)
+            issues_task = self._fetch_issues(owner, repo, since)
 
             commits, prs, issues = await asyncio.gather(
-                commits_task, prs_task, issues_task,
+                commits_task,
+                prs_task,
+                issues_task,
                 return_exceptions=True,
             )
 
@@ -236,8 +239,12 @@ class GitHubConnector:
         except Exception as exc:
             logger.error("GitHub fetch failed for %s/%s: %s", owner, repo, exc)
             return GitHubData(
-                owner=owner, repo=repo,
-                default_branch="main", stars=0, forks=0, open_issues=0,
+                owner=owner,
+                repo=repo,
+                default_branch="main",
+                stars=0,
+                forks=0,
+                open_issues=0,
                 error=str(exc),
             )
 
@@ -249,16 +256,18 @@ class GitHubConnector:
         records = []
         for item in data:
             commit = item.get("commit", {})
-            stats  = item.get("stats", {})
-            records.append(CommitRecord(
-                sha=item.get("sha", ""),
-                message=commit.get("message", "").split("\n")[0],
-                author=commit.get("author", {}).get("name", "unknown"),
-                date=commit.get("author", {}).get("date", ""),
-                files_changed=len(item.get("files", [])),
-                additions=stats.get("additions", 0),
-                deletions=stats.get("deletions", 0),
-            ))
+            stats = item.get("stats", {})
+            records.append(
+                CommitRecord(
+                    sha=item.get("sha", ""),
+                    message=commit.get("message", "").split("\n")[0],
+                    author=commit.get("author", {}).get("name", "unknown"),
+                    date=commit.get("author", {}).get("date", ""),
+                    files_changed=len(item.get("files", [])),
+                    additions=stats.get("additions", 0),
+                    deletions=stats.get("deletions", 0),
+                )
+            )
         return records
 
     async def _fetch_prs(self, owner: str, repo: str, since: str) -> list[PRRecord]:
@@ -277,19 +286,21 @@ class GitHubConnector:
             except Exception:
                 pass
 
-            records.append(PRRecord(
-                number=pr["number"],
-                title=pr.get("title", ""),
-                author=pr.get("user", {}).get("login", "unknown"),
-                state=pr.get("state", ""),
-                created_at=pr.get("created_at", ""),
-                merged_at=pr.get("merged_at"),
-                review_count=pr.get("review_comments", 0),
-                comments=pr.get("comments", 0),
-                additions=pr.get("additions", 0),
-                deletions=pr.get("deletions", 0),
-                files_changed=pr.get("changed_files", 0),
-            ))
+            records.append(
+                PRRecord(
+                    number=pr["number"],
+                    title=pr.get("title", ""),
+                    author=pr.get("user", {}).get("login", "unknown"),
+                    state=pr.get("state", ""),
+                    created_at=pr.get("created_at", ""),
+                    merged_at=pr.get("merged_at"),
+                    review_count=pr.get("review_comments", 0),
+                    comments=pr.get("comments", 0),
+                    additions=pr.get("additions", 0),
+                    deletions=pr.get("deletions", 0),
+                    files_changed=pr.get("changed_files", 0),
+                )
+            )
         return records
 
     async def _fetch_issues(self, owner: str, repo: str, since: str) -> list[IssueRecord]:
@@ -302,13 +313,15 @@ class GitHubConnector:
             # Skip pull requests (GitHub issues API includes PRs)
             if "pull_request" in issue:
                 continue
-            records.append(IssueRecord(
-                number=issue["number"],
-                title=issue.get("title", ""),
-                state=issue.get("state", ""),
-                labels=[lbl.get("name", "") for lbl in issue.get("labels", [])],
-                created_at=issue.get("created_at", ""),
-                closed_at=issue.get("closed_at"),
-                comments=issue.get("comments", 0),
-            ))
+            records.append(
+                IssueRecord(
+                    number=issue["number"],
+                    title=issue.get("title", ""),
+                    state=issue.get("state", ""),
+                    labels=[lbl.get("name", "") for lbl in issue.get("labels", [])],
+                    created_at=issue.get("created_at", ""),
+                    closed_at=issue.get("closed_at"),
+                    comments=issue.get("comments", 0),
+                )
+            )
         return records

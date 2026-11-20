@@ -3,6 +3,7 @@ Tests for causal_agent.py — pure statistical functions (no LLM, no DB).
 Covers: _extract_metric_series, granger_causality_test,
         _correlation_causality_proxy, and correlation helpers.
 """
+
 import pytest
 
 from app.agents.causal_agent import (
@@ -15,18 +16,22 @@ from app.agents.causal_agent import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _monthly_series(months: int = 18, base_in: int = 1_000_000,
-                    base_out: int = 800_000) -> list[dict]:
+
+def _monthly_series(
+    months: int = 18, base_in: int = 1_000_000, base_out: int = 800_000
+) -> list[dict]:
     """Generate flat monthly cashflow data."""
     series = []
     year, month = 2023, 1
     for _ in range(months):
-        series.append({
-            "month": f"{year:04d}-{month:02d}",
-            "in": base_in,
-            "out": base_out,
-            "net": base_in - base_out,
-        })
+        series.append(
+            {
+                "month": f"{year:04d}-{month:02d}",
+                "in": base_in,
+                "out": base_out,
+                "net": base_in - base_out,
+            }
+        )
         month += 1
         if month > 12:
             month = 1
@@ -41,8 +46,8 @@ def _float_series(n: int, base: float = 1.0, step: float = 0.0) -> list[float]:
 
 # ── _extract_metric_series ─────────────────────────────────────────────────────
 
-class TestExtractMetricSeries:
 
+class TestExtractMetricSeries:
     def test_returns_tuple_of_lists(self):
         data = _monthly_series(6)
         months, values = _extract_metric_series(data, "in")
@@ -120,8 +125,8 @@ class TestExtractMetricSeries:
 
 # ── granger_causality_test ─────────────────────────────────────────────────────
 
-class TestGrangerCausalityTest:
 
+class TestGrangerCausalityTest:
     def test_insufficient_data_returns_error(self):
         short = [1.0] * (MIN_POINTS_GRANGER - 1)
         result = granger_causality_test(short, short)
@@ -159,8 +164,8 @@ class TestGrangerCausalityTest:
 
 # ── _correlation_causality_proxy ───────────────────────────────────────────────
 
-class TestCorrelationCausalityProxy:
 
+class TestCorrelationCausalityProxy:
     def test_returns_dict(self):
         cause = _float_series(12, base=1.0, step=0.1)
         effect = _float_series(12, base=2.0, step=0.1)
@@ -175,7 +180,7 @@ class TestCorrelationCausalityProxy:
 
     def test_high_correlation_returns_true(self):
         """Perfectly correlated series should show causality proxy = True."""
-        cause = [float(i) for i in range(1, 16)]   # 1, 2, ..., 15
+        cause = [float(i) for i in range(1, 16)]  # 1, 2, ..., 15
         effect = [float(i + 1) for i in range(1, 16)]  # same, lagged
         result = _correlation_causality_proxy(cause, effect, max_lag=2)
         # High correlation (essentially the same sequence)
@@ -184,8 +189,9 @@ class TestCorrelationCausalityProxy:
     def test_uncorrelated_series_returns_false(self):
         """Completely orthogonal series should not show causality."""
         import random
+
         random.seed(42)
-        cause  = [random.uniform(-1, 1) for _ in range(20)]
+        cause = [random.uniform(-1, 1) for _ in range(20)]
         effect = [random.uniform(-1, 1) for _ in range(20)]
         result = _correlation_causality_proxy(cause, effect, max_lag=3)
         # Should be False for random noise (probabilistic, but seed=42 should work)
@@ -200,7 +206,7 @@ class TestCorrelationCausalityProxy:
 
     def test_too_short_series_handled(self):
         """Very short series (< 4 points per lag) should not crash."""
-        cause  = [1.0, 2.0, 3.0]
+        cause = [1.0, 2.0, 3.0]
         effect = [1.0, 2.0, 3.0]
         result = _correlation_causality_proxy(cause, effect, max_lag=3)
         assert isinstance(result, dict)
@@ -211,6 +217,7 @@ class TestCorrelationCausalityProxy:
 
 
 # ── Constants sanity ──────────────────────────────────────────────────────────
+
 
 def test_min_points_granger_at_least_12():
     assert MIN_POINTS_GRANGER >= 12

@@ -17,6 +17,7 @@ Data sources (all optional, taken from CompanyContext):
 
 Output: Structured dict + WeasyPrint HTML/PDF
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,23 +31,24 @@ logger = logging.getLogger(__name__)
 
 # ── Formatter helpers ─────────────────────────────────────────────────────────
 
+
 def _fmt_tl(cents: int | float) -> str:
     """True-cents input (fields named *_cents from CTO/CMO raw agents)."""
     val = (cents or 0) / 100
     if abs(val) >= 1_000_000:
-        return f"₺{val/1_000_000:.1f}M"
+        return f"₺{val / 1_000_000:.1f}M"
     elif abs(val) >= 1_000:
-        return f"₺{val/1_000:.0f}K"
+        return f"₺{val / 1_000:.0f}K"
     return f"₺{val:,.0f}"
 
 
 def _fmt_lira(lira: int | float) -> str:
     """Already-lira input (CFO scalars from Report.data / report_agent._fmt boundary)."""
-    val = (lira or 0)
+    val = lira or 0
     if abs(val) >= 1_000_000:
-        return f"₺{val/1_000_000:.1f}M"
+        return f"₺{val / 1_000_000:.1f}M"
     elif abs(val) >= 1_000:
-        return f"₺{val/1_000:.0f}K"
+        return f"₺{val / 1_000:.0f}K"
     return f"₺{val:,.0f}"
 
 
@@ -64,112 +66,115 @@ def _score(v: float | None, scale: float = 10.0) -> str:
 
 # ── Section builders ──────────────────────────────────────────────────────────
 
+
 def _build_cfo_section(cfo: dict[str, Any]) -> dict[str, Any]:
-    pnl      = cfo.get("pnl")      or {}
+    pnl = cfo.get("pnl") or {}
     cfo.get("cashflow") or {}
     forecast = cfo.get("forecast") or {}
     anomalies = cfo.get("anomalies") or []
-    alerts    = cfo.get("alerts")   or []
+    alerts = cfo.get("alerts") or []
 
     base = (forecast.get("scenarios") or {}).get("base") or {}
 
     return {
         "section": "CFO — Finansal Durum",
         "metrics": {
-            "revenue":         _fmt_lira(pnl.get("revenue", 0)),
-            "gross_profit":    _fmt_lira(pnl.get("gross_profit", 0)),
-            "gross_margin":    _pct(pnl.get("gross_margin")),
-            "ebitda":          _fmt_lira(pnl.get("ebitda", 0)),
-            "ebitda_margin":   _pct(pnl.get("ebitda_margin")),
-            "net_income":      _fmt_lira(pnl.get("net_income", 0)),
-            "net_margin":      _pct(pnl.get("net_margin")),
-            "cash_runway":     f"{base.get('runway_months', '?')} ay" if base.get("runway_months") else "—",
-            "forecast_12m":    _fmt_lira(base.get("twelve_month_net", 0)),
+            "revenue": _fmt_lira(pnl.get("revenue", 0)),
+            "gross_profit": _fmt_lira(pnl.get("gross_profit", 0)),
+            "gross_margin": _pct(pnl.get("gross_margin")),
+            "ebitda": _fmt_lira(pnl.get("ebitda", 0)),
+            "ebitda_margin": _pct(pnl.get("ebitda_margin")),
+            "net_income": _fmt_lira(pnl.get("net_income", 0)),
+            "net_margin": _pct(pnl.get("net_margin")),
+            "cash_runway": f"{base.get('runway_months', '?')} ay"
+            if base.get("runway_months")
+            else "—",
+            "forecast_12m": _fmt_lira(base.get("twelve_month_net", 0)),
         },
         "critical_alerts": [a for a in alerts if a.get("level") == "critical"],
-        "anomaly_count":   len(anomalies),
+        "anomaly_count": len(anomalies),
         "anomaly_critical": sum(1 for a in anomalies if a.get("severity") == "critical"),
     }
 
 
 def _build_cto_section(cto: dict[str, Any]) -> dict[str, Any]:
-    summary  = (cto.get("cto_summary") or {})
-    infra    = cto.get("infra")      or {}
-    debt     = cto.get("tech_debt")  or {}
-    velocity = cto.get("velocity")   or {}
+    summary = cto.get("cto_summary") or {}
+    infra = cto.get("infra") or {}
+    debt = cto.get("tech_debt") or {}
+    velocity = cto.get("velocity") or {}
     incidents = cto.get("incidents") or {}
 
     return {
         "section": "CTO — Teknoloji Sağlığı",
         "metrics": {
-            "health_score":    _score(summary.get("overall_health_score")),
-            "infra_cost":      _fmt_tl(infra.get("total_cost_cents", 0)),
-            "infra_waste":     _fmt_tl(infra.get("waste_estimate_cents", 0)),
-            "debt_score":      _score(debt.get("debt_score")),
-            "velocity_trend":  velocity.get("trend", "—"),
+            "health_score": _score(summary.get("overall_health_score")),
+            "infra_cost": _fmt_tl(infra.get("total_cost_cents", 0)),
+            "infra_waste": _fmt_tl(infra.get("waste_estimate_cents", 0)),
+            "debt_score": _score(debt.get("debt_score")),
+            "velocity_trend": velocity.get("trend", "—"),
             "incidents_total": incidents.get("total_incidents", 0),
-            "mttr_hours":      incidents.get("mttr_hours", "—"),
+            "mttr_hours": incidents.get("mttr_hours", "—"),
         },
         "quick_wins": summary.get("quick_wins") or [],
-        "top_risks":  summary.get("top_risks")  or [],
+        "top_risks": summary.get("top_risks") or [],
     }
 
 
 def _build_cmo_section(cmo: dict[str, Any]) -> dict[str, Any]:
-    summary   = cmo.get("cmo_summary") or {}
-    campaigns = cmo.get("campaigns")   or {}
-    funnel    = cmo.get("funnel")      or {}
-    cohort    = cmo.get("cohort")      or {}
+    summary = cmo.get("cmo_summary") or {}
+    campaigns = cmo.get("campaigns") or {}
+    funnel = cmo.get("funnel") or {}
+    cohort = cmo.get("cohort") or {}
 
     return {
         "section": "CMO — Pazarlama Etkinliği",
         "metrics": {
-            "marketing_score":   _score(summary.get("overall_marketing_score")),
-            "growth_score":      _score(summary.get("growth_efficiency_score")),
-            "overall_roas":      f"{campaigns.get('overall_roas', 0):.2f}x",
-            "blended_cac":       _fmt_tl(campaigns.get("blended_cac_cents", 0)),
-            "total_spend":       _fmt_tl(campaigns.get("total_spend_cents", 0)),
-            "conversion_rate":   _pct(funnel.get("overall_conversion_rate")),
-            "ltv_cac_ratio":     f"{cohort.get('ltv_cac_ratio', 0):.2f}x",
-            "retention_30d":     _pct(cohort.get("avg_retention_30d")),
+            "marketing_score": _score(summary.get("overall_marketing_score")),
+            "growth_score": _score(summary.get("growth_efficiency_score")),
+            "overall_roas": f"{campaigns.get('overall_roas', 0):.2f}x",
+            "blended_cac": _fmt_tl(campaigns.get("blended_cac_cents", 0)),
+            "total_spend": _fmt_tl(campaigns.get("total_spend_cents", 0)),
+            "conversion_rate": _pct(funnel.get("overall_conversion_rate")),
+            "ltv_cac_ratio": f"{cohort.get('ltv_cac_ratio', 0):.2f}x",
+            "retention_30d": _pct(cohort.get("avg_retention_30d")),
         },
-        "top_risks":  summary.get("top_risks")  or [],
+        "top_risks": summary.get("top_risks") or [],
         "quick_wins": summary.get("quick_wins") or [],
     }
 
 
 def _build_coo_section(coo: dict[str, Any]) -> dict[str, Any]:
     summary = coo.get("coo_summary") or {}
-    sla     = coo.get("sla")         or {}
+    sla = coo.get("sla") or {}
 
     return {
         "section": "COO — Operasyonel Verimlilik",
         "metrics": {
-            "ops_score":   _score(summary.get("overall_ops_score")),
-            "sla_breach":  _pct(sla.get("breach_rate")),
+            "ops_score": _score(summary.get("overall_ops_score")),
+            "sla_breach": _pct(sla.get("breach_rate")),
         },
-        "top_risks":  summary.get("top_risks")  or [],
+        "top_risks": summary.get("top_risks") or [],
         "quick_wins": summary.get("quick_wins") or [],
     }
 
 
 def _build_chro_section(chro: dict[str, Any]) -> dict[str, Any]:
-    summary    = chro.get("chro_summary") or {}
-    headcount  = chro.get("headcount")    or {}
-    attrition  = chro.get("attrition")    or {}
-    comp       = chro.get("compensation") or {}
+    summary = chro.get("chro_summary") or {}
+    headcount = chro.get("headcount") or {}
+    attrition = chro.get("attrition") or {}
+    comp = chro.get("compensation") or {}
 
     return {
         "section": "CHRO — İnsan Kaynakları",
         "metrics": {
-            "hr_score":         _score(summary.get("overall_hr_score")),
-            "total_headcount":  headcount.get("total_headcount", "—"),
-            "attrition_rate":   _pct(attrition.get("annualized_attrition_rate")),
+            "hr_score": _score(summary.get("overall_hr_score")),
+            "total_headcount": headcount.get("total_headcount", "—"),
+            "attrition_rate": _pct(attrition.get("annualized_attrition_rate")),
             "cost_of_attrition": _fmt_lira(attrition.get("cost_of_attrition", 0)),
-            "avg_salary":       _fmt_lira(comp.get("avg_salary", 0)),
+            "avg_salary": _fmt_lira(comp.get("avg_salary", 0)),
             "below_market_pct": _pct(comp.get("below_market_pct")),
         },
-        "top_risks":  summary.get("top_risks")  or [],
+        "top_risks": summary.get("top_risks") or [],
         "quick_wins": summary.get("quick_wins") or [],
     }
 
@@ -180,8 +185,8 @@ def _build_risk_section(risk: dict[str, Any]) -> dict[str, Any]:
     return {
         "section": "Risk — Kurumsal Risk Yönetimi",
         "metrics": {
-            "risk_score":  summary.get("overall_risk_score", "—"),
-            "risk_level":  summary.get("overall_risk_level", "—"),
+            "risk_score": summary.get("overall_risk_score", "—"),
+            "risk_level": summary.get("overall_risk_level", "—"),
         },
         "top_risks": (summary.get("top_risks") or [])[:5],
     }
@@ -190,14 +195,15 @@ def _build_risk_section(risk: dict[str, Any]) -> dict[str, Any]:
 def _build_ceo_section(ceo: dict[str, Any]) -> dict[str, Any]:
     return {
         "section": "CEO — Stratejik Sentez",
-        "cross_risks":          ceo.get("cross_risks")          or [],
+        "cross_risks": ceo.get("cross_risks") or [],
         "strategic_priorities": ceo.get("strategic_priorities") or [],
-        "board_deck_summary":   (ceo.get("board_deck") or {}).get("one_page_summary", ""),
-        "agents_used":          ceo.get("agents_used") or [],
+        "board_deck_summary": (ceo.get("board_deck") or {}).get("one_page_summary", ""),
+        "agents_used": ceo.get("agents_used") or [],
     }
 
 
 # ── Main builder ──────────────────────────────────────────────────────────────
+
 
 def build_unified_report(
     ctx_data: dict[str, Any],
@@ -215,13 +221,13 @@ def build_unified_report(
     Returns:
         Structured report dict with per-agent sections + executive summary
     """
-    cfo  = ctx_data.get("last_cfo_result")        or {}
-    cto  = ctx_data.get("last_cto_result")        or {}
-    cmo  = ctx_data.get("last_cmo_result")        or {}
-    coo  = ctx_data.get("last_coo_result")        or {}
-    chro = ctx_data.get("last_chro_result")       or {}
-    risk = ctx_data.get("last_risk_result")       or {}
-    ceo  = ctx_data.get("last_ceo_result")        or {}
+    cfo = ctx_data.get("last_cfo_result") or {}
+    cto = ctx_data.get("last_cto_result") or {}
+    cmo = ctx_data.get("last_cmo_result") or {}
+    coo = ctx_data.get("last_coo_result") or {}
+    chro = ctx_data.get("last_chro_result") or {}
+    risk = ctx_data.get("last_risk_result") or {}
+    ceo = ctx_data.get("last_ceo_result") or {}
 
     sections = []
     agents_available = []
@@ -250,16 +256,16 @@ def build_unified_report(
 
     # Executive summary — top-level KPIs
     exec_summary: dict[str, Any] = {
-        "company_name":    company_name or ctx_data.get("company_name") or "Şirket",
+        "company_name": company_name or ctx_data.get("company_name") or "Şirket",
         "reporting_period": reporting_period or ctx_data.get("reporting_period") or "",
         "agents_available": agents_available,
-        "generated_at":    datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
 
     # CFO headline
     if cfo:
         pnl = cfo.get("pnl") or {}
-        exec_summary["headline_revenue"]    = _fmt_lira(pnl.get("revenue", 0))
+        exec_summary["headline_revenue"] = _fmt_lira(pnl.get("revenue", 0))
         exec_summary["headline_net_margin"] = _pct(pnl.get("net_margin"))
 
     # Cross-risks from CEO
@@ -269,32 +275,33 @@ def build_unified_report(
 
     return {
         "executive_summary": exec_summary,
-        "sections":          sections,
+        "sections": sections,
         "raw": {
-            "cfo":  cfo  or None,
-            "cto":  cto  or None,
-            "cmo":  cmo  or None,
-            "coo":  coo  or None,
+            "cfo": cfo or None,
+            "cto": cto or None,
+            "cmo": cmo or None,
+            "coo": coo or None,
             "chro": chro or None,
             "risk": risk or None,
-            "ceo":  ceo  or None,
+            "ceo": ceo or None,
         },
     }
 
 
 # ── PDF generation ────────────────────────────────────────────────────────────
 
+
 def _build_unified_html(report: dict[str, Any]) -> str:
     """Convert unified report to HTML for WeasyPrint."""
-    summary  = report["executive_summary"]
+    summary = report["executive_summary"]
     sections = report["sections"]
 
-    company    = summary["company_name"]
-    period     = summary.get("reporting_period", "")
-    agents     = ", ".join(summary["agents_available"])
-    gen_at     = datetime.now(UTC).strftime("%d %B %Y, %H:%M UTC")
+    company = summary["company_name"]
+    period = summary.get("reporting_period", "")
+    agents = ", ".join(summary["agents_available"])
+    gen_at = datetime.now(UTC).strftime("%d %B %Y, %H:%M UTC")
     brand_name = get_brand().name
-    revenue    = summary.get("headline_revenue", "—")
+    revenue = summary.get("headline_revenue", "—")
     net_margin = summary.get("headline_net_margin", "—")
     risk_count = summary.get("cross_risk_count", 0)
 
@@ -302,26 +309,23 @@ def _build_unified_html(report: dict[str, Any]) -> str:
     sections_html = ""
     for sec in sections:
         metrics = sec.get("metrics") or {}
-        risks   = (sec.get("top_risks") or sec.get("cross_risks") or [])[:3]
-        wins    = (sec.get("quick_wins") or [])[:2]
+        risks = (sec.get("top_risks") or sec.get("cross_risks") or [])[:3]
+        wins = (sec.get("quick_wins") or [])[:2]
 
         metrics_html = "".join(
-            f'<tr><td class="k">{k.replace("_", " ").title()}</td>'
-            f'<td class="v">{v}</td></tr>'
+            f'<tr><td class="k">{k.replace("_", " ").title()}</td><td class="v">{v}</td></tr>'
             for k, v in metrics.items()
         )
 
         risks_html = "".join(
             f'<li class="risk-item sev-{r.get("severity", "medium")}">'
-            f'{r.get("message", r.get("title", str(r)))[:120]}</li>'
+            f"{r.get('message', r.get('title', str(r)))[:120]}</li>"
             for r in risks
             if isinstance(r, dict)
         )
 
         wins_html = "".join(
-            f'<li>{w.get("action", str(w))[:100]}</li>'
-            for w in wins
-            if isinstance(w, dict)
+            f"<li>{w.get('action', str(w))[:100]}</li>" for w in wins if isinstance(w, dict)
         )
 
         sections_html += f"""
@@ -411,10 +415,11 @@ def generate_unified_pdf(
     Returns raw PDF bytes.
     """
     report = build_unified_report(ctx_data, company_name, reporting_period)
-    html   = _build_unified_html(report)
+    html = _build_unified_html(report)
 
     try:
         from weasyprint import HTML as WeasyHTML
+
         pdf_bytes: bytes = WeasyHTML(string=html).write_pdf()
         return pdf_bytes
     except ImportError:

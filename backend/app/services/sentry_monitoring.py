@@ -19,6 +19,7 @@ Kurulum:
   - Kullanıcı bağlamı (org_id, user_id)
   - PII filtreleme (şifre, API key alanları gizlenir)
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,7 +53,6 @@ def init_sentry(settings: Any) -> bool:
             dsn=dsn,
             environment=environment,
             traces_sample_rate=float(sample_rate),
-
             integrations=[
                 FastApiIntegration(),
                 SqlalchemyIntegration(),
@@ -62,14 +62,11 @@ def init_sentry(settings: Any) -> bool:
                     event_level=logging.ERROR,
                 ),
             ],
-
             # PII filtreleme — hassas veri Sentry'ye gitmesin
             before_send=_filter_sensitive_data,
-
             # Request veri ayarları
             send_default_pii=False,  # Email, IP gibi PII'ları otomatik gönderme
             max_request_body_size="small",  # max 4KB request body
-
             # Release tracking (CI'da GIT_COMMIT env var set edilir)
             release=getattr(settings, "app_version", None),
         )
@@ -93,9 +90,19 @@ def _filter_sensitive_data(event: dict, hint: dict) -> dict | None:
     - Büyük JSON payload'larını kırpar
     """
     _SENSITIVE_KEYS = {
-        "password", "hashed_password", "token", "access_token", "refresh_token",
-        "api_key", "secret", "secret_key", "authorization", "openai_api_key",
-        "azure_client_secret", "google_client_secret", "smtp_password",
+        "password",
+        "hashed_password",
+        "token",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "secret",
+        "secret_key",
+        "authorization",
+        "openai_api_key",
+        "azure_client_secret",
+        "google_client_secret",
+        "smtp_password",
     }
 
     def _redact(obj: Any, depth: int = 0) -> Any:
@@ -141,6 +148,7 @@ def capture_agent_error(
     """
     try:
         import sentry_sdk
+
         with sentry_sdk.push_scope() as scope:
             scope.set_tag("agent", agent_name)
             if org_id:
@@ -160,10 +168,13 @@ def set_sentry_user(user_id: str, org_id: str | None = None, email: str | None =
     """
     try:
         import sentry_sdk
-        sentry_sdk.set_user({
-            "id":    user_id,
-            "org":   org_id,
-            # email gönderilmiyor — PII
-        })
+
+        sentry_sdk.set_user(
+            {
+                "id": user_id,
+                "org": org_id,
+                # email gönderilmiyor — PII
+            }
+        )
     except Exception:
         pass

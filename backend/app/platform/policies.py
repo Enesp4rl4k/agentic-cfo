@@ -77,5 +77,5 @@ LLM_CACHE_MAX_ENTRIES: int = 512
 # 0 / None on an org means "use the default". A hard-cap breach raises
 # LLMBudgetExceeded before the call leaves the process.
 LLM_ORG_MONTHLY_BUDGET_USD_DEFAULT: float = 50.0
-LLM_ORG_BUDGET_SOFT_WARN_RATIO: float = 0.80   # log a warning past 80 % of budget
+LLM_ORG_BUDGET_SOFT_WARN_RATIO: float = 0.80  # log a warning past 80 % of budget
 LLM_ORG_BUDGET_CHECK_TTL_SECONDS: float = 60.0  # cache the per-org spend lookup

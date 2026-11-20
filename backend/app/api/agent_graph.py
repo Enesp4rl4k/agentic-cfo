@@ -7,6 +7,7 @@ execution, including node statuses, durations, and connections.
 Consumed by the frontend AgentGraphVisualizer component to render a live
 or historical pipeline status view.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -29,82 +30,88 @@ router = APIRouter(tags=["agent-graph"])
 # Node IDs must match the step names logged by orchestrators.
 
 CFO_SUBGRAPH = [
-    {"id": "pnl",       "label": "P&L",          "group": "cfo", "x": 0,   "y": 0},
-    {"id": "cashflow",  "label": "Cash Flow",     "group": "cfo", "x": 0,   "y": 1},
-    {"id": "forecast",  "label": "Forecast",      "group": "cfo", "x": 0,   "y": 2},
-    {"id": "anomaly",   "label": "Anomaly Scan",  "group": "cfo", "x": 0,   "y": 3},
-    {"id": "tax",       "label": "Tax",           "group": "cfo", "x": 0,   "y": 4},
-    {"id": "budget",    "label": "Budget",        "group": "cfo", "x": 0,   "y": 5},
+    {"id": "pnl", "label": "P&L", "group": "cfo", "x": 0, "y": 0},
+    {"id": "cashflow", "label": "Cash Flow", "group": "cfo", "x": 0, "y": 1},
+    {"id": "forecast", "label": "Forecast", "group": "cfo", "x": 0, "y": 2},
+    {"id": "anomaly", "label": "Anomaly Scan", "group": "cfo", "x": 0, "y": 3},
+    {"id": "tax", "label": "Tax", "group": "cfo", "x": 0, "y": 4},
+    {"id": "budget", "label": "Budget", "group": "cfo", "x": 0, "y": 5},
 ]
 
 CEO_NODES = [
-    {"id": "run_pipelines",     "label": "Run Pipelines",       "group": "orchestrator", "x": 2, "y": 2},
-    {"id": "condense_summaries","label": "Condense Summaries",  "group": "orchestrator", "x": 2, "y": 3},
-    {"id": "synthesis",         "label": "CEO Synthesis",       "group": "synthesis",    "x": 2, "y": 4},
-    {"id": "strategic_priorities","label": "Strategic Priorities","group": "synthesis",  "x": 2, "y": 5},
-    {"id": "board_deck",        "label": "Board Deck",          "group": "output",       "x": 2, "y": 6},
-    {"id": "swot",              "label": "SWOT Analysis",       "group": "output",       "x": 3, "y": 6},
-    {"id": "hold_for_review",   "label": "Hold for Review",     "group": "control",      "x": 3, "y": 5},
+    {"id": "run_pipelines", "label": "Run Pipelines", "group": "orchestrator", "x": 2, "y": 2},
+    {
+        "id": "condense_summaries",
+        "label": "Condense Summaries",
+        "group": "orchestrator",
+        "x": 2,
+        "y": 3,
+    },
+    {"id": "synthesis", "label": "CEO Synthesis", "group": "synthesis", "x": 2, "y": 4},
+    {
+        "id": "strategic_priorities",
+        "label": "Strategic Priorities",
+        "group": "synthesis",
+        "x": 2,
+        "y": 5,
+    },
+    {"id": "board_deck", "label": "Board Deck", "group": "output", "x": 2, "y": 6},
+    {"id": "swot", "label": "SWOT Analysis", "group": "output", "x": 3, "y": 6},
+    {"id": "hold_for_review", "label": "Hold for Review", "group": "control", "x": 3, "y": 5},
 ]
 
 KERNEL_NODES = [
-    {"id": "cto_kernel",  "label": "CTO (gerçek veri)",  "group": "kernel", "x": 1, "y": 0},
-    {"id": "cmo_kernel",  "label": "CMO (gerçek veri)",  "group": "kernel", "x": 1, "y": 1},
+    {"id": "cto_kernel", "label": "CTO (gerçek veri)", "group": "kernel", "x": 1, "y": 0},
+    {"id": "cmo_kernel", "label": "CMO (gerçek veri)", "group": "kernel", "x": 1, "y": 1},
     {"id": "chro_kernel", "label": "CHRO (gerçek veri)", "group": "kernel", "x": 1, "y": 2},
-    {"id": "coo_kernel",  "label": "COO (gerçek veri)",  "group": "kernel", "x": 1, "y": 3},
-    {"id": "audit",       "label": "Audit",       "group": "kernel", "x": 1, "y": 4},
-    {"id": "compliance",  "label": "Compliance",  "group": "kernel", "x": 1, "y": 5},
+    {"id": "coo_kernel", "label": "COO (gerçek veri)", "group": "kernel", "x": 1, "y": 3},
+    {"id": "audit", "label": "Audit", "group": "kernel", "x": 1, "y": 4},
+    {"id": "compliance", "label": "Compliance", "group": "kernel", "x": 1, "y": 5},
 ]
 
 # Directed edges: (source_id, target_id, label?)
 PIPELINE_EDGES = [
     # CFO sub-pipeline
-    ("pnl",        "cashflow",           None),
-    ("cashflow",   "forecast",           None),
-    ("forecast",   "anomaly",            None),
-    ("anomaly",    "tax",                None),
-    ("tax",        "budget",             None),
+    ("pnl", "cashflow", None),
+    ("cashflow", "forecast", None),
+    ("forecast", "anomaly", None),
+    ("anomaly", "tax", None),
+    ("tax", "budget", None),
     # CFO → orchestrator
-    ("budget",          "run_pipelines", "CFO"),
+    ("budget", "run_pipelines", "CFO"),
     # Domain pipelines (real data) → orchestrator
-    ("cto_kernel",      "run_pipelines", None),
-    ("cmo_kernel",      "run_pipelines", None),
-    ("chro_kernel",     "run_pipelines", None),
-    ("coo_kernel",      "run_pipelines", None),
-    ("audit",           "run_pipelines", None),
-    ("compliance",      "run_pipelines", None),
+    ("cto_kernel", "run_pipelines", None),
+    ("cmo_kernel", "run_pipelines", None),
+    ("chro_kernel", "run_pipelines", None),
+    ("coo_kernel", "run_pipelines", None),
+    ("audit", "run_pipelines", None),
+    ("compliance", "run_pipelines", None),
     # Orchestrator flow
-    ("run_pipelines",     "condense_summaries", None),
-    ("condense_summaries","synthesis",          None),
-    ("synthesis",         "strategic_priorities","on_success"),
-    ("synthesis",         "hold_for_review",    "low_confidence"),
-    ("strategic_priorities","board_deck",        None),
-    ("strategic_priorities","swot",              None),
+    ("run_pipelines", "condense_summaries", None),
+    ("condense_summaries", "synthesis", None),
+    ("synthesis", "strategic_priorities", "on_success"),
+    ("synthesis", "hold_for_review", "low_confidence"),
+    ("strategic_priorities", "board_deck", None),
+    ("strategic_priorities", "swot", None),
 ]
 
 # Node group colors (CSS var names used by the frontend)
 GROUP_COLORS = {
-    "cfo":          "blue",
-    "kernel":       "violet",
+    "cfo": "blue",
+    "kernel": "violet",
     "orchestrator": "amber",
-    "synthesis":    "emerald",
-    "output":       "sky",
-    "control":      "rose",
+    "synthesis": "emerald",
+    "output": "sky",
+    "control": "rose",
 }
 
 
 def _build_topology() -> dict[str, Any]:
     """Return the static graph topology with group metadata."""
     all_nodes = CFO_SUBGRAPH + KERNEL_NODES + CEO_NODES
-    edges = [
-        {"source": s, "target": t, "label": label}
-        for s, t, label in PIPELINE_EDGES
-    ]
+    edges = [{"source": s, "target": t, "label": label} for s, t, label in PIPELINE_EDGES]
     return {
-        "nodes": [
-            {**n, "color": GROUP_COLORS.get(n["group"], "gray")}
-            for n in all_nodes
-        ],
+        "nodes": [{**n, "color": GROUP_COLORS.get(n["group"], "gray")} for n in all_nodes],
         "edges": edges,
     }
 
@@ -135,31 +142,31 @@ def _parse_step_logs(logs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 def _normalize_step(step: str) -> str:
     """Normalize step name variants to canonical node IDs."""
     mapping = {
-        "node_run_pipelines":      "run_pipelines",
+        "node_run_pipelines": "run_pipelines",
         "node_condense_summaries": "condense_summaries",
-        "node_synthesis":          "synthesis",
-        "node_strategic_priorities":"strategic_priorities",
-        "node_board_deck":         "board_deck",
-        "node_swot":               "swot",
-        "node_hold_for_review":    "hold_for_review",
+        "node_synthesis": "synthesis",
+        "node_strategic_priorities": "strategic_priorities",
+        "node_board_deck": "board_deck",
+        "node_swot": "swot",
+        "node_hold_for_review": "hold_for_review",
         # CFO pipeline
-        "pnl_agent":               "pnl",
-        "cashflow_agent":          "cashflow",
-        "forecast_agent":          "forecast",
-        "anomaly_agent":           "anomaly",
-        "tax_agent":               "tax",
-        "budget_agent":            "budget",
+        "pnl_agent": "pnl",
+        "cashflow_agent": "cashflow",
+        "forecast_agent": "forecast",
+        "anomaly_agent": "anomaly",
+        "tax_agent": "tax",
+        "budget_agent": "budget",
         # Kernels
-        "cto":                     "cto_kernel",
-        "cto_kernel":              "cto_kernel",
-        "cmo":                     "cmo_kernel",
-        "cmo_kernel":              "cmo_kernel",
-        "chro":                    "chro_kernel",
-        "chro_kernel":             "chro_kernel",
-        "coo":                     "coo_kernel",
-        "coo_kernel":              "coo_kernel",
-        "audit_kernel":            "audit",
-        "compliance_kernel":       "compliance",
+        "cto": "cto_kernel",
+        "cto_kernel": "cto_kernel",
+        "cmo": "cmo_kernel",
+        "cmo_kernel": "cmo_kernel",
+        "chro": "chro_kernel",
+        "chro_kernel": "chro_kernel",
+        "coo": "coo_kernel",
+        "coo_kernel": "coo_kernel",
+        "audit_kernel": "audit",
+        "compliance_kernel": "compliance",
     }
     return mapping.get(step.lower(), step.lower())
 
@@ -193,6 +200,7 @@ def _merge_topology_with_status(
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/agent-graph/topology")
 async def get_graph_topology() -> dict[str, Any]:
     """
@@ -214,12 +222,10 @@ async def get_job_graph(
     Node statuses: "pending" | "running" | "success" | "error"
     """
     # Load job record
-    result = await db.execute(
-        select(AnalysisJob).where(AnalysisJob.id == job_id)
-    )
+    result = await db.execute(select(AnalysisJob).where(AnalysisJob.id == job_id))
     job = result.scalar_one_or_none()
     if job is not None and not can_access(user, org_id=job.org_id, user_id=job.user_id):
-        job = None      # another organisation's job reads exactly like a missing one
+        job = None  # another organisation's job reads exactly like a missing one
 
     topology = _build_topology()
 
@@ -251,10 +257,7 @@ async def get_job_graph(
 
     # Compute overall progress percentage
     total_nodes = len(enriched["nodes"])
-    completed = sum(
-        1 for n in enriched["nodes"]
-        if n.get("status") in ("success", "error")
-    )
+    completed = sum(1 for n in enriched["nodes"] if n.get("status") in ("success", "error"))
     progress_pct = round(completed / total_nodes * 100) if total_nodes else 0
 
     return {

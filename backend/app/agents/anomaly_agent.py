@@ -12,6 +12,7 @@ Muhasebeden gelen işlem verisini analiz eder:
 
 done_when: state['anomalies'] listesi dolu veya boş (0 anomali = temiz)
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,16 +29,17 @@ logger = logging.getLogger(__name__)
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 
-Z_SCORE_THRESHOLD = 2.5        # flagged if abs(z) > this
-DUPLICATE_WINDOW_DAYS = 3      # same amount+vendor within N days = duplicate
-VENDOR_CONCENTRATION_PCT = 0.4 # single vendor > 40% of total = risk
+Z_SCORE_THRESHOLD = 2.5  # flagged if abs(z) > this
+DUPLICATE_WINDOW_DAYS = 3  # same amount+vendor within N days = duplicate
+VENDOR_CONCENTRATION_PCT = 0.4  # single vendor > 40% of total = risk
 ROUND_NUMBER_THRESHOLD = 0.85  # if >85% of amounts are round → suspicious
-MIN_TRANSACTIONS_FOR_STATS = 5 # minimum sample for statistical analysis
-EXPENSE_SPIKE_MULTIPLIER = 2.0 # month > 2x 3-month average = spike
-IQR_MULTIPLIER = 2.5           # IQR-based: value > Q3 + k*IQR = outlier
+MIN_TRANSACTIONS_FOR_STATS = 5  # minimum sample for statistical analysis
+EXPENSE_SPIKE_MULTIPLIER = 2.0  # month > 2x 3-month average = spike
+IQR_MULTIPLIER = 2.5  # IQR-based: value > Q3 + k*IQR = outlier
 
 
 # ── Pure calculation helpers ──────────────────────────────────────────────────
+
 
 def _category_scores(values: list[float]) -> tuple[list[float], list[float]] | None:
     """Z-score and IQR score for every value of one category, in one pass.
@@ -96,9 +98,8 @@ def _days_between(a: str | None, b: str | None) -> int | None:
 
 # ── Detection functions ───────────────────────────────────────────────────────
 
-def detect_duplicates(
-    transactions: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+
+def detect_duplicates(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Same vendor + same amount within DUPLICATE_WINDOW_DAYS = probable duplicate."""
     anomalies: list[dict[str, Any]] = []
     expenses = [t for t in transactions if t.get("type") == "expense"]
@@ -114,31 +115,31 @@ def detect_duplicates(
             for prev in seen[(vendor, amount)]:
                 days = _days_between(date, prev.get("transaction_date"))
                 if days is not None and days <= DUPLICATE_WINDOW_DAYS:
-                    anomalies.append({
-                        "anomaly_type": "duplicate_payment",
-                        "severity": "high",
-                        "title": f"Possible duplicate payment: {vendor or 'unknown vendor'}",
-                        "description": (
-                            f"Two payments of {amount / 100:,.2f} to '{vendor}' "
-                            f"within {days} days — potential double payment."
-                        ),
-                        "transaction_ids": [tx.get("id"), prev.get("id")],
-                        "evidence": {
-                            "amount": amount,
-                            "vendor": vendor,
-                            "days_apart": days,
-                        },
-                        "confidence": 0.85,
-                    })
+                    anomalies.append(
+                        {
+                            "anomaly_type": "duplicate_payment",
+                            "severity": "high",
+                            "title": f"Possible duplicate payment: {vendor or 'unknown vendor'}",
+                            "description": (
+                                f"Two payments of {amount / 100:,.2f} to '{vendor}' "
+                                f"within {days} days — potential double payment."
+                            ),
+                            "transaction_ids": [tx.get("id"), prev.get("id")],
+                            "evidence": {
+                                "amount": amount,
+                                "vendor": vendor,
+                                "days_apart": days,
+                            },
+                            "confidence": 0.85,
+                        }
+                    )
                     break
         seen[(vendor, tx.get("amount_cents"))].append(tx)
 
     return anomalies
 
 
-def detect_unusual_amounts(
-    transactions: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def detect_unusual_amounts(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Dual-method outlier detection per expense category:
     1. Z-score (sample standard deviation)
@@ -178,37 +179,39 @@ def detect_unusual_amounts(
 
             if z_flagged and iqr_flagged:
                 severity = "high" if (z and abs(z) > 3.5) else "medium"
-                confidence = min(0.95, 0.55 + (abs(z or 0) * 0.08) + (min(iqr_score or 0, 5) * 0.04))
+                confidence = min(
+                    0.95, 0.55 + (abs(z or 0) * 0.08) + (min(iqr_score or 0, 5) * 0.04)
+                )
                 cat_tr = cat.replace("_", " ")
-                anomalies.append({
-                    "anomaly_type": "unusual_amount",
-                    "severity": severity,
-                    "title": f"Olağandışı {cat_tr} gideri",
-                    "description": (
-                        f"'{cat_tr}' kategorisinde {amount / 100:,.2f} tutarındaki işlem, "
-                        f"kategori ortalamasının ({cat_mean / 100:,.2f}) {abs(z or 0):.1f}σ "
-                        f"üzerinde ve IQR analizinde de aykırı değer olarak işaretlendi. "
-                        f"Fatura ile karşılaştırın."
-                    ),
-                    "transaction_ids": [tx.get("id")],
-                    "evidence": {
-                        "amount": amount,
-                        "category": cat,
-                        "z_score": round(z or 0, 2),
-                        "iqr_score": round(iqr_score or 0, 2),
-                        "category_mean": round(cat_mean, 2),
-                        "category_std": round(cat_std, 2),
-                        "detection_methods": ["z_score", "iqr"],
-                    },
-                    "confidence": round(confidence, 3),
-                })
+                anomalies.append(
+                    {
+                        "anomaly_type": "unusual_amount",
+                        "severity": severity,
+                        "title": f"Olağandışı {cat_tr} gideri",
+                        "description": (
+                            f"'{cat_tr}' kategorisinde {amount / 100:,.2f} tutarındaki işlem, "
+                            f"kategori ortalamasının ({cat_mean / 100:,.2f}) {abs(z or 0):.1f}σ "
+                            f"üzerinde ve IQR analizinde de aykırı değer olarak işaretlendi. "
+                            f"Fatura ile karşılaştırın."
+                        ),
+                        "transaction_ids": [tx.get("id")],
+                        "evidence": {
+                            "amount": amount,
+                            "category": cat,
+                            "z_score": round(z or 0, 2),
+                            "iqr_score": round(iqr_score or 0, 2),
+                            "category_mean": round(cat_mean, 2),
+                            "category_std": round(cat_std, 2),
+                            "detection_methods": ["z_score", "iqr"],
+                        },
+                        "confidence": round(confidence, 3),
+                    }
+                )
 
     return anomalies
 
 
-def detect_vendor_concentration(
-    transactions: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def detect_vendor_concentration(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Single vendor consuming too large a share of total expenses."""
     anomalies: list[dict[str, Any]] = []
     expenses = [t for t in transactions if t.get("type") == "expense"]
@@ -226,31 +229,31 @@ def detect_vendor_concentration(
             continue
         ratio = amount / total
         if ratio > VENDOR_CONCENTRATION_PCT:
-            anomalies.append({
-                "anomaly_type": "vendor_concentration",
-                "severity": "medium" if ratio < 0.6 else "high",
-                "title": f"High vendor concentration: {vendor}",
-                "description": (
-                    f"{vendor} accounts for {ratio * 100:.1f}% of total expenses "
-                    f"({amount / 100:,.2f}). Over-reliance on a single vendor "
-                    f"creates operational risk."
-                ),
-                "transaction_ids": None,
-                "evidence": {
-                    "vendor": vendor,
-                    "vendor_total": amount,
-                    "total_expenses": total,
-                    "concentration_pct": round(ratio * 100, 1),
-                },
-                "confidence": 0.90,
-            })
+            anomalies.append(
+                {
+                    "anomaly_type": "vendor_concentration",
+                    "severity": "medium" if ratio < 0.6 else "high",
+                    "title": f"High vendor concentration: {vendor}",
+                    "description": (
+                        f"{vendor} accounts for {ratio * 100:.1f}% of total expenses "
+                        f"({amount / 100:,.2f}). Over-reliance on a single vendor "
+                        f"creates operational risk."
+                    ),
+                    "transaction_ids": None,
+                    "evidence": {
+                        "vendor": vendor,
+                        "vendor_total": amount,
+                        "total_expenses": total,
+                        "concentration_pct": round(ratio * 100, 1),
+                    },
+                    "confidence": 0.90,
+                }
+            )
 
     return anomalies
 
 
-def detect_expense_spikes(
-    transactions: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def detect_expense_spikes(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Monthly expense total > 2x 3-month rolling average = spike."""
     anomalies: list[dict[str, Any]] = []
 
@@ -269,42 +272,65 @@ def detect_expense_spikes(
         current = monthly[months[i]]
         if recent_avg > 0 and current > recent_avg * EXPENSE_SPIKE_MULTIPLIER:
             multiplier = current / recent_avg
-            anomalies.append({
-                "anomaly_type": "expense_spike",
-                "severity": "high" if multiplier > 3 else "medium",
-                "title": f"Expense spike in {months[i]}",
-                "description": (
-                    f"Total expenses in {months[i]} ({current / 100:,.2f}) are "
-                    f"{multiplier:.1f}x the 3-month average ({recent_avg / 100:,.2f}). "
-                    f"Review for one-time items or anomalous charges."
-                ),
-                "transaction_ids": None,
-                "evidence": {
-                    "month": months[i],
-                    "month_total": current,
-                    "rolling_avg": round(recent_avg, 2),
-                    "multiplier": round(multiplier, 2),
-                },
-                "confidence": 0.88,
-            })
+            anomalies.append(
+                {
+                    "anomaly_type": "expense_spike",
+                    "severity": "high" if multiplier > 3 else "medium",
+                    "title": f"Expense spike in {months[i]}",
+                    "description": (
+                        f"Total expenses in {months[i]} ({current / 100:,.2f}) are "
+                        f"{multiplier:.1f}x the 3-month average ({recent_avg / 100:,.2f}). "
+                        f"Review for one-time items or anomalous charges."
+                    ),
+                    "transaction_ids": None,
+                    "evidence": {
+                        "month": months[i],
+                        "month_total": current,
+                        "rolling_avg": round(recent_avg, 2),
+                        "multiplier": round(multiplier, 2),
+                    },
+                    "confidence": 0.88,
+                }
+            )
 
     return anomalies
 
 
 _AY_ADLARI = (
-    "ocak", "subat", "mart", "nisan", "mayis", "haziran", "temmuz", "agustos",
-    "eylul", "ekim", "kasim", "aralik",
-    "january", "february", "march", "april", "may", "june", "july", "august",
-    "september", "october", "november", "december",
+    "ocak",
+    "subat",
+    "mart",
+    "nisan",
+    "mayis",
+    "haziran",
+    "temmuz",
+    "agustos",
+    "eylul",
+    "ekim",
+    "kasim",
+    "aralik",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 )
-RECURRING_MIN_MONTHS = 3       # the same payment in ≥3 distinct months recurs
+RECURRING_MIN_MONTHS = 3  # the same payment in ≥3 distinct months recurs
 
 
 def _tekrar_anahtari(description: str | None) -> str:
     """The payment a description names, without its month: "Ocak Maaş - Satış
     Ekibi" and "Şubat Maaş - Satış" are both "maas satis"."""
     kelimeler = [
-        w for w in re.findall(r"[a-z]+", fold(description or ""))
+        w
+        for w in re.findall(r"[a-z]+", fold(description or ""))
         if w not in _AY_ADLARI and len(w) > 1
     ]
     return " ".join(kelimeler[:2])
@@ -321,9 +347,7 @@ def recurring_keys(transactions: list[dict[str, Any]]) -> set[str]:
     return {k for k, months in aylar.items() if len(months) >= RECURRING_MIN_MONTHS}
 
 
-def detect_round_numbers(
-    transactions: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def detect_round_numbers(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """High proportion of perfectly round expense amounts — fraud indicator.
 
     Only one-off payments are counted. Rent, salaries and subscriptions are
@@ -333,8 +357,10 @@ def detect_round_numbers(
     anomalies: list[dict[str, Any]] = []
     tekrarlayan = recurring_keys(transactions)
     expenses = [
-        t for t in transactions
-        if t.get("type") == "expense" and t.get("amount_cents", 0) > 0
+        t
+        for t in transactions
+        if t.get("type") == "expense"
+        and t.get("amount_cents", 0) > 0
         and _tekrar_anahtari(t.get("description")) not in tekrarlayan
     ]
     if len(expenses) < 10:
@@ -344,31 +370,31 @@ def detect_round_numbers(
     ratio = round_count / len(expenses)
 
     if ratio > ROUND_NUMBER_THRESHOLD:
-        anomalies.append({
-            "anomaly_type": "round_number",
-            "severity": "medium",
-            "title": "Unusually high proportion of round-number expenses",
-            "description": (
-                f"{ratio * 100:.0f}% of one-off expense transactions are round numbers "
-                f"({round_count}/{len(expenses)}; recurring payments such as rent and "
-                f"salaries are not counted). This can indicate manually entered "
-                f"or estimated amounts — verify against actual invoices."
-            ),
-            "transaction_ids": None,
-            "evidence": {
-                "round_count": round_count,
-                "total_expenses": len(expenses),
-                "ratio_pct": round(ratio * 100, 1),
-            },
-            "confidence": 0.70,
-        })
+        anomalies.append(
+            {
+                "anomaly_type": "round_number",
+                "severity": "medium",
+                "title": "Unusually high proportion of round-number expenses",
+                "description": (
+                    f"{ratio * 100:.0f}% of one-off expense transactions are round numbers "
+                    f"({round_count}/{len(expenses)}; recurring payments such as rent and "
+                    f"salaries are not counted). This can indicate manually entered "
+                    f"or estimated amounts — verify against actual invoices."
+                ),
+                "transaction_ids": None,
+                "evidence": {
+                    "round_count": round_count,
+                    "total_expenses": len(expenses),
+                    "ratio_pct": round(ratio * 100, 1),
+                },
+                "confidence": 0.70,
+            }
+        )
 
     return anomalies
 
 
-def detect_negative_cashflow_streak(
-    cashflow: dict[str, Any]
-) -> list[dict[str, Any]]:
+def detect_negative_cashflow_streak(cashflow: dict[str, Any]) -> list[dict[str, Any]]:
     """3+ consecutive months of negative net cash flow."""
     anomalies: list[dict[str, Any]] = []
     series = cashflow.get("monthly_series", [])
@@ -381,23 +407,25 @@ def detect_negative_cashflow_streak(
             if streak == 1:
                 streak_start = entry["month"]
             if streak >= 3:
-                anomalies.append({
-                    "anomaly_type": "negative_cashflow_streak",
-                    "severity": "critical",
-                    "title": f"{streak} consecutive months of negative cash flow",
-                    "description": (
-                        f"Cash flow has been negative for {streak} consecutive months "
-                        f"starting {streak_start}. The business is burning cash — "
-                        f"immediate review of cost structure and revenue pipeline required."
-                    ),
-                    "transaction_ids": None,
-                    "evidence": {
-                        "streak_months": streak,
-                        "streak_start": streak_start,
-                        "latest_month": entry["month"],
-                    },
-                    "confidence": 1.0,
-                })
+                anomalies.append(
+                    {
+                        "anomaly_type": "negative_cashflow_streak",
+                        "severity": "critical",
+                        "title": f"{streak} consecutive months of negative cash flow",
+                        "description": (
+                            f"Cash flow has been negative for {streak} consecutive months "
+                            f"starting {streak_start}. The business is burning cash — "
+                            f"immediate review of cost structure and revenue pipeline required."
+                        ),
+                        "transaction_ids": None,
+                        "evidence": {
+                            "streak_months": streak,
+                            "streak_start": streak_start,
+                            "latest_month": entry["month"],
+                        },
+                        "confidence": 1.0,
+                    }
+                )
                 break
         else:
             streak = 0
@@ -407,6 +435,7 @@ def detect_negative_cashflow_streak(
 
 
 # ── LLM narrative for anomaly summary ────────────────────────────────────────
+
 
 async def _generate_anomaly_narrative(
     anomalies: list[dict[str, Any]],
@@ -419,8 +448,7 @@ async def _generate_anomaly_narrative(
         from app.platform.model_gateway import complete_text
 
         summary = "\n".join(
-            f"- [{a['severity'].upper()}] {a['title']}: {a['description']}"
-            for a in anomalies[:8]
+            f"- [{a['severity'].upper()}] {a['title']}: {a['description']}" for a in anomalies[:8]
         )
 
         text = await complete_text(
@@ -445,6 +473,7 @@ async def _generate_anomaly_narrative(
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+
 async def run_anomaly_detection(
     state: CFOState,
     config: AgentRunConfig,
@@ -466,6 +495,7 @@ async def run_anomaly_detection(
 
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         all_anomalies: list[dict[str, Any]] = []
@@ -484,6 +514,7 @@ async def run_anomaly_detection(
         # S3-3: Attach evidence to each anomaly
         try:
             from app.services.evidence_builder import get_evidence_builder
+
             eb = get_evidence_builder()
             all_anomalies = [eb.attach_anomaly_evidence(a, transactions) for a in all_anomalies]
         except Exception as ev_exc:
@@ -496,7 +527,10 @@ async def run_anomaly_detection(
 
         logger.info(
             "Anomaly detection complete: job=%s total=%d critical=%d high=%d",
-            state.get("job_id"), len(all_anomalies), critical_count, high_count,
+            state.get("job_id"),
+            len(all_anomalies),
+            critical_count,
+            high_count,
         )
 
         return SkillResult(

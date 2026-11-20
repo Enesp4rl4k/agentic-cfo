@@ -29,6 +29,7 @@ SETUP:
     OPEN_BANKING_SANDBOX=true
     OPEN_BANKING_REDIRECT_URI=http://localhost:8000/api/v1/open-banking/callback
 """
+
 from __future__ import annotations
 
 import logging
@@ -48,7 +49,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_BANKS = {
-    "akbank":  {"name": "Akbank",       "color": "#e30613"},
+    "akbank": {"name": "Akbank", "color": "#e30613"},
     "garanti": {"name": "Garanti BBVA", "color": "#009966"},
 }
 
@@ -65,13 +66,14 @@ _oauth_states: dict[str, dict[str, Any]] = {}
 def _get_bank_settings(bank_id: str) -> tuple[str, str, bool]:
     """Return (client_id, client_secret, sandbox) for a bank."""
     from app.config import get_settings
+
     settings = get_settings()
 
     if bank_id == "akbank":
-        client_id     = getattr(settings, "akbank_client_id", "")
+        client_id = getattr(settings, "akbank_client_id", "")
         client_secret = getattr(settings, "akbank_client_secret", "")
     elif bank_id == "garanti":
-        client_id     = getattr(settings, "garanti_client_id", "")
+        client_id = getattr(settings, "garanti_client_id", "")
         client_secret = getattr(settings, "garanti_client_secret", "")
     else:
         raise HTTPException(
@@ -85,6 +87,7 @@ def _get_bank_settings(bank_id: str) -> tuple[str, str, bool]:
 
 def _get_redirect_uri() -> str:
     from app.config import get_settings
+
     settings = get_settings()
     return getattr(
         settings,
@@ -135,6 +138,7 @@ async def start_oauth(
         )
 
     from app.services.open_banking import get_bank_client
+
     client = get_bank_client(bank_id, client_id, client_secret, sandbox)
 
     state = str(uuid.uuid4())
@@ -145,18 +149,18 @@ async def start_oauth(
 
     # Store state for callback validation
     _oauth_states[state] = {
-        "bank_id":             bank_id,
+        "bank_id": bank_id,
         "redirect_after_auth": body.redirect_after_auth,
-        "created_at":          datetime.now(UTC).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     return {
         "data": {
             "redirect_url": auth_url,
-            "state":        state,
-            "bank_id":      bank_id,
-            "sandbox":      sandbox,
-            "note":         "Kullanıcıyı redirect_url'e yönlendirin. Banka yetkilendirmesi sonrası callback'e dönecek.",
+            "state": state,
+            "bank_id": bank_id,
+            "sandbox": sandbox,
+            "note": "Kullanıcıyı redirect_url'e yönlendirin. Banka yetkilendirmesi sonrası callback'e dönecek.",
         },
         "error": None,
     }
@@ -164,7 +168,7 @@ async def start_oauth(
 
 @router.get("/open-banking/callback")
 async def oauth_callback(
-    code:  str = Query(..., description="Authorization code from bank"),
+    code: str = Query(..., description="Authorization code from bank"),
     state: str = Query(..., description="State parameter for CSRF validation"),
     error: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
@@ -193,6 +197,7 @@ async def oauth_callback(
     client_id, client_secret, sandbox = _get_bank_settings(bank_id)
 
     from app.services.open_banking import get_bank_client
+
     client = get_bank_client(bank_id, client_id, client_secret, sandbox)
 
     try:
@@ -207,9 +212,7 @@ async def oauth_callback(
         )
 
     connection_id = str(uuid.uuid4())
-    expires_at = datetime.now(UTC) + timedelta(
-        seconds=tokens.get("expires_in", 3600)
-    )
+    expires_at = datetime.now(UTC) + timedelta(seconds=tokens.get("expires_in", 3600))
 
     # In production: save tokens to DB (BankConnection model)
     # For now, return the connection info
@@ -218,12 +221,12 @@ async def oauth_callback(
     return {
         "data": {
             "connection_id": connection_id,
-            "bank_id":       bank_id,
-            "bank_name":     _SUPPORTED_BANKS[bank_id]["name"],
-            "connected_at":  datetime.now(UTC).isoformat(),
-            "expires_at":    expires_at.isoformat(),
-            "sandbox":       sandbox,
-            "next_step":     f"POST /api/v1/open-banking/connections/{connection_id}/sync ile işlemleri senkronize edin.",
+            "bank_id": bank_id,
+            "bank_name": _SUPPORTED_BANKS[bank_id]["name"],
+            "connected_at": datetime.now(UTC).isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "sandbox": sandbox,
+            "next_step": f"POST /api/v1/open-banking/connections/{connection_id}/sync ile işlemleri senkronize edin.",
         },
         "error": None,
     }
@@ -232,10 +235,13 @@ async def oauth_callback(
 class OpenBankingSyncBody(BaseModel):
     """What the sync needs. The bank's access token travels in the body: as a
     query parameter it was written into every access and proxy log on the way."""
+
     bank_id: str = Field(..., description="Bank ID (akbank, garanti)")
     account_id: str = Field(..., description="Account ID from bank")
     access_token: str = Field(..., description="Access token from the OAuth flow")
-    days_back: int = Field(default=90, ge=1, le=730, description="How many days of history to fetch")
+    days_back: int = Field(
+        default=90, ge=1, le=730, description="How many days of history to fetch"
+    )
 
 
 @router.post("/open-banking/connections/{connection_id}/sync")
@@ -256,11 +262,12 @@ async def sync_transactions(
     from app.services.ingest.ekle import EKLENDI, Sahip, islemleri_ekle
 
     start_date = (datetime.now(UTC) - timedelta(days=body.days_back)).strftime("%Y-%m-%d")
-    end_date   = datetime.now(UTC).strftime("%Y-%m-%d")
+    end_date = datetime.now(UTC).strftime("%Y-%m-%d")
 
     client_id, client_secret, sandbox = _get_bank_settings(body.bank_id)
 
     from app.services.open_banking import get_bank_client
+
     client = get_bank_client(body.bank_id, client_id, client_secret, sandbox)
 
     try:
@@ -277,26 +284,34 @@ async def sync_transactions(
         ) from exc
 
     if not transactions:
-        return {"data": {"job_id": None, "bank_id": body.bank_id, "transaction_count": 0,
-                         "period": f"{start_date} – {end_date}", "status": "veri_yok"},
-                "error": None}
+        return {
+            "data": {
+                "job_id": None,
+                "bank_id": body.bank_id,
+                "transaction_count": 0,
+                "period": f"{start_date} – {end_date}",
+                "status": "veri_yok",
+            },
+            "error": None,
+        }
 
-    sonuc = await islemleri_ekle(db, Sahip.kullanici(current_user), transactions,
-                                 kaynak=f"{body.bank_id}_open_banking")
+    sonuc = await islemleri_ekle(
+        db, Sahip.kullanici(current_user), transactions, kaynak=f"{body.bank_id}_open_banking"
+    )
     dosya = (sonuc.get("dosyalar") or [{}])[0]
     if dosya.get("durum") != EKLENDI:
         raise HTTPException(status_code=422, detail=dosya.get("mesaj") or "İşlemler eklenemedi.")
 
     return {
         "data": {
-            "job_id":            sonuc.get("job_id"),
-            "bank_id":           body.bank_id,
+            "job_id": sonuc.get("job_id"),
+            "bank_id": body.bank_id,
             "transaction_count": len(transactions),
-            "period":            f"{start_date} – {end_date}",
+            "period": f"{start_date} – {end_date}",
             # What actually happened to the analysis, not a hopeful "queued".
-            "status":            dosya.get("dispatch", "not_requested"),
-            "message":           dosya.get("mesaj"),
-            "poll_url":          f"/api/v1/analysis/{sonuc.get('job_id')}",
+            "status": dosya.get("dispatch", "not_requested"),
+            "message": dosya.get("mesaj"),
+            "poll_url": f"/api/v1/analysis/{sonuc.get('job_id')}",
         },
         "error": None,
     }

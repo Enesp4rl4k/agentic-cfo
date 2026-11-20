@@ -6,15 +6,21 @@ are correctly wired into the pipeline orchestrator.
 
 These tests use the mock LLM pattern — no real LLM or DB needed.
 """
+
 import sys
 import types
 from unittest.mock import MagicMock
 
 # ── LangChain stub ────────────────────────────────────────────────────────────
 for mod in [
-    "langchain_openai", "langchain_core", "langchain_core.messages",
-    "langchain_core.language_models", "langchain_core.language_models.chat_models",
-    "langchain_core.runnables", "langgraph", "langgraph.graph",
+    "langchain_openai",
+    "langchain_core",
+    "langchain_core.messages",
+    "langchain_core.language_models",
+    "langchain_core.language_models.chat_models",
+    "langchain_core.runnables",
+    "langgraph",
+    "langgraph.graph",
 ]:
     if mod not in sys.modules:
         sys.modules[mod] = types.ModuleType(mod)
@@ -31,14 +37,29 @@ for cls in ["HumanMessage", "SystemMessage", "AIMessage"]:
 # Stub langgraph.graph
 lg = sys.modules["langgraph.graph"]
 if not hasattr(lg, "StateGraph"):
+
     class _FakeStateGraph:
-        def __init__(self, *a, **kw): pass
-        def add_node(self, *a, **kw): pass
-        def set_entry_point(self, *a, **kw): pass
-        def add_conditional_edges(self, *a, **kw): pass
-        def add_edge(self, *a, **kw): pass
-        def compile(self): return self
-        async def ainvoke(self, state, **kw): return state
+        def __init__(self, *a, **kw):
+            pass
+
+        def add_node(self, *a, **kw):
+            pass
+
+        def set_entry_point(self, *a, **kw):
+            pass
+
+        def add_conditional_edges(self, *a, **kw):
+            pass
+
+        def add_edge(self, *a, **kw):
+            pass
+
+        def compile(self):
+            return self
+
+        async def ainvoke(self, state, **kw):
+            return state
+
     lg.StateGraph = _FakeStateGraph  # type: ignore
     lg.END = "__end__"  # type: ignore
 
@@ -57,6 +78,7 @@ from tests.fixtures.llm_mock import (
 )
 
 # ── _is_skipped helper ────────────────────────────────────────────────────────
+
 
 class TestIsSkipped:
     def test_no_plan_returns_false(self):
@@ -90,6 +112,7 @@ class TestIsSkipped:
 
 
 # ── _update_reflection helper ─────────────────────────────────────────────────
+
 
 class TestUpdateReflection:
     def test_returns_reflection_scores_patch(self):
@@ -133,10 +156,11 @@ class TestUpdateReflection:
         patch = _update_reflection(state, "pnl", narrative, make_sample_pnl())
         scores = patch["reflection_scores"]
         assert "cashflow" in scores  # existing preserved
-        assert "pnl" in scores       # new added
+        assert "pnl" in scores  # new added
 
 
 # ── CapabilityRouter — routing plan in state ──────────────────────────────────
+
 
 class TestCapabilityRouterIntegration:
     def test_routing_plan_has_correct_structure(self):
@@ -157,6 +181,7 @@ class TestCapabilityRouterIntegration:
 
     def test_routing_plan_serialisable(self):
         import json
+
         router = CapabilityRouter()
         state = make_sample_state()
         plan = router.route(state)
@@ -187,6 +212,7 @@ class TestCapabilityRouterIntegration:
 
 # ── ReflectionAgent quality scores ───────────────────────────────────────────
 
+
 class TestReflectionIntegration:
     def test_good_narrative_high_score(self):
         agent = ReflectionAgent(pass_threshold=0.50)
@@ -216,6 +242,7 @@ class TestReflectionIntegration:
 
 
 # ── AgentMemoryStore — episode saving ────────────────────────────────────────
+
 
 class TestMemoryIntegration:
     def test_episode_saved_with_correct_fields(self):
@@ -269,40 +296,55 @@ class TestMemoryIntegration:
 
     def test_memory_similarity_search(self):
         store = AgentMemoryStore(backend="memory")
-        store.save(EpisodeRecord(
-            org_id="org-1", agent="cfo_pipeline", period="2024-Q1",
-            summary={}, narrative="Nakit akışı kritik, likidite sorunu var",
-            confidence=0.9,
-        ))
-        store.save(EpisodeRecord(
-            org_id="org-1", agent="cfo_pipeline", period="2024-Q2",
-            summary={}, narrative="Gelir büyümesi güçlü, marjlar arttı",
-            confidence=0.9,
-        ))
+        store.save(
+            EpisodeRecord(
+                org_id="org-1",
+                agent="cfo_pipeline",
+                period="2024-Q1",
+                summary={},
+                narrative="Nakit akışı kritik, likidite sorunu var",
+                confidence=0.9,
+            )
+        )
+        store.save(
+            EpisodeRecord(
+                org_id="org-1",
+                agent="cfo_pipeline",
+                period="2024-Q2",
+                summary={},
+                narrative="Gelir büyümesi güçlü, marjlar arttı",
+                confidence=0.9,
+            )
+        )
         results = store.retrieve(org_id="org-1", query="nakit akışı likidite")
         assert results[0].period == "2024-Q1"
 
 
 # ── Kernel services wired in orchestrator module ──────────────────────────────
 
+
 class TestKernelServicesWired:
     def test_orchestrator_imports_kernel_services(self):
         """Verify all three kernel services are importable from orchestrator."""
         from app.agents.orchestrator import _memory, _reflector, _router
+
         assert isinstance(_router, CapabilityRouter)
         assert isinstance(_reflector, ReflectionAgent)
         assert isinstance(_memory, AgentMemoryStore)
 
     def test_is_skipped_function_exists(self):
         from app.agents.orchestrator import _is_skipped
+
         assert callable(_is_skipped)
 
     def test_update_reflection_function_exists(self):
         from app.agents.orchestrator import _update_reflection
+
         assert callable(_update_reflection)
 
     def test_routing_plan_key_in_cfostate_type(self):
         from app.agents.state import CFOState
+
         # TypedDict keys accessible via __annotations__
         annotations = CFOState.__annotations__
         assert "routing_plan" in annotations
@@ -314,6 +356,7 @@ class TestKernelServicesWired:
         import inspect
 
         from app.agents.orchestrator import run_cfo_pipeline
+
         sig = inspect.signature(run_cfo_pipeline)
         assert "org_id" in sig.parameters
         assert "period" in sig.parameters

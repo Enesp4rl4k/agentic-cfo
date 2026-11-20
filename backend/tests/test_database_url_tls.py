@@ -4,6 +4,7 @@ asyncpg (the app) takes `?ssl=require`; psycopg (the LangGraph checkpointer and 
 agent memory) takes `?sslmode=require`. One query string handed to both breaks one of
 them, so each URL is written for its own driver from a single setting.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -13,8 +14,13 @@ from app.config import Settings
 
 def _pg(**over: object) -> Settings:
     return Settings(
-        use_sqlite=False, postgres_host="db.example.com", postgres_user="u", postgres_password="p",
-        postgres_db="aicfo", database_url_override="", **over,  # type: ignore[arg-type]
+        use_sqlite=False,
+        postgres_host="db.example.com",
+        postgres_user="u",
+        postgres_password="p",
+        postgres_db="aicfo",
+        database_url_override="",
+        **over,  # type: ignore[arg-type]
     )
 
 
@@ -37,20 +43,26 @@ def test_an_unknown_mode_is_refused_rather_than_sent_to_the_driver():
 
 
 def test_an_override_written_for_psycopg_is_translated_for_asyncpg():
-    s = Settings(use_sqlite=False, database_url_override="postgresql+asyncpg://u:p@h:5432/d?sslmode=require")
+    s = Settings(
+        use_sqlite=False, database_url_override="postgresql+asyncpg://u:p@h:5432/d?sslmode=require"
+    )
     assert s.database_url == "postgresql+asyncpg://u:p@h:5432/d?ssl=require"
     assert s.database_url_sync == "postgresql://u:p@h:5432/d?sslmode=require"
 
 
 def test_an_override_written_for_asyncpg_is_translated_for_psycopg():
-    s = Settings(use_sqlite=False, database_url_override="postgresql+asyncpg://u:p@h:5432/d?ssl=verify-full")
+    s = Settings(
+        use_sqlite=False, database_url_override="postgresql+asyncpg://u:p@h:5432/d?ssl=verify-full"
+    )
     assert s.database_url == "postgresql+asyncpg://u:p@h:5432/d?ssl=verify-full"
     assert s.database_url_sync == "postgresql://u:p@h:5432/d?sslmode=verify-full"
 
 
 def test_other_query_parameters_of_an_override_survive():
-    s = Settings(use_sqlite=False,
-                 database_url_override="postgresql+asyncpg://u:p@h:5432/d?sslmode=require&application_name=aicfo")
+    s = Settings(
+        use_sqlite=False,
+        database_url_override="postgresql+asyncpg://u:p@h:5432/d?sslmode=require&application_name=aicfo",
+    )
     assert "application_name=aicfo" in s.database_url
     assert "application_name=aicfo" in s.database_url_sync
     assert "sslmode" not in s.database_url

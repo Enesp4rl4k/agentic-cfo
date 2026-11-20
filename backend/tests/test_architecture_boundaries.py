@@ -11,6 +11,7 @@ any upward edge.
 
 Known, deliberate exceptions are listed per-rule; shrink them, never grow them.
 """
+
 from __future__ import annotations
 
 import ast

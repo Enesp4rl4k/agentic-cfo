@@ -5,6 +5,7 @@ Ajanların geçmiş Yönetim Kurulu (Boardroom) müzakerelerini, alınan uzlaş�
 taahhüt edilen hedefleri ve aksiyon durumlarını kalıcı olarak saklayan ve yeni müzakerelere
 bağlam (context) sağlayan hafıza modülü.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,9 +75,7 @@ class BoardroomMemoryService:
             with open(self.storage_path, encoding="utf-8") as f:
                 data = json.load(f)
                 for item in data:
-                    actions = [
-                        ActionItemRecord(**a) for a in item.get("action_items", [])
-                    ]
+                    actions = [ActionItemRecord(**a) for a in item.get("action_items", [])]
                     item["action_items"] = actions
                     rec = DebateMemoryRecord(**item)
                     if rec.final_decision.startswith(_HAZIR_KARAR):
@@ -136,8 +135,14 @@ class BoardroomMemoryService:
             )
 
         transcript = {
-            "round_1": [asdict(s) if hasattr(s, "__dataclass_fields__") else s.model_dump() for s in debate_result.round_1_statements],
-            "round_2": [asdict(s) if hasattr(s, "__dataclass_fields__") else s.model_dump() for s in debate_result.round_2_statements],
+            "round_1": [
+                asdict(s) if hasattr(s, "__dataclass_fields__") else s.model_dump()
+                for s in debate_result.round_1_statements
+            ],
+            "round_2": [
+                asdict(s) if hasattr(s, "__dataclass_fields__") else s.model_dump()
+                for s in debate_result.round_2_statements
+            ],
         }
 
         record = DebateMemoryRecord(
@@ -167,7 +172,8 @@ class BoardroomMemoryService:
         LLM, and echoed into this company's transcript.
         """
         own = [
-            r for r in self._records.values()
+            r
+            for r in self._records.values()
             if org_id and r.org_id == org_id and r.resolution_status != GECERSIZ
         ]
         if not own:
@@ -216,7 +222,8 @@ class BoardroomMemoryService:
         if not org_id:
             return []
         own = [
-            r for r in self._records.values()
+            r
+            for r in self._records.values()
             if r.org_id == org_id and r.resolution_status != GECERSIZ
         ]
         own.sort(key=lambda r: r.created_at, reverse=True)

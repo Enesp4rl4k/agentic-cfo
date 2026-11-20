@@ -24,6 +24,7 @@ Two independent hazards this file neutralises:
 3. Process-wide service singletons.  ~20 modules cache a singleton in a module
    global.  A fixture resets the ones that carry cross-test state.
 """
+
 from __future__ import annotations
 
 import os

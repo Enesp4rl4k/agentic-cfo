@@ -12,6 +12,7 @@ Akış:
   3. Google/Microsoft: /auth/sso/google/callback?code=...&state=... çağırır
   4. Backend: JWT üretir → frontend'e yönlendirir
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,11 +43,12 @@ async def list_sso_providers() -> dict[str, Any]:
     Frontend uses this to show/hide SSO login buttons.
     """
     from app.services.sso import get_sso_service
+
     svc = get_sso_service()
     return {
         "data": {
             "providers": svc.get_enabled_providers(),
-            "count":     len(svc.get_enabled_providers()),
+            "count": len(svc.get_enabled_providers()),
         },
         "error": None,
     }
@@ -54,10 +56,10 @@ async def list_sso_providers() -> dict[str, Any]:
 
 @router.get("/auth/sso/{provider}/login")
 async def sso_login(
-    provider:     str,
+    provider: str,
     redirect_uri: str = Query(
         default="",
-        description="Where to redirect after login (defaults to frontend /auth/callback)"
+        description="Where to redirect after login (defaults to frontend /auth/callback)",
     ),
 ) -> dict[str, Any]:
     """
@@ -72,14 +74,14 @@ async def sso_login(
 
     # Default redirect URI: backend callback endpoint
     if not redirect_uri:
-        base     = getattr(settings, "backend_url", "http://localhost:8000")
+        base = getattr(settings, "backend_url", "http://localhost:8000")
         redirect_uri = f"{base}/api/v1/auth/sso/{provider}/callback"
 
     try:
         svc = get_sso_service()
         url, state = await svc.get_authorization_url(
-            provider_name = provider,
-            redirect_uri  = redirect_uri,
+            provider_name=provider,
+            redirect_uri=redirect_uri,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -87,8 +89,8 @@ async def sso_login(
     return {
         "data": {
             "authorization_url": url,
-            "state":             state,
-            "provider":          provider,
+            "state": state,
+            "provider": provider,
         },
         "error": None,
     }
@@ -97,10 +99,10 @@ async def sso_login(
 @router.get("/auth/sso/{provider}/callback")
 async def sso_callback(
     provider: str,
-    code:     str   = Query(..., description="Authorization code from provider"),
-    state:    str   = Query(..., description="CSRF state parameter"),
-    error:    str | None = Query(default=None),
-    db:       AsyncSession = Depends(get_db),
+    code: str = Query(..., description="Authorization code from provider"),
+    state: str = Query(..., description="CSRF state parameter"),
+    error: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """
     OAuth2 callback endpoint.
@@ -118,9 +120,9 @@ async def sso_callback(
     from app.services.auth import create_access_token, create_refresh_token
     from app.services.sso import get_sso_service, provision_sso_user
 
-    settings     = get_settings()
+    settings = get_settings()
     frontend_url = _frontend_url(settings)
-    error_url    = f"{frontend_url}/auth/login?error=sso_failed"
+    error_url = f"{frontend_url}/auth/login?error=sso_failed"
 
     # Provider declined
     if error:
@@ -128,7 +130,7 @@ async def sso_callback(
         return RedirectResponse(url=f"{error_url}&reason={error}")
 
     try:
-        svc       = get_sso_service()
+        svc = get_sso_service()
         oauth_user = await svc.handle_callback(provider, code, state)
     except ValueError as exc:
         logger.warning("SSO callback validation failed: %s", exc)
@@ -144,22 +146,24 @@ async def sso_callback(
         return RedirectResponse(url=f"{error_url}&reason=provisioning_failed")
 
     # Generate JWT tokens
-    access_token  = create_access_token(
-        user_id = str(user.id),
-        email   = user.email,
-        role    = str(user.role),
+    access_token = create_access_token(
+        user_id=str(user.id),
+        email=user.email,
+        role=str(user.role),
     )
     refresh_token = create_refresh_token(
-        user_id = str(user.id),
-        email   = user.email,
+        user_id=str(user.id),
+        email=user.email,
     )
 
     # Redirect to frontend with tokens
-    params = urlencode({
-        "access_token":  access_token,
-        "refresh_token": refresh_token,
-        "provider":      provider,
-    })
+    params = urlencode(
+        {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "provider": provider,
+        }
+    )
     redirect_url = f"{frontend_url}/auth/sso-callback?{params}"
     return RedirectResponse(url=redirect_url, status_code=302)
 
@@ -175,7 +179,7 @@ async def list_sso_connections(
     return {
         "data": {
             "sso_provider": getattr(current_user, "sso_provider", None),
-            "sso_id":       getattr(current_user, "sso_id", None),
+            "sso_id": getattr(current_user, "sso_id", None),
             "has_password": bool(getattr(current_user, "hashed_password", "")),
         },
         "error": None,

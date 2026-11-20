@@ -6,6 +6,7 @@ published the result as `breach_probability`, rounded to four decimals and
 shown in the UI as a percentage. The ordering is worth keeping; the claim was
 not.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

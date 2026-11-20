@@ -16,6 +16,7 @@ Desteklenen export tipleri:
   - Hesap Hareketleri (Tarih;Belge Turu;Belge No;Hesap Kodu;Aciklama;Borc;Alacak)
   - Mizan Raporu (Hesap Kodu;Hesap Adi;Borc;Alacak;Borc Bakiye;Alacak Bakiye)
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,7 +46,7 @@ class LogoTigerConnector:
 
     async def create_or_update_integration(
         self,
-        org_id:       str,
+        org_id: str,
         display_name: str = "Logo Tiger",
     ) -> dict[str, Any]:
         """
@@ -56,19 +57,18 @@ class LogoTigerConnector:
 
         from app.models.erp_integration import ERPIntegration
 
-        stmt = (
-            select(ERPIntegration)
-            .where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "logo_tiger")
+        stmt = select(ERPIntegration).where(
+            ERPIntegration.org_id == org_id, ERPIntegration.provider == "logo_tiger"
         )
         integration = (await self.db.execute(stmt)).scalar_one_or_none()
 
         if not integration:
             integration = ERPIntegration(
-                org_id       = org_id,
-                provider     = "logo_tiger",
-                display_name = display_name,
-                status       = "active",  # CSV-based = her zaman hazir
-                connected_at = datetime.now(UTC),
+                org_id=org_id,
+                provider="logo_tiger",
+                display_name=display_name,
+                status="active",  # CSV-based = her zaman hazir
+                connected_at=datetime.now(UTC),
             )
             self.db.add(integration)
             await self.db.commit()
@@ -79,9 +79,9 @@ class LogoTigerConnector:
 
     async def sync_from_csv(
         self,
-        org_id:      str,
+        org_id: str,
         csv_content: str,
-        filename:    str = "logo_tiger_export.csv",
+        filename: str = "logo_tiger_export.csv",
     ) -> dict[str, Any]:
         """
         CSV icerigini parse et, SyncBatch olustur.
@@ -97,9 +97,8 @@ class LogoTigerConnector:
         start = time.time()
 
         # Entegrasyon bul veya olustur
-        stmt = (
-            select(ERPIntegration)
-            .where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "logo_tiger")
+        stmt = select(ERPIntegration).where(
+            ERPIntegration.org_id == org_id, ERPIntegration.provider == "logo_tiger"
         )
         integration = (await self.db.execute(stmt)).scalar_one_or_none()
         if not integration:
@@ -108,11 +107,11 @@ class LogoTigerConnector:
 
         # Sync log olustur
         log = ERPSyncLog(
-            integration_id = integration.id,
-            org_id         = org_id,
-            provider       = "logo_tiger",
-            status         = "running",
-            started_at     = datetime.now(UTC),
+            integration_id=integration.id,
+            org_id=org_id,
+            provider="logo_tiger",
+            status="running",
+            started_at=datetime.now(UTC),
         )
         self.db.add(log)
         await self.db.commit()
@@ -126,7 +125,9 @@ class LogoTigerConnector:
             # can_parse kontrolu
             if not LogoTigerParser.can_parse(csv_content):
                 # Relaxed mod -- Logo Tiger olabilir ama marker yok
-                logger.warning("Logo Tiger parser marker bulunamadi, zorla calistirilıyor: %s", filename)
+                logger.warning(
+                    "Logo Tiger parser marker bulunamadi, zorla calistirilıyor: %s", filename
+                )
 
             statement = parser.parse(csv_content, file_path=filename)
             transactions = statement.transactions
@@ -139,24 +140,26 @@ class LogoTigerConnector:
                     if tx.amount_cents == 0:
                         skipped += 1
                         continue
-                    normalized.append({
-                        "date":        tx.date.isoformat() if tx.date else None,
-                        "amount_cents": abs(tx.amount_cents),
-                        "type":        tx.tx_type or "expense",
-                        "description": tx.description or "",
-                        # ParsedTransaction has no `category` — it never has.
-                        # Reading one raised AttributeError inside the per-row
-                        # try below, so every transaction was counted as
-                        # "skipped" and the sync reported success having
-                        # imported nothing. "other" was not a category either;
-                        # the vocabulary's fallback is other_expense.
-                        "category":    classify_posting(
-                            tx.description or "", tx.tx_type or "expense", tx.account_code
-                        ),
-                        "account_code": tx.account_code,
-                        "source":      "logo_tiger",
-                        "reference":   tx.reference or "",
-                    })
+                    normalized.append(
+                        {
+                            "date": tx.date.isoformat() if tx.date else None,
+                            "amount_cents": abs(tx.amount_cents),
+                            "type": tx.tx_type or "expense",
+                            "description": tx.description or "",
+                            # ParsedTransaction has no `category` — it never has.
+                            # Reading one raised AttributeError inside the per-row
+                            # try below, so every transaction was counted as
+                            # "skipped" and the sync reported success having
+                            # imported nothing. "other" was not a category either;
+                            # the vocabulary's fallback is other_expense.
+                            "category": classify_posting(
+                                tx.description or "", tx.tx_type or "expense", tx.account_code
+                            ),
+                            "account_code": tx.account_code,
+                            "source": "logo_tiger",
+                            "reference": tx.reference or "",
+                        }
+                    )
                 except Exception as ex:
                     parse_errors.append(str(ex))
                     skipped += 1
@@ -164,57 +167,61 @@ class LogoTigerConnector:
             tx_count = len(normalized)
 
             # Integration guncelle
-            integration.last_sync_at     = datetime.now(UTC)
+            integration.last_sync_at = datetime.now(UTC)
             integration.last_sync_status = "success"
-            integration.last_sync_count  = tx_count
-            integration.last_error       = None
+            integration.last_sync_count = tx_count
+            integration.last_error = None
 
-            log.status                = "success"
-            log.transactions_synced   = tx_count
-            log.transactions_skipped  = skipped
-            log.finished_at           = datetime.now(UTC)
-            log.duration_seconds      = int(time.time() - start)
+            log.status = "success"
+            log.transactions_synced = tx_count
+            log.transactions_skipped = skipped
+            log.finished_at = datetime.now(UTC)
+            log.duration_seconds = int(time.time() - start)
 
             await self.db.commit()
 
             logger.info(
                 "Logo Tiger sync tamamlandi: org=%s txn=%d skipped=%d",
-                org_id, tx_count, skipped,
+                org_id,
+                tx_count,
+                skipped,
             )
 
             return {
-                "ok":             True,
+                "ok": True,
                 "integration_id": integration.id,
-                "transactions":   normalized,
-                "sync_count":     tx_count,
-                "skipped":        skipped,
-                "parse_errors":   parse_errors,
+                "transactions": normalized,
+                "sync_count": tx_count,
+                "skipped": skipped,
+                "parse_errors": parse_errors,
                 "statement_info": {
-                    "bank_name":     statement.bank_name,
+                    "bank_name": statement.bank_name,
                     "account_number": statement.account_number,
                     # The fields are statement_period_start/end; the short
                     # names never existed, so this raised straight into the
                     # outer handler and marked every sync an error.
                     "period_start": (
                         statement.statement_period_start.isoformat()
-                        if statement.statement_period_start else None
+                        if statement.statement_period_start
+                        else None
                     ),
                     "period_end": (
                         statement.statement_period_end.isoformat()
-                        if statement.statement_period_end else None
+                        if statement.statement_period_end
+                        else None
                     ),
                 },
             }
 
         except Exception as exc:
             err_msg = str(exc)
-            integration.last_sync_at     = datetime.now(UTC)
+            integration.last_sync_at = datetime.now(UTC)
             integration.last_sync_status = "error"
-            integration.last_error       = err_msg[:500]
+            integration.last_error = err_msg[:500]
 
-            log.status        = "error"
+            log.status = "error"
             log.error_message = err_msg[:500]
-            log.finished_at   = datetime.now(UTC)
+            log.finished_at = datetime.now(UTC)
             log.duration_seconds = int(time.time() - start)
 
             await self.db.commit()
@@ -224,7 +231,7 @@ class LogoTigerConnector:
     async def get_sync_history(
         self,
         org_id: str,
-        limit:  int = 10,
+        limit: int = 10,
     ) -> list[dict[str, Any]]:
         """Son sync loglarini getir."""
         from sqlalchemy import desc, select
@@ -243,6 +250,7 @@ class LogoTigerConnector:
 
 # ── Mikro ERP connector (CSV-based, Logo Tiger ile ayni pattern) ──────────────
 
+
 class MikroConnector:
     """
     Mikro ERP CSV upload connector.
@@ -254,9 +262,9 @@ class MikroConnector:
 
     async def sync_from_csv(
         self,
-        org_id:      str,
+        org_id: str,
         csv_content: str,
-        filename:    str = "mikro_export.csv",
+        filename: str = "mikro_export.csv",
     ) -> dict[str, Any]:
         from sqlalchemy import select
 
@@ -264,52 +272,57 @@ class MikroConnector:
         from app.parsers.accounting.mikro import MikroParser  # type: ignore[attr-defined]
 
         start = time.time()
-        stmt  = (
-            select(ERPIntegration)
-            .where(ERPIntegration.org_id == org_id, ERPIntegration.provider == "mikro")
+        stmt = select(ERPIntegration).where(
+            ERPIntegration.org_id == org_id, ERPIntegration.provider == "mikro"
         )
         integration = (await self.db.execute(stmt)).scalar_one_or_none()
         if not integration:
             integration = ERPIntegration(
-                org_id="mikro", provider="mikro", display_name="Mikro ERP",
-                status="active", connected_at=datetime.now(UTC),
+                org_id="mikro",
+                provider="mikro",
+                display_name="Mikro ERP",
+                status="active",
+                connected_at=datetime.now(UTC),
             )
             self.db.add(integration)
             await self.db.commit()
             await self.db.refresh(integration)
 
         log = ERPSyncLog(
-            integration_id=integration.id, org_id=org_id,
-            provider="mikro", status="running",
+            integration_id=integration.id,
+            org_id=org_id,
+            provider="mikro",
+            status="running",
             started_at=datetime.now(UTC),
         )
         self.db.add(log)
         await self.db.commit()
 
         try:
-            parser    = MikroParser()
+            parser = MikroParser()
             statement = parser.parse(csv_content, file_path=filename)
-            txns      = [
+            txns = [
                 {
-                    "date":         tx.date.isoformat() if tx.date else None,
+                    "date": tx.date.isoformat() if tx.date else None,
                     "amount_cents": abs(tx.amount_cents),
-                    "type":         tx.tx_type or "expense",
-                    "description":  tx.description or "",
-                    "category":     classify_posting(
+                    "type": tx.tx_type or "expense",
+                    "description": tx.description or "",
+                    "category": classify_posting(
                         tx.description or "", tx.tx_type or "expense", tx.account_code
                     ),
                     "account_code": tx.account_code,
-                    "source":       "mikro",
+                    "source": "mikro",
                 }
-                for tx in statement.transactions if tx.amount_cents != 0
+                for tx in statement.transactions
+                if tx.amount_cents != 0
             ]
-            integration.last_sync_at     = datetime.now(UTC)
+            integration.last_sync_at = datetime.now(UTC)
             integration.last_sync_status = "success"
-            integration.last_sync_count  = len(txns)
-            log.status              = "success"
+            integration.last_sync_count = len(txns)
+            log.status = "success"
             log.transactions_synced = len(txns)
-            log.finished_at         = datetime.now(UTC)
-            log.duration_seconds    = int(time.time() - start)
+            log.finished_at = datetime.now(UTC)
+            log.duration_seconds = int(time.time() - start)
             await self.db.commit()
             return {"ok": True, "transactions": txns, "sync_count": len(txns)}
         except Exception as exc:

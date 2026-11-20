@@ -6,6 +6,7 @@ Garanti PDF ekstrelerinde tipik format:
 - Tablo: Tarih | Valör | Açıklama | Tutar | Bakiye
 - Borç/alacak tek tutar sütununda, işaret ile ayrılır (- borç, + alacak)
 """
+
 from __future__ import annotations
 
 import re
@@ -48,7 +49,7 @@ class GarantiParser(BankParser):
         # Pattern: date, optional valor date, description, signed amount, balance
         row_pattern = re.compile(
             r"(\d{2}\.\d{2}\.\d{4})\s+"
-            r"(?:\d{2}\.\d{2}\.\d{4}\s+)?"   # optional valor date
+            r"(?:\d{2}\.\d{2}\.\d{4}\s+)?"  # optional valor date
             r"(.+?)\s+"
             r"([+-]?[\d.,]+)\s+"
             r"([\d.,]+)\s*$",
@@ -65,11 +66,13 @@ class GarantiParser(BankParser):
             if not amount:
                 continue
 
-            transactions.append(ParsedTransaction(
-                date=date,
-                description=description,
-                amount_cents=amount,
-                tx_type="expense" if negative else "income",
-                raw_row=m.group(0),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description,
+                    amount_cents=amount,
+                    tx_type="expense" if negative else "income",
+                    raw_row=m.group(0),
+                )
+            )
         return transactions

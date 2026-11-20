@@ -14,6 +14,7 @@ themselves, which cannot be stale by construction.
 What an accountant needs on a Monday is not a health score nobody computes. It
 is: which of my clients has something waiting for me.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -82,9 +83,7 @@ class ClientStatus:
         }
 
 
-async def status_for_clients(
-    db: AsyncSession, client_ids: list[str]
-) -> dict[str, ClientStatus]:
+async def status_for_clients(db: AsyncSession, client_ids: list[str]) -> dict[str, ClientStatus]:
     """Derive each client's position in the chain from the jobs themselves.
 
     Four grouped queries rather than one per client: an accountant's book is
@@ -118,16 +117,20 @@ async def status_for_clients(
     )
 
     latest_rows = (
-        await db.execute(
-            select(AnalysisJob)
-            .where(AnalysisJob.smmm_client_id.in_(client_ids))
-            .order_by(AnalysisJob.smmm_client_id, desc(AnalysisJob.created_at))
+        (
+            await db.execute(
+                select(AnalysisJob)
+                .where(AnalysisJob.smmm_client_id.in_(client_ids))
+                .order_by(AnalysisJob.smmm_client_id, desc(AnalysisJob.created_at))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     latest: dict[str, AnalysisJob] = {}
     for job in latest_rows:
         key = str(job.smmm_client_id)
-        if key not in latest:      # ordered newest-first per client
+        if key not in latest:  # ordered newest-first per client
             latest[key] = job
 
     job_to_client = {str(j.id): str(j.smmm_client_id) for j in latest.values()}
@@ -174,9 +177,7 @@ async def status_for_clients(
     return empty
 
 
-async def assert_owns_client(
-    db: AsyncSession, user_id: str, client_id: str
-) -> str:
+async def assert_owns_client(db: AsyncSession, user_id: str, client_id: str) -> str:
     """Return the client id if this user's SMMM record owns it, else raise.
 
     Ownership is checked here rather than trusted from the request: a client id

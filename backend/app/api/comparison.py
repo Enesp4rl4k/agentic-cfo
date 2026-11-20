@@ -8,6 +8,7 @@ POST /comparison/multi-period
 GET  /comparison/jobs
     List the user's completed analysis jobs (for selecting periods).
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,15 +58,15 @@ async def multi_period_comparison(
     """
     # Load jobs — only the caller's. Every id in the body used to be loaded,
     # so comparing your own period against another company's was one request.
-    result = await db.execute(
-        select(AnalysisJob).where(AnalysisJob.id.in_(body.job_ids))
-    )
-    jobs = [j for j in result.scalars().all() if can_access(user, org_id=j.org_id, user_id=j.user_id)]
+    result = await db.execute(select(AnalysisJob).where(AnalysisJob.id.in_(body.job_ids)))
+    jobs = [
+        j for j in result.scalars().all() if can_access(user, org_id=j.org_id, user_id=j.user_id)
+    ]
 
     if len(jobs) < 2:
         raise HTTPException(
             status_code=404,
-            detail=f"Yalnızca {len(jobs)} job bulundu, {len(body.job_ids)} istendi."
+            detail=f"Yalnızca {len(jobs)} job bulundu, {len(body.job_ids)} istendi.",
         )
 
     # Extract period data from each job
@@ -81,7 +82,7 @@ async def multi_period_comparison(
     if len(period_data_list) < 2:
         raise HTTPException(
             status_code=422,
-            detail="Analiz sonuçları çıkarılamadı. Job'ların tamamlanmış olduğundan emin olun."
+            detail="Analiz sonuçları çıkarılamadı. Job'ların tamamlanmış olduğundan emin olun.",
         )
 
     # Run comparison
@@ -126,15 +127,17 @@ async def list_completed_jobs(
     for job in jobs:
         meta = job.result_metadata or {}
         pnl = meta.get("pnl") or {}
-        job_list.append({
-            "job_id": str(job.id),
-            "filename": job.filename,
-            "created_at": job.created_at.isoformat() if job.created_at else None,
-            "status": job.status,
-            "period_label": meta.get("period_label") or pnl.get("period") or str(job.id)[:8],
-            "revenue": pnl.get("revenue"),
-            "date_from": meta.get("date_from") or pnl.get("period_start"),
-            "date_to": meta.get("date_to") or pnl.get("period_end"),
-        })
+        job_list.append(
+            {
+                "job_id": str(job.id),
+                "filename": job.filename,
+                "created_at": job.created_at.isoformat() if job.created_at else None,
+                "status": job.status,
+                "period_label": meta.get("period_label") or pnl.get("period") or str(job.id)[:8],
+                "revenue": pnl.get("revenue"),
+                "date_from": meta.get("date_from") or pnl.get("period_start"),
+                "date_to": meta.get("date_to") or pnl.get("period_end"),
+            }
+        )
 
     return {"data": {"jobs": job_list, "total": len(job_list)}, "error": None}

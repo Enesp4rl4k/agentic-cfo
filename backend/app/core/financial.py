@@ -5,6 +5,7 @@ Centralises currency conversion, safe division, profit margin,
 and variance formulas to prevent duplicated and brittle math across skills.
 Amounts are consistently represented as INTEGER cents/kuruş.
 """
+
 from __future__ import annotations
 
 import math

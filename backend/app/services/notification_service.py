@@ -12,6 +12,7 @@ Channels:
 
 All channels fail gracefully — one channel failure does not block others.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _alert_emoji(level: str) -> str:
     return {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(level, "⚪")
@@ -51,29 +53,33 @@ def _build_slack_payload(decisions: list[AlertDecision], org_name: str = "") -> 
     for d in actionable[:8]:  # Slack block limit
         emoji = _alert_emoji(d.alert.level)
         action_label = "⚡ ESCALATE" if d.action == AlertAction.ESCALATE else "📋 ACTION"
-        blocks.append({
-            "type": "section",
-            "fields": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"*{emoji} [{d.alert.domain.upper()}] {d.alert.level.upper()}*\n{d.alert.message[:200]}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*{action_label}*\nPriority: {d.priority_score:.2f}",
-                },
-            ],
-        })
-
-    blocks.append({
-        "type": "context",
-        "elements": [
+        blocks.append(
             {
-                "type": "mrkdwn",
-                "text": f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} · {len(actionable)} actionable alerts",
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*{emoji} [{d.alert.domain.upper()}] {d.alert.level.upper()}*\n{d.alert.message[:200]}",
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*{action_label}*\nPriority: {d.priority_score:.2f}",
+                    },
+                ],
             }
-        ],
-    })
+        )
+
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} · {len(actionable)} actionable alerts",
+                }
+            ],
+        }
+    )
 
     return {"blocks": blocks}
 
@@ -114,6 +120,7 @@ def _build_email_body(decisions: list[AlertDecision], org_name: str = "") -> tup
 
 
 # ── Main service ──────────────────────────────────────────────────────────────
+
 
 class NotificationService:
     """
@@ -175,7 +182,11 @@ class NotificationService:
 
         logger.info(
             "NotificationService: org=%s delivered slack=%d email=%d whatsapp=%d dashboard=%d",
-            org_id, results["slack"], results["email"], results["whatsapp"], results["dashboard"],
+            org_id,
+            results["slack"],
+            results["email"],
+            results["whatsapp"],
+            results["dashboard"],
         )
         return results
 
@@ -196,18 +207,21 @@ class NotificationService:
             return 0
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(webhook_url, json=payload)
                 if resp.status_code == 200:
                     logger.info(
                         "Slack notification sent: %d alerts to org=%s",
-                        len(decisions), org_name,
+                        len(decisions),
+                        org_name,
                     )
                     return 1
                 else:
                     logger.warning(
                         "Slack webhook failed: HTTP %d — %s",
-                        resp.status_code, resp.text[:200],
+                        resp.status_code,
+                        resp.text[:200],
                     )
                     return 0
         except Exception as exc:
@@ -230,6 +244,7 @@ class NotificationService:
         Skips silently if SMTP credentials are not configured.
         """
         from app.config import get_settings
+
         settings = get_settings()
 
         if not settings.smtp_user or not settings.smtp_password:
@@ -255,8 +270,8 @@ class NotificationService:
             try:
                 msg = MIMEMultipart("alternative")
                 msg["Subject"] = subject
-                msg["From"]    = settings.notification_from
-                msg["To"]      = recipient
+                msg["From"] = settings.notification_from
+                msg["To"] = recipient
                 msg.attach(MIMEText(body, "plain", "utf-8"))
 
                 await aiosmtplib.send(
@@ -278,7 +293,9 @@ class NotificationService:
         if delivered > 0:
             logger.info(
                 "Email notification: %d/%d recipients reached for org=%s",
-                delivered, len(recipients), org_name,
+                delivered,
+                len(recipients),
+                org_name,
             )
         return delivered
 
@@ -308,6 +325,7 @@ class NotificationService:
         Use a text template for alerts — e.g. "<Brand> Alert: {{1}}"
         """
         from app.config import get_settings
+
         settings = get_settings()
 
         # Build compact alert text (WhatsApp has 4096 char limit)
@@ -329,20 +347,21 @@ class NotificationService:
 
         # ── Meta Cloud API ────────────────────────────────────────────────────
         phone_number_id = getattr(settings, "whatsapp_phone_number_id", "")
-        access_token    = getattr(settings, "whatsapp_access_token", "")
-        api_version     = getattr(settings, "whatsapp_api_version", "v19.0")
+        access_token = getattr(settings, "whatsapp_access_token", "")
+        api_version = getattr(settings, "whatsapp_api_version", "v19.0")
 
         if phone_number_id and access_token:
             try:
                 import httpx
+
                 # Normalize phone number (must start with country code, no + or spaces)
                 to_number = phone_number.lstrip("+").replace(" ", "").replace("-", "")
                 payload = {
                     "messaging_product": "whatsapp",
-                    "recipient_type":    "individual",
-                    "to":                to_number,
-                    "type":              "text",
-                    "text":              {"body": message_text},
+                    "recipient_type": "individual",
+                    "to": to_number,
+                    "type": "text",
+                    "text": {"body": message_text},
                 }
                 url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
                 async with httpx.AsyncClient(timeout=15.0) as client:
@@ -355,26 +374,35 @@ class NotificationService:
                         },
                     )
                 if resp.status_code in (200, 201):
-                    logger.info("WhatsApp (Meta) sent to %s for org=%s", phone_number[:6] + "***", org_name)
+                    logger.info(
+                        "WhatsApp (Meta) sent to %s for org=%s", phone_number[:6] + "***", org_name
+                    )
                     return 1
                 else:
-                    logger.warning("WhatsApp Meta API failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                    logger.warning(
+                        "WhatsApp Meta API failed: HTTP %d — %s", resp.status_code, resp.text[:200]
+                    )
             except Exception as exc:
                 logger.warning("WhatsApp Meta delivery error: %s", exc)
             return 0
 
         # ── Twilio fallback ───────────────────────────────────────────────────
-        twilio_sid    = getattr(settings, "twilio_account_sid", "")
-        twilio_token  = getattr(settings, "twilio_auth_token", "")
-        twilio_from   = getattr(settings, "twilio_whatsapp_from", "")  # e.g. "whatsapp:+14155238886"
+        twilio_sid = getattr(settings, "twilio_account_sid", "")
+        twilio_token = getattr(settings, "twilio_auth_token", "")
+        twilio_from = getattr(settings, "twilio_whatsapp_from", "")  # e.g. "whatsapp:+14155238886"
 
         if twilio_sid and twilio_token and twilio_from:
             try:
                 import base64
 
                 import httpx
+
                 auth = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
-                to_wa = f"whatsapp:{phone_number}" if not phone_number.startswith("whatsapp:") else phone_number
+                to_wa = (
+                    f"whatsapp:{phone_number}"
+                    if not phone_number.startswith("whatsapp:")
+                    else phone_number
+                )
                 url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
                 async with httpx.AsyncClient(timeout=15.0) as client:
                     resp = await client.post(
@@ -383,10 +411,16 @@ class NotificationService:
                         headers={"Authorization": f"Basic {auth}"},
                     )
                 if resp.status_code in (200, 201):
-                    logger.info("WhatsApp (Twilio) sent to %s for org=%s", phone_number[:6] + "***", org_name)
+                    logger.info(
+                        "WhatsApp (Twilio) sent to %s for org=%s",
+                        phone_number[:6] + "***",
+                        org_name,
+                    )
                     return 1
                 else:
-                    logger.warning("WhatsApp Twilio failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                    logger.warning(
+                        "WhatsApp Twilio failed: HTTP %d — %s", resp.status_code, resp.text[:200]
+                    )
             except Exception as exc:
                 logger.warning("WhatsApp Twilio delivery error: %s", exc)
             return 0
@@ -405,6 +439,7 @@ class NotificationService:
         """Save actionable alerts as InAppNotification rows."""
         try:
             from app.models.in_app_notification import InAppNotification
+
             count = 0
             for d in decisions:
                 notif = InAppNotification(
@@ -435,6 +470,7 @@ class NotificationService:
             from sqlalchemy import select
 
             from app.models.alert_preference import AlertPreference
+
             result = await db.execute(
                 select(AlertPreference).where(AlertPreference.org_id == org_id)
             )
@@ -459,6 +495,7 @@ class NotificationService:
         """Return global Slack webhook from settings (fallback)."""
         try:
             from app.config import get_settings
+
             url = get_settings().slack_webhook_url
             return url if url else None
         except Exception:

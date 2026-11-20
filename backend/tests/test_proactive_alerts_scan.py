@@ -5,6 +5,7 @@ Before: the active-org query was raw SQL in Postgres-only syntax swallowed by
 (so a CFO-only org was never scanned), and alerts were inserted into a table no
 model created (so on SQLite every alert vanished into another `except`).
 """
+
 from __future__ import annotations
 
 import time
@@ -27,20 +28,30 @@ async def db():
 async def _analysis(db, org_id: str, *, hours_ago: float) -> None:
     from app.models.analysis_job import AnalysisJob
 
-    db.add(AnalysisJob(
-        filename="x.csv", file_path="/tmp/x.csv", file_type="csv", org_id=org_id,
-        status="completed", created_at=datetime.now(UTC) - timedelta(hours=hours_ago),
-    ))
+    db.add(
+        AnalysisJob(
+            filename="x.csv",
+            file_path="/tmp/x.csv",
+            file_type="csv",
+            org_id=org_id,
+            status="completed",
+            created_at=datetime.now(UTC) - timedelta(hours=hours_ago),
+        )
+    )
     await db.commit()
 
 
 async def _agent_job(db, org_id: str, *, hours_ago: float) -> None:
     from app.models.agent_job import AgentJob
 
-    db.add(AgentJob(
-        agent_type="cto", org_id=org_id, status="completed",
-        created_at=datetime.now(UTC) - timedelta(hours=hours_ago),
-    ))
+    db.add(
+        AgentJob(
+            agent_type="cto",
+            org_id=org_id,
+            status="completed",
+            created_at=datetime.now(UTC) - timedelta(hours=hours_ago),
+        )
+    )
     await db.commit()
 
 
@@ -56,9 +67,15 @@ async def test_active_orgs_include_cfo_only_and_agent_job_orgs(db):
 
 def _alert(alert_id: str = "a1") -> AlertEvent:
     return AlertEvent(
-        alert_id=alert_id, org_id="org-1", trigger="kri_breach", severity="high",
-        title="Gider / Gelir kırmızı", body="Faaliyet gideri gelirin %112'si",
-        metadata={"kri": "Gider / Gelir"}, channels=["in_app"], created_at=time.time(),
+        alert_id=alert_id,
+        org_id="org-1",
+        trigger="kri_breach",
+        severity="high",
+        title="Gider / Gelir kırmızı",
+        body="Faaliyet gideri gelirin %112'si",
+        metadata={"kri": "Gider / Gelir"},
+        channels=["in_app"],
+        created_at=time.time(),
     )
 
 

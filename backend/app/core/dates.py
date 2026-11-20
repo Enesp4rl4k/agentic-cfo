@@ -15,6 +15,7 @@ is an estimate. Callers persist that flag; the journal carries it; the e-Defter
 refuses to file on it until a human has settled the period from the source
 document. That is the one fact a reviewer can establish and the machine cannot.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

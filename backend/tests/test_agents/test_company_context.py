@@ -10,6 +10,7 @@ Covers:
   - Payload size guard: _trim_context_payload trims large agent results
   - CompanyContextService singleton
 """
+
 from __future__ import annotations
 
 import json
@@ -29,6 +30,7 @@ from app.services.company_context import (
 )
 
 # ── CompanyContext dataclass ──────────────────────────────────────────────────
+
 
 class TestCompanyContextDataclass:
     def test_default_fields(self):
@@ -76,10 +78,10 @@ class TestCompanyContextDataclass:
         ctx = CompanyContext(org_id="org-1")
         for agent in ["cfo", "cto", "cmo", "coo", "chro"]:
             ctx.set_active_job(agent, f"job-{agent}")
-        assert ctx.active_cfo_job_id  == "job-cfo"
-        assert ctx.active_cto_job_id  == "job-cto"
-        assert ctx.active_cmo_job_id  == "job-cmo"
-        assert ctx.active_coo_job_id  == "job-coo"
+        assert ctx.active_cfo_job_id == "job-cfo"
+        assert ctx.active_cto_job_id == "job-cto"
+        assert ctx.active_cmo_job_id == "job-cmo"
+        assert ctx.active_coo_job_id == "job-coo"
         assert ctx.active_chro_job_id == "job-chro"
 
     def test_set_active_job_unknown_ignored(self):
@@ -114,9 +116,9 @@ class TestCompanyContextDataclass:
         ctx.update_agent_result("cfo", {"data": 1})
         ctx.update_agent_result("risk", {"data": 2})
         summary = ctx.agent_summary()
-        assert summary["cfo"]["has_result"]  is True
+        assert summary["cfo"]["has_result"] is True
         assert summary["risk"]["has_result"] is True
-        assert summary["cto"]["has_result"]  is False
+        assert summary["cto"]["has_result"] is False
 
     def test_to_dict_from_dict_roundtrip(self):
         ctx = CompanyContext(
@@ -127,8 +129,8 @@ class TestCompanyContextDataclass:
         ctx.update_agent_result("cfo", {"revenue": 50_000})
         d = ctx.to_dict()
         ctx2 = CompanyContext.from_dict(d)
-        assert ctx2.org_id          == ctx.org_id
-        assert ctx2.company_name    == ctx.company_name
+        assert ctx2.org_id == ctx.org_id
+        assert ctx2.company_name == ctx.company_name
         assert ctx2.last_cfo_result == ctx.last_cfo_result
 
     def test_from_dict_ignores_unknown_fields(self):
@@ -143,6 +145,7 @@ class TestCompanyContextDataclass:
 
 
 # ── Payload trimming ──────────────────────────────────────────────────────────
+
 
 class TestTrimContextPayload:
     def _large_result(self, size_chars: int = _AGENT_RESULT_MAX_CHARS + 100) -> dict:
@@ -204,6 +207,7 @@ class TestTrimContextPayload:
 
 # ── get_company_context ───────────────────────────────────────────────────────
 
+
 class TestGetCompanyContext:
     @pytest.mark.asyncio
     async def test_returns_empty_context_when_no_redis_no_db(self):
@@ -224,7 +228,9 @@ class TestGetCompanyContext:
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(stored_ctx.to_dict()))
 
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
+        with patch(
+            "app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)
+        ):
             ctx = await get_company_context("org-1", db=None)
 
         assert ctx.company_name == "Acme"
@@ -235,7 +241,9 @@ class TestGetCompanyContext:
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
 
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
+        with patch(
+            "app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)
+        ):
             ctx = await get_company_context("org-hic-yazilmadi-2", db=None)
 
         assert ctx.org_id == "org-hic-yazilmadi-2"
@@ -244,6 +252,7 @@ class TestGetCompanyContext:
 
 # ── save_company_context ──────────────────────────────────────────────────────
 
+
 class TestSaveCompanyContext:
     @pytest.mark.asyncio
     async def test_save_writes_to_redis(self):
@@ -251,7 +260,9 @@ class TestSaveCompanyContext:
         mock_redis = AsyncMock()
         mock_redis.setex = AsyncMock()
 
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
+        with patch(
+            "app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)
+        ):
             await save_company_context(ctx, db=None)
 
         mock_redis.setex.assert_called_once()
@@ -288,7 +299,9 @@ class TestSaveCompanyContext:
         mock_redis = AsyncMock()
         mock_redis.setex = mock_setex
 
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
+        with patch(
+            "app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)
+        ):
             await save_company_context(ctx, db=None)
 
         if written_payload:
@@ -300,13 +313,16 @@ class TestSaveCompanyContext:
 
 # ── invalidate_company_context ────────────────────────────────────────────────
 
+
 class TestInvalidateCompanyContext:
     @pytest.mark.asyncio
     async def test_invalidate_deletes_redis_key(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock()
 
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
+        with patch(
+            "app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)
+        ):
             await invalidate_company_context("org-1", db=None)
 
         mock_redis.delete.assert_called_once_with("company_context:org-1")
@@ -319,6 +335,7 @@ class TestInvalidateCompanyContext:
 
 
 # ── CompanyContextService ─────────────────────────────────────────────────────
+
 
 class TestCompanyContextService:
     @pytest.mark.asyncio
@@ -333,10 +350,12 @@ class TestCompanyContextService:
     async def test_update_agent_saves_result(self):
         svc = CompanyContextService()
         mock_redis = AsyncMock()
-        mock_redis.get    = AsyncMock(return_value=None)
-        mock_redis.setex  = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock()
 
-        with patch("app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)):
+        with patch(
+            "app.services.company_context._get_redis", new=AsyncMock(return_value=mock_redis)
+        ):
             await svc.update_agent("org-1", "cfo", {"revenue": 75_000})
 
         # setex should have been called (save_company_context)

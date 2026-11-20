@@ -6,6 +6,7 @@ analysis history and semantic snapshots.
 Each dimension returns (score 0–100, why, [recommendations]). The overall score
 is the weighted mean. Stored per computation so the trend is real.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -47,56 +48,97 @@ def _clamp(x: float) -> int:
 
 
 def _grade(score: int) -> str:
-    return "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 55 else "D" if score >= 40 else "E"
+    return (
+        "A"
+        if score >= 85
+        else "B"
+        if score >= 70
+        else "C"
+        if score >= 55
+        else "D"
+        if score >= 40
+        else "E"
+    )
 
 
 async def _journal_payloads(org_id: str, db: AsyncSession) -> list[dict[str, Any]]:
     job_ids = (
-        await db.execute(select(AnalysisJob.id).where(AnalysisJob.org_id == org_id))
-    ).scalars().all()
+        (await db.execute(select(AnalysisJob.id).where(AnalysisJob.org_id == org_id)))
+        .scalars()
+        .all()
+    )
     if not job_ids:
         return []
     rows = (
-        await db.execute(
-            select(Report).where(
-                Report.job_id.in_(job_ids),
-                Report.report_type == _JOURNAL_REPORT,
-                Report.report_format == ReportFormat.JSON,
+        (
+            await db.execute(
+                select(Report).where(
+                    Report.job_id.in_(job_ids),
+                    Report.report_type == _JOURNAL_REPORT,
+                    Report.report_format == ReportFormat.JSON,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [r.data for r in rows if r.data]
 
 
 # ── Dimensions ─────────────────────────────────────────────────────────────
 
-async def _financial_discipline(org_id: str, db: AsyncSession, sig: dict) -> tuple[int, str, list[str]]:
+
+async def _financial_discipline(
+    org_id: str, db: AsyncSession, sig: dict
+) -> tuple[int, str, list[str]]:
     payloads = await _journal_payloads(org_id, db)
     sig["journal_reports"] = len(payloads)
     if not payloads:
-        return 20, "Henüz muhasebe yevmiyesi işlenmemiş.", [
-            "İlk dönemin işlemlerini yükleyip TR muhasebe analizini çalıştırın."
-        ]
+        return (
+            20,
+            "Henüz muhasebe yevmiyesi işlenmemiş.",
+            ["İlk dönemin işlemlerini yükleyip TR muhasebe analizini çalıştırın."],
+        )
     balanced = sum(1 for p in payloads if p.get("dengeli"))
-    confs = [float(p["ortalama_confidence"]) for p in payloads if p.get("ortalama_confidence") is not None]
+    confs = [
+        float(p["ortalama_confidence"])
+        for p in payloads
+        if p.get("ortalama_confidence") is not None
+    ]
     avg_conf = sum(confs) / len(confs) if confs else 0.0
     entries = [e for p in payloads for e in (p.get("yevmiye_kayitlari") or [])]
     sig["journal_entries"] = len(entries)
-    default_acct = sum(1 for e in entries if str(e.get("thp_hesap_kodu", "")).startswith("770")) if entries else 0
+    default_acct = (
+        sum(1 for e in entries if str(e.get("thp_hesap_kodu", "")).startswith("770"))
+        if entries
+        else 0
+    )
     generic_ratio = (default_acct / len(entries)) if entries else 1.0
 
-    score = 100 * (0.4 * (balanced / len(payloads)) + 0.4 * min(1.0, avg_conf / 0.9) + 0.2 * (1 - generic_ratio))
+    score = 100 * (
+        0.4 * (balanced / len(payloads))
+        + 0.4 * min(1.0, avg_conf / 0.9)
+        + 0.2 * (1 - generic_ratio)
+    )
     recs: list[str] = []
     if balanced < len(payloads):
         recs.append("Dengesiz dönem(ler) var — yevmiye denge hatalarını kapatın.")
     if generic_ratio > 0.5:
-        recs.append("Giderlerin çoğu genel hesaba (770) düşüyor — hesap planı eşlemesini derinleştirin.")
+        recs.append(
+            "Giderlerin çoğu genel hesaba (770) düşüyor — hesap planı eşlemesini derinleştirin."
+        )
     if avg_conf < 0.75:
         recs.append("Sınıflandırma güveni düşük — kategori kurallarını netleştirin.")
-    return _clamp(score), f"{balanced}/{len(payloads)} dönem dengeli, ort. güven {avg_conf:.2f}.", recs
+    return (
+        _clamp(score),
+        f"{balanced}/{len(payloads)} dönem dengeli, ort. güven {avg_conf:.2f}.",
+        recs,
+    )
 
 
-async def _delegated_authority(org_id: str, db: AsyncSession, sig: dict) -> tuple[int, str, list[str]]:
+async def _delegated_authority(
+    org_id: str, db: AsyncSession, sig: dict
+) -> tuple[int, str, list[str]]:
     policy = (
         await db.execute(
             select(AuthorityPolicy)
@@ -107,9 +149,13 @@ async def _delegated_authority(org_id: str, db: AsyncSession, sig: dict) -> tupl
     ).scalar_one_or_none()
     sig["has_custom_authority_policy"] = policy is not None
     if policy is None:
-        return 25, "Varsayılan yetki matrisi kullanılıyor — org'a özel delegasyon tanımlanmamış.", [
-            "Yetki Matrisi'ni düzenleyin: harcama bantlarına göre onaylayıcıları (finans, sahip) tanımlayın."
-        ]
+        return (
+            25,
+            "Varsayılan yetki matrisi kullanılıyor — org'a özel delegasyon tanımlanmamış.",
+            [
+                "Yetki Matrisi'ni düzenleyin: harcama bantlarına göre onaylayıcıları (finans, sahip) tanımlayın."
+            ],
+        )
     rules = policy.rules or []
     roles = {a.get("role") for r in rules for a in (r.get("approvals") or [])}
     sig["authority_rule_count"] = len(rules)
@@ -118,7 +164,8 @@ async def _delegated_authority(org_id: str, db: AsyncSession, sig: dict) -> tupl
     payloads = await _journal_payloads(org_id, db)
     entries = [e for p in payloads for e in (p.get("yevmiye_kayitlari") or [])]
     escalated_no_rule = sum(
-        1 for e in entries
+        1
+        for e in entries
         if (e.get("authority") or {}).get("outcome") == "needs_approval"
         and (e.get("authority") or {}).get("matched_rule_id") is None
     )
@@ -129,11 +176,15 @@ async def _delegated_authority(org_id: str, db: AsyncSession, sig: dict) -> tupl
     if len(roles) < 2:
         recs.append("Tek onaylayıcı rolü var — en az bir ara kademe (ör. finans müdürü) ekleyin.")
     if unmatched_ratio > 0.1:
-        recs.append(f"Kayıtların %{unmatched_ratio*100:.0f}'i hiçbir kurala uymadan yükseldi — matrisi genişletin.")
+        recs.append(
+            f"Kayıtların %{unmatched_ratio * 100:.0f}'i hiçbir kurala uymadan yükseldi — matrisi genişletin."
+        )
     return _clamp(score), f"{len(rules)} kural, {len(roles)} onay rolü tanımlı.", recs
 
 
-async def _decision_traceability(org_id: str, db: AsyncSession, sig: dict) -> tuple[int, str, list[str]]:
+async def _decision_traceability(
+    org_id: str, db: AsyncSession, sig: dict
+) -> tuple[int, str, list[str]]:
     job_count = (
         await db.execute(
             select(func.count()).select_from(AnalysisJob).where(AnalysisJob.org_id == org_id)
@@ -145,13 +196,17 @@ async def _decision_traceability(org_id: str, db: AsyncSession, sig: dict) -> tu
         )
     ).scalar_one()
     packets = (
-        await db.execute(
-            select(DefensibilityPacket).where(DefensibilityPacket.org_id == org_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(DefensibilityPacket).where(DefensibilityPacket.org_id == org_id)))
+        .scalars()
+        .all()
+    )
     finalized = sum(1 for p in packets if p.status == "finalized")
-    sig.update(analysis_jobs=job_count, agent_runs=run_count,
-               defensibility_packets=len(packets), finalized_packets=finalized)
+    sig.update(
+        analysis_jobs=job_count,
+        agent_runs=run_count,
+        defensibility_packets=len(packets),
+        finalized_packets=finalized,
+    )
 
     if job_count == 0:
         return 15, "Henüz analiz çalıştırılmamış.", ["İlk analiz işini çalıştırın."]
@@ -161,16 +216,24 @@ async def _decision_traceability(org_id: str, db: AsyncSession, sig: dict) -> tu
     score = 100 * (0.45 * ledger_cov + 0.35 * packet_cov + 0.20 * final_bonus)
     recs = []
     if packet_cov < 0.5:
-        recs.append("Dönemlerin çoğu için Savunulabilirlik Paketi üretilmemiş — her kapanışta oluşturun.")
+        recs.append(
+            "Dönemlerin çoğu için Savunulabilirlik Paketi üretilmemiş — her kapanışta oluşturun."
+        )
     if packets and finalized == 0:
         recs.append("Hiçbir paket kesinleştirilmemiş — mali müşavir beyanıyla mühürleyin.")
-    return _clamp(score), f"{run_count}/{job_count} çalışma defterde, {finalized} paket mühürlü.", recs
+    return (
+        _clamp(score),
+        f"{run_count}/{job_count} çalışma defterde, {finalized} paket mühürlü.",
+        recs,
+    )
 
 
 async def _human_oversight(org_id: str, db: AsyncSession, sig: dict) -> tuple[int, str, list[str]]:
     rows = (
-        await db.execute(select(SMMMOnayKaydi).where(SMMMOnayKaydi.org_id == org_id))
-    ).scalars().all()
+        (await db.execute(select(SMMMOnayKaydi).where(SMMMOnayKaydi.org_id == org_id)))
+        .scalars()
+        .all()
+    )
     sig["review_queue_total"] = len(rows)
     if not rows:
         return 50, "Onay kuyruğunda kayıt yok — henüz insan incelemesi gereken işlem oluşmadı.", []
@@ -198,18 +261,24 @@ async def _human_oversight(org_id: str, db: AsyncSession, sig: dict) -> tuple[in
 async def _process_cadence(org_id: str, db: AsyncSession, sig: dict) -> tuple[int, str, list[str]]:
     since = datetime.now(UTC) - timedelta(days=365)
     jobs = (
-        await db.execute(
-            select(AnalysisJob.created_at).where(
-                AnalysisJob.org_id == org_id, AnalysisJob.created_at >= since
+        (
+            await db.execute(
+                select(AnalysisJob.created_at).where(
+                    AnalysisJob.org_id == org_id, AnalysisJob.created_at >= since
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     months = {d.strftime("%Y-%m") for d in jobs if d}
     sig["active_months_12m"] = len(months)
     if not months:
-        return 10, "Son 12 ayda analiz çalışması yok.", [
-            "Aylık bir kapanış ritmi kurun — her ay verileri yükleyip analiz çalıştırın."
-        ]
+        return (
+            10,
+            "Son 12 ayda analiz çalışması yok.",
+            ["Aylık bir kapanış ritmi kurun — her ay verileri yükleyip analiz çalıştırın."],
+        )
     score = min(100, len(months) / 12 * 100)
     recs = []
     if len(months) < 6:
@@ -219,19 +288,25 @@ async def _process_cadence(org_id: str, db: AsyncSession, sig: dict) -> tuple[in
 
 async def _key_person_risk(org_id: str, db: AsyncSession, sig: dict) -> tuple[int, str, list[str]]:
     approvers = (
-        await db.execute(
-            select(SMMMOnayKaydi.onaylayan_user_id).where(
-                SMMMOnayKaydi.org_id == org_id,
-                SMMMOnayKaydi.onaylayan_user_id.is_not(None),
+        (
+            await db.execute(
+                select(SMMMOnayKaydi.onaylayan_user_id).where(
+                    SMMMOnayKaydi.org_id == org_id,
+                    SMMMOnayKaydi.onaylayan_user_id.is_not(None),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     counts = Counter(a for a in approvers if a)
     sig["distinct_approvers"] = len(counts)
     if not counts:
-        return 45, "Henüz onay geçmişi yok — dağılım ölçülemiyor.", [
-            "Onayları birden fazla kişiye dağıtın; tek imza noktası kilit-kişi riskidir."
-        ]
+        return (
+            45,
+            "Henüz onay geçmişi yok — dağılım ölçülemiyor.",
+            ["Onayları birden fazla kişiye dağıtın; tek imza noktası kilit-kişi riskidir."],
+        )
     total = sum(counts.values())
     top_share = max(counts.values()) / total
     sig["top_approver_share"] = round(top_share, 3)
@@ -240,8 +315,12 @@ async def _key_person_risk(org_id: str, db: AsyncSession, sig: dict) -> tuple[in
     if len(counts) < 2:
         recs.append("Tüm onaylar tek kişide — en az bir yedek onaylayıcı yetkilendirin.")
     elif top_share > 0.8:
-        recs.append(f"Onayların %{top_share*100:.0f}'i tek kişide toplanıyor — dağıtın.")
-    return _clamp(score), f"{len(counts)} farklı onaylayıcı, en yoğun kişi %{top_share*100:.0f}.", recs
+        recs.append(f"Onayların %{top_share * 100:.0f}'i tek kişide toplanıyor — dağıtın.")
+    return (
+        _clamp(score),
+        f"{len(counts)} farklı onaylayıcı, en yoğun kişi %{top_share * 100:.0f}.",
+        recs,
+    )
 
 
 _DIMS = {
@@ -261,10 +340,15 @@ async def compute_index(org_id: str, db: AsyncSession) -> dict[str, Any]:
 
     for key, fn in _DIMS.items():
         score, why, recs = await fn(org_id, db, signals)
-        dimensions.append({
-            "key": key, "label": LABELS[key], "score": score,
-            "weight": WEIGHTS[key], "why": why,
-        })
+        dimensions.append(
+            {
+                "key": key,
+                "label": LABELS[key],
+                "score": score,
+                "weight": WEIGHTS[key],
+                "why": why,
+            }
+        )
         for text in recs:
             recommendations.append({"dimension": key, "text": text})
 

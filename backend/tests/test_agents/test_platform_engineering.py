@@ -116,26 +116,20 @@ def _base_state(**over) -> CFOState:
 def test_low_confidence_hold_is_not_bypassable_by_require_review_false() -> None:
     """CLAUDE.md Law #10 — a low-confidence result always routes to a human."""
     state = _base_state(min_confidence=0.5)
-    verdict = evaluate_cfo_state(
-        state, run_config=AgentRunConfig(require_review=False)
-    )
+    verdict = evaluate_cfo_state(state, run_config=AgentRunConfig(require_review=False))
     assert verdict.action == "hold_for_review"
 
 
 def test_skill_needs_review_hold_is_not_bypassable() -> None:
     state = _base_state(awaiting_review=True)
-    verdict = evaluate_cfo_state(
-        state, run_config=AgentRunConfig(require_review=False)
-    )
+    verdict = evaluate_cfo_state(state, run_config=AgentRunConfig(require_review=False))
     assert verdict.action == "hold_for_review"
     assert any("needs_review" in r for r in verdict.reasons)
 
 
 def test_reflection_hold_band_is_not_bypassable() -> None:
     state = _base_state(reflection_scores={"pnl": {"overall_score": 0.40}})
-    verdict = evaluate_cfo_state(
-        state, run_config=AgentRunConfig(require_review=False)
-    )
+    verdict = evaluate_cfo_state(state, run_config=AgentRunConfig(require_review=False))
     assert verdict.action == "hold_for_review"
 
 
@@ -153,9 +147,7 @@ def test_soft_reflection_warning_is_bypassable_by_require_review_false() -> None
     state = _base_state(reflection_scores={"pnl": {"overall_score": 0.65}})  # warn band
     held = evaluate_cfo_state(state, run_config=AgentRunConfig(require_review=True))
     assert held.action == "hold_for_review"
-    proceeded = evaluate_cfo_state(
-        state, run_config=AgentRunConfig(require_review=False)
-    )
+    proceeded = evaluate_cfo_state(state, run_config=AgentRunConfig(require_review=False))
     assert proceeded.action == "proceed"
 
 

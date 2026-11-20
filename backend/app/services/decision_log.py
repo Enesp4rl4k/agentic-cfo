@@ -12,6 +12,7 @@ A decision enters this ledger at the moment it is made:
 
 Deterministic: no LLM in the path.
 """
+
 from __future__ import annotations
 
 import logging
@@ -149,15 +150,13 @@ async def measure_outcome(
             select(
                 func.coalesce(
                     func.sum(
-                        case((Transaction.type == "income", Transaction.amount_kurus),
-                             else_=0)
+                        case((Transaction.type == "income", Transaction.amount_kurus), else_=0)
                     ),
                     0,
                 ),
                 func.coalesce(
                     func.sum(
-                        case((Transaction.type == "expense", Transaction.amount_kurus),
-                             else_=0)
+                        case((Transaction.type == "expense", Transaction.amount_kurus), else_=0)
                     ),
                     0,
                 ),
@@ -181,9 +180,7 @@ async def measure_outcome(
     expected = decision.expected or {}
     variance: dict[str, Any] = {"realized_net_kurus": realized_net}
     if runway_latest is not None and expected.get("runway_months") is not None:
-        variance["runway_delta"] = round(
-            float(runway_latest) - float(expected["runway_months"]), 2
-        )
+        variance["runway_delta"] = round(float(runway_latest) - float(expected["runway_months"]), 2)
 
     now = datetime.now(UTC)
     decision.actual = {

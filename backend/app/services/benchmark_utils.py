@@ -12,6 +12,7 @@ Provides sector-specific comparison functions for:
 
 Each function returns structured data for reporting and visualization.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,11 +52,13 @@ def cfo_benchmark_margins(
         "gross_margin": engine.compare_to_benchmark("gross_margin", gross_margin, sector),
         "net_margin": engine.compare_to_benchmark("net_margin", net_margin, sector),
         "ebitda_margin": engine.compare_to_benchmark("ebitda_margin", ebitda_margin, sector),
-        "overall_position": _determine_position([
-            engine.compare_to_benchmark("gross_margin", gross_margin, sector),
-            engine.compare_to_benchmark("net_margin", net_margin, sector),
-            engine.compare_to_benchmark("ebitda_margin", ebitda_margin, sector),
-        ]),
+        "overall_position": _determine_position(
+            [
+                engine.compare_to_benchmark("gross_margin", gross_margin, sector),
+                engine.compare_to_benchmark("net_margin", net_margin, sector),
+                engine.compare_to_benchmark("ebitda_margin", ebitda_margin, sector),
+            ]
+        ),
     }
 
 
@@ -90,16 +93,10 @@ def cfo_benchmark_returns(
         "roe": roe_comp,
         "gap_analysis": {
             "roa_gap": engine.calculate_gap_analysis(
-                roa,
-                roa_comp["benchmark"]["median"],
-                "Return on Assets",
-                sector
+                roa, roa_comp["benchmark"]["median"], "Return on Assets", sector
             ),
             "roe_gap": engine.calculate_gap_analysis(
-                roe,
-                roe_comp["benchmark"]["median"],
-                "Return on Equity",
-                sector
+                roe, roe_comp["benchmark"]["median"], "Return on Equity", sector
             ),
         },
         "interpretation": _interpret_returns(roa, roe, roa_comp, roe_comp),
@@ -129,16 +126,22 @@ def cfo_benchmark_leverage(
         "debt_to_equity": engine.compare_to_benchmark("debt_to_equity", debt_to_equity, sector),
         "current_ratio": engine.compare_to_benchmark("current_ratio", current_ratio, sector),
         "leverage_health": (
-            "healthy" if debt_to_equity < 1.0 else
-            "moderate" if debt_to_equity < 2.0 else
-            "high" if debt_to_equity < 3.0 else
-            "critical"
+            "healthy"
+            if debt_to_equity < 1.0
+            else "moderate"
+            if debt_to_equity < 2.0
+            else "high"
+            if debt_to_equity < 3.0
+            else "critical"
         ),
         "liquidity_health": (
-            "excellent" if current_ratio > 2.0 else
-            "good" if current_ratio > 1.5 else
-            "adequate" if current_ratio > 1.0 else
-            "at_risk"
+            "excellent"
+            if current_ratio > 2.0
+            else "good"
+            if current_ratio > 1.5
+            else "adequate"
+            if current_ratio > 1.0
+            else "at_risk"
         ),
     }
 
@@ -180,11 +183,15 @@ def cto_benchmark_cloud_efficiency(
         "cost_per_engineer_annual": round(cost_per_engineer * 12, 0),
         "efficiency_score": round(efficiency_score, 1),
         "efficiency_grade": (
-            "A" if efficiency_score >= 95 else
-            "B" if efficiency_score >= 85 else
-            "C" if efficiency_score >= 70 else
-            "D" if efficiency_score >= 50 else
-            "F"
+            "A"
+            if efficiency_score >= 95
+            else "B"
+            if efficiency_score >= 85
+            else "C"
+            if efficiency_score >= 70
+            else "D"
+            if efficiency_score >= 50
+            else "F"
         ),
         "sector_benchmark": sector_benchmark,
         "recommendation": _cloud_efficiency_recommendation(waste_ratio),
@@ -215,10 +222,13 @@ def cto_benchmark_tech_debt(
     return {
         "debt_score": debt_score,
         "debt_health": (
-            "optimal" if debt_score <= 3 else
-            "good" if debt_score <= 5 else
-            "concerning" if debt_score <= 7 else
-            "critical"
+            "optimal"
+            if debt_score <= 3
+            else "good"
+            if debt_score <= 5
+            else "concerning"
+            if debt_score <= 7
+            else "critical"
         ),
         "velocity_trend": velocity_trend,
         "mttr_hours": mttr_hours,
@@ -261,18 +271,18 @@ def chro_benchmark_headcount(
     return {
         "headcount_growth": growth_comp,
         "growth_gap": engine.calculate_gap_analysis(
-            headcount_growth,
-            growth_comp["benchmark"]["median"],
-            "Headcount Growth YoY",
-            sector
+            headcount_growth, growth_comp["benchmark"]["median"], "Headcount Growth YoY", sector
         ),
         "revenue_per_headcount": revenue_per_employee,
         "revenue_per_headcount_benchmark": revenue_bench["median"] * 1000,  # Convert to TL
         "productivity_efficiency": (
-            "excellent" if revenue_per_employee > revenue_bench["p75"] * 1000 else
-            "good" if revenue_per_employee > revenue_bench["p50"] * 1000 else
-            "adequate" if revenue_per_employee > revenue_bench["p25"] * 1000 else
-            "below_average"
+            "excellent"
+            if revenue_per_employee > revenue_bench["p75"] * 1000
+            else "good"
+            if revenue_per_employee > revenue_bench["p50"] * 1000
+            else "adequate"
+            if revenue_per_employee > revenue_bench["p25"] * 1000
+            else "below_average"
         ),
         "headcount_change": headcount - headcount_prev,
         "headcount_change_pct": round(headcount_growth * 100, 1),
@@ -305,9 +315,11 @@ def chro_benchmark_compensation(
         "sector_benchmark_comp_ratio": 0.25,  # Typical: 20-30%
         "benchmark_gap": round((comp_ratio - 0.25) * 100, 1),
         "competitiveness": (
-            "competitive" if comp_ratio < 0.20 else
-            "market" if comp_ratio < 0.30 else
-            "above_market"
+            "competitive"
+            if comp_ratio < 0.20
+            else "market"
+            if comp_ratio < 0.30
+            else "above_market"
         ),
     }
 
@@ -345,10 +357,13 @@ def chro_benchmark_attrition(
         "sector_benchmark_attrition": round(sector_benchmark * 100, 1),
         "gap_vs_benchmark": round((attrition_rate - sector_benchmark) * 100, 1),
         "health_assessment": (
-            "excellent" if attrition_rate < sector_benchmark * 0.8 else
-            "good" if attrition_rate <= sector_benchmark else
-            "concerning" if attrition_rate <= sector_benchmark * 1.2 else
-            "high_risk"
+            "excellent"
+            if attrition_rate < sector_benchmark * 0.8
+            else "good"
+            if attrition_rate <= sector_benchmark
+            else "concerning"
+            if attrition_rate <= sector_benchmark * 1.2
+            else "high_risk"
         ),
         "key_drivers": _analyze_attrition(voluntary, involuntary),
     }
@@ -394,10 +409,13 @@ def cmo_benchmark_unit_economics(
         "payback_period_months": round(payback_months, 1),
         "payback_comparison": payback_comp,
         "unit_economics_health": (
-            "excellent" if ltv_cac_ratio > 3.0 and payback_months < 12 else
-            "good" if ltv_cac_ratio > 2.0 and payback_months < 18 else
-            "adequate" if ltv_cac_ratio > 1.5 else
-            "at_risk"
+            "excellent"
+            if ltv_cac_ratio > 3.0 and payback_months < 12
+            else "good"
+            if ltv_cac_ratio > 2.0 and payback_months < 18
+            else "adequate"
+            if ltv_cac_ratio > 1.5
+            else "at_risk"
         ),
         "recommendation": _unit_economics_recommendation(ltv_cac_ratio, payback_months),
     }
@@ -430,24 +448,33 @@ def coo_benchmark_efficiency(
     return {
         "process_cycle_days": cycle_days,
         "process_efficiency": (
-            "excellent" if cycle_days < 5 else
-            "good" if cycle_days < 10 else
-            "adequate" if cycle_days < 15 else
-            "needs_improvement"
+            "excellent"
+            if cycle_days < 5
+            else "good"
+            if cycle_days < 10
+            else "adequate"
+            if cycle_days < 15
+            else "needs_improvement"
         ),
         "sla_compliance_pct": sla_compliance,
         "sla_performance": (
-            "excellent" if sla_compliance > 98 else
-            "good" if sla_compliance > 95 else
-            "adequate" if sla_compliance > 90 else
-            "at_risk"
+            "excellent"
+            if sla_compliance > 98
+            else "good"
+            if sla_compliance > 95
+            else "adequate"
+            if sla_compliance > 90
+            else "at_risk"
         ),
         "resource_utilization_pct": utilization,
         "utilization_efficiency": (
-            "optimal" if utilization > 85 else
-            "good" if utilization > 75 else
-            "adequate" if utilization > 65 else
-            "underutilized"
+            "optimal"
+            if utilization > 85
+            else "good"
+            if utilization > 75
+            else "adequate"
+            if utilization > 65
+            else "underutilized"
         ),
         "overall_operational_health": _assess_operational_health(
             cycle_days, sla_compliance, utilization
@@ -488,9 +515,7 @@ def risk_benchmark_kri_thresholds(
     for kri_name, kri_value in kri_scores.items():
         threshold = thresholds.get(kri_name.lower(), 0.10)
         status = (
-            "green" if kri_value < threshold * 0.7 else
-            "yellow" if kri_value < threshold else
-            "red"
+            "green" if kri_value < threshold * 0.7 else "yellow" if kri_value < threshold else "red"
         )
         assessments[kri_name] = {
             "value": kri_value,
@@ -521,21 +546,29 @@ def _determine_position(comparisons: list[dict[str, Any]]) -> str:
     avg_score = sum(scores) / len(scores) if scores else 2
 
     return (
-        "sektörün üstünde" if avg_score >= 3.5 else
-        "sektör ortalamasında" if avg_score >= 2.5 else
-        "sektörün altında"
+        "sektörün üstünde"
+        if avg_score >= 3.5
+        else "sektör ortalamasında"
+        if avg_score >= 2.5
+        else "sektörün altında"
     )
 
 
 def _interpret_returns(roa: float, roe: float, roa_comp: dict, roe_comp: dict) -> str:
     """Interpret ROA and ROE for CFO context."""
-    if roa_comp.get("percentile_position") == "top_25" and roe_comp.get("percentile_position") == "top_25":
+    if (
+        roa_comp.get("percentile_position") == "top_25"
+        and roe_comp.get("percentile_position") == "top_25"
+    ):
         return "Mükemmel getiri profili - sektör liderleriniz."
-    elif roa_comp.get("percentile_position") in ["p50_p75", "top_25"] or \
-         roe_comp.get("percentile_position") in ["p50_p75", "top_25"]:
+    elif roa_comp.get("percentile_position") in ["p50_p75", "top_25"] or roe_comp.get(
+        "percentile_position"
+    ) in ["p50_p75", "top_25"]:
         return "İyi getiri - sektör ortalamasının üstünde."
-    elif roa_comp.get("percentile_position") == "bottom_25" or \
-         roe_comp.get("percentile_position") == "bottom_25":
+    elif (
+        roa_comp.get("percentile_position") == "bottom_25"
+        or roe_comp.get("percentile_position") == "bottom_25"
+    ):
         return "Düşük getiri - iyileştirme gerekiyor."
     return "Ortalama getiri profili."
 
@@ -556,9 +589,17 @@ def _tech_debt_recommendations(debt_score: float) -> list[str]:
     if debt_score <= 3:
         return ["Mevcut durumu koruyun.", "Teknik borç taraması yıllık yapın."]
     elif debt_score <= 5:
-        return ["Teknik borcu envanterize edin.", "Refactoring roadmap oluşturun.", "Sprint'te %20 bord zamanı ayırın."]
+        return [
+            "Teknik borcu envanterize edin.",
+            "Refactoring roadmap oluşturun.",
+            "Sprint'te %20 bord zamanı ayırın.",
+        ]
     elif debt_score <= 7:
-        return ["Acil refactoring gerekli.", "Sprint'te %40 bord zamanı ayırın.", "En önemli 5 bord sorununun roadmap'ını oluşturun."]
+        return [
+            "Acil refactoring gerekli.",
+            "Sprint'te %40 bord zamanı ayırın.",
+            "En önemli 5 bord sorununun roadmap'ını oluşturun.",
+        ]
     return ["Kritik durum. Teknik borç projesini başlatın.", "Yeni feature geliştirmeyi durdurun."]
 
 

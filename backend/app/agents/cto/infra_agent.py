@@ -13,6 +13,7 @@ Detects:
 
 done_when: state['infra']['total_cost_cents'] is an integer.
 """
+
 from __future__ import annotations
 
 import csv
@@ -28,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 # Environment detection keywords
 ENV_KEYWORDS = {
-    "prod":    ["prod", "production", "prd", "live"],
+    "prod": ["prod", "production", "prd", "live"],
     "staging": ["staging", "stage", "stg", "uat", "pre-prod", "preprod"],
-    "dev":     ["dev", "development", "sandbox", "test", "qa", "local"],
+    "dev": ["dev", "development", "sandbox", "test", "qa", "local"],
 }
 
 # Services considered high-waste risk if cost > threshold
@@ -67,10 +68,10 @@ def _parse_billing_csv(csv_text: str) -> list[dict[str, Any]]:
                 return fields_lower[c.lower()]
         return None
 
-    service_col  = _col("service", "product_name", "productname", "service_name", "Service")
-    cost_col     = _col("cost", "amount", "unblended_cost", "totalcost", "Cost")
-    date_col     = _col("date", "usage_start_date", "month", "start_date", "Date")
-    desc_col     = _col("description", "usage_type", "resource_id", "Description")
+    service_col = _col("service", "product_name", "productname", "service_name", "Service")
+    cost_col = _col("cost", "amount", "unblended_cost", "totalcost", "Cost")
+    date_col = _col("date", "usage_start_date", "month", "start_date", "Date")
+    desc_col = _col("description", "usage_type", "resource_id", "Description")
 
     if not service_col or not cost_col:
         logger.warning("InfraAgent: could not detect service/cost columns in CSV")
@@ -90,13 +91,15 @@ def _parse_billing_csv(csv_text: str) -> list[dict[str, Any]]:
         desc = row.get(desc_col, "") if desc_col else ""
         environment = _detect_environment(f"{service} {desc}")
 
-        rows.append({
-            "service": service,
-            "cost_cents": cost_cents,
-            "date": str(date)[:7],  # YYYY-MM
-            "environment": environment,
-            "description": desc,
-        })
+        rows.append(
+            {
+                "service": service,
+                "cost_cents": cost_cents,
+                "date": str(date)[:7],  # YYYY-MM
+                "environment": environment,
+                "description": desc,
+            }
+        )
 
     return rows
 
@@ -145,11 +148,13 @@ def _compute_infra_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     waste_items = []
     for svc, cost in service_totals.items():
         if cost > WASTE_THRESHOLD_CENTS and _detect_environment(svc) in ("dev", "staging"):
-            waste_items.append({
-                "service": svc,
-                "reason": f"Non-production environment spending ₺{cost/100:,.0f}/month",
-                "savings_cents": int(cost * 0.6),  # assume 60% reducible
-            })
+            waste_items.append(
+                {
+                    "service": svc,
+                    "reason": f"Non-production environment spending ₺{cost / 100:,.0f}/month",
+                    "savings_cents": int(cost * 0.6),  # assume 60% reducible
+                }
+            )
 
     waste_estimate_cents = sum(w["savings_cents"] for w in waste_items)
 
@@ -169,32 +174,38 @@ def _build_infra_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     alerts = []
     mom = metrics.get("mom_change_pct")
     if mom is not None and mom > 20:
-        alerts.append({
-            "level": "warning",
-            "message": f"Cloud costs increased {mom:.1f}% month-over-month. Review for unexpected usage.",
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"Cloud costs increased {mom:.1f}% month-over-month. Review for unexpected usage.",
+            }
+        )
     if mom is not None and mom > 50:
         alerts[0]["level"] = "critical"  # type: ignore[index]
 
     waste = metrics.get("waste_estimate_cents", 0)
     if waste > 10_000_00:  # > ₺10k/month waste
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"Estimated ₺{waste/100:,.0f}/month cloud waste detected. "
-                "Review non-production environment sizing."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"Estimated ₺{waste / 100:,.0f}/month cloud waste detected. "
+                    "Review non-production environment sizing."
+                ),
+            }
+        )
 
     top_drivers = metrics.get("top_cost_drivers", [])
     if top_drivers and top_drivers[0]["pct"] > 60:
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"Single service '{top_drivers[0]['service']}' accounts for "
-                f"{top_drivers[0]['pct']:.0f}% of cloud spend. High concentration risk."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"Single service '{top_drivers[0]['service']}' accounts for "
+                    f"{top_drivers[0]['pct']:.0f}% of cloud spend. High concentration risk."
+                ),
+            }
+        )
 
     return alerts
 
@@ -209,8 +220,7 @@ async def _generate_infra_narrative(
 
     top = metrics.get("top_cost_drivers", [])[:5]
     top_text = "\n".join(
-        f"  - {d['service']}: ₺{d['cost_cents']/100:,.0f} ({d['pct']}%)"
-        for d in top
+        f"  - {d['service']}: ₺{d['cost_cents'] / 100:,.0f} ({d['pct']}%)" for d in top
     )
     alert_text = (
         "\n".join(f"- [{a['level'].upper()}] {a['message']}" for a in alerts)
@@ -219,26 +229,28 @@ async def _generate_infra_narrative(
     waste = metrics.get("waste_estimate_cents", 0)
     mom = metrics.get("mom_change_pct")
 
-    return (await complete_text(
-        task="short_narrative",
-        system_prompt=(
-            "Sen deneyimli bir CTO ve bulut mimarısın. "
-            "Altyapı maliyet verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
-            "Yanıt şu yapıda olsun:\n"
-            "1. Mevcut bulut harcamasının 1-2 cümlelik değerlendirmesi (MoM değişim ve israf odaklı)\n"
-            "2. En kritik maliyet riski veya optimizasyon fırsatı\n"
-            "3. Ekibin hemen yapması gereken 2-3 somut maliyet iyileştirmesi (öncelik sırasıyla, TL cinsinden etki belirt)\n"
-            "FinOps perspektifinden pratik öneriler ekle."
-        ),
-        prompt=(
-            f"Aylık Toplam Bulut Harcaması: {metrics.get('total_cost_cents', 0)/100:,.0f} ₺\n"
-            f"Aylık Değişim: {f'{mom:+.1f}%' if mom is not None else 'N/A'}\n"
-            f"Tahmini İsraf: {waste/100:,.0f} ₺/ay\n\n"
-            f"En Yüksek Maliyetli Servisler:\n{top_text}\n\n"
-            f"Uyarılar:\n{alert_text}"
-        ),
-        max_tokens=512,
-    )).strip()
+    return (
+        await complete_text(
+            task="short_narrative",
+            system_prompt=(
+                "Sen deneyimli bir CTO ve bulut mimarısın. "
+                "Altyapı maliyet verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
+                "Yanıt şu yapıda olsun:\n"
+                "1. Mevcut bulut harcamasının 1-2 cümlelik değerlendirmesi (MoM değişim ve israf odaklı)\n"
+                "2. En kritik maliyet riski veya optimizasyon fırsatı\n"
+                "3. Ekibin hemen yapması gereken 2-3 somut maliyet iyileştirmesi (öncelik sırasıyla, TL cinsinden etki belirt)\n"
+                "FinOps perspektifinden pratik öneriler ekle."
+            ),
+            prompt=(
+                f"Aylık Toplam Bulut Harcaması: {metrics.get('total_cost_cents', 0) / 100:,.0f} ₺\n"
+                f"Aylık Değişim: {f'{mom:+.1f}%' if mom is not None else 'N/A'}\n"
+                f"Tahmini İsraf: {waste / 100:,.0f} ₺/ay\n\n"
+                f"En Yüksek Maliyetli Servisler:\n{top_text}\n\n"
+                f"Uyarılar:\n{alert_text}"
+            ),
+            max_tokens=512,
+        )
+    ).strip()
 
 
 async def run_infra_agent(
@@ -260,6 +272,7 @@ async def run_infra_agent(
 
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         rows = _parse_billing_csv(billing_csv)
@@ -295,8 +308,8 @@ async def run_infra_agent(
             confidence=confidence,
             needs_review=has_critical,
             detail=(
-                f"Cloud spend: ₺{metrics['total_cost_cents']/100:,.0f}, "
-                f"waste: ₺{metrics['waste_estimate_cents']/100:,.0f}, "
+                f"Cloud spend: ₺{metrics['total_cost_cents'] / 100:,.0f}, "
+                f"waste: ₺{metrics['waste_estimate_cents'] / 100:,.0f}, "
                 f"alerts: {len(alerts)}"
             ),
         )

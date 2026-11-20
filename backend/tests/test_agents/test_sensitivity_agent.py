@@ -2,6 +2,7 @@
 Tests for sensitivity_agent.py — pure computation functions (no LLM, no DB).
 Covers: _apply_variable, compute_sensitivity_matrix
 """
+
 import pytest
 
 from app.agents.sensitivity_agent import (
@@ -14,20 +15,20 @@ from app.agents.sensitivity_agent import (
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 BASE_PNL = {
-    "revenue":     2_000_000,
-    "cogs":          600_000,
+    "revenue": 2_000_000,
+    "cogs": 600_000,
     "gross_profit": 1_400_000,
-    "total_opex":    800_000,
-    "ebitda":        600_000,
-    "net_income":    500_000,
-    "tax":            50_000,
-    "loan_payments":  50_000,
-    "gross_margin":  0.70,
+    "total_opex": 800_000,
+    "ebitda": 600_000,
+    "net_income": 500_000,
+    "tax": 50_000,
+    "loan_payments": 50_000,
+    "gross_margin": 0.70,
     "ebitda_margin": 0.30,
-    "net_margin":    0.25,
+    "net_margin": 0.25,
     "opex": {
-        "salary":    500_000,
-        "rent":      150_000,
+        "salary": 500_000,
+        "rent": 150_000,
         "marketing": 150_000,
     },
 }
@@ -35,8 +36,8 @@ BASE_PNL = {
 
 # ── _apply_variable ───────────────────────────────────────────────────────────
 
-class TestApplyVariable:
 
+class TestApplyVariable:
     def test_does_not_mutate_original(self):
         original_revenue = BASE_PNL["revenue"]
         _apply_variable(BASE_PNL, "pricing_change_pct", 10)
@@ -116,31 +117,48 @@ class TestApplyVariable:
 
 # ── compute_sensitivity_matrix ────────────────────────────────────────────────
 
-class TestComputeSensitivityMatrix:
 
-    def _run(self, row_var="pricing_change_pct", col_var="opex_change_pct",
-             row_range=None, col_range=None):
+class TestComputeSensitivityMatrix:
+    def _run(
+        self,
+        row_var="pricing_change_pct",
+        col_var="opex_change_pct",
+        row_range=None,
+        col_range=None,
+    ):
         return compute_sensitivity_matrix(
-            BASE_PNL, row_var, col_var,
+            BASE_PNL,
+            row_var,
+            col_var,
             row_range=row_range or [-10, 0, 10],
             col_range=col_range or [-10, 0, 10],
         )
 
     def test_required_keys_present(self):
         result = self._run()
-        for key in ("row_variable", "col_variable", "row_values", "col_values",
-                    "matrix", "matrix_margin", "base_net_income",
-                    "best_case", "worst_case"):
+        for key in (
+            "row_variable",
+            "col_variable",
+            "row_values",
+            "col_values",
+            "matrix",
+            "matrix_margin",
+            "base_net_income",
+            "best_case",
+            "worst_case",
+        ):
             assert key in result
 
     def test_matrix_dimensions_correct(self):
         result = compute_sensitivity_matrix(
-            BASE_PNL, "pricing_change_pct", "opex_change_pct",
+            BASE_PNL,
+            "pricing_change_pct",
+            "opex_change_pct",
             row_range=[-10, 0, 10],
             col_range=[-5, 0, 5, 10],
         )
-        assert len(result["matrix"]) == 3        # 3 row values
-        assert len(result["matrix"][0]) == 4     # 4 col values
+        assert len(result["matrix"]) == 3  # 3 row values
+        assert len(result["matrix"][0]) == 4  # 4 col values
 
     def test_matrix_margin_same_dimensions(self):
         result = self._run()
@@ -182,7 +200,9 @@ class TestComputeSensitivityMatrix:
     def test_default_ranges_used_when_none(self):
         """When row_range/col_range are None, DEFAULT_RANGES should be used."""
         result = compute_sensitivity_matrix(
-            BASE_PNL, "pricing_change_pct", "opex_change_pct",
+            BASE_PNL,
+            "pricing_change_pct",
+            "opex_change_pct",
         )
         expected_row = DEFAULT_RANGES["pricing_change_pct"]
         assert result["row_values"] == expected_row
@@ -190,18 +210,24 @@ class TestComputeSensitivityMatrix:
     def test_zero_change_row_produces_pnl_net_income(self):
         """Row at 0% and Col at 0% should equal base net income."""
         result = compute_sensitivity_matrix(
-            BASE_PNL, "pricing_change_pct", "opex_change_pct",
-            row_range=[0], col_range=[0],
+            BASE_PNL,
+            "pricing_change_pct",
+            "opex_change_pct",
+            row_range=[0],
+            col_range=[0],
         )
         assert result["matrix"][0][0] == BASE_PNL["net_income"]
 
     def test_higher_pricing_improves_net_income_same_opex(self):
         """With opex fixed at 0%, higher pricing should give better net income."""
         result = compute_sensitivity_matrix(
-            BASE_PNL, "pricing_change_pct", "opex_change_pct",
-            row_range=[-10, 0, 10], col_range=[0],
+            BASE_PNL,
+            "pricing_change_pct",
+            "opex_change_pct",
+            row_range=[-10, 0, 10],
+            col_range=[0],
         )
-        net_low  = result["matrix"][0][0]  # -10% pricing
+        net_low = result["matrix"][0][0]  # -10% pricing
         net_base = result["matrix"][1][0]  #   0% pricing
         net_high = result["matrix"][2][0]  # +10% pricing
         assert net_low < net_base < net_high
@@ -209,10 +235,13 @@ class TestComputeSensitivityMatrix:
     def test_higher_opex_lowers_net_income_same_pricing(self):
         """With pricing fixed, higher opex should lower net income."""
         result = compute_sensitivity_matrix(
-            BASE_PNL, "pricing_change_pct", "opex_change_pct",
-            row_range=[0], col_range=[-10, 0, 10],
+            BASE_PNL,
+            "pricing_change_pct",
+            "opex_change_pct",
+            row_range=[0],
+            col_range=[-10, 0, 10],
         )
-        net_low  = result["matrix"][0][0]  # opex -10%
+        net_low = result["matrix"][0][0]  # opex -10%
         net_base = result["matrix"][0][1]  # opex   0%
         net_high = result["matrix"][0][2]  # opex +10%
         assert net_high < net_base < net_low
@@ -220,11 +249,16 @@ class TestComputeSensitivityMatrix:
 
 # ── DEFAULT_RANGES sanity ─────────────────────────────────────────────────────
 
-class TestDefaultRanges:
 
+class TestDefaultRanges:
     def test_all_variables_have_ranges(self):
-        for var in ("headcount_change_pct", "pricing_change_pct",
-                    "growth_rate_change_pct", "cogs_change_pct", "opex_change_pct"):
+        for var in (
+            "headcount_change_pct",
+            "pricing_change_pct",
+            "growth_rate_change_pct",
+            "cogs_change_pct",
+            "opex_change_pct",
+        ):
             assert var in DEFAULT_RANGES
             assert len(DEFAULT_RANGES[var]) >= 3
 

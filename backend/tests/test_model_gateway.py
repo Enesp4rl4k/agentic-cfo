@@ -1,4 +1,5 @@
 """Unit tests for the Model Gateway — the single LLM egress point."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,15 +23,18 @@ def _clean_gateway(monkeypatch):
     reset_ledger()
     # Don't touch the DB from unit tests — the ledger row write is best-effort.
     monkeypatch.setattr(mg, "_persist_call_log", lambda **_: None)
+
     # Budget check: don't hit the DB; drive it from the in-process ledger only.
     async def _spend(org_id):
         return float((mg._LEDGER.by_org.get(org_id) or {}).get("cost_usd", 0.0))
+
     monkeypatch.setattr(mg, "_org_month_spend_usd", _spend)
     yield
     reset_ledger()
 
 
 # ── placeholder key detection ───────────────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     "key,expected",
@@ -58,6 +62,7 @@ async def test_placeholder_key_raises_llm_unavailable(monkeypatch):
 
 # ── happy path + cost ledger ───────────────────────────────────────────────
 
+
 async def test_successful_call_records_cost_and_tokens(monkeypatch):
     async def _raw(cfg, system_prompt, prompt, *, schema, temperature, max_tokens, history=None):
         return "cevap metni", None, 1000, 500
@@ -82,6 +87,7 @@ async def test_successful_call_records_cost_and_tokens(monkeypatch):
 
 
 # ── retry semantics ───────────────────────────────────────────────────────
+
 
 async def test_retries_then_succeeds(monkeypatch):
     calls = {"n": 0}
@@ -108,8 +114,7 @@ async def test_retries_exhausted_raises_and_logs_failure(monkeypatch):
     monkeypatch.setattr(mg, "_raw_chat", _raw)
 
     with pytest.raises(RuntimeError, match="after 2 attempts"):
-        await complete(task="short_narrative", prompt="x", max_attempts=2,
-                       timeout_s=1.0)
+        await complete(task="short_narrative", prompt="x", max_attempts=2, timeout_s=1.0)
 
     snap = ledger_snapshot()
     assert snap["calls"] == 1
@@ -124,11 +129,11 @@ async def test_timeout_is_enforced(monkeypatch):
     monkeypatch.setattr(mg, "_raw_chat", _raw)
 
     with pytest.raises(RuntimeError):
-        await complete(task="short_narrative", prompt="x",
-                       timeout_s=0.05, max_attempts=1)
+        await complete(task="short_narrative", prompt="x", timeout_s=0.05, max_attempts=1)
 
 
 # ── caching ───────────────────────────────────────────────────────────────
+
 
 async def test_cache_hit_skips_second_call(monkeypatch):
     calls = {"n": 0}
@@ -149,6 +154,7 @@ async def test_cache_hit_skips_second_call(monkeypatch):
 
 
 # ── structured output ─────────────────────────────────────────────────────
+
 
 async def test_schema_path_returns_parsed(monkeypatch):
     from pydantic import BaseModel
@@ -173,6 +179,7 @@ async def test_schema_path_returns_parsed(monkeypatch):
 
 
 # ── per-org budget guard ──────────────────────────────────────────────────
+
 
 async def test_budget_soft_warn_still_proceeds(monkeypatch, caplog):
     async def _raw(*_a, **_k):

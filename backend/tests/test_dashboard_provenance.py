@@ -10,6 +10,7 @@ without a data migration.
 Harness mirrors test_demo_clone: demo guest is the lightest proven path
 through `load_owned_job` (no password auth needed).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -39,9 +40,7 @@ async def test_dashboard_labels_section_provenance(test_client):
     job_id = ctx.json()["data"]["active_cfo_job_id"]
     assert job_id
 
-    dash = await test_client.get(
-        f"/api/v1/dashboard/{job_id}", headers=_auth(data)
-    )
+    dash = await test_client.get(f"/api/v1/dashboard/{job_id}", headers=_auth(data))
     assert dash.status_code == 200, dash.text
     prov = dash.json()["data"]["provenance"]
 

@@ -2,6 +2,7 @@
 Tests for OCR service and invoice parser — pure function tests.
 No real PDF files needed — uses synthetic text fixtures.
 """
+
 import pytest
 
 from app.parsers.invoice import (
@@ -116,8 +117,8 @@ Hesap No: 1234-5678
 
 # ── _clean_ocr_text ───────────────────────────────────────────────────────────
 
-class TestCleanOCRText:
 
+class TestCleanOCRText:
     def test_removes_extra_spaces_in_numbers(self):
         result = _clean_ocr_text("1 500 ,00 TL")
         assert "1500" in result or "1 500" in result  # spaces in thousands removed
@@ -145,8 +146,8 @@ class TestCleanOCRText:
 
 # ── extract_invoice_fields ─────────────────────────────────────────────────────
 
-class TestExtractInvoiceFields:
 
+class TestExtractInvoiceFields:
     def test_extracts_invoice_number(self):
         result = extract_invoice_fields(GIB_EFATURA_TEXT)
         assert result["invoice_no"] == "FTR-2024-001"
@@ -206,16 +207,26 @@ class TestExtractInvoiceFields:
 
     def test_required_keys_always_present(self):
         result = extract_invoice_fields("")
-        for key in ("invoice_no", "invoice_date", "vendor_name", "vendor_tax_id",
-                    "buyer_name", "buyer_tax_id", "subtotal", "vat_amount",
-                    "total_amount", "currency", "line_items"):
+        for key in (
+            "invoice_no",
+            "invoice_date",
+            "vendor_name",
+            "vendor_tax_id",
+            "buyer_name",
+            "buyer_tax_id",
+            "subtotal",
+            "vat_amount",
+            "total_amount",
+            "currency",
+            "line_items",
+        ):
             assert key in result
 
 
 # ── _detect_invoice_type ──────────────────────────────────────────────────────
 
-class TestDetectInvoiceType:
 
+class TestDetectInvoiceType:
     def test_satis_faturasi_detected(self):
         assert _detect_invoice_type("SATIŞ FATURASI") == "satis"
 
@@ -240,8 +251,8 @@ class TestDetectInvoiceType:
 
 # ── _invoice_type_to_tx_type ──────────────────────────────────────────────────
 
-class TestInvoiceTypeToTxType:
 
+class TestInvoiceTypeToTxType:
     def test_satis_is_income(self):
         assert _invoice_type_to_tx_type("satis") == "income"
 
@@ -260,8 +271,8 @@ class TestInvoiceTypeToTxType:
 
 # ── TurkishInvoiceParser — Detection ──────────────────────────────────────────
 
-class TestTurkishInvoiceParserDetection:
 
+class TestTurkishInvoiceParserDetection:
     def test_detects_gib_efatura(self):
         assert TurkishInvoiceParser.can_parse(GIB_EFATURA_TEXT) is True
 
@@ -286,8 +297,8 @@ class TestTurkishInvoiceParserDetection:
 
 # ── TurkishInvoiceParser — Parsing ────────────────────────────────────────────
 
-class TestTurkishInvoiceParserParsing:
 
+class TestTurkishInvoiceParserParsing:
     def setup_method(self):
         self.parser = TurkishInvoiceParser()
 
@@ -345,8 +356,8 @@ class TestTurkishInvoiceParserParsing:
 
 # ── InvoiceBatchParser ────────────────────────────────────────────────────────
 
-class TestInvoiceBatchParser:
 
+class TestInvoiceBatchParser:
     def setup_method(self):
         self.parser = InvoiceBatchParser()
 
@@ -375,8 +386,8 @@ class TestInvoiceBatchParser:
 
 # ── OCRResult dataclass ────────────────────────────────────────────────────────
 
-class TestOCRResult:
 
+class TestOCRResult:
     def _make_result(self, confidence: float, text: str = "sample text") -> OCRResult:
         return OCRResult(
             text=text,
@@ -524,8 +535,8 @@ def test_ubl_tr_same_invoice_read_from_the_buyers_books():
 
     assert parsed.direction == "purchase"
     codes = {e.account_code for e in parsed.suggested_tdhp_entries}
-    assert "320.01" in codes   # Satıcılar
-    assert "191.01" in codes   # İndirilecek KDV
+    assert "320.01" in codes  # Satıcılar
+    assert "191.01" in codes  # İndirilecek KDV
     assert "600.01" not in codes
 
 

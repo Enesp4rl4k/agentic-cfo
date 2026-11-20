@@ -1,4 +1,5 @@
 """GitHub activity → CTO semantic overlay (commits/PRs/issues)."""
+
 from __future__ import annotations
 
 import logging
@@ -10,11 +11,7 @@ logger = logging.getLogger(__name__)
 def overlay_from_github_data(data: Any) -> dict[str, Any]:
     """Pure mapping from GitHubData → last_cto_result fragment."""
     commits = list(getattr(data, "commits", None) or [])
-    prs = list(
-        getattr(data, "pull_requests", None)
-        or getattr(data, "pull_requests", None)
-        or []
-    )
+    prs = list(getattr(data, "pull_requests", None) or getattr(data, "pull_requests", None) or [])
     list(getattr(data, "issues", None) or [])
     commit_n = len(commits)
     pr_n = len(prs)

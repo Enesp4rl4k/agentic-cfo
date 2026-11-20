@@ -10,6 +10,7 @@ Data inputs (what CMO agents consume):
 
 All monetary amounts stored as INTEGER (cents), same as CFO/CTO convention.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from typing import Any, TypedDict
 # ---------------------------------------------------------------------------
 # Shared audit type
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CMOStepLog:
@@ -31,16 +33,17 @@ class CMOStepLog:
 # CMO Run State — threaded through all LangGraph nodes
 # ---------------------------------------------------------------------------
 
+
 class CMOState(TypedDict, total=False):
     # ── Input ─────────────────────────────────────────────────────────────────
     job_id: str
     company_name: str | None
-    period: str | None                # e.g. "Q2 2025"
+    period: str | None  # e.g. "Q2 2025"
 
     # Raw input data (at least one required)
-    campaign_csv: str | None          # campaign performance export
-    funnel_csv: str | None            # lead funnel data
-    cohort_csv: str | None            # user retention cohort data
+    campaign_csv: str | None  # campaign performance export
+    funnel_csv: str | None  # lead funnel data
+    cohort_csv: str | None  # user retention cohort data
 
     # ── CampaignAgent ─────────────────────────────────────────────────────────
     campaigns: dict[str, Any] | None
@@ -112,6 +115,7 @@ class CMOState(TypedDict, total=False):
 # Skill result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CMOSkillResult:
     ok: bool
@@ -125,6 +129,7 @@ class CMOSkillResult:
 # ---------------------------------------------------------------------------
 # Run config
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CMORunConfig:
@@ -141,6 +146,6 @@ DEFAULT_CMO_RUN_CONFIG = CMORunConfig()
 # ---------------------------------------------------------------------------
 
 CMO_ROUTE_CAMPAIGNS = "campaigns"
-CMO_ROUTE_HOLD      = "hold_for_review"
-CMO_ROUTE_END       = "__end__"
-CMO_ROUTE_SUMMARY   = "cmo_summary"
+CMO_ROUTE_HOLD = "hold_for_review"
+CMO_ROUTE_END = "__end__"
+CMO_ROUTE_SUMMARY = "cmo_summary"

@@ -1,4 +1,5 @@
 """Tests for the L3 TR accounting vertical."""
+
 from __future__ import annotations
 
 import pytest
@@ -75,9 +76,7 @@ async def test_vertical_never_auto_approves_when_accounting_flags_review(_csv, m
             "hata": None,
         }
 
-    monkeypatch.setattr(
-        "app.agents.accounting.orchestrator.run_muhasebe_pipeline", _fake_muhasebe
-    )
+    monkeypatch.setattr("app.agents.accounting.orchestrator.run_muhasebe_pipeline", _fake_muhasebe)
     res = await run_tr_vertical(
         job_id="trv-003",
         file_path=_csv(GOOD),

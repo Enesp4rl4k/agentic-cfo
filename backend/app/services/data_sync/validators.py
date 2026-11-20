@@ -9,6 +9,7 @@ Detects:
 
 Flags suspicious data without blocking ingestion (warnings only).
 """
+
 from __future__ import annotations
 
 import logging
@@ -160,15 +161,13 @@ class DataQualityValidator:
             # Check for very old transactions
             if tx.date < datetime.now(UTC) - timedelta(days=365):
                 warnings.append(
-                    f"Very old transaction: {tx.date.date()} "
-                    f"{tx.amount_cents / 100:.2f} TRY"
+                    f"Very old transaction: {tx.date.date()} {tx.amount_cents / 100:.2f} TRY"
                 )
 
             # Check for future-dated transactions
             if tx.date > datetime.now(UTC) + timedelta(days=1):
                 warnings.append(
-                    f"Future-dated transaction: {tx.date.date()} "
-                    f"{tx.amount_cents / 100:.2f} TRY"
+                    f"Future-dated transaction: {tx.date.date()} {tx.amount_cents / 100:.2f} TRY"
                 )
 
         return warnings
@@ -277,9 +276,7 @@ class ConflictResolver:
                 # Lower SOURCE_PRIORITY number = higher trust (1 = bank API, 3 = CSV).
                 winner = min(
                     txs,
-                    key=lambda t: self.SOURCE_PRIORITY.get(
-                        t.source_type.value, 999
-                    ),
+                    key=lambda t: self.SOURCE_PRIORITY.get(t.source_type.value, 999),
                 )
                 resolved.append(winner)
                 logger.info(

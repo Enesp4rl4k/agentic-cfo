@@ -1,4 +1,5 @@
 """SyncSchedule ORM — scheduled data pulls (DQ-5)."""
+
 from __future__ import annotations
 
 import uuid
@@ -17,9 +18,7 @@ def _utcnow() -> datetime:
 class SyncSchedule(Base):
     __tablename__ = "sync_schedules"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="daily")

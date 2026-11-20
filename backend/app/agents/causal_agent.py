@@ -32,6 +32,7 @@ Usage:
         monthly_data=dashboard["cashflow"]["monthly_series"],
     )
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,6 +48,7 @@ MIN_POINTS_CORRELATION = 6
 
 
 # ── Data extraction helpers ────────────────────────────────────────────────────
+
 
 def _extract_metric_series(
     monthly_data: list[dict[str, Any]],
@@ -71,9 +73,9 @@ def _extract_metric_series(
             # Try alternative key names
             alternatives = {
                 "revenue": "in",
-                "income":  "in",
+                "income": "in",
                 "expenses": "out",
-                "expense":  "out",
+                "expense": "out",
             }
             val = entry.get(alternatives.get(metric, ""))
         if val is not None:
@@ -84,6 +86,7 @@ def _extract_metric_series(
 
 
 # ── Granger Causality ──────────────────────────────────────────────────────────
+
 
 def granger_causality_test(
     cause_series: list[float],
@@ -123,22 +126,19 @@ def granger_causality_test(
         results = grangercausalitytests(data, maxlag=max_lag, verbose=False)
 
         # Find best lag (lowest p-value)
-        best_lag = min(
-            range(1, max_lag + 1),
-            key=lambda lag: results[lag][0]["ssr_ftest"][1]
-        )
+        best_lag = min(range(1, max_lag + 1), key=lambda lag: results[lag][0]["ssr_ftest"][1])
         f_stat, p_val, _, _ = results[best_lag][0]["ssr_ftest"]
 
         granger_causes = p_val < 0.05
         confidence = round(1 - p_val, 3)
 
         return {
-            "granger_causes":  granger_causes,
-            "p_value":         round(float(p_val), 4),
-            "f_statistic":     round(float(f_stat), 3),
-            "optimal_lag":     best_lag,
-            "confidence":      confidence,
-            "method":          "statsmodels_grangercausalitytests",
+            "granger_causes": granger_causes,
+            "p_value": round(float(p_val), 4),
+            "f_statistic": round(float(f_stat), 3),
+            "optimal_lag": best_lag,
+            "confidence": confidence,
+            "method": "statsmodels_grangercausalitytests",
         }
 
     except ImportError:
@@ -164,7 +164,7 @@ def _correlation_causality_proxy(
     for lag in range(1, max_lag + 1):
         if n - lag < 4:
             continue
-        c = cause[:n - lag]
+        c = cause[: n - lag]
         e = effect[lag:n]
         try:
             corr = float(np.corrcoef(c, e)[0, 1])
@@ -175,17 +175,18 @@ def _correlation_causality_proxy(
 
     granger_causes = abs(best_corr) > 0.5
     return {
-        "granger_causes":  granger_causes,
-        "p_value":         None,
-        "f_statistic":     None,
-        "optimal_lag":     best_lag,
-        "confidence":      round(abs(best_corr), 3),
-        "method":          "lagged_correlation_proxy",
-        "note":            "statsmodels yüklü değil — basit gecikmeli korelasyon kullanıldı",
+        "granger_causes": granger_causes,
+        "p_value": None,
+        "f_statistic": None,
+        "optimal_lag": best_lag,
+        "confidence": round(abs(best_corr), 3),
+        "method": "lagged_correlation_proxy",
+        "note": "statsmodels yüklü değil — basit gecikmeli korelasyon kullanıldı",
     }
 
 
 # ── Lag correlation analysis ──────────────────────────────────────────────────
+
 
 def lag_correlation_analysis(
     series_x: list[float],
@@ -202,22 +203,26 @@ def lag_correlation_analysis(
     """
     n = min(len(series_x), len(series_y))
     if n < MIN_POINTS_CORRELATION:
-        return {"error": f"Gecikmeli korelasyon için en az {MIN_POINTS_CORRELATION} veri noktası gerekiyor."}
+        return {
+            "error": f"Gecikmeli korelasyon için en az {MIN_POINTS_CORRELATION} veri noktası gerekiyor."
+        }
 
     results: list[dict[str, Any]] = []
     for lag in range(max_lag + 1):
         if n - lag < 4:
             break
-        x = series_x[:n - lag]
+        x = series_x[: n - lag]
         y = series_y[lag:n]
         try:
             r = float(np.corrcoef(x, y)[0, 1])
-            results.append({
-                "lag":       lag,
-                "pearson_r": round(r, 3),
-                "direction": "pozitif" if r > 0 else "negatif",
-                "strength":  "güçlü" if abs(r) > 0.7 else "orta" if abs(r) > 0.4 else "zayıf",
-            })
+            results.append(
+                {
+                    "lag": lag,
+                    "pearson_r": round(r, 3),
+                    "direction": "pozitif" if r > 0 else "negatif",
+                    "strength": "güçlü" if abs(r) > 0.7 else "orta" if abs(r) > 0.4 else "zayıf",
+                }
+            )
         except Exception:
             continue
 
@@ -226,17 +231,19 @@ def lag_correlation_analysis(
 
     return {
         "lag_correlations": results,
-        "optimal_lag":      optimal["lag"] if optimal else 0,
-        "optimal_r":        optimal["pearson_r"] if optimal else 0,
-        "interpretation":   (
+        "optimal_lag": optimal["lag"] if optimal else 0,
+        "optimal_r": optimal["pearson_r"] if optimal else 0,
+        "interpretation": (
             f"En yüksek korelasyon {optimal['lag']} aylık gecikmede "
             f"(r={optimal['pearson_r']}, {optimal['strength']} {optimal['direction']} ilişki)"
-            if optimal else "Korelasyon hesaplanamadı."
+            if optimal
+            else "Korelasyon hesaplanamadı."
         ),
     }
 
 
 # ── Feature importance (SHAP-lite) ────────────────────────────────────────────
+
 
 def feature_importance_analysis(
     pnl: dict[str, Any],
@@ -267,42 +274,52 @@ def feature_importance_analysis(
             continue
         pct_of_revenue = round(amount / revenue * 100, 1)
         # Sensitivity: if this cost drops 10%, net income improves by:
-        sensitivity_pct = round(amount * 0.1 / max(abs(net_income), 1) * 100, 1) if net_income != 0 else 0
+        sensitivity_pct = (
+            round(amount * 0.1 / max(abs(net_income), 1) * 100, 1) if net_income != 0 else 0
+        )
 
-        features.append({
-            "feature":        cat.replace("_", " ").title(),
-            "amount":         amount,
-            "pct_of_revenue": pct_of_revenue,
-            "sensitivity_pct": sensitivity_pct,  # % improvement in net income from 10% cost cut
-            "direction":      "gider ↑ → kâr ↓",
-        })
+        features.append(
+            {
+                "feature": cat.replace("_", " ").title(),
+                "amount": amount,
+                "pct_of_revenue": pct_of_revenue,
+                "sensitivity_pct": sensitivity_pct,  # % improvement in net income from 10% cost cut
+                "direction": "gider ↑ → kâr ↓",
+            }
+        )
 
     # Also add COGS
     if pnl.get("cogs", 0) > 0:
         cogs = pnl["cogs"]
-        features.append({
-            "feature":        "SMM (Satılan Mal Maliyeti)",
-            "amount":         cogs,
-            "pct_of_revenue": round(cogs / revenue * 100, 1),
-            "sensitivity_pct": round(cogs * 0.1 / max(abs(net_income), 1) * 100, 1) if net_income != 0 else 0,
-            "direction":      "gider ↑ → kâr ↓",
-        })
+        features.append(
+            {
+                "feature": "SMM (Satılan Mal Maliyeti)",
+                "amount": cogs,
+                "pct_of_revenue": round(cogs / revenue * 100, 1),
+                "sensitivity_pct": round(cogs * 0.1 / max(abs(net_income), 1) * 100, 1)
+                if net_income != 0
+                else 0,
+                "direction": "gider ↑ → kâr ↓",
+            }
+        )
 
     features.sort(key=lambda x: -x["sensitivity_pct"])
 
     return {
-        "method":   "sensitivity_analysis",
+        "method": "sensitivity_analysis",
         "features": features[:8],
         "top_lever": features[0]["feature"] if features else None,
         "interpretation": (
             f"Net kâra en büyük etkiyi yapan gider: '{features[0]['feature']}'. "
             f"Bu kalemi %10 azaltmak net kârı yaklaşık %{features[0]['sensitivity_pct']:.0f} artırır."
-            if features else "Analiz yapılamadı."
+            if features
+            else "Analiz yapılamadı."
         ),
     }
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
+
 
 def run_causal_analysis(
     monthly_series: list[dict[str, Any]],
@@ -333,15 +350,15 @@ def run_causal_analysis(
     _months_y, series_y = _extract_metric_series(monthly_series, metric_y)
 
     granger_result = granger_causality_test(series_x, series_y, max_lag)
-    lag_result     = lag_correlation_analysis(series_x, series_y, max_lag)
-    importance     = feature_importance_analysis(pnl)
+    lag_result = lag_correlation_analysis(series_x, series_y, max_lag)
+    importance = feature_importance_analysis(pnl)
 
     # Build Turkish summary
     summary_parts = []
     if granger_result.get("granger_causes") is True:
         summary_parts.append(
             f"'{metric_x}' değişkeni, '{metric_y}' değişkenini istatistiksel olarak tahmin ediyor "
-            f"({granger_result.get('optimal_lag', '?')} aylık gecikmeyle, güven: %{granger_result.get('confidence', 0)*100:.0f})."
+            f"({granger_result.get('optimal_lag', '?')} aylık gecikmeyle, güven: %{granger_result.get('confidence', 0) * 100:.0f})."
         )
     elif granger_result.get("granger_causes") is False:
         summary_parts.append(
@@ -355,10 +372,10 @@ def run_causal_analysis(
         summary_parts.append(importance["interpretation"])
 
     return {
-        "metric_x":          metric_x,
-        "metric_y":          metric_y,
-        "granger":           granger_result,
-        "lag_correlation":   lag_result,
+        "metric_x": metric_x,
+        "metric_y": metric_y,
+        "granger": granger_result,
+        "lag_correlation": lag_result,
         "feature_importance": importance,
-        "summary":           " ".join(summary_parts) or "Nedensellik analizi için yeterli veri yok.",
+        "summary": " ".join(summary_parts) or "Nedensellik analizi için yeterli veri yok.",
     }

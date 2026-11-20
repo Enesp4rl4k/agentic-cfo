@@ -25,6 +25,7 @@ Garanti transaction format:
     ]
   }
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -43,16 +44,16 @@ def _make_garanti_config(
         else "https://api.garantibbva.com.tr/openapi"
     )
     return BankOAuthConfig(
-        bank_id       = "garanti",
-        bank_name     = "Garanti BBVA",
-        client_id     = client_id,
-        client_secret = client_secret,
-        auth_url      = f"{base}/oauth/authorize",
-        token_url     = f"{base}/oauth/token",
-        accounts_url  = f"{base}/v1/accounts",
-        transactions_url = f"{base}/v1/accounts/{{account_id}}/transactions",
-        scopes        = ["account_info", "transaction_history"],
-        sandbox       = sandbox,
+        bank_id="garanti",
+        bank_name="Garanti BBVA",
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_url=f"{base}/oauth/authorize",
+        token_url=f"{base}/oauth/token",
+        accounts_url=f"{base}/v1/accounts",
+        transactions_url=f"{base}/v1/accounts/{{account_id}}/transactions",
+        scopes=["account_info", "transaction_history"],
+        sandbox=sandbox,
     )
 
 
@@ -66,12 +67,12 @@ class GarantiClient(OpenBankingClient):
         account_list = raw.get("AccountList") or raw.get("accounts") or []
         return [
             {
-                "account_id":   acc.get("AccountNumber") or acc.get("accountId", ""),
-                "iban":         acc.get("IBAN") or acc.get("iban", ""),
-                "currency":     acc.get("CurrencyCode") or acc.get("currency", "TRY"),
+                "account_id": acc.get("AccountNumber") or acc.get("accountId", ""),
+                "iban": acc.get("IBAN") or acc.get("iban", ""),
+                "currency": acc.get("CurrencyCode") or acc.get("currency", "TRY"),
                 "account_type": acc.get("AccountType", "CURRENT"),
-                "name":         acc.get("AccountName", "Garanti BBVA Hesabı"),
-                "balance":      float(acc.get("Balance") or acc.get("balance") or 0),
+                "name": acc.get("AccountName", "Garanti BBVA Hesabı"),
+                "balance": float(acc.get("Balance") or acc.get("balance") or 0),
             }
             for acc in account_list
         ]
@@ -84,12 +85,7 @@ class GarantiClient(OpenBankingClient):
           TransactionType: "C" = Credit (income), "D" = Debit (expense)
           TransactionDate: "YYYYMMDD" format (different from Akbank)
         """
-        tx_list = (
-            raw.get("TransactionList")
-            or raw.get("transactions")
-            or raw.get("data")
-            or []
-        )
+        tx_list = raw.get("TransactionList") or raw.get("transactions") or raw.get("data") or []
         result: list[dict[str, Any]] = []
 
         for tx in tx_list:
@@ -112,15 +108,17 @@ class GarantiClient(OpenBankingClient):
             )
             vendor = tx.get("CounterPartyName") or tx.get("DebtorName") or None
 
-            result.append({
-                "amount_cents":     amount_cents,
-                "type":             tx_type,
-                "transaction_date": date_str,
-                "description":      description[:200],
-                "currency":         tx.get("CurrencyCode") or tx.get("currency", "TRY"),
-                "reference":        tx.get("TransactionId") or tx.get("ReferenceNumber"),
-                "vendor":           vendor[:100] if vendor else None,
-                "raw_source":       "garanti_open_banking",
-            })
+            result.append(
+                {
+                    "amount_cents": amount_cents,
+                    "type": tx_type,
+                    "transaction_date": date_str,
+                    "description": description[:200],
+                    "currency": tx.get("CurrencyCode") or tx.get("currency", "TRY"),
+                    "reference": tx.get("TransactionId") or tx.get("ReferenceNumber"),
+                    "vendor": vendor[:100] if vendor else None,
+                    "raw_source": "garanti_open_banking",
+                }
+            )
 
         return result

@@ -4,6 +4,7 @@ WebSocket Streaming API
 
 Token-level LLM streaming over WebSocket with optional dual-RAG grounding.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,9 @@ async def _stream_llm_tokens(
         from app.platform.model_gateway import stream as _gw_stream
 
         async for piece in _gw_stream(
-            task=task_type, system_prompt=system_prompt, prompt=prompt,
+            task=task_type,
+            system_prompt=system_prompt,
+            prompt=prompt,
         ):
             if piece:
                 yield piece

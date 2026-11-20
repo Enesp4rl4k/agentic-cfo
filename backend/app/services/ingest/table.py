@@ -5,6 +5,7 @@ IBAN and period before the header; a Turkish CSV is separated by ";" and
 written in Windows-1254; the last row is "TOPLAM". This module finds the table
 inside: the delimiter, the header row, the data rows.
 """
+
 from __future__ import annotations
 
 import csv
@@ -16,7 +17,7 @@ from typing import Any
 
 from app.core.turkish import fold
 
-_MAX_BASLIK_ARAMA = 25          # a header is never further down than this
+_MAX_BASLIK_ARAMA = 25  # a header is never further down than this
 _TOPLAM = ("toplam", "genel toplam", "total", "grand total", "ara toplam")
 
 
@@ -29,7 +30,7 @@ class Tablo:
     basliklar: list[str]
     satirlar: list[list[Any]]
     sayfa: str | None = None
-    baslik_satiri: int = 0          # 0-based row of the header in the original
+    baslik_satiri: int = 0  # 0-based row of the header in the original
 
 
 def anahtar(baslik: str) -> str:
@@ -38,7 +39,7 @@ def anahtar(baslik: str) -> str:
     "Brüt Maaş (TL)" → "brut maas", "İşlem_Tarihi" → "islem tarihi".
     """
     s = fold(str(baslik))
-    s = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", s)      # (TL), [adet]
+    s = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", s)  # (TL), [adet]
     s = re.sub(r"[₺$€%#*:]", " ", s)
     s = re.sub(r"[_\-./\\]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
@@ -83,7 +84,9 @@ def satirlari_oku(veri: bytes, uzanti: str) -> list[tuple[str | None, list[list[
         try:
             wb = openpyxl.load_workbook(io.BytesIO(veri), read_only=True, data_only=True)
         except Exception as exc:
-            raise OkunamayanDosya("Excel dosyası açılamadı; bozuk ya da parola korumalı olabilir.") from exc
+            raise OkunamayanDosya(
+                "Excel dosyası açılamadı; bozuk ya da parola korumalı olabilir."
+            ) from exc
         try:
             out = []
             for ws in wb.worksheets:
@@ -121,7 +124,7 @@ def tabloyu_bul(rows: list[list[Any]], bilinen: set[str], sayfa: str | None = No
         header.pop()
     width = len(header)
     data: list[list[Any]] = []
-    for row in rows[best_i + 1:]:
+    for row in rows[best_i + 1 :]:
         row = (list(row) + [None] * width)[:width]
         dolu = [c for c in row if not bos(c)]
         if not dolu:
@@ -134,6 +137,7 @@ def tabloyu_bul(rows: list[list[Any]], bilinen: set[str], sayfa: str | None = No
 
 
 # ── Values ──────────────────────────────────────────────────────────────────
+
 
 def sayi(v: Any) -> float | None:
     """A number as written in Turkish or English: "45.000,00", "1,234.5", "%12", "(1.500)"."""
@@ -149,13 +153,25 @@ def sayi(v: Any) -> float | None:
     if not s or not re.search(r"\d", s):
         return None
     if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".") if s.rfind(",") > s.rfind(".") else s.replace(",", "")
+        s = (
+            s.replace(".", "").replace(",", ".")
+            if s.rfind(",") > s.rfind(".")
+            else s.replace(",", "")
+        )
     elif "," in s:
         parts = s.split(",")
         # "1,500" is fifteen hundred; "12,5" is twelve and a half.
-        s = s.replace(",", "") if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3) else s.replace(",", ".")
-    elif s.count(".") > 1 or (s.count(".") == 1 and len(s.split(".")[1]) == 3 and len(s.split(".")[0]) <= 3
-                              and not isinstance(v, float)):
+        s = (
+            s.replace(",", "")
+            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3)
+            else s.replace(",", ".")
+        )
+    elif s.count(".") > 1 or (
+        s.count(".") == 1
+        and len(s.split(".")[1]) == 3
+        and len(s.split(".")[0]) <= 3
+        and not isinstance(v, float)
+    ):
         # "45.000" in a Turkish export is forty-five thousand.
         s = s.replace(".", "")
     try:
@@ -165,9 +181,20 @@ def sayi(v: Any) -> float | None:
     return -n if negatif else n
 
 
-_TARIH_BICIMLERI = ("%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%Y/%m/%d", "%d.%m.%y",
-                    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
-                    "%d/%m/%Y %H:%M", "%Y-%m")
+_TARIH_BICIMLERI = (
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%d.%m.%y",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%Y-%m",
+)
 
 
 def tarih(v: Any) -> str | None:

@@ -115,7 +115,9 @@ def _percentile(values: list[int], pct: float) -> int | None:
     return int(ordered[k])
 
 
-def _derive_actions(*, failed_count: int, awaiting_review_count: int, breaches: Iterable[dict[str, Any]]) -> list[str]:
+def _derive_actions(
+    *, failed_count: int, awaiting_review_count: int, breaches: Iterable[dict[str, Any]]
+) -> list[str]:
     actions: list[str] = []
     if failed_count > 0:
         actions.append("Inspect latest failed jobs and classify root cause before new deployments.")
@@ -190,9 +192,7 @@ async def llm_costs(
     ).first()
 
     ok_calls = await db.scalar(
-        select(func.count()).where(
-            LLMCallLog.created_at >= since, LLMCallLog.ok.is_(True), scope
-        )
+        select(func.count()).where(LLMCallLog.created_at >= since, LLMCallLog.ok.is_(True), scope)
     )
 
     return {
@@ -314,7 +314,9 @@ async def _management_summary(db: AsyncSession, org_id: str | None = None) -> di
 @router.get("/system/ops")
 async def system_ops(
     db: AsyncSession = Depends(get_db),
-    org_id: str | None = Query(default=None, description="Ignored unless it is the caller's own org"),
+    org_id: str | None = Query(
+        default=None, description="Ignored unless it is the caller's own org"
+    ),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     # This reported every organisation's job counts, recent failures with their
@@ -324,9 +326,7 @@ async def system_ops(
     if org_id and not current_user_org_matches(current_user, org_id):
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     org_id = str(current_user.org_id) if current_user.org_id else None
-    jobs_scope = (
-        AnalysisJob.org_id == org_id if org_id else AnalysisJob.user_id == current_user.id
-    )
+    jobs_scope = AnalysisJob.org_id == org_id if org_id else AnalysisJob.user_id == current_user.id
 
     # Job status counters
     status_rows = await db.execute(
@@ -341,7 +341,9 @@ async def system_ops(
     awaiting_review_count = int(
         (
             await db.execute(
-                select(func.count(AnalysisJob.id)).where(AnalysisJob.awaiting_review.is_(True), jobs_scope)
+                select(func.count(AnalysisJob.id)).where(
+                    AnalysisJob.awaiting_review.is_(True), jobs_scope
+                )
             )
         ).scalar_one()
         or 0
@@ -413,9 +415,7 @@ async def system_ops(
         created_at = as_utc(row.created_at)
         completed_at = as_utc(row.completed_at)
         if created_at and completed_at:
-            completion_ms_samples.append(
-                int((completed_at - created_at).total_seconds() * 1000)
-            )
+            completion_ms_samples.append(int((completed_at - created_at).total_seconds() * 1000))
         meta = row.result_metadata or {}
         started_iso = meta.get("analysis_started_at") if isinstance(meta, dict) else None
         if started_iso and created_at:
@@ -522,4 +522,3 @@ async def system_ops(
         },
         "error": None,
     }
-

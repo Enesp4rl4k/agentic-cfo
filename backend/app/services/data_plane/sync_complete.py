@@ -4,6 +4,7 @@ Post-sync hook: canonical rows persisted → semantic rebuild (+ optional brief)
 Called from scheduled_sync after successful canonical upsert so live connectors
 update the decision brief without waiting for full CFO analysis.
 """
+
 from __future__ import annotations
 
 import logging

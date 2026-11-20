@@ -13,6 +13,7 @@ from typing import Any, TypedDict
 @dataclass
 class ComplianceStepLog:
     """Log entry for Compliance pipeline execution."""
+
     node: str
     status: str  # "started" | "completed" | "failed"
     message: str
@@ -22,6 +23,7 @@ class ComplianceStepLog:
 @dataclass
 class ComplianceSkillResult:
     """Result from a Compliance skill (policies, violations, regulations)."""
+
     skill_name: str
     metrics: dict[str, Any]
     alerts: list[dict[str, str]]
@@ -32,6 +34,7 @@ class ComplianceSkillResult:
 @dataclass
 class ComplianceRunConfig:
     """Configuration for Compliance pipeline run."""
+
     llm_enabled: bool = False
     settings: Any = None
 

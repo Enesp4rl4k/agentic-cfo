@@ -28,6 +28,7 @@ once at the boundary; every `*_kurus` output is integer kuruş.
 Deterministic and read-only: no LLM, safe to call while the manager
 keeps thinking.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta

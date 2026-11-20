@@ -24,6 +24,7 @@ SLA Benchmarks (industry standard):
 
 done_when: state['sla']['sla_breach_rate'] is a float
 """
+
 from __future__ import annotations
 
 import csv
@@ -44,21 +45,34 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SLA_THRESHOLDS: dict[str, dict[str, float]] = {
-    "p1": {"response": 1.0,  "resolution": 4.0},
-    "p2": {"response": 4.0,  "resolution": 24.0},
-    "p3": {"response": 8.0,  "resolution": 72.0},
+    "p1": {"response": 1.0, "resolution": 4.0},
+    "p2": {"response": 4.0, "resolution": 24.0},
+    "p3": {"response": 8.0, "resolution": 72.0},
     "p4": {"response": 24.0, "resolution": 168.0},
-    "critical": {"response": 1.0,  "resolution": 4.0},
-    "high":     {"response": 4.0,  "resolution": 24.0},
-    "medium":   {"response": 8.0,  "resolution": 72.0},
-    "low":      {"response": 24.0, "resolution": 168.0},
+    "critical": {"response": 1.0, "resolution": 4.0},
+    "high": {"response": 4.0, "resolution": 24.0},
+    "medium": {"response": 8.0, "resolution": 72.0},
+    "low": {"response": 24.0, "resolution": 168.0},
 }
 
 _TIER_NORM = {
-    "p1": "p1", "critical": "p1", "sev1": "p1", "1": "p1",
-    "p2": "p2", "high": "p2", "sev2": "p2", "2": "p2",
-    "p3": "p3", "medium": "p3", "sev3": "p3", "3": "p3", "moderate": "p3",
-    "p4": "p4", "low": "p4", "sev4": "p4", "4": "p4",
+    "p1": "p1",
+    "critical": "p1",
+    "sev1": "p1",
+    "1": "p1",
+    "p2": "p2",
+    "high": "p2",
+    "sev2": "p2",
+    "2": "p2",
+    "p3": "p3",
+    "medium": "p3",
+    "sev3": "p3",
+    "3": "p3",
+    "moderate": "p3",
+    "p4": "p4",
+    "low": "p4",
+    "sev4": "p4",
+    "4": "p4",
 }
 
 _TIER_LABELS = {"p1": "P1-Kritik", "p2": "P2-Yüksek", "p3": "P3-Orta", "p4": "P4-Düşük"}
@@ -71,6 +85,7 @@ def _normalize_tier(raw: str) -> str:
 # ---------------------------------------------------------------------------
 # Logistic Regression (pure numpy / math — no sklearn)
 # ---------------------------------------------------------------------------
+
 
 def _sigmoid(z: float) -> float:
     """Numerically stable sigmoid."""
@@ -106,10 +121,10 @@ def _breach_risk_score(
     # Intercept -2.5 means baseline ~8% breach probability when all features are zero
     z = (
         -2.5
-        + 1.8 * age_ratio          # age_ratio coefficient: most predictive feature
-        + 0.6 * tier_w             # tier weight
+        + 1.8 * age_ratio  # age_ratio coefficient: most predictive feature
+        + 0.6 * tier_w  # tier weight
         + 2.0 * category_breach_rate  # historical category breach rate
-        + 1.5 * tier_breach_rate   # historical tier breach rate
+        + 1.5 * tier_breach_rate  # historical tier breach rate
     )
     return _sigmoid(z)
 
@@ -136,26 +151,31 @@ def _predict_breach_risk(
         sla_hrs = _SLA_THRESHOLDS.get(tier, _SLA_THRESHOLDS["p3"])["resolution"]
         remaining_hrs = max(0.0, sla_hrs - age_hrs)
 
-        at_risk.append({
-            "ticket_id":        t["ticket_id"],
-            "tier":             tier,
-            "tier_label":       _TIER_LABELS.get(tier, tier.upper()),
-            "category":         cat,
-            "age_hours":        round(age_hrs, 1),
-            "sla_threshold_hrs": sla_hrs,
-            "remaining_hrs":    round(remaining_hrs, 1),
-            # A ranking score, with the band it falls in. `breach_probability`
-            # was the old name; nothing measured a probability.
-            "risk_score": round(skor, 2),
-            "risk_olcum": "kural",
-            "risk_dayanak": "SLA süresinin ne kadarının geçtiği + bu kategori ve önceliğin geçmiş ihlal oranı",
-            "risk_level": (
-                "kritik" if skor >= 0.70
-                else "yüksek" if skor >= 0.50
-                else "orta" if skor >= 0.30
-                else "düşük"
-            ),
-        })
+        at_risk.append(
+            {
+                "ticket_id": t["ticket_id"],
+                "tier": tier,
+                "tier_label": _TIER_LABELS.get(tier, tier.upper()),
+                "category": cat,
+                "age_hours": round(age_hrs, 1),
+                "sla_threshold_hrs": sla_hrs,
+                "remaining_hrs": round(remaining_hrs, 1),
+                # A ranking score, with the band it falls in. `breach_probability`
+                # was the old name; nothing measured a probability.
+                "risk_score": round(skor, 2),
+                "risk_olcum": "kural",
+                "risk_dayanak": "SLA süresinin ne kadarının geçtiği + bu kategori ve önceliğin geçmiş ihlal oranı",
+                "risk_level": (
+                    "kritik"
+                    if skor >= 0.70
+                    else "yüksek"
+                    if skor >= 0.50
+                    else "orta"
+                    if skor >= 0.30
+                    else "düşük"
+                ),
+            }
+        )
 
     # Sort by breach probability descending
     at_risk.sort(key=lambda x: x["risk_score"], reverse=True)
@@ -166,9 +186,9 @@ def _predict_breach_risk(
 # Parse datetime
 # ---------------------------------------------------------------------------
 
+
 def _parse_datetime(raw: str) -> datetime | None:
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
-                "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
         try:
             return datetime.strptime(raw.strip(), fmt)
         except ValueError:
@@ -180,6 +200,7 @@ def _parse_datetime(raw: str) -> datetime | None:
 # CSV Parser
 # ---------------------------------------------------------------------------
 
+
 def _parse_sla_csv(csv_text: str) -> list[dict[str, Any]]:
     """Parse SLA CSV -- flexible column detection."""
     reader = csv.DictReader(io.StringIO(csv_text.strip()))
@@ -187,35 +208,43 @@ def _parse_sla_csv(csv_text: str) -> list[dict[str, Any]]:
 
     def _col(*candidates: str) -> str | None:
         for c in candidates:
-            for k in (reader.fieldnames or []):
-                if k.strip().lower().replace(" ", "_").replace("-", "_") == \
-                   c.lower().replace(" ", "_"):
+            for k in reader.fieldnames or []:
+                if k.strip().lower().replace(" ", "_").replace("-", "_") == c.lower().replace(
+                    " ", "_"
+                ):
                     return k
         return None
 
-    id_col         = _col("id", "ticket_id", "issue_id", "case_id", "record_id")
-    tier_col       = _col("tier", "priority", "severity", "sla_tier", "level")
-    created_col    = _col("created", "created_at", "created_date", "open_date", "date")
-    resolved_col   = _col("resolved", "closed_at", "resolved_at", "close_date",
-                          "resolution_date", "closed")
-    response_col   = _col("response_time_hours", "response_hrs", "first_response",
-                          "response_time", "time_to_first_response")
-    resolution_col = _col("resolution_time_hours", "resolution_hrs",
-                          "resolution_time", "time_to_resolve", "ttfr")
-    nps_col        = _col("nps", "nps_score", "satisfaction", "csat", "rating")
-    category_col   = _col("category", "issue_type", "type", "topic", "subject_area")
-    status_col     = _col("status", "state", "ticket_status")
+    id_col = _col("id", "ticket_id", "issue_id", "case_id", "record_id")
+    tier_col = _col("tier", "priority", "severity", "sla_tier", "level")
+    created_col = _col("created", "created_at", "created_date", "open_date", "date")
+    resolved_col = _col(
+        "resolved", "closed_at", "resolved_at", "close_date", "resolution_date", "closed"
+    )
+    response_col = _col(
+        "response_time_hours",
+        "response_hrs",
+        "first_response",
+        "response_time",
+        "time_to_first_response",
+    )
+    resolution_col = _col(
+        "resolution_time_hours", "resolution_hrs", "resolution_time", "time_to_resolve", "ttfr"
+    )
+    nps_col = _col("nps", "nps_score", "satisfaction", "csat", "rating")
+    category_col = _col("category", "issue_type", "type", "topic", "subject_area")
+    status_col = _col("status", "state", "ticket_status")
 
     for i, row in enumerate(reader):
-        tier       = _normalize_tier(row.get(tier_col) or "p3")
-        category   = (row.get(category_col) or "unknown").strip().lower()
+        tier = _normalize_tier(row.get(tier_col) or "p3")
+        category = (row.get(category_col) or "unknown").strip().lower()
         status_raw = (row.get(status_col) or "resolved").strip().lower()
-        status     = "resolved" if status_raw in ("resolved", "closed", "done", "fixed") else "open"
+        status = "resolved" if status_raw in ("resolved", "closed", "done", "fixed") else "open"
 
-        response_hrs   = None
+        response_hrs = None
         resolution_hrs = None
-        nps            = None
-        created_dt     = None
+        nps = None
+        created_dt = None
 
         try:
             response_hrs = float((row.get(response_col) or "").replace(",", ""))
@@ -228,9 +257,9 @@ def _parse_sla_csv(csv_text: str) -> list[dict[str, Any]]:
             pass
 
         # Calculate from timestamps if not directly available
-        created_raw  = row.get(created_col) or "" if created_col else ""
+        created_raw = row.get(created_col) or "" if created_col else ""
         resolved_raw = row.get(resolved_col) or "" if resolved_col else ""
-        created_dt   = _parse_datetime(created_raw) if created_raw else None
+        created_dt = _parse_datetime(created_raw) if created_raw else None
 
         if response_hrs is None or resolution_hrs is None:
             resolved_dt = _parse_datetime(resolved_raw) if resolved_raw else None
@@ -250,16 +279,18 @@ def _parse_sla_csv(csv_text: str) -> list[dict[str, Any]]:
 
         ticket_id = (row.get(id_col) or str(i + 1)) if id_col else str(i + 1)
 
-        rows.append({
-            "ticket_id":      ticket_id,
-            "tier":           tier,
-            "status":         status,
-            "response_hrs":   response_hrs,
-            "resolution_hrs": resolution_hrs,
-            "nps":            nps,
-            "category":       category,
-            "created_dt":     created_dt,
-        })
+        rows.append(
+            {
+                "ticket_id": ticket_id,
+                "tier": tier,
+                "status": status,
+                "response_hrs": response_hrs,
+                "resolution_hrs": resolution_hrs,
+                "nps": nps,
+                "category": category,
+                "created_dt": created_dt,
+            }
+        )
 
     return rows
 
@@ -268,43 +299,44 @@ def _parse_sla_csv(csv_text: str) -> list[dict[str, Any]]:
 # Pure Calculations
 # ---------------------------------------------------------------------------
 
+
 def _compute_sla_metrics(tickets: list[dict[str, Any]]) -> dict[str, Any]:
     """Pure calculation -- no LLM."""
     if not tickets:
         return {
-            "total_tickets":             0,
-            "sla_breach_count":          0,
-            "sla_breach_rate":           0.0,
-            "avg_response_time_hours":   0.0,
+            "total_tickets": 0,
+            "sla_breach_count": 0,
+            "sla_breach_rate": 0.0,
+            "avg_response_time_hours": 0.0,
             "avg_resolution_time_hours": 0.0,
-            "avg_nps_score":             0.0,
-            "by_tier":                   {},
-            "recurring_issues":          [],
-            "trend":                     "stable",
-            "at_risk_tickets":           [],
-            "high_risk_count":           0,
-            "alerts":                    [],
-            "narrative":                 "",
+            "avg_nps_score": 0.0,
+            "by_tier": {},
+            "recurring_issues": [],
+            "trend": "stable",
+            "at_risk_tickets": [],
+            "high_risk_count": 0,
+            "alerts": [],
+            "narrative": "",
         }
 
-    total    = len(tickets)
+    total = len(tickets)
     resolved = [t for t in tickets if t["status"] == "resolved"]
     open_tix = [t for t in tickets if t["status"] == "open"]
 
     # Response / resolution times
     resp_times = [t["response_hrs"] for t in resolved if t["response_hrs"] is not None]
-    res_times  = [t["resolution_hrs"] for t in resolved if t["resolution_hrs"] is not None]
+    res_times = [t["resolution_hrs"] for t in resolved if t["resolution_hrs"] is not None]
     nps_scores = [t["nps"] for t in tickets if t["nps"] is not None]
 
     avg_resp = sum(resp_times) / len(resp_times) if resp_times else 0.0
-    avg_res  = sum(res_times) / len(res_times) if res_times else 0.0
-    avg_nps  = sum(nps_scores) / len(nps_scores) if nps_scores else 0.0
+    avg_res = sum(res_times) / len(res_times) if res_times else 0.0
+    avg_nps = sum(nps_scores) / len(nps_scores) if nps_scores else 0.0
 
     # SLA breach detection
     breach_count = 0
     for t in resolved:
-        thresholds          = _SLA_THRESHOLDS.get(t["tier"], _SLA_THRESHOLDS["p3"])
-        response_breached   = (t["response_hrs"]   or 0) > thresholds["response"]
+        thresholds = _SLA_THRESHOLDS.get(t["tier"], _SLA_THRESHOLDS["p3"])
+        response_breached = (t["response_hrs"] or 0) > thresholds["response"]
         resolution_breached = (t["resolution_hrs"] or 0) > thresholds["resolution"]
         if response_breached or resolution_breached:
             breach_count += 1
@@ -312,33 +344,29 @@ def _compute_sla_metrics(tickets: list[dict[str, Any]]) -> dict[str, Any]:
     breach_rate = breach_count / len(resolved) if resolved else 0.0
 
     # Category and tier historical breach rates (for prediction)
-    cat_total: dict[str, int]   = Counter()
-    cat_breach: dict[str, int]  = Counter()
-    tier_total: dict[str, int]  = Counter()
+    cat_total: dict[str, int] = Counter()
+    cat_breach: dict[str, int] = Counter()
+    tier_total: dict[str, int] = Counter()
     tier_breach: dict[str, int] = Counter()
 
     for t in resolved:
-        cat  = t["category"]
+        cat = t["category"]
         tier = t["tier"]
-        cat_total[cat]   += 1
+        cat_total[cat] += 1
         tier_total[tier] += 1
         thresholds = _SLA_THRESHOLDS.get(tier, _SLA_THRESHOLDS["p3"])
-        if (t["response_hrs"] or 0) > thresholds["response"] or \
-           (t["resolution_hrs"] or 0) > thresholds["resolution"]:
-            cat_breach[cat]   += 1
+        if (t["response_hrs"] or 0) > thresholds["response"] or (
+            t["resolution_hrs"] or 0
+        ) > thresholds["resolution"]:
+            cat_breach[cat] += 1
             tier_breach[tier] += 1
 
-    category_breach_rates = {
-        cat: cat_breach[cat] / max(cat_total[cat], 1)
-        for cat in cat_total
-    }
-    tier_breach_rates = {
-        tier: tier_breach[tier] / max(tier_total[tier], 1)
-        for tier in tier_total
-    }
+    category_breach_rates = {cat: cat_breach[cat] / max(cat_total[cat], 1) for cat in cat_total}
+    tier_breach_rates = {tier: tier_breach[tier] / max(tier_total[tier], 1) for tier in tier_total}
 
     # Breach prediction for open tickets  (Python 3.11+ aware UTC)
     import datetime as _dt
+
     now = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
     at_risk = _predict_breach_risk(open_tix, category_breach_rates, tier_breach_rates, now)
     high_risk_count = sum(1 for t in at_risk if t["risk_level"] in ("kritik", "yüksek"))
@@ -346,27 +374,28 @@ def _compute_sla_metrics(tickets: list[dict[str, Any]]) -> dict[str, Any]:
     # By tier
     by_tier: dict[str, Any] = {}
     for tier_key in ["p1", "p2", "p3", "p4"]:
-        tier_tickets  = [t for t in tickets if t["tier"] == tier_key]
+        tier_tickets = [t for t in tickets if t["tier"] == tier_key]
         tier_resolved = [t for t in tier_tickets if t["status"] == "resolved"]
         if not tier_tickets:
             continue
 
         tier_resp = [t["response_hrs"] for t in tier_resolved if t["response_hrs"] is not None]
-        tier_res  = [t["resolution_hrs"] for t in tier_resolved if t["resolution_hrs"] is not None]
+        tier_res = [t["resolution_hrs"] for t in tier_resolved if t["resolution_hrs"] is not None]
         tier_breaches = sum(
-            1 for t in tier_resolved
+            1
+            for t in tier_resolved
             if (t["response_hrs"] or 0) > _SLA_THRESHOLDS[tier_key]["response"]
             or (t["resolution_hrs"] or 0) > _SLA_THRESHOLDS[tier_key]["resolution"]
         )
         by_tier[tier_key] = {
-            "label":            _TIER_LABELS.get(tier_key, tier_key.upper()),
-            "tickets":          len(tier_tickets),
-            "resolved":         len(tier_resolved),
-            "breaches":         tier_breaches,
-            "breach_rate":      round(tier_breaches / len(tier_resolved), 3) if tier_resolved else 0.0,
+            "label": _TIER_LABELS.get(tier_key, tier_key.upper()),
+            "tickets": len(tier_tickets),
+            "resolved": len(tier_resolved),
+            "breaches": tier_breaches,
+            "breach_rate": round(tier_breaches / len(tier_resolved), 3) if tier_resolved else 0.0,
             "avg_response_hrs": round(sum(tier_resp) / len(tier_resp), 1) if tier_resp else 0.0,
             "avg_resolution_hrs": round(sum(tier_res) / len(tier_res), 1) if tier_res else 0.0,
-            "sla_response_threshold":   _SLA_THRESHOLDS[tier_key]["response"],
+            "sla_response_threshold": _SLA_THRESHOLDS[tier_key]["response"],
             "sla_resolution_threshold": _SLA_THRESHOLDS[tier_key]["resolution"],
         }
 
@@ -383,12 +412,17 @@ def _compute_sla_metrics(tickets: list[dict[str, Any]]) -> dict[str, Any]:
     trend = "stable"
     if len(resolved) >= 10:
         mid = len(resolved) // 2
-        first_half_breach = sum(
-            1 for t in resolved[:mid]
-            if (t["response_hrs"] or 0) > _SLA_THRESHOLDS.get(t["tier"], {}).get("response", 8)
-        ) / mid
+        first_half_breach = (
+            sum(
+                1
+                for t in resolved[:mid]
+                if (t["response_hrs"] or 0) > _SLA_THRESHOLDS.get(t["tier"], {}).get("response", 8)
+            )
+            / mid
+        )
         second_half_breach = sum(
-            1 for t in resolved[mid:]
+            1
+            for t in resolved[mid:]
             if (t["response_hrs"] or 0) > _SLA_THRESHOLDS.get(t["tier"], {}).get("response", 8)
         ) / (len(resolved) - mid)
         if second_half_breach < first_half_breach - 0.05:
@@ -399,21 +433,21 @@ def _compute_sla_metrics(tickets: list[dict[str, Any]]) -> dict[str, Any]:
             trend = "stabil"
 
     return {
-        "total_tickets":             total,
-        "resolved_tickets":          len(resolved),
-        "open_tickets":              len(open_tix),
-        "sla_breach_count":          breach_count,
-        "sla_breach_rate":           round(breach_rate, 4),
-        "avg_response_time_hours":   round(avg_resp, 2),
+        "total_tickets": total,
+        "resolved_tickets": len(resolved),
+        "open_tickets": len(open_tix),
+        "sla_breach_count": breach_count,
+        "sla_breach_rate": round(breach_rate, 4),
+        "avg_response_time_hours": round(avg_resp, 2),
         "avg_resolution_time_hours": round(avg_res, 2),
-        "avg_nps_score":             round(avg_nps, 1),
-        "by_tier":                   by_tier,
-        "recurring_issues":          recurring_issues,
-        "trend":                     trend,
-        "at_risk_tickets":           at_risk[:10],   # top 10 at-risk open tickets
-        "high_risk_count":           high_risk_count,
-        "alerts":                    [],
-        "narrative":                 "",
+        "avg_nps_score": round(avg_nps, 1),
+        "by_tier": by_tier,
+        "recurring_issues": recurring_issues,
+        "trend": trend,
+        "at_risk_tickets": at_risk[:10],  # top 10 at-risk open tickets
+        "high_risk_count": high_risk_count,
+        "alerts": [],
+        "narrative": "",
     }
 
 
@@ -421,77 +455,91 @@ def _build_sla_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     """Generate actionable alerts in Turkish."""
     alerts: list[dict[str, str]] = []
 
-    breach_rate  = metrics.get("sla_breach_rate", 0.0)
-    nps          = metrics.get("avg_nps_score", 0.0)
-    trend        = metrics.get("trend", "stabil")
-    by_tier      = metrics.get("by_tier", {})
-    at_risk      = metrics.get("at_risk_tickets", [])
+    breach_rate = metrics.get("sla_breach_rate", 0.0)
+    nps = metrics.get("avg_nps_score", 0.0)
+    trend = metrics.get("trend", "stabil")
+    by_tier = metrics.get("by_tier", {})
+    at_risk = metrics.get("at_risk_tickets", [])
     high_risk_ct = metrics.get("high_risk_count", 0)
 
     if breach_rate >= 0.30:
-        alerts.append({
-            "level": "critical",
-            "message": (
-                f"SLA ihlal oranı %{breach_rate:.0%} — her 3 bilettten 1'i SLA'yı aşıyor. "
-                "Acil operasyonel inceleme ve kapasite artışı gerekli."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": (
+                    f"SLA ihlal oranı %{breach_rate:.0%} — her 3 bilettten 1'i SLA'yı aşıyor. "
+                    "Acil operasyonel inceleme ve kapasite artışı gerekli."
+                ),
+            }
+        )
     elif breach_rate >= 0.15:
-        alerts.append({
-            "level": "high",
-            "message": (
-                f"SLA ihlal oranı %{breach_rate:.0%} — %15 eşiğini aşıyor. "
-                "Personel seviyesi ve eskalasyon süreçleri gözden geçirilmeli."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "high",
+                "message": (
+                    f"SLA ihlal oranı %{breach_rate:.0%} — %15 eşiğini aşıyor. "
+                    "Personel seviyesi ve eskalasyon süreçleri gözden geçirilmeli."
+                ),
+            }
+        )
 
     # P1/Critical SLA breach
     p1 = by_tier.get("p1", {})
     if p1.get("breach_rate", 0) > 0.10:
-        alerts.append({
-            "level": "critical",
-            "message": (
-                f"P1-Kritik SLA ihlal oranı %{p1['breach_rate']:.0%}. "
-                "Kritik olaylar SLA içinde çözümlenemiyor — doğrudan gelir etkisi."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": (
+                    f"P1-Kritik SLA ihlal oranı %{p1['breach_rate']:.0%}. "
+                    "Kritik olaylar SLA içinde çözümlenemiyor — doğrudan gelir etkisi."
+                ),
+            }
+        )
 
     if high_risk_ct > 0:
         top_tix = [t["ticket_id"] for t in at_risk[:3] if t["risk_level"] in ("kritik", "yüksek")]
-        alerts.append({
-            "level": "high",
-            "message": (
-                f"Makine öğrenimi tahminleme: {high_risk_ct} açık bilet yüksek SLA ihlal riski taşıyor"
-                + (f" (Bilet: {', '.join(top_tix)})" if top_tix else "")
-                + ". Proaktif eskalasyon önerilir."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "high",
+                "message": (
+                    f"Makine öğrenimi tahminleme: {high_risk_ct} açık bilet yüksek SLA ihlal riski taşıyor"
+                    + (f" (Bilet: {', '.join(top_tix)})" if top_tix else "")
+                    + ". Proaktif eskalasyon önerilir."
+                ),
+            }
+        )
 
     if nps < 0 and metrics.get("total_tickets", 0) > 0:
-        alerts.append({
-            "level": "high",
-            "message": (
-                f"NPS skoru {nps:.0f} — negatif. "
-                "Müşteriler eleştirmen konumunda; churn ve olumsuz yayılım riski."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "high",
+                "message": (
+                    f"NPS skoru {nps:.0f} — negatif. "
+                    "Müşteriler eleştirmen konumunda; churn ve olumsuz yayılım riski."
+                ),
+            }
+        )
     elif nps < 20 and metrics.get("total_tickets", 0) > 0:
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"NPS {nps:.0f} — 20 benchmark'ının altında. "
-                "Tekrarlayan sorunları azalt ve çözüm kalitesini iyileştir."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"NPS {nps:.0f} — 20 benchmark'ının altında. "
+                    "Tekrarlayan sorunları azalt ve çözüm kalitesini iyileştir."
+                ),
+            }
+        )
 
     if trend == "kötüleşiyor":
-        alerts.append({
-            "level": "medium",
-            "message": (
-                "SLA performans trendi kötüleşiyor. "
-                "Son biletler önceki dönemlere kıyasla daha yüksek ihlal oranına sahip."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    "SLA performans trendi kötüleşiyor. "
+                    "Son biletler önceki dönemlere kıyasla daha yüksek ihlal oranına sahip."
+                ),
+            }
+        )
 
     return alerts
 
@@ -500,17 +548,18 @@ def _build_sla_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 # LLM Narrative (Turkish)
 # ---------------------------------------------------------------------------
 
+
 async def _generate_sla_narrative(metrics: dict[str, Any], settings) -> str:
     """Türkçe COO narrative — SLA ihlal tahmini bağlamıyla."""
     try:
         from app.platform.model_gateway import complete_text
 
-        breach     = metrics["sla_breach_rate"]
-        resp_time  = metrics["avg_response_time_hours"]
-        nps        = metrics["avg_nps_score"]
-        trend      = metrics["trend"]
-        total      = metrics["total_tickets"]
-        high_risk  = metrics.get("high_risk_count", 0)
+        breach = metrics["sla_breach_rate"]
+        resp_time = metrics["avg_response_time_hours"]
+        nps = metrics["avg_nps_score"]
+        trend = metrics["trend"]
+        total = metrics["total_tickets"]
+        high_risk = metrics.get("high_risk_count", 0)
         open_count = metrics.get("open_tickets", 0)
 
         system = (
@@ -528,23 +577,28 @@ async def _generate_sla_narrative(metrics: dict[str, Any], settings) -> str:
             f"- Yüksek riskli açık bilet (tahmin): {high_risk}\n\n"
             "Mevcut servis kalitesini, ihlal risklerini ve 2 öncelikli aksiyon öner."
         )
-        return (await complete_text(
-            task="metric_commentary", system_prompt=system, prompt=human, max_tokens=350,
-        )).strip()
+        return (
+            await complete_text(
+                task="metric_commentary",
+                system_prompt=system,
+                prompt=human,
+                max_tokens=350,
+            )
+        ).strip()
     except Exception:
         breach = metrics.get("sla_breach_rate", 0.0)
-        nps    = metrics.get("avg_nps_score", 0.0)
-        total  = metrics.get("total_tickets", 0)
+        nps = metrics.get("avg_nps_score", 0.0)
+        total = metrics.get("total_tickets", 0)
         high_risk = metrics.get("high_risk_count", 0)
-        return (
-            f"{total} bilet analiz edildi; SLA ihlal oranı %{breach:.0%}, NPS {nps:.0f}."
-            + (f" {high_risk} açık bilet yüksek ihlal riski taşıyor." if high_risk else "")
+        return f"{total} bilet analiz edildi; SLA ihlal oranı %{breach:.0%}, NPS {nps:.0f}." + (
+            f" {high_risk} açık bilet yüksek ihlal riski taşıyor." if high_risk else ""
         )
 
 
 # ---------------------------------------------------------------------------
 # LangGraph Node
 # ---------------------------------------------------------------------------
+
 
 async def run_sla_agent(state: COOState, config: dict) -> dict[str, Any]:
     """
@@ -558,13 +612,14 @@ async def run_sla_agent(state: COOState, config: dict) -> dict[str, Any]:
         return {"sla": None}
 
     try:
-        rows    = _parse_sla_csv(csv_text)
+        rows = _parse_sla_csv(csv_text)
         metrics = _compute_sla_metrics(rows)
-        alerts  = _build_sla_alerts(metrics)
+        alerts = _build_sla_alerts(metrics)
         metrics["alerts"] = alerts
 
         try:
             from app.config import get_settings
+
             settings = get_settings()
             if getattr(settings, "openai_api_key", None):
                 metrics["narrative"] = await _generate_sla_narrative(metrics, settings)
@@ -572,9 +627,9 @@ async def run_sla_agent(state: COOState, config: dict) -> dict[str, Any]:
             pass
 
         if not metrics.get("narrative"):
-            breach    = metrics.get("sla_breach_rate", 0.0)
-            nps       = metrics.get("avg_nps_score", 0.0)
-            total     = metrics.get("total_tickets", 0)
+            breach = metrics.get("sla_breach_rate", 0.0)
+            nps = metrics.get("avg_nps_score", 0.0)
+            total = metrics.get("total_tickets", 0)
             high_risk = metrics.get("high_risk_count", 0)
             metrics["narrative"] = (
                 f"{total} bilet analiz edildi; SLA ihlal oranı %{breach:.0%}, NPS {nps:.0f}."

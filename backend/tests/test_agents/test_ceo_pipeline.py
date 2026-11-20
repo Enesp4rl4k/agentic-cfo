@@ -73,7 +73,9 @@ AT_RISK_TECH = {
     "sla_breach_pct": 35.0,
     "avg_velocity": 20,
     "velocity_trend": "down",
-    "top_risks": [{"severity": "critical", "message": "MTTR exceeded SLA", "domain": "Reliability"}],
+    "top_risks": [
+        {"severity": "critical", "message": "MTTR exceeded SLA", "domain": "Reliability"}
+    ],
     "narrative": "Multiple tech risks.",
 }
 
@@ -102,6 +104,7 @@ CROSS_RISKS_SAMPLE = [
 
 
 # ── SynthesisAgent tests ──────────────────────────────────────────────────────
+
 
 def test_no_cross_risks_when_healthy():
     risks = _detect_cross_risks(HEALTHY_FIN, HEALTHY_TECH)
@@ -161,6 +164,7 @@ def test_risks_sorted_by_urgency():
 
 # ── CondenseSummaries helpers tests ───────────────────────────────────────────
 
+
 def test_condense_financial_has_required_keys():
     fake_cfo_state = {
         "pnl": {
@@ -209,19 +213,40 @@ def test_condense_tech_has_required_keys():
 
 # ── StrategicPrioritiesAgent tests ────────────────────────────────────────────
 
+
 def test_priority_score_now_higher_than_30d():
-    now_risk = {"urgency": "now", "severity": "high", "financial_impact_cents": 100_000,
-                "effort": "low", "impact": "high"}
-    later_risk = {"urgency": "30d", "severity": "high", "financial_impact_cents": 100_000,
-                  "effort": "low", "impact": "high"}
+    now_risk = {
+        "urgency": "now",
+        "severity": "high",
+        "financial_impact_cents": 100_000,
+        "effort": "low",
+        "impact": "high",
+    }
+    later_risk = {
+        "urgency": "30d",
+        "severity": "high",
+        "financial_impact_cents": 100_000,
+        "effort": "low",
+        "impact": "high",
+    }
     assert _score_priority(now_risk) > _score_priority(later_risk)
 
 
 def test_priority_score_critical_higher_than_medium():
-    critical = {"urgency": "30d", "severity": "critical", "financial_impact_cents": 50_000,
-                "effort": "medium", "impact": "critical"}
-    medium = {"urgency": "30d", "severity": "medium", "financial_impact_cents": 50_000,
-              "effort": "medium", "impact": "medium"}
+    critical = {
+        "urgency": "30d",
+        "severity": "critical",
+        "financial_impact_cents": 50_000,
+        "effort": "medium",
+        "impact": "critical",
+    }
+    medium = {
+        "urgency": "30d",
+        "severity": "medium",
+        "financial_impact_cents": 50_000,
+        "effort": "medium",
+        "impact": "medium",
+    }
     assert _score_priority(critical) > _score_priority(medium)
 
 
@@ -244,8 +269,8 @@ def test_build_priorities_has_required_fields():
         assert "rank" in p
         assert "title" in p
         assert "urgency" in p
-        assert "domains" in p        # list e.g. ["cfo", "cto"]
-        assert "owner_role" in p     # e.g. "CEO", "CFO", "CTO"
+        assert "domains" in p  # list e.g. ["cfo", "cto"]
+        assert "owner_role" in p  # e.g. "CEO", "CFO", "CTO"
 
 
 def test_build_priorities_empty_risks():
@@ -254,6 +279,7 @@ def test_build_priorities_empty_risks():
 
 
 # ── BoardDeckAgent tests ──────────────────────────────────────────────────────
+
 
 def test_build_slides_returns_list():
     # _build_slides(fin, tech, cross_risks, priorities, period)
@@ -273,8 +299,8 @@ def test_build_slides_have_required_fields():
     for slide in slides:
         assert "slide_number" in slide
         assert "title" in slide
-        assert "chart_type" in slide      # actual field name (not "type")
-        assert "narrative" in slide       # actual field name (not "content")
+        assert "chart_type" in slide  # actual field name (not "type")
+        assert "narrative" in slide  # actual field name (not "content")
 
 
 def test_build_slides_numbers_sequential():
@@ -287,8 +313,7 @@ def test_build_one_page_summary_is_string():
     priorities = _build_priorities_from_risks(CROSS_RISKS_SAMPLE, STRESSED_FIN, AT_RISK_TECH)
     # _build_one_page_summary(fin, tech, cross_risks, priorities, period, company_name)
     summary = _build_one_page_summary(
-        STRESSED_FIN, AT_RISK_TECH, CROSS_RISKS_SAMPLE, priorities,
-        "2024-Q2", "TestCo"
+        STRESSED_FIN, AT_RISK_TECH, CROSS_RISKS_SAMPLE, priorities, "2024-Q2", "TestCo"
     )
     assert isinstance(summary, str)
     assert len(summary) > 50
@@ -297,14 +322,16 @@ def test_build_one_page_summary_is_string():
 def test_build_one_page_summary_contains_key_terms():
     priorities = _build_priorities_from_risks(CROSS_RISKS_SAMPLE, STRESSED_FIN, AT_RISK_TECH)
     summary = _build_one_page_summary(
-        STRESSED_FIN, AT_RISK_TECH, CROSS_RISKS_SAMPLE, priorities,
-        "2024-Q2", "TestCo"
+        STRESSED_FIN, AT_RISK_TECH, CROSS_RISKS_SAMPLE, priorities, "2024-Q2", "TestCo"
     )
     lower = summary.lower()
-    assert any(term in lower for term in ["revenue", "risk", "action", "priority", "tech", "financial"])
+    assert any(
+        term in lower for term in ["revenue", "risk", "action", "priority", "tech", "financial"]
+    )
 
 
 # ── API overall_health_score tests ────────────────────────────────────────────
+
 
 def test_overall_health_healthy_company():
     result = {
@@ -395,15 +422,31 @@ async def test_run_board_deck_agent_accepts_ceo_run_config() -> None:
 # and the deck was always blank. These call the graph end to end and assert on
 # numbers that can only come from the input.
 
+
 @pytest.mark.asyncio
 async def test_ceo_pipeline_passes_cfo_transactions_through_the_graph() -> None:
     from app.agents.ceo.orchestrator import run_ceo_pipeline
 
     # Schema per _run_cfo_from_transactions' docstring: amounts in cents.
     txns = [
-        {"date": "2024-01-05", "description": "Satış A", "amount_cents": 15_000_000, "type": "revenue"},
-        {"date": "2024-01-12", "description": "Kira",    "amount_cents": -2_500_000, "type": "expense"},
-        {"date": "2024-02-03", "description": "Satış B", "amount_cents": 21_000_000, "type": "revenue"},
+        {
+            "date": "2024-01-05",
+            "description": "Satış A",
+            "amount_cents": 15_000_000,
+            "type": "revenue",
+        },
+        {
+            "date": "2024-01-12",
+            "description": "Kira",
+            "amount_cents": -2_500_000,
+            "type": "expense",
+        },
+        {
+            "date": "2024-02-03",
+            "description": "Satış B",
+            "amount_cents": 21_000_000,
+            "type": "revenue",
+        },
     ]
 
     result = await run_ceo_pipeline(

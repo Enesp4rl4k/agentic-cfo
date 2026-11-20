@@ -13,6 +13,7 @@ the table lacks. Nothing is dropped, altered or retyped; a column that cannot
 be added to a populated table (NOT NULL with no server default) is reported,
 not forced. Production does not run this: PostgreSQL goes through migrations.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SchemaSync:
     added: list[str] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)   # NOT NULL, no default
+    skipped: list[str] = field(default_factory=list)  # NOT NULL, no default
 
 
 def sync_dev_schema(conn: Connection, metadata: sa.MetaData) -> SchemaSync:
@@ -68,7 +69,9 @@ def sync_dev_schema(conn: Connection, metadata: sa.MetaData) -> SchemaSync:
         result.added.append(name)
 
     if result.added:
-        logger.warning("SQLite dev şeması güncellendi, eklenen kolonlar: %s", ", ".join(result.added))
+        logger.warning(
+            "SQLite dev şeması güncellendi, eklenen kolonlar: %s", ", ".join(result.added)
+        )
     if result.skipped:
         logger.error(
             "SQLite dev şemasında eksik ama eklenemeyen kolonlar (NOT NULL, varsayılansız): %s "

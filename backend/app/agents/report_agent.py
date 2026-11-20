@@ -11,6 +11,7 @@ SOLID Refactoring:
 
 done_when: state['report_paths']['xlsx'] exists on disk AND state['dashboard_json'] is populated.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -69,26 +70,30 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
     # Add runway KPI if forecast available
     base_scenario = forecast.get("scenarios", {}).get("base", {})
     if base_scenario.get("runway_months") is not None:
-        kpis.append({
-            "label": "Cash Runway",
-            "value": base_scenario["runway_months"],
-            "format": "months",
-            "trend": None,
-        })
+        kpis.append(
+            {
+                "label": "Cash Runway",
+                "value": base_scenario["runway_months"],
+                "format": "months",
+                "trend": None,
+            }
+        )
 
     # Add anomaly summary KPI if anomalies detected
     anomalies = state.get("anomalies") or []
     critical_count = sum(1 for a in anomalies if a.get("severity") == "critical")
     high_count = sum(1 for a in anomalies if a.get("severity") == "high")
     if anomalies:
-        kpis.append({
-            "label": "Anomalies",
-            "value": len(anomalies),
-            "format": "count",
-            "trend": None,
-            "critical": critical_count,
-            "high": high_count,
-        })
+        kpis.append(
+            {
+                "label": "Anomalies",
+                "value": len(anomalies),
+                "format": "count",
+                "trend": None,
+                "critical": critical_count,
+                "high": high_count,
+            }
+        )
 
     # Recent transactions (last 20)
     recent_transactions = sorted(
@@ -98,9 +103,7 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
     )[:20]
 
     # All alerts combined
-    all_alerts = (
-        cashflow.get("alerts", []) + forecast.get("alerts", [])
-    )
+    all_alerts = cashflow.get("alerts", []) + forecast.get("alerts", [])
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -142,24 +145,19 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
         "anomalies": state.get("anomalies", []),
         "anomaly_narrative": state.get("anomaly_narrative", ""),
         "triggered_alerts": state.get("triggered_alerts", []),
-
         # Budget agent
         "budget": state.get("budget"),
-
         # Tax agent — its own shape, in kuruş, which is what the tax page
         # reads (tax.vat.net_vat_payable, tax.reference_month, tax.paid). This
         # block used to be flattened into keys the page never read; nobody
         # noticed because the router skipped the tax agent on every run
         # (plan v8 §A2), so the block was always None.
         "tax": dict(state["tax"]) if state.get("tax") else None,
-
         # Multi-period agent
         "multi_period": state.get("multi_period"),
-
         "alerts": all_alerts,
         "recent_transactions": recent_transactions,
         "transaction_count": len(transactions),
-
         # Confidence decomposition — why min_confidence is what it is
         "min_confidence": state.get("min_confidence"),
         "confidence_breakdown": state.get("confidence_breakdown"),

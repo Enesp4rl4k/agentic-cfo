@@ -15,6 +15,7 @@ One contract, one decision:
 
 A skipped step has no confidence (None, not 1.0) and does not count.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -32,7 +33,7 @@ FAILED = "failed"
 class StepResult:
     step: str
     ok: bool
-    status: str                     # ok | skipped | failed
+    status: str  # ok | skipped | failed
     confidence: float | None = None
     needs_review: bool = False
     detail: str | None = None
@@ -77,7 +78,7 @@ def _step_result(entry: Any) -> StepResult | None:
     status = str(raw.get("status") or "")
     if status == SKIPPED:
         return StepResult(name, True, SKIPPED, None, **extra)
-    if "ok" in raw:   # {step, ok, detail, confidence}
+    if "ok" in raw:  # {step, ok, detail, confidence}
         return StepResult(name, bool(raw["ok"]), OK if raw["ok"] else FAILED, confidence, **extra)
     # {node, status, message}
     if status == "started":
@@ -91,7 +92,9 @@ def step_results(result: dict[str, Any]) -> list[StepResult]:
     return [s for s in map(_step_result, result.get("logs") or []) if s is not None]
 
 
-def evaluate(result: dict[str, Any], threshold: float = CONFIDENCE_AUTO_PROCEED_MIN) -> GateDecision:
+def evaluate(
+    result: dict[str, Any], threshold: float = CONFIDENCE_AUTO_PROCEED_MIN
+) -> GateDecision:
     """Does this role's result wait for a person?"""
     steps = step_results(result)
     measured = [s.confidence for s in steps if s.confidence is not None]
@@ -107,7 +110,11 @@ def evaluate(result: dict[str, Any], threshold: float = CONFIDENCE_AUTO_PROCEED_
     failed = [s.step for s in steps if s.status == FAILED]
     if failed:
         reasons.append(f"Başarısız adım: {', '.join(failed)}.")
-    if result.get("awaiting_review") or result.get("needs_review") or any(s.needs_review for s in steps):
+    if (
+        result.get("awaiting_review")
+        or result.get("needs_review")
+        or any(s.needs_review for s in steps)
+    ):
         reasons.append("Bir adım insan incelemesi istedi.")
     if lowest is None:
         reasons.append("Bu rolün güveni ölçülmedi; sonucu bir kişi onaylamalı.")

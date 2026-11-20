@@ -7,6 +7,7 @@ These are deterministic (template narratives, threshold 0.0) so they belong in
 the normal suite; ``-m eval`` selects just this file and the gate test asserts
 the aggregate pass-rate, tolerating at most one regression before failing CI.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -178,7 +179,5 @@ async def test_confidence_gate_precision_on_labeled_set(_write_csv) -> None:
             ConfidenceObservation(label, float(r.get("min_confidence") or 0.0), refused)
         )
 
-    report = calibrate_confidence_gate(
-        observations, threshold=CONFIDENCE_AUTO_PROCEED_MIN
-    )
+    report = calibrate_confidence_gate(observations, threshold=CONFIDENCE_AUTO_PROCEED_MIN)
     assert report.precision_at_threshold == 1.0, report.to_dict()

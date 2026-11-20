@@ -16,6 +16,7 @@ Usage:
         label="pnl_narrative",
     )
 """
+
 from __future__ import annotations
 
 import logging
@@ -63,6 +64,7 @@ async def reflect_and_retry(
         The best narrative produced (highest score, or last attempt).
     """
     if extract_text is None:
+
         def extract_text(r: Any) -> str:  # type: ignore[misc]
             if hasattr(r, "content"):
                 return str(r.content)
@@ -96,14 +98,19 @@ async def reflect_and_retry(
 
         logger.debug(
             "reflect_and_retry [%s] attempt=%d score=%.2f threshold=%.2f",
-            label, attempt + 1, score, threshold,
+            label,
+            attempt + 1,
+            score,
+            threshold,
         )
 
         if score >= threshold:
             if attempt > 0:
                 logger.info(
                     "reflect_and_retry [%s] passed on attempt %d (score=%.2f)",
-                    label, attempt + 1, score,
+                    label,
+                    attempt + 1,
+                    score,
                 )
             return text
 
@@ -117,7 +124,9 @@ async def reflect_and_retry(
             )
             logger.info(
                 "reflect_and_retry [%s] retry %d — hints: %s",
-                label, attempt + 1, hints_text,
+                label,
+                attempt + 1,
+                hints_text,
             )
         else:
             hint = (
@@ -127,6 +136,9 @@ async def reflect_and_retry(
 
     logger.warning(
         "reflect_and_retry [%s] exhausted %d retries — best score=%.2f (threshold=%.2f)",
-        label, max_retries, best_score, threshold,
+        label,
+        max_retries,
+        best_score,
+        threshold,
     )
     return best_text

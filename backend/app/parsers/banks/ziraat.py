@@ -1,4 +1,5 @@
 """Ziraat Bankası statement parser."""
+
 from __future__ import annotations
 
 import re
@@ -61,10 +62,15 @@ class ZiraatParser(BankParser):
 
             if not amount:
                 continue
-            transactions.append(ParsedTransaction(
-                date=date, description=description,
-                amount_cents=amount, tx_type=tx_type, raw_row=m.group(0),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description,
+                    amount_cents=amount,
+                    tx_type=tx_type,
+                    raw_row=m.group(0),
+                )
+            )
 
         if transactions:
             return transactions
@@ -84,11 +90,14 @@ class ZiraatParser(BankParser):
             amount = self.parse_turkish_amount(raw.lstrip("+-"))
             if not amount:
                 continue
-            transactions.append(ParsedTransaction(
-                date=date, description=description,
-                amount_cents=amount,
-                tx_type="expense" if negative else "income",
-                raw_row=m.group(0),
-            ))
+            transactions.append(
+                ParsedTransaction(
+                    date=date,
+                    description=description,
+                    amount_cents=amount,
+                    tx_type="expense" if negative else "income",
+                    raw_row=m.group(0),
+                )
+            )
 
         return transactions

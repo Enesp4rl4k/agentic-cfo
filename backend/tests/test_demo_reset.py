@@ -12,6 +12,7 @@ D4 — Reset + hijyen kapıları (DEMO_PLAN §D4).
 6. dosya hijyeni              → paylaşılan dosya purge edilen job'ın kendisi
    silinmedikçe kalmaz; tek başına kullanılan dosya unlink edilir
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -62,14 +63,13 @@ async def _org_id_by_slug(sessionmaker, slug: str) -> str:
     async with sessionmaker() as db:
         return str(
             (
-                await db.execute(
-                    select(Organization.id).where(Organization.slug == slug)
-                )
+                await db.execute(select(Organization.id).where(Organization.slug == slug))
             ).scalar_one()
         )
 
 
 # ── 1–3. Reset kapıları ────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_reset_requires_auth(test_client):
@@ -157,6 +157,7 @@ async def test_reset_refuses_golden_org(test_client):
 
 # ── 4. Seed günlük limiti ─────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_seed_daily_limit_returns_429(test_client, tmp_path, monkeypatch):
     """Kullanıcı başına günde 5 seed isteği; 6. = 429 + Retry-After."""
@@ -174,6 +175,7 @@ async def test_seed_daily_limit_returns_429(test_client, tmp_path, monkeypatch):
 
 
 # ── 5. TTL cron çekirdeği ─────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_ttl_purge_only_expired_guests(test_client):
@@ -277,6 +279,7 @@ async def test_ttl_purge_only_expired_guests(test_client):
 
 # ── 6. Dosya hijyeni ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_purge_unlinks_only_unshared_files(test_client, tmp_path):
     """Tek başına kullanılan demo dosyası silinir; paylaşılan dosya purge edilen
@@ -288,9 +291,7 @@ async def test_purge_unlinks_only_unshared_files(test_client, tmp_path):
     unique.write_text("tarih,tutar\n", encoding="utf-8")
 
     async with sm() as db:
-        holder = Organization(
-            name="Paylaşan Org", slug="paylasan-org", **_regional_defaults("TR")
-        )
+        holder = Organization(name="Paylaşan Org", slug="paylasan-org", **_regional_defaults("TR"))
         db.add(holder)
         await db.flush()
         # Holder + "golden" (B) AYNI dosyayı referanslar — clone dosyayı
@@ -352,6 +353,4 @@ async def test_purge_unlinks_only_unshared_files(test_client, tmp_path):
     assert not unique.exists(), "tek başına kullanılan demo dosyası silinmeli"
     assert shared.exists(), "yabancının dosyası asla silinmez"
     # Golden-benzeri org hâlâ iş başında:
-    assert await _count(
-        sm, AnalysisJob, org_id=golden_like_id, filename=DEMO_FILENAME
-    ) == 1
+    assert await _count(sm, AnalysisJob, org_id=golden_like_id, filename=DEMO_FILENAME) == 1

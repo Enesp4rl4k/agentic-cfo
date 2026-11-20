@@ -60,10 +60,10 @@ _IIA_MATURITY: dict[str, dict[str, str]] = {
 
 # IIA control effectiveness thresholds
 _CTRL_EFFECTIVENESS_LABELS = [
-    (75, "Etkili",           "Kontroller amacına uygun çalışıyor."),
-    (55, "Genellikle Etkili","Küçük boşluklar mevcut; izleme yeterli."),
-    (35, "Kısmen Etkili",   "Önemli boşluklar var; güçlendirme gerekli."),
-    (0,  "Yetersiz",        "Kontrol ortamı ciddi risk altında; acil aksiyon gerekli."),
+    (75, "Etkili", "Kontroller amacına uygun çalışıyor."),
+    (55, "Genellikle Etkili", "Küçük boşluklar mevcut; izleme yeterli."),
+    (35, "Kısmen Etkili", "Önemli boşluklar var; güçlendirme gerekli."),
+    (0, "Yetersiz", "Kontrol ortamı ciddi risk altında; acil aksiyon gerekli."),
 ]
 
 
@@ -77,6 +77,7 @@ def _ctrl_effectiveness_label(score: float) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Repeat finding detection
 # ---------------------------------------------------------------------------
+
 
 def _detect_repeat_findings(findings: dict[str, Any]) -> dict[str, Any]:
     """
@@ -107,7 +108,8 @@ def _detect_repeat_findings(findings: dict[str, Any]) -> dict[str, Any]:
     # High-risk areas: appeared 2+ times or had critical findings
     critical_area_set = set(critical_areas)
     high_risk_areas = [
-        area for area, count in area_counter.most_common(10)
+        area
+        for area, count in area_counter.most_common(10)
         if count >= 2 or area in critical_area_set
     ]
 
@@ -115,17 +117,23 @@ def _detect_repeat_findings(findings: dict[str, Any]) -> dict[str, Any]:
     priorities: list[dict[str, str]] = []
     for area, count in area_counter.most_common(5):
         severity = "Yüksek" if area in critical_area_set else ("Orta" if count >= 2 else "Düşük")
-        priorities.append({
-            "area": area,
-            "finding_count": str(count),
-            "risk_level": severity,
-            "recommendation": (
-                f"'{area}' alanında {count} bulgu tespit edildi"
-                + (" — kritik bulgular mevcut, öncelikli denetim planlanmalı." if area in critical_area_set
-                   else " — tekrarlayan örüntü, kök neden analizi yapılmalı." if count >= 2
-                   else " — rutin izleme yeterli.")
-            ),
-        })
+        priorities.append(
+            {
+                "area": area,
+                "finding_count": str(count),
+                "risk_level": severity,
+                "recommendation": (
+                    f"'{area}' alanında {count} bulgu tespit edildi"
+                    + (
+                        " — kritik bulgular mevcut, öncelikli denetim planlanmalı."
+                        if area in critical_area_set
+                        else " — tekrarlayan örüntü, kök neden analizi yapılmalı."
+                        if count >= 2
+                        else " — rutin izleme yeterli."
+                    )
+                ),
+            }
+        )
 
     return {
         "repeat_count": repeat_count,
@@ -140,27 +148,41 @@ def _detect_repeat_findings(findings: dict[str, Any]) -> dict[str, Any]:
 # Node helpers
 # ---------------------------------------------------------------------------
 
+
 async def node_findings(state: AuditState, config: dict) -> AuditState:
     result = await run_findings_agent(state, config)
-    return {**state, "findings": result["findings"],
-            "logs": result["logs"], "error": result.get("error")}
+    return {
+        **state,
+        "findings": result["findings"],
+        "logs": result["logs"],
+        "error": result.get("error"),
+    }
 
 
 async def node_controls(state: AuditState, config: dict) -> AuditState:
     result = await run_controls_agent(state, config)
-    return {**state, "controls": result["controls"],
-            "logs": result["logs"], "error": result.get("error")}
+    return {
+        **state,
+        "controls": result["controls"],
+        "logs": result["logs"],
+        "error": result.get("error"),
+    }
 
 
 async def node_coverage(state: AuditState, config: dict) -> AuditState:
     result = await run_coverage_agent(state, config)
-    return {**state, "coverage": result["coverage"],
-            "logs": result["logs"], "error": result.get("error")}
+    return {
+        **state,
+        "coverage": result["coverage"],
+        "logs": result["logs"],
+        "error": result.get("error"),
+    }
 
 
 # ---------------------------------------------------------------------------
 # Main summary node
 # ---------------------------------------------------------------------------
+
 
 async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     """
@@ -168,9 +190,9 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     Score 0-100 (higher = healthier audit posture).
     Adds IIA maturity labels, control effectiveness, repeat finding analysis, LLM narrative.
     """
-    fin  = state.get("findings") or {}
+    fin = state.get("findings") or {}
     ctrl = state.get("controls") or {}
-    cov  = state.get("coverage") or {}
+    cov = state.get("coverage") or {}
     logs: list[AuditStepLog] = list(state.get("logs") or [])
 
     # -- Audit Health Score (0-100) -----------------------------------------
@@ -179,13 +201,11 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     # coverage_score  : coverage_rate * 100,           weight 25 %
 
     findings_score = float(fin.get("finding_health_score", 100.0))
-    control_score  = float(ctrl.get("overall_control_score", 100.0))
+    control_score = float(ctrl.get("overall_control_score", 100.0))
     coverage_score = float(cov.get("coverage_rate", 1.0)) * 100.0
 
     audit_health = round(
-        findings_score * 0.35
-        + control_score  * 0.40
-        + coverage_score * 0.25,
+        findings_score * 0.35 + control_score * 0.40 + coverage_score * 0.25,
         1,
     )
 
@@ -210,7 +230,7 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     # -- Repeat Finding Analysis --------------------------------------------
     repeat_analysis = _detect_repeat_findings(fin)
     repeat_count = repeat_analysis["repeat_count"]
-    repeat_rate  = repeat_analysis["repeat_rate"]
+    repeat_rate = repeat_analysis["repeat_rate"]
     high_risk_areas = repeat_analysis["high_risk_areas"]
 
     # -- Top Issues (Turkish) -----------------------------------------------
@@ -218,47 +238,57 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
 
     open_critical = fin.get("open_critical", 0)
     if open_critical:
-        top_issues.append({
-            "source":   "bulgular",
-            "title":    f"{open_critical} kritik bulgu çözümsüz bekliyor",
-            "severity": "kritik",
-            "action":   "Denetim Komitesi'ne ilet; 30 günlük düzeltme planı oluştur.",
-        })
+        top_issues.append(
+            {
+                "source": "bulgular",
+                "title": f"{open_critical} kritik bulgu çözümsüz bekliyor",
+                "severity": "kritik",
+                "action": "Denetim Komitesi'ne ilet; 30 günlük düzeltme planı oluştur.",
+            }
+        )
 
     ineffective = len(ctrl.get("ineffective_controls", []))
     if ineffective:
-        top_issues.append({
-            "source":   "kontroller",
-            "title":    f"{ineffective} kontrol yetersiz/etkisiz",
-            "severity": "kritik",
-            "action":   "Etkilenen kontrolleri yeniden tasarla; geçici telafi edici kontroller devreye al.",
-        })
+        top_issues.append(
+            {
+                "source": "kontroller",
+                "title": f"{ineffective} kontrol yetersiz/etkisiz",
+                "severity": "kritik",
+                "action": "Etkilenen kontrolleri yeniden tasarla; geçici telafi edici kontroller devreye al.",
+            }
+        )
 
     hr_coverage = cov.get("high_risk_coverage", 1.0)
     if hr_coverage < 0.80:
-        top_issues.append({
-            "source":   "kapsam",
-            "title":    f"Yüksek riskli birimlerde kapsam oranı %{hr_coverage:.0%} — yetersiz",
-            "severity": "yüksek",
-            "action":   "Gelecek çeyrekte denetlenmemiş yüksek riskli birimler önceliklendirilmeli.",
-        })
+        top_issues.append(
+            {
+                "source": "kapsam",
+                "title": f"Yüksek riskli birimlerde kapsam oranı %{hr_coverage:.0%} — yetersiz",
+                "severity": "yüksek",
+                "action": "Gelecek çeyrekte denetlenmemiş yüksek riskli birimler önceliklendirilmeli.",
+            }
+        )
 
     overdue_findings = fin.get("overdue_count", 0)
     if overdue_findings:
-        top_issues.append({
-            "source":   "bulgular",
-            "title":    f"{overdue_findings} bulgunun düzeltmesi gecikiyor",
-            "severity": "orta",
-            "action":   "Sorumlu yöneticileri takibe al; 60 günü geçenler için eskalasyon başlat.",
-        })
+        top_issues.append(
+            {
+                "source": "bulgular",
+                "title": f"{overdue_findings} bulgunun düzeltmesi gecikiyor",
+                "severity": "orta",
+                "action": "Sorumlu yöneticileri takibe al; 60 günü geçenler için eskalasyon başlat.",
+            }
+        )
 
     if repeat_rate > 0.20:
-        top_issues.append({
-            "source":   "tekrar bulgular",
-            "title":    f"Bulgular içinde %{repeat_rate:.0%} tekrarlayan bulgu — sistemik sorun sinyali",
-            "severity": "yüksek",
-            "action":   f"Kök neden analizi yapılmalı; özellikle şu alanlar: {', '.join(high_risk_areas[:3]) or 'belirsiz'}.",
-        })
+        top_issues.append(
+            {
+                "source": "tekrar bulgular",
+                "title": f"Bulgular içinde %{repeat_rate:.0%} tekrarlayan bulgu — sistemik sorun sinyali",
+                "severity": "yüksek",
+                "action": f"Kök neden analizi yapılmalı; özellikle şu alanlar: {', '.join(high_risk_areas[:3]) or 'belirsiz'}.",
+            }
+        )
 
     # -- Quick Wins (Turkish) -----------------------------------------------
     quick_wins: list[dict[str, str]] = []
@@ -266,42 +296,57 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     backlog = cov.get("audit_backlog", 0)
     if backlog:
         total_units = max(cov.get("total_units", 1), 1)
-        quick_wins.append({
-            "aksiyon": f"Bekleyen {min(backlog, 5)} denetimi planla — acil birikimi temizle",
-            "efor":    "orta",
-            "etki":    f"Kapsam oranını ~%{min(backlog, 5) / total_units:.0%} artırır",
-        })
+        quick_wins.append(
+            {
+                "aksiyon": f"Bekleyen {min(backlog, 5)} denetimi planla — acil birikimi temizle",
+                "efor": "orta",
+                "etki": f"Kapsam oranını ~%{min(backlog, 5) / total_units:.0%} artırır",
+            }
+        )
 
     if repeat_count > 0:
-        quick_wins.append({
-            "aksiyon": "Tekrarlayan bulgular için kök neden analizi başlat (RCA workshop)",
-            "efor":    "yüksek",
-            "etki":    "Sistemik kontrol açıklarını kapatır; denetim kültürünü güçlendirir",
-        })
+        quick_wins.append(
+            {
+                "aksiyon": "Tekrarlayan bulgular için kök neden analizi başlat (RCA workshop)",
+                "efor": "yüksek",
+                "etki": "Sistemik kontrol açıklarını kapatır; denetim kültürünü güçlendirir",
+            }
+        )
 
     stale = ctrl.get("stale_controls", 0)
     if stale:
-        quick_wins.append({
-            "aksiyon": f"12 aydan uzun süredir test edilmemiş {stale} kontrolü test et",
-            "efor":    "orta",
-            "etki":    "Kontrol etkinliğini belgele; potansiyel açıkları erkenden tespit et",
-        })
+        quick_wins.append(
+            {
+                "aksiyon": f"12 aydan uzun süredir test edilmemiş {stale} kontrolü test et",
+                "efor": "orta",
+                "etki": "Kontrol etkinliğini belgele; potansiyel açıkları erkenden tespit et",
+            }
+        )
 
     if audit_health < 50:
-        quick_wins.append({
-            "aksiyon": "İç Denetim Birimi'nin IIA IPPF standartlarına uyumunu değerlendiren dış kalite değerlendirmesi planla",
-            "efor":    "yüksek",
-            "etki":    "Denetim fonksiyonunu kurumsal seviyeye taşır",
-        })
+        quick_wins.append(
+            {
+                "aksiyon": "İç Denetim Birimi'nin IIA IPPF standartlarına uyumunu değerlendiren dış kalite değerlendirmesi planla",
+                "efor": "yüksek",
+                "etki": "Denetim fonksiyonunu kurumsal seviyeye taşır",
+            }
+        )
 
     # -- Risk-Based Audit Priorities ----------------------------------------
     audit_priorities = repeat_analysis.get("priorities", [])
 
     # -- LLM Narrative (Turkish) --------------------------------------------
     narrative = _build_rule_based_narrative(
-        audit_health, maturity_label, maturity_info["description"],
-        fin, ctrl, cov, ctrl_eff_label, ctrl_eff_desc,
-        repeat_rate, high_risk_areas,
+        audit_health,
+        maturity_label,
+        maturity_info["description"],
+        fin,
+        ctrl,
+        cov,
+        ctrl_eff_label,
+        ctrl_eff_desc,
+        repeat_rate,
+        high_risk_areas,
     )
 
     try:
@@ -335,7 +380,12 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
                 f"Bulgular: {context['total_findings']} toplam, {context['open_critical']} kritik açık, "
                 f"{context['overdue']} gecikmiş\n"
                 f"Tekrar bulgu oranı: {context['repeat_rate_pct']}"
-                + (f" — riskli alanlar: {', '.join(context['high_risk_areas'])}" if context['high_risk_areas'] else "") + "\n"
+                + (
+                    f" — riskli alanlar: {', '.join(context['high_risk_areas'])}"
+                    if context["high_risk_areas"]
+                    else ""
+                )
+                + "\n"
                 f"Kontrol etkinliği: {context['ctrl_effectiveness']} (skor: {context['control_score']}/100), "
                 f"{context['ineffective_controls']} yetersiz kontrol\n"
                 f"Denetim evreni kapsamı: {context['coverage_rate_pct']} (yüksek riskli: {context['high_risk_coverage_pct']})\n\n"
@@ -355,8 +405,8 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     # -- Assemble Summary ---------------------------------------------------
     summary = {
         "audit_health_score": audit_health,
-        "maturity_level":     maturity_key,
-        "maturity_label":     maturity_label,
+        "maturity_level": maturity_key,
+        "maturity_label": maturity_label,
         "maturity_iia_level": maturity_info["iia_level"],
         "maturity_description": maturity_info["description"],
         "component_scores": {
@@ -364,25 +414,28 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
             "controls": round(control_score, 1),
             "coverage": round(coverage_score, 1),
         },
-        "control_effectiveness":      ctrl_eff_label,
+        "control_effectiveness": ctrl_eff_label,
         "control_effectiveness_desc": ctrl_eff_desc,
         "repeat_analysis": {
-            "repeat_count":    repeat_count,
-            "repeat_rate":     repeat_rate,
+            "repeat_count": repeat_count,
+            "repeat_rate": repeat_rate,
             "high_risk_areas": high_risk_areas,
-            "top_categories":  repeat_analysis.get("top_categories", []),
+            "top_categories": repeat_analysis.get("top_categories", []),
         },
         "audit_priorities": audit_priorities,
-        "top_issues":  top_issues[:5],
-        "quick_wins":  quick_wins[:4],
-        "narrative":   narrative,
+        "top_issues": top_issues[:5],
+        "quick_wins": quick_wins[:4],
+        "narrative": narrative,
     }
 
-    logs.append(AuditStepLog(
-        node="audit_summary", status="completed",
-        message=f"Denetim sağlık skoru: {audit_health}/100 ({maturity_label})",
-        metrics={"audit_health_score": audit_health},
-    ))
+    logs.append(
+        AuditStepLog(
+            node="audit_summary",
+            status="completed",
+            message=f"Denetim sağlık skoru: {audit_health}/100 ({maturity_label})",
+            metrics={"audit_health_score": audit_health},
+        )
+    )
 
     return {**state, "audit_summary": summary, "logs": logs}
 
@@ -444,17 +497,18 @@ def _build_rule_based_narrative(
 # Graph
 # ---------------------------------------------------------------------------
 
+
 def build_audit_graph() -> StateGraph:
     builder = StateGraph(AuditState)
-    builder.add_node("findings_agent",  node_findings)
-    builder.add_node("controls_agent",  node_controls)
-    builder.add_node("coverage_agent",  node_coverage)
-    builder.add_node("summary_agent",   node_audit_summary)
+    builder.add_node("findings_agent", node_findings)
+    builder.add_node("controls_agent", node_controls)
+    builder.add_node("coverage_agent", node_coverage)
+    builder.add_node("summary_agent", node_audit_summary)
 
-    builder.add_edge("findings_agent",  "controls_agent")
-    builder.add_edge("controls_agent",  "coverage_agent")
-    builder.add_edge("coverage_agent",  "summary_agent")
-    builder.add_edge("summary_agent",   END)
+    builder.add_edge("findings_agent", "controls_agent")
+    builder.add_edge("controls_agent", "coverage_agent")
+    builder.add_edge("coverage_agent", "summary_agent")
+    builder.add_edge("summary_agent", END)
 
     builder.set_entry_point("findings_agent")
     return builder.compile()
@@ -470,29 +524,30 @@ async def run_audit_pipeline(
     company_name: str | None = None,
     audit_period: str | None = None,
     settings: Any = None,
-    org_id: str | None = None,   # S2-6: cross-domain context
+    org_id: str | None = None,  # S2-6: cross-domain context
 ) -> dict[str, Any]:
     """
     Run the complete Internal Audit pipeline.
     S2-6: org_id enables CFO anomaly cross-check context enrichment.
     """
     base: AuditState = {
-        "findings_csv":  findings_csv,
-        "controls_csv":  controls_csv,
-        "coverage_csv":  coverage_csv,
-        "company_name":  company_name,
-        "audit_period":  audit_period,
-        "findings":      None,
-        "controls":      None,
-        "coverage":      None,
+        "findings_csv": findings_csv,
+        "controls_csv": controls_csv,
+        "coverage_csv": coverage_csv,
+        "company_name": company_name,
+        "audit_period": audit_period,
+        "findings": None,
+        "controls": None,
+        "coverage": None,
         "audit_summary": None,
-        "logs":          [],
-        "error":         None,
+        "logs": [],
+        "error": None,
     }
 
     if org_id:
         try:
             from app.services.cross_context_enricher import enrich_initial_state
+
             base = await enrich_initial_state("audit", base, org_id=org_id)  # type: ignore[assignment]
         except Exception:
             pass
@@ -501,10 +556,10 @@ async def run_audit_pipeline(
         base, config={"configurable": {"settings": settings}}
     )
     return {
-        "findings":      result.get("findings"),
-        "controls":      result.get("controls"),
-        "coverage":      result.get("coverage"),
+        "findings": result.get("findings"),
+        "controls": result.get("controls"),
+        "coverage": result.get("coverage"),
         "audit_summary": result.get("audit_summary"),
-        "logs":          result.get("logs"),
-        "error":         result.get("error"),
+        "logs": result.get("logs"),
+        "error": result.get("error"),
     }

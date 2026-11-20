@@ -32,14 +32,14 @@ class ReportFormat(StrEnum):
 class Report(Base):
     __tablename__ = "reports"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     job_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
-    report_type: Mapped[str] = mapped_column(String(20), nullable=False)   # pnl | cashflow | forecast | full
-    report_format: Mapped[str] = mapped_column(String(10), nullable=False) # xlsx | pdf | json
+    report_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # pnl | cashflow | forecast | full
+    report_format: Mapped[str] = mapped_column(String(10), nullable=False)  # xlsx | pdf | json
 
     # File path on disk (local storage) or S3 key
     file_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)

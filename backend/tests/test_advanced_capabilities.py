@@ -5,6 +5,7 @@ Tests for Advanced Capabilities:
 3. Multi-Channel Alert Dispatcher (Slack & Webhook)
 4. Demo Data Seeder & Playground Engine
 """
+
 from __future__ import annotations
 
 import os
@@ -18,10 +19,17 @@ from app.services.demo_seeder import DemoSeeder
 from app.services.inflation_accounting import EndeksYok, InflationAccountingEngine
 
 # An index table for the arithmetic; the engine holds no default of its own.
-_ENDEKS = {"2023-01": 1200.0, "2023-06": 1350.0, "2023-12": 1860.0, "2024-01": 1980.0, "2024-06": 2340.0}
+_ENDEKS = {
+    "2023-01": 1200.0,
+    "2023-06": 1350.0,
+    "2023-12": 1860.0,
+    "2024-01": 1980.0,
+    "2024-06": 2340.0,
+}
 
 
 # ── 1. Executive Board Deck PDF Exporter Tests ─────────────────────────────────
+
 
 def test_board_deck_pdf_exporter_generates_valid_pdf():
     pnl = {
@@ -65,12 +73,35 @@ def test_board_deck_pdf_exporter_generates_valid_pdf():
 
 # ── 2. Inflation Accounting (TMS 29) Tests ────────────────────────────────────
 
+
 def test_inflation_accounting_engine():
     balance_sheet = [
-        {"name": "Banka TL Mevduat", "is_monetary": True, "is_liability": False, "amount_cents": 10000000},
-        {"name": "Banka Kredi Borcu", "is_monetary": True, "is_liability": True, "amount_cents": 4000000},
-        {"name": "Ticari Mallar (Stok)", "is_monetary": False, "is_liability": False, "acquisition_period": "2023-12", "amount_cents": 8000000},
-        {"name": "Sermaye ve Özkaynak", "is_monetary": False, "is_liability": False, "acquisition_period": "2023-01", "amount_cents": 14000000},
+        {
+            "name": "Banka TL Mevduat",
+            "is_monetary": True,
+            "is_liability": False,
+            "amount_cents": 10000000,
+        },
+        {
+            "name": "Banka Kredi Borcu",
+            "is_monetary": True,
+            "is_liability": True,
+            "amount_cents": 4000000,
+        },
+        {
+            "name": "Ticari Mallar (Stok)",
+            "is_monetary": False,
+            "is_liability": False,
+            "acquisition_period": "2023-12",
+            "amount_cents": 8000000,
+        },
+        {
+            "name": "Sermaye ve Özkaynak",
+            "is_monetary": False,
+            "is_liability": False,
+            "acquisition_period": "2023-01",
+            "amount_cents": 14000000,
+        },
     ]
 
     result = InflationAccountingEngine.calculate_adjustment(
@@ -89,7 +120,14 @@ def test_inflation_accounting_engine():
 
 
 def test_no_official_index_means_no_restatement():
-    items = [{"name": "Makine", "is_monetary": False, "acquisition_period": "2023-03", "amount_cents": 100}]
+    items = [
+        {
+            "name": "Makine",
+            "is_monetary": False,
+            "acquisition_period": "2023-03",
+            "amount_cents": 100,
+        }
+    ]
     with pytest.raises(EndeksYok):
         InflationAccountingEngine.calculate_adjustment("2024-06", items, cpi_table=_ENDEKS)
     with pytest.raises(EndeksYok):
@@ -97,6 +135,7 @@ def test_no_official_index_means_no_restatement():
 
 
 # ── 3. Multi-Channel Alert Dispatcher Tests ───────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_alert_dispatcher_slack_and_webhook():
@@ -121,6 +160,7 @@ async def test_alert_dispatcher_slack_and_webhook():
 
 
 # ── 4. Demo Data Seeder Tests ─────────────────────────────────────────────────
+
 
 def test_demo_seeder_all_scenarios():
     saas = DemoSeeder.seed_scenario("saas_startup")

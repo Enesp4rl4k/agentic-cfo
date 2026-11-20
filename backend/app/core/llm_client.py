@@ -7,6 +7,7 @@ deterministic fallback string. It delegates to
 logging and tracing still apply; it just swallows every failure and returns
 ``fallback_text`` instead.
 """
+
 from __future__ import annotations
 
 import logging

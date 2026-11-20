@@ -16,6 +16,7 @@ A handler raises ``ValueError`` on malformed ``action_params``; the engine turns
 that into an ``error`` run. Validation happens before any write, so there is no
 partial state to roll back.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -56,9 +57,7 @@ async def _alert_dispatch(
     """
     params = definition.action_params
     message = str(
-        params.get("message")
-        or payload.get("message")
-        or f"Trigger '{definition.name}' fired"
+        params.get("message") or payload.get("message") or f"Trigger '{definition.name}' fired"
     )
     severity = str(params.get("severity") or "warning")
     channels = params.get("channels") or []
@@ -146,9 +145,7 @@ async def _analysis_start(
     just saw). Enqueue returns how it was dispatched (``queued`` / ``inline``),
     which is reported rather than flattened to a boolean.
     """
-    job_id = str(
-        definition.action_params.get("job_id") or payload.get("job_id") or ""
-    ).strip()
+    job_id = str(definition.action_params.get("job_id") or payload.get("job_id") or "").strip()
     if not job_id:
         raise ValueError("analysis.start requires a job_id (action_params or payload)")
 
@@ -199,7 +196,9 @@ async def _cascade_simulate(
         "coo_data": (ctx_obj.last_coo_result or {}) if ctx_obj else {},
     }
     sim = get_cascade_simulator(**ctx)
-    kwargs = {k: definition.action_params[k] for k in _SIMULATE_KWARGS if k in definition.action_params}
+    kwargs = {
+        k: definition.action_params[k] for k in _SIMULATE_KWARGS if k in definition.action_params
+    }
     result = sim.simulate(trigger, **kwargs)
     return {"trigger": trigger.value, "result": result.to_dict()}
 
@@ -223,9 +222,7 @@ async def _report_generate(
     The job must belong to the trigger's org — an action_params override is
     caller-supplied, never trusted on faith.
     """
-    job_id = str(
-        definition.action_params.get("job_id") or payload.get("job_id") or ""
-    ).strip()
+    job_id = str(definition.action_params.get("job_id") or payload.get("job_id") or "").strip()
     if not job_id:
         raise ValueError("report.generate requires a job_id (action_params or payload)")
 
@@ -234,20 +231,23 @@ async def _report_generate(
         raise ValueError(f"report.generate: no analysis job {job_id} for this org")
 
     latest = (
-        await db.execute(
-            select(Report)
-            .where(
-                Report.job_id == job_id,
-                Report.report_format == ReportFormat.JSON,
+        (
+            await db.execute(
+                select(Report)
+                .where(
+                    Report.job_id == job_id,
+                    Report.report_format == ReportFormat.JSON,
+                )
+                .order_by(Report.created_at.desc())
+                .limit(1)
             )
-            .order_by(Report.created_at.desc())
-            .limit(1)
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if latest is None or not latest.data:
         raise ValueError(
-            f"report.generate: job {job_id} has no dashboard JSON yet "
-            "(analysis incomplete)"
+            f"report.generate: job {job_id} has no dashboard JSON yet (analysis incomplete)"
         )
 
     company_name = str(definition.action_params.get("company_name") or "Şirket")

@@ -5,6 +5,7 @@ Covers: _detect_seasonality, _extrapolate, _compute_scenarios.
 forecast_agent.py imports langchain_openai at module level, so we mock it
 before the import to keep tests self-contained and dependency-free.
 """
+
 import sys
 import types
 
@@ -37,12 +38,20 @@ from app.agents.forecast_agent import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_series(months: int, base_in: int = 1_000_000, base_out: int = 800_000) -> list[dict]:
     """Generate a flat monthly series starting 2023-01."""
     series = []
     year, month = 2023, 1
     for _i in range(months):
-        series.append({"month": f"{year:04d}-{month:02d}", "in": base_in, "out": base_out, "net": base_in - base_out})
+        series.append(
+            {
+                "month": f"{year:04d}-{month:02d}",
+                "in": base_in,
+                "out": base_out,
+                "net": base_in - base_out,
+            }
+        )
         month += 1
         if month > 12:
             month = 1
@@ -68,8 +77,8 @@ def _make_growing_series(months: int, start_in: int = 500_000, growth: float = 1
 
 # ── _detect_seasonality ───────────────────────────────────────────────────────
 
-class TestDetectSeasonality:
 
+class TestDetectSeasonality:
     def test_returns_empty_for_short_series(self):
         series = _make_series(6)
         result = _detect_seasonality(series)
@@ -106,8 +115,8 @@ class TestDetectSeasonality:
 
 # ── _extrapolate ──────────────────────────────────────────────────────────────
 
-class TestExtrapolate:
 
+class TestExtrapolate:
     def test_returns_correct_number_of_months(self):
         series = _make_series(6)
         result = _extrapolate(series, 12, 1.02)
@@ -132,7 +141,7 @@ class TestExtrapolate:
 
     def test_months_are_sequential(self):
         """Projected months should follow on from the last historical month."""
-        series = _make_series(3)   # ends at 2023-03
+        series = _make_series(3)  # ends at 2023-03
         result = _extrapolate(series, 3, 1.0)
         assert result[0]["month"] == "2023-04"
         assert result[1]["month"] == "2023-05"
@@ -165,7 +174,7 @@ class TestExtrapolate:
 
     def test_seasonality_indices_applied(self):
         """With a doubled December index, December in should be ~2x normal."""
-        series = _make_series(12)   # ends at 2023-12
+        series = _make_series(12)  # ends at 2023-12
         # Override December (month 12) with index 2.0
         indices = dict.fromkeys(range(1, 13), 1.0)
         indices[1] = 2.0  # next month after Dec is Jan
@@ -196,8 +205,8 @@ class TestExtrapolate:
 
 # ── _compute_scenarios ────────────────────────────────────────────────────────
 
-class TestComputeScenarios:
 
+class TestComputeScenarios:
     def _cashflow(self, months: int = 6) -> dict:
         return {"monthly_series": _make_series(months, 1_000_000, 800_000)}
 
@@ -208,8 +217,14 @@ class TestComputeScenarios:
     def test_each_scenario_has_required_keys(self):
         result = _compute_scenarios(self._cashflow(), {})
         for scenario in result.values():
-            for key in ("label", "description", "growth_rate", "months",
-                        "runway_months", "twelve_month_net"):
+            for key in (
+                "label",
+                "description",
+                "growth_rate",
+                "months",
+                "runway_months",
+                "twelve_month_net",
+            ):
                 assert key in scenario
 
     def test_each_scenario_has_12_months(self):
@@ -225,7 +240,7 @@ class TestComputeScenarios:
 
     def test_base_net_between_optimistic_and_pessimistic(self):
         result = _compute_scenarios(self._cashflow(), {})
-        opt_net  = result["optimistic"]["twelve_month_net"]
+        opt_net = result["optimistic"]["twelve_month_net"]
         base_net = result["base"]["twelve_month_net"]
         pess_net = result["pessimistic"]["twelve_month_net"]
         assert pess_net <= base_net <= opt_net
@@ -250,8 +265,8 @@ class TestComputeScenarios:
 
     def test_growth_rates_are_correct(self):
         result = _compute_scenarios(self._cashflow(), {})
-        assert result["optimistic"]["growth_rate"]  == pytest.approx(1.05)
-        assert result["base"]["growth_rate"]        == pytest.approx(1.01)
+        assert result["optimistic"]["growth_rate"] == pytest.approx(1.05)
+        assert result["base"]["growth_rate"] == pytest.approx(1.01)
         assert result["pessimistic"]["growth_rate"] == pytest.approx(0.97)
 
     def test_twelve_month_net_matches_sum_of_months(self):

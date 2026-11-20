@@ -12,6 +12,7 @@ sahip olur: tenant izolasyonu korunur, /dashboard/{job} sahiplik denetimi ile
 
 Golden yoksa sessizce no-op döner (konuk boş org'la başlar — D1 davranışı).
 """
+
 from __future__ import annotations
 
 import json
@@ -86,20 +87,14 @@ def _patch_value(value: Any, pairs: list[tuple[str, str]]) -> Any:
 def _copy_row(model: Any, source: Any, **overrides: Any) -> Any:
     """New row of `model` with every column copied except `id` + overrides."""
     names = {c.name for c in type(source).__table__.columns}
-    data = {
-        name: getattr(source, name)
-        for name in names
-        if name != "id" and name not in overrides
-    }
+    data = {name: getattr(source, name) for name in names if name != "id" and name not in overrides}
     return model(**data, **overrides)
 
 
 async def clone_demo_workspace(db: AsyncSession, target_org_id: str) -> CloneOutcome:
     """Clone the golden demo workspace into `target_org_id`. Idempotent."""
     golden = (
-        await db.execute(
-            select(Organization).where(Organization.slug == GOLDEN_SLUG)
-        )
+        await db.execute(select(Organization).where(Organization.slug == GOLDEN_SLUG))
     ).scalar_one_or_none()
     if golden is None:
         return CloneOutcome(cloned=False, reason="no_golden")
@@ -117,9 +112,7 @@ async def clone_demo_workspace(db: AsyncSession, target_org_id: str) -> CloneOut
         )
     ).scalar_one_or_none()
     if existing is not None:
-        return CloneOutcome(
-            cloned=False, reason="already_cloned", job_id=str(existing)
-        )
+        return CloneOutcome(cloned=False, reason="already_cloned", job_id=str(existing))
 
     # The golden's latest completed demo analysis — the template to copy.
     job = (
@@ -160,9 +153,7 @@ async def clone_demo_workspace(db: AsyncSession, target_org_id: str) -> CloneOut
     )
 
     # Reports (dashboard JSON payload carries the old job id inside data)
-    reports = (
-        await db.execute(select(Report).where(Report.job_id == old_job_id))
-    ).scalars().all()
+    reports = (await db.execute(select(Report).where(Report.job_id == old_job_id))).scalars().all()
     for report_row in reports:
         db.add(
             _copy_row(
@@ -177,28 +168,26 @@ async def clone_demo_workspace(db: AsyncSession, target_org_id: str) -> CloneOut
 
     # Transactions + anomalies (job-scoped rows the dashboard endpoints read)
     txs = (
-        await db.execute(select(Transaction).where(Transaction.job_id == old_job_id))
-    ).scalars().all()
+        (await db.execute(select(Transaction).where(Transaction.job_id == old_job_id)))
+        .scalars()
+        .all()
+    )
     for tx_row in txs:
         db.add(_copy_row(Transaction, tx_row, id=str(uuid.uuid4()), job_id=new_job_id))
     counts["transactions"] = len(txs)
 
     anomalies = (
-        await db.execute(select(Anomaly).where(Anomaly.job_id == old_job_id))
-    ).scalars().all()
+        (await db.execute(select(Anomaly).where(Anomaly.job_id == old_job_id))).scalars().all()
+    )
     for anomaly_row in anomalies:
-        db.add(
-            _copy_row(Anomaly, anomaly_row, id=str(uuid.uuid4()), job_id=new_job_id)
-        )
+        db.add(_copy_row(Anomaly, anomaly_row, id=str(uuid.uuid4()), job_id=new_job_id))
     counts["anomalies"] = len(anomalies)
 
     # CompanyContext: one row per org; context_json embeds org_id and the
     # active_cfo_job_id / last_cfo_result.job_id references — all patched.
     ctx_row = (
         await db.execute(
-            select(CompanyContextSnapshot).where(
-                CompanyContextSnapshot.org_id == golden_org_id
-            )
+            select(CompanyContextSnapshot).where(CompanyContextSnapshot.org_id == golden_org_id)
         )
     ).scalar_one_or_none()
     if ctx_row is not None:
@@ -279,17 +268,23 @@ async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
     }
 
     job_rows = (
-        await db.execute(
-            select(AnalysisJob).where(
-                AnalysisJob.org_id == org_id,
-                AnalysisJob.filename == DEMO_FILENAME,
+        (
+            await db.execute(
+                select(AnalysisJob).where(
+                    AnalysisJob.org_id == org_id,
+                    AnalysisJob.filename == DEMO_FILENAME,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     job_ids = [str(j.id) for j in job_rows]
     counts["jobs"] = len(job_ids)
 
-    ledger = await db.execute(delete(CanonicalTransaction).where(CanonicalTransaction.org_id == org_id))
+    ledger = await db.execute(
+        delete(CanonicalTransaction).where(CanonicalTransaction.org_id == org_id)
+    )
     counts["ledger"] = int(ledger.rowcount or 0)
     await db.execute(delete(OpenItem).where(OpenItem.org_id == org_id))
     await db.execute(delete(OpenItemMatch).where(OpenItemMatch.org_id == org_id))
@@ -340,21 +335,23 @@ async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
             await db.delete(job)
 
     semantic = (
-        await db.execute(
-            select(CompanySemanticSnapshotRow).where(
-                CompanySemanticSnapshotRow.org_id == org_id
+        (
+            await db.execute(
+                select(CompanySemanticSnapshotRow).where(
+                    CompanySemanticSnapshotRow.org_id == org_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for row in semantic:
         await db.delete(row)
     counts["semantic"] = len(semantic)
 
     ctx_present = (
         await db.execute(
-            select(CompanyContextSnapshot.id).where(
-                CompanyContextSnapshot.org_id == org_id
-            )
+            select(CompanyContextSnapshot.id).where(CompanyContextSnapshot.org_id == org_id)
         )
     ).scalar_one_or_none()
     counts["context"] = 1 if ctx_present else 0

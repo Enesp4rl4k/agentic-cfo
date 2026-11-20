@@ -37,6 +37,7 @@ Usage:
     print(result.strategy_used)  # "native" | "pdfplumber" | "tesseract" | "failed"
     print(result.page_count)     # number of pages
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,10 +62,11 @@ _TESSERACT_LANG = "tur+eng"
 @dataclass
 class PageResult:
     """OCR result for a single PDF page."""
+
     page_num: int
     text: str
-    confidence: float          # 0.0–1.0
-    strategy: str              # "native" | "pdfplumber" | "tesseract"
+    confidence: float  # 0.0–1.0
+    strategy: str  # "native" | "pdfplumber" | "tesseract"
     char_count: int
     word_count: int
     has_tables: bool = False
@@ -74,9 +76,10 @@ class PageResult:
 @dataclass
 class OCRResult:
     """Full OCR result for a PDF document."""
-    text: str                          # Combined text from all pages
-    confidence: float                  # Average confidence across pages
-    strategy_used: str                 # Dominant strategy used
+
+    text: str  # Combined text from all pages
+    confidence: float  # Average confidence across pages
+    strategy_used: str  # Dominant strategy used
     page_count: int
     page_results: list[PageResult]
     file_path: str
@@ -116,6 +119,7 @@ def _try_pdfplumber_extraction(file_path: str, page_num: int) -> tuple[str, floa
     """
     try:
         import pdfplumber
+
         with pdfplumber.open(file_path) as pdf:
             if page_num >= len(pdf.pages):
                 return "", 0.0, False
@@ -303,7 +307,9 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
 
                     # Strategy 2: pdfplumber (better for tables)
                     if best_conf < 0.80:
-                        pl_text, pl_conf, has_tables = _try_pdfplumber_extraction(file_path, page_num)
+                        pl_text, pl_conf, has_tables = _try_pdfplumber_extraction(
+                            file_path, page_num
+                        )
                         if pl_conf > best_conf:
                             best_text = pl_text
                             best_conf = pl_conf
@@ -327,16 +333,18 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
                     doc_has_tables = True
 
                 word_count = len(best_text.split()) if best_text else 0
-                page_results.append(PageResult(
-                    page_num=page_num,
-                    text=best_text,
-                    confidence=best_conf,
-                    strategy=best_strategy,
-                    char_count=len(best_text),
-                    word_count=word_count,
-                    has_tables=page_has_tables,
-                    warnings=page_warnings,
-                ))
+                page_results.append(
+                    PageResult(
+                        page_num=page_num,
+                        text=best_text,
+                        confidence=best_conf,
+                        strategy=best_strategy,
+                        char_count=len(best_text),
+                        word_count=word_count,
+                        has_tables=page_has_tables,
+                        warnings=page_warnings,
+                    )
+                )
                 all_warnings.extend(page_warnings)
 
     except Exception as e:
@@ -353,19 +361,14 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
 
     # Combine all page texts
     full_text = "\n\n".join(
-        f"--- Page {pr.page_num + 1} ---\n{pr.text}"
-        for pr in page_results
-        if pr.text.strip()
+        f"--- Page {pr.page_num + 1} ---\n{pr.text}" for pr in page_results if pr.text.strip()
     )
 
     # Overall confidence = weighted average (longer pages count more)
     if page_results:
         total_chars = sum(pr.char_count for pr in page_results)
         if total_chars > 0:
-            weighted_conf = sum(
-                pr.confidence * pr.char_count / total_chars
-                for pr in page_results
-            )
+            weighted_conf = sum(pr.confidence * pr.char_count / total_chars for pr in page_results)
         else:
             weighted_conf = statistics.mean(pr.confidence for pr in page_results)
     else:
@@ -374,6 +377,7 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     # Dominant strategy (most pages)
     strategies = [pr.strategy for pr in page_results if pr.strategy != "failed"]
     from collections import Counter
+
     dominant_strategy = Counter(strategies).most_common(1)[0][0] if strategies else "failed"
 
     result = OCRResult(
@@ -390,8 +394,11 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
 
     logger.info(
         "PDF extracted: %s | pages=%d | strategy=%s | confidence=%.2f | chars=%d",
-        path.name, result.page_count, result.strategy_used,
-        result.confidence, len(result.text),
+        path.name,
+        result.page_count,
+        result.strategy_used,
+        result.confidence,
+        len(result.text),
     )
 
     return result
@@ -418,17 +425,17 @@ def extract_invoice_fields(text: str) -> dict[str, Any]:
     - line_items: Kalem listesi
     """
     fields: dict[str, Any] = {
-        "invoice_no":    None,
-        "invoice_date":  None,
-        "vendor_name":   None,
+        "invoice_no": None,
+        "invoice_date": None,
+        "vendor_name": None,
         "vendor_tax_id": None,
-        "buyer_name":    None,
-        "buyer_tax_id":  None,
-        "subtotal":      None,
-        "vat_amount":    None,
-        "total_amount":  None,
-        "currency":      "TRY",
-        "line_items":    [],
+        "buyer_name": None,
+        "buyer_tax_id": None,
+        "subtotal": None,
+        "vat_amount": None,
+        "total_amount": None,
+        "currency": "TRY",
+        "line_items": [],
     }
 
     if not text:

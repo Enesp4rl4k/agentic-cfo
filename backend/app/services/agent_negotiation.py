@@ -19,6 +19,7 @@ Somut Senaryolar:
 Her negotiation round max 10 saniye surer (timeout).
 Agent cevap vermezse son bilinen degeri kullanir.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,19 +34,22 @@ logger = logging.getLogger(__name__)
 
 # ── Negotiation sonucu ────────────────────────────────────────────────────────
 
+
 @dataclass
 class NegotiationResult:
     """Bir negotiation round'unun sonucu."""
-    query_type:    str
-    from_agent:    str
-    to_agent:      str
-    success:       bool
+
+    query_type: str
+    from_agent: str
+    to_agent: str
+    success: bool
     response_data: dict[str, Any]
-    fallback_used: bool   = False   # True ise timeout → fallback kullanildi
-    latency_ms:    float  = 0.0
+    fallback_used: bool = False  # True ise timeout → fallback kullanildi
+    latency_ms: float = 0.0
 
 
 # ── AgentNegotiator Mixin ─────────────────────────────────────────────────────
+
 
 class AgentNegotiator:
     """
@@ -71,13 +75,13 @@ class AgentNegotiator:
 
     async def ask_agent(
         self,
-        to_agent:   str,
+        to_agent: str,
         query_type: str,
-        payload:    dict[str, Any],
-        org_id:     str,
-        job_id:     str | None = None,
-        timeout:    float = 10.0,
-        fallback:   dict[str, Any] | None = None,
+        payload: dict[str, Any],
+        org_id: str,
+        job_id: str | None = None,
+        timeout: float = 10.0,
+        fallback: dict[str, Any] | None = None,
     ) -> NegotiationResult:
         """
         Baska bir agent'a soru sor, cevabini bekle.
@@ -85,18 +89,19 @@ class AgentNegotiator:
         fallback: timeout olursa kullanilacak varsayilan deger
         """
         import time
-        bus   = get_agent_bus()
+
+        bus = get_agent_bus()
         start = time.time()
 
         try:
             response = await bus.ask(
-                from_agent = self.agent_name,
-                to_agent   = to_agent,
-                query_type = query_type,
-                payload    = payload,
-                org_id     = org_id,
-                job_id     = job_id,
-                timeout    = timeout,
+                from_agent=self.agent_name,
+                to_agent=to_agent,
+                query_type=query_type,
+                payload=payload,
+                org_id=org_id,
+                job_id=job_id,
+                timeout=timeout,
             )
 
             latency = (time.time() - start) * 1000
@@ -104,66 +109,71 @@ class AgentNegotiator:
             if response is not None:
                 logger.debug(
                     "Negotiation OK: %s → %s [%s] %.0fms",
-                    self.agent_name, to_agent, query_type, latency,
+                    self.agent_name,
+                    to_agent,
+                    query_type,
+                    latency,
                 )
                 return NegotiationResult(
-                    query_type    = query_type,
-                    from_agent    = self.agent_name,
-                    to_agent      = to_agent,
-                    success       = True,
-                    response_data = response.payload,
-                    latency_ms    = latency,
+                    query_type=query_type,
+                    from_agent=self.agent_name,
+                    to_agent=to_agent,
+                    success=True,
+                    response_data=response.payload,
+                    latency_ms=latency,
                 )
             else:
                 # Timeout
                 logger.debug(
                     "Negotiation timeout: %s → %s [%s]",
-                    self.agent_name, to_agent, query_type,
+                    self.agent_name,
+                    to_agent,
+                    query_type,
                 )
                 return NegotiationResult(
-                    query_type    = query_type,
-                    from_agent    = self.agent_name,
-                    to_agent      = to_agent,
-                    success       = False,
-                    response_data = fallback or {},
-                    fallback_used = True,
-                    latency_ms    = latency,
+                    query_type=query_type,
+                    from_agent=self.agent_name,
+                    to_agent=to_agent,
+                    success=False,
+                    response_data=fallback or {},
+                    fallback_used=True,
+                    latency_ms=latency,
                 )
 
         except Exception as exc:
             logger.warning("Negotiation error: %s → %s: %s", self.agent_name, to_agent, exc)
             return NegotiationResult(
-                query_type    = query_type,
-                from_agent    = self.agent_name,
-                to_agent      = to_agent,
-                success       = False,
-                response_data = fallback or {},
-                fallback_used = True,
+                query_type=query_type,
+                from_agent=self.agent_name,
+                to_agent=to_agent,
+                success=False,
+                response_data=fallback or {},
+                fallback_used=True,
             )
 
     async def broadcast_finding(
         self,
         query_type: str,
-        payload:    dict[str, Any],
-        org_id:     str,
-        job_id:     str | None = None,
+        payload: dict[str, Any],
+        org_id: str,
+        job_id: str | None = None,
     ) -> None:
         """Kritik bulguyu tum agent'lara duyur."""
         bus = get_agent_bus()
         await bus.broadcast(
-            from_agent = self.agent_name,
-            query_type = query_type,
-            payload    = payload,
-            org_id     = org_id,
-            job_id     = job_id,
+            from_agent=self.agent_name,
+            query_type=query_type,
+            payload=payload,
+            org_id=org_id,
+            job_id=job_id,
         )
         logger.debug("Broadcast: %s [%s]", self.agent_name, query_type)
 
     async def multi_ask(
         self,
         queries: list[dict[str, Any]],
-        org_id:  str,
-        job_id:  str | None = None,
+        org_id: str,
+        job_id: str | None = None,
         timeout: float = 10.0,
     ) -> list[NegotiationResult]:
         """
@@ -172,13 +182,13 @@ class AgentNegotiator:
         """
         tasks = [
             self.ask_agent(
-                to_agent   = q["to"],
-                query_type = q["type"],
-                payload    = q.get("payload", {}),
-                org_id     = org_id,
-                job_id     = job_id,
-                timeout    = timeout,
-                fallback   = q.get("fallback"),
+                to_agent=q["to"],
+                query_type=q["type"],
+                payload=q.get("payload", {}),
+                org_id=org_id,
+                job_id=job_id,
+                timeout=timeout,
+                fallback=q.get("fallback"),
             )
             for q in queries
         ]
@@ -186,6 +196,7 @@ class AgentNegotiator:
 
 
 # ── CFO Negotiation Scenarios ─────────────────────────────────────────────────
+
 
 class CFONegotiationScenarios(AgentNegotiator):
     """
@@ -204,8 +215,8 @@ class CFONegotiationScenarios(AgentNegotiator):
     async def negotiate_cash_crisis(
         self,
         runway_months: float,
-        org_id:        str,
-        job_id:        str | None = None,
+        org_id: str,
+        job_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Nakit krizi tespitinde tum C-Suite'e paralel soru sor.
@@ -224,81 +235,80 @@ class CFONegotiationScenarios(AgentNegotiator):
         results = await self.multi_ask(
             queries=[
                 {
-                    "to":      "chro",
-                    "type":    QueryType.HIRING_PLAN,
+                    "to": "chro",
+                    "type": QueryType.HIRING_PLAN,
                     "payload": {
                         "runway_months": runway_months,
-                        "context":       "cash_crisis",
-                        "months_ahead":  3,
+                        "context": "cash_crisis",
+                        "months_ahead": 3,
                     },
                     "fallback": {"planned_hires": 0, "deferrable": True},
                 },
                 {
-                    "to":      "cto",
-                    "type":    QueryType.TECH_BUDGET_CUT,
+                    "to": "cto",
+                    "type": QueryType.TECH_BUDGET_CUT,
                     "payload": {
                         "runway_months": runway_months,
-                        "max_cut_pct":   0.30,
+                        "max_cut_pct": 0.30,
                     },
                     "fallback": {"savings_try": 0, "velocity_impact_pct": 0},
                 },
                 {
-                    "to":      "cmo",
-                    "type":    QueryType.MARKETING_ROI,
+                    "to": "cmo",
+                    "type": QueryType.MARKETING_ROI,
                     "payload": {
                         "runway_months": runway_months,
-                        "ask":           "can_reduce_spend",
+                        "ask": "can_reduce_spend",
                     },
                     "fallback": {"reducible_pct": 0.20, "revenue_impact_pct": 0.05},
                 },
             ],
-            org_id = org_id,
-            job_id = job_id,
+            org_id=org_id,
+            job_id=job_id,
         )
 
-        chro_data  = results[0].response_data
-        cto_data   = results[1].response_data
-        cmo_data   = results[2].response_data
+        chro_data = results[0].response_data
+        cto_data = results[1].response_data
+        cmo_data = results[2].response_data
 
         # Revize senaryo hesapla
-        monthly_savings = (
-            cto_data.get("savings_try", 0) +
-            cmo_data.get("monthly_savings_try", 0)
-        )
+        monthly_savings = cto_data.get("savings_try", 0) + cmo_data.get("monthly_savings_try", 0)
         hire_delay_months = chro_data.get("deferrable_months", 0)
 
         # Nakit omru revizyonu (basit yaklaşim)
-        revised_runway = runway_months + (monthly_savings / max(1, 100_000)) * 0.5 + hire_delay_months * 0.3
+        revised_runway = (
+            runway_months + (monthly_savings / max(1, 100_000)) * 0.5 + hire_delay_months * 0.3
+        )
 
         # Broadcast: revize senaryo hazir
         await self.broadcast_finding(
-            query_type = QueryType.SCENARIO_UPDATE,
-            payload    = {
-                "trigger":         "cash_crisis",
+            query_type=QueryType.SCENARIO_UPDATE,
+            payload={
+                "trigger": "cash_crisis",
                 "original_runway": runway_months,
-                "revised_runway":  round(revised_runway, 1),
-                "actions_taken":   [
+                "revised_runway": round(revised_runway, 1),
+                "actions_taken": [
                     f"CHRO: {chro_data.get('planned_hires', 0)} ise alim ertelendi",
                     f"CTO: aylık ₺{cto_data.get('savings_try', 0):,.0f} tasarruf",
-                    f"CMO: pazarlama %{cmo_data.get('reducible_pct', 0)*100:.0f} azaltildi",
+                    f"CMO: pazarlama %{cmo_data.get('reducible_pct', 0) * 100:.0f} azaltildi",
                 ],
             },
-            org_id = org_id,
-            job_id = job_id,
+            org_id=org_id,
+            job_id=job_id,
         )
 
         return {
-            "hiring_plan":  chro_data,
+            "hiring_plan": chro_data,
             "tech_savings": cto_data,
             "marketing_roi": cmo_data,
             "revised_runway": round(revised_runway, 1),
             "monthly_savings_total": round(monthly_savings),
             "negotiation_logs": [
                 {
-                    "query":     r.query_type,
-                    "to":        r.to_agent,
-                    "success":   r.success,
-                    "fallback":  r.fallback_used,
+                    "query": r.query_type,
+                    "to": r.to_agent,
+                    "success": r.success,
+                    "fallback": r.fallback_used,
                     "latency_ms": round(r.latency_ms),
                 }
                 for r in results
@@ -308,8 +318,8 @@ class CFONegotiationScenarios(AgentNegotiator):
     async def negotiate_budget_revision(
         self,
         cut_target_pct: float,
-        org_id:         str,
-        job_id:         str | None = None,
+        org_id: str,
+        job_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Bütçe revizyon sürecinde tüm domainlerden etki analizi al.
@@ -318,40 +328,41 @@ class CFONegotiationScenarios(AgentNegotiator):
         results = await self.multi_ask(
             queries=[
                 {
-                    "to":      "chro",
-                    "type":    QueryType.HEADCOUNT_IMPACT,
+                    "to": "chro",
+                    "type": QueryType.HEADCOUNT_IMPACT,
                     "payload": {"cut_target_pct": cut_target_pct},
                     "fallback": {"headcount_risk": "medium", "attrition_increase": 0.03},
                 },
                 {
-                    "to":      "cto",
-                    "type":    QueryType.VELOCITY_IMPACT,
+                    "to": "cto",
+                    "type": QueryType.VELOCITY_IMPACT,
                     "payload": {"cut_target_pct": cut_target_pct},
-                    "fallback": {"velocity_loss_pct": cut_target_pct * 0.4, "tech_debt_increase": 1.0},
+                    "fallback": {
+                        "velocity_loss_pct": cut_target_pct * 0.4,
+                        "tech_debt_increase": 1.0,
+                    },
                 },
                 {
-                    "to":      "cmo",
-                    "type":    QueryType.REVENUE_FORECAST,
+                    "to": "cmo",
+                    "type": QueryType.REVENUE_FORECAST,
                     "payload": {"marketing_cut_pct": cut_target_pct * 0.5},
                     "fallback": {"revenue_impact_pct": -cut_target_pct * 0.15},
                 },
             ],
-            org_id = org_id,
-            job_id = job_id,
+            org_id=org_id,
+            job_id=job_id,
         )
 
         return {
-            "hr_impact":      results[0].response_data,
-            "tech_impact":    results[1].response_data,
+            "hr_impact": results[0].response_data,
+            "tech_impact": results[1].response_data,
             "revenue_impact": results[2].response_data,
-            "negotiation_logs": [
-                {"query": r.query_type, "success": r.success}
-                for r in results
-            ],
+            "negotiation_logs": [{"query": r.query_type, "success": r.success} for r in results],
         }
 
 
 # ── CHRO Negotiation Responder ────────────────────────────────────────────────
+
 
 class CHRONegotiationResponder(AgentNegotiator):
     """
@@ -364,17 +375,17 @@ class CHRONegotiationResponder(AgentNegotiator):
 
     def build_hiring_plan_response(
         self,
-        chro_data:     dict[str, Any],
+        chro_data: dict[str, Any],
         runway_months: float,
-        months_ahead:  int = 3,
+        months_ahead: int = 3,
     ) -> dict[str, Any]:
         """
         Ise alim plani sorusuna cevap hazirla.
         Nakit durumuna gore dinamik olarak uyarlanir.
         """
-        open_roles     = chro_data.get("open_critical_roles", 0) or 0
-        turnover_rate  = chro_data.get("annual_turnover_rate")
-        avg_salary     = chro_data.get("avg_monthly_salary_try")
+        open_roles = chro_data.get("open_critical_roles", 0) or 0
+        turnover_rate = chro_data.get("annual_turnover_rate")
+        avg_salary = chro_data.get("avg_monthly_salary_try")
         # Without HR figures this used to answer with 30 000 TRY a month and a
         # 15% turnover rate — numbers belonging to no company — and the cost it
         # printed looked like this firm's own.
@@ -389,39 +400,43 @@ class CHRONegotiationResponder(AgentNegotiator):
         # Nakit durumuna gore plan
         if runway_months < 3:
             # Kritik: tum ise alimi durdur
-            planned_hires   = 0
-            deferrable      = True
+            planned_hires = 0
+            deferrable = True
             deferrable_months = 6
-            recommendation  = "Tum ise alimlar 6 ay ertelenebilir. Kritik roller icin freelance degerlendir."
+            recommendation = (
+                "Tum ise alimlar 6 ay ertelenebilir. Kritik roller icin freelance degerlendir."
+            )
         elif runway_months < 6:
             # Dikkatli: sadece kritik roller
-            planned_hires   = max(0, round(open_roles * 0.3))
-            deferrable      = True
+            planned_hires = max(0, round(open_roles * 0.3))
+            deferrable = True
             deferrable_months = 3
-            recommendation  = f"Sadece {planned_hires} kritik rol doldurulabilir. Diger {open_roles - planned_hires} rol ertelenmeli."
+            recommendation = f"Sadece {planned_hires} kritik rol doldurulabilir. Diger {open_roles - planned_hires} rol ertelenmeli."
         else:
             # Normal: plana devam
-            planned_hires   = open_roles
-            deferrable      = False
+            planned_hires = open_roles
+            deferrable = False
             deferrable_months = 0
-            recommendation  = f"{open_roles} acigin doldurulmasi oncelikli."
+            recommendation = f"{open_roles} acigin doldurulmasi oncelikli."
 
         monthly_hire_cost = planned_hires * avg_salary * 1.225  # SGK dahil
 
         return {
-            "planned_hires":         planned_hires,
-            "deferrable":            deferrable,
-            "deferrable_months":     deferrable_months,
+            "planned_hires": planned_hires,
+            "deferrable": deferrable,
+            "deferrable_months": deferrable_months,
             "monthly_hire_cost_try": round(monthly_hire_cost),
-            "open_critical_roles":   open_roles,
-            "attrition_risk":        (None if turnover_rate is None
-                                      else "high" if turnover_rate > 0.20 else "medium"),
-            "durum":                 "hesaplandi",
-            "recommendation":        recommendation,
+            "open_critical_roles": open_roles,
+            "attrition_risk": (
+                None if turnover_rate is None else "high" if turnover_rate > 0.20 else "medium"
+            ),
+            "durum": "hesaplandi",
+            "recommendation": recommendation,
         }
 
 
 # ── CTO Negotiation Responder ─────────────────────────────────────────────────
+
 
 class CTONegotiationResponder(AgentNegotiator):
     """CTO'nun CFO'dan gelen butce sorularına cevap uretici."""
@@ -430,16 +445,16 @@ class CTONegotiationResponder(AgentNegotiator):
 
     def build_budget_cut_response(
         self,
-        cto_data:    dict[str, Any],
+        cto_data: dict[str, Any],
         max_cut_pct: float = 0.30,
     ) -> dict[str, Any]:
         """
         Tech butce kesintisi sorusuna cevap.
         Neleri kesebiliriz, velocity'ye etkisi ne?
         """
-        monthly_tech   = cto_data.get("monthly_tech_budget_try")
-        infra_waste    = cto_data.get("infra_waste_pct")
-        tech_health    = cto_data.get("overall_health_score")
+        monthly_tech = cto_data.get("monthly_tech_budget_try")
+        infra_waste = cto_data.get("infra_waste_pct")
+        tech_health = cto_data.get("overall_health_score")
         # The defaults here were 50 000 TRY a month and 15% infrastructure
         # waste: a company that had connected no technology data was told how
         # much it could safely cut, in liras, from figures that were invented.
@@ -452,32 +467,34 @@ class CTONegotiationResponder(AgentNegotiator):
             }
 
         # Onceden kesilebilecekler
-        cloud_savings      = monthly_tech * infra_waste   # altyapi israfi
-        tooling_savings    = monthly_tech * 0.05           # kullanilmayan araclar
+        cloud_savings = monthly_tech * infra_waste  # altyapi israfi
+        tooling_savings = monthly_tech * 0.05  # kullanilmayan araclar
         total_safe_savings = cloud_savings + tooling_savings
 
         target_savings = monthly_tech * max_cut_pct
-        velocity_loss  = max(0.0, (target_savings - total_safe_savings) / monthly_tech * 0.8)
+        velocity_loss = max(0.0, (target_savings - total_safe_savings) / monthly_tech * 0.8)
 
         return {
-            "savings_try":             round(total_safe_savings),
-            "max_safe_cut_pct":        round(infra_waste + 0.05, 2),
-            "velocity_impact_pct":     round(velocity_loss * 100, 1),
-            "cloud_savings_try":       round(cloud_savings),
-            "tooling_savings_try":     round(tooling_savings),
-            "tech_health_risk":        (None if tech_health is None
-                                        else "high" if tech_health < 6 else "low"),
-            "durum":                   "hesaplandi",
+            "savings_try": round(total_safe_savings),
+            "max_safe_cut_pct": round(infra_waste + 0.05, 2),
+            "velocity_impact_pct": round(velocity_loss * 100, 1),
+            "cloud_savings_try": round(cloud_savings),
+            "tooling_savings_try": round(tooling_savings),
+            "tech_health_risk": (
+                None if tech_health is None else "high" if tech_health < 6 else "low"
+            ),
+            "durum": "hesaplandi",
             # The 0.8 factor below is a rule of thumb, not a measured relation.
-            "velocity_olcum":          "kural",
+            "velocity_olcum": "kural",
             "recommendation": (
                 f"Cloud optimizasyonu ile aylik ₺{cloud_savings:,.0f} tasarruf guvenli. "
-                f"Bunun otesinde velocity %{velocity_loss*100:.0f} duser."
+                f"Bunun otesinde velocity %{velocity_loss * 100:.0f} duser."
             ),
         }
 
 
 # ── Negotiation Session (tam bir muzakere turu) ────────────────────────────────
+
 
 class NegotiationSession:
     """
@@ -486,10 +503,10 @@ class NegotiationSession:
     """
 
     def __init__(self, org_id: str, job_id: str | None = None) -> None:
-        self.org_id  = org_id
-        self.job_id  = job_id
+        self.org_id = org_id
+        self.job_id = job_id
         self.rounds: list[NegotiationResult] = []
-        self._cfo    = CFONegotiationScenarios()
+        self._cfo = CFONegotiationScenarios()
 
     async def run_cash_crisis_protocol(self, runway_months: float) -> dict[str, Any]:
         """
@@ -497,36 +514,38 @@ class NegotiationSession:
         """
         logger.info(
             "Nakit krizi protokolu baslatiliyor: org=%s runway=%.1f ay",
-            self.org_id, runway_months,
+            self.org_id,
+            runway_months,
         )
         result = await self._cfo.negotiate_cash_crisis(
-            runway_months = runway_months,
-            org_id        = self.org_id,
-            job_id        = self.job_id,
+            runway_months=runway_months,
+            org_id=self.org_id,
+            job_id=self.job_id,
         )
         return {
-            "protocol":       "cash_crisis",
-            "org_id":         self.org_id,
+            "protocol": "cash_crisis",
+            "org_id": self.org_id,
             "trigger_runway": runway_months,
-            "result":         result,
+            "result": result,
         }
 
     async def run_budget_revision_protocol(self, cut_pct: float) -> dict[str, Any]:
         """Bütçe revizyon protokolu."""
         result = await self._cfo.negotiate_budget_revision(
-            cut_target_pct = cut_pct,
-            org_id         = self.org_id,
-            job_id         = self.job_id,
+            cut_target_pct=cut_pct,
+            org_id=self.org_id,
+            job_id=self.job_id,
         )
         return {
-            "protocol":   "budget_revision",
-            "org_id":     self.org_id,
+            "protocol": "budget_revision",
+            "org_id": self.org_id,
             "cut_target": cut_pct,
-            "result":     result,
+            "result": result,
         }
 
 
 # ── Public factory ─────────────────────────────────────────────────────────────
+
 
 def get_negotiation_session(org_id: str, job_id: str | None = None) -> NegotiationSession:
     return NegotiationSession(org_id=org_id, job_id=job_id)

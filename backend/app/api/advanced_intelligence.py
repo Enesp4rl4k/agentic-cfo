@@ -7,6 +7,7 @@ GET  /advanced/alert-history       -- Proaktif alert gecmisi
 POST /advanced/board-deck-pdf      -- CEO board deck PDF export
 POST /advanced/temporal/auto-record -- CFO analizini otomatik temporal kayit
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -60,15 +61,16 @@ def _assemble_board_deck(
 
 # ── NL Simulation ──────────────────────────────────────────────────────────────
 
+
 class NLSimulateRequest(BaseModel):
-    query:   str = Field(..., description="Dogal dil simulasyon sorusu")
-    job_id:  str | None = None
+    query: str = Field(..., description="Dogal dil simulasyon sorusu")
+    job_id: str | None = None
     context: dict[str, Any] | None = None
 
 
 @router.post("/advanced/nl-simulate")
 async def nl_simulate(
-    req:          NLSimulateRequest,
+    req: NLSimulateRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
@@ -90,20 +92,20 @@ async def nl_simulate(
 
     try:
         result = await bridge.process(
-            query   = req.query,
-            org_id  = org_id,
-            job_id  = req.job_id,
-            context = req.context,
+            query=req.query,
+            org_id=org_id,
+            job_id=req.job_id,
+            context=req.context,
         )
         return {
-            "ok":                  result.error is None,
-            "simulation_type":     result.simulation_type,
-            "intent_confidence":   result.intent_confidence,
-            "extracted_params":    result.extracted_params,
-            "answer":              result.answer,
-            "simulation_result":   result.simulation_result,
+            "ok": result.error is None,
+            "simulation_type": result.simulation_type,
+            "intent_confidence": result.intent_confidence,
+            "extracted_params": result.extracted_params,
+            "answer": result.answer,
+            "simulation_result": result.simulation_result,
             "follow_up_questions": result.follow_up_questions,
-            "error":               result.error,
+            "error": result.error,
         }
     except Exception as exc:
         logger.exception("NL simulate hatasi: %s", exc)
@@ -112,10 +114,11 @@ async def nl_simulate(
 
 # ── Proactive Alerts ────────────────────────────────────────────────────────────
 
+
 @router.post("/advanced/proactive-scan")
 async def proactive_scan(
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     Manuel KRI tarama ve alert tetikleme.
@@ -123,7 +126,7 @@ async def proactive_scan(
     """
     from app.agents.orchestration.proactive_alerts import get_proactive_orchestrator
 
-    org_id       = _get_org_id(current_user)
+    org_id = _get_org_id(current_user)
     orchestrator = get_proactive_orchestrator(db=db)
 
     try:
@@ -136,10 +139,10 @@ async def proactive_scan(
 
 @router.get("/advanced/alert-history")
 async def get_alert_history(
-    limit:        int = 20,
-    severity:     str | None = None,
+    limit: int = 20,
+    severity: str | None = None,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Son proaktif alertleri listele."""
     from sqlalchemy import text
@@ -163,17 +166,18 @@ async def get_alert_history(
         params["limit"] = limit
 
         result = await db.execute(text(query), params)
-        rows   = result.fetchall()
+        rows = result.fetchall()
 
         import json
+
         alerts = [
             {
-                "alert_id":   row.alert_id,
-                "trigger":    row.trigger,
-                "severity":   row.severity,
-                "title":      row.title,
-                "body":       row.body[:200] + "..." if len(row.body or "") > 200 else row.body,
-                "channels":   json.loads(row.channels) if row.channels else [],
+                "alert_id": row.alert_id,
+                "trigger": row.trigger,
+                "severity": row.severity,
+                "title": row.title,
+                "body": row.body[:200] + "..." if len(row.body or "") > 200 else row.body,
+                "channels": json.loads(row.channels) if row.channels else [],
                 "created_at": row.created_at,
                 "dispatched": row.dispatched,
             }
@@ -189,21 +193,22 @@ async def get_alert_history(
 
 # ── Board Deck PDF ─────────────────────────────────────────────────────────────
 
+
 class BoardDeckPDFRequest(BaseModel):
-    job_id:       str | None = None
+    job_id: str | None = None
     org_id_param: str | None = None
     company_name: str | None = None
-    period:       str | None = None
-    include_swot:     bool = True
-    include_kri:      bool = True
-    include_cascade:  bool = False
+    period: str | None = None
+    include_swot: bool = True
+    include_kri: bool = True
+    include_cascade: bool = False
 
 
 @router.post("/advanced/board-deck-pdf")
 async def board_deck_pdf(
-    req:          BoardDeckPDFRequest,
+    req: BoardDeckPDFRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """
     CEO board deck + SWOT + KRI + Cross-domain insights → PDF.
@@ -231,10 +236,10 @@ async def board_deck_pdf(
         filename = f"board-deck-{org_id[:8]}.pdf"
         return StreamingResponse(
             iter([pdf_bytes]),
-            media_type = "application/pdf",
-            headers    = {
+            media_type="application/pdf",
+            headers={
                 "Content-Disposition": content_disposition(f"{filename}"),
-                "Content-Length":      str(len(pdf_bytes)),
+                "Content-Length": str(len(pdf_bytes)),
             },
         )
     except Exception as exc:
@@ -244,18 +249,19 @@ async def board_deck_pdf(
 
 # ── Temporal Auto-record ──────────────────────────────────────────────────────
 
+
 class TemporalAutoRecordRequest(BaseModel):
-    agent:      str = Field(..., description="cfo|cto|cmo|chro|coo|risk")
-    period:     str = Field(..., description="2024-12 veya 2024-Q4")
-    job_id:     str | None = None
+    agent: str = Field(..., description="cfo|cto|cmo|chro|coo|risk")
+    period: str = Field(..., description="2024-12 veya 2024-Q4")
+    job_id: str | None = None
     data_source: str = "manual"
 
 
 @router.post("/advanced/temporal/auto-record")
 async def temporal_auto_record(
-    req:          TemporalAutoRecordRequest,
+    req: TemporalAutoRecordRequest,
     current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """
     CompanyContext'teki mevcut agent sonucunu temporal log'a otomatik kaydet.
@@ -267,23 +273,23 @@ async def temporal_auto_record(
     org_id = _get_org_id(current_user)
 
     try:
-        ctx     = await get_company_context(org_id) or {}
+        ctx = await get_company_context(org_id) or {}
         results = ctx.get("agent_results") or {}
-        cfo_r   = results.get("cfo") if req.agent == "cfo" else results.get(req.agent) or {}
+        cfo_r = results.get("cfo") if req.agent == "cfo" else results.get(req.agent) or {}
 
         # Agent bazinda metrik cikarimi
         metrics: dict[str, Any] = {}
         if req.agent == "cfo" and cfo_r:
-            pnl      = cfo_r.get("pnl") or {}
+            pnl = cfo_r.get("pnl") or {}
             cashflow = cfo_r.get("cashflow") or {}
             forecast = cfo_r.get("forecast") or {}
-            base_sc  = (forecast.get("scenarios") or {}).get("base") or {}
-            metrics  = {
-                "revenue":       pnl.get("revenue", 0),
-                "net_margin":    pnl.get("net_margin", 0),
-                "gross_margin":  pnl.get("gross_margin", 0),
+            base_sc = (forecast.get("scenarios") or {}).get("base") or {}
+            metrics = {
+                "revenue": pnl.get("revenue", 0),
+                "net_margin": pnl.get("net_margin", 0),
+                "gross_margin": pnl.get("gross_margin", 0),
                 "runway_months": base_sc.get("runway_months"),
-                "net_change":    cashflow.get("net_change", 0),
+                "net_change": cashflow.get("net_change", 0),
             }
         else:
             metrics = {k: v for k, v in (cfo_r or {}).items() if isinstance(v, (int, float))}
@@ -292,13 +298,13 @@ async def temporal_auto_record(
             return {"ok": False, "reason": f"{req.agent} icin metrik bulunamadi"}
 
         engine = get_temporal_engine(db=db)
-        event  = await engine.record_analysis(
-            org_id      = org_id,
-            agent       = req.agent,
-            period      = req.period,
-            metrics     = metrics,
-            confidence  = 0.85,
-            data_source = req.data_source,
+        event = await engine.record_analysis(
+            org_id=org_id,
+            agent=req.agent,
+            period=req.period,
+            metrics=metrics,
+            confidence=0.85,
+            data_source=req.data_source,
         )
         return {"ok": True, "event_id": event.event_id, "metrics_recorded": len(metrics)}
 

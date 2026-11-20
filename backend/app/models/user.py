@@ -8,6 +8,7 @@ Supports:
   - Multi-tenant: each user belongs to one Organization
   - Soft delete (deactivate instead of delete)
 """
+
 from __future__ import annotations
 
 import uuid
@@ -29,19 +30,17 @@ def _utcnow() -> datetime:
 
 
 class UserRole(StrEnum):
-    OWNER    = "owner"
-    ADMIN    = "admin"
-    CFO      = "cfo"
-    ANALYST  = "analyst"
-    VIEWER   = "viewer"
+    OWNER = "owner"
+    ADMIN = "admin"
+    CFO = "cfo"
+    ANALYST = "analyst"
+    VIEWER = "viewer"
 
 
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -63,9 +62,13 @@ class User(Base):
     api_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
 
     # SSO / OAuth2 fields (SEC-1)
-    sso_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)   # "microsoft"|"google"|"github"
-    sso_id:       Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)  # provider user ID
-    last_login:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sso_provider: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )  # "microsoft"|"google"|"github"
+    sso_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )  # provider user ID
+    last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Metadata
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

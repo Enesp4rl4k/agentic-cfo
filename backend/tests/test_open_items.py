@@ -7,6 +7,7 @@ Expected values below are read from GİB's own UBL-TR package (ubl_tr/…/xml):
     TicariFaturaOrnegi  issued 2009-01-05, due 2008-11-25: due BEFORE issue, not believed
     ISTISNA-1           issued 2010-05-31, due 2010-07-15, note "%50 Peşin, %50 ..."
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -26,18 +27,36 @@ from app.parsers.invoice.ubl_tr import UBLTRInvoiceParser
 from app.services.ledger import append_job, ledger_summary
 from tests.api_helpers import bellek_istemcisi, kullanici
 
-PKG = Path(__file__).resolve().parent / "fixtures" / "gib_corpus" / "ubl_tr" / "UBLTR_1.2.1_Paketi" / "xml"
+PKG = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "gib_corpus"
+    / "ubl_tr"
+    / "UBLTR_1.2.1_Paketi"
+    / "xml"
+)
 NEEDS_PKG = pytest.mark.skipif(not PKG.exists(), reason="GİB UBL-TR paketi yok")
 
 BIZ, THEM = "1111111111", "2222222222"
 
 
-def _invoice(*, uuid: str = "F47AC10B-58CC-4372-A567-0E02B2C3D479", supplier: str = BIZ, customer: str = THEM,
-             issued: str = "2024-03-01", terms: str = "", payable: str = "1180.00") -> str:
+def _invoice(
+    *,
+    uuid: str = "F47AC10B-58CC-4372-A567-0E02B2C3D479",
+    supplier: str = BIZ,
+    customer: str = THEM,
+    issued: str = "2024-03-01",
+    terms: str = "",
+    payable: str = "1180.00",
+) -> str:
     """Trimmed from TemelFaturaOrnegi.xml: the elements the parser reads."""
+
     def party(vkn: str, name: str) -> str:
-        return (f'<cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">{vkn}</cbc:ID></cac:PartyIdentification>'
-                f"<cac:PartyName><cbc:Name>{name}</cbc:Name></cac:PartyName></cac:Party>")
+        return (
+            f'<cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">{vkn}</cbc:ID></cac:PartyIdentification>'
+            f"<cac:PartyName><cbc:Name>{name}</cbc:Name></cac:PartyName></cac:Party>"
+        )
+
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
  xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -67,7 +86,9 @@ def _due(date: str, note: str = "") -> str:
 
 
 def test_the_due_date_and_its_note_are_read():
-    inv = UBLTRInvoiceParser.parse_xml(_invoice(terms=_due("2024-04-15", "45 gun vade")), own_vkn=BIZ)
+    inv = UBLTRInvoiceParser.parse_xml(
+        _invoice(terms=_due("2024-04-15", "45 gun vade")), own_vkn=BIZ
+    )
     assert inv.payment_due_date.isoformat() == "2024-04-15"
     assert inv.payment_note == "45 gun vade"
 
@@ -114,20 +135,35 @@ async def _analysed(client, org_id: str, xml: str) -> str:
     rows = _try_parse_ubl_xml(xml)
     assert rows
     async with client._maker() as db:
-        job = AnalysisJob(filename="f.xml", file_path="/f.xml", file_type="xml", org_id=org_id,
-                          status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="f.xml",
+            file_path="/f.xml",
+            file_type="xml",
+            org_id=org_id,
+            status=JobStatus.COMPLETED,
+        )
         db.add(job)
         await db.flush()
         for r in rows:
             when, estimated = parse_transaction_date(r.get("transaction_date"))
-            db.add(Transaction(
-                job_id=job.id, amount_kurus=r["amount_cents"], currency=r["currency"], type=r["type"],
-                category=r["category"], description=r.get("description"), vendor=r.get("vendor"),
-                transaction_date=when, date_is_estimated=estimated, confidence=r.get("confidence"),
-                document_id=r.get("document_id"),
-                due_date=date.fromisoformat(r["due_date"]) if r.get("due_date") else None,
-                payment_note=r.get("payment_note"), counterparty=r.get("counterparty"),
-            ))
+            db.add(
+                Transaction(
+                    job_id=job.id,
+                    amount_kurus=r["amount_cents"],
+                    currency=r["currency"],
+                    type=r["type"],
+                    category=r["category"],
+                    description=r.get("description"),
+                    vendor=r.get("vendor"),
+                    transaction_date=when,
+                    date_is_estimated=estimated,
+                    confidence=r.get("confidence"),
+                    document_id=r.get("document_id"),
+                    due_date=date.fromisoformat(r["due_date"]) if r.get("due_date") else None,
+                    payment_note=r.get("payment_note"),
+                    counterparty=r.get("counterparty"),
+                )
+            )
         await db.commit()
         await append_job(db, job.id)
         return job.id
@@ -178,13 +214,22 @@ async def test_the_summary_totals_what_is_open_and_says_what_has_no_date(client)
     _, org_id, _ = await kullanici(client, "toplam@example.com")
     await _analysed(client, org_id, _invoice(uuid="A", terms=_due("2024-04-15")))
     await _analysed(client, org_id, _invoice(uuid="B"))
-    await _analysed(client, org_id, _invoice(uuid="C", supplier=THEM, customer=BIZ, terms=_due("2024-05-01")))
+    await _analysed(
+        client, org_id, _invoice(uuid="C", supplier=THEM, customer=BIZ, terms=_due("2024-05-01"))
+    )
     async with client._maker() as db:
         open_items = (await ledger_summary(db, org_id))["open_items"]
-    assert open_items == {"receivable_cents": 2360_00, "payable_cents": 1180_00, "no_due_date": 1, "other_currency": 0}
+    assert open_items == {
+        "receivable_cents": 2360_00,
+        "payable_cents": 1180_00,
+        "no_due_date": 1,
+        "other_currency": 0,
+    }
 
 
-async def test_a_real_invoice_file_through_the_whole_pipeline_opens_an_item(client, monkeypatch, tmp_path):
+async def test_a_real_invoice_file_through_the_whole_pipeline_opens_an_item(
+    client, monkeypatch, tmp_path
+):
     """The row crosses LangGraph state and the worker: only a real run proves it."""
     import app.database as database
     from app.worker import run_cfo_analysis
@@ -199,8 +244,13 @@ async def test_a_real_invoice_file_through_the_whole_pipeline_opens_an_item(clie
     path = tmp_path / "fatura.xml"
     path.write_text(_invoice(terms=_due("2024-04-15", "45 gun vade")), encoding="utf-8")
     async with client._maker() as db:
-        job = AnalysisJob(filename="fatura.xml", file_path=str(path), file_type="xml", org_id=org_id,
-                          status=JobStatus.PENDING)
+        job = AnalysisJob(
+            filename="fatura.xml",
+            file_path=str(path),
+            file_type="xml",
+            org_id=org_id,
+            status=JobStatus.PENDING,
+        )
         db.add(job)
         await db.commit()
         job_id = job.id
@@ -208,7 +258,11 @@ async def test_a_real_invoice_file_through_the_whole_pipeline_opens_an_item(clie
     out = await run_cfo_analysis({}, job_id)
     assert out.get("ok") is True, out
     async with client._maker() as db:
-        tx = (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).scalars().one()
+        tx = (
+            (await db.execute(select(Transaction).where(Transaction.job_id == job_id)))
+            .scalars()
+            .one()
+        )
         status = (await db.get(AnalysisJob, job_id)).status
     assert tx.due_date == date(2024, 4, 15)
     assert tx.document_id == "F47AC10B-58CC-4372-A567-0E02B2C3D479"

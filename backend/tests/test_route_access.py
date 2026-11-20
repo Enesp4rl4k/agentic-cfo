@@ -19,6 +19,7 @@ Two layers:
 2. Behavioural, over HTTP: two organisations, and the second one's requests for
    the first one's objects come back 404 — reads and writes both.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -36,59 +37,183 @@ from tests.api_helpers import bellek_istemcisi
 AUTH_DEPENDENCIES = {"get_current_user", "require_tr_pack", "stream_ticket_user"}
 JOB_DEPENDENCIES = {"owned_job", "stream_ticket_user"}
 BODY_CHECKS = ("load_owned_job(", "_edefter_context(", "_edefter_build(", "_check_job_access(")
-ID_CHECKS = (*BODY_CHECKS, "ensure_tenant(", "can_access(", "current_user_org_matches(", "_load_owned(", "_resolve_org_id(")
+ID_CHECKS = (
+    *BODY_CHECKS,
+    "ensure_tenant(",
+    "can_access(",
+    "current_user_org_matches(",
+    "_load_owned(",
+    "_resolve_org_id(",
+)
 
 # Routes that take an id and scope it inside the handler without this module.
 # Each was read; the reason is what makes it safe. Adding a line here is a
 # review decision, not a way to make the test pass.
 SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
-    ("GET", "/api/v1/auth/sso/{provider}/login"): "provider is a name from a fixed list, not an object",
-    ("GET", "/api/v1/auth/sso/{provider}/callback"): "provider name; the callback verifies OAuth state",
+    (
+        "GET",
+        "/api/v1/auth/sso/{provider}/login",
+    ): "provider is a name from a fixed list, not an object",
+    (
+        "GET",
+        "/api/v1/auth/sso/{provider}/callback",
+    ): "provider name; the callback verifies OAuth state",
     ("POST", "/api/v1/open-banking/connect/{bank_id}"): "bank id is a key into a static table",
-    ("POST", "/api/v1/open-banking/connections/{connection_id}/sync"): "id unused; the new job is created in the caller's org",
+    (
+        "POST",
+        "/api/v1/open-banking/connections/{connection_id}/sync",
+    ): "id unused; the new job is created in the caller's org",
     ("GET", "/api/v1/efatura/invoices/{direction}"): "inbound|outbound, not an object",
     ("GET", "/api/v1/efatura/tax-calendar/{period}"): "a YYYY-MM period, not an object",
-    ("GET", "/api/v1/billing/check-limit/{resource}"): "resource name; usage read for the caller's org",
-    ("GET", "/api/v1/temporal/history/{agent}"): "agent name; history read for the caller's org (400 without one)",
-    ("POST", "/api/v1/connectors/{name}/connect"): "connector type; the connection row is the caller's org",
+    (
+        "GET",
+        "/api/v1/billing/check-limit/{resource}",
+    ): "resource name; usage read for the caller's org",
+    (
+        "GET",
+        "/api/v1/temporal/history/{agent}",
+    ): "agent name; history read for the caller's org (400 without one)",
+    (
+        "POST",
+        "/api/v1/connectors/{name}/connect",
+    ): "connector type; the connection row is the caller's org",
     ("POST", "/api/v1/connectors/{name}/sync"): "connector type; synced for the caller's org",
     ("GET", "/api/v1/connectors/{name}/status"): "connector type; queried by the caller's org",
     ("DELETE", "/api/v1/connectors/{name}"): "connector type; queried by the caller's org",
-    ("POST", "/api/v1/agent-jobs/{agent_type}"): "agent type; the job is created in the caller's org",
+    (
+        "POST",
+        "/api/v1/agent-jobs/{agent_type}",
+    ): "agent type; the job is created in the caller's org",
     ("GET", "/api/v1/agent-jobs/list/{agent_type}"): "agent type; listed by the caller's org",
-    ("GET", "/api/v1/agent-jobs/{job_id}"): "an AgentJob, not an AnalysisJob; 404 unless job.org_id == caller's (org required)",
-    ("DELETE", "/api/v1/agent-jobs/{job_id}"): "an AgentJob; 404 unless job.org_id == caller's (org required)",
-    ("POST", "/api/v1/agent-jobs/{job_id}/approve"): "an AgentJob; 404 unless job.org_id == caller's (owner role)",
-    ("POST", "/api/v1/agent-jobs/{job_id}/reject"): "an AgentJob; 404 unless job.org_id == caller's (owner role)",
-    ("PATCH", "/api/v1/notifications/{notification_id}/read"): "404 unless notif.org_id == caller's (org required)",
-    ("DELETE", "/api/v1/notifications/{notification_id}"): "404 unless notif.org_id == caller's (org required)",
-    ("PATCH", "/api/v1/related-parties/{party_id}"): "404 unless party.org_id == caller's manager org",
-    ("DELETE", "/api/v1/related-parties/{party_id}"): "404 unless party.org_id == caller's manager org",
-    ("GET", "/api/v1/erp/integrations/{integration_id}"): "selected WHERE id AND org_id == caller's",
-    ("DELETE", "/api/v1/erp/integrations/{integration_id}"): "selected WHERE id AND org_id == caller's",
-    ("PUT", "/api/v1/smmm/clients/{client_id}"): "selected WHERE id AND muhasebeci == caller's SMMM record",
-    ("DELETE", "/api/v1/smmm/clients/{client_id}"): "selected WHERE id AND muhasebeci == caller's SMMM record",
-    ("DELETE", "/api/v1/chat/sessions/{session_id}"): "session store is keyed by the caller's user id",
-    ("GET", "/api/v1/chat/sessions/{session_id}/history"): "session store is keyed by the caller's user id",
-    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "admin-only; pilot invites are platform-wide, not tenant data",
-    ("POST", "/api/v1/alerts/acknowledge/{job_id}/{alert_fingerprint}"): "job resolved by owned_job; fingerprint is a hash",
-    ("GET", "/api/v1/benchmark/{job_id}/metric/{metric}"): "job resolved by owned_job; metric is a name",
-    ("POST", "/api/v1/datasource/{job_id}/{domain}/{source_type}"): "job resolved by owned_job; domain/type are names",
-    ("DELETE", "/api/v1/datasource/{job_id}/{source_id}"): "job resolved by owned_job; source selected WHERE job_id",
-    ("GET", "/api/v1/context/{org_id}/agent/{agent}"): "org resolved by _resolve_org_id; agent is a name",
+    (
+        "GET",
+        "/api/v1/agent-jobs/{job_id}",
+    ): "an AgentJob, not an AnalysisJob; 404 unless job.org_id == caller's (org required)",
+    (
+        "DELETE",
+        "/api/v1/agent-jobs/{job_id}",
+    ): "an AgentJob; 404 unless job.org_id == caller's (org required)",
+    (
+        "POST",
+        "/api/v1/agent-jobs/{job_id}/approve",
+    ): "an AgentJob; 404 unless job.org_id == caller's (owner role)",
+    (
+        "POST",
+        "/api/v1/agent-jobs/{job_id}/reject",
+    ): "an AgentJob; 404 unless job.org_id == caller's (owner role)",
+    (
+        "PATCH",
+        "/api/v1/notifications/{notification_id}/read",
+    ): "404 unless notif.org_id == caller's (org required)",
+    (
+        "DELETE",
+        "/api/v1/notifications/{notification_id}",
+    ): "404 unless notif.org_id == caller's (org required)",
+    (
+        "PATCH",
+        "/api/v1/related-parties/{party_id}",
+    ): "404 unless party.org_id == caller's manager org",
+    (
+        "DELETE",
+        "/api/v1/related-parties/{party_id}",
+    ): "404 unless party.org_id == caller's manager org",
+    (
+        "GET",
+        "/api/v1/erp/integrations/{integration_id}",
+    ): "selected WHERE id AND org_id == caller's",
+    (
+        "DELETE",
+        "/api/v1/erp/integrations/{integration_id}",
+    ): "selected WHERE id AND org_id == caller's",
+    (
+        "PUT",
+        "/api/v1/smmm/clients/{client_id}",
+    ): "selected WHERE id AND muhasebeci == caller's SMMM record",
+    (
+        "DELETE",
+        "/api/v1/smmm/clients/{client_id}",
+    ): "selected WHERE id AND muhasebeci == caller's SMMM record",
+    (
+        "DELETE",
+        "/api/v1/chat/sessions/{session_id}",
+    ): "session store is keyed by the caller's user id",
+    (
+        "GET",
+        "/api/v1/chat/sessions/{session_id}/history",
+    ): "session store is keyed by the caller's user id",
+    (
+        "DELETE",
+        "/api/v1/pilot/invite/{invite_id}",
+    ): "admin-only; pilot invites are platform-wide, not tenant data",
+    (
+        "POST",
+        "/api/v1/alerts/acknowledge/{job_id}/{alert_fingerprint}",
+    ): "job resolved by owned_job; fingerprint is a hash",
+    (
+        "GET",
+        "/api/v1/benchmark/{job_id}/metric/{metric}",
+    ): "job resolved by owned_job; metric is a name",
+    (
+        "POST",
+        "/api/v1/datasource/{job_id}/{domain}/{source_type}",
+    ): "job resolved by owned_job; domain/type are names",
+    (
+        "DELETE",
+        "/api/v1/datasource/{job_id}/{source_id}",
+    ): "job resolved by owned_job; source selected WHERE job_id",
+    (
+        "GET",
+        "/api/v1/context/{org_id}/agent/{agent}",
+    ): "org resolved by _resolve_org_id; agent is a name",
     ("GET", "/api/v1/dashboard/{job_id}"): "job checked by load_owned_job in the handler",
-    ("GET", "/api/v1/ceo/status/{job_id}"): "a Redis CEO job id; refused unless its recorded owner passes can_access",
-    ("GET", "/api/v1/agent-graph/job/{job_id}"): "job loaded, then treated as missing unless can_access",
-    ("DELETE", "/api/v1/org/members/{user_id}"): "admin of the caller's org; 404 unless target.org_id == that org",
-    ("DELETE", "/api/v1/org/invites/{invite_id}"): "admin; selected WHERE id AND org_id == caller's org",
-    ("PUT", "/api/v1/sync/schedules/{schedule_id}"): "404 unless row.org_id == caller's org (or user id)",
-    ("DELETE", "/api/v1/sync/schedules/{schedule_id}"): "404 unless row.org_id == caller's org (or user id)",
-    ("POST", "/api/v1/sync/schedules/{schedule_id}/run"): "404 unless row.org_id == caller's org (or user id)",
-    ("GET", "/api/v1/analysis/{job_id}/domains/{domain}"): "job resolved by owned_job; domain is a name from a fixed list",
-    ("POST", "/api/v1/analysis/{job_id}/domains/{domain}"): "job resolved by owned_job; domain is a name from a fixed list",
-    ("GET", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
-    ("PATCH", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
-    ("DELETE", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    (
+        "GET",
+        "/api/v1/ceo/status/{job_id}",
+    ): "a Redis CEO job id; refused unless its recorded owner passes can_access",
+    (
+        "GET",
+        "/api/v1/agent-graph/job/{job_id}",
+    ): "job loaded, then treated as missing unless can_access",
+    (
+        "DELETE",
+        "/api/v1/org/members/{user_id}",
+    ): "admin of the caller's org; 404 unless target.org_id == that org",
+    (
+        "DELETE",
+        "/api/v1/org/invites/{invite_id}",
+    ): "admin; selected WHERE id AND org_id == caller's org",
+    (
+        "PUT",
+        "/api/v1/sync/schedules/{schedule_id}",
+    ): "404 unless row.org_id == caller's org (or user id)",
+    (
+        "DELETE",
+        "/api/v1/sync/schedules/{schedule_id}",
+    ): "404 unless row.org_id == caller's org (or user id)",
+    (
+        "POST",
+        "/api/v1/sync/schedules/{schedule_id}/run",
+    ): "404 unless row.org_id == caller's org (or user id)",
+    (
+        "GET",
+        "/api/v1/analysis/{job_id}/domains/{domain}",
+    ): "job resolved by owned_job; domain is a name from a fixed list",
+    (
+        "POST",
+        "/api/v1/analysis/{job_id}/domains/{domain}",
+    ): "job resolved by owned_job; domain is a name from a fixed list",
+    (
+        "GET",
+        "/api/v1/tetikler/{trigger_id}",
+    ): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    (
+        "PATCH",
+        "/api/v1/tetikler/{trigger_id}",
+    ): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    (
+        "DELETE",
+        "/api/v1/tetikler/{trigger_id}",
+    ): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
 }
 
 
@@ -144,8 +269,10 @@ def test_the_registry_is_actually_walked() -> None:
 
 def test_every_route_authenticates_or_says_why_not() -> None:
     offenders = [
-        f"{m} {p}" for (m, p), r in ROUTES
-        if (m, p) not in PUBLIC_ROUTES and not (_deps(r) & AUTH_DEPENDENCIES)
+        f"{m} {p}"
+        for (m, p), r in ROUTES
+        if (m, p) not in PUBLIC_ROUTES
+        and not (_deps(r) & AUTH_DEPENDENCIES)
         and "require_role" not in _source(r)
     ]
     assert not offenders, (
@@ -182,7 +309,9 @@ def test_every_other_object_id_is_scoped() -> None:
         params = set(re.findall(r"\{(\w+)\}", p)) - {"job_id"}
         if not params or (m, p) in SCOPED_IN_HANDLER or (m, p) in PUBLIC_ROUTES:
             continue
-        if any(c in _source(r) for c in ID_CHECKS) or (_deps(r) & JOB_DEPENDENCIES and params <= set()):
+        if any(c in _source(r) for c in ID_CHECKS) or (
+            _deps(r) & JOB_DEPENDENCIES and params <= set()
+        ):
             continue
         offenders.append(f"{m} {p}")
     assert not offenders, (
@@ -203,13 +332,18 @@ def test_no_route_trusts_a_role_across_organisations() -> None:
 
     api = pathlib.Path(__file__).resolve().parents[1] / "app" / "api"
     hits = [
-        f.name for f in api.glob("*.py")
-        if re.search(r"org_id\s*!=.*\n?.*role not in \(\s*\"admin\",\s*\"owner\"\s*\)", f.read_text(encoding="utf-8"))
+        f.name
+        for f in api.glob("*.py")
+        if re.search(
+            r"org_id\s*!=.*\n?.*role not in \(\s*\"admin\",\s*\"owner\"\s*\)",
+            f.read_text(encoding="utf-8"),
+        )
     ]
     assert not hits
 
 
 # ── Behaviour, over HTTP ─────────────────────────────────────────────────────
+
 
 @pytest_asyncio.fixture
 async def client():
@@ -222,7 +356,9 @@ async def _member(client, email: str, *, org: bool = True):
     from app.models.user import User
 
     pw = "StrongPassword123!"
-    await client.post("/api/v1/auth/register", json={"email": email, "password": pw, "full_name": "T"})
+    await client.post(
+        "/api/v1/auth/register", json={"email": email, "password": pw, "full_name": "T"}
+    )
     org_id = None
     async with client._maker() as db:
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
@@ -235,7 +371,9 @@ async def _member(client, email: str, *, org: bool = True):
         user.role = "owner"
         await db.commit()
         user_id = user.id
-    token = (await client.post("/api/v1/auth/login", json={"email": email, "password": pw})).json()["data"]["access_token"]
+    token = (await client.post("/api/v1/auth/login", json={"email": email, "password": pw})).json()[
+        "data"
+    ]["access_token"]
     return {"Authorization": f"Bearer {token}"}, org_id, user_id
 
 
@@ -247,22 +385,50 @@ async def _seed(client, org_id: str, user_id: str) -> dict[str, str]:
     from app.models.transaction import Transaction
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="a.csv", file_path="/a.csv", file_type="csv",
-                          org_id=org_id, user_id=user_id, status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="a.csv",
+            file_path="/a.csv",
+            file_type="csv",
+            org_id=org_id,
+            user_id=user_id,
+            status=JobStatus.COMPLETED,
+        )
         db.add(job)
         await db.flush()
-        tx = Transaction(job_id=job.id, amount_kurus=1000, currency="TRY", type="expense",
-                         category="rent", description="kira",
-                         transaction_date=datetime(2024, 1, 5, tzinfo=UTC))
-        rep = Report(job_id=job.id, report_type="dashboard", report_format=ReportFormat.JSON,
-                     data={"pnl": {"revenue": 100}})
-        onay = SMMMOnayKaydi(job_id=job.id, org_id=org_id, kayit_id="k1", orijinal_kayit={"satirlar": []},
-                             durum=OnayDurumu.BEKLIYOR)
-        anomaly = Anomaly(job_id=job.id, anomaly_type="spike", severity="high",
-                          title="t", description="d")
+        tx = Transaction(
+            job_id=job.id,
+            amount_kurus=1000,
+            currency="TRY",
+            type="expense",
+            category="rent",
+            description="kira",
+            transaction_date=datetime(2024, 1, 5, tzinfo=UTC),
+        )
+        rep = Report(
+            job_id=job.id,
+            report_type="dashboard",
+            report_format=ReportFormat.JSON,
+            data={"pnl": {"revenue": 100}},
+        )
+        onay = SMMMOnayKaydi(
+            job_id=job.id,
+            org_id=org_id,
+            kayit_id="k1",
+            orijinal_kayit={"satirlar": []},
+            durum=OnayDurumu.BEKLIYOR,
+        )
+        anomaly = Anomaly(
+            job_id=job.id, anomaly_type="spike", severity="high", title="t", description="d"
+        )
         db.add_all([tx, rep, onay, anomaly])
         await db.commit()
-        return {"job": job.id, "tx": tx.id, "report": rep.id, "onay": onay.id, "anomaly": anomaly.id}
+        return {
+            "job": job.id,
+            "tx": tx.id,
+            "report": rep.id,
+            "onay": onay.id,
+            "anomaly": anomaly.id,
+        }
 
 
 @pytest.mark.asyncio
@@ -307,8 +473,12 @@ async def test_another_organisation_gets_404_for_reads_and_writes(client) -> Non
 async def test_the_owner_still_gets_in(client) -> None:
     owner, org_a, user_a = await _member(client, "own@example.com")
     ids = await _seed(client, org_a, user_a)
-    for url in (f"/api/v1/analysis/{ids['job']}", f"/api/v1/transactions/{ids['tx']}",
-                f"/api/v1/muhasebe/mizan/{ids['job']}", f"/api/v1/smmm/onay/queue/{ids['job']}"):
+    for url in (
+        f"/api/v1/analysis/{ids['job']}",
+        f"/api/v1/transactions/{ids['tx']}",
+        f"/api/v1/muhasebe/mizan/{ids['job']}",
+        f"/api/v1/smmm/onay/queue/{ids['job']}",
+    ):
         resp = await client.get(url, headers=owner)
         assert resp.status_code == 200, f"{url}: {resp.status_code} {resp.text[:200]}"
 
@@ -346,20 +516,27 @@ async def test_a_stream_ticket_opens_only_its_own_job(client) -> None:
     ids = await _seed(client, org_a, user_a)
     other = await _seed(client, org_a, user_a)
 
-    ticket = (await client.post(f"/api/v1/stream/{ids['job']}/ticket", headers=owner)).json()["data"]["ticket"]
+    ticket = (await client.post(f"/api/v1/stream/{ids['job']}/ticket", headers=owner)).json()[
+        "data"
+    ]["ticket"]
     ok = await client.get(f"/api/v1/stream/{ids['job']}", params={"ticket": ticket})
     assert ok.status_code == 200
     reused = await client.get(f"/api/v1/stream/{other['job']}", params={"ticket": ticket})
     assert reused.status_code == 401, "bilet başka bir işe açılmamalı"
-    forged = await client.get(f"/api/v1/stream/{ids['job']}", params={"ticket": ticket[:-4] + "0000"})
+    forged = await client.get(
+        f"/api/v1/stream/{ids['job']}", params={"ticket": ticket[:-4] + "0000"}
+    )
     assert forged.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_ceo_analysis_refuses_a_server_file_path(client) -> None:
     owner, _org, _ = await _member(client, "ceo@example.com")
-    resp = await client.post("/api/v1/ceo/analyze", headers=owner,
-                             json={"cfo_file_path": "/etc/passwd", "cfo_file_type": "csv"})
+    resp = await client.post(
+        "/api/v1/ceo/analyze",
+        headers=owner,
+        json={"cfo_file_path": "/etc/passwd", "cfo_file_type": "csv"},
+    )
     assert resp.status_code == 422
     assert "analyze-from-job" in resp.text
 

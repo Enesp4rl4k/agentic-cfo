@@ -2,6 +2,7 @@
 Tests for AgentMemoryStore — memory engineering layer.
 Pure tests, no DB setup required (uses in-memory backend).
 """
+
 import time
 
 from app.services.agent_memory import (
@@ -13,6 +14,7 @@ from app.services.agent_memory import (
 )
 
 # ── EpisodeRecord ─────────────────────────────────────────────────────────────
+
 
 class TestEpisodeRecord:
     def test_auto_generates_id(self):
@@ -49,6 +51,7 @@ class TestEpisodeRecord:
 
 
 # ── TF-IDF similarity ─────────────────────────────────────────────────────────
+
 
 class TestTfidfSimilarity:
     def test_identical_texts_score_one(self):
@@ -95,6 +98,7 @@ class TestTokenise:
 
 
 # ── AgentMemoryStore ──────────────────────────────────────────────────────────
+
 
 def _make_episode(
     org_id: str = "org-1",

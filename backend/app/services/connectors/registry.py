@@ -1,4 +1,5 @@
 """Catalog of live data connectors (what is wired vs regional-pack stubs)."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -6,6 +6,7 @@ document that stated KDV and stopaj to the kuruş. The stopaj was not booked
 at all. The amounts now travel on the transaction (`kdv_kurus`,
 `stopaj_kurus`), and the engine books them where they belong.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,8 +26,14 @@ def clf():
 
 
 def _k(engine, clf, desc, amount, typ, **extra):
-    tx = {"id": "tx", "amount_kurus": amount, "type": typ, "description": desc,
-          "transaction_date": "2026-09-01T00:00:00+00:00", **extra}
+    tx = {
+        "id": "tx",
+        "amount_kurus": amount,
+        "type": typ,
+        "description": desc,
+        "transaction_date": "2026-09-01T00:00:00+00:00",
+        **extra,
+    }
     return engine.create_entry(tx, clf.classify(desc, amount, typ))
 
 
@@ -36,8 +43,15 @@ def _lines(k):
 
 def test_the_client_books_the_gross_fee_the_kdv_and_the_stopaj_owed() -> None:
     """e-SMM, client side: fee 1 000, KDV 200, stopaj 200, paid 1 000."""
-    k = _k(DoubleEntryEngine(), THPClassifier(), "e-SMM CDE1: 9876543210 — Hukuki danışmanlık",
-           100_000, "expense", kdv_kurus=20_000, stopaj_kurus=20_000)
+    k = _k(
+        DoubleEntryEngine(),
+        THPClassifier(),
+        "e-SMM CDE1: 9876543210 — Hukuki danışmanlık",
+        100_000,
+        "expense",
+        kdv_kurus=20_000,
+        stopaj_kurus=20_000,
+    )
     lines = _lines(k)
     assert lines[k.thp_hesap_kodu] == (100_000, 0), "gider brüt ücret olmalı"
     assert lines["191"] == (20_000, 0)
@@ -49,8 +63,15 @@ def test_the_client_books_the_gross_fee_the_kdv_and_the_stopaj_owed() -> None:
 
 
 def test_the_professional_books_revenue_kdv_and_prepaid_stopaj(engine, clf) -> None:
-    k = _k(engine, clf, "Serbest meslek satış geliri", 100_000, "income",
-           kdv_kurus=20_000, stopaj_kurus=20_000)
+    k = _k(
+        engine,
+        clf,
+        "Serbest meslek satış geliri",
+        100_000,
+        "income",
+        kdv_kurus=20_000,
+        stopaj_kurus=20_000,
+    )
     lines = _lines(k)
     assert lines["102"] == (100_000, 0)
     assert lines["193"] == (20_000, 0)
@@ -80,13 +101,21 @@ def test_ingestion_carries_the_invoice_kdv_only_when_nothing_else_is_in_play(mon
     from app.agents.data_ingestion import _try_parse_ubl_xml
     from app.config import get_settings
 
-    xml = Path(__file__).resolve().parent / "fixtures" / "gib_corpus" / "ubl_tr" / "UBLTR_1.2.1_Paketi" / "xml"
+    xml = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "gib_corpus"
+        / "ubl_tr"
+        / "UBLTR_1.2.1_Paketi"
+        / "xml"
+    )
     sale = xml / "YTB_Satıs_EArşiv.xml"
     withheld = xml / "YTB_Tevkıfat_EArşiv.xml"
     if not sale.is_file():
         pytest.skip("GİB UBL-TR paketi yok")
 
     import re
+
     ours = "1234567808"
     monkeypatch.setattr(get_settings(), "gib_vkn", ours)
 
@@ -106,5 +135,10 @@ def test_the_columns_exist_on_the_model_and_in_a_migration() -> None:
     from app.models.transaction import Transaction
 
     assert {"kdv_kurus", "stopaj_kurus"} <= set(Transaction.__table__.columns.keys())
-    mig = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "035_transaction_tax_amounts.py"
+    mig = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "035_transaction_tax_amounts.py"
+    )
     assert "kdv_kurus" in mig.read_text(encoding="utf-8")

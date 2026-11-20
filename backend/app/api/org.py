@@ -11,6 +11,7 @@ POST   /api/v1/org/invite/accept   — accept invite via token
 GET    /api/v1/org/invites         — list pending invites (admin+)
 DELETE /api/v1/org/invites/{id}    — cancel invite (admin+)
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,6 +38,7 @@ INVITE_EXPIRE_DAYS = 7
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _slugify(name: str) -> str:
     slug = name.lower().strip()
     slug = re.sub(r"[^\w\s-]", "", slug)
@@ -52,6 +54,7 @@ def _slugify(name: str) -> str:
 # which is why creating a workspace failed for every request after the first.
 # Load the org through the request's own session, and mutate only instances
 # fetched from it. Same rule deps_regional.py already follows.
+
 
 async def _load_org(user: User, db: AsyncSession) -> Organization:
     org = await db.get(Organization, str(user.org_id)) if user.org_id else None
@@ -89,6 +92,7 @@ async def _require_owner(user: User, db: AsyncSession) -> Organization:
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
+
 class CreateOrgRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     slug: str | None = None  # auto-generated if omitted
@@ -125,42 +129,48 @@ def _org_dict(org: Organization) -> dict[str, Any]:
     from app.services.regional.packs import normalize_packs
 
     return {
-        "org_id":               org.id,
-        "name":                 org.name,
-        "slug":                 org.slug,
-        "description":          org.description,
-        "logo_url":             org.logo_url,
-        "country_code":         getattr(org, "country_code", None) or "US",
-        "base_currency":        getattr(org, "base_currency", None) or "USD",
-        "locale":               getattr(org, "locale", None) or "en-US",
-        "regional_packs":       normalize_packs(getattr(org, "regional_packs", None)),
-        "focus_mode":           bool(org.focus_mode),
-        "plan":                 org.plan,
-        "max_members":          org.max_members,
-        "max_jobs_per_month":   org.max_jobs_per_month,
-        "is_active":            org.is_active,
-        "created_at":           org.created_at.isoformat(),
+        "org_id": org.id,
+        "name": org.name,
+        "slug": org.slug,
+        "description": org.description,
+        "logo_url": org.logo_url,
+        "country_code": getattr(org, "country_code", None) or "US",
+        "base_currency": getattr(org, "base_currency", None) or "USD",
+        "locale": getattr(org, "locale", None) or "en-US",
+        "regional_packs": normalize_packs(getattr(org, "regional_packs", None)),
+        "focus_mode": bool(org.focus_mode),
+        "plan": org.plan,
+        "max_members": org.max_members,
+        "max_jobs_per_month": org.max_jobs_per_month,
+        "is_active": org.is_active,
+        "created_at": org.created_at.isoformat(),
     }
 
 
 def _member_dict(u: User) -> dict[str, Any]:
     return {
-        "user_id":      u.id,
-        "email":        u.email,
-        "full_name":    u.full_name,
-        "role":         u.role,
-        "is_active":    u.is_active,
+        "user_id": u.id,
+        "email": u.email,
+        "full_name": u.full_name,
+        "role": u.role,
+        "is_active": u.is_active,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
-        "joined_at":    u.created_at.isoformat(),
+        "joined_at": u.created_at.isoformat(),
     }
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 def _regional_defaults(country_code: str) -> dict[str, Any]:
     cc = country_code.upper()
     if cc == "TR":
-        return {"country_code": "TR", "base_currency": "TRY", "locale": "tr-TR", "regional_packs": ["tr"]}
+        return {
+            "country_code": "TR",
+            "base_currency": "TRY",
+            "locale": "tr-TR",
+            "regional_packs": ["tr"],
+        }
     return {"country_code": cc, "base_currency": "USD", "locale": "en-US", "regional_packs": []}
 
 
@@ -226,9 +236,7 @@ async def get_my_org(
     """Get the current user's organization."""
     org = await _require_org(current_user, db)
     # Count members
-    result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active)
-    )
+    result = await db.execute(select(User).where(User.org_id == org.id, User.is_active))
     members = result.scalars().all()
     data = _org_dict(org)
     data["member_count"] = len(members)
@@ -290,15 +298,13 @@ async def list_members(
 ) -> dict[str, Any]:
     """List all members of the current user's org."""
     org = await _require_org(current_user, db)
-    result = await db.execute(
-        select(User).where(User.org_id == org.id).order_by(User.created_at)
-    )
+    result = await db.execute(select(User).where(User.org_id == org.id).order_by(User.created_at))
     members = result.scalars().all()
     return {
         "data": {
-            "org_id":  org.id,
+            "org_id": org.id,
             "members": [_member_dict(m) for m in members],
-            "total":   len(members),
+            "total": len(members),
         },
         "error": None,
     }
@@ -342,9 +348,7 @@ async def invite_member(
     org = await _require_admin(current_user, db)
 
     # Check member limit
-    result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active)
-    )
+    result = await db.execute(select(User).where(User.org_id == org.id, User.is_active))
     count = len(result.scalars().all())
     if count >= org.max_members:
         raise HTTPException(400, detail=f"Üye limiti doldu ({org.max_members}).")
@@ -396,9 +400,9 @@ async def invite_member(
 
     return {
         "data": {
-            "invite_id":  invite.id,
-            "email":      invite.email,
-            "role":       invite.role,
+            "invite_id": invite.id,
+            "email": invite.email,
+            "role": invite.role,
             "expires_at": invite.expires_at.isoformat(),
             "email_sent": bool(email_sent),
         },
@@ -418,9 +422,7 @@ async def accept_invite(
     from app.services.auth import create_access_token, create_refresh_token, hash_password
 
     result = await db.execute(
-        select(OrgInvite).where(
-            OrgInvite.token == body.token, OrgInvite.accepted.is_(False)
-        )
+        select(OrgInvite).where(OrgInvite.token == body.token, OrgInvite.accepted.is_(False))
     )
     invite = result.scalar_one_or_none()
     if not invite:
@@ -453,22 +455,22 @@ async def accept_invite(
     await db.commit()
     await db.refresh(user)
 
-    access  = create_access_token(user.id, user.email, user.role)
+    access = create_access_token(user.id, user.email, user.role)
     refresh = create_refresh_token(user.id)
 
     logger.info("Invite accepted: %s joined org %s", user.email, invite.org_id)
 
     return {
         "data": {
-            "access_token":  access,
+            "access_token": access,
             "refresh_token": refresh,
-            "token_type":    "bearer",
-            "expires_in":    1800,
+            "token_type": "bearer",
+            "expires_in": 1800,
             "user": {
-                "user_id":  user.id,
-                "email":    user.email,
-                "role":     user.role,
-                "org_id":   user.org_id,
+                "user_id": user.id,
+                "email": user.email,
+                "role": user.role,
+                "org_id": user.org_id,
             },
         },
         "error": None,
@@ -491,9 +493,9 @@ async def list_invites(
     return {
         "data": [
             {
-                "invite_id":  i.id,
-                "email":      i.email,
-                "role":       i.role,
+                "invite_id": i.id,
+                "email": i.email,
+                "role": i.role,
                 "expires_at": i.expires_at.isoformat(),
                 "created_at": i.created_at.isoformat(),
             }

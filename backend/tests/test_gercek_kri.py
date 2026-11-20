@@ -1,4 +1,5 @@
 """Risk indicators are only what was measured — and the page contract they feed."""
+
 from app.agents.risk.gercek_kri import gercek_kri
 
 
@@ -50,11 +51,22 @@ def test_missing_figure_is_left_out_not_defaulted():
 
 
 def test_uploaded_kri_file_keeps_its_own_thresholds():
-    risk_result = {"kris": {"breached_red": [{
-        "name": "Kilit personel ayrılığı", "category": "people", "value": 3,
-        "threshold_red": 2, "threshold_amber": 1, "unit": "kişi", "owner": "İK",
-        "lower_is_worse": False,
-    }]}}
+    risk_result = {
+        "kris": {
+            "breached_red": [
+                {
+                    "name": "Kilit personel ayrılığı",
+                    "category": "people",
+                    "value": 3,
+                    "threshold_red": 2,
+                    "threshold_amber": 1,
+                    "unit": "kişi",
+                    "owner": "İK",
+                    "lower_is_worse": False,
+                }
+            ]
+        }
+    }
     kris, posture = gercek_kri(None, None, risk_result)
     assert len(kris) == 1
     k = kris[0]

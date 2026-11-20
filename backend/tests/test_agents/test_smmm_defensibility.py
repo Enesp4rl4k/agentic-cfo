@@ -1,4 +1,5 @@
 """SMMM Defensibility Packet (differentiator #4) — assembly, hash, finalize."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -43,25 +44,36 @@ def _entry(kayit_id: str, code: str, amount: int, *, needs_review: bool, conf: f
 
 
 async def _seed_journal(db, job_id="job-1", entries=None):
-    db.add(Report(
-        job_id=job_id, report_type="tr_muhasebe_journal", report_format=ReportFormat.JSON,
-        data={
-            "yevmiye_kayitlari": entries or [],
-            "dengeli": True, "denge_hatalari": [],
-            "ortalama_confidence": 0.87, "thp_dagilim": {"770": 2, "153": 1},
-        },
-    ))
+    db.add(
+        Report(
+            job_id=job_id,
+            report_type="tr_muhasebe_journal",
+            report_format=ReportFormat.JSON,
+            data={
+                "yevmiye_kayitlari": entries or [],
+                "dengeli": True,
+                "denge_hatalari": [],
+                "ortalama_confidence": 0.87,
+                "thp_dagilim": {"770": 2, "153": 1},
+            },
+        )
+    )
     await db.commit()
 
 
 async def _seed_onay(db, job_id, kayit_id, durum, *, org_id="org-1", corrected=None):
-    db.add(SMMMOnayKaydi(
-        job_id=job_id, org_id=org_id, kayit_id=kayit_id, durum=durum,
-        otomatik_hesap_kodu="770",
-        duzeltilmis_hesap_kodu=corrected,
-        onaylayan_user_id="smmm-1" if durum != OnayDurumu.BEKLIYOR else None,
-        onay_zamani=datetime.now(UTC) if durum != OnayDurumu.BEKLIYOR else None,
-    ))
+    db.add(
+        SMMMOnayKaydi(
+            job_id=job_id,
+            org_id=org_id,
+            kayit_id=kayit_id,
+            durum=durum,
+            otomatik_hesap_kodu="770",
+            duzeltilmis_hesap_kodu=corrected,
+            onaylayan_user_id="smmm-1" if durum != OnayDurumu.BEKLIYOR else None,
+            onay_zamani=datetime.now(UTC) if durum != OnayDurumu.BEKLIYOR else None,
+        )
+    )
     await db.commit()
 
 
@@ -70,8 +82,8 @@ async def test_decision_source_classification(db):
     entries = [
         _entry("k1", "770", 10_000, needs_review=False, conf=0.95),  # ai_auto
         _entry("k2", "770", 500_000, needs_review=True, conf=0.55),  # -> approved
-        _entry("k3", "153", 800_000, needs_review=True, conf=0.5),   # -> corrected
-        _entry("k4", "770", 900_000, needs_review=True, conf=0.4),   # -> rejected
+        _entry("k3", "153", 800_000, needs_review=True, conf=0.5),  # -> corrected
+        _entry("k4", "770", 900_000, needs_review=True, conf=0.4),  # -> rejected
     ]
     await _seed_journal(db, entries=entries)
     await _seed_onay(db, "job-1", "k2", OnayDurumu.ONAYLANDI)
@@ -110,7 +122,7 @@ async def test_pending_review_blocks_defensible_flag(db):
 @pytest.mark.asyncio
 async def test_hash_is_stable_and_content_sensitive():
     p1 = {"summary": {"a": 1}, "entries": [{"x": 1}]}
-    p2 = {"entries": [{"x": 1}], "summary": {"a": 1}}   # key order differs
+    p2 = {"entries": [{"x": 1}], "summary": {"a": 1}}  # key order differs
     p3 = {"summary": {"a": 2}, "entries": [{"x": 1}]}
     assert content_hash(p1) == content_hash(p2)
     assert content_hash(p1) != content_hash(p3)
@@ -119,12 +131,20 @@ async def test_hash_is_stable_and_content_sensitive():
 @pytest.mark.asyncio
 async def test_build_pulls_run_metadata(db):
     await _seed_journal(db, entries=[_entry("k1", "770", 1000, needs_review=False, conf=0.9)])
-    db.add(AgentRun(
-        org_id="org-1", pipeline="tr_vertical", job_id="job-1", status="completed",
-        latency_ms=1234.5, cost_usd=0.02,
-        result_ref={"reconciliation": {"action": "proceed"},
-                    "confidence_breakdown": {"aggregate": 0.9}},
-    ))
+    db.add(
+        AgentRun(
+            org_id="org-1",
+            pipeline="tr_vertical",
+            job_id="job-1",
+            status="completed",
+            latency_ms=1234.5,
+            cost_usd=0.02,
+            result_ref={
+                "reconciliation": {"action": "proceed"},
+                "confidence_breakdown": {"aggregate": 0.9},
+            },
+        )
+    )
     await db.commit()
     packet = await build_packet(db=db, job_id="job-1", org_id="org-1", period="2024-01")
     assert packet.summary["run"]["latency_ms"] == 1234.5
@@ -142,7 +162,9 @@ async def test_finalize_lifecycle(db):
         await finalize_packet(db=db, packet_id=packet.id, user_id="smmm-1", statement="  ")
 
     final = await finalize_packet(
-        db=db, packet_id=packet.id, user_id="smmm-1",
+        db=db,
+        packet_id=packet.id,
+        user_id="smmm-1",
         statement="2024/01 dönemi kayıtlarını inceledim ve uygun buldum. SM. Ali Veli",
     )
     assert final.status == "finalized"

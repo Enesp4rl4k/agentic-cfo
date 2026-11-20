@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # FastAPI matches routes in registration order — "/reports/{id}/download"
 # must come before "/reports/{id}" or it will never be reached.
 
+
 @router.get("/reports/{report_id}/download")
 async def download_report(
     report_id: str,
@@ -61,9 +62,7 @@ async def list_reports(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all generated reports for a job."""
-    result = await db.execute(
-        select(Report).where(Report.job_id == job_id)
-    )
+    result = await db.execute(select(Report).where(Report.job_id == job_id))
     reports = result.scalars().all()
     return {
         "data": [
@@ -127,6 +126,7 @@ async def download_executive_report(
 
     try:
         from app.services.executive_report_pdf import generate_executive_report
+
         pdf_bytes = await asyncio.to_thread(
             generate_executive_report,
             dashboard=report.data,
@@ -140,7 +140,7 @@ async def download_executive_report(
         raise HTTPException(status_code=500, detail="Yönetici raporu üretilemedi.") from exc
 
     safe_name = company_name.lower().replace(" ", "-").replace(".", "")[:30]
-    filename  = f"{safe_name}-yonetim-raporu.pdf"
+    filename = f"{safe_name}-yonetim-raporu.pdf"
 
     return Response(
         content=pdf_bytes,
@@ -153,6 +153,7 @@ async def download_executive_report(
 
 
 # ── Unified Executive Report ──────────────────────────────────────────────────
+
 
 @router.get("/reports/unified/summary")
 async def get_unified_report_summary(
@@ -173,11 +174,17 @@ async def get_unified_report_summary(
     org_id = str(user.org_id) if user.org_id else "default"
     ctx = await get_company_context(org_id, db)
 
-    if not any([
-        ctx.last_cfo_result, ctx.last_cto_result, ctx.last_cmo_result,
-        ctx.last_coo_result, ctx.last_chro_result, ctx.last_risk_result,
-        ctx.last_ceo_result,
-    ]):
+    if not any(
+        [
+            ctx.last_cfo_result,
+            ctx.last_cto_result,
+            ctx.last_cmo_result,
+            ctx.last_coo_result,
+            ctx.last_chro_result,
+            ctx.last_risk_result,
+            ctx.last_ceo_result,
+        ]
+    ):
         raise HTTPException(
             status_code=404,
             detail="Henüz tamamlanmış analiz yok. Önce bir veya daha fazla agent analizi çalıştırın.",
@@ -230,6 +237,7 @@ async def download_unified_pdf(
 
     company = (ctx.company_name or "sirket").lower().replace(" ", "-")[:25]
     from datetime import datetime
+
     date_str = datetime.now().strftime("%Y%m%d")
     filename = f"{company}-yonetim-raporu-{date_str}.pdf"
 

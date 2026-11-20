@@ -5,6 +5,7 @@ Bu modül, farklı departman ajanlarının (CFO, CMO, COO vb.)
 belirli bir konu üzerinde tartıştığı, geçmiş kararları hatırladığı
 ve oy birliğine vardığı LLM tabanlı çok turlu müzakere altyapısını barındırır.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,6 +19,7 @@ from app.services.negotiation.boardroom_memory import get_boardroom_memory
 logger = logging.getLogger(__name__)
 
 # ── Pydantic Schemas ─────────────────────────────────────────────────────────
+
 
 class BoardroomStatement(BaseModel):
     agent_name: str = Field(..., description="Ajan rolü, örn: 'CFO', 'CMO'")
@@ -43,15 +45,21 @@ class BoardroomDebateResult(BaseModel):
 
 # ── LLM Helpers ──────────────────────────────────────────────────────────────
 
+
 async def _structured(schema, prompt: str, *, temperature: float):
     from app.platform.model_gateway import complete
+
     res = await complete(
-        task="deep_analysis", prompt=prompt, schema=schema, temperature=temperature,
+        task="deep_analysis",
+        prompt=prompt,
+        schema=schema,
+        temperature=temperature,
     )
     return res.parsed
 
 
 # ── Debate Engine ────────────────────────────────────────────────────────────
+
 
 async def run_boardroom_debate(
     topic: str,
@@ -95,14 +103,16 @@ async def run_boardroom_debate(
     round_2_results = await asyncio.gather(*tasks)
 
     # 3. Faz: Uzlaşı (Consensus)
-    round_2_summary = "\n".join([f"{r.agent_name} önerisi: {r.proposed_solution}" for r in round_2_results])
+    round_2_summary = "\n".join(
+        [f"{r.agent_name} önerisi: {r.proposed_solution}" for r in round_2_results]
+    )
     consensus = await _generate_consensus(topic, round_1_summary, round_2_summary)
 
     debate_res = BoardroomDebateResult(
         topic=topic,
         round_1_statements=round_1_results,
         round_2_statements=round_2_results,
-        consensus=consensus
+        consensus=consensus,
     )
 
     # 4. Hafızaya Kaydet
@@ -124,7 +134,9 @@ async def _generate_opening_statement(agent: str, topic: str, context: str) -> B
     return result
 
 
-async def _generate_response_statement(agent: str, topic: str, round_1_summary: str) -> BoardroomStatement:
+async def _generate_response_statement(
+    agent: str, topic: str, round_1_summary: str
+) -> BoardroomStatement:
     prompt = (
         f"Sen şirketin {agent} (Yönetim Kurulu Üyesi) rolündesin.\n"
         f"Konu: {topic}\n"
@@ -136,7 +148,9 @@ async def _generate_response_statement(agent: str, topic: str, round_1_summary: 
     return result
 
 
-async def _generate_consensus(topic: str, round_1_summary: str, round_2_summary: str) -> BoardroomConsensus:
+async def _generate_consensus(
+    topic: str, round_1_summary: str, round_2_summary: str
+) -> BoardroomConsensus:
     prompt = (
         f"Sen şirketin tarafsız Yönetim Kurulu Sekreterisin. Aşağıdaki tartışmayı analiz et ve nihai bir uzlaşı (consensus) metni çıkar.\n"
         f"Konu: {topic}\n"

@@ -5,6 +5,7 @@ and the same statement or overlapping months are routinely uploaded more than
 once. Counted per analysis row, each re-upload doubled a counterparty's
 frequency and total — the numbers the list ranks by.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -22,19 +23,35 @@ async def client():
         yield c
 
 
-async def _analiz(client, org_id: str, aylar: list[int], *, satici: str = "Öztürk Gayrimenkul") -> None:
+async def _analiz(
+    client, org_id: str, aylar: list[int], *, satici: str = "Öztürk Gayrimenkul"
+) -> None:
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.models.transaction import Transaction
 
     async with client._maker() as db:
-        job = AnalysisJob(filename="ekstre.csv", file_path="/e.csv", file_type="csv",
-                          org_id=org_id, status=JobStatus.COMPLETED)
+        job = AnalysisJob(
+            filename="ekstre.csv",
+            file_path="/e.csv",
+            file_type="csv",
+            org_id=org_id,
+            status=JobStatus.COMPLETED,
+        )
         db.add(job)
         await db.flush()
         for ay in aylar:
-            db.add(Transaction(job_id=job.id, amount_kurus=KIRA, currency="TRY", type="expense",
-                               category="rent", vendor=satici, description=f"Kira {ay}. ay",
-                               transaction_date=datetime(2026, ay, 5, tzinfo=UTC)))
+            db.add(
+                Transaction(
+                    job_id=job.id,
+                    amount_kurus=KIRA,
+                    currency="TRY",
+                    type="expense",
+                    category="rent",
+                    vendor=satici,
+                    description=f"Kira {ay}. ay",
+                    transaction_date=datetime(2026, ay, 5, tzinfo=UTC),
+                )
+            )
         await db.commit()
 
 
@@ -47,7 +64,7 @@ async def _oneriler(client, headers) -> dict[str, dict]:
 async def test_the_same_months_uploaded_twice_count_once(client):
     headers, org_id, _ = await kullanici(client, "kira@example.com")
     await _analiz(client, org_id, [1, 2, 3])
-    await _analiz(client, org_id, [1, 2, 3])          # the same statement again
+    await _analiz(client, org_id, [1, 2, 3])  # the same statement again
 
     (oneri,) = (await _oneriler(client, headers)).values()
     assert oneri["transaction_count"] == 3
@@ -57,7 +74,7 @@ async def test_the_same_months_uploaded_twice_count_once(client):
 async def test_overlapping_months_count_each_payment_once(client):
     headers, org_id, _ = await kullanici(client, "ortusen@example.com")
     await _analiz(client, org_id, [1, 2, 3])
-    await _analiz(client, org_id, [2, 3, 4])          # Feb–Mar overlap
+    await _analiz(client, org_id, [2, 3, 4])  # Feb–Mar overlap
 
     (oneri,) = (await _oneriler(client, headers)).values()
     assert oneri["transaction_count"] == 4

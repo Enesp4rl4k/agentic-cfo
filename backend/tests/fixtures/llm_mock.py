@@ -16,6 +16,7 @@ Usage in tests:
         result = await run_pnl(state, config)
         assert result.ok
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,9 +27,11 @@ from unittest.mock import MagicMock, patch
 
 # ── Mock message type ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class MockMessage:
     """Mimics langchain_core.messages.AIMessage interface."""
+
     content: str
 
     def __str__(self) -> str:
@@ -36,6 +39,7 @@ class MockMessage:
 
 
 # ── MockLLM ───────────────────────────────────────────────────────────────────
+
 
 class MockLLM:
     """
@@ -92,6 +96,7 @@ class MockLLM:
 
 # ── Patch helpers ─────────────────────────────────────────────────────────────
 
+
 @contextmanager
 def patch_llm(
     response: str | list[str] = "Mock CFO narrative — dönemi güçlü kapattık.",
@@ -128,9 +133,11 @@ def patch_settings(
 
 # ── Sample state builders ─────────────────────────────────────────────────────
 
+
 def make_sample_transactions(n: int = 20) -> list[dict[str, Any]]:
     """Generate n deterministic sample transactions for testing."""
     import random
+
     rng = random.Random(42)
 
     categories = ["revenue", "salary", "rent", "utilities", "marketing", "cogs"]
@@ -139,46 +146,48 @@ def make_sample_transactions(n: int = 20) -> list[dict[str, Any]]:
     txs = []
     for i in range(n):
         is_income = i % 3 == 0
-        txs.append({
-            "id": f"tx-{i:04d}",
-            "transaction_date": f"2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}",
-            "type": "income" if is_income else "expense",
-            "category": "revenue" if is_income else categories[i % len(categories)],
-            "description": f"İşlem {i}",
-            "vendor": vendors[i % len(vendors)],
-            "amount_cents": rng.randint(10_000, 500_000),
-        })
+        txs.append(
+            {
+                "id": f"tx-{i:04d}",
+                "transaction_date": f"2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}",
+                "type": "income" if is_income else "expense",
+                "category": "revenue" if is_income else categories[i % len(categories)],
+                "description": f"İşlem {i}",
+                "vendor": vendors[i % len(vendors)],
+                "amount_cents": rng.randint(10_000, 500_000),
+            }
+        )
     return txs
 
 
 def make_sample_pnl() -> dict[str, Any]:
     return {
-        "revenue":       480_000_00,
-        "cogs":          144_000_00,
-        "gross_profit":  336_000_00,
-        "gross_margin":  0.70,
+        "revenue": 480_000_00,
+        "cogs": 144_000_00,
+        "gross_profit": 336_000_00,
+        "gross_margin": 0.70,
         "opex": {
-            "salary":    120_000_00,
-            "rent":       24_000_00,
-            "marketing":  18_000_00,
-            "technology":  9_600_00,
+            "salary": 120_000_00,
+            "rent": 24_000_00,
+            "marketing": 18_000_00,
+            "technology": 9_600_00,
             "other_expense": 4_800_00,
         },
-        "total_opex":    176_400_00,
-        "ebitda":        159_600_00,
+        "total_opex": 176_400_00,
+        "ebitda": 159_600_00,
         "ebitda_margin": 0.332,
-        "net_income":    139_200_00,
-        "net_margin":    0.29,
-        "narrative":     "",
+        "net_income": 139_200_00,
+        "net_margin": 0.29,
+        "narrative": "",
     }
 
 
 def make_sample_cashflow() -> dict[str, Any]:
     return {
-        "operating":   120_000_00,
-        "investing":   -24_000_00,
-        "financing":    -6_000_00,
-        "net_change":   90_000_00,
+        "operating": 120_000_00,
+        "investing": -24_000_00,
+        "financing": -6_000_00,
+        "net_change": 90_000_00,
         "monthly_series": [
             {"month": f"2024-{m:02d}", "in": 40_000_00, "out": 32_500_00, "net": 7_500_00}
             for m in range(1, 13)
@@ -191,13 +200,13 @@ def make_sample_cashflow() -> dict[str, Any]:
 def make_sample_state(n_transactions: int = 20) -> dict[str, Any]:
     """Build a complete CFOState-compatible dict for pipeline testing."""
     return {
-        "job_id":       "test-job-001",
-        "file_path":    "/tmp/test.csv",
-        "file_type":    "csv",
+        "job_id": "test-job-001",
+        "file_path": "/tmp/test.csv",
+        "file_type": "csv",
         "transactions": make_sample_transactions(n_transactions),
-        "pnl":          make_sample_pnl(),
-        "cashflow":     make_sample_cashflow(),
-        "logs":         [],
+        "pnl": make_sample_pnl(),
+        "cashflow": make_sample_cashflow(),
+        "logs": [],
         "min_confidence": 1.0,
         "awaiting_review": False,
         "halted": False,

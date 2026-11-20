@@ -8,6 +8,7 @@ Coordinates:
 
 Entry point: sync_all_sources() → runs all enabled sources in parallel.
 """
+
 from __future__ import annotations
 
 import logging
@@ -153,11 +154,7 @@ class DataSyncOrchestrator:
 
             # Filter by account_ids if specified
             if config.account_ids:
-                account_ids = {
-                    a.get("id")
-                    for a in accounts
-                    if a.get("id") in config.account_ids
-                }
+                account_ids = {a.get("id") for a in accounts if a.get("id") in config.account_ids}
             else:
                 account_ids = {a.get("id") for a in accounts if a.get("id")}
 
@@ -170,9 +167,7 @@ class DataSyncOrchestrator:
             total_errors = 0
 
             for account_id in account_ids:
-                batch = await client.fetch_transactions(
-                    account_id, date_from, date_to
-                )
+                batch = await client.fetch_transactions(account_id, date_from, date_to)
                 all_transactions.extend(batch.transactions)
                 all_warnings.extend(batch.warnings)
                 total_errors += batch.error_count
@@ -220,11 +215,7 @@ class DataSyncOrchestrator:
 
             # Filter by account_ids if specified
             if config.account_ids:
-                account_ids = {
-                    a.get("id")
-                    for a in accounts
-                    if a.get("id") in config.account_ids
-                }
+                account_ids = {a.get("id") for a in accounts if a.get("id") in config.account_ids}
             else:
                 account_ids = {a.get("id") for a in accounts if a.get("id")}
 
@@ -237,9 +228,7 @@ class DataSyncOrchestrator:
             total_errors = 0
 
             for account_id in account_ids:
-                batch = await client.fetch_transactions(
-                    account_id, date_from, date_to
-                )
+                batch = await client.fetch_transactions(account_id, date_from, date_to)
                 all_transactions.extend(batch.transactions)
                 all_warnings.extend(batch.warnings)
                 total_errors += batch.error_count
@@ -283,9 +272,7 @@ class DataSyncOrchestrator:
             # Detect duplicates within batch
             duplicates = self.duplicate_detector.detect_duplicates_in_batch(batch)
             if duplicates:
-                batch.warnings.append(
-                    f"Detected {len(duplicates)} duplicates within batch"
-                )
+                batch.warnings.append(f"Detected {len(duplicates)} duplicates within batch")
 
             processed.append(batch)
 

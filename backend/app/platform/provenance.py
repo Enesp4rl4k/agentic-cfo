@@ -13,6 +13,7 @@ Nothing here changes what the kernels compute — it only makes the basis of a
 number explicit so the UI can badge it and the auto-chain can refuse to act on
 a fabricated figure.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -35,9 +36,7 @@ def is_synthetic(data_source: str | None) -> bool:
     return (data_source or "benchmark") in SYNTHETIC_SOURCES
 
 
-def provenance_block(
-    data_source: str | None, confidence: float | None = None
-) -> dict[str, Any]:
+def provenance_block(data_source: str | None, confidence: float | None = None) -> dict[str, Any]:
     ds = data_source or "benchmark"
     return {
         "data_source": ds,
@@ -54,7 +53,5 @@ def attach_provenance(result: dict[str, Any]) -> dict[str, Any]:
     ``posture`` for the risk kernel). Safe on dicts that carry neither.
     """
     out = result.get("output") or result.get("posture") or {}
-    result["provenance"] = provenance_block(
-        out.get("data_source"), out.get("confidence")
-    )
+    result["provenance"] = provenance_block(out.get("data_source"), out.get("confidence"))
     return result

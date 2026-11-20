@@ -13,6 +13,7 @@ from typing import Any, TypedDict
 @dataclass
 class CHROStepLog:
     """Log entry for CHRO pipeline execution."""
+
     node: str
     status: str  # "started" | "completed" | "failed"
     message: str
@@ -22,6 +23,7 @@ class CHROStepLog:
 @dataclass
 class CHROSkillResult:
     """Result from a CHRO skill (headcount, attrition, compensation)."""
+
     skill_name: str
     metrics: dict[str, Any]
     alerts: list[dict[str, str]]
@@ -32,6 +34,7 @@ class CHROSkillResult:
 @dataclass
 class CHRORunConfig:
     """Configuration for CHRO pipeline run."""
+
     llm_enabled: bool = False
     settings: Any = None
 

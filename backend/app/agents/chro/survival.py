@@ -27,6 +27,7 @@ Usage:
     analyzer = SurvivalAnalyzer(employees, departures)
     result = analyzer.compute_full_analysis()
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,9 +41,10 @@ logger = logging.getLogger(__name__)
 
 # ── Kaplan-Meier Estimator ────────────────────────────────────────────────────
 
+
 def kaplan_meier(
-    durations: list[float],   # Time at risk (months of tenure or observed time)
-    events:    list[bool],    # True = left (event), False = still employed (censored)
+    durations: list[float],  # Time at risk (months of tenure or observed time)
+    events: list[bool],  # True = left (event), False = still employed (censored)
 ) -> dict[str, Any]:
     """
     Compute Kaplan-Meier survival function.
@@ -82,10 +84,10 @@ def kaplan_meier(
             event_table[t]["censored"] += 1
 
     sorted_times = sorted(event_table.keys())
-    times:         list[float] = []
-    survival:      list[float] = []
-    n_risk_list:   list[int]   = []
-    n_events_list: list[int]   = []
+    times: list[float] = []
+    survival: list[float] = []
+    n_risk_list: list[int] = []
+    n_events_list: list[int] = []
 
     s = 1.0
     n_at_risk = n
@@ -98,10 +100,10 @@ def kaplan_meier(
             times.append(t)
             n_risk_list.append(n_at_risk)
             n_events_list.append(d)
-            s *= (1 - d / n_at_risk)
+            s *= 1 - d / n_at_risk
             survival.append(round(s, 4))
 
-        n_at_risk -= (d + c)
+        n_at_risk -= d + c
 
     # Median survival: first t where S(t) ≤ 0.5
     median_survival: float | None = None
@@ -118,20 +120,21 @@ def kaplan_meier(
         return 1.0  # No events before horizon
 
     return {
-        "times":            times,
-        "survival_probs":   survival,
-        "n_risk":           n_risk_list,
-        "n_events":         n_events_list,
-        "median_survival":  median_survival,
-        "survival_at_6m":   round(_survival_at(6), 3),
-        "survival_at_12m":  round(_survival_at(12), 3),
-        "survival_at_24m":  round(_survival_at(24), 3),
-        "n_employees":      n,
-        "n_departures":     sum(1 for e in events if e),
+        "times": times,
+        "survival_probs": survival,
+        "n_risk": n_risk_list,
+        "n_events": n_events_list,
+        "median_survival": median_survival,
+        "survival_at_6m": round(_survival_at(6), 3),
+        "survival_at_12m": round(_survival_at(12), 3),
+        "survival_at_24m": round(_survival_at(24), 3),
+        "n_employees": n,
+        "n_departures": sum(1 for e in events if e),
     }
 
 
 # ── Attrition Risk Scoring ────────────────────────────────────────────────────
+
 
 def compute_attrition_risk_score(
     employee: dict[str, Any],
@@ -171,9 +174,21 @@ def compute_attrition_risk_score(
     # ── 2. Level/seniority risk ───────────────────────────────────────────────
     level = str(employee.get("level", "mid")).lower()
     level_risk = {
-        "l1": 2.0, "l2": 2.5, "l3": 3.0, "l4": 2.0, "l5": 1.5, "l6": 1.0,
-        "junior": 2.5, "mid": 3.0, "senior": 2.0, "lead": 1.5, "staff": 1.0,
-        "principal": 0.8, "manager": 1.5, "director": 1.0, "vp": 0.8,
+        "l1": 2.0,
+        "l2": 2.5,
+        "l3": 3.0,
+        "l4": 2.0,
+        "l5": 1.5,
+        "l6": 1.0,
+        "junior": 2.5,
+        "mid": 3.0,
+        "senior": 2.0,
+        "lead": 1.5,
+        "staff": 1.0,
+        "principal": 0.8,
+        "manager": 1.5,
+        "director": 1.0,
+        "vp": 0.8,
     }
     lvl_score = level_risk.get(level, 2.0)
     score += lvl_score
@@ -186,7 +201,7 @@ def compute_attrition_risk_score(
     dept_multiplier = 1 + dept_rate
     score *= dept_multiplier
     if dept_rate > 0.20:
-        factors.append(f"Yüksek attrition geçmişi olan departman (%{dept_rate*100:.0f})")
+        factors.append(f"Yüksek attrition geçmişi olan departman (%{dept_rate * 100:.0f})")
 
     # ── 4. Compensation risk ──────────────────────────────────────────────────
     if comp_gap_pct > 10:
@@ -211,17 +226,18 @@ def compute_attrition_risk_score(
 
     return {
         "risk_score": score,
-        "risk_tier":  tier,
+        "risk_tier": tier,
         "risk_factors": factors,
         "employee_id": employee.get("employee_id") or employee.get("id"),
-        "name":        employee.get("name"),
-        "department":  dept,
-        "level":       level,
+        "name": employee.get("name"),
+        "department": dept,
+        "level": level,
         "tenure_years": tenure_years,
     }
 
 
 # ── Full Analysis ─────────────────────────────────────────────────────────────
+
 
 class SurvivalAnalyzer:
     """
@@ -233,10 +249,10 @@ class SurvivalAnalyzer:
 
     def __init__(
         self,
-        employees: list[dict[str, Any]],    # Current employees
-        departures: list[dict[str, Any]],   # Historical departures
+        employees: list[dict[str, Any]],  # Current employees
+        departures: list[dict[str, Any]],  # Historical departures
     ) -> None:
-        self.employees  = employees
+        self.employees = employees
         self.departures = departures
 
     def compute_full_analysis(self) -> dict[str, Any]:
@@ -263,24 +279,28 @@ class SurvivalAnalyzer:
         # Current employees → censored observations
         for emp in self.employees:
             tenure = self._compute_tenure_months(emp)
-            all_records.append({
-                **emp,
-                "tenure_months": tenure,
-                "departed": False,
-            })
+            all_records.append(
+                {
+                    **emp,
+                    "tenure_months": tenure,
+                    "departed": False,
+                }
+            )
 
         # Departed employees → actual events
         for dep in self.departures:
             tenure = self._compute_tenure_months(dep)
-            all_records.append({
-                **dep,
-                "tenure_months": tenure,
-                "departed": True,
-            })
+            all_records.append(
+                {
+                    **dep,
+                    "tenure_months": tenure,
+                    "departed": True,
+                }
+            )
 
         # ── Overall KM curve ──────────────────────────────────────────────────
         durations = [r["tenure_months"] for r in all_records]
-        events    = [r["departed"] for r in all_records]
+        events = [r["departed"] for r in all_records]
         overall_km = kaplan_meier(durations, events)
 
         # ── By department ──────────────────────────────────────────────────────
@@ -334,54 +354,59 @@ class SurvivalAnalyzer:
         for (dept, level), scores in cohort_scores.items():
             avg_score = statistics.mean(scores)
             if avg_score >= 5.5:
-                high_risk_cohorts.append({
-                    "department":    dept,
-                    "level":         level,
-                    "avg_risk_score": round(avg_score, 1),
-                    "headcount":     len(scores),
-                    "critical_count": sum(1 for s in scores if s >= 7.5),
-                })
+                high_risk_cohorts.append(
+                    {
+                        "department": dept,
+                        "level": level,
+                        "avg_risk_score": round(avg_score, 1),
+                        "headcount": len(scores),
+                        "critical_count": sum(1 for s in scores if s >= 7.5),
+                    }
+                )
         high_risk_cohorts.sort(key=lambda x: -x["avg_risk_score"])
 
         # ── Summary metrics ───────────────────────────────────────────────────
         overall_survival_12m = overall_km.get("survival_at_12m", 1.0)
         annual_attrition_est = round(1 - overall_survival_12m, 3)
-        median_survival      = overall_km.get("median_survival")
-        critical_count       = sum(1 for r in risk_scores if r["risk_tier"] == "kritik")
-        high_count           = sum(1 for r in risk_scores if r["risk_tier"] == "yüksek")
+        median_survival = overall_km.get("median_survival")
+        critical_count = sum(1 for r in risk_scores if r["risk_tier"] == "kritik")
+        high_count = sum(1 for r in risk_scores if r["risk_tier"] == "yüksek")
 
         summary = {
-            "total_analyzed":      len(all_records),
-            "current_employees":   len(self.employees),
+            "total_analyzed": len(all_records),
+            "current_employees": len(self.employees),
             "historical_departures": len(self.departures),
             "annual_attrition_pct": round(annual_attrition_est * 100, 1),
             "median_survival_months": median_survival,
-            "survival_at_12m_pct":  round(overall_survival_12m * 100, 1),
-            "critical_risk_count":  critical_count,
-            "high_risk_count":      high_count,
-            "highest_risk_dept":    high_risk_cohorts[0]["department"] if high_risk_cohorts else None,
+            "survival_at_12m_pct": round(overall_survival_12m * 100, 1),
+            "critical_risk_count": critical_count,
+            "high_risk_count": high_count,
+            "highest_risk_dept": high_risk_cohorts[0]["department"] if high_risk_cohorts else None,
         }
 
         # Turkish interpretation
         interp = self._build_interpretation(summary, high_risk_cohorts, dept_km)
 
         return {
-            "overall_km":        overall_km,
-            "by_department":     dept_km,
-            "by_level":          level_km,
-            "risk_scores":       risk_scores[:20],   # Top 20 highest risk
+            "overall_km": overall_km,
+            "by_department": dept_km,
+            "by_level": level_km,
+            "risk_scores": risk_scores[:20],  # Top 20 highest risk
             "high_risk_cohorts": high_risk_cohorts[:5],
-            "summary":           summary,
-            "interpretation":    interp,
+            "summary": summary,
+            "interpretation": interp,
         }
 
     def _compute_tenure_months(self, record: dict[str, Any]) -> float:
         """Compute tenure in months from hire_date and optional departure_date."""
         from datetime import datetime
+
         try:
             hire_raw = (
-                record.get("start_date") or record.get("hire_date") or
-                record.get("joined") or record.get("start")
+                record.get("start_date")
+                or record.get("hire_date")
+                or record.get("joined")
+                or record.get("start")
             )
             if not hire_raw:
                 return float(record.get("tenure_years", 1)) * 12
@@ -421,9 +446,9 @@ class SurvivalAnalyzer:
         parts: list[str] = []
 
         attrition = summary["annual_attrition_pct"]
-        median    = summary["median_survival_months"]
-        s12m      = summary["survival_at_12m_pct"]
-        critical  = summary["critical_risk_count"]
+        median = summary["median_survival_months"]
+        s12m = summary["survival_at_12m_pct"]
+        critical = summary["critical_risk_count"]
 
         # Overall attrition assessment
         if attrition > 25:
@@ -435,9 +460,7 @@ class SurvivalAnalyzer:
                 f"Yıllık işten ayrılma oranı %{attrition:.0f} — kabul edilebilir sınırda, izlenmeli."
             )
         else:
-            parts.append(
-                f"Yıllık işten ayrılma oranı %{attrition:.0f} — sağlıklı düzeyde."
-            )
+            parts.append(f"Yıllık işten ayrılma oranı %{attrition:.0f} — sağlıklı düzeyde.")
 
         # Median survival
         if median:

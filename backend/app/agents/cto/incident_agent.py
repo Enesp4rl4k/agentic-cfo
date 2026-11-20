@@ -16,6 +16,7 @@ Input: incident_csv — PagerDuty / OpsGenie / custom CSV export with columns:
 
 done_when: state['incidents']['mttr_hours'] is a float.
 """
+
 from __future__ import annotations
 
 import csv
@@ -33,9 +34,9 @@ logger = logging.getLogger(__name__)
 
 SLA_TARGETS_HOURS = {
     "critical": 1.0,
-    "high":     4.0,
-    "medium":   24.0,
-    "low":      72.0,
+    "high": 4.0,
+    "medium": 24.0,
+    "low": 72.0,
 }
 
 
@@ -74,22 +75,22 @@ def _parse_incident_csv(csv_text: str) -> list[dict[str, Any]]:
                 return fields_lower[c.lower()]
         return None
 
-    id_col        = _col("id", "incident_id", "number")
-    title_col     = _col("title", "name", "description", "summary")
-    severity_col  = _col("severity", "priority", "urgency", "level")
-    service_col   = _col("service", "affected_service", "component", "team")
-    started_col   = _col("started_at", "created_at", "opened_at", "start_time", "timestamp")
-    resolved_col  = _col("resolved_at", "closed_at", "end_time", "resolved")
-    detected_col  = _col("detected_at", "acknowledged_at", "first_ack")
+    id_col = _col("id", "incident_id", "number")
+    title_col = _col("title", "name", "description", "summary")
+    severity_col = _col("severity", "priority", "urgency", "level")
+    service_col = _col("service", "affected_service", "component", "team")
+    started_col = _col("started_at", "created_at", "opened_at", "start_time", "timestamp")
+    resolved_col = _col("resolved_at", "closed_at", "end_time", "resolved")
+    detected_col = _col("detected_at", "acknowledged_at", "first_ack")
 
     for row in reader:
-        inc_id    = row.get(id_col, "") if id_col else ""
-        title     = row.get(title_col, "Unnamed incident") if title_col else "Unnamed incident"
-        severity  = (row.get(severity_col, "medium") if severity_col else "medium").lower().strip()
-        service   = (row.get(service_col, "unknown") if service_col else "unknown").strip()
-        started   = _parse_datetime(row.get(started_col, "") if started_col else "")
-        resolved  = _parse_datetime(row.get(resolved_col, "") if resolved_col else "")
-        detected  = _parse_datetime(row.get(detected_col, "") if detected_col else "")
+        inc_id = row.get(id_col, "") if id_col else ""
+        title = row.get(title_col, "Unnamed incident") if title_col else "Unnamed incident"
+        severity = (row.get(severity_col, "medium") if severity_col else "medium").lower().strip()
+        service = (row.get(service_col, "unknown") if service_col else "unknown").strip()
+        started = _parse_datetime(row.get(started_col, "") if started_col else "")
+        resolved = _parse_datetime(row.get(resolved_col, "") if resolved_col else "")
+        detected = _parse_datetime(row.get(detected_col, "") if detected_col else "")
 
         if not started:
             continue
@@ -122,17 +123,19 @@ def _parse_incident_csv(csv_text: str) -> list[dict[str, Any]]:
         sla_target = SLA_TARGETS_HOURS.get(severity, 24.0)
         sla_breached = ttr_hours is not None and ttr_hours > sla_target
 
-        rows.append({
-            "id": inc_id,
-            "title": title,
-            "severity": severity,
-            "service": service,
-            "started_at": started.isoformat(),
-            "month": started.strftime("%Y-%m"),
-            "ttr_hours": ttr_hours,
-            "ttd_hours": ttd_hours,
-            "sla_breached": sla_breached,
-        })
+        rows.append(
+            {
+                "id": inc_id,
+                "title": title,
+                "severity": severity,
+                "service": service,
+                "started_at": started.isoformat(),
+                "month": started.strftime("%Y-%m"),
+                "ttr_hours": ttr_hours,
+                "ttd_hours": ttd_hours,
+                "sla_breached": sla_breached,
+            }
+        )
 
     return rows
 
@@ -201,30 +204,38 @@ def _build_incident_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     mttr = metrics.get("mttr_hours")
     if mttr is not None and mttr > 4:
         level = "critical" if mttr > 8 else "warning"
-        alerts.append({
-            "level": level,
-            "message": f"Mean time to recover is {mttr:.1f}h — target is <4h for production incidents.",
-        })
+        alerts.append(
+            {
+                "level": level,
+                "message": f"Mean time to recover is {mttr:.1f}h — target is <4h for production incidents.",
+            }
+        )
 
     breach_pct = metrics.get("sla_breach_pct", 0)
     if breach_pct > 20:
-        alerts.append({
-            "level": "critical" if breach_pct > 40 else "warning",
-            "message": f"{breach_pct:.0f}% of incidents breached SLA targets. Reliability at risk.",
-        })
+        alerts.append(
+            {
+                "level": "critical" if breach_pct > 40 else "warning",
+                "message": f"{breach_pct:.0f}% of incidents breached SLA targets. Reliability at risk.",
+            }
+        )
 
     critical_count = metrics.get("by_severity", {}).get("critical", 0)
     if critical_count > 5:
-        alerts.append({
-            "level": "warning",
-            "message": f"{critical_count} critical incidents in period. Review root causes for systemic issues.",
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": f"{critical_count} critical incidents in period. Review root causes for systemic issues.",
+            }
+        )
 
     if metrics.get("trend") == "degrading":
-        alerts.append({
-            "level": "warning",
-            "message": "Incident frequency is increasing — reliability is degrading over time.",
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": "Incident frequency is increasing — reliability is degrading over time.",
+            }
+        )
 
     return alerts
 
@@ -242,34 +253,39 @@ async def _generate_incident_narrative(
         "\n".join(f"- [{a['level'].upper()}] {a['message']}" for a in alerts)
         or "No critical alerts."
     )
-    top_services = "\n".join(
-        f"  - {s['service']}: {s['count']} incidents ({s['pct']}%)"
-        for s in metrics.get("recurring_services", [])[:3]
-    ) or "  No data"
+    top_services = (
+        "\n".join(
+            f"  - {s['service']}: {s['count']} incidents ({s['pct']}%)"
+            for s in metrics.get("recurring_services", [])[:3]
+        )
+        or "  No data"
+    )
 
-    return (await complete_text(
-        task="short_narrative",
-        system_prompt=(
-            "Sen deneyimli bir CTO'sun, güvenilirlik mühendisliği konusunda uzmansın. "
-            "Aşağıdaki olay (incident) verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
-            "Yanıt şu yapıda olsun:\n"
-            "1. Mevcut güvenilirlik durumunun 1-2 cümlelik değerlendirmesi (MTTR, SLA ihlali odaklı)\n"
-            "2. En kritik 1-2 sorun ve kök neden kalıbı\n"
-            "3. Ekibin hemen yapması gereken 2-3 somut teknik eylem (madde madde)\n"
-            "Teknik jargonu azalt, yöneticinin anlayacağı dilde yaz."
-        ),
-        prompt=(
-            f"Toplam Olay: {metrics['total_incidents']}\n"
-            f"Önem Dağılımı: kritik={by_sev.get('critical',0)}, yüksek={by_sev.get('high',0)}, "
-            f"orta={by_sev.get('medium',0)}, düşük={by_sev.get('low',0)}\n"
-            f"MTTR: {metrics.get('mttr_hours', 'N/A')}s | MTTD: {metrics.get('mttd_hours', 'N/A')}s\n"
-            f"SLA İhlali: {metrics['sla_breach_count']} adet ({metrics['sla_breach_pct']}%)\n"
-            f"Trend: {metrics['trend']}\n\n"
-            f"En Çok Olay Yaşanan Servisler:\n{top_services}\n\n"
-            f"Uyarılar:\n{alert_text}"
-        ),
-        max_tokens=512,
-    )).strip()
+    return (
+        await complete_text(
+            task="short_narrative",
+            system_prompt=(
+                "Sen deneyimli bir CTO'sun, güvenilirlik mühendisliği konusunda uzmansın. "
+                "Aşağıdaki olay (incident) verilerini analiz et ve Türkçe olarak kısa, eyleme dönüştürülebilir bir özet yaz. "
+                "Yanıt şu yapıda olsun:\n"
+                "1. Mevcut güvenilirlik durumunun 1-2 cümlelik değerlendirmesi (MTTR, SLA ihlali odaklı)\n"
+                "2. En kritik 1-2 sorun ve kök neden kalıbı\n"
+                "3. Ekibin hemen yapması gereken 2-3 somut teknik eylem (madde madde)\n"
+                "Teknik jargonu azalt, yöneticinin anlayacağı dilde yaz."
+            ),
+            prompt=(
+                f"Toplam Olay: {metrics['total_incidents']}\n"
+                f"Önem Dağılımı: kritik={by_sev.get('critical', 0)}, yüksek={by_sev.get('high', 0)}, "
+                f"orta={by_sev.get('medium', 0)}, düşük={by_sev.get('low', 0)}\n"
+                f"MTTR: {metrics.get('mttr_hours', 'N/A')}s | MTTD: {metrics.get('mttd_hours', 'N/A')}s\n"
+                f"SLA İhlali: {metrics['sla_breach_count']} adet ({metrics['sla_breach_pct']}%)\n"
+                f"Trend: {metrics['trend']}\n\n"
+                f"En Çok Olay Yaşanan Servisler:\n{top_services}\n\n"
+                f"Uyarılar:\n{alert_text}"
+            ),
+            max_tokens=512,
+        )
+    ).strip()
 
 
 async def run_incident_agent(
@@ -291,6 +307,7 @@ async def run_incident_agent(
 
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         incidents = _parse_incident_csv(incident_csv)

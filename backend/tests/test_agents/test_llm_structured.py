@@ -2,6 +2,7 @@
 Tests for llm_structured.py — template-based fallback functions.
 No LLM key needed — all tests use _is_placeholder_key=True path.
 """
+
 from app.services.llm_structured import (
     ActionItem,
     CashFlowNarrative,
@@ -15,6 +16,7 @@ from app.services.llm_structured import (
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _pnl(
     revenue: int = 2_000_000,
@@ -59,9 +61,24 @@ def _cashflow(operating: int = 300_000, net_change: int = 200_000) -> dict:
 def _forecast(base_net: int = 2_400_000, runway: int | None = None) -> dict:
     return {
         "scenarios": {
-            "optimistic": {"label": "İyimser", "twelve_month_net": 4_000_000, "runway_months": None, "months": []},
-            "base":       {"label": "Baz",     "twelve_month_net": base_net,    "runway_months": runway,  "months": []},
-            "pessimistic":{"label": "Kötümser","twelve_month_net": -200_000,    "runway_months": 3,       "months": []},
+            "optimistic": {
+                "label": "İyimser",
+                "twelve_month_net": 4_000_000,
+                "runway_months": None,
+                "months": [],
+            },
+            "base": {
+                "label": "Baz",
+                "twelve_month_net": base_net,
+                "runway_months": runway,
+                "months": [],
+            },
+            "pessimistic": {
+                "label": "Kötümser",
+                "twelve_month_net": -200_000,
+                "runway_months": 3,
+                "months": [],
+            },
         },
         "alerts": [],
     }
@@ -69,8 +86,8 @@ def _forecast(base_net: int = 2_400_000, runway: int | None = None) -> dict:
 
 # ── _is_placeholder_key ────────────────────────────────────────────────────────
 
-class TestIsPlaceholderKey:
 
+class TestIsPlaceholderKey:
     def test_empty_string_is_placeholder(self):
         assert _is_placeholder_key("") is True
 
@@ -92,8 +109,8 @@ class TestIsPlaceholderKey:
 
 # ── PnLNarrative schema ───────────────────────────────────────────────────────
 
-class TestPnLNarrativeSchema:
 
+class TestPnLNarrativeSchema:
     def test_valid_construction(self):
         n = PnLNarrative(
             summary="Test özet",
@@ -146,8 +163,8 @@ class TestPnLNarrativeSchema:
 
 # ── _pnl_narrative_template ───────────────────────────────────────────────────
 
-class TestPnLNarrativeTemplate:
 
+class TestPnLNarrativeTemplate:
     def test_returns_pnl_narrative(self):
         result = _pnl_narrative_template(_pnl())
         assert isinstance(result, PnLNarrative)
@@ -161,9 +178,9 @@ class TestPnLNarrativeTemplate:
         assert len(result.actions) >= 1
 
     def test_healthy_pnl_no_critical_risks(self):
-        result = _pnl_narrative_template(_pnl(
-            gross_margin=0.60, net_margin=0.20, net_income=400_000
-        ))
+        result = _pnl_narrative_template(
+            _pnl(gross_margin=0.60, net_margin=0.20, net_income=400_000)
+        )
         critical = [r for r in result.risks if r.severity == "critical"]
         assert len(critical) == 0
 
@@ -201,8 +218,8 @@ class TestPnLNarrativeTemplate:
 
 # ── _cashflow_narrative_template ──────────────────────────────────────────────
 
-class TestCashFlowNarrativeTemplate:
 
+class TestCashFlowNarrativeTemplate:
     def test_returns_cashflow_narrative(self):
         result = _cashflow_narrative_template(_cashflow())
         assert isinstance(result, CashFlowNarrative)
@@ -243,8 +260,8 @@ class TestCashFlowNarrativeTemplate:
 
 # ── _forecast_narrative_template ──────────────────────────────────────────────
 
-class TestForecastNarrativeTemplate:
 
+class TestForecastNarrativeTemplate:
     def test_returns_forecast_narrative(self):
         result = _forecast_narrative_template(_forecast())
         assert isinstance(result, ForecastNarrative)
@@ -276,9 +293,24 @@ class TestForecastNarrativeTemplate:
         # Build a forecast with no short runways in any scenario
         healthy_forecast = {
             "scenarios": {
-                "optimistic": {"label": "İyimser", "twelve_month_net": 6_000_000, "runway_months": None, "months": []},
-                "base":       {"label": "Baz",     "twelve_month_net": 4_000_000, "runway_months": None, "months": []},
-                "pessimistic":{"label": "Kötümser","twelve_month_net": 1_000_000, "runway_months": None, "months": []},
+                "optimistic": {
+                    "label": "İyimser",
+                    "twelve_month_net": 6_000_000,
+                    "runway_months": None,
+                    "months": [],
+                },
+                "base": {
+                    "label": "Baz",
+                    "twelve_month_net": 4_000_000,
+                    "runway_months": None,
+                    "months": [],
+                },
+                "pessimistic": {
+                    "label": "Kötümser",
+                    "twelve_month_net": 1_000_000,
+                    "runway_months": None,
+                    "months": [],
+                },
             },
             "alerts": [],
         }
@@ -321,24 +353,28 @@ class TestAsyncNarrativeFunctions:
 
     def test_get_pnl_narrative_template_path(self):
         from app.services.llm_structured import get_pnl_narrative
+
         result = _run(get_pnl_narrative(_pnl(), _mock_settings()))
         assert isinstance(result, PnLNarrative)
         assert len(result.summary) > 0
 
     def test_get_cashflow_narrative_template_path(self):
         from app.services.llm_structured import get_cashflow_narrative
+
         result = _run(get_cashflow_narrative(_cashflow(), _mock_settings()))
         assert isinstance(result, CashFlowNarrative)
         assert len(result.summary) > 0
 
     def test_get_forecast_narrative_template_path(self):
         from app.services.llm_structured import get_forecast_narrative
+
         result = _run(get_forecast_narrative(_forecast(), _mock_settings()))
         assert isinstance(result, ForecastNarrative)
         assert len(result.summary) > 0
 
     def test_to_text_produces_non_empty_string(self):
         from app.services.llm_structured import get_pnl_narrative
+
         narrative = _run(get_pnl_narrative(_pnl(), _mock_settings()))
         text = narrative.to_text()
         assert len(text) > 100

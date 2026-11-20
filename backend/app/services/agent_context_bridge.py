@@ -4,6 +4,7 @@ Agent Context Bridge — CompanyContext + Semantic Model → Agent Input enrichm
 FAZ-1B: Solves the "agents see only their own CSV" problem.
 Semantic layer: prefers typed metrics when a snapshot exists.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,6 +28,7 @@ async def enrich_state(
 
     try:
         from app.services.company_context import get_company_context
+
         ctx = await get_company_context(org_id, db)
     except Exception as exc:
         logger.warning("Context bridge: failed to load context for org=%s: %s", org_id, exc)

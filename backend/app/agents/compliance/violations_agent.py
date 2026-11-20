@@ -10,6 +10,7 @@ Input: violations_csv
 
 done_when: state['violations']['total_violations'] is an int.
 """
+
 from __future__ import annotations
 
 import csv
@@ -26,9 +27,9 @@ logger = logging.getLogger(__name__)
 # Days overdue thresholds by severity
 OVERDUE_SLA_DAYS: dict[str, int] = {
     "critical": 7,
-    "high":     30,
-    "medium":   90,
-    "low":      180,
+    "high": 30,
+    "medium": 90,
+    "low": 180,
 }
 
 # Remediation status normalisation map
@@ -82,13 +83,13 @@ def _parse_violations_csv(csv_text: str) -> list[dict[str, Any]]:
                 return fields_lower[c.lower()]
         return None
 
-    viol_col      = _col("violation", "title", "name", "description", "finding")
-    policy_col    = _col("policy_id", "policy", "policy_ref", "control")
-    severity_col  = _col("severity", "level", "priority", "criticality")
-    found_col     = _col("date_found", "found_date", "created_at", "discovered_at", "date")
-    due_col       = _col("due_date", "remediation_due", "target_date", "deadline")
-    status_col    = _col("remediation_status", "status", "state")
-    owner_col     = _col("responsible_party", "owner", "assignee", "responsible")
+    viol_col = _col("violation", "title", "name", "description", "finding")
+    policy_col = _col("policy_id", "policy", "policy_ref", "control")
+    severity_col = _col("severity", "level", "priority", "criticality")
+    found_col = _col("date_found", "found_date", "created_at", "discovered_at", "date")
+    due_col = _col("due_date", "remediation_due", "target_date", "deadline")
+    status_col = _col("remediation_status", "status", "state")
+    owner_col = _col("responsible_party", "owner", "assignee", "responsible")
     framework_col = _col("framework", "regulation", "standard", "source")
 
     rows: list[dict[str, Any]] = []
@@ -96,16 +97,20 @@ def _parse_violations_csv(csv_text: str) -> list[dict[str, Any]]:
 
     for i, row in enumerate(reader, start=1):
         try:
-            violation   = (row.get(viol_col) or f"Violation {i}").strip() if viol_col else f"Violation {i}"
-            policy_id   = (row.get(policy_col) or "unknown").strip() if policy_col else "unknown"
-            severity    = _norm_severity(row.get(severity_col, "medium") if severity_col else "medium")
-            status_raw  = (row.get(status_col, "open") if status_col else "open")
-            status      = _norm_status(status_raw)
-            owner       = (row.get(owner_col, "unassigned") if owner_col else "unassigned").strip()
-            framework   = (row.get(framework_col, "internal") if framework_col else "internal").strip()
+            violation = (
+                (row.get(viol_col) or f"Violation {i}").strip() if viol_col else f"Violation {i}"
+            )
+            policy_id = (row.get(policy_col) or "unknown").strip() if policy_col else "unknown"
+            severity = _norm_severity(row.get(severity_col, "medium") if severity_col else "medium")
+            status_raw = row.get(status_col, "open") if status_col else "open"
+            status = _norm_status(status_raw)
+            owner = (row.get(owner_col, "unassigned") if owner_col else "unassigned").strip()
+            framework = (
+                row.get(framework_col, "internal") if framework_col else "internal"
+            ).strip()
 
-            date_found  = _parse_datetime(row.get(found_col, "") if found_col else "")
-            due_date    = _parse_datetime(row.get(due_col, "") if due_col else "")
+            date_found = _parse_datetime(row.get(found_col, "") if found_col else "")
+            due_date = _parse_datetime(row.get(due_col, "") if due_col else "")
 
             # Compute days open / overdue
             days_open: int | None = None
@@ -125,19 +130,21 @@ def _parse_violations_csv(csv_text: str) -> list[dict[str, Any]]:
                         days_overdue = days_open - sla_days
                         overdue = True
 
-            rows.append({
-                "violation": violation,
-                "policy_id": policy_id,
-                "severity": severity,
-                "status": status,
-                "owner": owner,
-                "framework": framework,
-                "date_found": date_found.isoformat() if date_found else None,
-                "due_date": due_date.isoformat() if due_date else None,
-                "days_open": days_open,
-                "overdue": overdue,
-                "days_overdue": days_overdue,
-            })
+            rows.append(
+                {
+                    "violation": violation,
+                    "policy_id": policy_id,
+                    "severity": severity,
+                    "status": status,
+                    "owner": owner,
+                    "framework": framework,
+                    "date_found": date_found.isoformat() if date_found else None,
+                    "due_date": due_date.isoformat() if due_date else None,
+                    "days_open": days_open,
+                    "overdue": overdue,
+                    "days_overdue": days_overdue,
+                }
+            )
         except Exception:
             logger.debug("Skipping violation row %d due to parse error", i)
 
@@ -164,22 +171,20 @@ def _compute_violations_metrics(violations: list[dict[str, Any]]) -> dict[str, A
             "top_owners_by_open": [],
         }
 
-    total  = len(violations)
+    total = len(violations)
     open_v = [v for v in violations if v["status"] == "open"]
     closed = [v for v in violations if v["status"] == "closed"]
     overdue = [v for v in violations if v["overdue"]]
 
-    by_severity  = dict(Counter(v["severity"] for v in violations))
-    by_status    = dict(Counter(v["status"]   for v in violations))
+    by_severity = dict(Counter(v["severity"] for v in violations))
+    by_status = dict(Counter(v["status"] for v in violations))
     by_framework = dict(Counter(v["framework"] for v in violations))
-    by_owner     = dict(Counter(v["owner"]     for v in violations))
+    by_owner = dict(Counter(v["owner"] for v in violations))
 
-    critical_open = sum(
-        1 for v in open_v if v["severity"] == "critical"
-    )
+    critical_open = sum(1 for v in open_v if v["severity"] == "critical")
 
     remediation_rate = round(len(closed) / total * 100, 1) if total else 0.0
-    overdue_rate     = round(len(overdue) / len(open_v) * 100, 1) if open_v else 0.0
+    overdue_rate = round(len(overdue) / len(open_v) * 100, 1) if open_v else 0.0
 
     # Average days open (only for items with date_found)
     days_values = [v["days_open"] for v in open_v if v["days_open"] is not None]
@@ -235,47 +240,55 @@ def _build_violations_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
     critical_open = metrics.get("critical_open", 0)
     if critical_open > 0:
-        alerts.append({
-            "level": "critical",
-            "message": (
-                f"{critical_open} critical violation(s) still open — "
-                "require immediate remediation within 7 days."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": (
+                    f"{critical_open} critical violation(s) still open — "
+                    "require immediate remediation within 7 days."
+                ),
+            }
+        )
 
     overdue = metrics.get("overdue_violations", 0)
     overdue_rate = metrics.get("overdue_rate", 0.0)
     if overdue > 0:
         level = "critical" if overdue_rate > 50 else "warning"
-        alerts.append({
-            "level": level,
-            "message": (
-                f"{overdue} violation(s) overdue ({overdue_rate:.0f}% of open items). "
-                "Escalate to owners and set firm deadlines."
-            ),
-        })
+        alerts.append(
+            {
+                "level": level,
+                "message": (
+                    f"{overdue} violation(s) overdue ({overdue_rate:.0f}% of open items). "
+                    "Escalate to owners and set firm deadlines."
+                ),
+            }
+        )
 
     remediation_rate = metrics.get("remediation_rate", 0.0)
     total = metrics.get("total_violations", 0)
     if total > 0 and remediation_rate < 50:
-        alerts.append({
-            "level": "warning",
-            "message": (
-                f"Remediation rate only {remediation_rate:.0f}% — "
-                "more than half of violations remain open."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"Remediation rate only {remediation_rate:.0f}% — "
+                    "more than half of violations remain open."
+                ),
+            }
+        )
 
     avg_days = metrics.get("avg_days_open")
     if avg_days is not None and avg_days > 60:
         level = "critical" if avg_days > 120 else "warning"
-        alerts.append({
-            "level": level,
-            "message": (
-                f"Average time to remediate is {avg_days:.0f} days — "
-                "violations are ageing without resolution."
-            ),
-        })
+        alerts.append(
+            {
+                "level": level,
+                "message": (
+                    f"Average time to remediate is {avg_days:.0f} days — "
+                    "violations are ageing without resolution."
+                ),
+            }
+        )
 
     # Ownership concentration
     by_owner = metrics.get("by_owner", {})
@@ -283,13 +296,15 @@ def _build_violations_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
         max_count = max(by_owner.values())
         if total and max_count > total * 0.40:
             top_owner = max(by_owner, key=by_owner.get)  # type: ignore[arg-type]
-            alerts.append({
-                "level": "info",
-                "message": (
-                    f"Violation ownership concentrated: '{top_owner}' owns "
-                    f"{max_count}/{total} items — consider redistributing."
-                ),
-            })
+            alerts.append(
+                {
+                    "level": "info",
+                    "message": (
+                        f"Violation ownership concentrated: '{top_owner}' owns "
+                        f"{max_count}/{total} items — consider redistributing."
+                    ),
+                }
+            )
 
     return alerts
 
@@ -301,64 +316,74 @@ def _build_remediation_recommendations(
     recs: list[dict[str, str]] = []
 
     if metrics.get("critical_open", 0) > 0:
-        recs.append({
-            "priority": "P1",
-            "action": "Immediate remediation of all critical violations",
-            "detail": (
-                "Assign a dedicated owner, set a 7-day hard deadline, "
-                "and schedule daily stand-ups until resolved."
-            ),
-            "effort": "high",
-        })
+        recs.append(
+            {
+                "priority": "P1",
+                "action": "Immediate remediation of all critical violations",
+                "detail": (
+                    "Assign a dedicated owner, set a 7-day hard deadline, "
+                    "and schedule daily stand-ups until resolved."
+                ),
+                "effort": "high",
+            }
+        )
 
     top_overdue = metrics.get("top_overdue", [])
     if top_overdue:
         most_overdue = top_overdue[0]
-        recs.append({
-            "priority": "P2",
-            "action": f"Escalate overdue violation: '{most_overdue['violation']}'",
-            "detail": (
-                f"This {most_overdue['severity']} violation is {most_overdue['days_overdue']} days overdue. "
-                f"Owner: {most_overdue['owner']}. Escalate to management if unresolved by end of week."
-            ),
-            "effort": "medium",
-        })
+        recs.append(
+            {
+                "priority": "P2",
+                "action": f"Escalate overdue violation: '{most_overdue['violation']}'",
+                "detail": (
+                    f"This {most_overdue['severity']} violation is {most_overdue['days_overdue']} days overdue. "
+                    f"Owner: {most_overdue['owner']}. Escalate to management if unresolved by end of week."
+                ),
+                "effort": "medium",
+            }
+        )
 
     if metrics.get("remediation_rate", 100) < 60:
-        recs.append({
-            "priority": "P2",
-            "action": "Establish weekly violation review cadence",
-            "detail": (
-                "With <60% remediation rate, implement weekly compliance review meetings "
-                "to track progress and remove blockers."
-            ),
-            "effort": "low",
-        })
+        recs.append(
+            {
+                "priority": "P2",
+                "action": "Establish weekly violation review cadence",
+                "detail": (
+                    "With <60% remediation rate, implement weekly compliance review meetings "
+                    "to track progress and remove blockers."
+                ),
+                "effort": "low",
+            }
+        )
 
     top_owners = metrics.get("top_owners_by_open", [])
     if top_owners and top_owners[0]["open_count"] > 3:
-        recs.append({
-            "priority": "P3",
-            "action": f"Redistribute workload from '{top_owners[0]['owner']}'",
-            "detail": (
-                f"'{top_owners[0]['owner']}' has {top_owners[0]['open_count']} open violations. "
-                "Redistribute to reduce remediation bottleneck."
-            ),
-            "effort": "low",
-        })
+        recs.append(
+            {
+                "priority": "P3",
+                "action": f"Redistribute workload from '{top_owners[0]['owner']}'",
+                "detail": (
+                    f"'{top_owners[0]['owner']}' has {top_owners[0]['open_count']} open violations. "
+                    "Redistribute to reduce remediation bottleneck."
+                ),
+                "effort": "low",
+            }
+        )
 
     by_framework = metrics.get("by_framework", {})
     if by_framework:
         top_framework = max(by_framework, key=by_framework.get)  # type: ignore[arg-type]
-        recs.append({
-            "priority": "P3",
-            "action": f"Focused review of {top_framework} compliance",
-            "detail": (
-                f"{by_framework[top_framework]} violations linked to {top_framework}. "
-                "Run a targeted control assessment for this framework."
-            ),
-            "effort": "medium",
-        })
+        recs.append(
+            {
+                "priority": "P3",
+                "action": f"Focused review of {top_framework} compliance",
+                "detail": (
+                    f"{by_framework[top_framework]} violations linked to {top_framework}. "
+                    "Run a targeted control assessment for this framework."
+                ),
+                "effort": "medium",
+            }
+        )
 
     return recs
 
@@ -379,17 +404,17 @@ async def run_violations_agent(
 
     try:
         csv_text = state.get("violations_csv") or ""
-        rows     = _parse_violations_csv(csv_text)
-        metrics  = _compute_violations_metrics(rows)
-        alerts   = _build_violations_alerts(metrics)
-        recs     = _build_remediation_recommendations(metrics)
+        rows = _parse_violations_csv(csv_text)
+        metrics = _compute_violations_metrics(rows)
+        alerts = _build_violations_alerts(metrics)
+        recs = _build_remediation_recommendations(metrics)
 
         # Build narrative
-        total        = metrics["total_violations"]
-        open_count   = metrics["open_violations"]
-        critical     = metrics["critical_open"]
-        overdue      = metrics["overdue_violations"]
-        rem_rate     = metrics["remediation_rate"]
+        total = metrics["total_violations"]
+        open_count = metrics["open_violations"]
+        critical = metrics["critical_open"]
+        overdue = metrics["overdue_violations"]
+        rem_rate = metrics["remediation_rate"]
 
         if total == 0:
             narrative = "No violations data provided — violation tracking not available."
@@ -399,7 +424,9 @@ async def run_violations_agent(
                 f"Remediation rate: {rem_rate:.0f}%.",
             ]
             if critical > 0:
-                parts.append(f"CRITICAL: {critical} open critical violation(s) require immediate action.")
+                parts.append(
+                    f"CRITICAL: {critical} open critical violation(s) require immediate action."
+                )
             if overdue > 0:
                 parts.append(f"{overdue} violation(s) are overdue.")
             narrative = " ".join(parts)
@@ -426,16 +453,21 @@ async def run_violations_agent(
 
         logger.info(
             "ViolationsAgent: total=%d open=%d critical=%d overdue=%d",
-            total, open_count, critical, overdue,
+            total,
+            open_count,
+            critical,
+            overdue,
         )
 
     except Exception as exc:
         logger.exception("ViolationsAgent failed")
         result["error"] = f"Violations agent failed: {exc}"
-        result["logs"].append(ComplianceStepLog(
-            node="violations_agent",
-            status="failed",
-            message=str(exc),
-        ))
+        result["logs"].append(
+            ComplianceStepLog(
+                node="violations_agent",
+                status="failed",
+                message=str(exc),
+            )
+        )
 
     return result

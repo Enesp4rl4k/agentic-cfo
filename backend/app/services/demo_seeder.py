@@ -7,6 +7,7 @@ for instant onboarding exploration across 3 industry archetypes:
 2. E-Commerce Scaleup (High Volume Daily Sales & Ad Spend)
 3. Manufacturing SME (Raw Materials, Factory OpEx & Export Invoices)
 """
+
 from __future__ import annotations
 
 import random
@@ -68,24 +69,28 @@ class DemoSeeder:
         for name, amt in customers:
             tx_cents = amount_to_cents(amt)
             tx_date = f"{year:04d}-{month:02d}-{random.randint(2, 10):02d}"
-            transactions.append({
-                "id": f"tx-saas-in-{random.randint(1000, 9999)}",
-                "amount_cents": tx_cents,
-                "type": "income",
-                "category": "revenue",
-                "vendor": name,
-                "description": f"SaaS Kurumsal Yıllık Lisans: {name}",
-                "transaction_date": tx_date,
-                "confidence": 1.0,
-            })
-            invoices.append({
-                "invoice_id": f"inv-saas-{random.randint(1000, 9999)}",
-                "invoice_number": f"GIB{year}0000{random.randint(100, 999)}",
-                "amount_cents": tx_cents,
-                "gross_amount": amt,
-                "counterparty": name,
-                "direction": "outbound",
-            })
+            transactions.append(
+                {
+                    "id": f"tx-saas-in-{random.randint(1000, 9999)}",
+                    "amount_cents": tx_cents,
+                    "type": "income",
+                    "category": "revenue",
+                    "vendor": name,
+                    "description": f"SaaS Kurumsal Yıllık Lisans: {name}",
+                    "transaction_date": tx_date,
+                    "confidence": 1.0,
+                }
+            )
+            invoices.append(
+                {
+                    "invoice_id": f"inv-saas-{random.randint(1000, 9999)}",
+                    "invoice_number": f"GIB{year}0000{random.randint(100, 999)}",
+                    "amount_cents": tx_cents,
+                    "gross_amount": amt,
+                    "counterparty": name,
+                    "direction": "outbound",
+                }
+            )
 
         # Outflows (Salaries, AWS, Tools)
         expenses = [
@@ -98,16 +103,18 @@ class DemoSeeder:
         for desc, amt, cat in expenses:
             tx_cents = amount_to_cents(amt)
             tx_date = f"{year:04d}-{month:02d}-{random.randint(12, 25):02d}"
-            transactions.append({
-                "id": f"tx-saas-out-{random.randint(1000, 9999)}",
-                "amount_cents": tx_cents,
-                "type": "expense",
-                "category": cat,
-                "vendor": desc.split()[0],
-                "description": desc,
-                "transaction_date": tx_date,
-                "confidence": 1.0,
-            })
+            transactions.append(
+                {
+                    "id": f"tx-saas-out-{random.randint(1000, 9999)}",
+                    "amount_cents": tx_cents,
+                    "type": "expense",
+                    "category": cat,
+                    "vendor": desc.split()[0],
+                    "description": desc,
+                    "transaction_date": tx_date,
+                    "confidence": 1.0,
+                }
+            )
 
         tot_in = sum(t["amount_cents"] for t in transactions if t["type"] == "income")
         tot_out = sum(t["amount_cents"] for t in transactions if t["type"] == "expense")
@@ -135,38 +142,44 @@ class DemoSeeder:
 
         # High volume daily sales
         total_sales_cents = amount_to_cents(1250000.0)
-        transactions.append({
-            "id": "tx-ecom-in-1",
-            "amount_cents": total_sales_cents,
-            "type": "income",
-            "category": "revenue",
-            "vendor": "İyzico / PayTR / Trendyol Marketplace",
-            "description": "E-Ticaret Pazaryeri ve Web Satış Hasılatı",
-            "transaction_date": f"{year:04d}-{month:02d}-15",
-            "confidence": 1.0,
-        })
+        transactions.append(
+            {
+                "id": "tx-ecom-in-1",
+                "amount_cents": total_sales_cents,
+                "type": "income",
+                "category": "revenue",
+                "vendor": "İyzico / PayTR / Trendyol Marketplace",
+                "description": "E-Ticaret Pazaryeri ve Web Satış Hasılatı",
+                "transaction_date": f"{year:04d}-{month:02d}-15",
+                "confidence": 1.0,
+            }
+        )
 
         # COGS & Marketing
-        transactions.append({
-            "id": "tx-ecom-out-1",
-            "amount_cents": amount_to_cents(650000.0),
-            "type": "expense",
-            "category": "cogs",
-            "vendor": "Tedarikçi Tekstil Ltd.",
-            "description": "Stok ve Ürün Tedarik Bedeli",
-            "transaction_date": f"{year:04d}-{month:02d}-10",
-            "confidence": 1.0,
-        })
-        transactions.append({
-            "id": "tx-ecom-out-2",
-            "amount_cents": amount_to_cents(250000.0),
-            "type": "expense",
-            "category": "marketing",
-            "vendor": "Meta & Google Ads",
-            "description": "Dijital Performans Reklam Harcamaları",
-            "transaction_date": f"{year:04d}-{month:02d}-20",
-            "confidence": 1.0,
-        })
+        transactions.append(
+            {
+                "id": "tx-ecom-out-1",
+                "amount_cents": amount_to_cents(650000.0),
+                "type": "expense",
+                "category": "cogs",
+                "vendor": "Tedarikçi Tekstil Ltd.",
+                "description": "Stok ve Ürün Tedarik Bedeli",
+                "transaction_date": f"{year:04d}-{month:02d}-10",
+                "confidence": 1.0,
+            }
+        )
+        transactions.append(
+            {
+                "id": "tx-ecom-out-2",
+                "amount_cents": amount_to_cents(250000.0),
+                "type": "expense",
+                "category": "marketing",
+                "vendor": "Meta & Google Ads",
+                "description": "Dijital Performans Reklam Harcamaları",
+                "transaction_date": f"{year:04d}-{month:02d}-20",
+                "confidence": 1.0,
+            }
+        )
 
         return DemoScenarioData(
             scenario_id="ecommerce_scaleup",
@@ -181,26 +194,30 @@ class DemoSeeder:
     @classmethod
     def _seed_manufacturing(cls, year: int, month: int) -> DemoScenarioData:
         transactions = []
-        transactions.append({
-            "id": "tx-mfg-in-1",
-            "amount_cents": amount_to_cents(2500000.0),
-            "type": "income",
-            "category": "revenue",
-            "vendor": "Avrupa İhracat Müşterisi (DE)",
-            "description": "Sanayi Parça İhracat Hasılatı",
-            "transaction_date": f"{year:04d}-{month:02d}-12",
-            "confidence": 1.0,
-        })
-        transactions.append({
-            "id": "tx-mfg-out-1",
-            "amount_cents": amount_to_cents(1400000.0),
-            "type": "expense",
-            "category": "cogs",
-            "vendor": "Demir Çelik Sanayi A.Ş.",
-            "description": "Hammadde ve Saç Alımı",
-            "transaction_date": f"{year:04d}-{month:02d}-05",
-            "confidence": 1.0,
-        })
+        transactions.append(
+            {
+                "id": "tx-mfg-in-1",
+                "amount_cents": amount_to_cents(2500000.0),
+                "type": "income",
+                "category": "revenue",
+                "vendor": "Avrupa İhracat Müşterisi (DE)",
+                "description": "Sanayi Parça İhracat Hasılatı",
+                "transaction_date": f"{year:04d}-{month:02d}-12",
+                "confidence": 1.0,
+            }
+        )
+        transactions.append(
+            {
+                "id": "tx-mfg-out-1",
+                "amount_cents": amount_to_cents(1400000.0),
+                "type": "expense",
+                "category": "cogs",
+                "vendor": "Demir Çelik Sanayi A.Ş.",
+                "description": "Hammadde ve Saç Alımı",
+                "transaction_date": f"{year:04d}-{month:02d}-05",
+                "confidence": 1.0,
+            }
+        )
 
         return DemoScenarioData(
             scenario_id="manufacturing_sme",

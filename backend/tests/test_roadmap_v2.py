@@ -6,6 +6,7 @@ Master Roadmap 2.0 Feature Tests:
 4. Epic 4: Multi-Entity & Holding Consolidation Engine (Intercompany Eliminations & Minority Share)
 5. Epic 5: Omnichannel CFO Bot Gateway (WhatsApp & Slack Interactive Approval)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -21,6 +22,7 @@ from app.services.financial_rag import FinancialRAGEngine
 from app.services.prescriptive_recommender import PrescriptiveRecommender
 
 # ── Epic 1: Two-Way ERP Sync Tests ───────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_erp_journal_pusher_balanced_entry():
@@ -56,6 +58,7 @@ async def test_erp_journal_pusher_unbalanced_entry_rejected():
 
 # ── Epic 2: Financial RAG & Contract Intelligence Tests ───────────────────────
 
+
 def test_financial_rag_contract_clauses():
     contract_sample = """
     TARAFLAR ARASINDAKİ TİCARİ SÖZLEŞME
@@ -78,12 +81,13 @@ def test_financial_rag_contract_clauses():
 
 # ── Epic 3: Prescriptive Cashflow Recommender Tests ───────────────────────────
 
+
 def test_prescriptive_cashflow_recommender():
     report = PrescriptiveRecommender.analyze_and_prescribe(
-        cash_balance_cents=50000000,       # 500,000 TL
-        monthly_burn_cents=20000000,       # 200,000 TL / ay (2.5 ay runway)
-        receivables_cents=60000000,        # 600,000 TL alacak
-        payables_cents=40000000,           # 400,000 TL borç
+        cash_balance_cents=50000000,  # 500,000 TL
+        monthly_burn_cents=20000000,  # 200,000 TL / ay (2.5 ay runway)
+        receivables_cents=60000000,  # 600,000 TL alacak
+        payables_cents=40000000,  # 400,000 TL borç
         target_runway_months=12.0,
     )
     assert report.current_runway_months == 2.5
@@ -93,6 +97,7 @@ def test_prescriptive_cashflow_recommender():
 
 
 # ── Epic 4: Multi-Entity Consolidation Tests ─────────────────────────────────
+
 
 def test_consolidation_engine_with_eliminations():
     entities = [
@@ -142,6 +147,7 @@ def test_consolidation_engine_with_eliminations():
 
 
 # ── Epic 5: Omnichannel CFO Bot Gateway Tests ─────────────────────────────────
+
 
 def test_bot_gateway_commands():
     ctx = {

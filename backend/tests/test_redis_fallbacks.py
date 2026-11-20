@@ -11,6 +11,7 @@ Also pinned here: the cache's shared-client shape — operations must
 never close the pool (rate limiter and SSE bus share it) and a broker
 miss must still reach the memory tier.
 """
+
 from __future__ import annotations
 
 from app.api.analysis import _idempotency_seized

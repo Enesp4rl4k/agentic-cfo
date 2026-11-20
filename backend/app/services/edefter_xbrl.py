@@ -25,6 +25,7 @@ tek bir alanda söyler ki hiçbir çağıran bu ayrımı kaçırmasın.
 Dosya adlandırma GİB kuralıdır: VKN-YYYYMM-Y-000000.xml (yevmiye),
 -K- (kebir). Numaralandırma aynı dönemde parça başına artar.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -68,10 +69,10 @@ class EDefterError(ValueError):
 class EDefterXBRL:
     """One ledger file, plus everything a caller needs to judge it."""
 
-    kind: str            # "Y" (yevmiye) | "K" (kebir)
-    file_name: str       # GİB naming: VKN-YYYYMM-Y-000000.xml
+    kind: str  # "Y" (yevmiye) | "K" (kebir)
+    file_name: str  # GİB naming: VKN-YYYYMM-Y-000000.xml
     xml: str
-    period: str          # YYYY-MM
+    period: str  # YYYY-MM
     vkn: str
     entry_count: int
     line_count: int
@@ -83,9 +84,7 @@ class EDefterXBRL:
     # incomplete, and those are different things that a single "valid" flag
     # would blur.
     filable: bool = False
-    unfilable_reason: str = (
-        "mali mühürle XAdES imzalanmadı ve beratı alınmadı — GİB'e yüklenemez"
-    )
+    unfilable_reason: str = "mali mühürle XAdES imzalanmadı ve beratı alınmadı — GİB'e yüklenemez"
     warnings: list[str] = field(default_factory=list)
     # Entries booked gross because the source gave no KDV amount. Their 391/191
     # totals — and so the berat's tax detail — are understated by that tax.
@@ -102,7 +101,7 @@ class LedgerOwner:
 
     vkn: str
     title: str
-    creator: str = ""            # defteri oluşturan kişi
+    creator: str = ""  # defteri oluşturan kişi
     fiscal_year_start: str = ""  # YYYY-MM-DD
     fiscal_year_end: str = ""
     software_name: str = ""
@@ -128,9 +127,7 @@ def _el(parent: ET.Element, prefix: str, tag: str, text: str = "", **attrs: str)
     return node
 
 
-def _fact(
-    parent: ET.Element, prefix: str, tag: str, text: str, *, unit: str = ""
-) -> ET.Element:
+def _fact(parent: ET.Element, prefix: str, tag: str, text: str, *, unit: str = "") -> ET.Element:
     """An XBRL fact: always bound to a context, numerics also to a unit."""
     attrs = {"contextRef": CONTEXT_ID}
     if unit:
@@ -238,9 +235,7 @@ class EDefterXBRLGenerator:
                     "— başka ayın kaydı bu deftere yazılamaz"
                 )
             comment = str(entry.get("aciklama") or "")
-            doc_ref = str(
-                entry.get("kaynak_islem_id") or entry.get("kayit_id") or f"{idx:06d}"
-            )
+            doc_ref = str(entry.get("kaynak_islem_id") or entry.get("kayit_id") or f"{idx:06d}")
             entry_debit = sum(int(line.get("borc") or 0) for line in lines)
             entry_credit = sum(int(line.get("alacak") or 0) for line in lines)
 
@@ -267,9 +262,7 @@ class EDefterXBRLGenerator:
                         "taşıyor — tek satır tek tarafa yazılır"
                     )
                 if not debit and not credit:
-                    warnings.append(
-                        f"{idx}. kaydın {line_no}. satırı sıfır tutarlı, atlandı"
-                    )
+                    warnings.append(f"{idx}. kaydın {line_no}. satırı sıfır tutarlı, atlandı")
                     continue
 
                 cls._append_detail(
@@ -288,18 +281,21 @@ class EDefterXBRLGenerator:
             total_debit += entry_debit
             total_credit += entry_credit
 
-        return cls._with_kdv(entries, cls._finish(
-            root,
-            kind="Y",
-            period=period,
-            vkn=vkn,
-            sequence=sequence,
-            entry_count=len(entries),
-            line_count=line_count,
-            total_debit=total_debit,
-            total_credit=total_credit,
-            warnings=warnings,
-        ))
+        return cls._with_kdv(
+            entries,
+            cls._finish(
+                root,
+                kind="Y",
+                period=period,
+                vkn=vkn,
+                sequence=sequence,
+                entry_count=len(entries),
+                line_count=line_count,
+                total_debit=total_debit,
+                total_credit=total_credit,
+                warnings=warnings,
+            ),
+        )
 
     @classmethod
     def generate_ledger(
@@ -327,9 +323,7 @@ class EDefterXBRLGenerator:
         by_account: dict[str, list[dict[str, Any]]] = {}
         for idx, entry in enumerate(entries, start=1):
             if str(entry.get("tarih_kaynagi") or "islem") != "islem":
-                raise EDefterError(
-                    f"{idx}. kaydın tarihi belirsiz — kebir de üretilemez"
-                )
+                raise EDefterError(f"{idx}. kaydın tarihi belirsiz — kebir de üretilemez")
             posting_date = str(entry.get("tarih") or "")[:10] or f"{period}-01"
             if posting_date[:7] != period:
                 # Whatever period the caller passed, this month's ledger does
@@ -339,24 +333,24 @@ class EDefterXBRLGenerator:
                     "— başka ayın kaydı bu deftere yazılamaz"
                 )
             comment = str(entry.get("aciklama") or "")
-            doc_ref = str(
-                entry.get("kaynak_islem_id") or entry.get("kayit_id") or f"{idx:06d}"
-            )
+            doc_ref = str(entry.get("kaynak_islem_id") or entry.get("kayit_id") or f"{idx:06d}")
             for line in entry.get("satirlar") or []:
                 debit = int(line.get("borc") or 0)
                 credit = int(line.get("alacak") or 0)
                 if not debit and not credit:
                     continue
                 code = str(line.get("hesap_kodu") or "")
-                by_account.setdefault(code, []).append({
-                    "entry_no": idx,
-                    "account_name": str(line.get("hesap_adi") or ""),
-                    "amount_kurus": debit or credit,
-                    "debit_credit": "D" if debit else "C",
-                    "posting_date": posting_date,
-                    "document_reference": doc_ref,
-                    "comment": str(line.get("aciklama") or comment),
-                })
+                by_account.setdefault(code, []).append(
+                    {
+                        "entry_no": idx,
+                        "account_name": str(line.get("hesap_adi") or ""),
+                        "amount_kurus": debit or credit,
+                        "debit_credit": "D" if debit else "C",
+                        "posting_date": posting_date,
+                        "document_reference": doc_ref,
+                        "comment": str(line.get("aciklama") or comment),
+                    }
+                )
 
         total_debit = total_credit = 0
         line_count = 0
@@ -391,18 +385,21 @@ class EDefterXBRLGenerator:
             total_debit += debit
             total_credit += credit
 
-        return cls._with_kdv(entries, cls._finish(
-            root,
-            kind="K",
-            period=period,
-            vkn=vkn,
-            sequence=sequence,
-            entry_count=len(by_account),
-            line_count=line_count,
-            total_debit=total_debit,
-            total_credit=total_credit,
-            warnings=[],
-        ))
+        return cls._with_kdv(
+            entries,
+            cls._finish(
+                root,
+                kind="K",
+                period=period,
+                vkn=vkn,
+                sequence=sequence,
+                entry_count=len(by_account),
+                line_count=line_count,
+                total_debit=total_debit,
+                total_credit=total_credit,
+                warnings=[],
+            ),
+        )
 
     # ── building blocks ──────────────────────────────────────────────────────
 
@@ -434,9 +431,7 @@ class EDefterXBRLGenerator:
     def _require_vkn(vkn: str) -> str:
         digits = "".join(c for c in (vkn or "") if c.isdigit())
         if len(digits) not in (10, 11):
-            raise EDefterError(
-                f"VKN 10 (kurum) veya TCKN 11 hane olmalı: {vkn!r}"
-            )
+            raise EDefterError(f"VKN 10 (kurum) veya TCKN 11 hane olmalı: {vkn!r}")
         return digits
 
     @classmethod
@@ -446,26 +441,39 @@ class EDefterXBRLGenerator:
         for prefix, uri in NS.items():
             ET.register_namespace(prefix, uri)
 
-        root = ET.Element(_q("edefter", "defter"), {
-            _q("xsi", "schemaLocation"): "http://www.edefter.gov.tr ../xsd/edefter.xsd",
-            # `iso4217:TRY` and `iso639:tr` are QNames carried in element *text*,
-            # and a QName is only valid where its prefix is declared. ElementTree
-            # emits xmlns declarations for namespaces used in tags and attribute
-            # names, never for ones that appear only in content — so without
-            # these two literal declarations the schema rejects the currency unit
-            # and the language, which is exactly what it should do.
-            "xmlns:iso4217": NS["iso4217"],
-            "xmlns:iso639": NS["iso639"],
-        })
-        xbrl = _el(root, "xbrli", "xbrl", **{
-            _q("xsi", "schemaLocation"): (
-                "http://www.xbrl.org/int/gl/plt/2006-10-25 " + SCHEMA_REF
-            ),
-        })
-        _el(xbrl, "link", "schemaRef", **{
-            _q("xlink", "href"): SCHEMA_REF,
-            _q("xlink", "type"): "simple",
-        })
+        root = ET.Element(
+            _q("edefter", "defter"),
+            {
+                _q("xsi", "schemaLocation"): "http://www.edefter.gov.tr ../xsd/edefter.xsd",
+                # `iso4217:TRY` and `iso639:tr` are QNames carried in element *text*,
+                # and a QName is only valid where its prefix is declared. ElementTree
+                # emits xmlns declarations for namespaces used in tags and attribute
+                # names, never for ones that appear only in content — so without
+                # these two literal declarations the schema rejects the currency unit
+                # and the language, which is exactly what it should do.
+                "xmlns:iso4217": NS["iso4217"],
+                "xmlns:iso639": NS["iso639"],
+            },
+        )
+        xbrl = _el(
+            root,
+            "xbrli",
+            "xbrl",
+            **{
+                _q("xsi", "schemaLocation"): (
+                    "http://www.xbrl.org/int/gl/plt/2006-10-25 " + SCHEMA_REF
+                ),
+            },
+        )
+        _el(
+            xbrl,
+            "link",
+            "schemaRef",
+            **{
+                _q("xlink", "href"): SCHEMA_REF,
+                _q("xlink", "type"): "simple",
+            },
+        )
 
         context = _el(xbrl, "xbrli", "context", id=CONTEXT_ID)
         entity = _el(context, "xbrli", "entity")
@@ -482,7 +490,9 @@ class EDefterXBRLGenerator:
         doc_info = _el(entries_node, "gl-cor", "documentInfo")
         _fact(doc_info, "gl-cor", "entriesType", entries_type)
         _fact(
-            doc_info, "gl-cor", "uniqueID",
+            doc_info,
+            "gl-cor",
+            "uniqueID",
             f"{'YEV' if entries_type == 'journal' else 'KEB'}"
             f"{period.replace('-', '')}{sequence:06d}",
         )

@@ -11,6 +11,7 @@ Supported CSV formats (flexible column detection):
 
 done_when: state['funnel']['overall_conversion_rate'] is a float
 """
+
 from __future__ import annotations
 
 import csv
@@ -29,19 +30,35 @@ logger = logging.getLogger(__name__)
 
 _STAGE_MAP = {
     # Lead / raw
-    "lead": "lead", "new": "lead", "raw": "lead", "prospect": "lead",
+    "lead": "lead",
+    "new": "lead",
+    "raw": "lead",
+    "prospect": "lead",
     # MQL
-    "mql": "mql", "marketing_qualified": "mql", "marketing qualified": "mql",
-    "qualified": "mql", "inbound": "mql",
+    "mql": "mql",
+    "marketing_qualified": "mql",
+    "marketing qualified": "mql",
+    "qualified": "mql",
+    "inbound": "mql",
     # SQL
-    "sql": "sql", "sales_qualified": "sql", "sales qualified": "sql",
-    "opportunity": "sql", "demo": "sql", "proposal": "sql",
+    "sql": "sql",
+    "sales_qualified": "sql",
+    "sales qualified": "sql",
+    "opportunity": "sql",
+    "demo": "sql",
+    "proposal": "sql",
     # Won
-    "won": "won", "closed won": "won", "closed_won": "won",
-    "customer": "won", "converted": "won",
+    "won": "won",
+    "closed won": "won",
+    "closed_won": "won",
+    "customer": "won",
+    "converted": "won",
     # Lost (tracked but excluded from funnel flow)
-    "lost": "lost", "closed lost": "lost", "closed_lost": "lost",
-    "disqualified": "lost", "churned": "lost",
+    "lost": "lost",
+    "closed lost": "lost",
+    "closed_lost": "lost",
+    "disqualified": "lost",
+    "churned": "lost",
 }
 
 _STAGE_ORDER = ["lead", "mql", "sql", "won"]
@@ -53,6 +70,7 @@ def _normalize_stage(raw: str) -> str:
 
 # ── CSV Parser ────────────────────────────────────────────────────────────────
 
+
 def _parse_funnel_csv(csv_text: str) -> list[dict[str, Any]]:
     """Parse funnel CSV -- flexible column detection."""
     reader = csv.DictReader(io.StringIO(csv_text.strip()))
@@ -60,25 +78,25 @@ def _parse_funnel_csv(csv_text: str) -> list[dict[str, Any]]:
 
     def _col(*candidates: str) -> str | None:
         for c in candidates:
-            for k in (reader.fieldnames or []):
+            for k in reader.fieldnames or []:
                 if k.strip().lower().replace(" ", "_") == c.lower().replace(" ", "_"):
                     return k
         return None
 
-    id_col      = _col("id", "lead_id", "contact_id", "record_id")
-    stage_col   = _col("stage", "status", "lifecycle_stage", "lead_status")
-    source_col  = _col("source", "lead_source", "channel", "utm_source", "origin")
+    id_col = _col("id", "lead_id", "contact_id", "record_id")
+    stage_col = _col("stage", "status", "lifecycle_stage", "lead_status")
+    source_col = _col("source", "lead_source", "channel", "utm_source", "origin")
     created_col = _col("created", "created_date", "date", "created_at", "lead_date")
-    closed_col  = _col("closed", "closed_date", "close_date", "converted_date", "won_date")
+    closed_col = _col("closed", "closed_date", "close_date", "converted_date", "won_date")
 
     for i, row in enumerate(reader):
         stage_raw = row.get(stage_col) or "lead"
-        stage     = _normalize_stage(stage_raw)
-        source    = (row.get(source_col) or "unknown").strip().lower()
-        lead_id   = row.get(id_col) or str(i + 1)
+        stage = _normalize_stage(stage_raw)
+        source = (row.get(source_col) or "unknown").strip().lower()
+        lead_id = row.get(id_col) or str(i + 1)
 
         created_dt: datetime | None = None
-        closed_dt:  datetime | None = None
+        closed_dt: datetime | None = None
         for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
             try:
                 raw_c = (row.get(created_col) or "").strip()
@@ -100,19 +118,22 @@ def _parse_funnel_csv(csv_text: str) -> list[dict[str, Any]]:
         if created_dt and closed_dt and closed_dt >= created_dt:
             cycle_days = (closed_dt - created_dt).days
 
-        rows.append({
-            "lead_id":    lead_id,
-            "stage":      stage,
-            "source":     source,
-            "created_dt": created_dt,
-            "closed_dt":  closed_dt,
-            "cycle_days": cycle_days,
-        })
+        rows.append(
+            {
+                "lead_id": lead_id,
+                "stage": stage,
+                "source": source,
+                "created_dt": created_dt,
+                "closed_dt": closed_dt,
+                "cycle_days": cycle_days,
+            }
+        )
 
     return rows
 
 
 # ── Pure Calculations ─────────────────────────────────────────────────────────
+
 
 def _compute_funnel_metrics(leads: list[dict[str, Any]]) -> dict[str, Any]:
     """Pure calculation -- no LLM."""
@@ -139,14 +160,14 @@ def _compute_funnel_metrics(leads: list[dict[str, Any]]) -> dict[str, Any]:
     def _reached(lead: dict, stage: str) -> bool:
         return stage_idx.get(lead["stage"], -1) >= stage_idx.get(stage, 99)
 
-    total  = len(leads)
-    mqls   = sum(1 for l in leads if _reached(l, "mql"))
-    sqls   = sum(1 for l in leads if _reached(l, "sql"))
-    wons   = sum(1 for l in leads if _reached(l, "won"))
+    total = len(leads)
+    mqls = sum(1 for l in leads if _reached(l, "mql"))
+    sqls = sum(1 for l in leads if _reached(l, "sql"))
+    wons = sum(1 for l in leads if _reached(l, "won"))
 
     l2m = mqls / total if total > 0 else 0.0
-    m2s = sqls / mqls  if mqls  > 0 else 0.0
-    s2w = wons / sqls  if sqls  > 0 else 0.0
+    m2s = sqls / mqls if mqls > 0 else 0.0
+    s2w = wons / sqls if sqls > 0 else 0.0
     overall = wons / total if total > 0 else 0.0
 
     cycle_days = [l["cycle_days"] for l in leads if l["cycle_days"] is not None]
@@ -155,8 +176,8 @@ def _compute_funnel_metrics(leads: list[dict[str, Any]]) -> dict[str, Any]:
     # ── Bottleneck: stage with lowest conversion ───────────────────────────────
     stage_rates = {
         "lead_to_mql": l2m,
-        "mql_to_sql":  m2s,
-        "sql_to_won":  s2w,
+        "mql_to_sql": m2s,
+        "sql_to_won": s2w,
     }
     bottleneck = min(stage_rates, key=lambda k: stage_rates[k])
 
@@ -183,19 +204,19 @@ def _compute_funnel_metrics(leads: list[dict[str, Any]]) -> dict[str, Any]:
         }
 
     return {
-        "total_leads":             total,
-        "mql_count":               mqls,
-        "sql_count":               sqls,
-        "won_count":               wons,
-        "lead_to_mql_rate":        round(l2m, 4),
-        "mql_to_sql_rate":         round(m2s, 4),
-        "sql_to_won_rate":         round(s2w, 4),
+        "total_leads": total,
+        "mql_count": mqls,
+        "sql_count": sqls,
+        "won_count": wons,
+        "lead_to_mql_rate": round(l2m, 4),
+        "mql_to_sql_rate": round(m2s, 4),
+        "sql_to_won_rate": round(s2w, 4),
         "overall_conversion_rate": round(overall, 4),
-        "avg_cycle_days":          round(avg_cycle, 1),
-        "by_source":               by_source,
-        "bottleneck_stage":        bottleneck,
-        "alerts":                  [],
-        "narrative":               "",
+        "avg_cycle_days": round(avg_cycle, 1),
+        "by_source": by_source,
+        "bottleneck_stage": bottleneck,
+        "alerts": [],
+        "narrative": "",
     }
 
 
@@ -204,69 +225,82 @@ def _build_funnel_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     alerts: list[dict[str, str]] = []
 
     overall = metrics.get("overall_conversion_rate", 0.0)
-    l2m     = metrics.get("lead_to_mql_rate", 0.0)
-    m2s     = metrics.get("mql_to_sql_rate", 0.0)
-    s2w     = metrics.get("sql_to_won_rate", 0.0)
-    cycle   = metrics.get("avg_cycle_days", 0.0)
+    l2m = metrics.get("lead_to_mql_rate", 0.0)
+    m2s = metrics.get("mql_to_sql_rate", 0.0)
+    s2w = metrics.get("sql_to_won_rate", 0.0)
+    cycle = metrics.get("avg_cycle_days", 0.0)
     bottleneck = metrics.get("bottleneck_stage", "")
 
     if overall < 0.01 and metrics.get("total_leads", 0) > 0:
-        alerts.append({
-            "level": "critical",
-            "message": (
-                f"Overall conversion rate is {overall:.1%} — "
-                "less than 1% of leads become customers."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": (
+                    f"Overall conversion rate is {overall:.1%} — "
+                    "less than 1% of leads become customers."
+                ),
+            }
+        )
     elif overall < 0.05 and metrics.get("total_leads", 0) > 0:
-        alerts.append({
-            "level": "high",
-            "message": (
-                f"Conversion rate {overall:.1%} is below 5% benchmark. "
-                f"Main bottleneck: {bottleneck.replace('_', ' ')} stage."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "high",
+                "message": (
+                    f"Conversion rate {overall:.1%} is below 5% benchmark. "
+                    f"Main bottleneck: {bottleneck.replace('_', ' ')} stage."
+                ),
+            }
+        )
 
     if l2m < 0.10 and metrics.get("total_leads", 0) > 0:
-        alerts.append({
-            "level": "high",
-            "message": (
-                f"Only {l2m:.0%} of leads become MQLs. "
-                "Improve lead qualification criteria or targeting."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "high",
+                "message": (
+                    f"Only {l2m:.0%} of leads become MQLs. "
+                    "Improve lead qualification criteria or targeting."
+                ),
+            }
+        )
 
     if m2s < 0.20 and metrics.get("mql_count", 0) > 0:
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"MQL→SQL rate is {m2s:.0%}. "
-                "Sales and marketing alignment needed — review MQL definition."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"MQL→SQL rate is {m2s:.0%}. "
+                    "Sales and marketing alignment needed — review MQL definition."
+                ),
+            }
+        )
 
     if s2w < 0.15 and metrics.get("sql_count", 0) > 0:
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"SQL→Won rate is {s2w:.0%}. "
-                "Review sales process, pricing, or competitive positioning."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"SQL→Won rate is {s2w:.0%}. "
+                    "Review sales process, pricing, or competitive positioning."
+                ),
+            }
+        )
 
     if cycle > 90 and metrics.get("won_count", 0) > 0:
-        alerts.append({
-            "level": "medium",
-            "message": (
-                f"Average sales cycle is {cycle:.0f} days. "
-                "Long cycle increases churn risk and cash flow pressure."
-            ),
-        })
+        alerts.append(
+            {
+                "level": "medium",
+                "message": (
+                    f"Average sales cycle is {cycle:.0f} days. "
+                    "Long cycle increases churn risk and cash flow pressure."
+                ),
+            }
+        )
 
     return alerts
 
 
 # ── LLM Narrative ─────────────────────────────────────────────────────────────
+
 
 async def _generate_funnel_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative -- falls back to rule-based summary."""
@@ -281,14 +315,18 @@ async def _generate_funnel_narrative(metrics: dict[str, Any], settings) -> str:
             f"bottleneck={bottleneck}, avg_cycle={cycle:.0f} days. "
             "Write a 2-sentence CMO-level insight on funnel health."
         )
-        return (await complete_text(
-            task="metric_commentary", prompt=prompt, max_tokens=300,
-        )).strip()
+        return (
+            await complete_text(
+                task="metric_commentary",
+                prompt=prompt,
+                max_tokens=300,
+            )
+        ).strip()
     except Exception:
-        overall    = metrics.get("overall_conversion_rate", 0.0)
+        overall = metrics.get("overall_conversion_rate", 0.0)
         bottleneck = metrics.get("bottleneck_stage", "unknown")
-        total      = metrics.get("total_leads", 0)
-        won        = metrics.get("won_count", 0)
+        total = metrics.get("total_leads", 0)
+        won = metrics.get("won_count", 0)
         return (
             f"{won} customers converted from {total} leads "
             f"({overall:.1%} overall rate). "
@@ -297,6 +335,7 @@ async def _generate_funnel_narrative(metrics: dict[str, Any], settings) -> str:
 
 
 # ── LangGraph Node ─────────────────────────────────────────────────────────────
+
 
 async def run_funnel_agent(state: CMOState, config: dict) -> dict[str, Any]:
     """
@@ -310,13 +349,14 @@ async def run_funnel_agent(state: CMOState, config: dict) -> dict[str, Any]:
         return {"funnel": None}
 
     try:
-        rows    = _parse_funnel_csv(csv_text)
+        rows = _parse_funnel_csv(csv_text)
         metrics = _compute_funnel_metrics(rows)
-        alerts  = _build_funnel_alerts(metrics)
+        alerts = _build_funnel_alerts(metrics)
         metrics["alerts"] = alerts
 
         try:
             from app.config import get_settings
+
             settings = get_settings()
             metrics["narrative"] = await _generate_funnel_narrative(metrics, settings)
         except Exception:
@@ -324,8 +364,10 @@ async def run_funnel_agent(state: CMOState, config: dict) -> dict[str, Any]:
 
         logger.info(
             "CMO FunnelAgent: job=%s leads=%d won=%d conversion=%.2f%%",
-            state.get("job_id"), metrics["total_leads"],
-            metrics["won_count"], metrics["overall_conversion_rate"] * 100,
+            state.get("job_id"),
+            metrics["total_leads"],
+            metrics["won_count"],
+            metrics["overall_conversion_rate"] * 100,
         )
         return {"funnel": metrics}
 

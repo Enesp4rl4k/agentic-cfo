@@ -40,6 +40,7 @@ Usage
     event = await svc.parse_webhook(payload=body, signature=header)
     await svc.handle_webhook_event(event, db=db)
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,19 +51,20 @@ logger = logging.getLogger(__name__)
 
 # ── Plan definitions ──────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class PlanConfig:
     id: str
     name: str
-    price_monthly_try: int     # in Turkish Lira (for display)
+    price_monthly_try: int  # in Turkish Lira (for display)
     price_yearly_try: int
-    max_orgs: int              # -1 = unlimited
-    max_uploads_per_month: int # -1 = unlimited
-    max_users: int             # -1 = unlimited
+    max_orgs: int  # -1 = unlimited
+    max_uploads_per_month: int  # -1 = unlimited
+    max_users: int  # -1 = unlimited
     features: list[str]
     # Stripe price IDs (populated from env vars at runtime)
     stripe_price_monthly: str = ""
-    stripe_price_yearly: str  = ""
+    stripe_price_yearly: str = ""
 
 
 PLANS: dict[str, PlanConfig] = {
@@ -124,6 +126,7 @@ PLANS: dict[str, PlanConfig] = {
 
 # ── Stripe service ────────────────────────────────────────────────────────────
 
+
 class StripeService:
     """
     Wrapper around Stripe Python SDK.
@@ -136,14 +139,19 @@ class StripeService:
         self._settings = settings
         self._secret_key: str = getattr(settings, "stripe_secret_key", "") or ""
         self._webhook_secret: str = getattr(settings, "stripe_webhook_secret", "") or ""
-        self._enabled = bool(self._secret_key and not self._secret_key.startswith("sk_test_placeholder"))
+        self._enabled = bool(
+            self._secret_key and not self._secret_key.startswith("sk_test_placeholder")
+        )
 
         if self._enabled:
             try:
                 import stripe as _stripe  # type: ignore[import]
+
                 _stripe.api_key = self._secret_key
                 self._stripe = _stripe
-                logger.info("Stripe initialized (live=%s)", not self._secret_key.startswith("sk_test_"))
+                logger.info(
+                    "Stripe initialized (live=%s)", not self._secret_key.startswith("sk_test_")
+                )
             except ImportError:
                 logger.warning("stripe package not installed — billing disabled")
                 self._enabled = False
@@ -286,9 +294,7 @@ class StripeService:
             return None
 
         try:
-            event = self._stripe.Webhook.construct_event(
-                payload, signature, self._webhook_secret
-            )
+            event = self._stripe.Webhook.construct_event(payload, signature, self._webhook_secret)
             return event
         except self._stripe.error.SignatureVerificationError:
             logger.warning("Stripe webhook signature verification failed")
@@ -385,7 +391,13 @@ class StripeService:
             stripe_customer_id=customer_id,
         )
 
-        return {"processed": True, "action": "updated", "org_id": org_id, "plan": plan, "status": status}
+        return {
+            "processed": True,
+            "action": "updated",
+            "org_id": org_id,
+            "plan": plan,
+            "status": status,
+        }
 
     async def _handle_subscription_deleted(self, obj: dict, db: Any) -> dict:
         """Downgrade to free plan on cancellation."""
@@ -417,11 +429,14 @@ class StripeService:
 
         # Update status to past_due — org keeps access during grace period
         # (Stripe retries payment automatically)
-        logger.warning("Payment failed for subscription %s customer %s", subscription_id, customer_id)
+        logger.warning(
+            "Payment failed for subscription %s customer %s", subscription_id, customer_id
+        )
         return {"processed": True, "action": "payment_failed", "subscription_id": subscription_id}
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
+
 
 async def _update_org_subscription(
     db: Any,
@@ -447,9 +462,7 @@ async def _update_org_subscription(
             update_data["stripe_customer_id"] = stripe_customer_id
 
         await db.execute(
-            update(Organization)
-            .where(Organization.id == org_id)
-            .values(**update_data)
+            update(Organization).where(Organization.id == org_id).values(**update_data)
         )
         await db.commit()
     except Exception as e:
@@ -464,6 +477,7 @@ def _plan_from_price_id(price_id: str) -> str | None:
     """Reverse-lookup plan name from a Stripe price ID."""
     try:
         from app.config import get_settings
+
         settings = get_settings()
         for plan in ("starter", "pro", "enterprise"):
             for interval in ("month", "year"):
@@ -485,10 +499,13 @@ def get_stripe_service() -> StripeService:
     if _stripe_service is None:
         try:
             from app.config import get_settings
+
             _stripe_service = StripeService(settings=get_settings())
         except Exception:
+
             class _NullSettings:
                 stripe_secret_key = ""
                 stripe_webhook_secret = ""
+
             _stripe_service = StripeService(settings=_NullSettings())
     return _stripe_service

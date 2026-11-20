@@ -9,5 +9,6 @@ def __getattr__(name: str):
             compliance_graph,
             run_compliance_pipeline,
         )
+
         return locals()[name]
     raise AttributeError(f"module 'app.agents.compliance' has no attribute {name!r}")

@@ -10,6 +10,7 @@ Data inputs (what COO agents consume):
 
 All monetary amounts stored as INTEGER (cents), same as CFO/CTO/CMO convention.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from typing import Any, TypedDict
 # ---------------------------------------------------------------------------
 # Shared audit type
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class COOStepLog:
@@ -31,6 +33,7 @@ class COOStepLog:
 # COO Run State -- threaded through all LangGraph nodes
 # ---------------------------------------------------------------------------
 
+
 class COOState(TypedDict, total=False):
     # -- Input ----------------------------------------------------------------
     job_id: str
@@ -38,9 +41,9 @@ class COOState(TypedDict, total=False):
     period: str | None
 
     # Raw input data (at least one required)
-    process_csv: str | None     # process performance export
-    resource_csv: str | None    # headcount/productivity data
-    sla_csv: str | None         # SLA & service delivery data
+    process_csv: str | None  # process performance export
+    resource_csv: str | None  # headcount/productivity data
+    sla_csv: str | None  # SLA & service delivery data
 
     # -- ProcessAgent ---------------------------------------------------------
     processes: dict[str, Any] | None
@@ -109,6 +112,7 @@ class COOState(TypedDict, total=False):
 # Skill result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class COOSkillResult:
     ok: bool
@@ -122,6 +126,7 @@ class COOSkillResult:
 # ---------------------------------------------------------------------------
 # Run config
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class COORunConfig:
@@ -138,6 +143,6 @@ DEFAULT_COO_RUN_CONFIG = COORunConfig()
 # ---------------------------------------------------------------------------
 
 COO_ROUTE_PROCESS = "process"
-COO_ROUTE_HOLD    = "hold_for_review"
-COO_ROUTE_END     = "__end__"
+COO_ROUTE_HOLD = "hold_for_review"
+COO_ROUTE_END = "__end__"
 COO_ROUTE_SUMMARY = "coo_summary"

@@ -9,6 +9,7 @@ This test removes the blind spot: the registry is the contract, and every entry
 in it must import cleanly and expose its router attribute. If a module is
 genuinely optional, delete its registry line — do not leave it broken.
 """
+
 from __future__ import annotations
 
 import importlib

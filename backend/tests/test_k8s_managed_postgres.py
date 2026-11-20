@@ -2,6 +2,7 @@
 
 Built with `kubectl kustomize`, which renders offline; skipped where kubectl is absent.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -20,7 +21,11 @@ pytestmark = pytest.mark.skipif(shutil.which("kubectl") is None, reason="kubectl
 
 def _render(path: Path) -> list[dict]:
     out = subprocess.run(
-        ["kubectl", "kustomize", str(path)], capture_output=True, text=True, check=True, timeout=60,
+        ["kubectl", "kustomize", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
     ).stdout
     return [doc for doc in yaml.safe_load_all(out) if doc]
 
@@ -59,10 +64,21 @@ def test_the_overlay_asks_for_tls_and_a_host_that_must_be_edited():
 
 def test_every_pod_that_needs_the_database_reads_the_same_config():
     docs = _render(OVERLAY)
-    for kind, name in (("Deployment", "backend"), ("Deployment", "worker"),
-                       ("Deployment", "worker-maintenance"), ("Job", "db-migration")):
-        workload = next((d for d in docs if d["kind"] == kind and d["metadata"]["name"].endswith(name)), None)
+    for kind, name in (
+        ("Deployment", "backend"),
+        ("Deployment", "worker"),
+        ("Deployment", "worker-maintenance"),
+        ("Job", "db-migration"),
+    ):
+        workload = next(
+            (d for d in docs if d["kind"] == kind and d["metadata"]["name"].endswith(name)), None
+        )
         assert workload is not None, (kind, name)
         containers = workload["spec"]["template"]["spec"]["containers"]
-        refs = {e["configMapRef"]["name"] for c in containers for e in c.get("envFrom", []) if "configMapRef" in e}
+        refs = {
+            e["configMapRef"]["name"]
+            for c in containers
+            for e in c.get("envFrom", [])
+            if "configMapRef" in e
+        }
         assert "aicfo-config" in refs, (kind, name)

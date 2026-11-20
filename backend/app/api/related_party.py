@@ -11,6 +11,7 @@ Editing the register is an owner/admin action: it decides which transactions get
 escalated to the owner for disclosure, so an analyst must not be able to quietly
 remove a party and let the entries through.
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,6 +77,7 @@ class PartyPatch(BaseModel):
 
 class CheckIn(BaseModel):
     """A counterparty as it would appear on a statement line."""
+
     vendor: str | None = None
     description: str | None = None
     tax_id: str | None = None

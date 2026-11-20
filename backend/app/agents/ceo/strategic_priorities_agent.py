@@ -13,6 +13,7 @@ LLM adds strategic framing to each priority.
 
 done_when: state['strategic_priorities'] is a non-empty list.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,7 @@ IMPACT_SCORE = {"critical": 40, "high": 20, "medium": 10, "low": 2}
 
 def _score_priority(risk: dict[str, Any]) -> float:
     """Composite priority score — higher = act first."""
-    urgency  = URGENCY_SCORE.get(risk.get("urgency", "90d"), 10)
+    urgency = URGENCY_SCORE.get(risk.get("urgency", "90d"), 10)
     severity = SEVERITY_SCORE.get(risk.get("severity", "low"), 2)
     fin_impact = min(30, risk.get("financial_impact_cents", 0) / 1_000_00)  # cap at ₺1M
     return urgency + severity + fin_impact
@@ -50,81 +51,93 @@ def _build_priorities_from_risks(
     # ── From cross-domain risks ────────────────────────────────────────────────
     for risk in cross_risks:
         effort = "low" if risk.get("urgency") == "now" else "medium"
-        priorities.append({
-            "title":            risk["title"],
-            "rationale":        risk["recommended_action"],
-            "domains":          risk.get("domains", ["cfo", "cto"]),
-            "urgency":          risk.get("urgency", "90d"),
-            "severity":         risk.get("severity", "medium"),
-            "financial_impact_cents": risk.get("financial_impact_cents", 0),
-            "owner_role":       "CEO",
-            "effort":           effort,
-            "impact":           risk.get("severity", "medium"),
-            "_score":           _score_priority(risk),
-        })
+        priorities.append(
+            {
+                "title": risk["title"],
+                "rationale": risk["recommended_action"],
+                "domains": risk.get("domains", ["cfo", "cto"]),
+                "urgency": risk.get("urgency", "90d"),
+                "severity": risk.get("severity", "medium"),
+                "financial_impact_cents": risk.get("financial_impact_cents", 0),
+                "owner_role": "CEO",
+                "effort": effort,
+                "impact": risk.get("severity", "medium"),
+                "_score": _score_priority(risk),
+            }
+        )
 
     # ── CFO-only priorities ────────────────────────────────────────────────────
     runway = fin.get("cash_runway_months")
-    if runway is not None and runway <= 3 and not any(
-        "runway" in p["title"].lower() for p in priorities
+    if (
+        runway is not None
+        and runway <= 3
+        and not any("runway" in p["title"].lower() for p in priorities)
     ):
-        priorities.append({
-            "title":        "Emergency cash conservation plan",
-            "rationale":    f"Cash runway is {runway} months. Immediate OpEx review required.",
-            "domains":      ["cfo"],
-            "urgency":      "now",
-            "severity":     "critical",
-            "financial_impact_cents": fin.get("monthly_burn_cents", 0),
-            "owner_role":   "CFO",
-            "effort":       "medium",
-            "impact":       "critical",
-            "_score":       150,
-        })
+        priorities.append(
+            {
+                "title": "Emergency cash conservation plan",
+                "rationale": f"Cash runway is {runway} months. Immediate OpEx review required.",
+                "domains": ["cfo"],
+                "urgency": "now",
+                "severity": "critical",
+                "financial_impact_cents": fin.get("monthly_burn_cents", 0),
+                "owner_role": "CFO",
+                "effort": "medium",
+                "impact": "critical",
+                "_score": 150,
+            }
+        )
 
     if fin.get("net_margin", 0) < -0.05:
-        priorities.append({
-            "title":        "Path to profitability — 90-day plan",
-            "rationale":    f"Net margin {fin['net_margin']*100:.1f}%. Define concrete cost reduction or revenue targets.",
-            "domains":      ["cfo"],
-            "urgency":      "30d",
-            "severity":     "high",
-            "financial_impact_cents": abs(fin.get("net_income_cents", 0)),
-            "owner_role":   "CFO",
-            "effort":       "medium",
-            "impact":       "high",
-            "_score":       70,
-        })
+        priorities.append(
+            {
+                "title": "Path to profitability — 90-day plan",
+                "rationale": f"Net margin {fin['net_margin'] * 100:.1f}%. Define concrete cost reduction or revenue targets.",
+                "domains": ["cfo"],
+                "urgency": "30d",
+                "severity": "high",
+                "financial_impact_cents": abs(fin.get("net_income_cents", 0)),
+                "owner_role": "CFO",
+                "effort": "medium",
+                "impact": "high",
+                "_score": 70,
+            }
+        )
 
     # ── CTO-only priorities ────────────────────────────────────────────────────
     health = tech.get("overall_health_score")  # risk scale; None = no CTO run
     if health is not None and health >= 7.0:
-        priorities.append({
-            "title":        "Technology health intervention",
-            "rationale":    f"Tech health score {health:.1f}/10 indicates systemic issues. Architecture review needed.",
-            "domains":      ["cto"],
-            "urgency":      "30d",
-            "severity":     "high",
-            "financial_impact_cents": 0,
-            "owner_role":   "CTO",
-            "effort":       "high",
-            "impact":       "high",
-            "_score":       60,
-        })
+        priorities.append(
+            {
+                "title": "Technology health intervention",
+                "rationale": f"Tech health score {health:.1f}/10 indicates systemic issues. Architecture review needed.",
+                "domains": ["cto"],
+                "urgency": "30d",
+                "severity": "high",
+                "financial_impact_cents": 0,
+                "owner_role": "CTO",
+                "effort": "high",
+                "impact": "high",
+                "_score": 60,
+            }
+        )
 
     waste = tech.get("infra_waste_cents", 0)
     if waste > 5_000_00 and not any("cloud waste" in p["title"].lower() for p in priorities):
-        priorities.append({
-            "title":        f"Cloud cost optimization — save ₺{waste/100:,.0f}/month",
-            "rationale":    "Reduce identified cloud waste with immediate rightsizing and unused resource cleanup.",
-            "domains":      ["cto"],
-            "urgency":      "30d",
-            "severity":     "medium",
-            "financial_impact_cents": waste,
-            "owner_role":   "CTO",
-            "effort":       "low",
-            "impact":       "medium",
-            "_score":       55,
-        })
+        priorities.append(
+            {
+                "title": f"Cloud cost optimization — save ₺{waste / 100:,.0f}/month",
+                "rationale": "Reduce identified cloud waste with immediate rightsizing and unused resource cleanup.",
+                "domains": ["cto"],
+                "urgency": "30d",
+                "severity": "medium",
+                "financial_impact_cents": waste,
+                "owner_role": "CTO",
+                "effort": "low",
+                "impact": "medium",
+                "_score": 55,
+            }
+        )
 
     # Sort by score descending, assign ranks
     priorities.sort(key=lambda p: p.get("_score", 0), reverse=True)
@@ -144,7 +157,7 @@ async def run_strategic_priorities_agent(
     done_when: state['strategic_priorities'] is a non-empty list.
     """
     cross_risks = state.get("cross_risks") or []
-    fin  = state.get("financial_summary") or {}
+    fin = state.get("financial_summary") or {}
     tech = state.get("tech_summary") or {}
 
     try:
@@ -189,7 +202,8 @@ async def run_strategic_priorities_agent(
 
         logger.info(
             "CEO StrategicPriorities: job=%s priorities=%d",
-            state.get("job_id"), len(priorities),
+            state.get("job_id"),
+            len(priorities),
         )
 
         return CEOSkillResult(

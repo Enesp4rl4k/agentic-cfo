@@ -14,6 +14,7 @@ other tenants → 404, no measurable data yet → 409.
 
 No LLM and no API key is needed anywhere in this file.
 """
+
 from __future__ import annotations
 
 import pytest_asyncio
@@ -98,6 +99,7 @@ async def _record(client, headers, job_id: str, **overrides) -> dict:
 
 # ── 1. Beklenti sunucu tarafında paketten dolar ──────────────────────────────
 
+
 async def test_record_snapshots_packet_numbers_server_side(client):
     headers, org_id, user_id = await _user(client, "kayit@example.com")
     job_id = await _seed_job(client, org_id)
@@ -129,7 +131,7 @@ async def test_record_snapshots_packet_numbers_server_side(client):
     assert d["actual"] is None and d["variance"] is None
 
     exp = d["expected"]
-    assert exp["runway_months"] == 9.5          # packet's number, NOT 999
+    assert exp["runway_months"] == 9.5  # packet's number, NOT 999
     assert exp["forecast_12m_net"] == 3_000_000_00
     assert exp["revenue_12m"] == 12_000_000_00
     assert exp["option_id"] == preset["id"]
@@ -147,6 +149,7 @@ async def test_record_defaults_topic_to_the_option(client):
 
 
 # ── Sözleşme kenarları ───────────────────────────────────────────────────────
+
 
 async def test_record_running_job_is_409(client):
     headers, org_id, _ = await _user(client, "calisiyor@example.com")
@@ -197,6 +200,7 @@ async def test_record_unknown_option_is_422(client):
 
 # ── 2. Defter: liste tenant'ına göre ─────────────────────────────────────────
 
+
 async def test_list_is_tenant_scoped_and_filterable(client):
     headers_a, org_a, _ = await _user(client, "defter-a@example.com")
     headers_b, _org_b, _ = await _user(client, "defter-b@example.com")
@@ -205,9 +209,7 @@ async def test_list_is_tenant_scoped_and_filterable(client):
 
     open_d = await _record(client, headers_a, job_a1)
     closed_d = await _record(client, headers_a, job_a2)
-    r = await client.post(
-        f"/api/v1/decisions/{closed_d['id']}/outcome", json={}, headers=headers_a
-    )
+    r = await client.post(f"/api/v1/decisions/{closed_d['id']}/outcome", json={}, headers=headers_a)
     assert r.status_code == 200, r.text
 
     # Own org, newest first: the just-closed row leads.
@@ -215,14 +217,12 @@ async def test_list_is_tenant_scoped_and_filterable(client):
     assert [d["id"] for d in mine] == [closed_d["id"], open_d["id"]]
 
     only_open = (
-        await client.get("/api/v1/decisions", params={"status": "open"},
-                         headers=headers_a)
+        await client.get("/api/v1/decisions", params={"status": "open"}, headers=headers_a)
     ).json()["data"]
     assert [d["id"] for d in only_open] == [open_d["id"]]
 
     by_job = (
-        await client.get("/api/v1/decisions", params={"job_id": job_a1},
-                         headers=headers_a)
+        await client.get("/api/v1/decisions", params={"job_id": job_a1}, headers=headers_a)
     ).json()["data"]
     assert [d["id"] for d in by_job] == [open_d["id"]]
 
@@ -233,13 +233,14 @@ async def test_list_is_tenant_scoped_and_filterable(client):
 
 # ── 3. Sonuç döngüsü: karardan sonra gelen veri ölçülür ──────────────────────
 
+
 async def test_outcome_measures_only_what_happened_after_the_decision(client):
     from datetime import UTC, datetime, timedelta
 
     from app.models.decision_log import DecisionLog
 
     headers, org_id, _ = await _user(client, "sonuc@example.com")
-    job1 = await _seed_job(client, org_id)              # decision job: runway 9.5
+    job1 = await _seed_job(client, org_id)  # decision job: runway 9.5
     decision = await _record(client, headers, job1, option_id="baseline")
 
     # Newer finished analysis arrives with fresh numbers: runway 11,
@@ -277,14 +278,14 @@ async def test_outcome_measures_only_what_happened_after_the_decision(client):
     assert d["outcome_note"] == "İlk ay sonucu"
 
     actual = d["actual"]
-    assert actual["realized_net_kurus"] == 300_000_00   # +500k −200k TL
-    assert actual["transactions_since"] == 2            # 5-day-old row excluded
+    assert actual["realized_net_kurus"] == 300_000_00  # +500k −200k TL
+    assert actual["transactions_since"] == 2  # 5-day-old row excluded
     assert actual["runway_months_latest"] == 11.0
-    assert actual["data_job_id"] == job2                # newest finished analysis
+    assert actual["data_job_id"] == job2  # newest finished analysis
 
     variance = d["variance"]
     assert variance["realized_net_kurus"] == 300_000_00
-    assert variance["runway_delta"] == 1.5              # 11 − 9.5
+    assert variance["runway_delta"] == 1.5  # 11 − 9.5
 
 
 async def test_outcome_twice_is_409(client):
@@ -303,9 +304,9 @@ async def test_outcome_twice_is_409(client):
     assert "ölçülmüş" in second.json()["error"]
 
     # The first reading stands — unchanged by the refused second call.
-    after = (
-        await client.get(f"/api/v1/decisions/{decision['id']}", headers=headers)
-    ).json()["data"]
+    after = (await client.get(f"/api/v1/decisions/{decision['id']}", headers=headers)).json()[
+        "data"
+    ]
     assert after["actual"] == first.json()["data"]["actual"]
 
 
@@ -315,13 +316,9 @@ async def test_outcome_other_tenant_is_404(client):
     job_id = await _seed_job(client, org_a)
     decision = await _record(client, headers_a, job_id)
 
-    r = await client.post(
-        f"/api/v1/decisions/{decision['id']}/outcome", json={}, headers=headers_b
-    )
+    r = await client.post(f"/api/v1/decisions/{decision['id']}/outcome", json={}, headers=headers_b)
     assert r.status_code == 404
-    r2 = await client.get(
-        f"/api/v1/decisions/{decision['id']}", headers=headers_b
-    )
+    r2 = await client.get(f"/api/v1/decisions/{decision['id']}", headers=headers_b)
     assert r2.status_code == 404
 
 
@@ -339,14 +336,13 @@ async def test_outcome_without_measurable_data_is_409(client):
         job.status = JobStatus.FAILED
         await db.commit()
 
-    r = await client.post(
-        f"/api/v1/decisions/{decision['id']}/outcome", json={}, headers=headers
-    )
+    r = await client.post(f"/api/v1/decisions/{decision['id']}/outcome", json={}, headers=headers)
     assert r.status_code == 409
     assert "tamamlanmış analiz" in r.json()["error"]
 
 
 # ── 4. Paket emsali artık defteri başında taşır ──────────────────────────────
+
 
 async def test_packet_precedent_leads_with_the_ledger(client):
     headers, org_id, _ = await _user(client, "emsal@example.com")
@@ -358,9 +354,7 @@ async def test_packet_precedent_leads_with_the_ledger(client):
 
     preset = next(o for o in packet_before["options"] if not o["baseline"])
     decision = await _record(client, headers, job_id, option_id=preset["id"])
-    await client.post(
-        f"/api/v1/decisions/{decision['id']}/outcome", json={}, headers=headers
-    )
+    await client.post(f"/api/v1/decisions/{decision['id']}/outcome", json={}, headers=headers)
 
     packet_after = (
         await client.get(f"/api/v1/analysis/{job_id}/decision-packet", headers=headers)
@@ -372,5 +366,5 @@ async def test_packet_precedent_leads_with_the_ledger(client):
     assert lead["topic"] == decision["topic"]
     assert lead["final_decision"] == preset["label"]
     assert lead["resolution_status"] == "closed"
-    assert lead["confidence_score"] is None   # the ledger never computed one
+    assert lead["confidence_score"] is None  # the ledger never computed one
     assert lead["created_at"]

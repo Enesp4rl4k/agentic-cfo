@@ -31,14 +31,12 @@ class AnalysisJob(Base):
 
     # The reaper's scan predicate: "non-terminal and past its lease". Kept as a
     # composite because it runs every few minutes against a growing table.
-    __table_args__ = (
-        Index("ix_analysis_jobs_status_lease", "status", "lease_expires_at"),
-    )
+    __table_args__ = (Index("ix_analysis_jobs_status_lease", "status", "lease_expires_at"),)
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    status: Mapped[str] = mapped_column(
+        String(30), default=JobStatus.PENDING, nullable=False, index=True
     )
-    status: Mapped[str] = mapped_column(String(30), default=JobStatus.PENDING, nullable=False, index=True)
 
     # ── Lease (DDIA Ch.7 — claim, don't check-then-act) ──────────────────────
     # `status` transitions are atomic UPDATE ... WHERE status=... claims; the
@@ -79,9 +77,7 @@ class AnalysisJob(Base):
     # an accountant could register forty clients and run the chain for none of
     # them, and the portal's dashboard counted analyses from fields nothing
     # ever wrote.
-    smmm_client_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True, index=True
-    )
+    smmm_client_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     logs: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
@@ -95,9 +91,7 @@ class AnalysisJob(Base):
 
     # Connector / sync / ingestion metadata (used by scheduled sync + UI)
     # NOTE: Keep it small; put large payloads elsewhere.
-    result_metadata: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON, nullable=True
-    )
+    result_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True

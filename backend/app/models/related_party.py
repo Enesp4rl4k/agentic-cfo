@@ -14,6 +14,7 @@ the transaction dict and no parser or upload path writes it. This table is what
 makes the rule able to fire — the org's own list of the parties it is connected
 to, matched against the counterparty on each transaction.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -28,12 +29,12 @@ from app.database import Base
 # How the party is connected to the company. Kept as plain strings rather than a
 # DB enum so an org can be described without a migration.
 RELATIONSHIP_TYPES: tuple[str, ...] = (
-    "ortak",            # shareholder / partner
-    "yonetici",         # director, board member
-    "aile",             # family member of an owner or director
-    "istirak",          # subsidiary / affiliate the company holds
-    "ana_ortaklik",     # parent company
-    "kilit_personel",   # key management personnel
+    "ortak",  # shareholder / partner
+    "yonetici",  # director, board member
+    "aile",  # family member of an owner or director
+    "istirak",  # subsidiary / affiliate the company holds
+    "ana_ortaklik",  # parent company
+    "kilit_personel",  # key management personnel
     "diger",
 )
 
@@ -47,9 +48,7 @@ class RelatedParty(Base):
         Index("ix_related_parties_org_norm", "org_id", "normalized_name"),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     name: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -58,9 +57,7 @@ class RelatedParty(Base):
     # rename cannot silently change what a sealed packet was matched against.
     normalized_name: Mapped[str] = mapped_column(String(300), nullable=False)
 
-    relationship_type: Mapped[str] = mapped_column(
-        String(30), nullable=False, default="diger"
-    )
+    relationship_type: Mapped[str] = mapped_column(String(30), nullable=False, default="diger")
     # VKN (10 digits) or TCKN (11) — the only unambiguous identifier there is.
     tax_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

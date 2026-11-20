@@ -14,6 +14,7 @@ Onay gerektiren durumlar (double_entry.py'de belirlenir):
   - Otomatik sınıflandırılamadı
   - Duran varlık alımı
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,7 +32,7 @@ def _utcnow() -> datetime:
 
 
 class OnayDurumu(StrEnum):
-    BEKLIYOR  = "bekliyor"
+    BEKLIYOR = "bekliyor"
     ONAYLANDI = "onaylandi"
     DUZELTILDI = "duzeltildi"
     REDDEDILDI = "reddedildi"
@@ -44,11 +45,10 @@ class SMMMOnayKaydi(Base):
     Her kayıt bir yevmiye kaydına karşılık gelir.
     SMMM onaylar, düzeltir veya reddeder.
     """
+
     __tablename__ = "smmm_onay_kayitlari"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # İlgili analiz iş kimliği
     job_id: Mapped[str] = mapped_column(
@@ -86,7 +86,9 @@ class SMMMOnayKaydi(Base):
     # Orijinal otomatik sınıflandırma meta verisi
     otomatik_hesap_kodu: Mapped[str | None] = mapped_column(String(10), nullable=True)
     otomatik_confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
-    otomatik_yontem: Mapped[str | None] = mapped_column(String(20), nullable=True)  # kural|llm|varsayılan
+    otomatik_yontem: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # kural|llm|varsayılan
     onay_neden: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # İşlem bilgileri (hızlı görüntüleme için)

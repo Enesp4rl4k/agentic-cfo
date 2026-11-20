@@ -35,9 +35,7 @@ class CanonicalTransaction(Base):
         Index("ix_canonical_transactions_org_date", "org_id", "transaction_date"),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     source_record_id: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -68,7 +66,9 @@ class CanonicalTransaction(Base):
     # What the row rests on: book (a posting with an account), document (an
     # invoice) or cash (a bank movement). One sale can appear as a document and as
     # cash; they are two views of the money, never duplicates of each other.
-    basis: Mapped[str] = mapped_column(String(20), nullable=False, default="cash", server_default="cash")
+    basis: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="cash", server_default="cash"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
@@ -76,4 +76,3 @@ class CanonicalTransaction(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
-

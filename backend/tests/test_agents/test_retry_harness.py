@@ -2,6 +2,7 @@
 Tests for RetryHarness — loop engineering layer.
 Pure async tests, no LLM, no DB.
 """
+
 import pytest
 
 from app.services.retry_harness import (
@@ -15,6 +16,7 @@ from app.services.retry_harness import (
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 async def always_ok(input_: str, **kwargs) -> str:
     return f"OK: {input_}"
@@ -39,6 +41,7 @@ async def raises_on_call(input_: str, **kwargs) -> str:
 
 
 # ── Validators ────────────────────────────────────────────────────────────────
+
 
 class TestValidators:
     def test_non_empty_string_pass(self):
@@ -114,6 +117,7 @@ class TestValidators:
 
 # ── Default correction builder ────────────────────────────────────────────────
 
+
 class TestCorrectionBuilder:
     def test_string_input_appends_correction(self):
         new_input = default_correction_builder(
@@ -138,6 +142,7 @@ class TestCorrectionBuilder:
 
 # ── RetryHarness ──────────────────────────────────────────────────────────────
 
+
 class TestRetryHarness:
     @pytest.mark.asyncio
     async def test_succeeds_on_first_attempt(self):
@@ -157,9 +162,7 @@ class TestRetryHarness:
     @pytest.mark.asyncio
     async def test_fails_with_validator_exhausts_retries(self):
         harness = RetryHarness(max_retries=3, fallback="return_last", base_delay_ms=0)
-        result = await harness.run(
-            always_fail, "test", validator=validate_non_empty_string
-        )
+        result = await harness.run(always_fail, "test", validator=validate_non_empty_string)
         assert not result.success
         assert result.attempt_count == 3
 
@@ -167,9 +170,7 @@ class TestRetryHarness:
     async def test_succeeds_on_third_attempt(self):
         fail_then_succeed._count = 0  # reset state
         harness = RetryHarness(max_retries=3, base_delay_ms=0)
-        result = await harness.run(
-            fail_then_succeed, "test", validator=validate_non_empty_string
-        )
+        result = await harness.run(fail_then_succeed, "test", validator=validate_non_empty_string)
         assert result.success
         assert result.attempt_count == 3
         assert result.value == "success narrative"
@@ -183,8 +184,10 @@ class TestRetryHarness:
     @pytest.mark.asyncio
     async def test_fallback_return_default(self):
         harness = RetryHarness(
-            max_retries=2, fallback="return_default",
-            default_value="fallback narrative", base_delay_ms=0
+            max_retries=2,
+            fallback="return_default",
+            default_value="fallback narrative",
+            base_delay_ms=0,
         )
         result = await harness.run(always_fail, "test", validator=validate_non_empty_string)
         assert not result.success

@@ -17,6 +17,7 @@ Design:
   - Lazy: only loads context keys relevant to the requesting agent
   - Thin: adds summary keys only, never full result payloads
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,14 +27,14 @@ logger = logging.getLogger(__name__)
 
 # Which context keys each agent cares about
 _AGENT_CONTEXT_MAP: dict[str, list[str]] = {
-    "cto":        ["__cfo_summary", "__chro_summary"],
-    "chro":       ["__cfo_summary", "__cto_summary"],
-    "cmo":        ["__cfo_summary", "__coo_summary"],
-    "coo":        ["__cto_summary", "__chro_summary"],
+    "cto": ["__cfo_summary", "__chro_summary"],
+    "chro": ["__cfo_summary", "__cto_summary"],
+    "cmo": ["__cfo_summary", "__coo_summary"],
+    "coo": ["__cto_summary", "__chro_summary"],
     "compliance": ["__cfo_summary"],  # muhasebe anomalileri
-    "audit":      ["__cfo_summary"],  # anomaly cross-check
-    "risk":       ["__cfo_summary", "__cto_summary"],
-    "ceo":        ["__cfo_summary", "__cto_summary", "__cmo_summary", "__chro_summary"],
+    "audit": ["__cfo_summary"],  # anomaly cross-check
+    "risk": ["__cfo_summary", "__cto_summary"],
+    "ceo": ["__cfo_summary", "__cto_summary", "__cmo_summary", "__chro_summary"],
 }
 
 
@@ -53,6 +54,7 @@ async def enrich_initial_state(
 
     try:
         from app.services.agent_context_bridge import enrich_state
+
         bridge = await enrich_state(agent, base_state, org_id=org_id)
         # Only include keys this agent actually needs
         relevant_keys = _AGENT_CONTEXT_MAP.get(agent, [])
@@ -82,11 +84,11 @@ def build_cross_context_prompt_block(state: dict[str, Any], agent: str) -> str:
             risk_note = " ⚠️ KRİTİK" if runway < 6 else ""
             lines.append(f"Nakit Ömrü (CFO): {runway:.1f} ay{risk_note}")
         if cfo.get("net_margin") is not None:
-            lines.append(f"Net Kâr Marjı (CFO): %{cfo['net_margin']*100:.1f}")
+            lines.append(f"Net Kâr Marjı (CFO): %{cfo['net_margin'] * 100:.1f}")
         if cfo.get("critical_anomalies"):
             lines.append(f"CFO Kritik Anomali: {cfo['critical_anomalies']} adet")
         if cfo.get("revenue") is not None:
-            lines.append(f"Gelir (CFO): ₺{cfo['revenue']/100:,.0f}")
+            lines.append(f"Gelir (CFO): ₺{cfo['revenue'] / 100:,.0f}")
 
     # CTO context
     cto = state.get("__cto_summary") or {}
@@ -104,7 +106,7 @@ def build_cross_context_prompt_block(state: dict[str, Any], agent: str) -> str:
         if cmo.get("overall_roas") is not None:
             lines.append(f"Pazarlama ROAS (CMO): {cmo['overall_roas']:.1f}x")
         if cmo.get("cac") is not None:
-            lines.append(f"Müşteri Edinme Maliyeti (CMO): ₺{cmo['cac']/100:,.0f}")
+            lines.append(f"Müşteri Edinme Maliyeti (CMO): ₺{cmo['cac'] / 100:,.0f}")
 
     # CHRO context
     chro = state.get("__chro_summary") or {}
@@ -112,7 +114,7 @@ def build_cross_context_prompt_block(state: dict[str, Any], agent: str) -> str:
         if chro.get("turnover_rate") is not None:
             tr = chro["turnover_rate"]
             risk_note = " ⚠️ YÜKSEK" if tr > 0.15 else ""
-            lines.append(f"İşten Ayrılma Oranı (CHRO): %{tr*100:.0f}{risk_note}")
+            lines.append(f"İşten Ayrılma Oranı (CHRO): %{tr * 100:.0f}{risk_note}")
         if chro.get("headcount_change") is not None:
             lines.append(f"Kadro Değişimi (CHRO): {chro['headcount_change']:+d} kişi")
         if chro.get("engagement_score") is not None:
@@ -122,7 +124,7 @@ def build_cross_context_prompt_block(state: dict[str, Any], agent: str) -> str:
     coo = state.get("__coo_summary") or {}
     if coo:
         if coo.get("sla_compliance") is not None:
-            lines.append(f"SLA Uyumu (COO): %{coo['sla_compliance']*100:.0f}")
+            lines.append(f"SLA Uyumu (COO): %{coo['sla_compliance'] * 100:.0f}")
 
     if not lines:
         return ""

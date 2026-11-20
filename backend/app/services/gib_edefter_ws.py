@@ -26,6 +26,7 @@ attachment. Error 107 ("datahandler") hints at a JAX-WS DataHandler; inline
 base64 is what the schema type allows and what this sends. The first real call
 against the test endpoint settles it.
 """
+
 from __future__ import annotations
 
 import base64
@@ -126,9 +127,9 @@ def _envelope(operation: str, children: list[tuple[str, str]]) -> bytes:
     ts = etree.SubElement(sec, f"{{{WSU}}}Timestamp")
     ts.set(f"{{{WSU}}}Id", f"TS-{uuid.uuid4().hex}")
     etree.SubElement(ts, f"{{{WSU}}}Created").text = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    etree.SubElement(ts, f"{{{WSU}}}Expires").text = (
-        now + timedelta(minutes=5)
-    ).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    etree.SubElement(ts, f"{{{WSU}}}Expires").text = (now + timedelta(minutes=5)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z"
+    )
     body = etree.SubElement(env, f"{{{SOAP12}}}Body", nsmap={"wsu": WSU})
     body.set(f"{{{WSU}}}Id", f"id-{uuid.uuid4().hex}")
     op = etree.SubElement(body, f"{{{WEB}}}{operation}")
@@ -156,10 +157,14 @@ def parse_response(xml: bytes) -> etree._Element:
     try:
         root = etree.fromstring(xml, etree.XMLParser(resolve_entities=False, no_network=True))
     except etree.XMLSyntaxError as exc:
-        raise GibWsError(None, f"GİB yanıtı XML değil: {exc}", xml[:500].decode("utf-8", "replace")) from exc
+        raise GibWsError(
+            None, f"GİB yanıtı XML değil: {exc}", xml[:500].decode("utf-8", "replace")
+        ) from exc
     body = root.find(f"{{{SOAP12}}}Body")
     if body is None or not len(body):
-        raise GibWsError(None, "GİB yanıtında SOAP gövdesi yok", xml[:500].decode("utf-8", "replace"))
+        raise GibWsError(
+            None, "GİB yanıtında SOAP gövdesi yok", xml[:500].decode("utf-8", "replace")
+        )
     first = body[0]
     if _local(first) == "Fault":
         text = " ".join(t.strip() for t in first.itertext() if t.strip())
@@ -200,7 +205,9 @@ class GibEDefterClient:
             resp = await client.post(
                 self.url,
                 content=signed,
-                headers={"Content-Type": f'application/soap+xml; charset=utf-8; action="{operation}"'},
+                headers={
+                    "Content-Type": f'application/soap+xml; charset=utf-8; action="{operation}"'
+                },
             )
         # SOAP 1.2 faults come back as 500 with a body; read it either way.
         return parse_response(resp.content)
@@ -210,10 +217,13 @@ class GibEDefterClient:
             raise ValueError(f"paket adı GİB biçiminde değil: {file_name!r}")
         if not zip_bytes:
             raise ValueError("paket boş")
-        op = await self._call("sendDocumentFile", [
-            ("fileName", file_name),
-            ("binaryData", base64.b64encode(zip_bytes).decode("ascii")),
-        ])
+        op = await self._call(
+            "sendDocumentFile",
+            [
+                ("fileName", file_name),
+                ("binaryData", base64.b64encode(zip_bytes).decode("ascii")),
+            ],
+        )
         ret = _find_local(op, "return")
         return str(ret.text or "").strip() if ret is not None else ""
 
@@ -224,11 +234,13 @@ class GibEDefterClient:
         for el in op.iter():
             if isinstance(el.tag, str) and _local(el) == "durum":
                 fields = {_local(c): (c.text or "").strip() for c in el if isinstance(c.tag, str)}
-                out.append(BatchStatus(
-                    paket_id=fields.get("paketKimligi", paket_id),
-                    code=fields.get("durumKodu", ""),
-                    description=fields.get("durumAciklama", ""),
-                ))
+                out.append(
+                    BatchStatus(
+                        paket_id=fields.get("paketKimligi", paket_id),
+                        code=fields.get("durumKodu", ""),
+                        description=fields.get("durumAciklama", ""),
+                    )
+                )
         return out
 
     async def receive_berat(self, paket_id: str) -> ReceivedFile:

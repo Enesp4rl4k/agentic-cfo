@@ -16,6 +16,7 @@ Input: git_log_text — output of:
 
 done_when: state['tech_debt']['debt_score'] is a float.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,9 +30,9 @@ from app.agents.narrative_guard import narrative_guard
 logger = logging.getLogger(__name__)
 
 # Thresholds
-HOTSPOT_MIN_CHANGES = 5        # file changed 5+ times in period = hotspot
-BUS_FACTOR_MIN_COMMITS = 3     # file needs 3+ commits to evaluate bus factor
-HIGH_CHURN_PCT = 0.30          # >30% of files are hotspots = high churn
+HOTSPOT_MIN_CHANGES = 5  # file changed 5+ times in period = hotspot
+BUS_FACTOR_MIN_COMMITS = 3  # file needs 3+ commits to evaluate bus factor
+HIGH_CHURN_PCT = 0.30  # >30% of files are hotspots = high churn
 
 
 def _parse_git_log(git_log: str) -> dict[str, Any]:
@@ -104,7 +105,8 @@ def _compute_debt_metrics(parsed: dict[str, Any]) -> dict[str, Any]:
             "file": fname,
             "changes": data["count"],
             "authors": len(data["authors"]),
-            "bus_factor_risk": len(data["authors"]) == 1 and data["count"] >= BUS_FACTOR_MIN_COMMITS,
+            "bus_factor_risk": len(data["authors"]) == 1
+            and data["count"] >= BUS_FACTOR_MIN_COMMITS,
         }
         for fname, data in file_changes.items()
         if data["count"] >= HOTSPOT_MIN_CHANGES
@@ -116,7 +118,8 @@ def _compute_debt_metrics(parsed: dict[str, Any]) -> dict[str, Any]:
 
     # Bus factor: files only one person ever touched
     bus_factor_files = [
-        f for f, d in file_changes.items()
+        f
+        for f, d in file_changes.items()
         if len(d["authors"]) == 1 and d["count"] >= BUS_FACTOR_MIN_COMMITS
     ]
     bus_factor_score = len(bus_factor_files) / total_files if total_files else 0
@@ -135,13 +138,15 @@ def _compute_debt_metrics(parsed: dict[str, Any]) -> dict[str, Any]:
     refactor_priorities = []
     for h in hotspots[:5]:
         severity = "critical" if h["changes"] > 20 else "high" if h["changes"] > 10 else "medium"
-        refactor_priorities.append({
-            "area": h["file"],
-            "severity": severity,
-            "changes_in_period": h["changes"],
-            "estimated_days": max(1, h["changes"] // 5),
-            "bus_factor_risk": h["bus_factor_risk"],
-        })
+        refactor_priorities.append(
+            {
+                "area": h["file"],
+                "severity": severity,
+                "changes_in_period": h["changes"],
+                "estimated_days": max(1, h["changes"] // 5),
+                "bus_factor_risk": h["bus_factor_risk"],
+            }
+        )
 
     return {
         "total_commits": total_commits,
@@ -160,33 +165,38 @@ def _compute_debt_metrics(parsed: dict[str, Any]) -> dict[str, Any]:
 async def _generate_debt_narrative(metrics: dict[str, Any], settings) -> str:
     from app.platform.model_gateway import complete_text
 
-    top_hotspots = "\n".join(
-        f"  - {h['file']} ({h['changes']} changes, {h['authors']} contributors)"
-        for h in metrics.get("hotspot_files", [])[:5]
-    ) or "  None detected"
+    top_hotspots = (
+        "\n".join(
+            f"  - {h['file']} ({h['changes']} changes, {h['authors']} contributors)"
+            for h in metrics.get("hotspot_files", [])[:5]
+        )
+        or "  None detected"
+    )
 
-    return (await complete_text(
-        task="short_narrative",
-        system_prompt=(
-            "Sen deneyimli bir CTO ve yazılım mimarısın. "
-            "Git geçmişinden elde edilen teknik borç göstergelerini analiz et ve Türkçe olarak "
-            "kısa, eyleme dönüştürülebilir bir özet yaz. "
-            "Yanıt şu yapıda olsun:\n"
-            "1. Teknik borç durumunun 1-2 cümlelik değerlendirmesi (skor ve churn odaklı)\n"
-            "2. En riskli 1-2 alan (bus factor, hotspot)\n"
-            "3. Ekibin sprint'e alması gereken 2-3 somut iyileştirme (öncelik sırasıyla)\n"
-            "Geliştirici deneyimiyle ilgili pratik öneriler ekle."
-        ),
-        prompt=(
-            f"Teknik Borç Skoru: {metrics['debt_score']:.1f}/10\n"
-            f"Toplam Commit (dönem): {metrics['total_commits']}\n"
-            f"Aktif Katkıcı: {metrics['active_contributors']}\n"
-            f"Kod Değişim Oranı (Churn): %{metrics['churn_rate']*100:.1f}\n"
-            f"Bus Factor Riski Olan Dosya: {metrics['bus_factor_files_count']}\n\n"
-            f"En Yoğun Değişen Dosyalar (Hotspot):\n{top_hotspots}"
-        ),
-        max_tokens=512,
-    )).strip()
+    return (
+        await complete_text(
+            task="short_narrative",
+            system_prompt=(
+                "Sen deneyimli bir CTO ve yazılım mimarısın. "
+                "Git geçmişinden elde edilen teknik borç göstergelerini analiz et ve Türkçe olarak "
+                "kısa, eyleme dönüştürülebilir bir özet yaz. "
+                "Yanıt şu yapıda olsun:\n"
+                "1. Teknik borç durumunun 1-2 cümlelik değerlendirmesi (skor ve churn odaklı)\n"
+                "2. En riskli 1-2 alan (bus factor, hotspot)\n"
+                "3. Ekibin sprint'e alması gereken 2-3 somut iyileştirme (öncelik sırasıyla)\n"
+                "Geliştirici deneyimiyle ilgili pratik öneriler ekle."
+            ),
+            prompt=(
+                f"Teknik Borç Skoru: {metrics['debt_score']:.1f}/10\n"
+                f"Toplam Commit (dönem): {metrics['total_commits']}\n"
+                f"Aktif Katkıcı: {metrics['active_contributors']}\n"
+                f"Kod Değişim Oranı (Churn): %{metrics['churn_rate'] * 100:.1f}\n"
+                f"Bus Factor Riski Olan Dosya: {metrics['bus_factor_files_count']}\n\n"
+                f"En Yoğun Değişen Dosyalar (Hotspot):\n{top_hotspots}"
+            ),
+            max_tokens=512,
+        )
+    ).strip()
 
 
 async def run_tech_debt_agent(
@@ -208,6 +218,7 @@ async def run_tech_debt_agent(
 
     try:
         from app.config import get_settings
+
         settings = get_settings()
 
         parsed = _parse_git_log(git_log)
@@ -243,7 +254,7 @@ async def run_tech_debt_agent(
             needs_review=needs_review,
             detail=(
                 f"Tech debt score: {debt_score:.1f}/10, "
-                f"churn: {metrics['churn_rate']*100:.1f}%, "
+                f"churn: {metrics['churn_rate'] * 100:.1f}%, "
                 f"hotspots: {len(metrics.get('hotspot_files', []))}"
             ),
         )

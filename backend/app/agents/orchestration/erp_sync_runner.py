@@ -8,6 +8,7 @@ result into CompanyContext through a dict API the dataclass does not have —
 so a sync ran and nothing any page reads ever changed. Pulled transactions now
 take the same path as a dropped file (app/services/ingest/ekle.py).
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # ── Scheduled sync runner (scheduler.py'den cagirilir) ────────────────────────
 
+
 async def run_scheduled_erp_sync(db: Any) -> dict[str, Any]:
     """
     Otomatik sync aktif olan tum ERP entegrasyonlarini sync et.
@@ -28,12 +30,9 @@ async def run_scheduled_erp_sync(db: Any) -> dict[str, Any]:
 
     from app.models.erp_integration import ERPIntegration
 
-    stmt = (
-        select(ERPIntegration)
-        .where(
-            ERPIntegration.status == "active",
-            ERPIntegration.auto_sync_enabled.is_(True),
-        )
+    stmt = select(ERPIntegration).where(
+        ERPIntegration.status == "active",
+        ERPIntegration.auto_sync_enabled.is_(True),
     )
     integrations = (await db.execute(stmt)).scalars().all()
 
@@ -51,7 +50,9 @@ async def run_scheduled_erp_sync(db: Any) -> dict[str, Any]:
             son = integration.last_sync_at
             if son is not None and son.tzinfo is None:
                 son = son.replace(tzinfo=UTC)
-            if son is not None and simdi - son < timedelta(hours=integration.sync_interval_hours or 24):
+            if son is not None and simdi - son < timedelta(
+                hours=integration.sync_interval_hours or 24
+            ):
                 continue
             onceki_durum = integration.last_sync_status
             try:
@@ -60,31 +61,42 @@ async def run_scheduled_erp_sync(db: Any) -> dict[str, Any]:
                 # Nobody is watching a timer. Say it once where they will see
                 # it — not again every hour while it stays broken.
                 if onceki_durum != "error":
-                    db.add(InAppNotification(
-                        org_id=integration.org_id, level="warning", domain="cfo", source="parasut",
-                        message=f"Paraşüt faturaları otomatik alınamadı: {exc} Entegrasyonlar sayfasından "
-                                "bağlantıyı kontrol edin.",
-                    ))
+                    db.add(
+                        InAppNotification(
+                            org_id=integration.org_id,
+                            level="warning",
+                            domain="cfo",
+                            source="parasut",
+                            message=f"Paraşüt faturaları otomatik alınamadı: {exc} Entegrasyonlar sayfasından "
+                            "bağlantıyı kontrol edin.",
+                        )
+                    )
                     await db.commit()
                 raise
-            results.append({
-                "org_id":   integration.org_id,
-                "provider": integration.provider,
-                "ok":       True,
-                "durum":    out["durum"],
-                "job_id":   out.get("job_id"),
-                "sync_count": out["sync_count"],
-            })
+            results.append(
+                {
+                    "org_id": integration.org_id,
+                    "provider": integration.provider,
+                    "ok": True,
+                    "durum": out["durum"],
+                    "job_id": out.get("job_id"),
+                    "sync_count": out["sync_count"],
+                }
+            )
         except Exception as exc:
             logger.error(
                 "Scheduled ERP sync hatasi: org=%s provider=%s err=%s",
-                integration.org_id, integration.provider, exc,
+                integration.org_id,
+                integration.provider,
+                exc,
             )
-            results.append({
-                "org_id":   integration.org_id,
-                "provider": integration.provider,
-                "ok":       False,
-                "error":    str(exc),
-            })
+            results.append(
+                {
+                    "org_id": integration.org_id,
+                    "provider": integration.provider,
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
 
     return {"synced": len(results), "results": results}

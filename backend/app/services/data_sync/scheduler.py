@@ -15,6 +15,7 @@ All jobs include:
   - Error notifications
   - Audit logging
 """
+
 from __future__ import annotations
 
 import logging
@@ -239,9 +240,7 @@ class SyncScheduler:
             jobs_info[job.id] = {
                 "name": job.name,
                 "trigger": str(job.trigger),
-                "next_run": job.next_run_time.isoformat()
-                if job.next_run_time
-                else None,
+                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
             }
 
         return jobs_info

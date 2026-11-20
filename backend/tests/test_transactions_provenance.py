@@ -7,6 +7,7 @@ not see that its date was invented or what the invoice said about KDV — the
 facts that decide whether to approve it. A live e-SMM upload showed `raw_text`
 coming back empty for a row that had one.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -28,11 +29,15 @@ async def _user(client, email: str) -> tuple[dict[str, str], str]:
     from app.models.organization import Organization
     from app.models.user import User
 
-    await client.post("/api/v1/auth/register",
-                      json={"email": email, "password": "StrongPassword123!", "full_name": "T"})
-    token = (await client.post("/api/v1/auth/login",
-                               json={"email": email, "password": "StrongPassword123!"})
-             ).json()["data"]["access_token"]
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "StrongPassword123!", "full_name": "T"},
+    )
+    token = (
+        await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "StrongPassword123!"}
+        )
+    ).json()["data"]["access_token"]
     async with client._maker() as db:
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
         org = Organization(name=email, slug=email.split("@")[0])
@@ -42,9 +47,11 @@ async def _user(client, email: str) -> tuple[dict[str, str], str]:
         await db.commit()
         org_id = org.id
     # A fresh login so the token carries the org.
-    token = (await client.post("/api/v1/auth/login",
-                               json={"email": email, "password": "StrongPassword123!"})
-             ).json()["data"]["access_token"]
+    token = (
+        await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "StrongPassword123!"}
+        )
+    ).json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}, org_id
 
 
@@ -56,18 +63,32 @@ async def _job_with_rows(client, org_id: str) -> str:
         job = AnalysisJob(filename="m.pdf", file_path="/m.pdf", file_type="pdf", org_id=org_id)
         db.add(job)
         await db.flush()
-        db.add(Transaction(
-            job_id=job.id, amount_kurus=100_000, currency="TRY", type="expense",
-            category="other_expense", description="e-SMM CDE1: 9876543210 — Hukuki danışmanlık",
-            transaction_date=datetime(2026, 9, 1, tzinfo=UTC),
-            kdv_kurus=20_000, stopaj_kurus=20_000,
-            raw_text="UUID: x | No: CDE1 | Tür: e-SMM | Stopaj: 200",
-        ))
-        db.add(Transaction(
-            job_id=job.id, amount_kurus=5_000, currency="TRY", type="expense",
-            category="other_expense", description="okunamayan tarih",
-            transaction_date=datetime(2026, 9, 11, tzinfo=UTC), date_is_estimated=True,
-        ))
+        db.add(
+            Transaction(
+                job_id=job.id,
+                amount_kurus=100_000,
+                currency="TRY",
+                type="expense",
+                category="other_expense",
+                description="e-SMM CDE1: 9876543210 — Hukuki danışmanlık",
+                transaction_date=datetime(2026, 9, 1, tzinfo=UTC),
+                kdv_kurus=20_000,
+                stopaj_kurus=20_000,
+                raw_text="UUID: x | No: CDE1 | Tür: e-SMM | Stopaj: 200",
+            )
+        )
+        db.add(
+            Transaction(
+                job_id=job.id,
+                amount_kurus=5_000,
+                currency="TRY",
+                type="expense",
+                category="other_expense",
+                description="okunamayan tarih",
+                transaction_date=datetime(2026, 9, 11, tzinfo=UTC),
+                date_is_estimated=True,
+            )
+        )
         await db.commit()
         return job.id
 
