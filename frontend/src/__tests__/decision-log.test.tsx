@@ -19,6 +19,13 @@ const { dec, packet } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/decisions", () => dec);
 vi.mock("@/lib/api/decisionPacket", () => packet);
+// Money is written in the organisation's effective currency (formerly lira hard-coded): a lira company here.
+vi.mock("@/hooks/useOrgSettings", () => ({
+  useOrgSettings: () => ({
+    org: { org_id: "o", name: "T", locale: "tr-TR", base_currency: "TRY", base_currency_confirmed: true, effective_currency: "TRY" },
+    loading: false, error: null, refresh: () => {}, locale: "tr-TR",
+  }),
+}));
 
 import { DecisionLogPanel } from "@/components/ui/decision-log-panel";
 import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";

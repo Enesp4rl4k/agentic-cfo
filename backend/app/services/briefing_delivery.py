@@ -104,6 +104,8 @@ async def collect_facts(
     return {
         "anchor_date": anchor_date.isoformat(),
         "data_date": data_date.isoformat(),
+        # The currency the radar (and so every amount below) is in: the diff shown to a person labels with it.
+        "currency": radar.currency,
         "opening_cash_cents": briefing.starting_cash_cents,
         "opening_as_of": briefing.balance_as_of,
         "week_start": briefing.week_start,
@@ -141,7 +143,7 @@ def facts_fingerprint(facts: dict[str, Any]) -> str:
 def _show(field: str, facts: dict[str, Any]) -> str:
     if field.endswith("_cents"):
         value = facts.get(field)
-        return "bilinmiyor" if value is None else _fmt(int(value))
+        return "bilinmiyor" if value is None else _fmt(int(value), facts.get("currency"))
     if field == "items_sha":
         return f"{facts.get('receivable_count', 0)} alacak, {facts.get('payable_count', 0)} ödeme kalemi"
     if field == "headline_sha":

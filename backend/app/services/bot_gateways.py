@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
 from app.core.financial import cents_to_amount
 
 logger = logging.getLogger(__name__)
@@ -43,16 +44,24 @@ class OmnichannelCFOBotGateway:
         ctx = financial_context or {}
         cmd = message_text.strip().lower()
 
-        cents_to_amount(ctx.get("revenue_cents", 150000000))
-        cash_try = cents_to_amount(ctx.get("cash_cents", 85000000))
-        runway = ctx.get("runway_months", 14.5)
-        vat_try = cents_to_amount(ctx.get("vat_payable_cents", 1850000))
+        # A figure the context does not carry is "bilinmiyor", never a made-up number; the amounts are
+        # written in the currency the context states, or bare.
+        cur = ctx.get("currency")
+
+        def money(key: str) -> str:
+            value = ctx.get(key)
+            return "bilinmiyor" if value is None else fmt_amount(cents_to_amount(value), cur, 2)
+
+        cash_text = money("cash_cents")
+        vat_text = money("vat_payable_cents")
+        runway = ctx.get("runway_months")
+        runway_text = "bilinmiyor" if runway is None else f"{runway} Ay"
 
         if "nakit" in cmd or "runway" in cmd or "kasa" in cmd:
             reply = (
                 f"💼 *Agentic CFO Nakit Durumu*\n\n"
-                f"• Toplam Kasa & Banka: ₺{cash_try:,.2f}\n"
-                f"• Tahmini Runway: {runway} Ay\n"
+                f"• Toplam Kasa & Banka: {cash_text}\n"
+                f"• Tahmini Runway: {runway_text}\n"
                 f"• Finansal Sağlık: Stabil ✅"
             )
             return BotResponse(
@@ -65,7 +74,7 @@ class OmnichannelCFOBotGateway:
         elif "vergi" in cmd or "kdv" in cmd:
             reply = (
                 f"📅 *Agentic CFO Vergi Takvimi*\n\n"
-                f"• Tahakkuk Eden KDV: ₺{vat_try:,.2f}\n"
+                f"• Tahakkuk Eden KDV: {vat_text}\n"
                 f"• Son Ödeme Günü: Ayın 26'sı\n"
                 f"• Durum: Ödeme kuyruğunda hazır ⏳"
             )

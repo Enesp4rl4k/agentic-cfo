@@ -202,7 +202,7 @@ async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
             f"Kurumsal risk skoru: {enterprise_score}/10 — risk duruşu {posture_tr}. "
             f"Risk kaydı: {reg.get('total_risks', 0)} risk, "
             f"{reg.get('by_band', {}).get('critical', 0)} kritik. "
-            f"Operasyonel kayıplar: {loss.get('total_net_loss', 0) / 100:,.0f} ₺ net. "
+            f"Operasyonel kayıplar: {loss.get('total_net_loss', 0) / 100:,.0f} net. "
             f"KRI: {len(kri.get('breached_red', []))} kırmızı, "
             f"{len(kri.get('breached_amber', []))} amber."
         )

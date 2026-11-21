@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import load_owned_job, require_writer
 from app.api.auth import get_current_user
+from app.core.currency_totals import fmt_amount
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
@@ -294,6 +295,7 @@ async def explain_anomaly(
             related_txs.append({
                 "id": str(tx.id),
                 "amount": tx.amount_kurus / 100 if tx.amount_kurus else 0,
+                "currency": tx.currency,
                 "vendor": tx.vendor or "",
                 "category": tx.category or "",
                 "description": tx.description or "",
@@ -303,7 +305,7 @@ async def explain_anomaly(
     evidence = anomaly.evidence or {}
     evidence_text = ", ".join(f"{k}: {v}" for k, v in evidence.items() if k not in ("detectors",))
     tx_text = "\n".join(
-        f"  - {t['date']} | {t['vendor']} | {t['category']} | {t['amount']:,.2f} TL | {t['description']}"
+        f"  - {t['date']} | {t['vendor']} | {t['category']} | {fmt_amount(t['amount'], t['currency'], 2)} | {t['description']}"
         for t in related_txs
     ) or "  (ilgili işlem bulunamadı)"
 

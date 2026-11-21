@@ -82,6 +82,7 @@ def ornek_rapor(*, runway: float = 9.5) -> dict[str, Any]:
     """
     return {
         "pnl": {
+            "currency": "TRY",
             "revenue": 12_000_000,
             "total_opex": 8_000_000,
             "net_margin": 0.2,

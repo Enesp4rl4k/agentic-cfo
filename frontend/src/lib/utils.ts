@@ -7,14 +7,12 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Format a number as currency in the given currency and locale.
- * Money screens pass the currency the data is in (see useCurrencyFormat); `null` formats the bare number;
- * the USD default is only for legacy call sites that do not say.
+ * Money screens pass the currency the data is in (see useCurrencyFormat). `null` (no currency is known)
+ * formats the bare number: a symbol is a claim, and there is no default currency to fall back on.
  */
-export function formatCurrency(value: number, currency: string | null = "USD", locale = "en-US"): string {
-  // No currency known (several, none confirmed): the number alone, never a symbol we cannot vouch for.
-  if (currency === null) {
-    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
-  }
+export function formatCurrency(value: number, currency: string | null, locale = "en-US"): string {
+  const bare = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  if (currency === null) return bare.format(value);
   try {
     return new Intl.NumberFormat(locale, {
       style: "currency",
@@ -23,12 +21,8 @@ export function formatCurrency(value: number, currency: string | null = "USD", l
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+    // Not an ISO 4217 code Intl knows: say the code as written rather than a symbol we invented.
+    return `${bare.format(value)} ${currency}`;
   }
 }
 
