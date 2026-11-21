@@ -63,6 +63,7 @@ def _row(r: CanonicalTransaction) -> dict[str, Any]:
         "id": r.id,
         "transaction_date": r.transaction_date.isoformat()[:10],
         "amount_cents": r.amount_cents,
+        "currency": r.currency,
         "direction": r.direction,
         "description": r.description,
         "category": r.category,

@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency_totals import DEFAULT_BASE, normalise
 from app.models.related_party import RelatedParty
 
 # Turkish company-form suffixes carry no identifying information: "Demir A.Ş."
@@ -171,13 +172,18 @@ MIN_RECURRENCE = 2
 
 
 def group_counterparties(
-    rows: list[tuple[str, int, int]],
+    rows: list[tuple[Any, ...]],
     known: set[str],
     *,
     limit: int = 25,
     min_recurrence: int = MIN_RECURRENCE,
+    base: str = DEFAULT_BASE,
 ) -> list[dict[str, Any]]:
-    """Collapse (vendor, count, total) rows into suggestions by normalised name.
+    """Collapse (vendor, count, total[, currency]) rows into suggestions by normalised name.
+
+    Amounts in different currencies are not added: `total_kurus` is the base-currency total
+    (the ranking uses it), `totals_by_currency` carries each currency's own. A row with no
+    currency counts as the base.
 
     Recurrence has to be counted *after* normalising. Grouping and thresholding
     in SQL measures how often a company was spelled one particular way, so
@@ -187,7 +193,9 @@ def group_counterparties(
     Migros, spelled identically twice, survived.
     """
     grouped: dict[str, dict[str, Any]] = {}
-    for vendor, tx_count, total in rows:
+    base = normalise(base) or DEFAULT_BASE
+    for vendor, tx_count, total, *rest in rows:
+        currency = normalise(rest[0]) if rest and rest[0] else base
         normalized = normalize_name(vendor)
         if not normalized or normalized in known:
             continue
@@ -198,12 +206,15 @@ def group_counterparties(
             "normalized_name": normalized,
             "transaction_count": 0,
             "total_kurus": 0,
+            "totals_by_currency": {},
             "spellings": 0,
         })
         if len(vendor) > len(str(entry["vendor"])):
             entry["vendor"] = vendor
         entry["transaction_count"] += int(tx_count or 0)
-        entry["total_kurus"] += int(total or 0)
+        entry["totals_by_currency"][currency] = entry["totals_by_currency"].get(currency, 0) + int(total or 0)
+        if currency == base:
+            entry["total_kurus"] += int(total or 0)
         entry["spellings"] += 1
 
     return sorted(

@@ -125,6 +125,19 @@ async def muhasebe_analiz(
             detail="Bu job'a ait işlem bulunamadı. Önce analiz çalıştırın.",
         )
 
+    # A journal is kept in one currency. Posting a USD amount as if it were lira would put a
+    # number in the books that is not one; no exchange rate is kept here, so rows in any other
+    # currency stay out of the journal and are counted in the response for the accountant.
+    from app.core.currency_totals import split_by_currency
+    from app.services.ledger import base_currency_of
+
+    journal_currency = await base_currency_of(db, str(job.org_id)) if job.org_id else "TRY"
+    txs, foreign_txs = split_by_currency(txs, journal_currency)
+    if not txs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu job'un tüm işlemleri {journal_currency} dışında; kur kaynağı olmadan yevmiyeye alınmadı.",
+        )
     tx_dicts = [
         {
             "id":               tx.id,
@@ -210,6 +223,7 @@ async def muhasebe_analiz(
     result_dict = sonuc.to_dict()
     result_dict["onay_kuyruguna_eklendi"] = onay_eklendi
     result_dict["iliskili_taraf_isaretlendi"] = related_flagged
+    result_dict["para_birimi_disi"] = {c: len(v) for c, v in sorted(foreign_txs.items())}
     result_dict["coa_adapter"] = "tr_thp" if "tr" in packs else "generic_gaap"
 
     logger.info(

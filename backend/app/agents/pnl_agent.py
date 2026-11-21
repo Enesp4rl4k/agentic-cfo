@@ -14,6 +14,13 @@ from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core.currency_totals import (
+    DEFAULT_BASE,
+    currency_note,
+    foreign_summaries,
+    normalise,
+    split_by_currency,
+)
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.services.telemetry import trace_agent
 
@@ -88,13 +95,26 @@ def _compute_trend(monthly: dict[str, int]) -> dict[str, Any]:
     }
 
 
-def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
+def _compute_pnl(
+    transactions: list[dict[str, Any]],
+    base_currency: str | None = None,
+    foreign_totals: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Pure calculation — no LLM, no I/O.
+
+    Only `base_currency` rows (default TRY) are summed: amounts in another currency are not
+    the same unit and are never added in. Each other currency is reported as its own
+    sub-total in `other_currencies` (`foreign_totals` when the pipeline already took those
+    rows out, else computed from the rows given). Margins and trends are therefore base-only.
 
     Balance-sheet movements (`tax_payment`, `transfer`) are cash, not profit: a
     KDV payment or a loan drawn is neither an expense nor revenue. They stay in
     the transactions for the cash flow and are left out here.
     """
+    base = normalise(base_currency) or DEFAULT_BASE
+    everything = transactions
+    transactions, other = split_by_currency(transactions, base)
+    foreign = foreign_summaries(everything, everything, base) if other else list(foreign_totals or [])
     transactions = [t for t in transactions if t.get("category") not in BILANCO_KATEGORILERI]
     income_txs = [t for t in transactions if t.get("type") == "income"]
     expense_txs = [t for t in transactions if t.get("type") == "expense"]
@@ -138,6 +158,10 @@ def _compute_pnl(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "net_margin": net_margin,
         "total_expenses": cogs + total_opex + tax + loan_payments,
         "transaction_count": len(transactions),
+        # The figures above are in `currency` only; every other currency is its own line.
+        "currency": base,
+        "other_currencies": foreign,
+        "currency_note": currency_note(base, foreign),
         # S1-1: trend analysis
         "revenue_trend": revenue_trend,
         "expense_trend": expense_trend,
@@ -205,12 +229,12 @@ async def _generate_cfo_narrative(
 async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
     """P&L Skill. done_when: state['pnl']['net_income'] is an integer."""
     transactions = state.get("transactions", [])
-    if not transactions:
+    if not transactions and not state.get("foreign_totals"):
         return SkillResult(ok=False, detail="No transactions available for P&L calculation.", halt=True)
 
     try:
         settings = get_settings()
-        pnl = _compute_pnl(transactions)
+        pnl = _compute_pnl(transactions, state.get("base_currency"), state.get("foreign_totals"))
         narrative = await _generate_cfo_narrative(pnl, settings, state=state)
         pnl["narrative"] = narrative
 

@@ -40,6 +40,9 @@ class MorningFacts:
     week_net_cents: int | None = None
     week_end_balance_cents: int | None = None
     shortfall_cents: int | None = None
+    # (currency, revenue, expense) of every other currency in the period: never added to the
+    # lira figures, and said so in a line of their own.
+    other_currencies: tuple[tuple[str, int, int], ...] = ()
 
     @property
     def profit_cents(self) -> int | None:
@@ -59,7 +62,8 @@ class MorningFacts:
             self.revenue_cents, self.expense_cents, self.profit_cents, self.opening_cash_cents,
             self.week_net_cents, self.week_end_balance_cents, self.shortfall_cents,
         )
-        return {abs(v) for v in known if v is not None}
+        foreign = {abs(v) for _code, rev, exp in self.other_currencies for v in (rev, exp) if v}
+        return {abs(v) for v in known if v is not None} | foreign
 
     def allowed_plain(self) -> set[int]:
         plain = {self.job_count, self.critical_count, self.high_count}
@@ -84,6 +88,10 @@ async def build_facts(
             revenue_cents=int(summary["revenue_cents"]),
             expense_cents=int(summary["expense_cents"]),
             period_start=period["start"], period_end=period["end"], period_months=period["months"],
+            other_currencies=tuple(
+                (o["currency"], int(o["revenue_cents"]), int(o["expense_cents"]))
+                for o in summary["other_currencies"]
+            ),
         )
     radar = await compute_cash_radar(db, org_id, anchor_date=today)
     if radar.opening_cash is not None:
@@ -108,6 +116,11 @@ def _data_date_line(facts: MorningFacts) -> str:
     return f"{_tr_date(facts.data_date)} tarihli verilere göre."
 
 
+def _plain(cents: int) -> str:
+    """An amount as the Turkish text writes it, without a currency sign: 12.400,00."""
+    return f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
+
+
 def facts_lines(facts: MorningFacts) -> list[str]:
     """One sentence per known figure. An unknown figure has no sentence."""
     lines: list[str] = []
@@ -116,6 +129,10 @@ def facts_lines(facts: MorningFacts) -> list[str]:
             f"Defterde {facts.period_start} – {facts.period_end} arasında "
             f"{_fmt(facts.revenue_cents)} gelir, {_fmt(facts.expense_cents)} gider görünüyor."
         )
+    for code, revenue, expense in facts.other_currencies:
+        parts = [f"{_plain(v)} {code} {word}" for v, word in ((revenue, "gelir"), (expense, "gider")) if v]
+        if parts:
+            lines.append(f"Ayrıca {' ve '.join(parts)} var; TL'ye çevrilmedi, yukarıdaki toplamlara girmedi.")
     if facts.opening_cash_cents is not None and facts.opening_as_of:
         lines.append(
             f"Banka bakiyesi {_fmt(facts.opening_cash_cents)} "

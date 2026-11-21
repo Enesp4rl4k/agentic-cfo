@@ -2839,4 +2839,13 @@ export const tr: MessageTree = {
     },
     footer: { sample: "Ekranlardaki rakamlar örnektir", carpe: "Carpe diem.", carpeSub: "GÜNÜ YAKALA" },
   },
+  otherCurrency: {
+    notConverted: "Ayrıca: {amounts}, {base}'ye çevrilmedi.",
+    revenueOf: "{amount} gelir",
+    expenseOf: "{amount} gider",
+    inOf: "{amount} giriş",
+    outOf: "{amount} çıkış",
+    ratiosNote: "Marjlar ve değişimler yalnızca {base} tutarlarıyla hesaplandı.",
+    assumed: "Bu satırların {n} tanesinin para birimi varsayıldı.",
+  },
 };

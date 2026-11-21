@@ -44,6 +44,20 @@ if not os.environ.get("DATABASE_URL_OVERRIDE"):
 # in-memory backend here; the durability tests switch to sqlite explicitly.
 os.environ.setdefault("LANGGRAPH_CHECKPOINT", "memory")
 
+# ── 0b. The test companies are Turkish ───────────────────────────────────────
+# `Organization.base_currency` defaults to USD (the international default), but the money in
+# these tests is lira: with the default, every figure would be a "not converted" foreign
+# line. A test that wants another base passes `base_currency=` itself.
+from sqlalchemy import event
+
+from app.models.organization import Organization
+
+
+@event.listens_for(Organization, "init")
+def _test_orgs_keep_lira(target, args, kwargs):  # type: ignore[no-untyped-def]
+    kwargs.setdefault("base_currency", "TRY")
+
+
 # ── 1. Pin the real langchain / langgraph modules ────────────────────────────
 _REAL_MODULE_NAMES = (
     "langgraph",

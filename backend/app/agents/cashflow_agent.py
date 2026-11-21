@@ -15,6 +15,13 @@ from typing import Any
 from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core.currency_totals import (
+    DEFAULT_BASE,
+    currency_note,
+    foreign_summaries,
+    normalise,
+    split_by_currency,
+)
 from app.services.ledger import BOOK
 from app.services.telemetry import trace_agent
 
@@ -32,8 +39,20 @@ def _fmt(cents: int) -> str:
     return f"₺{cents / 100:,.2f}"
 
 
-def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pure calculation — classifies each transaction and sums by activity."""
+def _classify_cashflow(
+    transactions: list[dict[str, Any]],
+    base_currency: str | None = None,
+    foreign_totals: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Pure calculation — classifies each transaction and sums by activity.
+
+    Only `base_currency` rows (default TRY) are summed; another currency is its own
+    sub-total in `other_currencies`, never added in (`core/currency_totals`).
+    """
+    base = normalise(base_currency) or DEFAULT_BASE
+    everything = transactions
+    transactions, other = split_by_currency(transactions, base)
+    foreign = foreign_summaries(everything, everything, base) if other else list(foreign_totals or [])
     operating_in = operating_out = 0
     investing_in = investing_out = 0
     financing_in = financing_out = 0
@@ -94,6 +113,9 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "financing": financing,
         "net_change": net_change,
         "monthly_series": monthly_series,
+        "currency": base,
+        "other_currencies": foreign,
+        "currency_note": currency_note(base, foreign, "cash"),
         # CCC metrics
         "dso_days": ccc["dso_days"],
         "dpo_days": ccc["dpo_days"],
@@ -251,12 +273,12 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
     # company holding only invoices has no cash movement yet, which is an answer.
     ledger = state.get("ledger_view")
     transactions = ledger["cash"] if ledger is not None else state.get("transactions", [])
-    if not transactions and ledger is None:
+    if not transactions and ledger is None and not state.get("foreign_totals"):
         return SkillResult(ok=False, detail="No transactions for cash flow analysis.", halt=True)
 
     try:
         settings = get_settings()
-        cashflow = _classify_cashflow(transactions)
+        cashflow = _classify_cashflow(transactions, state.get("base_currency"), state.get("foreign_totals"))
         alerts = _detect_alerts(cashflow)
         # Rows read from an e-Defter journal are accrual income-statement lines:
         # a sale counts when invoiced, paid or not. Classified as cash they make

@@ -2586,6 +2586,16 @@ export type MessageTree = {
     close: { title: string; note: string; cta: string; demo: string };
     footer: { sample: string; carpe: string; carpeSub: string };
   };
+  // Amounts in other currencies are never added to the base total (no exchange-rate source).
+  otherCurrency: {
+    notConverted: string;
+    revenueOf: string;
+    expenseOf: string;
+    inOf: string;
+    outOf: string;
+    ratiosNote: string;
+    assumed: string;
+  };
 };
 
 export const en: MessageTree = {
@@ -5428,5 +5438,14 @@ export const en: MessageTree = {
       demo: "Try the demo",
     },
     footer: { sample: "Figures on screen are samples", carpe: "Carpe diem.", carpeSub: "SEIZE THE DAY" },
+  },
+  otherCurrency: {
+    notConverted: "Also: {amounts}, not converted to {base}.",
+    revenueOf: "{amount} revenue",
+    expenseOf: "{amount} expenses",
+    inOf: "{amount} in",
+    outOf: "{amount} out",
+    ratiosNote: "Margins and changes use {base} amounts only.",
+    assumed: "{n} of these rows have an assumed currency.",
   },
 };

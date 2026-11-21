@@ -259,6 +259,50 @@
         "title": "CashRadarOut",
         "type": "object"
       },
+      "CurrencySubtotalOut": {
+        "description": "One non-base currency, summed on its own. Never added to the base figures.",
+        "properties": {
+          "assumed_rows": {
+            "default": 0,
+            "title": "Assumed Rows",
+            "type": "integer"
+          },
+          "cash_in_cents": {
+            "title": "Cash In Cents",
+            "type": "integer"
+          },
+          "cash_out_cents": {
+            "title": "Cash Out Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "expense_cents": {
+            "title": "Expense Cents",
+            "type": "integer"
+          },
+          "revenue_cents": {
+            "title": "Revenue Cents",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "revenue_cents",
+          "expense_cents",
+          "cash_in_cents",
+          "cash_out_cents",
+          "rows"
+        ],
+        "title": "CurrencySubtotalOut",
+        "type": "object"
+      },
       "DecisionRequest": {
         "properties": {
           "note": {
@@ -801,6 +845,10 @@
       },
       "LedgerSummaryOut": {
         "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
           "expense_cents": {
             "title": "Expense Cents",
             "type": "integer"
@@ -825,6 +873,13 @@
           "open_items": {
             "$ref": "#/components/schemas/OpenItemsOut"
           },
+          "other_currencies": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencySubtotalOut"
+            },
+            "title": "Other Currencies",
+            "type": "array"
+          },
           "period": {
             "$ref": "#/components/schemas/LedgerPeriodOut"
           },
@@ -845,8 +900,10 @@
           "last_upload",
           "open_items",
           "rows",
+          "currency",
           "revenue_cents",
           "expense_cents",
+          "other_currencies",
           "possible_duplicates",
           "period",
           "months"

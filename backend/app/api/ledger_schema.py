@@ -45,12 +45,29 @@ class LedgerMonthOut(BaseModel):
     cash_out_cents: int
 
 
+class CurrencySubtotalOut(BaseModel):
+    """One non-base currency, summed on its own. Never added to the base figures."""
+
+    currency: str
+    revenue_cents: int
+    expense_cents: int
+    cash_in_cents: int
+    cash_out_cents: int
+    rows: int
+    # Rows whose currency was assumed at upload rather than read (0 until the flag exists).
+    assumed_rows: int = 0
+
+
 class LedgerSummaryOut(BaseModel):
     last_upload: LastUploadOut | None
     open_items: OpenItemsOut
     rows: int
+    # The organisation's base currency: revenue, expense and the monthly cash figures are in it.
+    currency: str
     revenue_cents: int
     expense_cents: int
+    # Every other currency, reported separately and not converted (no exchange-rate source).
+    other_currencies: list[CurrencySubtotalOut]
     possible_duplicates: int
     period: LedgerPeriodOut
     months: list[LedgerMonthOut]

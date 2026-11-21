@@ -272,6 +272,29 @@ export interface components {
             /** Weeks */
             weeks: components["schemas"]["RadarWeekOut"][];
         };
+        /**
+         * CurrencySubtotalOut
+         * @description One non-base currency, summed on its own. Never added to the base figures.
+         */
+        CurrencySubtotalOut: {
+            /**
+             * Assumed Rows
+             * @default 0
+             */
+            assumed_rows: number;
+            /** Cash In Cents */
+            cash_in_cents: number;
+            /** Cash Out Cents */
+            cash_out_cents: number;
+            /** Currency */
+            currency: string;
+            /** Expense Cents */
+            expense_cents: number;
+            /** Revenue Cents */
+            revenue_cents: number;
+            /** Rows */
+            rows: number;
+        };
         /** DecisionRequest */
         DecisionRequest: {
             /** Note */
@@ -466,12 +489,16 @@ export interface components {
         };
         /** LedgerSummaryOut */
         LedgerSummaryOut: {
+            /** Currency */
+            currency: string;
             /** Expense Cents */
             expense_cents: number;
             last_upload: components["schemas"]["LastUploadOut"] | null;
             /** Months */
             months: components["schemas"]["LedgerMonthOut"][];
             open_items: components["schemas"]["OpenItemsOut"];
+            /** Other Currencies */
+            other_currencies: components["schemas"]["CurrencySubtotalOut"][];
             period: components["schemas"]["LedgerPeriodOut"];
             /** Possible Duplicates */
             possible_duplicates: number;

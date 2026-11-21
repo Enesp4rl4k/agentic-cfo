@@ -57,6 +57,7 @@ from app.agents.reconciliation_node import node_reconcile
 from app.agents.report_agent import run_report
 from app.agents.tax_agent import run_tax
 from app.agents.verifier_node import node_verifier
+from app.core.currency_totals import DEFAULT_BASE, foreign_summaries, normalise, split_by_currency
 from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
 from app.services.agent_memory import EpisodeRecord, get_memory_store
 from app.services.capability_router import get_capability_router
@@ -119,6 +120,28 @@ def _update_reflection(state: CFOState, agent: str, narrative: str, context: dic
 # ── Node builders ─────────────────────────────────────────────────────────────
 # Fatal nodes (halt on failure)
 
+def _keep_base_currency(state: CFOState, patch: dict[str, Any]) -> None:
+    """Every step after ingestion reads base-currency rows only.
+
+    Amounts in different currencies are not the same unit and no exchange rate is kept
+    (`core/currency_totals`), so the rows in any other currency leave `transactions` here:
+    no total, ratio, ranking or anomaly check downstream can mix them. What was left out
+    travels as `foreign_totals`, one sub-total per currency, for the report to show beside
+    the base figures. A ledger-fed run arrives already split (`company_view`).
+    """
+    txs = patch.get("transactions")
+    if txs is None:
+        return
+    ledger = state.get("ledger_view")
+    base = normalise((ledger or {}).get("base_currency") or state.get("base_currency")) or DEFAULT_BASE
+    kept, _ = split_by_currency(txs, base)
+    patch["base_currency"] = base
+    patch["transactions"] = kept
+    patch["foreign_totals"] = (
+        list(ledger.get("foreign") or []) if ledger is not None else foreign_summaries(txs, txs, base)
+    )
+
+
 async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
     result = await run_data_ingestion(state, _run_config(config))
     patch = _append_log(state, StepLog(
@@ -137,6 +160,8 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
                 "data_ingestion: %d transaction(s) categorised by %d user rule(s)",
                 sum(hits.values()), len(hits),
             )
+
+    _keep_base_currency(state, patch)
 
     if not result.ok:
         patch.update({"halted": True, "awaiting_review": True, "error": result.detail})
@@ -462,6 +487,25 @@ cfo_graph = _compile_cfo_graph()
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
+async def _stored_base_currency(org_id: str | None) -> str | None:
+    """The organisation's stored base currency, for a run that was not handed one."""
+    if not org_id:
+        return None
+    try:
+        from sqlalchemy import select
+
+        from app.database import session_factory
+        from app.models.organization import Organization
+
+        async with session_factory()() as db:
+            return (await db.execute(
+                select(Organization.base_currency).where(Organization.id == org_id)
+            )).scalar_one_or_none()
+    except Exception as exc:  # a run is not blocked on this: the default base is TRY
+        logger.warning("base currency lookup failed for org %s: %s", org_id, exc)
+        return None
+
+
 async def run_cfo_pipeline(
     job_id: str,
     file_path: str,
@@ -472,7 +516,8 @@ async def run_cfo_pipeline(
     period: str | None = None,
     ek_belgeler: list[dict[str, str]] | None = None,
     category_rules: list[dict[str, Any]] | None = None,
-    ledger_view: dict[str, list[dict[str, Any]]] | None = None,
+    ledger_view: dict[str, Any] | None = None,
+    base_currency: str | None = None,
 ) -> CFOState:
     """
     Run the full CFO analysis pipeline.
@@ -516,6 +561,8 @@ async def run_cfo_pipeline(
         "category_rules": category_rules or [],
         "category_rule_hits": None,
         "ledger_view": ledger_view,
+        "base_currency": base_currency or await _stored_base_currency(org_id),
+        "foreign_totals": None,
         "routing_plan": None,
         "reflection_scores": None,
         "memory_episode_ids": None,

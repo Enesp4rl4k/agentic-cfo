@@ -49,6 +49,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency_totals import (
+    DEFAULT_BASE,
+    foreign_summaries,
+    normalise,
+    split_by_currency,
+)
 from app.core.invoice_identity import (
     document_key,
     lacks_counterparty,
@@ -118,6 +124,18 @@ SOURCE_CORRECTION = "correction"
 
 
 _CHUNK = 500
+
+
+async def base_currency_of(db: AsyncSession, org_id: str) -> str:
+    """The organisation's base currency: the one that gets the headline totals.
+
+    Read as stored. It decides which figures are headline and which are listed as "not
+    converted"; it is never used to assume what currency a row is in.
+    """
+    stored = (await db.execute(
+        select(Organization.base_currency).where(Organization.id == org_id)
+    )).scalar_one_or_none()
+    return normalise(stored) or DEFAULT_BASE
 
 
 async def lock_org(db: AsyncSession, org_id: str) -> None:
@@ -320,7 +338,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             "asil_tarih": asil_tarih,
             "asil_donem": asil_donem,
             "amount_cents": tx.amount_kurus,
-            "currency": tx.currency,
+            "currency": normalise(tx.currency) or DEFAULT_BASE,  # the column's own default
             "direction": tx.type,
             "category": tx.category,
             "account_code": tx.account_code,
@@ -421,6 +439,7 @@ class CompanyRows:
     # Correction-pair rows in `profit` whose original belongs to a period outside this one:
     # row id -> that period ("2025-09"), so a screen can say "correction from an earlier period".
     reclass_of_period: dict[str, str]
+    base_currency: str      # the headline currency; rows in any other are never added to it
 
 
 def month_of(when: datetime) -> str:
@@ -441,6 +460,7 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
     """
     from app.services.reconciliation import rows_settling_items
 
+    assumed = getattr(CanonicalTransaction, "currency_assumed", None)  # PR #110 adds it; use it when present
     rows = (await db.execute(
         select(
             CanonicalTransaction.id,
@@ -457,6 +477,7 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
             CanonicalTransaction.basis,
             CanonicalTransaction.corrects_id,
             CanonicalTransaction.asil_donem,
+            *([assumed] if assumed is not None else []),
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
@@ -522,26 +543,34 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
         rows=len(in_counted),
         period=shown,
         reclass_of_period=reclass,
+        base_currency=await base_currency_of(db, org_id),
     )
 
 
 async def ledger_summary(db: AsyncSession, org_id: str, period: Period | None = None) -> dict[str, Any]:
     """The company's figures from the ledger, in kuruş, for one period (default: last 12 months).
 
+    The headline figures are in the organisation's base currency. Every other currency is
+    summed on its own in `other_currencies` and never added to them (`core/currency_totals`).
     What awaits a person waits: open items are not a period's figures.
     """
     view = await company_rows(db, org_id, period)
+    base = view.base_currency
+    cash, _ = split_by_currency(view.cash, base)
+    profit, _ = split_by_currency(view.profit, base)
     months = {m: {"cash_in_cents": 0, "cash_out_cents": 0} for m in view.months}
-    for r in view.cash:
+    for r in cash:
         key = "cash_in_cents" if r.direction == "income" else "cash_out_cents"
         months[month_of(r.transaction_date)][key] += r.amount_cents
-    earned = [r for r in view.profit if r.category not in BILANCO_KATEGORILERI]
+    earned = [r for r in profit if r.category not in BILANCO_KATEGORILERI]
     return {
         "last_upload": await _last_upload(db, org_id),
         "open_items": await _open_items_summary(db, org_id),
         "rows": view.rows,
+        "currency": base,
         "revenue_cents": sum(r.amount_cents for r in earned if r.direction == "income"),
         "expense_cents": sum(r.amount_cents for r in earned if r.direction != "income"),
+        "other_currencies": foreign_summaries(view.profit, view.cash, base),
         "possible_duplicates": view.possible_duplicates,
         "period": view.period.as_dict(),
         "months": [{"month": m, **months[m]} for m in view.months],

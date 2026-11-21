@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useTransactions, useCorrectCategory } from "@/hooks/useCFO";
 import { RuleRerunBanner, UserRuleBadge } from "@/components/transactions/RuleFeedback";
+import { OtherCurrencyLines, type OtherCurrency } from "@/components/ui/other-currency-lines";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { formatCurrency, cn } from "@/lib/utils";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -236,7 +238,7 @@ function exportCsv(rows: ReturnType<typeof buildRows>, filename: string) {
   // an accountant that drops "this date was invented" is a different record.
   const header = [
     "Date", "Date estimated", "Description", "Vendor", "Category", "Type",
-    "Amount", "KDV (stated)", "Stopaj (stated)",
+    "Amount", "KDV (stated)", "Stopaj (stated)", "Currency",
   ];
   const money = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
   const lines = rows.map((tx) =>
@@ -250,6 +252,7 @@ function exportCsv(rows: ReturnType<typeof buildRows>, filename: string) {
       (tx.amount_cents / 100).toFixed(2),
       money(tx.kdv_cents),
       money(tx.stopaj_cents),
+      tx.currency ?? "",
     ].join(",")
   );
   const blob = new Blob([header.join(",") + "\n" + lines.join("\n")], {
@@ -273,6 +276,7 @@ function buildRows<T>(arr: T[]) {
     category: string;
     type: string;
     amount_cents: number;
+    currency?: string | null;
     date_is_estimated?: boolean;
     kdv_cents?: number | null;
     stopaj_cents?: number | null;
@@ -285,6 +289,7 @@ function buildRows<T>(arr: T[]) {
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
+  const { org } = useOrgSettings();
 
   // Filters
   const [search, setSearch] = useState("");
@@ -370,11 +375,22 @@ export default function TransactionsPage() {
   const safePage = Math.min(page, totalPages);
   const pageRows = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  // Summary stats (always from full set)
-  const income = allTransactions.filter((t) => t.type === "income");
-  const expenses = allTransactions.filter((t) => t.type === "expense");
-  const totalIn = income.reduce((s, t) => s + t.amount_cents / 100, 0);
-  const totalOut = expenses.reduce((s, t) => s + t.amount_cents / 100, 0);
+  // Summary stats (always from full set). Amounts in different currencies are never added:
+  // the headline is the organisation's base currency and every other currency is its own
+  // "not converted" line (no exchange-rate source).
+  const baseCurrency = (org?.base_currency || "TRY").toUpperCase();
+  const currencyOf = (t: { currency?: string | null }) => (t.currency || baseCurrency).toUpperCase();
+  const inBase = allTransactions.filter((t) => currencyOf(t) === baseCurrency);
+  const totalIn = inBase.filter((t) => t.type === "income").reduce((s, t) => s + t.amount_cents / 100, 0);
+  const totalOut = inBase.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount_cents / 100, 0);
+  const otherCurrencies: OtherCurrency[] = [
+    ...new Set(allTransactions.map(currencyOf).filter((c) => c !== baseCurrency)),
+  ].sort().map((currency) => {
+    const rows = allTransactions.filter((t) => currencyOf(t) === currency);
+    const sum = (type: string) => rows.filter((t) => t.type === type).reduce((s, t) => s + t.amount_cents, 0);
+    return { currency, cash_in_cents: sum("income"), cash_out_cents: sum("expense"), rows: rows.length };
+  });
+  const money = (value: number) => formatCurrency(value, baseCurrency, org?.locale || "en-US");
 
   const hasFilter = search || filterCat !== "all" || filterType !== "all";
 
@@ -398,13 +414,13 @@ export default function TransactionsPage() {
           <div className="hidden text-right sm:block">
             <p className="text-xs text-muted-foreground">Total In</p>
             <p className="text-sm font-semibold tabular-nums text-emerald-400">
-              {formatCurrency(totalIn)}
+              {money(totalIn)}
             </p>
           </div>
           <div className="hidden text-right sm:block">
             <p className="text-xs text-muted-foreground">Total Out</p>
             <p className="text-sm font-semibold tabular-nums text-destructive">
-              {formatCurrency(totalOut)}
+              {money(totalOut)}
             </p>
           </div>
           <div className="hidden text-right sm:block">
@@ -415,7 +431,7 @@ export default function TransactionsPage() {
                 totalIn - totalOut >= 0 ? "text-emerald-400" : "text-destructive"
               )}
             >
-              {formatCurrency(totalIn - totalOut)}
+              {money(totalIn - totalOut)}
             </p>
           </div>
 
@@ -439,6 +455,7 @@ export default function TransactionsPage() {
           </button>
         </div>
       </div>
+      <OtherCurrencyLines items={otherCurrencies} base={baseCurrency} kind="cash" ratios />
 
       {/* Filter toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -581,12 +598,12 @@ export default function TransactionsPage() {
                       <div className="mt-0.5 flex gap-1.5 text-[10px] text-muted-foreground">
                         {tx.kdv_cents != null && (
                           <span title="KDV as the source document states it">
-                            KDV {formatCurrency(tx.kdv_cents / 100)}
+                            KDV {formatCurrency(tx.kdv_cents / 100, currencyOf(tx), org?.locale || "en-US")}
                           </span>
                         )}
                         {tx.stopaj_cents != null && tx.stopaj_cents > 0 && (
                           <span title="Income-tax withholding as the source document states it">
-                            · stopaj {formatCurrency(tx.stopaj_cents / 100)}
+                            · stopaj {formatCurrency(tx.stopaj_cents / 100, currencyOf(tx), org?.locale || "en-US")}
                           </span>
                         )}
                       </div>
@@ -613,7 +630,7 @@ export default function TransactionsPage() {
                     )}
                   >
                     {tx.type === "income" ? "+" : "−"}
-                    {formatCurrency(tx.amount_cents / 100)}
+                    {formatCurrency(tx.amount_cents / 100, currencyOf(tx), org?.locale || "en-US")}
                   </td>
                 </tr>
               ))}
