@@ -461,7 +461,9 @@ def _router_model_for(task: str) -> str:
         cfg = get_llm_router().select_model(task)
         return cfg.model_id
     except Exception:
-        return "gpt-4o"  # safe fallback
+        from app.config import get_settings
+
+        return get_settings().llm_model
 
 
 async def get_pnl_narrative(
