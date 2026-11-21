@@ -48,7 +48,7 @@ from app.core.invoice_identity import canonical_invoice_id
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
-from app.models.canonical_transaction import CanonicalTransaction
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.models.transaction import Transaction
 
@@ -56,6 +56,10 @@ logger = logging.getLogger(__name__)
 
 # Rows identified by their content, across every file and source.
 SOURCE_FINGERPRINT = "fingerprint"
+# A category correction on a closed month: a reversing row and a corrected row, booked in
+# the first open month (services/ledger_correction.py). Neither is a payment or a new
+# upload, so duplicate detection and reconciliation leave them alone.
+SOURCE_CORRECTION = "correction"
 
 ACTIVE = "active"
 POSSIBLE_DUPLICATE = "possible_duplicate"
@@ -124,6 +128,7 @@ async def _others_by_money(
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
+            money_rows(),
             CanonicalTransaction.transaction_date >= datetime.combine(min(days) - window, time.min, UTC),
             CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
         )
@@ -159,23 +164,24 @@ async def _insert_ignoring_races(db: AsyncSession, values: dict[str, Any]) -> in
     return int(result.rowcount or 0)
 
 
-async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
-    """Append a completed analysis to its company's ledger. Idempotent; commits."""
-    counts = {"new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0}
-    job = await db.get(AnalysisJob, job_id)
-    if job is None or not job.org_id or job.status != JobStatus.COMPLETED:
-        return counts
-    org_id = str(job.org_id)
-
-    txs = (await db.execute(
+async def job_transactions(db: AsyncSession, job_id: str) -> list[Transaction]:
+    return list((await db.execute(
         select(Transaction).where(Transaction.job_id == job_id).order_by(Transaction.transaction_date)
-    )).scalars().all()
+    )).scalars().all())
 
+
+def record_ids(org_id: str, txs: list[Transaction]) -> tuple[list[tuple[str, Transaction]], int]:
+    """Each transaction the ledger counts, with its `source_record_id`; and how many had no date.
+
+    The one place that says which ledger row a transaction is, so a correction finds the
+    row the append wrote.
+    """
+    no_date = 0
     usable: list[tuple[str, Transaction]] = []
     seen: Counter[str] = Counter()
     for tx in txs:
         if tx.date_is_estimated:
-            counts["no_date"] += 1
+            no_date += 1
             continue
         if not tx.amount_kurus:
             continue
@@ -189,6 +195,19 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         print_ = _fingerprint(org_id, tx)
         seen[print_] += 1
         usable.append((f"fp:{print_}#{seen[print_]}", tx))
+    return usable, no_date
+
+
+
+async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
+    """Append a completed analysis to its company's ledger. Idempotent; commits."""
+    counts = {"new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0}
+    job = await db.get(AnalysisJob, job_id)
+    if job is None or not job.org_id or job.status != JobStatus.COMPLETED:
+        return counts
+    org_id = str(job.org_id)
+
+    usable, counts["no_date"] = record_ids(org_id, await job_transactions(db, job_id))
     if not usable:
         await _record(db, job, counts)
         return counts
@@ -376,29 +395,40 @@ async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
             CanonicalTransaction.description,
             CanonicalTransaction.ledger_status,
             CanonicalTransaction.basis,
+            CanonicalTransaction.corrects_id,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
         ).order_by(CanonicalTransaction.transaction_date, CanonicalTransaction.id)
     )).all()
     settling = await rows_settling_items(db, org_id)
-    counted = [r for r in rows if r.ledger_status != POSSIBLE_DUPLICATE]
+    # Correction rows (a closed-month category correction, `corrects_id` set) are not
+    # money: the money views, the months and the counts read the real rows only.
+    money = [r for r in rows if r.corrects_id is None]
+    counted = [r for r in money if r.ledger_status != POSSIBLE_DUPLICATE]
     book_months = {month_of(r.transaction_date) for r in counted if r.basis == BOOK}
     cash_months = {month_of(r.transaction_date) for r in counted if r.basis == CASH}
+    profit = [
+        r for r in counted
+        # The books already say what their month earned, and a settling line
+        # is an invoice already counted, arriving.
+        if (r.basis == BOOK or month_of(r.transaction_date) not in book_months)
+        and not (r.basis == CASH and r.id in settling)
+    ]
+    # The by-category profit view also reads each correction pair, which moves an amount
+    # between categories in an open month. The pair inherits the treatment of the row it
+    # corrects: counted in profit only if that row is, whatever month the pair sits in.
+    in_profit = {r.id for r in profit}
+    corrections = [r for r in rows if r.corrects_id in in_profit and r.ledger_status != POSSIBLE_DUPLICATE]
     return CompanyRows(
-        profit=[
-            r for r in counted
-            # The books already say what their month earned, and a settling line
-            # is an invoice already counted, arriving.
-            if (r.basis == BOOK or month_of(r.transaction_date) not in book_months)
-            and not (r.basis == CASH and r.id in settling)
-        ],
+        profit=profit + corrections,
         # A posting list with no bank statement beside it is the best view of cash.
+        # A reclassification moves no cash: the pairs are not here.
         cash=[
             r for r in counted
             if r.basis == CASH or (r.basis == BOOK and month_of(r.transaction_date) not in cash_months)
         ],
-        possible_duplicates=len(rows) - len(counted),
+        possible_duplicates=len(money) - len(counted),
         months=sorted({month_of(r.transaction_date) for r in counted}),
         rows=len(counted),
     )

@@ -200,7 +200,7 @@ async def get_live_data_status(
 ) -> dict[str, Any]:
     """Whether org has live sync + fresh semantic brief (golden path readiness)."""
     org_id = _org_id(current_user)
-    from app.models.canonical_transaction import CanonicalTransaction
+    from app.models.canonical_transaction import CanonicalTransaction, money_rows
     from app.models.sync_run import SyncRun
 
     snap = await get_latest_semantic_snapshot(org_id, db)
@@ -221,7 +221,7 @@ async def get_live_data_status(
         count_result = await db.execute(
             select(func.count())
             .select_from(CanonicalTransaction)
-            .where(CanonicalTransaction.org_id == org_id)
+            .where(CanonicalTransaction.org_id == org_id, money_rows())
         )
         canonical_count = int(count_result.scalar_one() or 0)
     except Exception:

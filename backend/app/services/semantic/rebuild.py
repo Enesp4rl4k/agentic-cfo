@@ -79,6 +79,7 @@ async def _load_canonical(
         from sqlalchemy import case, func
 
         from app.models.canonical_transaction import CanonicalTransaction as CT
+        from app.models.canonical_transaction import money_rows
 
         is_inflow = func.lower(func.coalesce(CT.direction, "")).in_(_INFLOW_DIRECTIONS)
         absolute = func.abs(CT.amount_cents)
@@ -92,6 +93,7 @@ async def _load_canonical(
             CT.org_id == str(org_id),
             CT.ledger_status == "active",
             CT.basis != "document",
+            money_rows(),
         )
         if period_start is not None:
             stmt = stmt.where(CT.transaction_date >= period_start)

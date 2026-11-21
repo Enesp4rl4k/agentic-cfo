@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
-from app.models.canonical_transaction import CanonicalTransaction
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 
 
 @dataclass(frozen=True)
@@ -99,6 +99,7 @@ async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str
                     CanonicalTransaction.ledger_status == "active",
                     CanonicalTransaction.direction == "expense",
                     CanonicalTransaction.amount_cents > 0,
+                    money_rows(),
                     CanonicalTransaction.currency == "TRY",
                 )
             )
