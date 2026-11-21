@@ -50,6 +50,7 @@ from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
+from app.models.organization import Organization
 from app.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,41 @@ CASH = "cash"
 
 _CHUNK = 500
 DUPLICATE_WINDOW_DAYS = 3    # as the anomaly agent's duplicate check
+
+
+async def lock_org(db: AsyncSession, org_id: str) -> None:
+    """Serialise ledger writers and month closes of one organisation (no-op on SQLite).
+
+    The organisation row is always locked first (corrections, `donem_kilidi.kilitle`,
+    `append_job`), so the lock state read afterwards is the state at commit.
+    """
+    await db.execute(select(Organization.id).where(Organization.id == org_id).with_for_update())
+
+
+def correction_number(source_record_id: str) -> int:
+    """n of a correction row id `<record>~k<n>-iptal|yeni`."""
+    return int(source_record_id.rsplit("~k", 1)[1].split("-")[0])
+
+
+async def effective_categories(db: AsyncSession, org_id: str) -> dict[str, str | None]:
+    """Original row id -> the category its latest correction gave it (closed months only).
+
+    A closed month's original row keeps its old category; its effective one is the
+    latest corrected row's. Readers that show or match categories use this.
+    """
+    rows = (await db.execute(
+        select(CanonicalTransaction.corrects_id, CanonicalTransaction.source_record_id,
+               CanonicalTransaction.category)
+        .where(CanonicalTransaction.org_id == org_id,
+               CanonicalTransaction.corrects_id.is_not(None),
+               CanonicalTransaction.source_record_id.like("%-yeni"))
+    )).all()
+    latest: dict[str, tuple[int, str | None]] = {}
+    for corrects_id, record_id, category in rows:
+        n = correction_number(record_id)
+        if corrects_id not in latest or n > latest[corrects_id][0]:
+            latest[corrects_id] = (n, category)
+    return {k: v[1] for k, v in latest.items()}
 
 
 def _words(text: str | None) -> str:
@@ -212,6 +248,9 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         await _record(db, job, counts)
         return counts
 
+    # Org row first, as corrections and month closes do: a close racing this append is
+    # serial, so the closed months read below are the ones at commit.
+    await lock_org(db, org_id)
     existing = await _existing(db, org_id, [rid for rid, _ in usable])
     # Months the accountant closed: their rows do not change, and money that belongs
     # to them but arrives now is written into the first open month.

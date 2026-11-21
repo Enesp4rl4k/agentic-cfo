@@ -14,6 +14,16 @@ from typing import Any, TypedDict
 
 from app.platform.policies import CONFIDENCE_AUTO_PROCEED_MIN
 
+
+def is_correction_row(tx: dict[str, Any]) -> bool:
+    """A closed-month category correction row (ledger `corrects_id` set).
+
+    It moves an amount between categories; it is not a payment and opens no period.
+    Category totals read it, detectors and period lists do not.
+    """
+    return bool(tx.get("corrects_id"))
+
+
 # ---------------------------------------------------------------------------
 # Shared audit type (one entry per skill run)
 # ---------------------------------------------------------------------------

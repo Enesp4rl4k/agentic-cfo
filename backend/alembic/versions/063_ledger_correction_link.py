@@ -27,6 +27,10 @@ _INDEX = "ix_canonical_transactions_corrects_id"
 def upgrade() -> None:
     insp = sa.inspect(op.get_bind())
     tables = insp.get_table_names()
+    # `corrects_id` intentionally has no foreign key: it is a soft pointer to another row of
+    # the same table (a correction row to the row it corrects). Ledger rows are never deleted
+    # one by one (only an org-wide demo reset or erasure removes them, together with their
+    # corrections), and a self-referencing FK would make that bulk delete order-dependent.
     if _LEDGER in tables and "corrects_id" not in {c["name"] for c in insp.get_columns(_LEDGER)}:
         op.add_column(_LEDGER, sa.Column("corrects_id", sa.String(36), nullable=True))
         op.create_index(_INDEX, _LEDGER, ["corrects_id"])
