@@ -2152,6 +2152,17 @@ export type MessageTree = {
         uploaded: string;
       };
       analysis: { title: string; body: string; done: string };
+      radar: {
+        title: string;
+        body: string;
+        cta: string;
+        waiting: string;
+        loading: string;
+        loadError: string;
+        unknownTitle: string;
+        unknownBody: string;
+        known: string;
+      };
       auto: {
         title: string;
         body: string;
@@ -2160,8 +2171,17 @@ export type MessageTree = {
         parasutAuto: string;
       };
     };
-    doneBanner: { body: string; cta: string };
     optionalBadge: string;
+    calculating: {
+      title: string;
+      body: string;
+    };
+    ready: {
+      title: string;
+      body: string;
+      toRadar: string;
+      toLogbook: string;
+    };
     status: { done: string; todo: string };
     form: {
       nameLabel: string;
@@ -4821,7 +4841,7 @@ export const en: MessageTree = {
     retry: "Try again",
     progress: {
       complete: "Setup complete",
-      count: "{done} of 3 steps done",
+      count: "{done} of {total} steps done",
       aria: "Setup progress",
     },
     steps: {
@@ -4831,7 +4851,7 @@ export const en: MessageTree = {
       },
       data: {
         title: "Connect your data",
-        body: "Just drop the file you exported from your accounting program or your bank — the system works out what it is.",
+        body: "Drop the file you exported from your accounting program, and a bank statement that has a balance column — the system works out what each file is.",
         cta: "Connect my data",
         parasutConnected: "Paraşüt connected",
         uploaded: "{count} files uploaded",
@@ -4841,6 +4861,17 @@ export const en: MessageTree = {
         body: "The analysis starts on its own once your data arrives.",
         done: "{count} analyses completed",
       },
+      radar: {
+        title: "Cash radar starting balance",
+        body: "The radar starts from the closing balance of your bank statement, never from a guess.",
+        cta: "Upload a statement with balances",
+        waiting: "Shown once your first analysis is complete.",
+        loading: "Reading the balance…",
+        loadError: "Could not read the radar.",
+        unknownTitle: "No proven bank balance yet",
+        unknownBody: "The statement has no balance column, or its running balances do not chain. Upload a statement that does; until then the radar shows movements but no cash gap.",
+        known: "{amount} as of {date}",
+      },
       auto: {
         title: "Let the data arrive on its own",
         body: "Instead of uploading files by hand every time, send them to your dedicated email address or put your Paraşüt connection on autopilot.",
@@ -4849,11 +4880,17 @@ export const en: MessageTree = {
         parasutAuto: "Paraşüt automatic",
       },
     },
-    doneBanner: {
-      body: "Setup complete. Your company's status lives in the Command Center.",
-      cta: "Command Center",
-    },
     optionalBadge: "optional",
+    calculating: {
+      title: "Calculating the route",
+      body: "The first report usually takes a few minutes. While this page stays open it refreshes itself; if you close it, the result is here when you come back.",
+    },
+    ready: {
+      title: "Your first report is ready",
+      body: "The first analysis is complete and the cash radar starts from your real bank balance.",
+      toRadar: "Open the cash radar",
+      toLogbook: "Open the Logbook",
+    },
     status: {
       done: "done",
       todo: "to do",

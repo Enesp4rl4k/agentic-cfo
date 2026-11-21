@@ -6,7 +6,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const { api, cfo, packet } = vi.hoisted(() => ({
   api: { baslangicDurumu: vi.fn(), firmaOlustur: vi.fn() },
@@ -16,26 +15,13 @@ const { api, cfo, packet } = vi.hoisted(() => ({
 vi.mock("@/lib/api/baslangic", () => api);
 vi.mock("@/lib/api/cfo", () => cfo);
 vi.mock("@/lib/api/decisionPacket", () => packet);
-vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) =>
-    React.createElement("a", { href }, children),
-}));
-
-// The page renders through useI18n, which resolves the org locale to pick the
-// message tree — these assertions pin the Turkish copy of a tr-TR org.
-vi.mock("@/hooks/useOrgSettings", () => ({
-  useOrgSettings: () => ({
-    org: { org_id: "org1", name: "Test Org", locale: "tr-TR", base_currency: "TRY" },
-    loading: false,
-    error: null,
-    refresh: () => {},
-    hasTrPack: true,
-    baseCurrency: "TRY",
-    locale: "tr-TR",
-  }),
-}));
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
+vi.mock("@/lib/api/ledger", async () => (await import("./dashboard-mocks")).ledgerModule);
+// The page renders through useI18n, which resolves the org locale — these assertions pin a tr-TR org's copy.
+vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 
 import BaslangicPage from "@/app/(dashboard)/baslangic/page";
+import { ledgerSpies, renderWithQuery } from "./dashboard-mocks";
 
 const durum = (over: Record<string, unknown> = {}) => ({
   firma: { var: true, ad: "Kobi A.Ş." },
@@ -46,23 +32,22 @@ const durum = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-// The decision-packet panel polls with useQuery, so the tree needs a real
-// QueryClient. The packet mock rejects (retry off) and the panel stays hidden.
-const renderPage = () => {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={client}>
-      <BaslangicPage />
-    </QueryClientProvider>,
-  );
-};
+// The decision-packet panel polls with useQuery; its mock rejects and the panel stays hidden.
+const renderPage = () => renderWithQuery(<BaslangicPage />);
+
+/** The radar as the API answers it: starting cash proven by a statement, or unknown. */
+const radar = (over: Record<string, unknown> = {}) => ({
+  starting_cash_cents: 1_250_000_00,
+  starting_cash_as_of: "2026-11-14",
+  ...over,
+});
 
 describe("Başlangıç", () => {
   beforeEach(() => {
     Object.values(api).forEach((f) => f.mockReset());
     cfo.approveJob.mockReset();
+    ledgerSpies.getCashRadar.mockReset();
+    ledgerSpies.getCashRadar.mockResolvedValue(radar());
     // The packet is optional furniture: reject so the panel renders nothing
     // and the assertions below stay about the approval flow itself.
     packet.getDecisionPacket.mockReset();
@@ -73,15 +58,14 @@ describe("Başlangıç", () => {
     api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 2 }));
     renderPage();
     expect(await screen.findByText("Kurulum tamam")).toBeInTheDocument();
-    expect(screen.getByText("3/3")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Komuta Merkezi/ })).toHaveAttribute("href", "/command-center");
+    expect(screen.getByText("4/4")).toBeInTheDocument();
   });
 
   it("asks for a company name when there is none, and creates it", async () => {
     api.baslangicDurumu.mockResolvedValue(durum({ firma: { var: false, ad: null }, veri: { analiz_sayisi: 0, parasut_bagli: false } }));
     api.firmaOlustur.mockResolvedValue(undefined);
     renderPage();
-    expect(await screen.findByText("3 adımdan 0'i tamam")).toBeInTheDocument();
+    expect(await screen.findByText("4 adımdan 0'i tamam")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Firma adı"), { target: { value: "Yıldız Tekstil" } });
     fireEvent.click(screen.getByRole("button", { name: "Kaydet" }));
     await waitFor(() => expect(api.firmaOlustur).toHaveBeenCalledWith("Yıldız Tekstil"));
@@ -127,5 +111,71 @@ describe("Başlangıç", () => {
     renderPage();
     expect(await screen.findByText("Durum okunamadı")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Tekrar dene/ })).toBeInTheDocument();
+  });
+
+  it("says the first report is ready and where to read it once every step is done", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1 }));
+    renderPage();
+    expect(await screen.findByText("İlk raporun hazır")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Nakit radarını aç" })).toHaveAttribute("href", "/nakit-radari");
+    expect(screen.getByRole("link", { name: "Seyir Defteri'ni aç" })).toHaveAttribute("href", "/bulten");
+  });
+
+  it("does not say the report is ready while a step is still open", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 0 }));
+    renderPage();
+    await screen.findByText(/4 adımdan/);
+    expect(screen.queryByText("İlk raporun hazır")).toBeNull();
+  });
+
+  it("shows the route being calculated while an analysis is in flight, and only then", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({
+      son_analiz: { id: "job-2", durum: "analyzing", onay_bekliyor: false, guven: null,
+                    dosya: "ekstre.csv", hata: null, olusturma: null },
+    }));
+    renderPage();
+    expect(await screen.findByText("Rota hesaplanıyor")).toBeInTheDocument();
+    expect(screen.getByText(/ekstre\.csv işleniyor/)).toBeInTheDocument();
+  });
+
+  it("numbers the steps in order", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum());
+    renderPage();
+    await screen.findByText(/4 adımdan/);
+    for (const n of ["01", "02", "03", "04", "05"]) expect(screen.getByText(n)).toBeInTheDocument();
+  });
+
+  it("starts from the balance a statement proved, and asks the radar only once an analysis is complete", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1 }));
+    renderPage();
+    expect(await screen.findByText(/14\.11\.2026 tarihinde .*1\.250\.000/)).toBeInTheDocument();
+    expect(ledgerSpies.getCashRadar).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the first analysis and does not read the radar before it", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum());
+    renderPage();
+    expect(await screen.findByText("İlk analiziniz bitince burada görünür.")).toBeInTheDocument();
+    expect(ledgerSpies.getCashRadar).not.toHaveBeenCalled();
+  });
+
+  it("says the balance is unproven, never invents one, and points to a statement upload", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1 }));
+    ledgerSpies.getCashRadar.mockResolvedValue(radar({ starting_cash_cents: null, starting_cash_as_of: null }));
+    renderPage();
+    expect(await screen.findByText("Kanıtlanmış banka bakiyesi yok")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Bakiyeli ekstre yükle/ })).toHaveAttribute("href", "/baglan");
+    expect(screen.queryByText("İlk raporun hazır")).toBeNull();
+    expect(screen.getByText("3/4")).toBeInTheDocument();
+  });
+
+  it("says so when the radar cannot be read, and reads it again on request", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1 }));
+    ledgerSpies.getCashRadar.mockRejectedValueOnce(new Error("down"));
+    renderPage();
+    expect(await screen.findByText("Radar okunamadı.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Tekrar dene/ }));
+    await waitFor(() => expect(screen.getByText("İlk raporun hazır")).toBeInTheDocument());
+    expect(ledgerSpies.getCashRadar).toHaveBeenCalledTimes(2);
   });
 });

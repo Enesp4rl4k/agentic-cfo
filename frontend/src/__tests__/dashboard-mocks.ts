@@ -60,6 +60,7 @@ export const ledgerSpies = {
   getPossibleDuplicates: vi.fn(),
   resolveSettlement: vi.fn(),
   resolveDuplicate: vi.fn(),
+  getCashRadar: vi.fn(),
 };
 
 export const ledgerModule = {
@@ -67,6 +68,7 @@ export const ledgerModule = {
   getPossibleDuplicates: (...a: unknown[]) => ledgerSpies.getPossibleDuplicates(...a),
   resolveSettlement: (...a: unknown[]) => ledgerSpies.resolveSettlement(...a),
   resolveDuplicate: (...a: unknown[]) => ledgerSpies.resolveDuplicate(...a),
+  getCashRadar: (...a: unknown[]) => ledgerSpies.getCashRadar(...a),
 };
 
 /** A bank movement the ledger proposes to close an invoice with. */
