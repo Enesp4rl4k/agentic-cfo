@@ -34,7 +34,10 @@ async def other_currency_projections(
     db: AsyncSession, org_id: str, cur: str, anchor: date, weeks: int
 ) -> dict[str, dict[str, int]]:
     """{currency: recurring and tax projections} for every currency but `cur`, inside the horizon."""
-    from app.services.recurring_obligations import detect_recurring_obligations, project_recurring_obligations
+    from app.services.recurring_obligations import (
+        detect_recurring_obligations,
+        project_recurring_obligations,
+    )
     from app.services.tax_calendar import project_tax_obligations
 
     codes = (

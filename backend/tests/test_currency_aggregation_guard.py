@@ -133,6 +133,9 @@ SAFE: dict[str, tuple[str, Callable[[], None] | None]] = {
     "api/ledger.py::get_proposed_settlements": (
         "one transfer paying several invoices: the lumped matches are same-currency (reconciliation)",
         _matches_are_same_currency),
+    "services/radar_currency.py::other_currency_projections": (
+        "sums rent and tax projections once per currency (each code read on its own), never across them",
+        None),
     "services/cash_radar.py::_split": (
         "splits the radar's items by basis; the radar only holds items in its own currency",
         _radar_items_are_one_currency),

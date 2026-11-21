@@ -651,6 +651,16 @@ export interface components {
             payable_cents: number;
             /** Receivable Cents */
             receivable_cents: number;
+            /**
+             * Recurring Payable Cents
+             * @default 0
+             */
+            recurring_payable_cents: number;
+            /**
+             * Tax Payable Cents
+             * @default 0
+             */
+            tax_payable_cents: number;
         };
         /** Otomatik */
         Otomatik: {

@@ -37,7 +37,6 @@ from app.core.currency_totals import (
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.services.bank_balance import proven_balance
-from app.services.radar_currency import other_currency_projections, usable_balance
 from app.services.briefing_held import held_line as _held_line
 from app.services.ledger_documents import (
     DOCUMENT,
@@ -47,6 +46,7 @@ from app.services.ledger_documents import (
     source_transaction,
 )
 from app.services.payment_plan import effective_dates
+from app.services.radar_currency import other_currency_projections, usable_balance
 from app.services.reconciliation import payment_behaviour
 
 HORIZON_WEEKS = 13
