@@ -274,6 +274,8 @@ class TestPipelineHolds:
         runway = result["forecast"]["runway"]
         assert runway["opening_cash_cents"] == 11_650_000  # the statement's closing balance
         assert runway["source_filename"] == "ekstre.csv"
+        # The dashboard (what the forecast page reads) carries the runway with its basis.
+        assert result["dashboard_json"]["forecast"]["runway"]["opening_cash_cents"] == 11_650_000
         # The cash-flow agent's own critical alerts are on the screen and did not hold it.
         assert any(a["level"] == "critical" for a in result["cashflow"]["alerts"])
 
