@@ -44,7 +44,7 @@ class OpenItem(Base):
     org_id: Mapped[str] = mapped_column(String(36), nullable=False)
     direction: Mapped[str] = mapped_column(String(20), nullable=False)      # receivable | payable
     instrument: Mapped[str] = mapped_column(String(20), nullable=False, default="invoice")
-    document_id: Mapped[str] = mapped_column(String(64), nullable=False)    # e-Fatura UUID
+    document_id: Mapped[str] = mapped_column(String(128), nullable=False)  # ETTN, GİB no, or inv:<side>:<party>:<no>
     source_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     counterparty: Mapped[str | None] = mapped_column(String(300), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

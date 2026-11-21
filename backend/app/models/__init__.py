@@ -16,6 +16,7 @@ from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.connector_connection import ConnectorConnection
+from app.models.counterparty_alias import CounterpartyAlias
 from app.models.data_source import (
     DOMAIN_SOURCE_KWARGS,
     DataSource,
@@ -75,6 +76,7 @@ __all__ = [
     "CompanySemanticSnapshotRow",
     "ComplianceCertification",
     "ConnectorConnection",
+    "CounterpartyAlias",
     "DataSource",
     "DataSourceDomain",
     "DataSourceType",

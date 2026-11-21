@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.services.reconciliation import CONFIRMED, settle_from_matches
-from tests.api_helpers import bellek_istemcisi, kullanici
+from tests.api_helpers import bellek_istemcisi, by_number, kullanici
 from tests.test_bank_reconciliation import _bank, _item, _sale, _upload
 
 
@@ -79,7 +79,7 @@ async def test_a_paid_amount_without_a_confirmed_match_falls_back_to_open(client
     _, org_id, _ = await kullanici(client, "kayitsiz@example.com")
     await _upload(client, org_id, _sale("A"))
     async with client._maker() as db:
-        item = (await db.execute(select(OpenItem).where(OpenItem.document_id == "A"))).scalars().one()
+        item = (await db.execute(select(OpenItem).where(by_number(OpenItem.document_id, "A")))).scalars().one()
         item.paid_cents = item.amount_cents
         item.status = "settled"
         await db.commit()

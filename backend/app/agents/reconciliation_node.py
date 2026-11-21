@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.agents.state import CFOState, StepLog
+from app.core.tdhp import BILANCO_KATEGORILERI
 from app.services.rag.grounding_validator import (
     _claim_supported,
     extract_numeric_claims,
@@ -72,9 +73,14 @@ def _check_pnl_identities(pnl: dict[str, Any], transactions: list[dict]) -> list
     opex = pnl.get("opex", {}) or {}
     total_expenses = pnl.get("total_expenses")
 
-    # Independent recomputation of the one lossless figure: revenue = Σ income.
+    # Independent recomputation of the one lossless figure: revenue = Σ income. Like with like:
+    # the P&L leaves balance-sheet movements out (`pnl_agent._compute_pnl`: a transfer or a tax
+    # payment is cash, not profit), so a row corrected to one of them is no longer revenue and
+    # must leave this sum too, or every such correction halts the run.
     income_sum = sum(
-        t.get("amount_cents", 0) for t in transactions if t.get("type") == "income"
+        t.get("amount_cents", 0)
+        for t in transactions
+        if t.get("type") == "income" and t.get("category") not in BILANCO_KATEGORILERI
     )
     if transactions and not _close(revenue, income_sum):
         fails.append(f"revenue {revenue} != Σ income transactions {income_sum}")
@@ -143,7 +149,9 @@ def _uncategorized_expense_note(pnl: dict, transactions: list[dict]) -> str | No
              "marketing", "technology", "other_expense"}
     orphan = [
         t for t in transactions
-        if t.get("type") == "expense" and str(t.get("category", "")) not in known
+        if t.get("type") == "expense"
+        and str(t.get("category", "")) not in known
+        and t.get("category") not in BILANCO_KATEGORILERI  # left out on purpose: cash, not cost
     ]
     if not orphan:
         return None
