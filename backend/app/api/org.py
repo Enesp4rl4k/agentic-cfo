@@ -161,6 +161,19 @@ def _org_dict(org: Organization) -> dict[str, Any]:
     }
 
 
+async def _base_fields(db: AsyncSession, org: Organization) -> dict[str, Any]:
+    """How this organisation's money is labelled: `base_currency` above is only the stored column (its default
+    is USD), so screens format with `effective_currency` (`core/currency_totals.effective_base`)."""
+    from app.services.ledger_base import effective_base_of
+
+    eb = await effective_base_of(db, str(org.id))
+    return {
+        "base_currency_confirmed": org.base_currency_confirmed_at is not None,
+        "effective_currency": eb.run_currency,
+        "base_state": eb.state,
+    }
+
+
 async def _org_members(db: AsyncSession, org_id: str) -> list[tuple[User, str]]:
     """Members of an organisation with their role *in it*, oldest first.
 
@@ -273,7 +286,7 @@ async def get_my_org(
     org = await _require_org(current_user, db)
     # Count members
     members = [u for u, _ in await _org_members(db, str(org.id)) if u.is_active]
-    data = _org_dict(org)
+    data = {**_org_dict(org), **await _base_fields(db, org)}
     data["member_count"] = len(members)
     return {"data": data, "error": None}
 
@@ -327,7 +340,7 @@ async def update_org(
         org.legal_title = body.legal_title.strip() or None
     await db.commit()
     await db.refresh(org)
-    return {"data": _org_dict(org), "error": None}
+    return {"data": {**_org_dict(org), **await _base_fields(db, org)}, "error": None}
 
 
 @router.get("/org/me/tax-rates")

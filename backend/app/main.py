@@ -168,6 +168,8 @@ app.add_middleware(
         # e-Defter: what was produced, and the fact that it cannot be filed.
         "X-EDefter-Entry-Count", "X-EDefter-Line-Count", "X-EDefter-SHA256",
         "X-EDefter-Filable", "X-EDefter-Unfilable-Code",
+        # Entries left out of a statutory export because they are in another currency (USD=3).
+        "X-Para-Birimi-Disi",
         # Berat preview: which defter it was derived from, and what it says.
         "X-EDefter-Berat-Of", "X-EDefter-Berat-Unique-ID", "X-EDefter-Berat-Size-MiB",
         "X-EDefter-KDV-Unverified",

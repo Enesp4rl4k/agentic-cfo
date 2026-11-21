@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/api/client";
 import type { components } from "@/lib/api/generated/pilot-schema";
+import type { OtherCurrency } from "@/components/ui/other-currency-lines";
 
 // The company ledger (backend app/services/ledger.py): one record of the money,
 // whichever files brought it. Amounts are kuruş.
@@ -9,8 +10,18 @@ export interface LedgerSummary {
   last_upload: { filename: string; new: number; already: number; possible_duplicate: number } | null;
   open_items: { receivable_cents: number; payable_cents: number; no_due_date: number; other_currency: number };
   rows: number;
+  /** The organisation's base currency: `revenue_cents`, `expense_cents` and the monthly cash are in it. */
+  /** The headline currency; null when several are present and none is confirmed (no single headline). */
+  currency: string | null;
+  base_state: "confirmed" | "single_unconfirmed" | "ambiguous" | "no_data";
+  base_confirmed: boolean;
+  confirm_path: string;
   revenue_cents: number;
   expense_cents: number;
+  /** Every other currency, summed on its own and not converted (no exchange-rate source). */
+  other_currencies: OtherCurrency[];
+  /** Every currency, headline included. */
+  currency_totals: OtherCurrency[];
   possible_duplicates: number;
   /** The period these figures cover: the last 12 months of data unless one was asked for. */
   period: {
@@ -32,6 +43,8 @@ export interface LedgerRow {
   id: string;
   transaction_date: string;
   amount_cents: number;
+  /** The row's own currency: its amount is never shown in another. */
+  currency?: string;
   direction: string;
   description: string | null;
   matches?: LedgerRow[];

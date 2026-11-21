@@ -143,10 +143,16 @@ async def measure_outcome(
             "Ölçüm için tamamlanmış analiz yok — sonuç, veri geldiğinde ölçülebilir.",
         )
 
-    # Realised since the decision, by business date (what happened after).
-    income_kurus, expense_kurus, tx_count = (
+    # Realised since the decision, by business date (what happened after). Summed per currency:
+    # the headline is the organisation's base currency, any other is listed and never added in.
+    from app.core.currency_totals import DEFAULT_BASE, normalise
+    from app.services.ledger import base_currency_of
+
+    base_ccy = await base_currency_of(db, str(decision.org_id)) if decision.org_id else DEFAULT_BASE
+    by_currency = (
         await db.execute(
             select(
+                Transaction.currency,
                 func.coalesce(
                     func.sum(
                         case((Transaction.type == "income", Transaction.amount_kurus),
@@ -165,10 +171,20 @@ async def measure_outcome(
             ).where(
                 Transaction.job_id == data_job.id,
                 Transaction.transaction_date > decided_at,
-            )
+            ).group_by(Transaction.currency)
         )
-    ).one()
-    income_kurus, expense_kurus = int(income_kurus), int(expense_kurus)
+    ).all()
+    income_kurus = expense_kurus = tx_count = 0
+    other_currencies: list[dict[str, Any]] = []
+    for currency, inc, exp, n in by_currency:
+        tx_count += int(n)
+        if normalise(currency) == base_ccy:
+            income_kurus, expense_kurus = int(inc), int(exp)
+        else:
+            other_currencies.append({
+                "currency": normalise(currency), "income_kurus": int(inc), "expense_kurus": int(exp),
+                "transactions": int(n),
+            })
     realized_net = income_kurus - expense_kurus
 
     # Latest runway — the one number expectation and outcome genuinely share.
@@ -191,6 +207,9 @@ async def measure_outcome(
         "income_kurus": income_kurus,
         "expense_kurus": expense_kurus,
         "transactions_since": int(tx_count),
+        "currency": base_ccy,
+        # Other currencies, summed on their own and not converted.
+        "other_currencies": other_currencies,
         "runway_months_latest": runway_latest,
         "data_job_id": data_job.id,
         "decided_at": decided_at.isoformat() if decided_at else None,

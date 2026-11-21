@@ -16,7 +16,6 @@ Plan v10 §4 (O4) & Plan v11 Faz 3:
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -28,8 +27,8 @@ from app.models.decision import DecidedVia, DecisionKind
 from app.models.decision_log import DecisionLog
 from app.services import decisions
 from app.services.briefing_held import held_caveat, held_only_sentence
+from app.services.briefing_numbers import _date_parts, verify_narrative_numbers
 from app.services.cash_radar import _fmt, compute_cash_radar
-from app.services.rag.grounding_validator import parse_numeric_token
 
 
 class BriefingNeedsAnalysis(Exception):
@@ -147,6 +146,7 @@ def _generate_deterministic_sentences(
     week_estimated_share: float = 0.0,
     horizon_estimated_share: float = 0.0,
     held_caveat: str = "",
+    currency: str = "TRY",
 ) -> tuple[str, str, str]:
     """Build the canonical 3-sentence briefing from verified radar facts."""
     balance_known = starting_cash_cents is not None
@@ -154,9 +154,9 @@ def _generate_deterministic_sentences(
     # Sentence 1: Radar Net Change. Without a proven starting balance the radar only
     # knows the movement, so no balance is stated.
     if net_change_cents > 0:
-        move = f"{_fmt(net_change_cents)} tutarında net giriş beklenmektedir"
+        move = f"{_fmt(net_change_cents, currency)} tutarında net giriş beklenmektedir"
     elif net_change_cents < 0:
-        move = f"{_fmt(abs(net_change_cents))} tutarında net çıkış beklenmektedir"
+        move = f"{_fmt(abs(net_change_cents), currency)} tutarında net çıkış beklenmektedir"
     else:
         move = None
     note = _balance_note(balance_as_of, balance_age_days, balance_stale)
@@ -164,13 +164,13 @@ def _generate_deterministic_sentences(
     if balance_known and move:
         sentence_1 = (
             f"Bu hafta net nakit pozisyonunuzda {move} "
-            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents)}{note})."
+            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents, currency)}{note})."
         )
     elif balance_known:
         label = "son bilinen bakiye" if balance_stale else "bakiye"
         sentence_1 = (
             f"Bu hafta nakit pozisyonunuzda önemli bir net hareket beklenmemektedir "
-            f"({label}: {_fmt(end_balance_cents)}{note})."
+            f"({label}: {_fmt(end_balance_cents, currency)}{note})."
         )
     elif move:
         sentence_1 = (
@@ -191,7 +191,7 @@ def _generate_deterministic_sentences(
     if approaching_amount_cents > 0 and approaching_date:
         sentence_2 = (
             f"Bu haftanın en kritik yükümlülüğü, {approaching_date} vadeli "
-            f"{_fmt(approaching_amount_cents)} tutarındaki {approaching_title} ödemesidir."
+            f"{_fmt(approaching_amount_cents, currency)} tutarındaki {approaching_title} ödemesidir."
         )
     else:
         sentence_2 = (
@@ -219,46 +219,6 @@ def _generate_deterministic_sentences(
             sentence_3 += f" Radara dahil değil: {', '.join(x.lower() for x in not_included)}."
 
     return sentence_1, sentence_2, sentence_3
-
-
-_NUMBER = re.compile(r"\d[\d.,]*\d|\d")
-# Money is written to the lira or to the kuruş; nothing looser counts as the same figure.
-_ROUNDING = 0.5
-
-
-def _date_parts(*days: str | None) -> set[int]:
-    """Year, month and day numbers of the dates the briefing itself states."""
-    parts: set[int] = set()
-    for day in days:
-        if day:
-            parts.update(int(p) for p in re.findall(r"\d+", day))
-    return parts
-
-
-def verify_narrative_numbers(
-    narrative: str,
-    allowed_cents: set[int],
-    *,
-    allowed_plain: set[int] | None = None,
-) -> bool:
-    """Anti-hallucination gate: every number in the narrative must be a known fact.
-
-    A number is a fact when it is one of the verified amounts (to the lira or the
-    kuruş, no looser) or a date part the briefing itself states. Days, counts and
-    percentages count as claims too: nothing here computed them.
-    """
-    allowed_liras = {abs(c) / 100.0 for c in allowed_cents if c is not None}
-    plain = allowed_plain or set()
-    for raw in _NUMBER.findall(narrative or ""):
-        value = parse_numeric_token(raw)
-        if value is None:
-            return False
-        if value.is_integer() and int(value) in plain:
-            continue
-        if any(abs(value - known) <= _ROUNDING for known in allowed_liras):
-            continue
-        return False
-    return True
 
 
 async def assemble_monday_briefing(
@@ -304,7 +264,7 @@ async def assemble_monday_briefing(
         top_rec = max(week_1.receivables, key=lambda r: r["amount_cents"])
         action_type = "collection_followup"
         action_title = f"Tahsilat takibi: {top_rec.get('counterparty') or 'Müşteri'}"
-        action_detail = f"{_fmt(top_rec['amount_cents'])} tutarındaki alacağın zamanında tahsilatını teyit edin."
+        action_detail = f"{_fmt(top_rec['amount_cents'], radar.currency)} tutarındaki alacağın zamanında tahsilatını teyit edin."
         action_amount = top_rec["amount_cents"]
     else:
         action_type = "monitor"
@@ -331,6 +291,7 @@ async def assemble_monday_briefing(
         week_estimated_share=_inflow_estimated_share([week_1.inflow_basis] if week_1 else []),
         horizon_estimated_share=_inflow_estimated_share([w.inflow_basis for w in radar.weeks]),
         held_caveat=caveat,
+        currency=radar.currency,
     )
     # A company whose every document is held has an empty radar for a reason a person can fix:
     # saying "nothing to report" (or sending no briefing at all) would hide the queue.
@@ -344,7 +305,7 @@ async def assemble_monday_briefing(
     )
     held_only = radar.held_documents is not None and not has_radar_data
     if held_only and radar.held_documents is not None:
-        s1 = held_only_sentence(radar.held_documents)
+        s1 = held_only_sentence(radar.held_documents, radar.currency)
     deterministic_full_text = f"{s1} {s2} {s3}"
 
     # If candidate narrative is provided (e.g. from LLM), run the anti-hallucination gate

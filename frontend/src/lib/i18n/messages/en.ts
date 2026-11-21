@@ -2630,6 +2630,24 @@ export type MessageTree = {
     close: { title: string; note: string; cta: string; demo: string };
     footer: { sample: string; carpe: string; carpeSub: string };
   };
+  // Amounts in other currencies are never added to the base total (no exchange-rate source).
+  otherCurrency: {
+    notConverted: string;
+    revenueOf: string;
+    expenseOf: string;
+    inOf: string;
+    outOf: string;
+    ratiosNote: string;
+    assumed: string;
+    unconfirmed: string;
+    chooseTitle: string;
+    chooseBody: string;
+    confirmLink: string;
+    leftOut: string;
+    perCurrency: string;
+    dominantCaption: string;
+    journalLeftOut: string;
+  };
   heldRows: {
     title: string;
     subtitle: string;
@@ -5651,6 +5669,23 @@ export const en: MessageTree = {
       demo: "Try the demo",
     },
     footer: { sample: "Figures on screen are samples", carpe: "Carpe diem.", carpeSub: "SEIZE THE DAY" },
+  },
+  otherCurrency: {
+    notConverted: "Also: {amounts}, not converted to {base}.",
+    revenueOf: "{amount} revenue",
+    expenseOf: "{amount} expenses",
+    inOf: "{amount} in",
+    outOf: "{amount} out",
+    ratiosNote: "Margins and changes use {base} amounts only.",
+    assumed: "{n} of these rows have an assumed currency.",
+    unconfirmed: "The company currency is not confirmed yet; the figures are in {base}.",
+    chooseTitle: "Choose your company currency",
+    chooseBody: "There is more than one currency and none is confirmed, so no single total is shown.",
+    confirmLink: "Confirm the currency",
+    leftOut: "{n} foreign-currency transactions are not included ({currencies}).",
+    perCurrency: "Totals by currency",
+    dominantCaption: "The figures below are in {currency} only; other currencies are not included.",
+    journalLeftOut: "{n} foreign-currency entries are not in this export ({currencies}).",
   },
   heldRows: {
     title: "Rows waiting for your review",

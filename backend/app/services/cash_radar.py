@@ -28,12 +28,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.currency_totals import (
+    DEFAULT_BASE,
+    currency_notes,
+    fmt_money,
+    normalise,
+)
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.services.bank_balance import proven_balance
+from app.services.briefing_held import held_line as _held_line
 from app.services.ledger_documents import (
     DOCUMENT,
-    HOLD_REASONS_TR,
     POSSIBLE_DUPLICATE,
     hold_reason,
     load_aliases,
@@ -62,11 +68,9 @@ ESTIMATED = "estimated"
 ASSUMED = "assumed"
 
 
-def _fmt(cents: int) -> str:
-    """Lira as the Turkish text around it writes it: ₺1.234,56."""
-    sign = "-" if cents < 0 else ""
-    swapped = f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
-    return f"{sign}₺{swapped}"
+def _fmt(cents: int, currency: str | None = None) -> str:
+    """An amount as the Turkish text around it writes it: ₺1.234,56 for lira, 1.234,56 USD otherwise."""
+    return fmt_money(cents, currency)
 
 
 @dataclass(frozen=True)
@@ -194,6 +198,12 @@ class CashRadar:
     opening_cash: OpeningCash | None = None
     held_documents: HeldDocuments | None = None
     awaiting_decision: Any = None  # AwaitingDecisions: both queues of waiting decisions, one block
+    # The currency every figure above is in (`core/currency_totals.effective_base`, the same one the P&L
+    # uses), how it was decided, and what was left out: open items in any other currency, listed with their
+    # own currency and totals, never converted.
+    currency: str = "TRY"
+    base_state: str = "confirmed"
+    other_currency_totals: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -241,7 +251,7 @@ def _weeks_from(anchor: date) -> list[tuple[date, date]]:
 
 
 def _actions(
-    week: int, shortfall: int, collect: list[RadarItem], pay: list[RadarItem]
+    week: int, shortfall: int, collect: list[RadarItem], pay: list[RadarItem], currency: str = DEFAULT_BASE
 ) -> list[dict[str, Any]]:
     """What a person could do about the gap: each names real money, none invents terms."""
     actions: list[dict[str, Any]] = []
@@ -252,7 +262,7 @@ def _actions(
                 "type": "early_collection",
                 "title": f"Tahsilatı öne çek: {top.counterparty or 'müşteri'}",
                 "detail": (
-                    f"{_fmt(top.amount_cents)} tutarındaki alacak {top.expected_date} "
+                    f"{_fmt(top.amount_cents, currency)} tutarındaki alacak {top.expected_date} "
                     f"tarihinde bekleniyor; {week}. haftadan önce tahsil edilirse açık küçülür."
                 ),
                 "amount_cents": top.amount_cents,
@@ -265,7 +275,7 @@ def _actions(
                 "type": "defer_payment",
                 "title": f"Ödemeyi konuş: {top.counterparty or 'tedarikçi'}",
                 "detail": (
-                    f"{week}. haftadaki {_fmt(top.amount_cents)} ödemesi açığı doğuruyor; "
+                    f"{week}. haftadaki {_fmt(top.amount_cents, currency)} ödemesi açığı doğuruyor; "
                     "vade uzatımı için tedarikçiyle görüşülebilir."
                 ),
                 "amount_cents": top.amount_cents,
@@ -274,7 +284,7 @@ def _actions(
     actions.append(
         {
             "type": "financing",
-            "title": f"Finansman ihtiyacı: {_fmt(shortfall)}",
+            "title": f"Finansman ihtiyacı: {_fmt(shortfall, currency)}",
             "detail": f"Açık {week}. haftada başlıyor; bu tutar için kredi limiti gerekebilir.",
             "amount_cents": shortfall,
         }
@@ -291,6 +301,10 @@ async def compute_cash_radar(
     anchor = anchor_date or datetime.now(UTC).date()
     ranges = _weeks_from(anchor)
     horizon_end = ranges[-1][1]
+    from app.services.ledger import effective_base_of
+
+    effective = await effective_base_of(db, org_id)
+    cur = effective.run_currency or DEFAULT_BASE
     balance = await proven_balance(db, org_id)
     moved = await effective_dates(db, org_id)
     delays = {
@@ -313,14 +327,18 @@ async def compute_cash_radar(
     payables: list[list[RadarItem]] = [[] for _ in ranges]
     overdue_receivables: list[dict[str, Any]] = []
     overdue_payables = undated_rec = undated_pay = beyond = other_currency = 0
+    foreign_items: dict[str, dict[str, int]] = {}
     has_cheques = False
 
     for item in items:
         remaining = item.amount_cents - item.paid_cents
         if remaining <= 0:
             continue
-        if item.currency != "TRY":
+        if normalise(item.currency) != cur:
             other_currency += 1  # counted, never converted at a rate we chose
+            slot = foreign_items.setdefault(normalise(item.currency), {"receivable_cents": 0, "payable_cents": 0, "count": 0})
+            slot["receivable_cents" if item.direction == RECEIVABLE else "payable_cents"] += remaining
+            slot["count"] += 1
             continue
         if item.instrument in ("cheque", "promissory_note"):
             has_cheques = True
@@ -444,9 +462,10 @@ async def compute_cash_radar(
     if waiting:
         # Extracted rows a person has not yet accepted: not in any figure here.
         not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
-    held = await _held_documents(db, org_id, anchor, ranges)
+    not_included.extend(currency_notes(effective.state, cur, foreign_items))
+    held = await _held_documents(db, org_id, anchor, ranges, cur)
     if held is not None:
-        not_included.append(_held_line(held))
+        not_included.append(_held_line(held, cur))
 
     weeks: list[RadarWeek] = []
     running = balance["balance_cents"] if balance else 0
@@ -482,7 +501,7 @@ async def compute_cash_radar(
         top = max(pays, key=lambda p: p.amount_cents) if pays else None
         driver = (
             f"{first_gap + 1}. haftada {top.counterparty or 'bir tedarikçiye'} "
-            f"{_fmt(top.amount_cents)} ödemesi bakiyeyi eksiye düşürüyor."
+            f"{_fmt(top.amount_cents, cur)} ödemesi bakiyeyi eksiye düşürüyor."
             if top
             else f"{first_gap + 1}. haftada çıkışlar mevcut nakdi aşıyor."
         )
@@ -493,7 +512,7 @@ async def compute_cash_radar(
             week_end=ranges[first_gap][1].isoformat(),
             shortfall_cents=amount,
             driver=driver,
-            actions=_actions(first_gap + 1, amount, collect, pays),
+            actions=_actions(first_gap + 1, amount, collect, pays, cur),
         )
 
     return CashRadar(
@@ -513,28 +532,15 @@ async def compute_cash_radar(
         tax_obligations_cents=total_tax_cents,
         opening_cash=_opening_cash(balance, anchor),
         held_documents=held,
-        awaiting_decision=block(waiting, held, _held_line(held) if held else ""),
-    )
-
-
-def _held_line(held: HeldDocuments) -> str:
-    """The `not_included` line: what waits, in lira, and that a person must answer."""
-    parts = []
-    if held.payable_cents:
-        parts.append(f"{_fmt(held.payable_cents)} ödeme")
-    if held.receivable_cents:
-        parts.append(f"{_fmt(held.receivable_cents)} tahsilat")
-    if held.other_currency_count:
-        parts.append(f"{held.other_currency_count} döviz belgesi (tutar çevrilmedi)")
-    why = "; ".join(f"{HOLD_REASONS_TR[k]}: {n}" for k, n in sorted(held.by_reason.items()) if n)
-    return (
-        f"Karar bekleyen {held.count} belge ({', '.join(parts)}): mükerrer olabilir, "
-        f"siz karar verene kadar radarda yok" + (f" ({why})" if why else "")
+        currency=cur,
+        base_state=effective.state,
+        other_currency_totals=[{"currency": c, **v} for c, v in sorted(foreign_items.items())],
+        awaiting_decision=block(waiting, held, _held_line(held, cur) if held else ""),
     )
 
 
 async def _held_documents(
-    db: AsyncSession, org_id: str, anchor: date, ranges: list[tuple[date, date]]
+    db: AsyncSession, org_id: str, anchor: date, ranges: list[tuple[date, date]], currency: str = DEFAULT_BASE
 ) -> HeldDocuments | None:
     """Held invoices, by the week they would fall in if kept; None when nothing is held."""
     rows = (await db.execute(
@@ -558,7 +564,7 @@ async def _held_documents(
         reason = await hold_reason(db, row, aliases, cache)
         by_reason[reason] = by_reason.get(reason, 0) + 1
         payable = row.direction != "income"
-        if row.currency != "TRY":
+        if normalise(row.currency) != currency:
             foreign += 1
             foreign_pay += int(payable)
             continue

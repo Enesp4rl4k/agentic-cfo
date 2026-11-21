@@ -17,8 +17,9 @@ import {
 import { AlertTriangle, Upload } from "lucide-react";
 import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
-import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { CurrencyScope, useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { cn } from "@/lib/utils";
+import { BaseCurrencyNotice, DominantCaption, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
 import type { Alert, MonthlyEntry } from "@/types";
 
 // ── Chart styles (matches dashboard.tsx) ─────────────────────────────────────
@@ -422,7 +423,7 @@ export default function CashflowPage() {
   const jobId = searchParams.get("job");
 
   const { data: dashboard, isLoading } = useDashboard(jobId);
-  const fmt = useCurrencyFormat();
+  const fmt = useCurrencyFormat(dashboard?.cashflow?.currency);
   const { t } = useI18n();
 
   if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
@@ -455,7 +456,12 @@ export default function CashflowPage() {
     { label: t.cashflow.metrics.netChange, value: fmt(cf.net_change), positive: netPositive, neutral: false },
   ];
 
+  const ambiguous = cf.base_state === "ambiguous";
+  const sum = (key: "in" | "out") => cf.monthly_series.reduce((total, r) => total + r[key], 0);
+  const dominant = { currency: cf.currency ?? "", cash_in_cents: sum("in"), cash_out_cents: sum("out") };
+
   return (
+    <CurrencyScope currency={cf.currency}>
     <div className="space-y-4 p-5">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">{t.cashflow.title}</h1>
@@ -471,6 +477,15 @@ export default function CashflowPage() {
 
       {/* Summary metrics */}
       <MetricStrip metrics={metrics} />
+      <BaseCurrencyNotice state={cf.base_state} base={cf.currency} />
+      {ambiguous ? (
+        <>
+          <OtherCurrencyLines base="" kind="cash" items={[dominant, ...(cf.other_currencies ?? [])]} />
+          <DominantCaption currency={cf.currency} />
+        </>
+      ) : (
+        <OtherCurrencyLines items={cf.other_currencies} base={cf.currency ?? ""} kind="cash" ratios />
+      )}
 
       {/* Monthly in/out area chart */}
       <div className="rounded-lg border border-border bg-card p-4">
@@ -494,5 +509,6 @@ export default function CashflowPage() {
         </div>
       )}
     </div>
+    </CurrencyScope>
   );
 }

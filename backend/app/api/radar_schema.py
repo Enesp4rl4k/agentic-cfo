@@ -115,6 +115,15 @@ class AwaitingDecisionOut(BaseModel):
     documents: AwaitingLineOut | None = None
 
 
+class OtherCurrencyTotalOut(BaseModel):
+    """Open items in a currency other than the radar's: counted with their own totals, never converted."""
+
+    currency: str
+    receivable_cents: int
+    payable_cents: int
+    count: int
+
+
 class CashRadarOut(BaseModel):
     anchor_date: str
     starting_cash_cents: int | None
@@ -133,3 +142,8 @@ class CashRadarOut(BaseModel):
     opening_cash: OpeningCashOut | None = None
     held_documents: HeldDocumentsOut | None = None
     awaiting_decision: AwaitingDecisionOut | None = None
+    # The radar's currency (the same effective base as the P&L), how it was decided, and the open items left
+    # out because they are in another currency.
+    currency: str = "TRY"
+    base_state: str = "confirmed"
+    other_currency_totals: list[OtherCurrencyTotalOut] = []

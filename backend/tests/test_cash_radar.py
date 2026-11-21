@@ -191,8 +191,21 @@ async def test_a_gap_names_its_week_its_cause_and_real_amounts(client):
     assert radar.weeks[5].end_balance_cents == -25_000_00
 
 
+async def _confirm_try(client, org_id):
+    """The test company has confirmed its currency: the foreign document is then "another currency"."""
+    from datetime import UTC, datetime
+
+    from app.models.organization import Organization
+
+    async with client._maker() as db:
+        org = await db.get(Organization, org_id)
+        org.base_currency, org.base_currency_confirmed_at = "TRY", datetime.now(UTC)
+        await db.commit()
+
+
 async def test_a_foreign_currency_invoice_is_counted_never_converted(client):
     _, org_id, _ = await kullanici(client, "doviz@example.com")
+    await _confirm_try(client, org_id)
     await _upload(client, org_id, _sale("USD1", 1_000_00, "2025-01-10", currency="USD"))
 
     radar = await _radar(client, org_id)
