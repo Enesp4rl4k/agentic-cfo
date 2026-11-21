@@ -19,6 +19,7 @@ import pytest_asyncio
 from app.models.decision_log import DecisionLog
 from app.models.open_item import OpenItem
 from app.services.monday_briefing import (
+    OWNER_STATED_DONE_LABEL,
     assemble_monday_briefing,
     record_briefing_response,
 )
@@ -229,7 +230,7 @@ async def test_record_briefing_response(client):
             note="Tahsilat için müşteri arandı.",
         )
         assert d_done.status == "closed"
-        assert d_done.chosen_option_label == "Yaptım"
+        assert d_done.chosen_option_label == OWNER_STATED_DONE_LABEL
         assert d_done.expected["source"] == "monday_briefing"
         assert d_done.actual["owner_response"] == "done"
 
@@ -310,7 +311,7 @@ async def test_monday_briefing_api_endpoints(client):
     assert resp_action.status_code == 200
     act_data = resp_action.json()["data"]
     assert act_data["status"] == "closed"
-    assert act_data["chosen_option_label"] == "Yaptım"
+    assert act_data["chosen_option_label"] == OWNER_STATED_DONE_LABEL
     assert act_data["decision_id"] is not None
 
     # Verify decision logged in db

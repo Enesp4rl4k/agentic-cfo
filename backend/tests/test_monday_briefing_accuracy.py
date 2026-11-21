@@ -13,7 +13,11 @@ from sqlalchemy import func, select
 from app.core.turkish import contains
 from app.models.decision_log import DecisionLog
 from app.models.open_item import OpenItem
-from app.services.monday_briefing import assemble_monday_briefing, verify_narrative_numbers
+from app.services.monday_briefing import (
+    OWNER_STATED_DONE_LABEL,
+    assemble_monday_briefing,
+    verify_narrative_numbers,
+)
 from tests.api_helpers import bellek_istemcisi, kullanici
 from tests.test_monday_briefing import _statement, _upload
 
@@ -145,10 +149,10 @@ async def test_a_later_answer_replaces_the_earlier_one(client):
     assert first.json()["data"]["status"] == "open"
     done = await client.post("/api/v1/briefing/monday/respond", headers=headers, json={**base, "response": "done"})
     assert done.json()["data"]["status"] == "closed"
-    assert done.json()["data"]["chosen_option_label"] == "Yaptım"
+    assert done.json()["data"]["chosen_option_label"] == OWNER_STATED_DONE_LABEL
     async with client._maker() as db:
         row = await db.get(DecisionLog, first.json()["data"]["decision_id"])
-        assert row.chosen_option_label == "Yaptım" and row.status == "closed"
+        assert row.chosen_option_label == OWNER_STATED_DONE_LABEL and row.status == "closed"
 
 
 async def test_an_answer_needs_an_analysis_to_hang_on(client):

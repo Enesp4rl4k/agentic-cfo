@@ -347,8 +347,13 @@ export type MessageTree = {
       cancel: string;
       forbidden: string;
       failed: string;
+      changedTitle: string;
+      changedBody: string;
+      changedConfirm: string;
+      changeLine: string;
     };
     carpeSub: string;
+    savedDoneUnverified: string;
   };
   reviewQueue: {
     title: string;
@@ -2935,8 +2940,13 @@ export const en: MessageTree = {
       cancel: "Cancel",
       forbidden: "Only the company's accountant can release this e-mail. You are not registered as an accountant for this company.",
       failed: "The e-mail could not be released. Try again in a moment.",
+      changedTitle: "The figures changed since this e-mail was written",
+      changedBody: "Nothing was sent. The e-mail was written from older figures; these changed. Send the refreshed version only if it looks right.",
+      changedConfirm: "Send the refreshed e-mail",
+      changeLine: "{label}: {old} → {new}",
     },
     carpeSub: "Seize the day.",
+    savedDoneUnverified: "Saved as your statement that you did it. It counts as confirmed only once a bank statement line shows it.",
   },
   reviewQueue: {
     title: "{n} analyses await your approval",
