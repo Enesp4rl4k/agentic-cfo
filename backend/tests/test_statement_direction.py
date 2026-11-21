@@ -561,19 +561,22 @@ def test_real_rows_that_merely_begin_like_a_summary_line_are_booked() -> None:
 
 
 def test_exact_summary_lines_are_skipped_and_counted() -> None:
-    rows = _read(_csv(
+    from app.services.ingest.okuma import ReadLedger
+    from app.services.ingest.summary import ingest_summary
+
+    ledger = ReadLedger()
+    rows = _try_parse_csv(_csv(
         "Tarih;Açıklama;Tutar;Bakiye",
         ";Devreden Bakiye;;10.000,00",
         "02.03.2026;Kira;-400,00;9.600,00",
         "03.03.2026;Satış;1.000,00;10.600,00",
         "04.03.2026;Elektrik;-250,00;10.350,00",
         ";Genel Toplam;;10.350,00",
-    ))
+    ), ledger=ledger) or []
     assert [r["description"] for r in rows] == ["Kira", "Satış", "Elektrik"]
-    assert rows[0]["summary_lines_skipped"] == 2                  # reported, not silent
-    from app.services.ingest.summary import ingest_summary
-
-    assert "2 özet satırı atlandı" in ingest_summary(rows, {}, 2)["summary"]
+    assert ledger.summary_skipped == 2 and [x["description"] for x in ledger.summary_lines] == ["Devreden Bakiye", "Genel Toplam"]
+    said = ingest_summary(rows, {}, ledger.as_dict())["summary"]
+    assert "5 satır okundu: 3 kaydedildi, 0 kararınızı bekliyor, 2 özet satırı atlandı" in said
 
 
 def test_a_summary_phrase_with_a_date_and_an_amount_is_held_when_it_does_not_fit() -> None:

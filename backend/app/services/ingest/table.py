@@ -15,10 +15,9 @@ from datetime import date, datetime
 from typing import Any
 
 from app.core.turkish import fold
+from app.parsers.direction import is_summary_phrase
 
 _MAX_BASLIK_ARAMA = 25          # a header is never further down than this
-_TOPLAM = ("toplam", "genel toplam", "total", "grand total", "ara toplam")
-
 
 class OkunamayanDosya(ValueError):
     """The file is not a table this module can read; the message is for the person."""
@@ -31,6 +30,13 @@ class Tablo:
     sayfa: str | None = None
     baslik_satiri: int = 0          # 0-based row of the header in the original
     ust_metin: str = ""             # what the rows above the header say (bank, account): the statement's identity
+    # The reader drops ONLY structurally empty rows and repeated header rows, and counts both. It does not
+    # decide what is a transaction: a row that looks like a total is TAGGED here (`toplam_satirlari`, indexes
+    # into `satirlar`) and kept. Statements are judged by app.services.ingest.rows (one rule, counted); the
+    # converters of non-money sources (staff lists, billing) leave tagged rows out, as they always did.
+    bos: int = 0
+    baslik_tekrari: int = 0
+    toplam_satirlari: frozenset[int] = frozenset()
 
 
 def anahtar(baslik: str) -> str:
@@ -127,20 +133,25 @@ def tabloyu_bul(rows: list[list[Any]], bilinen: set[str], sayfa: str | None = No
         header.pop()
     width = len(header)
     data: list[list[Any]] = []
+    empty = repeats = 0
+    tagged: set[int] = set()
+    heads = [anahtar(h) for h in header]
     for row in rows[best_i + 1:]:
         row = (list(row) + [None] * width)[:width]
         dolu = [c for c in row if not bos(c)]
         if not dolu:
+            empty += 1
             continue
-        # Totals and sums at the foot of an export are not records.
-        # (only a line of figures: a row whose other cells are words is a record that happens to start with it)
-        if isinstance(dolu[0], str) and anahtar(dolu[0]).startswith(_TOPLAM) and all(
-            not isinstance(c, str) or sayi(c) is not None for c in dolu[1:]
-        ):
+        # A page break repeats the header row: not a record.
+        if len(dolu) >= 2 and all(not bos(c) and anahtar(str(c)) == heads[i] for i, c in enumerate(row) if not bos(c)):
+            repeats += 1
             continue
+        if isinstance(dolu[0], str) and is_summary_phrase(dolu[0]):
+            tagged.add(len(data))
         data.append(row)
     above = " ".join(str(c) for row in rows[:best_i] for c in row if not bos(c))
-    return Tablo(basliklar=header, satirlar=data, sayfa=sayfa, baslik_satiri=best_i, ust_metin=above)
+    return Tablo(basliklar=header, satirlar=data, sayfa=sayfa, baslik_satiri=best_i, ust_metin=above,
+                 bos=empty, baslik_tekrari=repeats, toplam_satirlari=frozenset(tagged))
 
 
 # ── Values ──────────────────────────────────────────────────────────────────

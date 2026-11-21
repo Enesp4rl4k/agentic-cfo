@@ -97,7 +97,7 @@ def _eslestir(sema: S.Sema, basliklar: list[str]) -> Aday:
 def tabloyu_tani(tablo: Tablo) -> Tanima:
     adaylar = [_eslestir(s, tablo.basliklar) for s in S.SEMALAR]
     uyan = sorted((a for a in adaylar if not a.eksik), key=lambda a: -a.aciklanan)
-    n = len(tablo.satirlar)
+    n = len(tablo.satirlar) - len(tablo.toplam_satirlari)
     if not uyan:
         yakin = sorted(adaylar, key=lambda a: (len(a.eksik), -a.aciklanan))[:2]
         en = yakin[0]
@@ -284,7 +284,9 @@ def standart_csv(tablo: Tablo, tur: str) -> tuple[str, dict[str, str]]:
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
     w.writerow([ad for _, ad, _, _ in cikis])
-    for row in tablo.satirlar:
+    for k, row in enumerate(tablo.satirlar):
+        if tur != S.BANKA_EKSTRESI and k in tablo.toplam_satirlari:
+            continue    # a total line of a staff list or a bill: not a record (statements keep it: rows.py judges it)
         vals = [(_deger(a, row[i], k) if a else ("" if bos(row[i]) else str(row[i]).strip()))
                 for i, _, a, k in cikis]
         w.writerow(vals)

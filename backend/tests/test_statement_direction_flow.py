@@ -397,3 +397,66 @@ async def test_a_remembered_reading_is_not_applied_when_the_new_files_balance_co
     assert len(asked) == 1 and asked[0]["reason"] == "balance_contradicts"           # held and asked again
     assert await _transactions(client, job2) == []
     assert [d.outcome for d in await _decisions(client, DecisionKind.DIRECTION_MAPPING) if d.outcome == "overridden"] == ["overridden"]
+
+
+# ── round 4: the counts reach the user, and a sign memory is checked ─────────────────────────────────────────
+
+SIGN_HEADER = "Tarih;Açıklama;Tutar;Bakiye;Para Birimi"
+
+
+def _signs(*rows: str, title: str = "AKBANK Hesap No: 1234567") -> str:
+    return NL.join([title, SIGN_HEADER, *rows]) + NL
+
+
+def _mostly_out(positives: int) -> str:
+    out = [f"{d:02d}.03.2026;Ödeme {d};-{d},00;;TRY" for d in range(1, 21)]
+    return _signs(*out, *[f"{20 + d}.03.2026;Tahsilat {d};{d * 10},00;;TRY" for d in range(1, positives + 1)])
+
+
+async def test_the_upload_result_says_where_every_row_went(env, monkeypatch):
+    client, tmp_path = env
+    headers, org_id, _ = await kullanici(client, "c1@x.com")
+    content = NL.join([
+        "Tarih;Açıklama;Tutar;Bakiye;Para Birimi",
+        ";Devreden Bakiye;;10.000,00;TRY",
+        "02.03.2026;Kira;-400,00;9.600,00;TRY",
+        "03.03.2026;Satış;1.000,00;10.600,00;TRY",
+        "04.03.2026;Toplam fatura ödemesi;-250,00;10.350,00;TRY",
+        ";Genel Toplam;;10.350,00;TRY",
+    ]) + NL
+    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
+    ingest = (await client.get(f"/api/v1/analysis/{job_id}", headers=headers)).json()["data"]["ingest"]
+    assert ingest["rows_read"] == 5 and ingest["processed"] == 3 and ingest["held"] == 0 and ingest["summary_lines_skipped"] == 2
+    assert "5 satır okundu: 3 kaydedildi, 0 kararınızı bekliyor, 2 özet satırı atlandı" in ingest["summary"]
+    assert [x["description"] for x in ingest["skipped_lines"]] == ["Devreden Bakiye", "Genel Toplam"]
+    assert ingest["unaccounted"] == 0
+    assert "Toplam fatura ödemesi" in {t.description for t in await _transactions(client, job_id)}
+
+
+async def test_a_remembered_sign_answer_does_not_apply_to_a_file_with_no_negatives_or_a_contradicting_balance(env, monkeypatch):
+    client, tmp_path = env
+    headers, org_id, _ = await kullanici(client, "c2@x.com")
+    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_mostly_out(2), name="a.csv")
+    asked = (await _questions(client, headers))[0]
+    assert asked["reason"] == "sign_unconfirmed" and asked["options"] == ["mixed", "sign_correct"]
+    done = await client.post("/api/v1/held-rows/file-direction", headers=headers,
+                             json={"job_id": job_id, "file_key": asked["file_key"], "answer": "sign_correct"})
+    assert done.json()["data"]["remembered"] and done.json()["data"]["resolved"] == 22
+
+    # the same format and account, now a file whose amounts carry no negative sign at all: the memory is for the sign
+    positives = _signs(*[f"{d:02d}.05.2026;Gider {d};{d},00;;TRY" for d in range(1, 8)])
+    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=positives, name="b.csv")
+    assert await _transactions(client, job2) == []
+    assert [q["reason"] for q in await _questions(client, headers) if q["job_id"] == job2] == ["no_signal"]
+
+    # and a file of the same format whose balance says the signs are backwards: asked, the override recorded
+    balance, lines = 10_000, []
+    for d in range(1, 7):
+        balance += d * 10                       # the balance goes UP by every amount written as negative
+        lines.append(f"{d:02d}.04.2026;Ödeme {d};-{d * 10},00;{balance},00;TRY")
+    lines.append(f"07.04.2026;Tahsilat;70,00;{balance - 70},00;TRY")
+    lines.append(f"08.04.2026;Tahsilat;80,00;{balance - 150},00;TRY")
+    job3, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_signs(*lines), name="c.csv")
+    asked3 = [q for q in await _questions(client, headers) if q["job_id"] == job3]
+    assert [q["reason"] for q in asked3] == ["balance_contradicts"] and await _transactions(client, job3) == []
+    assert [d.outcome for d in await _decisions(client, DecisionKind.DIRECTION_MAPPING) if d.outcome == "overridden"] == ["overridden"]

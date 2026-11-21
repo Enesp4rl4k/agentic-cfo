@@ -2974,6 +2974,11 @@ export const tr: MessageTree = {
     mappingsBody: "Aynı biçimdeki ekstreler bu cevapla okunur, tekrar sorulmaz. Kaldırırsanız bir sonraki yüklemede yeniden sorulur.",
     mappingRevoke: "Unut",
     assumedCurrency: "varsayıldı",
+    ingestRead: "{read} satır okundu: {saved} kaydedildi, {held} kararınızı bekliyor, {skipped} özet satırı atlandı",
+    ingestTransfers: "{count} geçiş/kapanış kaydı atlandı",
+    ingestSkippedTitle: "Atlanan özet satırları",
+    ingestLost: "{count} satır hesaba katılamadı; dosyayı gözden geçirin.",
+    ingestFallback: "Bu dosya beklenen biçimde okunamadı, alternatif okuyucu kullanıldı.",
   },
   heldAnalysis: {
     title: "Onayınızı bekleyen {n} analiz",

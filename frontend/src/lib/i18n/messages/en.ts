@@ -2681,6 +2681,11 @@ export type MessageTree = {
     mappingsBody: string;
     mappingRevoke: string;
     assumedCurrency: string;
+    ingestRead: string;
+    ingestTransfers: string;
+    ingestSkippedTitle: string;
+    ingestLost: string;
+    ingestFallback: string;
   };
   heldAnalysis: {
     title: string;
@@ -5725,6 +5730,11 @@ export const en: MessageTree = {
     mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",
     mappingRevoke: "Forget",
     assumedCurrency: "assumed",
+    ingestRead: "{read} rows read: {saved} saved, {held} waiting for your decision, {skipped} summary lines skipped",
+    ingestTransfers: "{count} transfer/closing postings skipped",
+    ingestSkippedTitle: "Skipped summary lines",
+    ingestLost: "{count} rows could not be accounted for; please review the file.",
+    ingestFallback: "This file could not be read in the expected format; another reader was used.",
   },
   heldAnalysis: {
     title: "{n} analyses await your approval",

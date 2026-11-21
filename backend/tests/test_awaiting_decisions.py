@@ -90,3 +90,27 @@ async def test_the_briefing_does_not_repeat_documents_its_headline_already_said(
     assert brief.full_text.count("1 belge") == 1
     assert "1 kayıt incelemenizi bekliyor; bu rakamlara dahil değil" in brief.full_text
     assert get_settings().radar_held_material_ratio == 0.10
+
+
+async def test_an_all_held_company_is_told_once_per_queue_and_no_document_is_counted_twice(client) -> None:
+    """PR #115's all-held briefing and PR #110's rows line together: each queue named once, the radar's
+    held-documents line still carries its review path, and the held-only sentence is not repeated."""
+    from sqlalchemy import select as _select
+
+    from app.models.open_item import OpenItem
+    from tests.test_g23_followups import _upload as g23_upload
+
+    _, org_id, _ = await kullanici(client, "allheld@example.com")
+    await g23_upload(client, org_id, who="Alfa Gıda", cents=100_000)
+    await g23_upload(client, org_id, who="Alfa Gıdacılık", cents=100_000)
+    async with client._maker() as db:
+        for item in (await db.execute(_select(OpenItem).where(OpenItem.org_id == org_id))).scalars():
+            await db.delete(item)
+        await db.commit()
+    await _hold_a_row(client, org_id)
+    brief = await _brief(client, org_id)
+    assert brief.has_data is True and "kararınızı bekliyor; radar bunlar olmadan boş" in brief.sentence_radar
+    assert brief.full_text.count("1 belge") == 1                       # the document is said once
+    assert "1 kayıt incelemenizi bekliyor; bu rakamlara dahil değil" in brief.full_text
+    radar = await _radar(client, org_id)
+    assert radar.held_documents.review_path == "/onay" and radar.awaiting_decision.documents.path == "/onay"

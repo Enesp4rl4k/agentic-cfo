@@ -72,6 +72,9 @@ class BankParser(ABC):
     # Subclasses set this to identify themselves in the registry
     bank_id: ClassVar[str] = ""
     bank_display_name: ClassVar[str] = ""
+    # Rows of the statement text the row pattern matched. Every one becomes a ParsedTransaction (an unreadable
+    # date or amount is held, never dropped): `app.services.ingest.okuma` checks the two counts agree.
+    matched: int = 0
 
     @classmethod
     @abstractmethod

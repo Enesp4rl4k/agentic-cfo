@@ -9,6 +9,7 @@ Akbank PDF ekstrelerinde tipik format:
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
@@ -62,9 +63,10 @@ class AkbankParser(BankParser):
             re.MULTILINE,
         )
         for m in row_pattern.finditer(text):
+            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             debit_raw = m.group(3)
             credit_raw = m.group(4)
@@ -75,8 +77,7 @@ class AkbankParser(BankParser):
             # never assumed to be a debit.
             raw = debit_raw or credit_raw
             amount = self.parse_turkish_amount(raw) if raw else None
-            if not amount:
-                continue
+            amount = amount or 0
             tx_type = ""
 
             transactions.append(ParsedTransaction(
@@ -85,7 +86,7 @@ class AkbankParser(BankParser):
                 amount_cents=amount,
                 tx_type=tx_type,
                 balance_cents=self.parse_turkish_amount(m.group(5)),
-                raw_row=m.group(0),
+                raw_row=m.group(0), date_estimated=estimated,
                 confidence_note="borç/alacak sütunu metinden ayırt edilemedi",
             ))
 

@@ -187,6 +187,23 @@ export interface components {
             /** Tamamlanan */
             tamamlanan: number;
         };
+        /**
+         * AwaitingDecisionOut
+         * @description Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates.
+         */
+        AwaitingDecisionOut: {
+            documents?: components["schemas"]["AwaitingLineOut"] | null;
+            rows?: components["schemas"]["AwaitingLineOut"] | null;
+        };
+        /** AwaitingLineOut */
+        AwaitingLineOut: {
+            /** Count */
+            count: number;
+            /** Path */
+            path: string;
+            /** Text */
+            text: string;
+        };
         /** BasisSplitOut */
         BasisSplitOut: {
             /**
@@ -272,6 +289,7 @@ export interface components {
         CashRadarOut: {
             /** Anchor Date */
             anchor_date: string;
+            awaiting_decision?: components["schemas"]["AwaitingDecisionOut"] | null;
             /** Beyond Horizon Cents */
             beyond_horizon_cents: number;
             held_documents?: components["schemas"]["HeldDocumentsOut"] | null;
@@ -795,6 +813,10 @@ export interface components {
             hata: string | null;
             /** Id */
             id: string;
+            /** Ingest */
+            ingest?: {
+                [key: string]: unknown;
+            } | null;
             /** Olusturma */
             olusturma: string | null;
             /** Onay Bekliyor */

@@ -9,6 +9,7 @@ Garanti PDF ekstrelerinde tipik format:
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 from app.parsers.direction import sign_is_informative
@@ -59,15 +60,15 @@ class GarantiParser(BankParser):
         # A column of all-positive amounts says nothing about direction (app.parsers.direction).
         signed = sign_is_informative([m.group(3).startswith("-") for m in found])
         for m in found:
+            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             amount_raw = m.group(3).lstrip("+")
             negative = amount_raw.startswith("-")
             amount = self.parse_turkish_amount(amount_raw.lstrip("-"))
-            if not amount:
-                continue
+            amount = amount or 0
 
             transactions.append(ParsedTransaction(
                 date=date,
@@ -75,6 +76,6 @@ class GarantiParser(BankParser):
                 amount_cents=amount,
                 tx_type=("expense" if negative else "income") if signed else "",
                 balance_cents=self.parse_turkish_amount(m.group(4)),
-                raw_row=m.group(0),
+                raw_row=m.group(0), date_estimated=estimated,
             ))
         return transactions

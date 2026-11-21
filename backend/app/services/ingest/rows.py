@@ -7,6 +7,7 @@ re-exports what its callers import from it.
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Any
 
 from app.core import tdhp
@@ -18,6 +19,7 @@ from app.parsers.direction import (
     DEBIT_ALIASES,
     FileDirection,
     RowDirection,
+    header_signature,
     is_summary_phrase,
     norm_header,
     parse_money,
@@ -35,6 +37,9 @@ from app.services.ingest.cells import (
     _parse_amount,
     _parse_date,
 )
+from app.services.ingest.okuma import ReadLedger
+
+logger = logging.getLogger(__name__)
 
 
 def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any]]:
@@ -71,6 +76,8 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             # Not money moved: the bank's own running total, which proves the
             # balance the statement closes on (app.services.bank_balance).
             "balance_cents": tx.balance_cents,
+            # A matched row whose amount could not be read is held, never booked at 0.
+            **({"zero_amount": True} if not tx.amount_cents and tx.account_code is None else {}),
         })
     return transactions
 
@@ -250,6 +257,8 @@ def _csv_satiri(
         raise ValueError("a row without a known account needs its settled direction")
     tx["type"] = yon.type
     tx["amount_cents"] = yon.amount_cents
+    if yon.amount_cents == 0:
+        tx["zero_amount"] = True           # a meaningless row is held, never booked at 0
     if yon.mismatch:
         tx["balance_mismatch"] = True      # its balance step does not reconcile: held on its own
     if yon.note:
@@ -280,17 +289,27 @@ def _dosya_isareti(settled: FileDirection, yon: RowDirection | None, raw_text: s
 
 def _try_parse_csv(
     raw_text: str, atlanan: list[str] | None = None, identity: str = "",
+    ledger: ReadLedger | None = None, count_read: bool = True,
 ) -> list[dict[str, Any]] | None:
     """Attempt deterministic CSV parsing if the text is structured CSV.
+
+    Returns None when the text is not a statement table (the next reader may try), a list otherwise: an
+    empty list means a statement was read and every row was skipped (and counted in `ledger`).
 
     A row naming a transfer or closing account (7x1, 690/692) is not read — it
     moves what is already counted — and is reported in `atlanan` instead.
     The direction of every other row comes from `app.parsers.direction`: one
     resolver for every upload path, and a file it cannot place is held whole,
     with one question for the file (`direction_file` / `direction_question`).
+
+    Every row handed to this function leaves it by exactly one named bucket of `ledger`
+    (app.services.ingest.okuma): emitted, blank, summary_skipped or account_skipped.
     """
     import csv
     import io
+
+    ledger = ledger if ledger is not None else ReadLedger()
+    headers: list[str] = []
     try:
         # Excel sheets are read as tab-separated and Turkish exports often use
         # ";" — the header line says which one this file uses.
@@ -307,22 +326,35 @@ def _try_parse_csv(
         if not ((set(headers) & set(_TUTAR_KOLONLARI) or names & AMOUNT_COLUMNS)
                 and set(headers) & set(_TARIH_KOLONLARI)):
             return None
-        rows = [
-            {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
-            for row in reader if row and any(row.values())
-        ]
+        rows: list[dict[str, str]] = []
+        malformed: set[int] = set()
+        yielded = 0
+        for row in reader:
+            yielded += 1
+            if not row or not any(row.values()):
+                ledger.blank += 1
+                continue
+            # Cells beyond the header's width mean the row's columns are misaligned (an unquoted delimiter).
+            if any(str(x).strip() for x in (row.get(None) or [])):
+                malformed.add(len(rows))
+            rows.append({fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k})
+        if count_read:
+            ledger.read += yielded
         uncoded = [i for i, r in enumerate(rows) if not _kodlu_mu(r)]
         # A carried balance or a total line is not a movement: not booked, not held, but its balance anchors
         # the check of the rows around it.
-        desc = ("description", "aciklama", "detay")
+        date_keys = ("date", "tarih", "islem tarihi")
         # A line is a summary line only if it is structurally one: its WHOLE description is a summary phrase
         # and it has no date or carries no amount. "Toplam fatura ödemesi" is a payment. A phrase line that
         # has a date AND an amount is a transaction; if it does not fit the balance chain it is held
-        # ("özet satırı olabilir"), never skipped.
-        phrased = {i for i in uncoded if is_summary_phrase(_ilk(rows[i], *desc))}
-        notmoves = {i for i in phrased if not _tutarli(rows[i]) or _parse_date(_ilk(rows[i], "date", "tarih", "islem tarihi")) is None}
+        # ("özet satırı olabilir"), never skipped. Every skipped line is counted and listed.
+        phrased = {i for i in uncoded if is_summary_phrase(_ozet_metni(rows[i]))}
+        notmoves = {
+            i for i in phrased
+            if not _tutarli(rows[i]) or _parse_date(_ilk(rows[i], *date_keys)) is None
+        }
         suspects = phrased - notmoves
-        has_balance = bool({norm_header(h) for h in headers} & {"bakiye", "balance"})
+        has_balance = bool(set(names) & {"bakiye", "balance"})
         settled = resolve_file(
             headers, [rows[i] for i in uncoded], frozenset(k for k, i in enumerate(uncoded) if i in notmoves),
             identity or statement_identity(raw_text.split(chr(10), 1)[0]),
@@ -333,23 +365,41 @@ def _try_parse_csv(
         asked = False
         for i, r in enumerate(rows):
             if i in notmoves:
+                ledger.skip_summary(_ozet_metni(rows[i]), _ilk(rows[i], *date_keys))
                 continue
             tx = _csv_satiri(r, atlanan, yonler.get(i))
             if tx is None:
+                ledger.account_skipped += 1
                 continue
             if i in suspects and (not has_balance or (yonler.get(i) and yonler[i].mismatch)):
                 tx["summary_suspect"] = True
+            if i in malformed:
+                tx["malformed_row"] = True
             if mark := _dosya_isareti(settled, yonler.get(i), raw_text):
                 tx["direction_file"] = mark
                 if not asked and settled.hold is not None:
                     tx["direction_question"], asked = settled.hold["question"], True
             transactions.append(tx)
-        if transactions and notmoves:
-            # Nothing disappears unseen: the upload result says how many summary lines were left out.
-            transactions[0]["summary_lines_skipped"] = len(notmoves)
-        return transactions or None
-    except Exception:
+        ledger.emitted += len(transactions)
+        return transactions
+    except Exception as exc:
+        # Never swallowed: the file's layout signature and the error type are logged (no cell contents), the
+        # summary tells the person another reader took over, and the next reader is tried.
+        import traceback
+
+        where = traceback.extract_tb(exc.__traceback__)[-1]
+        logger.error(
+            "statement reader failed signature=%s error=%s at=%s:%s",
+            header_signature(headers) if headers else "?", type(exc).__name__, where.name, where.lineno,
+        )
+        ledger.reader_failed = True
         return None
+
+
+def _ozet_metni(row: dict[str, str]) -> str:
+    """What names the line: its description, or when that is empty the first cell that says anything
+    (exports put "TOPLAM" in the date column of a totals row)."""
+    return _ilk(row, "description", "aciklama", "detay") or next((v for v in row.values() if v), "")
 
 
 def _kolon(r_lower: dict[str, str], aliases: frozenset[str]) -> str:
@@ -365,12 +415,15 @@ def _tutarli(row: dict[str, str]) -> bool:
     return False
 
 
-def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
+def _tablo_ekstresi(
+    file_path: str, atlanan: list[str] | None = None, ledger: ReadLedger | None = None,
+) -> list[dict[str, Any]] | None:
     """The statement table inside a spreadsheet, found under any title rows, as transactions."""
     from app.services.ingest.recognize import standart_csv, tabloyu_sec
     from app.services.ingest.schemas import BANKA_EKSTRESI
     from app.services.ingest.table import OkunamayanDosya
 
+    ledger = ledger if ledger is not None else ReadLedger()
     try:
         with open(file_path, "rb") as f:
             veri = f.read()
@@ -381,4 +434,10 @@ def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[di
         return None
     from app.parsers.direction import statement_identity as _identity
 
-    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan, _identity(tablo.ust_metin))
+    # The table reader drops only blank rows and repeated headers, and says how many.
+    ledger.read += len(tablo.satirlar) + tablo.bos + tablo.baslik_tekrari
+    ledger.blank += tablo.bos
+    ledger.header_repeats += tablo.baslik_tekrari
+    return _try_parse_csv(
+        standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan, _identity(tablo.ust_metin), ledger, count_read=False,
+    )

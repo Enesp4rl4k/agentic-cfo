@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { getJobStatus } from "@/lib/api/cfo";
+import { IngestCounts } from "@/components/held-rows/IngestCounts";
 import { DirectionMappings } from "@/components/held-rows/DirectionMappings";
 import { FileDirectionCard } from "@/components/held-rows/FileDirectionCard";
 import {
@@ -56,6 +58,11 @@ export default function BekleyenKayitlarPage() {
 
   const rows = useQuery({ queryKey: [...HELD_KEY, jobId ?? "all"], queryFn: () => listHeldRows(jobId) });
   const base = useQuery({ queryKey: ["base-currency"], queryFn: getBaseCurrency });
+  const upload = useQuery({
+    queryKey: ["job-ingest", jobId],
+    queryFn: () => getJobStatus(jobId as string),
+    enabled: Boolean(jobId),
+  });
   const files = useQuery({ queryKey: [...HELD_KEY, "files"], queryFn: listFileQuestions });
   const mappings = useQuery({ queryKey: [...HELD_KEY, "mappings"], queryFn: listDirectionMappings });
 
@@ -101,6 +108,7 @@ export default function BekleyenKayitlarPage() {
   return (
     <div className="space-y-4 p-5">
       <PageHead title={copy.title} subtitle={copy.subtitle} />
+      {jobId && <IngestCounts ingest={upload.data?.ingest} />}
       {failed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}
       {rows.isError && <p role="alert" className="text-sm text-destructive">{copy.failed}</p>}
 

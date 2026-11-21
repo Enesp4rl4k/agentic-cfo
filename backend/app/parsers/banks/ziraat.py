@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 from app.parsers.direction import sign_is_informative
@@ -47,9 +48,10 @@ class ZiraatParser(BankParser):
             re.MULTILINE,
         )
         for m in two_col.finditer(text):
+            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             borç_raw, alacak_raw = m.group(3), m.group(4)
 
@@ -60,13 +62,12 @@ class ZiraatParser(BankParser):
                 amount = self.parse_turkish_amount(borç_raw)
                 tx_type = "expense"
             else:
-                continue
+                amount, tx_type = 0, ""
 
-            if not amount:
-                continue
+            amount = amount or 0
             transactions.append(ParsedTransaction(
                 date=date, description=description,
-                amount_cents=amount, tx_type=tx_type, raw_row=m.group(0),
+                amount_cents=amount, tx_type=tx_type, raw_row=m.group(0), date_estimated=estimated,
                 balance_cents=self.parse_turkish_amount(m.group(5)),
             ))
 
@@ -78,24 +79,25 @@ class ZiraatParser(BankParser):
             r"(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+([+-]?[\d.,]+)\s+([\d.,]+)\s*$",
             re.MULTILINE,
         )
+        self.matched = 0        # the fallback pass counts its own rows
         found = list(one_col.finditer(text))
         signed = sign_is_informative([m.group(3).startswith("-") for m in found])   # all-positive says nothing
         for m in found:
+            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             raw = m.group(3)
             negative = raw.startswith("-")
             amount = self.parse_turkish_amount(raw.lstrip("+-"))
-            if not amount:
-                continue
+            amount = amount or 0
             transactions.append(ParsedTransaction(
                 date=date, description=description,
                 amount_cents=amount,
                 tx_type=("expense" if negative else "income") if signed else "",
                 balance_cents=self.parse_turkish_amount(m.group(4)),
-                raw_row=m.group(0),
+                raw_row=m.group(0), date_estimated=estimated,
             ))
 
         return transactions

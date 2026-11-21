@@ -33,6 +33,7 @@ from app.models.held_transaction import PENDING, REJECTED, RELEASED, HeldTransac
 from app.services.decisions import record_decision
 from app.services.ingest.hold import (
     AMOUNT_UNREADABLE,
+    AMOUNT_ZERO,
     BALANCE_MISMATCH,
     CURRENCY_UNKNOWN,
     DATE_UNREADABLE,
@@ -51,6 +52,8 @@ REASON_TEXT: dict[str, str] = {
     "direction_file_unknown": "yön belirsiz",
     "balance_mismatch": "bakiye ile uyuşmuyor",
     "summary_suspect": "özet satırı olabilir",
+    "amount_zero": "tutar sıfır",
+    "malformed_row": "sütunlar kaymış olabilir",
     "amount_unreadable": "tutar okunamadı",
     "date_unreadable": "tarih okunamadı",
     "document_held_together": "aynı belgenin başka bir satırı bekliyor",
@@ -209,7 +212,7 @@ _FIXES = {
     "type": (DIRECTION_UNKNOWN, DIRECTION_FILE, BALANCE_MISMATCH),
     "currency": (CURRENCY_UNKNOWN,),
     "transaction_date": (DATE_UNREADABLE,),
-    "amount_cents": (AMOUNT_UNREADABLE,),
+    "amount_cents": (AMOUNT_UNREADABLE, AMOUNT_ZERO),
 }
 _EARLIEST = date(2000, 1, 1)
 _LATEST_AHEAD = timedelta(days=366)
@@ -246,6 +249,8 @@ def apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | Non
             value = _valid_date(value)
         out[key] = value
         fixed.add(key)
+    if "amount_cents" in fixed:
+        out.pop("zero_amount", None)
     if "type" in fixed:
         out.pop("direction_file", None)
         out.pop("direction_question", None)

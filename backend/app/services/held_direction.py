@@ -132,6 +132,9 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
             direct, convention = known.get((sig, BALANCE_CONTRADICTS)), known.get((sig, CONVENTION_UNVERIFIED))
             if convention is not None and convention.answer == "as_read":
                 overridden.add(convention.id)       # this file's balance contradicts what was remembered
+            sign = known.get((sig, SIGN_UNCONFIRMED))
+            if sign is not None and sign.answer == "sign_correct":
+                overridden.add(sign.id)             # "the signs are right" does not outrank a balance that says otherwise
             if direct is not None:
                 answer = "balance"
             elif convention is not None and convention.answer == "inverted":
