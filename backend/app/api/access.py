@@ -217,7 +217,7 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/open-banking/callback"): "bank OAuth redirect; verifies state",
     ("GET", "/api/v1/pilot/invite/validate"): "checks an invite code before sign-up",
     ("POST", "/api/v1/org/invite/accept"): "accepts an invite by its token (an existing account also proves itself)",
-    ("GET", "/api/v1/org/invite/preview"): "reads an invitation by its secret token before sign-in: organisation, role, state",
+    ("POST", "/api/v1/org/invite/preview"): "reads an invitation by its secret token before sign-in: organisation, role, state",
     ("GET", "/api/v1/benchmark/sectors"): "static sector list, no tenant data",
     ("GET", "/api/v1/agent-graph/topology"): "static agent graph, no tenant data",
     ("GET", "/api/v1/open-banking/banks"): "static list of supported banks",

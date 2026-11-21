@@ -771,7 +771,6 @@ class ScheduledSyncRunner:
         import io
 
         from fastapi import UploadFile
-        from sqlalchemy import select
 
         from app.models.user import User
         from app.services.upload_service import (
@@ -785,10 +784,8 @@ class ScheduledSyncRunner:
             upload_result = await stream_to_disk(fake_file, "csv", settings.max_upload_size_mb)
 
             # Get a system user for the org (owner)
-            result = await db.execute(
-                select(User).where(User.org_id == org_id).limit(1)
-            )
-            user = result.scalar_one_or_none()
+            owner_id = await job_owner_id(db, org_id)
+            user = await db.get(User, owner_id) if owner_id else None
             if not user:
                 logger.warning("No user found for org %s — cannot create job", org_id)
                 return None
@@ -890,6 +887,35 @@ class ScheduledSyncRunner:
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
+
+async def job_owner_id(db: Any, org_id: str) -> str | None:
+    """The member a scheduled job is booked under: the organisation's owner, else its most senior member.
+
+    Read from memberships, not `users.org_id` (the company someone is acting in right now: an owner
+    working in a client's books would leave this company with nobody, and a viewer who happens to be
+    acting here would own its jobs). A user with no membership rows falls back to their column.
+    """
+    from sqlalchemy import select
+
+    from app.models.organization import OrgMembership
+    from app.models.user import User
+
+    order = ["owner", "admin", "cfo", "smmm", "analyst", "viewer"]
+    rows = (
+        await db.execute(
+            select(OrgMembership.user_id, OrgMembership.role)
+            .join(User, User.id == OrgMembership.user_id)
+            .where(OrgMembership.org_id == str(org_id), User.is_active.is_(True))
+        )
+    ).all()
+    if rows:
+        best = min(rows, key=lambda r: (order.index(r.role) if r.role in order else len(order), str(r.user_id)))
+        return str(best.user_id)
+    legacy = (
+        await db.execute(select(User.id).where(User.org_id == str(org_id), User.is_active.is_(True)).limit(1))
+    ).scalar_one_or_none()
+    return str(legacy) if legacy else None
+
 
 def _today_str() -> str:
     return datetime.now(UTC).strftime("%Y%m%d")
