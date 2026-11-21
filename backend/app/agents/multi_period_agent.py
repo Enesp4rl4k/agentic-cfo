@@ -19,7 +19,7 @@ import statistics
 from collections import defaultdict
 from typing import Any
 
-from app.agents.state import AgentRunConfig, CFOState, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult, is_correction_row
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,19 @@ def _aggregate_by_month(
         "other_expense": 0, "tax": 0, "loan": 0,
     })
 
+    # A month holding only correction rows (a reversal and its corrected row, booked in
+    # the first open month) is not a period: it nets to zero and would read as a collapse.
+    real_months = {
+        str(tx.get("transaction_date") or "")[:7]
+        for tx in transactions if tx.get("transaction_date") and not is_correction_row(tx)
+    }
     for tx in transactions:
         date = tx.get("transaction_date", "")
         if not date:
             continue
         month_key = str(date)[:7]  # YYYY-MM
+        if month_key not in real_months:
+            continue
         amount = tx.get("amount_cents", 0)
         cat = tx.get("category", "other_expense")
         tx_type = tx.get("type", "expense")
