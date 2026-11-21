@@ -13,7 +13,6 @@ from typing import Any
 from app.core.financial import cents_to_amount
 from app.core.interfaces import IReportExporter
 
-
 UNKNOWN = "currency unknown"
 
 
