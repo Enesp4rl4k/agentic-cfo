@@ -5,8 +5,8 @@ but arrives later is written into the first open month, with its own date and th
 closed period it belongs to kept beside it (`asil_tarih`, `asil_donem`). Two nullable
 columns and one new table; nothing changes for an organisation that closes no month.
 
-Revision ID: 060_donem_kilitleri
-Revises: 059_money_check_constraints
+Revision ID: 061_donem_kilitleri
+Revises: 060_journal_tables
 """
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "060_donem_kilitleri"
-down_revision = "059_money_check_constraints"
+revision = "061_donem_kilitleri"
+down_revision = "060_journal_tables"
 branch_labels = None
 depends_on = None
 
