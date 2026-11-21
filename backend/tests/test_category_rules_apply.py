@@ -196,7 +196,7 @@ async def test_worker_passes_org_and_rules_and_records_source_and_hits(ortam, mo
     async def sahte(**kw: Any) -> dict[str, Any]:
         alinan.append(kw)
         return {
-            "transactions": [{"amount_cents": 50_00, "type": "expense",
+            "transactions": [{"amount_cents": 50_00, "currency": "TRY", "type": "expense",
                               "category": "utilities", "category_source": USER_RULE,
                               "vendor": "Turkcell", "description": "Turkcell fatura",
                               "transaction_date": "2026-08-01"}],

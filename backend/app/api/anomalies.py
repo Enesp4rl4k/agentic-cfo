@@ -135,7 +135,7 @@ async def scan_anomalies(
             "description": tx.description,
             "vendor": tx.vendor,
             "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-            "confidence": float(tx.confidence) if tx.confidence else None,
+            "confidence": float(tx.confidence) if tx.confidence is not None else None,
         }
         for tx in txs
     ]

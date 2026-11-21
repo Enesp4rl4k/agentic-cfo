@@ -118,6 +118,9 @@ class CFOState(TypedDict, total=False):
     # {profit, cash}: a company analysis reads its ledger instead of a file. Profit
     # and cash are different rows of one money (plan v9 §K1), so cash has its own.
     ledger_view: dict[str, list[dict[str, Any]]] | None
+    # Extracted rows waiting for a person (unknown/low confidence, unknown currency):
+    # not in `transactions`, so no figure in this run includes them.
+    held_transactions: list[dict[str, Any]]
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None
     # Numeric reconciliation output (separate LangGraph step, runs before verifier)

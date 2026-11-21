@@ -210,6 +210,7 @@ async def purge_job_outputs(db: AsyncSession, job_id: str) -> None:
     purge and the new rows are atomic.
     """
     from app.models.anomaly import Anomaly
+    from app.models.held_transaction import HeldTransaction
     from app.models.report import Report
     from app.models.transaction import Transaction
 
@@ -219,3 +220,11 @@ async def purge_job_outputs(db: AsyncSession, job_id: str) -> None:
                 synchronize_session=False
             )
         )
+    # Held rows still waiting are asked again by the new run; the ones a person
+    # already released or rejected are the trail of a decision and stay (the new
+    # run finds them by row identity and does not ask twice).
+    await db.execute(
+        delete(HeldTransaction)
+        .where(HeldTransaction.job_id == job_id, HeldTransaction.status == "pending")
+        .execution_options(synchronize_session=False)
+    )

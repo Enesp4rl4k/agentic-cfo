@@ -2626,6 +2626,38 @@ export type MessageTree = {
     close: { title: string; note: string; cta: string; demo: string };
     footer: { sample: string; carpe: string; carpeSub: string };
   };
+  heldRows: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    failed: string;
+    actionFailed: string;
+    linkWaiting: string;
+    linkJob: string;
+    from: string;
+    release: string;
+    correct: string;
+    reject: string;
+    save: string;
+    cancel: string;
+    releaseGroup: string;
+    blocked: string;
+    direction: string;
+    income: string;
+    expense: string;
+    currency: string;
+    date: string;
+    amount: string;
+    unknownAmount: string;
+    unknownDate: string;
+    unknownDirection: string;
+    unknownCurrency: string;
+    currencyTitle: string;
+    currencyBody: string;
+    currencyConfirm: string;
+    currencyConfirmed: string;
+    reasons: Record<string, string>;
+  };
 };
 
 export const en: MessageTree = {
@@ -5521,5 +5553,45 @@ export const en: MessageTree = {
       demo: "Try the demo",
     },
     footer: { sample: "Figures on screen are samples", carpe: "Carpe diem.", carpeSub: "SEIZE THE DAY" },
+  },
+  heldRows: {
+    title: "Rows waiting for your review",
+    subtitle: "The system does not write a row it is unsure of into your books, and does not guess. These rows are in no total; they wait for your decision.",
+    empty: "No rows are waiting for review.",
+    failed: "Waiting rows could not be read.",
+    actionFailed: "Your decision could not be saved. Try again.",
+    linkWaiting: "{count} rows are waiting for your review",
+    linkJob: "{count} rows from this upload are waiting for your review",
+    from: "Source document",
+    release: "Accept as is",
+    correct: "Correct and accept",
+    reject: "Reject",
+    save: "Correct and accept",
+    cancel: "Cancel",
+    releaseGroup: "Accept the whole group",
+    blocked: "Correct the missing information first.",
+    direction: "Direction",
+    income: "Income",
+    expense: "Expense",
+    currency: "Currency",
+    date: "Date",
+    amount: "Amount (minor units)",
+    unknownAmount: "no amount",
+    unknownDate: "no date",
+    unknownDirection: "no direction",
+    unknownCurrency: "no currency",
+    currencyTitle: "What is your company's currency?",
+    currencyBody: "Some documents do not state a currency. If you confirm the company currency, only the rows waiting for that reason are released, marked as assumed.",
+    currencyConfirm: "Confirm",
+    currencyConfirmed: "Currency confirmed; waiting rows were released.",
+    reasons: {
+      confidence_unknown: "confidence unknown",
+      confidence_low: "low confidence",
+      currency_unknown: "currency unknown",
+      direction_unknown: "direction unclear",
+      amount_unreadable: "amount unreadable",
+      date_unreadable: "date unreadable",
+      document_held_together: "another row of the same document is waiting",
+    },
   },
 };

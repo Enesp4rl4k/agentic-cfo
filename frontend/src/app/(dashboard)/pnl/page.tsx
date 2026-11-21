@@ -20,6 +20,7 @@ import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat"
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import type { PnLData, ProvenanceBlock } from "@/types";
 
 // ── Chart style ───────────────────────────────────────────────────────────────
@@ -554,6 +555,9 @@ export default function PnLPage() {
           {t.pnl.subtitle}
         </p>
       </div>
+
+      {/* Rows from this upload that wait for a person are in none of the figures below. */}
+      <HeldRowsLink jobId={jobId} />
 
       <KPIStrip pnl={pnl} prov={dashboard!.provenance?.pnl} />
       <WaterfallChart pnl={pnl} />

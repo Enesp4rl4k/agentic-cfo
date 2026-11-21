@@ -20,7 +20,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from arq import create_pool
@@ -28,7 +28,6 @@ from arq.connections import ArqRedis, RedisSettings
 from redis import exceptions as redis_exc
 
 from app.config import get_settings
-from app.core.dates import parse_transaction_date
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +265,7 @@ async def run_cfo_analysis(
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.models.anomaly import Anomaly
     from app.models.report import Report, ReportFormat, ReportType
-    from app.models.transaction import Transaction
+    from app.services.ingest.persist import build_transaction
     from app.services.job_state import (
         claim_for_analysis,
         fail_job,
@@ -381,39 +380,30 @@ async def run_cfo_analysis(
             # union of two.
             await purge_job_outputs(db, job_id)
 
-            # Persist transactions
+            # Persist transactions. A row that reaches here with no currency or
+            # direction is not given one: it waits with the rows the extraction held.
+            from app.services.held_rows import register_held
+
+            held_rows: list[dict[str, Any]] = list(result.get("held_transactions") or [])
+            persisted_rows: list[dict[str, Any]] = []
             for tx_data in result.get("transactions") or []:
-                # An unreadable date used to become today's, silently. It still
-                # becomes today's — the column is not nullable and the row has
-                # to exist to be reviewed — but the row now says so, because
-                # this date decides the accounting period and the period ends
-                # up on the e-Defter.
-                tx_date, tx_date_estimated = parse_transaction_date(
-                    tx_data.get("transaction_date")
-                )
-                tx = Transaction(
-                    job_id=job_id,
-                    amount_kurus=tx_data.get("amount_cents", 0),
-                    currency=tx_data.get("currency", "USD"),
-                    type=tx_data.get("type", "expense"),
-                    category=tx_data.get("category", "other_expense"),
-                    description=tx_data.get("description", ""),
-                    vendor=tx_data.get("vendor"),
-                    transaction_date=tx_date,
-                    date_is_estimated=tx_date_estimated,
-                    # As the document stated them; None when it did not.
-                    kdv_kurus=tx_data.get("kdv_cents"),
-                    stopaj_kurus=tx_data.get("stopaj_cents"),
-                    raw_text=tx_data.get("raw_text"),
-                    confidence=tx_data.get("confidence"),
-                    category_source=tx_data.get("category_source"),
-                    account_code=tx_data.get("account_code"),
-                    document_id=tx_data.get("document_id"),
-                    due_date=date.fromisoformat(tx_data["due_date"]) if tx_data.get("due_date") else None,
-                    payment_note=tx_data.get("payment_note"),
-                    counterparty=tx_data.get("counterparty"),
-                )
-                db.add(tx)
+                lacking = [
+                    code for code, missing in (
+                        ("currency_unknown", not str(tx_data.get("currency") or "").strip()),
+                        ("direction_unknown", tx_data.get("type") not in ("income", "expense")),
+                    ) if missing
+                ]
+                if lacking:
+                    held_rows.append({**tx_data, "hold_reasons": lacking})
+                    continue
+                persisted_rows.append(tx_data)
+            # One question, asked once: a row a person already released comes back
+            # into this job as they answered it; a rejected or already waiting one
+            # is not asked again.
+            registered = await register_held(db, job_id, org_id_str, held_rows)
+            persisted_rows.extend(registered["released_again"])
+            for tx_data in persisted_rows:
+                db.add(build_transaction(job_id, tx_data))
 
             # A person's single-row corrections survive a rerun (the rows above are new).
             from app.services.ledger_correction import apply_overrides
@@ -466,6 +456,9 @@ async def run_cfo_analysis(
             )
             completed_at = datetime.now(UTC)
             meta = dict(job.result_metadata or {})
+            from app.services.ingest.summary import ingest_summary
+
+            meta["ingest"] = ingest_summary(persisted_rows, registered)
             if terminal == JobStatus.COMPLETED and job.org_id:
                 # What follows a completed analysis (ledger, company view,
                 # chain) is owed from the moment the job reads completed, so the
