@@ -69,9 +69,9 @@ async def _upload(client, org_id: str, *rows: dict[str, Any], meta: dict | None 
         return job.id
 
 
-def _statement(day: str, cents: int) -> dict:
+def _statement(day: str, cents: int, currency: str = "TRY") -> dict:
     """What the worker records for a statement whose balances chain."""
-    return {"closing_balance": {"date": day, "balance_cents": cents}}
+    return {"closing_balance": {"date": day, "balance_cents": cents, "currency": currency}}
 
 
 async def _radar(client, org_id: str, anchor: date = ANCHOR) -> Any:
@@ -274,4 +274,4 @@ async def test_a_bank_statement_with_a_balance_column_proves_its_closing_balance
     assert out.get("ok") is True, out
     async with client._maker() as db:
         meta = (await db.get(AnalysisJob, job_id)).result_metadata
-    assert meta["closing_balance"] == {"date": "2025-04-09", "balance_cents": 57_500_50}
+    assert meta["closing_balance"] == {"date": "2025-04-09", "balance_cents": 57_500_50, "currency": "TRY"}

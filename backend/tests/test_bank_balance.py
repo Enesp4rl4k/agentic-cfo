@@ -41,3 +41,11 @@ def test_a_row_without_a_balance_proves_nothing():
 def test_a_single_row_has_nothing_to_chain_to():
     assert closing_balance(OLDEST_FIRST[:1]) is None
     assert closing_balance([]) is None
+
+
+def test_a_closing_balance_carries_the_one_currency_its_rows_share_and_none_otherwise():
+    usd = [{**r, "currency": "usd"} for r in OLDEST_FIRST]
+    assert closing_balance(usd) == {"date": "2025-04-09", "balance_cents": 57_500_50, "currency": "USD"}
+    mixed = [usd[0], usd[1], {**usd[2], "currency": "TRY"}]
+    assert "currency" not in (closing_balance(mixed) or {})
+    assert "currency" not in (closing_balance(OLDEST_FIRST) or {})

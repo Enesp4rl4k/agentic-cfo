@@ -109,6 +109,9 @@ class OtherCurrencyTotalOut(BaseModel):
     receivable_cents: int
     payable_cents: int
     count: int
+    # Rent/payroll and tax/SGK payments projected from this currency's own history (additive; never in the weeks).
+    recurring_payable_cents: int = 0
+    tax_payable_cents: int = 0
 
 
 class CashRadarOut(BaseModel):

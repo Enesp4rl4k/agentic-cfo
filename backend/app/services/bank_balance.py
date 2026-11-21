@@ -14,7 +14,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency_totals import normalise
 from app.models.analysis_job import AnalysisJob, JobStatus
+from app.models.transaction import Transaction
 
 
 def _signed(tx: dict[str, Any]) -> int:
@@ -31,7 +33,10 @@ def _chains(rows: list[dict[str, Any]]) -> bool:
 
 
 def closing_balance(transactions: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """{"date", "balance_cents"} the statement ends on, or None if it does not prove one."""
+    """{"date", "balance_cents"} the statement ends on, or None if it does not prove one.
+
+    Plus "currency" when every row names the same one: a balance is an amount, and an amount has a currency.
+    Rows that name none or disagree leave it out: the balance's currency is then unknown, never assumed."""
     rows = [t for t in transactions if t.get("balance_cents") is not None and t.get("transaction_date")]
     # One row proves nothing: there is nothing to chain it to.
     if len(rows) < 2 or len(rows) != len(transactions):
@@ -39,12 +44,19 @@ def closing_balance(transactions: list[dict[str, Any]]) -> dict[str, Any] | None
     for ordered in (rows, rows[::-1]):
         if _chains(ordered):
             last = ordered[-1]
-            return {"date": str(last["transaction_date"])[:10], "balance_cents": int(last["balance_cents"])}
+            proven = {"date": str(last["transaction_date"])[:10], "balance_cents": int(last["balance_cents"])}
+            codes = {normalise(t.get("currency")) for t in transactions}
+            if len(codes) == 1 and "" not in codes:
+                proven["currency"] = codes.pop()
+            return proven
     return None
 
 
 async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
-    """The latest closing balance a completed statement proved, if any did."""
+    """The latest closing balance a completed statement proved, if any did.
+
+    Carries its "currency" ("" when unknown). A balance stored before currencies were kept takes the one
+    currency its statement's rows share; if they share none, it stays unknown."""
     jobs = (
         await db.execute(
             select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.result_metadata).where(
@@ -58,4 +70,12 @@ async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None
         for job_id, filename, m in jobs
         if m and m.get("closing_balance")
     ]
-    return max(found, key=lambda c: c["date"], default=None)
+    latest = max(found, key=lambda c: c["date"], default=None)
+    if latest is None:
+        return None
+    code = normalise(latest.get("currency"))
+    if not code:
+        rows = await db.execute(select(Transaction.currency).where(Transaction.job_id == latest["job_id"]))
+        codes = {normalise(c) for c in rows.scalars().all()}
+        code = codes.pop() if len(codes) == 1 else ""
+    return {**latest, "currency": code}

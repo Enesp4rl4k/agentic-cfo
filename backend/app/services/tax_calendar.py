@@ -89,13 +89,17 @@ def _next_working_day(day: date) -> date:
     return day
 
 
-async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str, int]:
-    """Median of past cash payments to the tax office / SGK, per kind of tax."""
-    return {kind: median for kind, (median, _) in (await get_historical_tax_stats(db, org_id)).items()}
+async def get_historical_tax_averages(db: AsyncSession, org_id: str, currency: str = "TRY") -> dict[str, int]:
+    """Median of past cash payments to the tax office / SGK, per kind of tax (in `currency` only)."""
+    return {kind: median for kind, (median, _) in (await get_historical_tax_stats(db, org_id, currency)).items()}
 
 
-async def get_historical_tax_stats(db: AsyncSession, org_id: str) -> dict[str, tuple[int, int]]:
-    """Per kind of tax: (median of past cash payments, how many payments it is taken over)."""
+async def get_historical_tax_stats(
+    db: AsyncSession, org_id: str, currency: str = "TRY"
+) -> dict[str, tuple[int, int]]:
+    """Per kind of tax: (median of past cash payments, how many payments it is taken over).
+
+    Only payments in `currency`: a median over lira and dollars is a number in neither."""
     rows = (
         (
             await db.execute(
@@ -106,7 +110,7 @@ async def get_historical_tax_stats(db: AsyncSession, org_id: str) -> dict[str, t
                     CanonicalTransaction.direction == "expense",
                     CanonicalTransaction.amount_cents > 0,
                     money_rows(),
-                    CanonicalTransaction.currency == "TRY",
+                    CanonicalTransaction.currency == currency,
                 )
             )
         )
@@ -189,10 +193,11 @@ async def project_tax_obligations(
     org_id: str,
     anchor: date,
     horizon_weeks: int = 13,
+    currency: str = "TRY",
 ) -> list[TaxObligationProjection]:
     """Statutory deadlines inside the horizon, with amounts from past payments."""
     horizon_end = anchor + timedelta(days=7 * horizon_weeks - 1)
-    historical = await get_historical_tax_stats(db, org_id)
+    historical = await get_historical_tax_stats(db, org_id, currency)
     return [
         TaxObligationProjection(
             id=f"tax_{d.kind}_{d.due.isoformat()}",

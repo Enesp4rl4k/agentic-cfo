@@ -257,7 +257,10 @@ def currency_notes(state: str, currency: str, foreign_items: Mapping[str, Mappin
     for code, v in sorted(foreign_items.items()):
         sums = ", ".join(
             f"{fmt_money(v[k], code)} {word}"
-            for k, word in (("payable_cents", "ödeme"), ("receivable_cents", "tahsilat")) if v[k]
+            for k, word in (
+                ("payable_cents", "ödeme"), ("receivable_cents", "tahsilat"),
+                ("recurring_payable_cents", "düzenli ödeme tahmini"), ("tax_payable_cents", "vergi/SGK tahmini"),
+            ) if v.get(k)
         )
         lines.append(f"{code} kalemleri ({v['count']}; {sums or 'tutarsız'}): {currency}'ye çevrilmedi, radarda yok")
     return lines
