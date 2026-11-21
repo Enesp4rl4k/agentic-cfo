@@ -179,7 +179,7 @@ async def test_other_settings_do_not_mark_focus_as_chosen(client):
 
 
 def test_migration_round_trip_and_backfill():
-    """065 on a bare organisations table: backfills the focus choice, and downgrades cleanly."""
+    """067 on a bare organisations table: backfills the focus choice, and downgrades cleanly."""
     import importlib.util
     from pathlib import Path
 
@@ -187,7 +187,7 @@ def test_migration_round_trip_and_backfill():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
 
-    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "065_org_size_profile.py"
+    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "067_org_size_profile.py"
     spec = importlib.util.spec_from_file_location("m065", path)
     mig = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mig)

@@ -4,8 +4,8 @@ All columns are nullable (or default false), so every existing company is unchan
 `focus_mode_explicit` is back-filled from `focus_mode`: a company whose focus mode is
 already on had it switched on by a person, and a size profile must never undo that.
 
-Revision ID: 065_org_size_profile
-Revises: 064_decisions_table
+Revision ID: 067_org_size_profile
+Revises: 066_counterparty_aliases
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "065_org_size_profile"
-down_revision = "064_decisions_table"
+revision = "067_org_size_profile"
+down_revision = "066_counterparty_aliases"
 branch_labels = None
 depends_on = None
 
