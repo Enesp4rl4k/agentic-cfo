@@ -255,12 +255,13 @@ async def test_two_spellings_with_the_same_number_and_amount_are_held_for_a_pers
 
 
 @pytest.mark.asyncio
-async def test_plainly_different_companies_with_the_same_number_and_amount_are_not_held(db):
+async def test_different_names_with_the_same_number_and_amount_are_held_for_a_person(db):
+    """Not a gate any more: a longer form of a name, or an OCR typo, is the same invoice as often as not."""
     org_id = await _org(db)
     await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Sanayi A.Ş.", "cents": 100_000})
     counts = await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ticaret A.Ş.", "cents": 100_000})
-    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
-    assert len(await _items(db, org_id)) == 2
+    assert (counts["new"], counts["possible_duplicate"]) == (0, 1)
+    assert len(await _items(db, org_id)) == 1
 
 
 @pytest.mark.asyncio
