@@ -40,3 +40,32 @@ export async function respondToMondayBriefing(
   });
   return res.data.data;
 }
+
+// The two delivery routes have no response model in the backend's OpenAPI schema (app/api/
+// monday_briefing.py returns plain dicts), so they are absent from pilot-schema.ts and their shape is
+// written here, from outbox.py / briefing_delivery.deliveries. Give them a response_model and
+// `npm run gen:api` replaces these.
+
+/** One e-mail of the briefing: `status` is the outbox's own (held, pending, sent, failed). */
+export interface BriefingDelivery {
+  recipient: string;
+  status: string;
+  reason: string | null;
+  attempts: number;
+  sent_at: string | null;
+}
+
+export async function getBriefingDeliveries(briefingId: string): Promise<BriefingDelivery[]> {
+  const res = await apiClient.get<Envelope<BriefingDelivery[]>>("/briefing/monday/deliveries", {
+    params: { briefing_id: briefingId },
+  });
+  return res.data.data;
+}
+
+/** Only the company's accountant may; anyone else gets 403. Returns how many e-mails were released. */
+export async function releaseMondayBriefing(briefingId: string): Promise<{ released: number }> {
+  const res = await apiClient.post<Envelope<{ released: number }>>("/briefing/monday/release", {
+    briefing_id: briefingId,
+  });
+  return res.data.data;
+}

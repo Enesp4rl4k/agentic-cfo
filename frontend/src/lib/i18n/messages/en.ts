@@ -312,6 +312,22 @@ export type MessageTree = {
     approvalsLink: string;
     noApprovals: string;
     carpe: string;
+    release: {
+      title: string;
+      week: string;
+      heldAccountant: string;
+      heldOwner: string;
+      sending: string;
+      sent: string;
+      alreadyReleased: string;
+      action: string;
+      confirmTitle: string;
+      confirmBody: string;
+      confirm: string;
+      cancel: string;
+      forbidden: string;
+      failed: string;
+    };
     carpeSub: string;
   };
   reviewQueue: {
@@ -2844,6 +2860,22 @@ export const en: MessageTree = {
     approvalsLink: "Review pending approvals",
     noApprovals: "No decision is waiting for you right now.",
     carpe: "Carpe diem.",
+    release: {
+      title: "Briefing e-mail",
+      week: "Week: {week}",
+      heldAccountant: "This week's e-mail is waiting for your approval. It does not go to the company owner until you release it.",
+      heldOwner: "The e-mail is waiting for your accountant's approval. The briefing is always visible here; it reaches you by e-mail once your accountant releases it.",
+      sending: "Approved, the e-mail is being sent.",
+      sent: "The e-mail was sent.",
+      alreadyReleased: "This e-mail had already been released.",
+      action: "Release the e-mail",
+      confirmTitle: "Send the e-mail?",
+      confirmBody: "The briefing for {week} will be e-mailed to the company owner. Make sure you have reviewed the figures first.",
+      confirm: "Yes, send",
+      cancel: "Cancel",
+      forbidden: "Only the company's accountant can release this e-mail. You are not registered as an accountant for this company.",
+      failed: "The e-mail could not be released. Try again in a moment.",
+    },
     carpeSub: "Seize the day.",
   },
   reviewQueue: {

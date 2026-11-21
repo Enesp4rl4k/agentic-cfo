@@ -82,3 +82,29 @@ export function renderWithQuery(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(React.createElement(QueryClientProvider, { client }, ui));
 }
+
+/**
+ * The Monday briefing's delivery API and the memberships (whose active role decides who may release),
+ * as spies. `membershipsFor("smmm")` / `membershipsFor("owner")` is what /org/memberships answers.
+ *
+ *   vi.mock("@/lib/api/briefing", async () => (await import("./dashboard-mocks")).briefingDeliveryModule);
+ *   vi.mock("@/lib/api/orgs", async () => (await import("./dashboard-mocks")).orgsModule);
+ */
+export const briefingDeliverySpies = {
+  getBriefingDeliveries: vi.fn(),
+  releaseMondayBriefing: vi.fn(),
+};
+
+export const briefingDeliveryModule = {
+  getBriefingDeliveries: (...a: unknown[]) => briefingDeliverySpies.getBriefingDeliveries(...a),
+  releaseMondayBriefing: (...a: unknown[]) => briefingDeliverySpies.releaseMondayBriefing(...a),
+};
+
+export const membershipSpies = { getMemberships: vi.fn() };
+
+export const orgsModule = { getMemberships: (...a: unknown[]) => membershipSpies.getMemberships(...a) };
+
+export const membershipsFor = (role: string) => ({
+  active_org_id: "org1",
+  memberships: [{ org_id: "org1", name: "Test Org", role, active: true }],
+});
