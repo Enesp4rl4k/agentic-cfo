@@ -2806,6 +2806,49 @@ export type MessageTree = {
       noReason: string;
     };
   };
+  transactionsPage: {
+    title: string;
+    count: string;
+    countFiltered: string;
+    editHint: string;
+    totalIn: string;
+    totalOut: string;
+    net: string;
+    exportCsv: string;
+    exportAria: string;
+    searchPlaceholder: string;
+    searchAria: string;
+    filterTypeAria: string;
+    allTypes: string;
+    income: string;
+    expense: string;
+    filterCategoryAria: string;
+    allCategories: string;
+    clear: string;
+    clearAria: string;
+    listAria: string;
+    colDate: string;
+    colDescription: string;
+    colVendor: string;
+    colCategory: string;
+    colAmount: string;
+    sortBy: string;
+    estimated: string;
+    estimatedTitle: string;
+    kdvTitle: string;
+    stopajTitle: string;
+    assumed: string;
+    assumedTitle: string;
+    noMatch: string;
+    showing: string;
+    prev: string;
+    next: string;
+    page: string;
+    emptyTitle: string;
+    emptyBody: string;
+    emptyCta: string;
+    applyToVendor: string;
+  };
 };
 
 export const en: MessageTree = {
@@ -5930,5 +5973,47 @@ export const en: MessageTree = {
       failedTitle: "This analysis did not complete",
       noReason: "No reason was recorded.",
     },
+  },  transactionsPage: {
+    title: "Transactions",
+    count: "{count} transactions",
+    countFiltered: "{shown} of {total} transactions",
+    editHint: "click a category badge to correct it",
+    totalIn: "Total In",
+    totalOut: "Total Out",
+    net: "Net",
+    exportCsv: "Export CSV",
+    exportAria: "Export transactions as CSV",
+    searchPlaceholder: "Search description or vendor…",
+    searchAria: "Search transactions",
+    filterTypeAria: "Filter by type",
+    allTypes: "All types",
+    income: "Income",
+    expense: "Expense",
+    filterCategoryAria: "Filter by category",
+    allCategories: "All categories",
+    clear: "Clear",
+    clearAria: "Clear filters",
+    listAria: "Transaction list",
+    colDate: "Date",
+    colDescription: "Description",
+    colVendor: "Vendor",
+    colCategory: "Category",
+    colAmount: "Amount",
+    sortBy: "Sort by {label}",
+    estimated: "estimated",
+    estimatedTitle: "The source had no readable date. This is a placeholder; the entry is held for review.",
+    kdvTitle: "KDV as the source document states it",
+    stopajTitle: "Income-tax withholding as the source document states it",
+    assumed: "{currency} assumed",
+    assumedTitle: "The document did not state a currency; the organisation's base currency was assumed.",
+    noMatch: "No transactions match the current filters.",
+    showing: "Showing {from}–{to} of {total}",
+    prev: "Previous page",
+    next: "Next page",
+    page: "Page {n}",
+    emptyTitle: "No transactions yet",
+    emptyBody: "Upload a financial document and run an analysis to see and edit transactions.",
+    emptyCta: "Upload document",
+    applyToVendor: "Apply to all from vendor",
   },
 };

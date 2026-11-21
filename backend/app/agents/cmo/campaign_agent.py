@@ -218,7 +218,7 @@ def _build_campaign_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
             "level": "high",
             "message": (
                 f"{len(under)} underperforming campaign(s) wasting "
-                f"₺{spend_wasted / 100:,.0f}. Pause or reallocate budget."
+                f"{spend_wasted / 100:,.0f}. Pause or reallocate budget."
             ),
         })
 
@@ -240,7 +240,7 @@ def _build_campaign_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
         alerts.append({
             "level": "medium",
             "message": (
-                f"High CAC (₺{cac / 100:,.0f}) combined with low ROAS. "
+                f"High CAC ({cac / 100:,.0f}) combined with low ROAS. "
                 "Customer lifetime value must exceed CAC to be sustainable."
             ),
         })
@@ -289,8 +289,8 @@ async def _generate_campaign_narrative(
                 )
 
         context = (
-            f"ROAS: {roas:.2f}x | Harcama: {spend:,.0f} ₺ | Gelir: {rev:,.0f} ₺ | "
-            f"CAC: {cac:,.0f} ₺ | Düşük performanslı kampanya: {n_bad}"
+            f"ROAS: {roas:.2f}x | Harcama: {spend:,.0f} | Gelir: {rev:,.0f} | "
+            f"CAC: {cac:,.0f} | Düşük performanslı kampanya: {n_bad}"
             + attr_context
             + bm_context
         )
@@ -304,7 +304,7 @@ async def _generate_campaign_narrative(
                 "1. Genel pazarlama verimliliğinin 1-2 cümlelik değerlendirmesi\n"
                 "2. Attribution modelinden öne çıkan içgörü (varsa)\n"
                 "3. Pazarlama ekibinin hemen yapması gereken 2-3 somut eylem\n"
-                "Rakamları Türkçe birimlerle (₺, %) kullan."
+                "Rakamları verideki birimlerle kullan; veride yoksa para birimi simgesi ekleme."
             ),
             prompt=context,
             max_tokens=700,
@@ -315,7 +315,7 @@ async def _generate_campaign_narrative(
         spend = metrics.get("total_spend_cents", 0) / 100
         rev   = metrics.get("total_revenue_cents", 0) / 100
         return (
-            f"Toplam {spend:,.0f} ₺ reklam harcaması {rev:,.0f} ₺ gelir üretiyor "
+            f"Toplam {spend:,.0f} reklam harcaması {rev:,.0f} gelir üretiyor "
             f"(ROAS {roas:.2f}x). "
             f"{len(metrics.get('underperforming', []))} kampanya düşük performanslı."
         )

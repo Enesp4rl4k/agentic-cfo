@@ -146,7 +146,7 @@ def _generate_deterministic_sentences(
     week_estimated_share: float = 0.0,
     horizon_estimated_share: float = 0.0,
     held_caveat: str = "",
-    currency: str = "TRY",
+    currency: str | None = None,
 ) -> tuple[str, str, str]:
     """Build the canonical 3-sentence briefing from verified radar facts."""
     balance_known = starting_cash_cents is not None

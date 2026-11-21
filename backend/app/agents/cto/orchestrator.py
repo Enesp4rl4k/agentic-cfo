@@ -165,7 +165,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
     if infra.get("waste_estimate_cents", 0) > 0:
         quick_wins.append({
             "action": "Non-production bulut ortamlarını rightsize et",
-            "estimated_impact": f"Aylık {infra['waste_estimate_cents']/100:,.0f} ₺ tasarruf",
+            "estimated_impact": f"Aylık {infra['waste_estimate_cents']/100:,.0f} tasarruf",
             "effort": "düşük",
         })
     if tech_debt.get("refactor_priorities"):

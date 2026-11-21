@@ -31,7 +31,7 @@ def _lines(packet: Any) -> list[str]:
         f"Durum: {packet.status}    İçerik özeti (SHA-256): {packet.content_hash}",
         "",
         f"Kayıt sayısı: {s.get('entry_count', 0)}    Toplam tutar: "
-        f"{(s.get('total_amount_kurus', 0) or 0) / 100:,.2f} {s.get('primary_currency') or 'TRY'}",
+        f"{(s.get('total_amount_kurus', 0) or 0) / 100:,.2f} {s.get('primary_currency') or ''}",
         f"İnsan incelemesi: {s.get('human_reviewed', 0)}    "
         f"AI otomatik: {s.get('ai_auto_posted', 0)}    "
         f"Reddedilen: {s.get('rejected', 0)}    Bekleyen: {s.get('pending_review', 0)}",
@@ -50,7 +50,7 @@ def _lines(packet: Any) -> list[str]:
         out.append(
             f"  [{_DS_LABEL.get(it['decision_source'], it['decision_source'])}] "
             f"{it.get('date', '')[:10]} · {it.get('account_code')} · "
-            f"{(it.get('amount_kurus') or 0) / 100:,.2f} TRY · güven "
+            f"{(it.get('amount_kurus') or 0) / 100:,.2f} {it.get('currency') or ''} · güven "
             f"{it.get('classification_confidence')} · {it.get('description', '')[:60]}"
         )
         rv = it.get("review")
