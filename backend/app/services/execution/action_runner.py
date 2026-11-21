@@ -86,7 +86,7 @@ class ActionRunner:
             )
 
         kind = classify(action)
-        logger.info("Action %s (%s) approved by %s: no connector, nothing executed", action_id, kind, approved_by_user_id)
+        logger.info("Action approval with no connector (%s): nothing executed", kind)
         # Nothing is written to the action record: it stays pending, not "executed".
         return ExecutionResult(
             outcome=NOT_CONNECTED,
