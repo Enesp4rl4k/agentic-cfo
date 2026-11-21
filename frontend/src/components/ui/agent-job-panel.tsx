@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 import { LottiePlayer } from "./lottie-player";
@@ -230,7 +231,10 @@ export function AgentJobPanel({
       {/* Error message */}
       {isHeld && (
         <p className="mt-2 text-xs text-muted-foreground">
-          {t.reviewQueue.heldNotice}
+          {t.reviewQueue.heldNotice}{" "}
+          <Link href="/onay" className="font-medium underline underline-offset-2">
+            {t.reviewQueue.goToQueue}
+          </Link>
         </p>
       )}
 

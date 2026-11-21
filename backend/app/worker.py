@@ -459,6 +459,12 @@ async def run_cfo_analysis(
             from app.services.ingest.summary import ingest_summary
 
             meta["ingest"] = ingest_summary(persisted_rows, registered)
+            if terminal == JobStatus.AWAITING_REVIEW:
+                from app.services.held_analysis import held_by
+
+                why = held_by(result)
+                if why is not None:
+                    meta["held_by"] = why
             if terminal == JobStatus.COMPLETED and job.org_id:
                 # What follows a completed analysis (ledger, company view,
                 # chain) is owed from the moment the job reads completed, so the
@@ -471,7 +477,11 @@ async def run_cfo_analysis(
                 meta["review"] = {"devam": BEKLIYOR, "devam_istendi": completed_at.isoformat()}
             from app.services.bank_balance import closing_balance
 
-            closing = closing_balance(list(result.get("transactions") or []))
+            # A statement with rows held for a person proves its balance over the whole file
+            # (data_ingestion); the rows booked so far are only part of it.
+            closing = result.get("statement_closing_balance") or closing_balance(
+                list(result.get("transactions") or [])
+            )
             if closing is not None:
                 meta["closing_balance"] = closing
             try:
