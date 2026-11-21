@@ -1,15 +1,10 @@
 name: Build and Deploy to Kubernetes
 
+# PARKED: runs only when started by hand (workflow_dispatch). There is no staging or
+# production Kubernetes target yet, the deploy job is gated on refs/heads/main while the
+# default branch is master, and its kubeconfig/Helm steps are commented out, so running
+# it on every push only produced red builds. Restore the push trigger when a target exists.
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'k8s/**'
-      - 'helm/**'
   workflow_dispatch:
 
 env:
