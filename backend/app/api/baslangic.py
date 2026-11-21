@@ -105,10 +105,16 @@ async def baslangic(
         select(func.count(AnalysisJob.id)).where(scope, AnalysisJob.status == "completed")
     ) or 0)
 
-    by_status = dict((await db.execute(
-        select(AnalysisJob.status, func.count(AnalysisJob.id)).where(scope).group_by(AnalysisJob.status)
-    )).all())
-    count = lambda *names: sum(int(by_status.get(n, 0)) for n in names)  # noqa: E731
+    by_status: dict[str, int] = {
+        str(status): int(n)
+        for status, n in (await db.execute(
+            select(AnalysisJob.status, func.count(AnalysisJob.id)).where(scope).group_by(AnalysisJob.status)
+        )).all()
+    }
+
+    def count(*names: JobStatus) -> int:
+        return sum(by_status.get(str(n.value), 0) for n in names)
+
     from app.services import held_analysis
 
     held = await held_analysis.list_held(db, org_id, current_user.id)
