@@ -15,7 +15,11 @@ const respondToMondayBriefing = vi.fn();
 vi.mock("@/lib/api/briefing", () => ({
   getMondayBriefing: (...args: unknown[]) => getMondayBriefing(...args),
   respondToMondayBriefing: (...args: unknown[]) => respondToMondayBriefing(...args),
+  // The release card (BriefingRelease) has its own test; here the briefing has no e-mail.
+  getBriefingDeliveries: () => Promise.resolve([]),
+  releaseMondayBriefing: vi.fn(),
 }));
+vi.mock("@/lib/api/orgs", async () => (await import("./dashboard-mocks")).orgsModule);
 
 // The Monday screen also shows the route and the count of waiting decisions.
 const getCashRadar = vi.fn();
@@ -34,6 +38,7 @@ vi.mock("@/lib/api/planChanges", () => ({
 vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
+import { membershipSpies, membershipsFor } from "./dashboard-mocks";
 import BultenPage from "@/app/(dashboard)/bulten/page";
 
 const briefing = (over: Record<string, unknown> = {}) => ({
@@ -73,6 +78,7 @@ function show() {
 }
 
 beforeEach(() => {
+  membershipSpies.getMemberships.mockResolvedValue(membershipsFor("owner"));
   getMondayBriefing.mockReset();
   respondToMondayBriefing.mockReset();
   getCashRadar.mockReset();

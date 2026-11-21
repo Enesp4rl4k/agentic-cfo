@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { BriefingRelease } from "@/components/bulten/BriefingRelease";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
@@ -203,6 +204,7 @@ export default function BultenPage() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
             <Route copy={copy} fmt={fmt} />
             <div className="space-y-4">
+              <BriefingRelease briefing={briefing} />
               <Decisions copy={copy} />
               <Answer briefing={briefing} copy={copy} />
             </div>
