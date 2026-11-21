@@ -34,6 +34,7 @@ from app.agents.forecast_agent import (
     _detect_seasonality,
     _extrapolate,
 )
+from app.services.runway import compute_runway
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -239,9 +240,19 @@ class TestComputeScenarios:
     def test_runway_months_set_when_deficit(self):
         """Low income vs high expenses — pessimistic scenario should hit runway."""
         cf = {"monthly_series": _make_series(6, base_in=500_000, base_out=900_000)}
-        result = _compute_scenarios(cf, {})
+        # The balance the statement proves: the runway counts down from it, not from zero.
+        runway = compute_runway(
+            {"balance_cents": 1_500_000, "as_of": "2026-11-19", "age_days": 2, "stale": False, "filename": "e.csv"}, cf
+        )
+        result = _compute_scenarios(cf, {}, runway)
         assert result["pessimistic"]["runway_months"] is not None
         assert result["pessimistic"]["runway_months"] <= 12
+
+    def test_scenario_runway_is_unknown_without_a_proven_balance(self):
+        cf = {"monthly_series": _make_series(6, base_in=500_000, base_out=900_000)}
+        result = _compute_scenarios(cf, {})
+        assert all(sc["runway_months"] is None for sc in result.values())
+        assert all(sc["runway_basis"] == "no_balance" for sc in result.values())
 
     def test_empty_series_returns_empty_months(self):
         result = _compute_scenarios({"monthly_series": []}, {})

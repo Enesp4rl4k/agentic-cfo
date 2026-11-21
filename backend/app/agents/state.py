@@ -125,6 +125,11 @@ class CFOState(TypedDict, total=False):
     # (held ones included, in file order). Set only when rows were held: the balance is
     # a fact of the file, not of which rows a person still has to look at.
     statement_closing_balance: dict[str, Any] | None
+    # {date, balance_cents, job_id, filename}: the latest balance the company's completed
+    # statements prove (`bank_balance.proven_balance`, the cash radar's own source), loaded by
+    # the caller since nodes hold no session. The forecast's runway starts from the newer of
+    # this and the balance this run's own statement proves; None → no runway is claimed.
+    opening_cash: dict[str, Any] | None
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None
     # Numeric reconciliation output (separate LangGraph step, runs before verifier)

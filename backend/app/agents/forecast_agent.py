@@ -7,6 +7,10 @@ Responsibility: Generate 3/6/12-month financial forecasts with three scenarios
 Uses historical monthly series from P&L + Cash Flow to extrapolate trends.
 GPT-4o adds strategic commentary on each scenario.
 
+Cash runway starts from the balance a bank statement proves (`app.services.runway`):
+with no proven balance there is no runway, and an alert, however severe, is shown and
+never a reason to hold the run (a hold is for what a person can decide about THIS upload).
+
 done_when: state['forecast'] contains scenarios dict and alerts list.
 """
 from __future__ import annotations
@@ -15,9 +19,18 @@ import logging
 import statistics
 from typing import Any
 
+from app.agents.forecast_montecarlo import _monte_carlo_simulation
 from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.services.runway import (
+    NO_BALANCE,
+    RUNWAY_MIN_MONTHS,
+    can_project,
+    compute_runway,
+    opening_cash_for,
+    runway_alert,
+)
 from app.services.telemetry import trace_agent
 
 logger = logging.getLogger(__name__)
@@ -153,7 +166,9 @@ def _extrapolate(
     return projected
 
 
-def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[str, Any]:
+def _compute_scenarios(
+    cashflow: dict[str, Any], pnl: dict[str, Any], runway: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Generate optimistic / base / pessimistic projections for 12 months.
 
     Seasonality detection runs on the historical monthly_series.
@@ -164,6 +179,10 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
       optimistic:  revenue +5%/mo, costs -1%/mo (efficiency gains)
       base:        revenue +1%/mo, costs +1%/mo (steady state)
       pessimistic: revenue -3%/mo, costs +1%/mo (contracting market)
+
+    `runway` is the measured runway block (`app.services.runway.compute_runway`): scenario
+    runways count down from its proven opening cash, and only when the burn is measured too.
+    Without it they are None: unknown, not "stable".
     """
     series = cashflow.get("monthly_series", [])
 
@@ -213,171 +232,55 @@ def _compute_scenarios(cashflow: dict[str, Any], pnl: dict[str, Any]) -> dict[st
     }
 
 
-    # Runway calculation: how many months until cumulative net goes negative
+    # Runway: months until the proven balance plus the cumulative net goes negative within
+    # the projection. Only with a measured balance AND burn: else None, with the reason.
+    opening = runway["opening_cash_cents"] if runway and can_project(runway) else None
     for _key, scenario in scenarios.items():
-        cumulative = 0
         runway_months: int | None = None
-        for i, m in enumerate(scenario["months"], start=1):
-            cumulative += m["net"]
-            if cumulative < 0 and runway_months is None:
-                runway_months = i
+        if opening is not None:
+            cumulative = opening
+            for i, m in enumerate(scenario["months"], start=1):
+                cumulative += m["net"]
+                if cumulative < 0:
+                    runway_months = i
+                    break
         scenario["runway_months"] = runway_months
+        scenario["runway_basis"] = runway["status"] if runway else NO_BALANCE
         scenario["twelve_month_net"] = sum(m["net"] for m in scenario["months"])
 
     return scenarios
 
 
-def _monte_carlo_simulation(
-    monthly_series: list[dict[str, Any]],
-    n_simulations: int = 1000,
-    months_ahead: int = 12,
-) -> dict[str, Any]:
+def _build_forecast_alerts(
+    scenarios: dict[str, Any], runway: dict[str, Any] | None = None, *, limited_history: bool = False
+) -> list[dict[str, str]]:
+    """What the forecast says about cash, each alert with its basis.
+
+    Only the measured runway (a proven balance over a burn read from enough months) may be
+    critical. A scenario is an assumption, so what it says is at most a warning. Whether an
+    alert is shown never depends on it being critical, and none of them holds the run.
     """
-    Monte Carlo simulation for revenue forecast uncertainty quantification.
-
-    Uses historical monthly_series to estimate:
-    - Mean monthly growth rate
-    - Growth rate volatility (std deviation)
-
-    Runs n_simulations random paths using numpy's random normal draws,
-    then computes P10/P50/P90 percentile outcomes.
-
-    Returns:
-        p10: Pessimistic bound (10th percentile)
-        p50: Median expected outcome
-        p90: Optimistic bound (90th percentile)
-        runway_risk_pct: % of simulations where runway < 6 months
-        monthly_bands: List of {month, p10, p50, p90} for chart rendering
-    """
-    if len(monthly_series) < 3:
-        return {}
-
-    try:
-        import numpy as np
-
-        # Extract net cash values
-        np.array([m["net"] for m in monthly_series], dtype=float)
-        ins  = np.array([m["in"] for m in monthly_series], dtype=float)
-
-        # Estimate growth statistics from historical data
-        # Use log-returns for stability
-        if len(ins) >= 2 and np.all(ins > 0):
-            log_returns = np.diff(np.log(ins + 1))
-            mu    = float(np.mean(log_returns))     # mean monthly log-growth
-            sigma = float(np.std(log_returns, ddof=1))  # volatility
-            growth_basis = "gecmis_aylar"
-        else:
-            # Not this company's numbers: a stand-in when there is too little
-            # history. Reported, so nothing presents the result as measured.
-            mu, sigma = 0.01, 0.05
-            growth_basis = "varsayilan"
-
-        # Clip sigma to prevent extreme scenarios
-        sigma = min(sigma, 0.25)
-
-        # Baseline values from last month
-        last_in  = float(ins[-1]) if len(ins) > 0 else 100_000_00
-        last_out = float(monthly_series[-1]["out"])
-        last_month_str = monthly_series[-1]["month"]
-        last_year  = int(last_month_str[:4])
-        last_month = int(last_month_str[5:7])
-
-        # Build month labels
-        month_labels: list[str] = []
-        y, mo = last_year, last_month
-        for _ in range(months_ahead):
-            mo += 1
-            if mo > 12:
-                mo = 1
-                y += 1
-            month_labels.append(f"{y:04d}-{mo:02d}")
-
-        # Run simulations
-        rng = np.random.default_rng(seed=42)  # reproducible
-        sim_nets = np.zeros((n_simulations, months_ahead))
-
-        for sim in range(n_simulations):
-            cur_in  = last_in
-            cur_out = last_out
-            for t in range(months_ahead):
-                # Random log-return draw
-                r = rng.normal(mu, sigma)
-                cur_in  = cur_in * np.exp(r)
-                # Costs grow slower — assume 30% of revenue volatility
-                cur_out = cur_out * np.exp(r * 0.3)
-                sim_nets[sim, t] = cur_in - cur_out
-
-        # Cumulative net per simulation
-        cum_nets = np.cumsum(sim_nets, axis=1)
-
-        # Monthly percentile bands
-        monthly_bands: list[dict[str, Any]] = []
-        for t, month in enumerate(month_labels):
-            col = cum_nets[:, t]
-            monthly_bands.append({
-                "month": month,
-                "p10": int(np.percentile(col, 10)),
-                "p50": int(np.percentile(col, 50)),
-                "p90": int(np.percentile(col, 90)),
-            })
-
-        # Final 12-month cumulative outcomes
-        final_cum = cum_nets[:, -1]
-        p10_12m = int(np.percentile(final_cum, 10))
-        p50_12m = int(np.percentile(final_cum, 50))
-        p90_12m = int(np.percentile(final_cum, 90))
-
-        # Runway risk: % of sims where cumulative net < 0 within 6 months
-        if months_ahead >= 6:
-            cum_6m = cum_nets[:, 5]
-            runway_risk_pct = round(float(np.mean(cum_6m < 0)) * 100, 1)
-        else:
-            runway_risk_pct = 0.0
-
-        return {
-            "n_simulations": n_simulations,
-            "months_ahead": months_ahead,
-            "growth_mu": round(mu, 4),
-            "growth_sigma": round(sigma, 4),
-            "growth_basis": growth_basis,
-            "p10_12m_net": p10_12m,
-            "p50_12m_net": p50_12m,
-            "p90_12m_net": p90_12m,
-            "runway_risk_pct": runway_risk_pct,
-            "monthly_bands": monthly_bands,
-        }
-
-    except Exception as exc:
-        logger.warning("Monte Carlo simulation failed: %s", exc)
-        return {}
-
-
-def _build_forecast_alerts(scenarios: dict[str, Any]) -> list[dict[str, str]]:
     alerts: list[dict[str, str]] = []
+    if runway is not None:
+        measured = runway_alert(runway)
+        if measured:
+            alerts.append(measured)
 
-    base_runway = scenarios["base"].get("runway_months")
     pessimistic_runway = scenarios["pessimistic"].get("runway_months")
-
-    if base_runway is not None and base_runway <= 3:
-        alerts.append({
-            "level": "critical",
-            "message": f"Baz senaryo: nakit ömrü yalnızca {base_runway} ay. Acil gider kesimi veya gelir artışı gerekiyor.",
-        })
-    elif base_runway is not None and base_runway <= 6:
+    if pessimistic_runway is not None and pessimistic_runway <= 6:
         alerts.append({
             "level": "warning",
-            "message": f"Baz senaryo: nakit ömrü {base_runway} ay. Gider yapısı gözden geçirilmeli.",
+            "basis": "scenario",
+            "message": (
+                f"Kötümser senaryo (varsayım: gelir ayda %3 düşer, gider %1 artar): kasa "
+                f"{pessimistic_runway} ay içinde tükenebilir. Bu bir ölçüm değil, bir senaryo."
+            ),
         })
 
-    if pessimistic_runway is not None and pessimistic_runway <= 2:
-        alerts.append({
-            "level": "critical",
-            "message": f"Kötümser senaryo: {pessimistic_runway} ay içinde nakit tükenebilir. Finansman planı yapılmalı.",
-        })
-
-    if scenarios["base"]["twelve_month_net"] < 0:
+    if not limited_history and scenarios["base"]["twelve_month_net"] < 0:
         alerts.append({
             "level": "warning",
+            "basis": "scenario",
             "message": "Baz senaryoda 12 aylık net nakit negatif — karlılık yolu belirsiz, maliyet optimizasyonu şart.",
         })
 
@@ -423,7 +326,7 @@ def _build_scenario_explanation(
     explanations: dict[str, str] = {}
 
     for name, sc in scenarios.items():
-        growth = sc.get("revenue_growth_rate", 0) * 100
+        growth = (sc.get("revenue_rate", 1.0) - 1.0) * 100
         runway = sc.get("runway_months")
         twelve_net = sc.get("twelve_month_net", 0)
 
@@ -437,9 +340,11 @@ def _build_scenario_explanation(
             label = "Baz Senaryo"
             assumption = f"Mevcut trend devam ediyor (aylık %{growth:.1f})"
 
+        basis = sc.get("runway_basis")
         runway_text = (
-            f"Nakit ömrü: {runway:.0f} ay" if runway and runway < 36
-            else "Nakit ömrü: 36+ ay (stabil)"
+            f"Nakit ömrü: {runway:.0f} ay" if runway
+            else "Nakit ömrü: 12 ay içinde tükenmiyor" if basis in ("computed", "not_burning")
+            else "Nakit ömrü hesaplanamadı (kasa bakiyesi bilinmiyor ya da yetersiz veri)"
         )
 
         explanations[name] = (
@@ -452,7 +357,7 @@ def _build_scenario_explanation(
         # What the number is: the share of simulations that go negative — not a
         # forecast's "reliability", which the last sentence used to derive from
         # that same share (a risky outcome is not an unreliable model).
-        rp = monte_carlo.get("runway_risk_pct", 0)
+        rp = monte_carlo.get("runway_risk_pct")
         n = monte_carlo.get("n_simulations", 0)
         temel = (
             "aylık büyüme ortalaması ve oynaklığı geçmiş aylarınızdan hesaplandı"
@@ -460,11 +365,24 @@ def _build_scenario_explanation(
             else "geçmiş ay sayısı yetersiz olduğu için varsayılan büyüme ve oynaklık kullanıldı"
         )
         explanations["monte_carlo_summary"] = (
-            f"{n} simülasyonun %{rp:.0f}'inde ilk 6 ayda kümülatif nakit negatife düşüyor "
-            f"({temel})."
+            f"{n} simülasyonun %{rp:.0f}'inde kasa ilk 6 ayda sıfırın altına iniyor ({temel})."
+            if rp is not None
+            else "Kasa bakiyesi bilinmediği ya da aylık hareket yetersiz olduğu için kasanın "
+                 "tükenme payı hesaplanmadı."
         )
 
     return explanations
+
+
+def _runway_detail(runway: dict[str, Any]) -> str:
+    if runway["runway_months"] is not None:
+        return f"{runway['runway_months']} ay"
+    return {
+        "computed": "36 aydan uzun",
+        "not_burning": "nakit azalmıyor",
+        "no_balance": "hesaplanamadı (kasa bakiyesi bilinmiyor)",
+        "insufficient_history": "hesaplanamadı (yetersiz ay)",
+    }.get(runway["status"], "hesaplanamadı")
 
 
 @trace_agent("forecast_agent")
@@ -482,21 +400,32 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
     try:
         settings = get_settings()
-        scenarios = _compute_scenarios(cashflow, pnl)
-        alerts = _build_forecast_alerts(scenarios)
+        # One balance, as the cash radar reads it: the proven closing balance of a statement.
+        # None when no statement proves one: then there is no runway to claim.
+        opening = opening_cash_for(state)  # type: ignore[arg-type]
+        runway = compute_runway(opening, cashflow)
+        series = cashflow.get("monthly_series", [])
+        limited_history = len(series) < RUNWAY_MIN_MONTHS
+        scenarios = _compute_scenarios(cashflow, pnl, runway)
+        alerts = _build_forecast_alerts(scenarios, runway, limited_history=limited_history)
 
         # Monte Carlo simulation — runs in parallel with narrative generation
-        series = cashflow.get("monthly_series", [])
-        monte_carlo = _monte_carlo_simulation(series, n_simulations=1000, months_ahead=12)
+        monte_carlo = _monte_carlo_simulation(
+            series, n_simulations=1000, months_ahead=12,
+            opening_cash_cents=runway["opening_cash_cents"] if can_project(runway) else None,
+        )
 
-        # Add runway_risk alert if Monte Carlo shows high probability
-        if monte_carlo.get("runway_risk_pct", 0) > 30:
+        # A share of simulations is a statement about a model: shown as a warning at most,
+        # and only when growth and volatility were estimated from this company's months.
+        risk_pct = monte_carlo.get("runway_risk_pct")
+        if risk_pct is not None and risk_pct > 30 and monte_carlo.get("growth_basis") == "gecmis_aylar":
             alerts.append({
-                "level": "critical" if monte_carlo["runway_risk_pct"] > 60 else "warning",
+                "level": "warning",
+                "basis": "monte_carlo",
                 "message": (
-                    f"Monte Carlo simülasyonu: {monte_carlo['runway_risk_pct']:.0f}% olasılıkla "
-                    f"6 ay içinde nakit sıkıntısı yaşanabilir "
-                    f"(1000 senaryo, P50={_fmt(monte_carlo.get('p50_12m_net', 0))})."
+                    f"Monte Carlo simülasyonunun %{risk_pct:.0f}'inde kasa 6 ay içinde sıfırın "
+                    f"altına iniyor (başlangıç: {_fmt(runway['opening_cash_cents'])}; büyüme ve "
+                    f"oynaklık geçmiş aylardan tahmin edildi, 1000 senaryo)."
                 ),
             })
 
@@ -510,6 +439,9 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
         forecast = {
             "scenarios": scenarios,
             "alerts": alerts,
+            "runway": runway,
+            "history_months": len(series),
+            "limited_history": limited_history,
             "narrative": narrative,
             "seasonality_applied": has_seasonality,
             # Why there is no seasonal shape, in the reader's words: a flat
@@ -536,8 +468,9 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
             },
         }
 
-        has_critical = any(a["level"] == "critical" for a in alerts)
-        confidence = 0.85 if not has_critical else 0.80
+        # How sure the forecast is of its own arithmetic. Bad news is not doubt: a critical
+        # alert does not lower it, and no alert holds the run (it is shown, with its basis).
+        confidence = 0.85
         if has_seasonality:
             confidence = min(0.92, confidence + 0.05)
         # Monte Carlo boosts confidence (more data → more reliable)
@@ -548,10 +481,10 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
             ok=True,
             patch={"forecast": forecast},
             confidence=confidence,
-            needs_review=has_critical,
+            needs_review=False,
             detail=(
                 f"Tahmin oluşturuldu: baz 12a net={_fmt(scenarios['base']['twelve_month_net'])}, "
-                f"baz runway={scenarios['base']['runway_months'] or 'stabil'} ay, "
+                f"nakit pisti={_runway_detail(runway)}, "
                 f"uyarı={len(alerts)}, mevsimsellik={'uygulandı' if has_seasonality else 'yok'}, "
                 f"monte_carlo={'ok' if monte_carlo else 'atlandı'}"
             ),

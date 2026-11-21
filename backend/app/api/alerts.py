@@ -72,10 +72,19 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
         ))
 
     # Monte Carlo runway risk alert
+    # Only a risk counted from a proven balance, with growth estimated from the company's own
+    # months, says anything (a figure counted from zero, or from stand-in defaults, does not):
+    # and a share of simulations is a model's statement, a warning at most.
     mc = forecast.get("monte_carlo") or {}
-    if mc.get("runway_risk_pct", 0) > 30:
+    risk = mc.get("runway_risk_pct")
+    if (
+        isinstance(risk, int | float)
+        and risk > 30
+        and mc.get("runway_risk_basis") == "opening_cash"
+        and mc.get("growth_basis") == "gecmis_aylar"
+    ):
         raw.append(RawAlert(
-            level="critical" if mc["runway_risk_pct"] > 60 else "warning",
+            level="warning",
             # The share of simulations that go negative, said as that. It read
             # "%X olasılıkla ... yaşanabilir", which states a probability the
             # simulation does not produce on its own.

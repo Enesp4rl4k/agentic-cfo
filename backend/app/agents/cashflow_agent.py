@@ -282,8 +282,9 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         cashflow["alerts"] = alerts
         cashflow["narrative"] = narrative
 
-        has_critical = any(a["level"] == "critical" for a in alerts)
-        confidence = 0.90 if not has_critical else 0.85
+        # Alerts are findings about the company, shown with their basis; none of them holds
+        # the run (a hold asks a person about THIS upload) and bad news is not doubt.
+        confidence = 0.90
 
         # S3-3: Attach cashflow evidence
         try:
@@ -296,7 +297,7 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
             ok=True,
             patch={"cashflow": cashflow},
             confidence=confidence,
-            needs_review=has_critical,
+            needs_review=False,
             detail=(
                 f"Cash flow: operating={_fmt(cashflow['operating'])}, "
                 f"net={_fmt(cashflow['net_change'])}, "

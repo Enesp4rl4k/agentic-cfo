@@ -138,6 +138,12 @@ def _supported_values(pnl: dict, cashflow: dict, forecast: dict) -> list[float]:
         if isinstance(scen, dict):
             for vv in scen.values():
                 add(vv)
+    # The runway's own inputs (the proven balance, the average monthly net, with its sign
+    # either way): a narrative that quotes them quotes computed figures.
+    for vv in ((forecast or {}).get("runway") or {}).values():
+        add(vv)
+        if isinstance(vv, (int, float)) and not isinstance(vv, bool):
+            add(abs(vv))
     return vals
 
 

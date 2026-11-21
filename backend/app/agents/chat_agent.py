@@ -75,7 +75,7 @@ def _build_financial_context(
     if base:
         lines += [
             f"12-Month Net: {fmt(base.get('twelve_month_net', 0))}",
-            f"Cash Runway: {base.get('runway_months', 'Stable')} months",
+            f"Cash Runway: {_runway_line(forecast)}",
         ]
 
     if anomalies:
@@ -142,14 +142,28 @@ def _en_buyuk_gider(pnl: dict[str, Any]) -> str | None:
     return f"En büyük gider kalemi {ad}: {_tl(kalemler[en])}."
 
 
+def _runway_line(forecast: dict[str, Any]) -> str:
+    """The runway as the stored forecast says it: a figure with its basis, or why there is none."""
+    runway = forecast.get("runway") or {}
+    if runway.get("message"):
+        return str(runway["message"])
+    ay = ((forecast.get("scenarios") or {}).get("base") or {}).get("runway_months")
+    return f"{ay} months" if ay is not None else "not computed"
+
+
 def _runway_cevabi(dashboard: dict[str, Any]) -> str | None:
-    base = ((dashboard.get("forecast") or {}).get("scenarios") or {}).get("base")
+    forecast = dashboard.get("forecast") or {}
+    base = (forecast.get("scenarios") or {}).get("base")
     if not base:
         return None
+    runway = forecast.get("runway") or {}
+    if runway.get("message"):
+        # The sentence names the balance, its date and the burn it rests on, or says there is none.
+        return str(runway["message"])
     ay = base.get("runway_months")
     if isinstance(ay, (int, float)):
         return f"Baz senaryoda nakit pisti: {ay:.1f} ay."
-    return "Baz senaryoda 12 aylık tahmin içinde nakit tükenmesi görünmüyor."
+    return "Bu analizde nakit pisti hesaplanmadı."
 
 
 def dogrudan_cevap(soru: str, dashboard: dict[str, Any]) -> str | None:

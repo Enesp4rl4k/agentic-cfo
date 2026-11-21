@@ -352,6 +352,13 @@ async def run_cfo_analysis(
             await db.refresh(job)
             await db.commit()
 
+            # The balance the cash radar starts from, loaded here (the nodes hold no session):
+            # the forecast's runway counts down from it, never from zero.
+            from app.services.bank_balance import proven_balance
+
+            opening_cash = await proven_balance(db, org_id_str) if org_id_str else None
+            await db.commit()
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
@@ -363,6 +370,7 @@ async def run_cfo_analysis(
                 # the rules above) ran as if the job belonged to nobody.
                 org_id=org_id_str,
                 category_rules=category_rules,
+                opening_cash=opening_cash,
             )
 
             # Publish each completed step to SSE clients

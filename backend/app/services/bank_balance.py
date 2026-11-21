@@ -9,6 +9,7 @@ read a column wrong) closes on no balance at all: unknown, not guessed.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
@@ -59,3 +60,19 @@ async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None
         if m and m.get("closing_balance")
     ]
     return max(found, key=lambda c: c["date"], default=None)
+
+
+def balance_age(as_of: str, anchor: date, stale_after_days: int) -> tuple[int, bool]:
+    """(days since the statement closed, whether that is older than the staleness limit).
+
+    The one rule for how old a proven balance may be before it is shown as "last known": the
+    cash radar and the forecast's runway both read it here.
+    """
+    age = max(0, (anchor - date.fromisoformat(str(as_of)[:10])).days)
+    return age, age > stale_after_days
+
+
+def latest_balance(*candidates: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The newest of the proven balances given (the first one on a tie), or None."""
+    known = [c for c in candidates if c]
+    return max(known, key=lambda c: str(c["date"])[:10], default=None)
