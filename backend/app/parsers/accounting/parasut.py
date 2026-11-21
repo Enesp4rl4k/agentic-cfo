@@ -32,6 +32,7 @@ import re
 
 from app.core.turkish import fold
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import sign_is_informative
 
 # Paraşüt işlem tipi → tx_type mapping
 _TYPE_MAP: dict[str, str] = {
@@ -62,6 +63,14 @@ def _map_type(raw: str) -> str | None:
         if key in raw_lower:
             return tx_type
     return None
+
+
+def _sign_decides(transactions: list[ParsedTransaction], signs: dict[int, bool]) -> None:
+    """Direction from the sign of an amount column, but only if the file's signs are informative (both signs, a
+    real share): an all-positive export says nothing and its rows stay without a direction (held)."""
+    if signs and sign_is_informative(list(signs.values())):
+        for index, negative in signs.items():
+            transactions[index].tx_type = "expense" if negative else "income"
 
 
 class ParasutParser(BankParser):
@@ -173,6 +182,7 @@ class ParasutParser(BankParser):
             return []
 
         transactions: list[ParsedTransaction] = []
+        signs: dict[int, bool] = {}
         for row in rows[header_idx + 1:]:
             if not row or len(row) <= max(c for c in [date_col, amt_col] if c is not None):
                 continue
@@ -197,7 +207,9 @@ class ParasutParser(BankParser):
             # Determine type
             tx_type = _map_type(raw_type)
             if tx_type is None:
-                tx_type = "expense" if is_negative else "income"
+                # The sign decides only where it is informative for the file (decided after the loop).
+                tx_type = ""
+                signs[len(transactions)] = is_negative
 
             vendor = self._extract_vendor(description, account)
 
@@ -211,6 +223,7 @@ class ParasutParser(BankParser):
                 reference=reference or None,
                 raw_row=",".join(row),
             ))
+        _sign_decides(transactions, signs)
         return transactions
 
     def _parse_invoice_list(self, text: str) -> list[ParsedTransaction]:
@@ -254,7 +267,7 @@ class ParasutParser(BankParser):
             if not amount_cents or amount_cents == 0:
                 continue
 
-            tx_type = _map_type(raw_type) or "income"
+            tx_type = _map_type(raw_type) or ""    # unknown is held ("yön belirsiz"), never income by default
 
             transactions.append(ParsedTransaction(
                 date=date,
@@ -293,6 +306,7 @@ class ParasutParser(BankParser):
             return []
 
         transactions: list[ParsedTransaction] = []
+        signs: dict[int, bool] = {}
         for row in rows[header_idx + 1:]:
             if not row:
                 continue
@@ -308,7 +322,8 @@ class ParasutParser(BankParser):
             if not amount_cents:
                 continue
 
-            tx_type = "expense" if is_negative else "income"
+            tx_type = ""
+            signs[len(transactions)] = is_negative
 
             transactions.append(ParsedTransaction(
                 date=date,
@@ -318,6 +333,7 @@ class ParasutParser(BankParser):
                 currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 raw_row=",".join(row),
             ))
+        _sign_decides(transactions, signs)
         return transactions
 
     @staticmethod

@@ -2968,6 +2968,7 @@ export const tr: MessageTree = {
       summary_suspect: "özet satırı olabilir",
       balance_mismatch: "bakiye ile uyuşmuyor",
       line_unreadable: "satır okunamadı",
+      amount_uncertain: "tutar belirsiz",
       amount_zero: "tutar sıfır",
       malformed_row: "sütunlar kaymış olabilir",
     },

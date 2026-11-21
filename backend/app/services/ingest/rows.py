@@ -80,6 +80,7 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             **({"zero_amount": True} if not tx.amount_cents else {}),
             # A line that looked like money and that no row pattern took: held with its raw text.
             **({"line_unreadable": True} if tx.unread else {}),
+            **({"amount_uncertain": True} if tx.amount_uncertain else {}),
         })
     return transactions
 

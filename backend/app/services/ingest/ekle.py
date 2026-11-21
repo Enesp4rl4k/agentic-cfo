@@ -342,11 +342,17 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
     w.writerow(["tarih", "açıklama", "tutar", "tip"] + (["fatura no", "cari", "vade"] if faturali else []))
     for t in islemler:
         kurus = t.get("amount_cents")
+        has_amount = kurus is not None or t.get("amount") is not None
         tutar = abs(int(kurus)) / 100 if kurus is not None else abs(float(t.get("amount") or 0))
-        tip = "income" if str(t.get("type") or t.get("tx_type") or "").lower() in ("income", "gelir") else "expense"
+        said = str(t.get("type") or t.get("tx_type") or "").lower()
+        # An unknown direction is "?": the statement reader holds that row ("yön belirsiz"), it is never an expense.
+        tip = "income" if said in ("income", "gelir") else "expense" if said in ("expense", "gider") else "?"
         tarih = t.get("date") or t.get("transaction_date") or ""
         tarih = tarih.isoformat() if hasattr(tarih, "isoformat") else str(tarih)
-        satir = [tarih[:10], (t.get("description") or "")[:500], -tutar if tip == "expense" else tutar, tip]
+        satir = [
+            tarih[:10], (t.get("description") or "")[:500],
+            ("?" if not has_amount else -tutar if tip == "expense" else tutar), tip,   # "?": no amount to stand behind
+        ]
         if faturali:
             satir += [t.get("document_id") or "", t.get("counterparty") or "", t.get("due_date") or ""]
         w.writerow(satir)

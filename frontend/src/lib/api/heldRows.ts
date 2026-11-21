@@ -12,6 +12,7 @@ export type HeldReason =
   | "balance_mismatch"
   | "summary_suspect"
   | "line_unreadable"
+  | "amount_uncertain"
   | "amount_zero"
   | "malformed_row"
   | "amount_unreadable"

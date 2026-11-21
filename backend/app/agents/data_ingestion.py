@@ -27,7 +27,6 @@ from app.core import tdhp
 from app.core.row_confidence import parse_confidence
 from app.parsers.base import ParsedStatement
 from app.parsers.invoice import TurkishInvoiceParser
-from app.parsers.lines import account_for_lines
 from app.parsers.registry import ParserRegistry
 from app.services.ingest.categories import (
     _CATEGORY_MAP,
@@ -41,6 +40,7 @@ from app.services.ingest.cells import (
     _parse_amount,
     _parse_date,
 )
+from app.services.ingest.door import read_document, read_text_statement
 from app.services.ingest.ebelge import (
     _try_parse_ubl_xml,
 )
@@ -477,20 +477,15 @@ async def _belgeyi_oku(
                 from app.services.org_identity import own_vkn as org_vkn
 
                 parser = detected_bank(own_vkn=await org_vkn(state.get("org_id")))
-            statement: ParsedStatement = await asyncio.to_thread(parser.parse, raw_text, file_path)
-            if not issubclass(detected_bank, TurkishInvoiceParser):
-                # What was READ comes from the physical lines of the text, not from the row pattern: a line
-                # that looks like money and no pattern took is held ("satır okunamadı"), never dropped.
-                account = account_for_lines(raw_text, statement.transactions)
-                statement.transactions = account.transactions
-                ledger.absorb(account)
-            transactions = _statement_to_transactions(statement)
+            # ONE door (app.services.ingest.door): every line accounted for, a held row for what no pattern took.
             ambiguous = bool(getattr(detected_bank, "debit_credit_layout", False))
-            if not issubclass(detected_bank, TurkishInvoiceParser):
-                ledger.emitted += len(transactions)
-                ledger.balance_check = _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text, ambiguous)
+            if issubclass(detected_bank, TurkishInvoiceParser):
+                door = await asyncio.to_thread(read_document, parser, raw_text, file_path, ambiguous=ambiguous)
             else:
-                _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text, ambiguous)
+                door = await asyncio.to_thread(read_text_statement, parser, raw_text, file_path, ambiguous=ambiguous)
+                ledger.add(door.ledger)
+            statement: ParsedStatement = door.statement
+            transactions = door.rows
 
             if transactions:
                 parseable = sum(

@@ -56,6 +56,14 @@ class ReadLedger:
         self.__init__()  # type: ignore[misc]
         self.reader_failed = failed
 
+    def add(self, other: ReadLedger) -> None:
+        """Another reader's counts, added in (every number, the listed lines, the flags)."""
+        for name in SUMMED:
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+        self.summary_lines = [*self.summary_lines, *other.summary_lines][:MAX_LISTED]
+        self.reader_failed = self.reader_failed or other.reader_failed
+        self.balance_check = other.balance_check or self.balance_check
+
     def absorb(self, account: Any) -> None:
         """Add what `parsers.lines.account_for_lines` found: the physical lines read, and where each went."""
         self.read += account.read

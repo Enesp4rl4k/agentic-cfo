@@ -43,6 +43,8 @@ class ParsedTransaction:
     date_estimated: bool = False
     # True when the line looked like money but no row pattern took it: held as a raw line (app.parsers.lines).
     unread: bool = False
+    # True when the matched line has a money-like token that is neither the amount nor the balance: held, not booked.
+    amount_uncertain: bool = False
 
 
 @dataclass

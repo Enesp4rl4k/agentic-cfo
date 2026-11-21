@@ -5821,6 +5821,7 @@ export const en: MessageTree = {
       summary_suspect: "may be a summary line",
       balance_mismatch: "does not reconcile with the balance",
       line_unreadable: "line could not be read",
+      amount_uncertain: "amount uncertain",
       amount_zero: "amount is zero",
       malformed_row: "columns may be misaligned",
     },
