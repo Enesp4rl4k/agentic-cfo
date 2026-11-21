@@ -133,8 +133,10 @@ async def _send_http(row: OutboxMessage) -> str:
     return "sent" if sent.delivered else f"failed:http_{sent.status_code}"
 
 
-async def release(db: AsyncSession, *, org_id: str, source: str, source_ref: str) -> int:
-    """A person allowed it: held messages for this source become pending."""
+async def held_rows(
+    db: AsyncSession, *, org_id: str, source: str, source_ref: str
+) -> list[OutboxMessage]:
+    """The messages of one source still waiting for a person."""
     rows = (
         await db.execute(
             select(OutboxMessage).where(
@@ -145,7 +147,26 @@ async def release(db: AsyncSession, *, org_id: str, source: str, source_ref: str
             )
         )
     ).scalars().all()
+    return list(rows)
+
+
+async def release(
+    db: AsyncSession,
+    *,
+    org_id: str,
+    source: str,
+    source_ref: str,
+    refreshed: tuple[str, str] | None = None,
+) -> int:
+    """A person allowed it: held messages for this source become pending.
+
+    `refreshed` is a (subject, body) the releaser confirmed in place of the held text.
+    Who released, and when, is the caller's decision record, written in the same
+    transaction (services/briefing_delivery.release_briefing)."""
+    rows = await held_rows(db, org_id=org_id, source=source, source_ref=source_ref)
     for row in rows:
+        if refreshed is not None:
+            row.subject, row.body = refreshed[0][:255], refreshed[1]
         row.status = PENDING
         row.last_error = None
     return len(rows)

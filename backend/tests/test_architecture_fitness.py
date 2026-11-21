@@ -201,6 +201,30 @@ def test_f3_alerts_and_trigger_webhooks_go_through_the_outbox() -> None:
     )
 
 
+def test_f3_notification_slack_goes_through_the_outbox() -> None:
+    """The notification service's Slack path writes an outbox row; it has no sender of its own.
+
+    Its e-mail and WhatsApp senders are still direct (ratchet below: only the delivery
+    service and the WhatsApp sender may talk to the network)."""
+    path = _modules()["app.services.notification_service"]
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    defined = {n.name for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef | ast.FunctionDef)}
+    called = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    assert "_send_slack" not in defined | called, "Slack must not be sent inline (ADR 0003, F3)"
+    assert "enqueue_slack" in called, "the Slack path must write an outbox row"
+    inline_http = {
+        fn.name
+        for fn in ast.walk(tree)
+        if isinstance(fn, ast.AsyncFunctionDef | ast.FunctionDef)
+        and any(
+            isinstance(n, ast.Import | ast.ImportFrom)
+            and "httpx" in ast.dump(n)
+            for n in ast.walk(fn)
+        )
+    }
+    assert inline_http <= {"_send_whatsapp"}, f"new inline HTTP sender: {sorted(inline_http)}"
+
+
 def test_f3_the_check_sees_a_direct_send(tmp_path: Path) -> None:
     sender = tmp_path / "sender.py"
     sender.write_text(

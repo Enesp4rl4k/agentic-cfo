@@ -113,6 +113,20 @@ def _isolate_service_singletons():
     _reset_singletons()
 
 
+# ── 2b. No test reaches a real webhook ───────────────────────────────────────
+# AlertDispatcher reports "delivered" only when an HTTP endpoint answered. Tests
+# inject a transport that answers 200 for every URL (the test-only seam); a test
+# that wants a failure or a recording transport overrides it with monkeypatch.
+@pytest.fixture(autouse=True)
+def _alert_dispatcher_answers_200(monkeypatch):
+    import httpx
+
+    from app.services.alert_dispatcher import AlertDispatcher
+
+    monkeypatch.setattr(
+        AlertDispatcher, "transport", httpx.MockTransport(lambda request: httpx.Response(200))
+    )
+
 # ── 3. Shared HTTP client fixture ────────────────────────────────────────────
 # An in-memory FastAPI app with its own throwaway database, yielded per test.
 # Lives here (not in test_ingest) so every API test file can request `client`

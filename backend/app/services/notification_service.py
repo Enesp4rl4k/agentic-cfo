@@ -14,13 +14,14 @@ All channels fail gracefully — one channel failure does not block others.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from app.core.branding import get_brand
-from app.services.alert_router import AlertAction, AlertDecision
+from app.services.alert_router import AlertDecision
 
 logger = logging.getLogger(__name__)
 
@@ -29,53 +30,6 @@ logger = logging.getLogger(__name__)
 
 def _alert_emoji(level: str) -> str:
     return {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(level, "⚪")
-
-
-def _build_slack_payload(decisions: list[AlertDecision], org_name: str = "") -> dict[str, Any]:
-    """Format actionable alert decisions as a Slack Block Kit message."""
-    actionable = [d for d in decisions if d.is_actionable]
-    if not actionable:
-        return {}
-
-    blocks: list[dict] = [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": f"{_alert_emoji('critical')} C-Suite Alert{'  |  ' + org_name if org_name else ''}",
-            },
-        },
-        {"type": "divider"},
-    ]
-
-    for d in actionable[:8]:  # Slack block limit
-        emoji = _alert_emoji(d.alert.level)
-        action_label = "⚡ ESCALATE" if d.action == AlertAction.ESCALATE else "📋 ACTION"
-        blocks.append({
-            "type": "section",
-            "fields": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"*{emoji} [{d.alert.domain.upper()}] {d.alert.level.upper()}*\n{d.alert.message[:200]}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*{action_label}*\nPriority: {d.priority_score:.2f}",
-                },
-            ],
-        })
-
-    blocks.append({
-        "type": "context",
-        "elements": [
-            {
-                "type": "mrkdwn",
-                "text": f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} · {len(actionable)} actionable alerts",
-            }
-        ],
-    })
-
-    return {"blocks": blocks}
 
 
 async def send_plain_email(recipient: str, subject: str, body: str) -> str:
@@ -187,7 +141,7 @@ class NotificationService:
         if "slack" in channels:
             webhook_url = prefs.get("slack_webhook") or await self._global_slack_url()
             if webhook_url:
-                sent = await self._send_slack(actionable, webhook_url, org_name)
+                sent = await self._queue_slack(actionable, webhook_url, org_id, org_name, db)
                 results["slack"] = sent
 
         # Email delivery
@@ -217,38 +171,45 @@ class NotificationService:
 
     # ── Slack ─────────────────────────────────────────────────────────────────
 
-    async def _send_slack(
+    async def _queue_slack(
         self,
         decisions: list[AlertDecision],
         webhook_url: str,
+        org_id: str,
         org_name: str,
+        db: Any,
     ) -> int:
-        """
-        POST to Slack incoming webhook using httpx (already in requirements.txt).
-        Returns 1 on success, 0 on failure.
-        """
-        payload = _build_slack_payload(decisions, org_name)
-        if not payload:
+        """Write the Slack message to the outbox (ADR 0003); delivery and its outcome are
+        the outbox's. Returns 1 when a row was queued, 0 when nothing could be queued."""
+        if db is None:
+            logger.warning("Slack alert not queued: no database session for the outbox")
             return 0
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(webhook_url, json=payload)
-                if resp.status_code == 200:
-                    logger.info(
-                        "Slack notification sent: %d alerts to org=%s",
-                        len(decisions), org_name,
-                    )
-                    return 1
-                else:
-                    logger.warning(
-                        "Slack webhook failed: HTTP %d — %s",
-                        resp.status_code, resp.text[:200],
-                    )
-                    return 0
-        except Exception as exc:
-            logger.warning("Slack delivery error: %s", exc)
+        actionable = [d for d in decisions if d.is_actionable]
+        if not actionable:
             return 0
+        from app.services import outbox
+
+        lines = [
+            f"{_alert_emoji(d.alert.level)} [{d.alert.domain.upper()}] "
+            f"{d.alert.level.upper()}: {d.alert.message[:200]}"
+            for d in actionable[:8]
+        ]
+        severity = "critical" if any(d.alert.level == "critical" for d in actionable) else "warning"
+        text = "\n".join(lines)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        day = datetime.now(UTC).strftime("%Y%m%d")
+        await outbox.enqueue_slack(
+            db,
+            key=f"notification:{org_id}:{day}:{digest}:slack",
+            org_id=org_id,
+            webhook_url=webhook_url,
+            title=f"C-Suite Alert{'  |  ' + org_name if org_name else ''}",
+            message=text,
+            severity=severity,
+            source="notification",
+            source_ref=digest,
+        )
+        return 1
 
     # ── Email ─────────────────────────────────────────────────────────────────
 

@@ -104,7 +104,11 @@ function Answer({ briefing, copy }: Readonly<{ briefing: MondayBriefing; copy: C
       </div>
       {answer.isPending && <p className="m-0 text-sm text-muted-foreground">{copy.saving}</p>}
       {/* Saved is said only once the server has answered that it is. */}
-      {answer.isSuccess && <p className="m-0 text-sm">{copy.saved}</p>}
+      {answer.isSuccess && (
+        <p className="m-0 text-sm">
+          {answer.variables === "done" ? copy.savedDoneUnverified : copy.saved}
+        </p>
+      )}
       {answer.isError && (
         <p className="m-0 text-sm text-destructive" role="alert">
           {copy.saveFailed} {answer.error instanceof Error ? answer.error.message : ""}

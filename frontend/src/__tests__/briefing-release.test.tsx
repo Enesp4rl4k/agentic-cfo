@@ -49,7 +49,7 @@ describe("bülten e-postasını serbest bırakma", () => {
     expect(releaseMondayBriefing).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Evet, gönder" }));
     await waitFor(() => expect(releaseMondayBriefing).toHaveBeenCalledTimes(1));
-    expect(releaseMondayBriefing).toHaveBeenCalledWith("brief_org1_202505");
+    expect(releaseMondayBriefing).toHaveBeenCalledWith("brief_org1_202505", undefined);
     expect(await screen.findByText("E-posta gönderildi.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "E-postayı serbest bırak" })).toBeNull();
   });
@@ -70,6 +70,26 @@ describe("bülten e-postasını serbest bırakma", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Evet, gönder" }));
     expect(await screen.findByText("E-posta gönderildi.")).toBeTruthy();
     expect(screen.getByText(/zaten serbest bırakılmıştı/)).toBeTruthy();
+  });
+
+  it("shows what changed and sends nothing until the refreshed e-mail is confirmed", async () => {
+    getBriefingDeliveries.mockResolvedValueOnce([row("held")]).mockResolvedValue([row("sent")]);
+    releaseMondayBriefing
+      .mockResolvedValueOnce({
+        released: 0, needs_confirmation: true, fingerprint: "fp-new",
+        changes: [{ field: "opening_cash_cents", label: "Açılış bakiyesi", old: "₺50.000,00", new: "₺70.000,00" }],
+      })
+      .mockResolvedValueOnce({ released: 1, refreshed: true });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "E-postayı serbest bırak" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Evet, gönder" }));
+    expect(await screen.findByText(/rakamlar değişti/)).toBeTruthy();
+    expect(screen.getByText("Açılış bakiyesi: ₺50.000,00 → ₺70.000,00")).toBeTruthy();
+    expect(releaseMondayBriefing).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Güncellenmiş e-postayı gönder" }));
+    await waitFor(() => expect(releaseMondayBriefing).toHaveBeenCalledTimes(2));
+    expect(releaseMondayBriefing).toHaveBeenLastCalledWith("brief_org1_202505", "fp-new");
+    expect(await screen.findByText("E-posta gönderildi.")).toBeTruthy();
   });
 
   it("explains the role when the server answers 403", async () => {

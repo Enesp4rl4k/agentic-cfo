@@ -353,8 +353,13 @@ export const tr: MessageTree = {
       cancel: "Vazgeç",
       forbidden: "Bu e-postayı yalnız şirketin mali müşaviri serbest bırakabilir. Bu şirkette müşavir olarak kayıtlı değilsin.",
       failed: "E-posta serbest bırakılamadı. Biraz sonra yeniden dene.",
+      changedTitle: "Bu e-posta yazıldıktan sonra rakamlar değişti",
+      changedBody: "Hiçbir şey gönderilmedi. E-posta eski rakamlarla yazılmıştı; aşağıdakiler değişti. Güncellenmiş hali doğru görünüyorsa gönder.",
+      changedConfirm: "Güncellenmiş e-postayı gönder",
+      changeLine: "{label}: {old} → {new}",
     },
     carpeSub: "Günü yakala.",
+    savedDoneUnverified: "Yaptığını bildirdin, bu şekilde kaydedildi. Bir banka ekstresi satırı gösterene kadar doğrulanmış sayılmaz.",
   },
   reviewQueue: {
     title: "Onayınızı bekleyen {n} analiz",
