@@ -92,7 +92,9 @@ def sync_outcome(door: DoorRead) -> dict[str, Any]:
     """What a connector reports for a text pull: the counts, and whether it may say "success"."""
     counts, lost = reconcile(door.ledger.as_dict(), len(door.rows), 0)
     return {
-        "ok": lost == 0, "status": "needs_review" if lost else "success", "unaccounted": lost,
+        # "awaiting_review" is the status the rest of the app uses for "a person must look" (JobStatus): a sync
+        # whose rows are lost, or whose rows wait for a person, is never "success".
+        "ok": lost == 0, "status": "awaiting_review" if lost or door.flagged else "success", "unaccounted": lost,
         "held_candidates": door.flagged, "counts": counts,
         "skipped": door.ledger.summary_skipped + door.ledger.account_skipped,
     }

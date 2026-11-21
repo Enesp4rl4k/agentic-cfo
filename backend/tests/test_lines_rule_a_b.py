@@ -58,15 +58,62 @@ def test_a_money_line_after_a_row_is_held_not_merged_into_its_description(line: 
     assert unaccounted({**door.ledger.as_dict(), "accepted": len(accepted), "held": len(held)}) == 0
 
 
-def test_the_loose_test_errs_toward_holding_and_exempts_only_explicit_patterns() -> None:
-    for held_line in ("Maas 5000", "Büyükdere Cad. No: 12 Kat 3", "Beş bin lira", "Kira 50", "ödeme ₺5"):
-        assert is_candidate(held_line), held_line
-    for explained in (
-        "IBAN TR33 0006 1005 1978 6457 8413 26", "Hesap No: 1234-5678-9012", "Müşteri No 4455667", "Sayfa 2 / 5",
-        "Tel: 0850 222 00 00", "Dönem: 01.01.2026 - 31.01.2026", "Referans No: 98765", "© 2026 Banka tüm hakları saklıdır 2026",
-        "Hesap Özeti",
-    ):
-        assert not is_candidate(explained), (explained, money_tokens(explained))
+REVIEWER_LINES = [                       # review of a27cf27, verbatim: each used to be absorbed as a continuation
+    "Hesap özeti ücreti 1.250,00", "Dönem sonu faiz 1.500,50", "Dönem sonu faiz 12.05.2025 1.500,50",
+    "Belge 2500", "Referans 12345 EFT", "Ref 5000", "Müşteri 1500 tahsilat",
+]
+
+
+@pytest.mark.parametrize("line", REVIEWER_LINES)
+def test_an_exemption_never_swallows_a_real_amount(line: str) -> None:
+    door, accepted, held = _door(line)
+    assert len(door.rows) == 2 and door.ledger.continuation == 0, "the line must be a row of its own"
+    assert "line_unreadable" in row_reasons({**door.rows[1], "currency": "TRY"}) or door.rows[1].get("amount_uncertain")
+    assert door.rows[1]["amount_cents"] > 0                                                  # the amount is on the held row
+    assert door.balance_check != "verified" or _is_held(door.rows[1])                        # never a clean "verified" run without it
+    assert unaccounted({**door.ledger.as_dict(), "accepted": len(accepted), "held": len(held)}) == 0
+
+
+# Each exemption: the exempt token ALONE on a line is not held; the same token plus a money token on the line IS.
+EXEMPT_PAIRS = [
+    ("IBAN", "TR33 0006 1005 1978 6457 8413 26"),
+    ("card mask", "**** 1234"),
+    ("card 4-4-4-4", "4543 1234 5678 9010"),
+    ("mobile phone", "0(532) 123 45 67"),
+    ("+90 phone", "+90 212 318 18 18"),
+    ("landline", "0 212 318 18 18"),
+    ("0850 line", "0 850 222 0 333"),
+    ("444 line", "444 0 333"),
+    ("page marker", "Sayfa 2 / 5"),
+    ("copyright year", "© 2026"),
+    ("year phrase", "2026 yılı"),
+    ("labelled id line", "Müşteri No: 4455667"),
+    ("keyword reference (long)", "Ref 20250001234"),
+    ("keyword reference (alphanumeric)", "Dekont FTR2025000123"),
+]
+
+
+@pytest.mark.parametrize(("name", "token"), EXEMPT_PAIRS, ids=[p[0] for p in EXEMPT_PAIRS])
+def test_an_exempt_token_alone_is_not_held_but_the_same_token_with_money_is(name: str, token: str) -> None:
+    assert not is_candidate(token), (name, money_tokens(token))
+    for with_money in (f"{token} 1.250,00", f"Havale 750,00 {token}", f"{token} 5000"):
+        assert is_candidate(with_money), (name, with_money)
+    # and in a statement: with money it is a held row carrying that money
+    door, _, _ = _door(f"{token} 1.250,00")
+    assert door.rows[1]["amount_cents"] == 125000 and door.ledger.continuation == 0
+
+
+def test_a_short_reference_number_stays_money_suspect_and_an_invalid_iban_is_not_an_iban() -> None:
+    for line in ("Ref 5000", "Belge 2500", "Referans 12345", "TR33 0006 1005 1978 6457 8413 27"):
+        assert is_candidate(line), line                                       # the last: checksum fails, so it is just digits
+    assert not is_candidate("Hesap özeti")                                    # words alone exempt nothing and hold nothing
+    assert is_candidate("Hesap özeti 1.250,00") and is_candidate("Toplam fatura 1.250,00")
+
+
+def test_a_labelled_id_is_exempt_only_on_a_line_that_is_the_label_and_its_number() -> None:
+    assert not is_candidate("Vergi No: 1234567890")
+    assert is_candidate("Vergi No: 1234567890 12.05.2025")                   # a date on the line: not a header/footer line
+    assert is_candidate("Vergi No: 1234567890 aidat 1.500,00")
 
 
 # ── RULE A (ii)/(iii): a matched row with a number it did not account for is not booked ──────────────────────
@@ -138,7 +185,9 @@ async def test_the_mikro_connector_goes_through_the_door_too(client) -> None:
 
 # ── injection property test, extended ────────────────────────────────────────────────────────────────────────
 
-PLAIN_DIGIT_LINES = [("Maas odemesi 5000", 500000), ("Kira bedeli 5000 TL", 500000), ("3 Kas Maas odemesi 5000", 500000),
+PLAIN_DIGIT_LINES = [("Hesap özeti ücreti 1.250,00", 125000), ("Dönem sonu faiz 1.500,50", 150050), ("Ref 5000", 500000),
+                     ("Belge 2500", 250000), ("Toplam fatura 750,00", 75000), ("Devir ücreti 300,00", 30000),
+                     ("Maas odemesi 5000", 500000), ("Kira bedeli 5000 TL", 500000), ("3 Kas Maas odemesi 5000", 500000),
                      ("Aidat 250", 25000), ("Havale 12000 lira", 1200000)]
 EXTRA_TOKEN_ROWS = [("05.01.2026 B ₺5.000 -9.200", 500000), ("05.01.2026 Ödeme 100,00 $20,00 9.000,00", 10000)]
 

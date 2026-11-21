@@ -46,19 +46,43 @@ _CURRENCY_MARKED = re.compile(
 _MONEY_WORDS = re.compile(r"\b(?:bin|milyon|milyar|lira|kuruş|kurus|tl|try|usd|eur|dolar|euro|avro|sterlin)\b", re.IGNORECASE)
 _BIG_INTEGER = re.compile(r"(?<![\d.,])\d{2,}(?!\d)(?![.,]\d)")
 
-# Numbers positively identified as something else, each by an explicit pattern (tested in test_text_lines_invariant).
-_NOT_MONEY = [
-    re.compile(r"\bTR\d{2}(?:[ ]?\d{4}){5}[ ]?\d{2}\b", re.IGNORECASE),                                  # IBAN
-    re.compile(                                                                                         # account / card / reference ids
-        r"\b(?:hesap|müşteri|musteri|kart|referans|ref|dekont|şube|sube|vkn|tckn|sicil|mersis|evrak|fiş|fis|belge)"
-        r"[ ]*(?:no|numarası|numarasi|kodu)?[ ]*[.:]?[ ]*\d[\d\- /]{2,}", re.IGNORECASE),
-    re.compile(r"(?<!\d)(?:\+?90[ -]?)?\(?0?\d{3}\)?[ -]?\d{3}[ -]?\d{2}[ -]?\d{2}(?!\d)"),               # phone
-    re.compile(r"\b(?:sayfa|page)[ ]*\d+(?:[ ]*(?:/|of)[ ]*\d+)?", re.IGNORECASE),                       # page 2/5
-    re.compile(                                                                                         # dates of a header phrase
-        r"\b(?:dönem|donem|tarih aralığı|tarih araligi|rapor tarihi|ekstre tarihi|düzenleme tarihi|hesap özeti|"
-        r"hesap ozeti|başlangıç|baslangic|bitiş|bitis)\b[^\n\d]{0,20}[\d./ \-–:]{6,30}", re.IGNORECASE),
-    re.compile(r"(?:©|\bcopyright\b|\ball rights\b|\btüm hakları\b)[^\n]*?\d{4}", re.IGNORECASE),        # a year in a footer
+# An exemption removes only the exact TOKEN it positively identifies, by a strict, anchored, shape-based pattern.
+# It never removes a line, never anything with a money shape (1.250,00, 1,250.00, 1500,50), and a word such as
+# "Hesap özeti", "Dönem sonu", "Toplam" or "Ref" exempts nothing by itself.
+_MONEY_SHAPE = re.compile(r"\d{1,3}(?:[.,]\d{3})+[.,]\d{1,2}|\d+[.,]\d{1,2}")
+_IBAN = re.compile(r"\bTR\d{2}(?: ?\d{4}){5} ?\d{2}\b", re.IGNORECASE)
+_CARD = re.compile(r"\*{4}[ -]?\d{4}\b|(?<!\d)\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{4}(?!\d)|(?<!\d)\d{16}(?!\d)")
+_PHONES = [
+    re.compile(r"(?<!\d)\+90[ -]?\(?\d{3}\)?[ -]?\d{3}[ -]?\d{2}[ -]?\d{2}(?!\d)"),                    # +90 ...
+    re.compile(r"(?<!\d)0[ ]?\(?5\d{2}\)?[ -]?\d{3}[ -]?\d{2}[ -]?\d{2}(?!\d)"),                        # 0(5xx) xxx xx xx
+    re.compile(r"(?<!\d)0[ ]?\(?[2-4]\d{2}\)?[ -]?\d{3}[ -]?\d{2}[ -]?\d{2}(?!\d)"),                    # landline
+    re.compile(r"(?<!\d)0?[ ]?850[ -]?\d{3}[ -]?(?:\d{2}[ -]?\d{2}|\d[ -]?\d{3})(?!\d)"),               # 0850 ... (also "0 850 222 0 333")
+    re.compile(r"(?<!\d)444[ -]?\d[ -]?\d{3}(?!\d)"),                                                    # 444 x xxx
 ]
+_PAGE = re.compile(r"\b(?:sayfa|page)[ ]*\d{1,3}(?:[ ]*(?:/|of)[ ]*\d{1,3})?(?![\d.,]\d)", re.IGNORECASE)
+_YEAR_PHRASE = re.compile(r"(?<![\d.,])(?:19|20)\d{2}(?![\d.,]\d)(?=[ ]*(?:yılı|yılında|yılına|yili|yilinda))", re.IGNORECASE)   # "2026 yılı"
+_COPYRIGHT_YEAR = re.compile(r"(?:©|\bcopyright\b)[ ]*(?:\(c\)[ ]*)?\d{4}\b", re.IGNORECASE)
+# A tax/customer/branch number, ONLY when the whole line is the label and its number (a header/footer line).
+_LABELLED_LINE = re.compile(
+    r"^(?:vergi|müşteri|musteri|şube|sube|hesap|kart|vkn|tckn|mersis|sicil)[ ]*(?:no|numarası|numarasi|kodu|kimlik no)?"
+    r"[ ]*[.:][ ]*\d[\d\-/]*\d$", re.IGNORECASE,
+)
+# A keyword-led reference exempts its number only if it is long or alphanumeric enough not to be an amount.
+_REFERENCE = re.compile(
+    r"\b(?:ref|referans|belge|dekont|ftr|fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*(?:no|nu|numarası)?[ ]*[.:]?[ ]*"
+    r"(?:\d{8,}(?![.,]\d)|(?=[A-Z0-9\-/]*[A-Z])(?=[A-Z0-9\-/]*\d)[A-Z0-9\-/]{6,}(?![.,]\d))", re.IGNORECASE,
+)
+
+
+def _iban_valid(match: re.Match[str]) -> str:
+    """Blank an IBAN only if its ISO 7064 checksum holds: a 24-digit run that is not one stays money-suspect."""
+    digits = re.sub(r"\s", "", match.group(0)).upper()
+    moved = digits[4:] + digits[:4]
+    try:
+        number = int("".join(str(int(c, 36)) for c in moved))
+    except ValueError:
+        return match.group(0)
+    return " " if number % 97 == 1 else match.group(0)
 _HEADER_WORDS = ("tarih", "aciklama", "borc", "alacak", "bakiye", "tutar", "islem", "valor", "date", "description", "balance")
 MAX_LISTED = 25
 
@@ -69,9 +93,12 @@ def read_lines(text: str) -> list[str]:
 
 
 def strip_explained(line: str) -> str:
-    """The line with the numbers an explicit pattern identifies as not money blanked out."""
-    for pattern in _NOT_MONEY:
+    """The line with the tokens a strict pattern identifies as not money blanked out (the rest untouched)."""
+    line = _IBAN.sub(_iban_valid, line)
+    for pattern in (_CARD, *_PHONES, _PAGE, _COPYRIGHT_YEAR, _YEAR_PHRASE, _REFERENCE):
         line = pattern.sub(" ", line)
+    if _LABELLED_LINE.match(line.strip()) and not DATE_LIKE.search(line) and not _MONEY_SHAPE.search(line):
+        return " "
     return line
 
 
@@ -124,13 +151,13 @@ def _first_amount(line: str) -> int:
 
     A bare integer is whole lira: "5000" is 5.000,00."""
     cleaned = DATE_LIKE.sub(" ", strip_explained(line))
-    found = sorted(
-        (m.start(), m.group(0)) for pattern in (_CURRENCY_MARKED, AMOUNT_LIKE, _BIG_INTEGER) for m in pattern.finditer(cleaned)
-    )
-    for _, token in found:                  # the earliest token in the text: the amount precedes the balance
-        parsed = parse_money(token)
-        if parsed and parsed[0]:
-            return parsed[0]
+    # Money-shaped tokens (separators, decimals, a currency mark) come before bare integers (ids, years).
+    for patterns in ((_CURRENCY_MARKED, AMOUNT_LIKE), (_BIG_INTEGER,)):
+        found = sorted((m.start(), m.group(0)) for pattern in patterns for m in pattern.finditer(cleaned))
+        for _, token in found:              # the earliest token in the text: the amount precedes the balance
+            parsed = parse_money(token)
+            if parsed and parsed[0]:
+                return parsed[0]
     return 0
 
 
@@ -196,11 +223,19 @@ def account_for_lines(text: str, transactions: list[ParsedTransaction]) -> LineA
         for j in range(cursor, min(cursor + 6, len(pending))):
             raw = _squash(pending[j].raw_row)
             if raw and raw in sq:
-                placed[i] = pending[j]
-                pending.pop(j)
+                matched = pending.pop(j)
                 cursor = j
+                # A date range ("Dönem: 01.01.2026 - 31.01.2026") that a pattern took for a row has no money in it:
+                # the parser invented an amount from a date. It is not a transaction; the line is a title.
+                if len(DATE_LIKE.findall(lines[i])) >= 2 and not money_tokens(lines[i]):
+                    break
+                placed[i] = matched
                 break
     first = min(placed, default=-1)
+    # Position evidence that cannot hide a transaction: above the table's column-header line a row cannot be. A
+    # line there with no date and no decimal money shape (an address, a postcode, a customer-service number) is
+    # a non-row. Nothing below the header, and nothing after the last row, is ever exempted by position.
+    header_at = next((i for i, line in enumerate(lines) if _is_header(line)), None)
     out: list[ParsedTransaction] = []
     acct = LineAccount(out, read=len(lines))
     previous_is_row = False
@@ -219,6 +254,10 @@ def account_for_lines(text: str, transactions: list[ParsedTransaction]) -> LineA
             continue
         if is_summary_phrase(_words(line)):
             acct.summary.append(line[:120])
+            previous_is_row = False
+            continue
+        if header_at is not None and i < header_at and not DATE_LIKE.search(line) and not _MONEY_SHAPE.search(line):
+            acct.non_row += 1
             previous_is_row = False
             continue
         if is_candidate(line):

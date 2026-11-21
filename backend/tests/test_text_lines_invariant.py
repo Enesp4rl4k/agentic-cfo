@@ -242,3 +242,15 @@ def test_a_statement_that_is_not_text_reports_no_balance_claim() -> None:
 
     said = ingest_summary([{}], {}, {"read": 3, "balance_check": None})["summary"]
     assert "bakiye" not in said
+
+
+# ── noise on a realistic two-page text ───────────────────────────────────────────────────────────────────────
+
+def test_a_realistic_two_page_statement_holds_almost_nothing_that_is_not_a_transaction() -> None:
+    from tests.realistic_garanti import two_page_statement
+
+    rows, ledger = _pipeline(GarantiParser, two_page_statement(20))
+    noise = [r for r in rows if r.get("line_unreadable")]
+    assert len(rows) - len(noise) == 20                                       # every real row, none lost
+    assert len(noise) <= 1, [r["description"] for r in noise]                 # the footer date line is the only one held
+    assert ledger.non_row_lines >= 8                                           # address, phones, page markers, copyright counted
