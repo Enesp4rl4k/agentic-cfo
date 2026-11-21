@@ -479,7 +479,7 @@ test.describe("Pilot flow", () => {
       await expect(send).toHaveAttribute("aria-disabled", "true");
       await expect(send).toHaveAttribute("title", /mali müşavir tavsiye eder/);
       await expect(page.getByText(/Ödeme tarihini değiştirmek şirketin ticari kararıdır/).first()).toBeVisible();
-      await send.click();
+      await send.click({ force: true }); // aria-disabled: Playwright waits for "enabled" otherwise
       await expect(page.getByText(/Öneri onaya gönderildi|Ödeme planı değişti/)).toHaveCount(0);
     });
     const accountant = await login(request, ACCOUNTANT);
@@ -511,11 +511,12 @@ test.describe("Pilot flow", () => {
   test("17. the workspace screen offers exactly the roles the owner may grant, each with a line on what it can do", async ({ page }) => {
     await loginInBrowser(page, OWNER);
     await page.goto("/settings/workspace");
-    const options = page.locator("form select option");
+    const inviteForm = page.locator("form").filter({ has: page.locator('input[type="email"]') });
+    const options = inviteForm.locator("select option");
     await expect(options.first()).toBeAttached({ timeout: 60_000 });
     const values = await options.evaluateAll((all) => all.map((o) => (o as HTMLOptionElement).value));
     expect(values.sort()).toEqual(["admin", "analyst", "cfo", "owner", "smmm", "viewer"]);
-    await expect(page.locator("form select option[value='smmm']")).toHaveCount(1);
+    await expect(inviteForm.locator("select option[value='smmm']")).toHaveCount(1);
     await expect(page.getByText(/Şirketin mali müşaviri: kayıtları onaylar/)).toBeVisible();
     await expect(page.getByText("Yalnızca görüntüler; hiçbir şeyi değiştirmez.")).toBeVisible();
   });
