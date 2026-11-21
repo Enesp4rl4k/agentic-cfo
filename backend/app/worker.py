@@ -1059,6 +1059,19 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
 
 # ── ARQ Worker settings ────────────────────────────────────────────────────────
 
+async def _start_crons(ctx: dict[str, Any]) -> None:
+    """Run APScheduler here when SCHEDULER_PROCESS=worker (staging/prod)."""
+    from app.scheduler import start_scheduler
+
+    start_scheduler("worker")
+
+
+async def _stop_crons(ctx: dict[str, Any]) -> None:
+    from app.scheduler import stop_scheduler
+
+    stop_scheduler()
+
+
 class WorkerSettings:
     """ARQ worker configuration. Run with: arq app.worker.WorkerSettings"""
 
@@ -1069,6 +1082,9 @@ class WorkerSettings:
     keep_result = 86400             # keep job result in Redis for 24h
     retry_jobs = True
     max_tries = 2                   # retry once on failure
+    # The crons live in this worker type only — never in the maintenance one.
+    on_startup = _start_crons
+    on_shutdown = _stop_crons
 
     @classmethod
     def redis_settings(cls) -> RedisSettings:

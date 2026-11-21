@@ -1130,11 +1130,26 @@ async def _rag_backfill_maintenance() -> None:
         logger.error("RAG backfill enqueue error: %s", exc)
 
 
-def start_scheduler() -> None:
+def start_scheduler(process: str = "api") -> None:
+    """Start APScheduler if `process` is the process type that owns the crons.
+
+    `process` is the caller's kind ("api" from the FastAPI lifespan, "worker"
+    from the arq analysis worker); `scheduler_process` names the owner. Every
+    job is still wrapped in `_exclusive`, so replicas of the owner never
+    double-run a tick.
+    """
     from app.config import get_settings
 
-    if not get_settings().scheduler_enabled:
+    settings = get_settings()
+    if not settings.scheduler_enabled:
         logger.info("CFO Scheduler disabled (scheduler_enabled=false)")
+        return
+    if settings.scheduler_process != process:
+        logger.info(
+            "CFO Scheduler not started in %s process (owned by %s)",
+            process,
+            settings.scheduler_process,
+        )
         return
     scheduler = get_scheduler()
     if not scheduler.running:
