@@ -197,6 +197,7 @@ class CashRadar:
     tax_obligations_cents: int = 0
     opening_cash: OpeningCash | None = None
     held_documents: HeldDocuments | None = None
+    awaiting_decision: Any = None  # AwaitingDecisions: both queues of waiting decisions, one block
     # The currency every figure above is in (`core/currency_totals.effective_base`, the same one the P&L
     # uses), how it was decided, and what was left out: open items in any other currency, listed with their
     # own currency and totals, never converted.
@@ -454,6 +455,7 @@ async def compute_cash_radar(
         not_included.append("Vergi ve SGK yükümlülükleri")
     if not has_cheques:
         not_included.append("Çek ve senetler")
+    from app.services.awaiting_decisions import block
     from app.services.held_rows import pending_count
 
     waiting = await pending_count(db, org_id)
@@ -533,6 +535,7 @@ async def compute_cash_radar(
         currency=cur,
         base_state=effective.state,
         other_currency_totals=[{"currency": c, **v} for c, v in sorted(foreign_items.items())],
+        awaiting_decision=block(waiting, held, _held_line(held, cur) if held else ""),
     )
 
 

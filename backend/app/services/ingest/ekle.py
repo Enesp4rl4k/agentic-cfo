@@ -99,7 +99,14 @@ async def _finansal_ekle(
         # bank's title rows, one signed amount, ISO dates, no totals row.
         tablo = await asyncio.to_thread(tabloyu_sec, veri, dosya_adi, S.BANKA_EKSTRESI)
         if tablo is not None:
-            veri, uzanti = standart_csv(tablo, S.BANKA_EKSTRESI)[0].encode("utf-8"), "csv"
+            from app.parsers.direction import statement_identity
+
+            csv_text = standart_csv(tablo, S.BANKA_EKSTRESI)[0]
+            # The bank's title rows say which account this is; the normalised table has no room for them,
+            # so the account travels as a first line the table reader skips as a title row.
+            if statement_identity(tablo.ust_metin):
+                csv_text = '"' + tablo.ust_metin[:400].replace('"', "") + '"' + chr(10) + csv_text
+            veri, uzanti = csv_text.encode("utf-8"), "csv"
     try:
         validate_magic_bytes(uzanti, veri[:8])
     except FileValidationError as exc:
@@ -335,11 +342,17 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
     w.writerow(["tarih", "açıklama", "tutar", "tip"] + (["fatura no", "cari", "vade"] if faturali else []))
     for t in islemler:
         kurus = t.get("amount_cents")
+        has_amount = kurus is not None or t.get("amount") is not None
         tutar = abs(int(kurus)) / 100 if kurus is not None else abs(float(t.get("amount") or 0))
-        tip = "income" if str(t.get("type") or t.get("tx_type") or "").lower() in ("income", "gelir") else "expense"
+        said = str(t.get("type") or t.get("tx_type") or "").lower()
+        # An unknown direction is "?": the statement reader holds that row ("yön belirsiz"), it is never an expense.
+        tip = "income" if said in ("income", "gelir") else "expense" if said in ("expense", "gider") else "?"
         tarih = t.get("date") or t.get("transaction_date") or ""
         tarih = tarih.isoformat() if hasattr(tarih, "isoformat") else str(tarih)
-        satir = [tarih[:10], (t.get("description") or "")[:500], -tutar if tip == "expense" else tutar, tip]
+        satir = [
+            tarih[:10], (t.get("description") or "")[:500],
+            ("?" if not has_amount else -tutar if tip == "expense" else tutar), tip,   # "?": no amount to stand behind
+        ]
         if faturali:
             satir += [t.get("document_id") or "", t.get("counterparty") or "", t.get("due_date") or ""]
         w.writerow(satir)

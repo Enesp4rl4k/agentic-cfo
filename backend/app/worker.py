@@ -468,7 +468,7 @@ async def run_cfo_analysis(
             meta = dict(job.result_metadata or {})
             from app.services.ingest.summary import ingest_summary
 
-            meta["ingest"] = ingest_summary(persisted_rows, registered)
+            meta["ingest"] = ingest_summary(persisted_rows, registered, result.get("ingest_counts"))
             if terminal == JobStatus.AWAITING_REVIEW:
                 from app.services.held_analysis import held_by
 

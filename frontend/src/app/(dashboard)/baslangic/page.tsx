@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IngestCounts } from "@/components/held-rows/IngestCounts";
 import { baslangicDurumu, firmaOlustur, type BaslangicDurumu } from "@/lib/api/baslangic";
 import { HeldReasons } from "@/components/held-analyses/HeldReasons";
 import { PageHead } from "@/components/brand-app/PageHead";
@@ -218,6 +219,9 @@ function Adimlar({
             : undefined}
           aciklama={bs.steps.data.body}
         >
+          <div className="mb-3">
+            <IngestCounts ingest={durum.son_analiz?.ingest} />
+          </div>
           <Button asChild className="min-h-[44px]">
             <Link href="/baglan">{bs.steps.data.cta} <ArrowRight className="h-4 w-4" /></Link>
           </Button>

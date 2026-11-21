@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -30,6 +30,18 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.held_transaction import PENDING, REJECTED, RELEASED, HeldTransaction
 from app.services.decisions import record_decision
+from app.services.ingest.currencies import is_currency_code
+from app.services.ingest.hold import (
+    AMOUNT_UNCERTAIN,
+    AMOUNT_UNREADABLE,
+    AMOUNT_ZERO,
+    BALANCE_MISMATCH,
+    CURRENCY_UNKNOWN,
+    DATE_UNREADABLE,
+    DIRECTION_FILE,
+    DIRECTION_UNKNOWN,
+    row_reasons,
+)
 from app.services.ingest.persist import build_transaction
 
 # What a person reads, per reason code (app.services.ingest.hold).
@@ -38,6 +50,13 @@ REASON_TEXT: dict[str, str] = {
     "confidence_low": "güven düşük",
     "currency_unknown": "para birimi bilinmiyor",
     "direction_unknown": "yön belirsiz",
+    "direction_file_unknown": "yön belirsiz",
+    "balance_mismatch": "bakiye ile uyuşmuyor",
+    "summary_suspect": "özet satırı olabilir",
+    "amount_zero": "tutar sıfır",
+    "line_unreadable": "satır okunamadı",
+    "amount_uncertain": "tutar belirsiz",
+    "malformed_row": "sütunlar kaymış olabilir",
     "amount_unreadable": "tutar okunamadı",
     "date_unreadable": "tarih okunamadı",
     "document_held_together": "aynı belgenin başka bir satırı bekliyor",
@@ -161,6 +180,8 @@ def describe(row: HeldTransaction, filename: str | None = None) -> dict[str, Any
         "amount_cents": p.get("amount_cents"),
         "currency": p.get("currency"),
         "type": p.get("type"),
+        "currency_assumed": bool(p.get("currency_assumed")),
+        "direction_file": (p.get("direction_file") or {}).get("key"),
         "description": p.get("description"),
         "vendor": p.get("vendor"),
         "transaction_date": p.get("transaction_date"),
@@ -185,8 +206,34 @@ class CorrectionError(ValueError):
     """A correction is not usable; nothing was written."""
 
 
-def _apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | None) -> dict[str, Any]:
+class UnknownRows(LookupError):
+    """Row ids that are not this organisation's (or do not exist): the caller answers 404."""
+
+
+# Which open question each corrected field answers.
+_FIXES = {
+    "type": (DIRECTION_UNKNOWN, DIRECTION_FILE, BALANCE_MISMATCH),
+    "currency": (CURRENCY_UNKNOWN,),
+    "transaction_date": (DATE_UNREADABLE,),
+    "amount_cents": (AMOUNT_UNREADABLE, AMOUNT_ZERO, AMOUNT_UNCERTAIN),
+}
+_EARLIEST = date(2000, 1, 1)
+_LATEST_AHEAD = timedelta(days=366)
+
+
+def _valid_date(value: Any) -> str:
+    parsed, estimated = parse_transaction_date(str(value))
+    if estimated:
+        raise CorrectionError("transaction_date must be a readable date (YYYY-MM-DD)")
+    if not (_EARLIEST <= parsed.date() <= datetime.now(UTC).date() + _LATEST_AHEAD):
+        raise CorrectionError("transaction_date is outside the plausible range (2000 to a year ahead)")
+    return str(value)
+
+
+def apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | None) -> dict[str, Any]:
+    """The row with a person's fixes applied. Every fix is checked; one bad one writes nothing."""
     out = dict(payload)
+    fixed: set[str] = set()
     for key, value in (corrections or {}).items():
         if key not in _CORRECTABLE or value is None or value == "":
             continue
@@ -194,21 +241,32 @@ def _apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | No
             raise CorrectionError("type must be income or expense")
         if key == "currency":
             value = str(value).strip().upper()
-            if not (len(value) == 3 and value.isalpha()):
-                raise CorrectionError("currency must be an ISO-4217 code")
-        if key == "amount_cents" and (isinstance(value, bool) or not isinstance(value, int) or value == 0):
-            raise CorrectionError("amount_cents must be a non-zero integer")
+            if not is_currency_code(value):
+                raise CorrectionError("currency must be a known ISO-4217 code")
+            out.pop("currency_assumed", None)   # a person said it: it is no longer assumed
+        if key == "amount_cents":
+            # The direction is its own field: an amount is a magnitude.
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise CorrectionError("amount_cents must be a positive integer (the direction is the type)")
         if key == "transaction_date":
-            if parse_transaction_date(str(value))[1]:
-                raise CorrectionError("transaction_date must be a readable date (YYYY-MM-DD)")
-            value = str(value)
+            value = _valid_date(value)
         out[key] = value
+        fixed.add(key)
+    if "amount_cents" in fixed:
+        out.pop("zero_amount", None)
+        out.pop("amount_uncertain", None)
+    if "type" in fixed:
+        out.pop("direction_file", None)
+        out.pop("direction_question", None)
+        out.pop("balance_mismatch", None)
+        if out.get("category") is None:        # chosen now that the direction is known
+            from app.services.ingest.rows import _yukleyenin_kategorisi
+
+            out["category"] = _yukleyenin_kategorisi(
+                str(out.get("category_hint") or ""), str(out.get("description") or ""), out["type"]
+            )
     if out.get("hold_reasons"):
-        fixed = {
-            "type": "direction_unknown", "currency": "currency_unknown",
-            "transaction_date": "date_unreadable", "amount_cents": "amount_unreadable",
-        }
-        gone = {fixed[k] for k in (corrections or {}) if k in fixed and (corrections or {}).get(k) not in (None, "")}
+        gone = {reason for k in fixed for reason in _FIXES[k]}
         out["hold_reasons"] = [r for r in out["hold_reasons"] if r not in gone]
     return out
 
@@ -232,13 +290,55 @@ def _snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "amount_cents": amount if isinstance(amount, int) and not isinstance(amount, bool) else None,
         "currency": payload.get("currency"),
+        "currency_assumed": bool(payload.get("currency_assumed")),
         "type": payload.get("type"),
         "transaction_date": payload.get("transaction_date"),
         "hold_reasons": list(payload.get("hold_reasons") or []),
     }
 
 
-async def resolve(
+async def _check_ids(db: AsyncSession, org_id: str, ids: list[str]) -> None:
+    """Every id must be a row of this organisation, whatever its status; else nothing is touched."""
+    if not ids:
+        return
+    own = set((await db.execute(
+        select(HeldTransaction.id).where(HeldTransaction.org_id == org_id, HeldTransaction.id.in_(set(ids)))
+    )).scalars().all())
+    if unknown := sorted(set(ids) - own):
+        raise UnknownRows(", ".join(unknown))
+
+
+async def update_waiting(
+    db: AsyncSession, org_id: str, user_id: str, payloads: dict[str, dict[str, Any]], note: str,
+) -> int:
+    """Store a person's answer on rows that stay pending (another question is still open). No commit.
+
+    Each one is a recorded decision with before and after, like a release: an answer that changes
+    a row is never silent just because the row keeps waiting.
+    """
+    changed = 0
+    for row in await pending_rows(db, org_id):
+        if row.id not in payloads:
+            continue
+        new = payloads[row.id]
+        new["hold_reasons"] = row_reasons(new)
+        won = await db.execute(
+            update(HeldTransaction).where(HeldTransaction.id == row.id, HeldTransaction.status == PENDING)
+            .values(payload=new).execution_options(synchronize_session=False)
+        )
+        if won.rowcount != 1:
+            continue
+        await record_decision(
+            db, org_id=org_id, kind=DecisionKind.HELD_ROW_RESOLUTION, target_type="held_transaction",
+            target_id=row.id, outcome="updated", decided_via=DecidedVia.HUMAN, decided_by=user_id, reason=note,
+            evidence_refs=[{"type": "analysis_job", "id": row.job_id}],
+            before=_snapshot(row.payload), after=_snapshot(new),
+        )
+        changed += 1
+    return changed
+
+
+async def resolve_uncommitted(
     db: AsyncSession,
     org_id: str,
     *,
@@ -251,15 +351,10 @@ async def resolve(
     corrections: dict[str, dict[str, Any]] | None = None,
     currency: str | None = None,
     note: str | None = None,
-) -> dict[str, Any]:
-    """Release or reject pending rows of an organisation. One transaction; commits.
-
-    Rows are picked by `ids`, or by `job_id` / `reason` / `document_id`. `corrections`
-    maps a row id to the fields a person fixed (type, currency, transaction_date,
-    amount_cents); `currency` fills the currency of every picked row that has none.
-    A document is released or rejected whole: if any of its rows cannot be released
-    (something still missing), none is.
-    """
+    staged: dict[str, dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], set[str]]:
+    """`resolve` without the commit: (result, the jobs whose rows were released)."""
+    await _check_ids(db, org_id, [*(ids or []), *(corrections or {})])
     picked = await pending_rows(db, org_id, job_id=job_id, reason=reason, document_id=document_id)
     if ids is not None:
         wanted = set(ids)
@@ -278,7 +373,9 @@ async def resolve(
         fix = dict(corrections.get(row.id) or {})
         if currency and not str(row.payload.get("currency") or "").strip():
             fix.setdefault("currency", currency)
-        payload = _apply_corrections(row.payload, fix)
+        # `staged` is what the row becomes before the person's fixes (a confirmed currency, say);
+        # the decision still records the row as it was.
+        payload = apply_corrections((staged or {}).get(row.id, row.payload), fix)
         final[row.id] = payload
         if release and (lacking := _missing(payload)):
             blocked[row.id] = lacking
@@ -326,7 +423,15 @@ async def resolve(
             after=_snapshot(payload) if release else None,
         )
         resolved += 1
-    await db.commit()
+    return {
+        "resolved": resolved,
+        "blocked": [{"id": i, "missing": m} for i, m in blocked.items()],
+        "already_resolved": already,
+    }, jobs
+
+
+async def append_released(db: AsyncSession, jobs: set[str]) -> dict[str, Any]:
+    """After the commit: add the jobs whose rows were released to the ledger (idempotent)."""
     appended: dict[str, Any] = {}
     for jid in sorted(jobs):
         job = await db.get(AnalysisJob, jid)
@@ -334,40 +439,74 @@ async def resolve(
             from app.services.ledger import append_job
 
             appended[jid] = await append_job(db, jid)
-    return {
-        "resolved": resolved,
-        "blocked": [{"id": i, "missing": m} for i, m in blocked.items()],
-        "already_resolved": already,
-        "still_waiting": await pending_count(db, org_id),
-        "ledger": appended,
-    }
+    return appended
+
+
+async def resolve(db: AsyncSession, org_id: str, **kwargs: Any) -> dict[str, Any]:
+    """Release or reject pending rows of an organisation. One transaction; commits.
+
+    Rows are picked by `ids`, or by `job_id` / `reason` / `document_id`. `corrections`
+    maps a row id to the fields a person fixed (type, currency, transaction_date,
+    amount_cents); `currency` fills the currency of every picked row that has none.
+    A document is released or rejected whole: if any of its rows cannot be released
+    (something still missing), none is. An id that is not this organisation's raises
+    `UnknownRows` before anything is written.
+    """
+    out, jobs = await resolve_uncommitted(db, org_id, **kwargs)
+    await db.commit()
+    out["still_waiting"] = await pending_count(db, org_id)
+    out["ledger"] = await append_released(db, jobs)
+    return out
 
 
 async def fill_currency(
     db: AsyncSession, org_id: str, user_id: str, code: str
-) -> dict[str, Any]:
-    """The company currency was just confirmed: apply it to rows held for that and nothing else.
+) -> tuple[dict[str, Any], set[str]]:
+    """The company currency is being confirmed: apply it to rows held for that and nothing else.
 
-    A row whose only open question was the currency is released; a row with
-    another question keeps waiting, with its currency now filled and marked
-    assumed. Commits.
+    No commit: the caller confirms the currency, fills the rows and releases them in ONE
+    transaction, then adds the jobs to the ledger. A row whose only open question was the
+    currency is released; a row with another question keeps waiting, with its currency now
+    filled and marked assumed, and that change is a recorded decision.
     """
     only_currency: list[str] = []
+    staged: dict[str, dict[str, Any]] = {}
+    waiting: dict[str, dict[str, Any]] = {}
     for row in await pending_rows(db, org_id, reason=CURRENCY_REASON):
         payload = dict(row.payload)
         reasons = [r for r in payload.get("hold_reasons", []) if r != CURRENCY_REASON]
         payload.update(currency=code, currency_assumed=True, hold_reasons=reasons)
-        await db.execute(
-            update(HeldTransaction).where(HeldTransaction.id == row.id, HeldTransaction.status == PENDING)
-            .values(payload=payload).execution_options(synchronize_session=False)
-        )
-        if not reasons:
+        if reasons:
+            waiting[row.id] = payload
+        else:
             only_currency.append(row.id)
-    await db.commit()
-    if not only_currency:
-        return {"resolved": 0, "blocked": [], "already_resolved": 0,
-                "still_waiting": await pending_count(db, org_id), "ledger": {}}
-    return await resolve(
-        db, org_id, user_id=user_id, release=True, ids=only_currency,
+            staged[row.id] = payload
+    await update_waiting(db, org_id, user_id, waiting, "company currency confirmed")
+    out, jobs = await resolve_uncommitted(
+        db, org_id, user_id=user_id, release=True, ids=only_currency, staged=staged,
         note="company currency confirmed",
-    )
+    ) if only_currency else ({"resolved": 0, "blocked": [], "already_resolved": 0}, set())
+    out["still_waiting"] = await pending_count(db, org_id)
+    return out, jobs
+
+
+async def assumed_under_other_currency(db: AsyncSession, org_id: str, code: str) -> dict[str, Any]:
+    """Rows booked in a currency the document did not state, whose currency is not `code`.
+
+    When the company currency is confirmed anew, rows previously admitted as `currency_assumed`
+    keep the currency they were stored with: nothing is rewritten silently. They are listed here
+    so a person can review them (and correct a row's currency by hand).
+    """
+    from app.models.transaction import Transaction
+
+    rows = (await db.execute(
+        select(Transaction.id, Transaction.currency)
+        .join(AnalysisJob, AnalysisJob.id == Transaction.job_id)
+        .where(AnalysisJob.org_id == org_id, Transaction.currency_assumed.is_(True), Transaction.currency != code)
+        .order_by(Transaction.id)
+    )).all()
+    return {
+        "count": len(rows),
+        "by_currency": dict(Counter(c for _, c in rows)),
+        "transaction_ids": [i for i, _ in rows[:100]],
+    }

@@ -26,6 +26,7 @@ from app.models.data_source import (
 from app.models.decision import Decision
 from app.models.decision_log import DecisionLog
 from app.models.defensibility_packet import DefensibilityPacket
+from app.models.direction_mapping import DirectionMapping
 from app.models.donem_kilidi import DonemKilidi
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
 from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
@@ -84,6 +85,7 @@ __all__ = [
     "Decision",
     "DecisionLog",
     "DefensibilityPacket",
+    "DirectionMapping",
     "DonemKilidi",
     "ERPIntegration",
     "ERPSyncLog",

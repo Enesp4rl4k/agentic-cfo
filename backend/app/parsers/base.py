@@ -2,8 +2,9 @@
 Bank statement parser — base types and parsed data models.
 
 Each bank parser produces a list of ParsedTransaction objects.
-The LLM is only used as a fallback (GenericParser) when no bank-specific
-parser matches. Structured parsers are faster and more reliable.
+The LLM is only used as a fallback (app.agents.data_ingestion) when no bank-specific
+parser matches. Structured parsers are faster and more reliable. Direction is never defaulted:
+see app.parsers.direction.
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ class ParsedTransaction:
     description: str
     amount_cents: int          # Positive, sign by tx_type; negative only for a correction posted to an income-statement account
     tx_type: str               # "income" | "expense"
-    currency: str = "TRY"
+    # "" = the document did not state it. Never defaulted to TRY: see app.services.ingest.hold.
+    currency: str = ""
     vendor: str | None = None
     balance_cents: int | None = None   # Running balance if available
     reference: str | None = None       # Bank reference / cheque number
@@ -39,6 +41,10 @@ class ParsedTransaction:
     # True when `date` is a placeholder because the document had no readable one:
     # the row leaves the parser undated and flagged, never dated "today".
     date_estimated: bool = False
+    # True when the line looked like money but no row pattern took it: held as a raw line (app.parsers.lines).
+    unread: bool = False
+    # True when the matched line has a money-like token that is neither the amount nor the balance: held, not booked.
+    amount_uncertain: bool = False
 
 
 @dataclass

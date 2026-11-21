@@ -102,6 +102,19 @@ class HeldDocumentsOut(BaseModel):
     by_reason: dict[str, int]
 
 
+class AwaitingLineOut(BaseModel):
+    count: int
+    text: str
+    path: str
+
+
+class AwaitingDecisionOut(BaseModel):
+    """Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates."""
+
+    rows: AwaitingLineOut | None = None
+    documents: AwaitingLineOut | None = None
+
+
 class OtherCurrencyTotalOut(BaseModel):
     """Open items in a currency other than the radar's: counted with their own totals, never converted."""
 
@@ -128,6 +141,7 @@ class CashRadarOut(BaseModel):
     tax_obligations_cents: int = 0
     opening_cash: OpeningCashOut | None = None
     held_documents: HeldDocumentsOut | None = None
+    awaiting_decision: AwaitingDecisionOut | None = None
     # The radar's currency (the same effective base as the P&L), how it was decided, and the open items left
     # out because they are in another currency.
     currency: str = "TRY"

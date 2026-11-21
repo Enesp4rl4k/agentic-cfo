@@ -17,6 +17,9 @@ import {
 import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
 import { QuickDemoBanner } from "@/components/demo/QuickDemoBanner";
 import { POST_UPLOAD_ROUTE } from "@/lib/routes";
+import { useQuery } from "@tanstack/react-query";
+import { IngestCounts } from "@/components/held-rows/IngestCounts";
+import { getJobStatus } from "@/lib/api/cfo";
 import { apiClient } from "@/lib/api/client";
 
 // ── Health score helpers ──────────────────────────────────────────────────────
@@ -356,6 +359,14 @@ export default function UploadPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Where every row of the upload went, as soon as the run has read it (polled while this screen shows).
+  const ingestCounts = useQuery({
+    queryKey: ["job-ingest", jobId],
+    queryFn: () => getJobStatus(jobId as string),
+    enabled: phase === "done" && Boolean(jobId),
+    refetchInterval: (q) => (q.state.data?.ingest ? false : 2000),
+  });
+
   // Auto-redirect to dashboard once job is ready
   useEffect(() => {
     if (phase === "done" && jobId) {
@@ -684,6 +695,7 @@ export default function UploadPage() {
               {up.done.body}
             </p>
           </div>
+          <IngestCounts ingest={ingestCounts.data?.ingest} />
           {/* Fallback manual button in case redirect is slow */}
           <button
             onClick={goToDashboard}

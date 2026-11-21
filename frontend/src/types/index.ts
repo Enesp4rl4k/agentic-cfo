@@ -210,6 +210,8 @@ export interface AnalysisJob {
   error: string | null;
   created_at: string;
   completed_at: string | null;
+  /** Where every row of the upload went: read, saved, waiting, skipped (null until the run read it). */
+  ingest?: import("@/components/held-rows/IngestCounts").IngestSummary | null;
 }
 
 export interface ReportMeta {

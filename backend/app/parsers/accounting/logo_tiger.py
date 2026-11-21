@@ -198,7 +198,7 @@ class LogoTigerParser(BankParser):
                 description=description or f"Logo işlemi {date.strftime('%d.%m.%Y')}",
                 amount_cents=amount,
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 vendor=self._extract_vendor(description),
                 reference=reference,
                 raw_row=delimiter.join(row),
@@ -238,7 +238,7 @@ class LogoTigerParser(BankParser):
                 description=desc,
                 amount_cents=amount,
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 raw_row=line,
             ))
         return transactions

@@ -134,6 +134,8 @@ def yevmiye_oku(xml: bytes) -> YevmiyeSonucu:
             aciklama = (satir.findtext(f"{_GL}detailComment") or kayit_yorum).strip()
             islemler.append({
                 "amount_cents": kurus,
+                # The e-Defter is the statutory ledger and is kept in lira by law (VUK 215, TTK 64): TRY is stated by
+                # the document type itself, not guessed.
                 "currency": "TRY",
                 "type": tip,
                 "category": kategori,

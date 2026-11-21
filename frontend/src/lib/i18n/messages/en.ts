@@ -169,6 +169,10 @@ export type MessageTree = {
     basisKnown: string;
     basisEstimated: string;
     basisAssumed: string;
+    awaitingTitle: string;
+    awaitingRows: string;
+    awaitingDocuments: string;
+    awaitingOpen: string;
     heldReview: string;
   };
   takvim: {
@@ -2686,6 +2690,33 @@ export type MessageTree = {
     currencyConfirm: string;
     currencyConfirmed: string;
     reasons: Record<string, string>;
+    fileTitle: string;
+    fileBodyNoSignal: string;
+    fileBodyBalance: string;
+    fileBodyConvention: string;
+    fileBodyInconclusive: string;
+    fileConventionQuestion: string;
+    fileConventionMapping: string;
+    fileRememberDenied: string;
+    fileBodySign: string;
+    fileNoAccount: string;
+    fileRows: string;
+    fileColumns: string;
+    fileSamples: string;
+    fileRemember: string;
+    fileRoles: Record<string, string>;
+    fileOptions: Record<string, string>;
+    mappingsTitle: string;
+    mappingsBody: string;
+    mappingRevoke: string;
+    assumedCurrency: string;
+    ingestRead: string;
+    ingestTransfers: string;
+    ingestSkippedTitle: string;
+    ingestLost: string;
+    ingestFallback: string;
+    ingestBalanceVerified: string;
+    ingestBalanceUnverified: string;
   };
   acceptInvite: {
     title: string;
@@ -2994,6 +3025,10 @@ export const en: MessageTree = {
     basisKnown: "documented",
     basisEstimated: "estimated",
     basisAssumed: "assumed",
+    awaitingTitle: "Waiting for your decision",
+    awaitingRows: "Rows to review",
+    awaitingDocuments: "Possible duplicate documents",
+    awaitingOpen: "Decide",
     heldReview: "Review the documents and decide",
   },
   takvim: {
@@ -5792,7 +5827,57 @@ export const en: MessageTree = {
       amount_unreadable: "amount unreadable",
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
+      direction_file_unknown: "direction unclear",
+      summary_suspect: "may be a summary line",
+      balance_mismatch: "does not reconcile with the balance",
+      line_unreadable: "line could not be read",
+      amount_uncertain: "amount uncertain",
+      amount_zero: "amount is zero",
+      malformed_row: "columns may be misaligned",
     },
+    fileTitle: "Which way do the amounts in this statement go?",
+    fileBodyNoSignal: "This file has no column or sign that says which way an amount moved; the system cannot tell money in from money out and does not guess. You can correct the rows one by one, or upload a file with a direction or balance column. If the file really holds only one kind, say so below.",
+    fileBodyBalance: "The balance column shows the opposite of the direction read from the amount columns. Your one answer applies to every row of the file.",
+    fileBodyConvention: "Which party's books the debit/credit words follow differs from bank to bank, and this file has no balance column to check it against. Your one answer applies to every row of the file.",
+    fileBodyInconclusive: "The balance column confirms only part of the rows; the file could not be read with confidence.",
+    fileConventionQuestion: "In this statement, is \"{label}\" money going OUT of your account?",
+    fileConventionMapping: "Read as: {mapping}",
+    fileBodySign: "There are very few negative amounts: the sign may show the direction, or it may be a single refund. Your one answer applies to every row of the file.",
+    fileNoAccount: "This file does not say which bank account it is from; the answer applies to this file and cannot be remembered for the format.",
+    fileRememberDenied: "Remembering this answer for the format needs an owner, admin or the accountant.",
+    fileRows: "{count} rows waiting",
+    fileColumns: "Detected columns",
+    fileSamples: "Sample rows",
+    fileRemember: "Remember my answer for this statement format",
+    fileRoles: {
+      date: "date",
+      description: "description",
+      amount: "amount",
+      debit: "debit",
+      credit: "credit",
+      direction: "direction",
+      balance: "balance",
+    },
+    fileOptions: {
+      only_income: "This file holds only money in (income)",
+      only_expense: "This file holds only money out (expense)",
+      as_read: "Yes, as the columns say",
+      balance: "As the balance shows",
+      sign_correct: "The signs are right: minus = money out, plus = money in",
+      inverted: "No, the opposite",
+      mixed: "I will correct the rows one by one",
+    },
+    mappingsTitle: "Remembered statement directions",
+    mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",
+    mappingRevoke: "Forget",
+    assumedCurrency: "assumed",
+    ingestRead: "{read} rows read: {saved} saved, {held} waiting for your decision, {skipped} summary lines skipped",
+    ingestTransfers: "{count} transfer/closing postings skipped",
+    ingestSkippedTitle: "Skipped summary lines",
+    ingestLost: "{count} rows could not be accounted for; please review the file.",
+    ingestFallback: "This file could not be read in the expected format; another reader was used.",
+    ingestBalanceVerified: "Verified against the running balance.",
+    ingestBalanceUnverified: "Not verified against the balance: the rows could not be checked with the running balance.",
   },
   acceptInvite: {
     title: "Join the invitation",
