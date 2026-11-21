@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.decision_log import DecisionLog
 from app.services import decisions
@@ -129,6 +130,32 @@ def _balance_note(as_of: str | None, age_days: int, stale: bool) -> str:
     return f"{_tr_date(as_of)} ekstresine göre"
 
 
+def held_caveat(radar: Any, week_outflow_cents: int) -> str:
+    """The headline caveat for documents waiting for a decision, "" when they do not matter yet.
+
+    Material (named setting `radar_held_material_ratio`, default 10%): what the held payables would add
+    to this week, plus held payables with no date (they could fall in it), is at least that share of
+    the week's outflow, or the week has no outflow at all; or a held payable's size is unknown
+    (foreign currency, never converted). A caveat is never dropped for an amount that cannot be
+    added up: unknown counts as material. Small queues stay in `not_included` only.
+    """
+    held = radar.held_documents
+    if held is None:
+        return ""
+    ratio = get_settings().radar_held_material_ratio
+    at_risk = held.week1_payable_cents + held.undated_payable_cents
+    unknown = held.other_currency_payable_count > 0
+    material = unknown or (at_risk > 0 and (week_outflow_cents <= 0 or at_risk >= ratio * week_outflow_cents))
+    if not material:
+        return ""
+    size = f" ({_fmt(held.payable_cents)} ödeme)" if held.payable_cents else ""
+    foreign = " Tutarı çevrilmemiş döviz belgeleri de var." if unknown else ""
+    return (
+        f" Karar bekleyen {held.count} belge{size} radara dahil değil; "
+        f"bu hafta çıkışlar olduğundan düşük görünebilir.{foreign}"
+    )
+
+
 def _generate_deterministic_sentences(
     net_change_cents: int,
     end_balance_cents: int,
@@ -145,6 +172,7 @@ def _generate_deterministic_sentences(
     balance_stale: bool = False,
     week_estimated_share: float = 0.0,
     horizon_estimated_share: float = 0.0,
+    held_caveat: str = "",
 ) -> tuple[str, str, str]:
     """Build the canonical 3-sentence briefing from verified radar facts."""
     balance_known = starting_cash_cents is not None
@@ -182,6 +210,8 @@ def _generate_deterministic_sentences(
 
     if balance_known and week_estimated_share > ESTIMATED_MAJORITY:
         sentence_1 += " Bu haftaki girişlerin çoğu tahmini tarihlere dayanıyor."
+    # Held documents are in no radar figure above: a material queue is said in the headline.
+    sentence_1 += held_caveat
 
     # Sentence 2: Approaching Critical Liability
     if approaching_amount_cents > 0 and approaching_date:
@@ -309,6 +339,7 @@ async def assemble_monday_briefing(
         action_amount = 0
 
     opening = radar.opening_cash
+    caveat = held_caveat(radar, week_1.outflow_cents if week_1 else 0)
     s1, s2, s3 = _generate_deterministic_sentences(
         net_change_cents=net_change,
         end_balance_cents=end_balance,
@@ -325,6 +356,7 @@ async def assemble_monday_briefing(
         balance_stale=opening.stale if opening else False,
         week_estimated_share=_inflow_estimated_share([week_1.inflow_basis] if week_1 else []),
         horizon_estimated_share=_inflow_estimated_share([w.inflow_basis for w in radar.weeks]),
+        held_caveat=caveat,
     )
     deterministic_full_text = f"{s1} {s2} {s3}"
 
@@ -356,11 +388,15 @@ async def assemble_monday_briefing(
                 )
             if _inflow_estimated_share([w.inflow_basis for w in radar.weeks]) > ESTIMATED_MAJORITY:
                 final_text += " Not: beklenen girişlerin çoğu tahmine dayanıyor."
+            final_text += caveat
         else:
             # Rejection: fall back to the deterministic template.
             fallback_used = True
             final_text = deterministic_full_text
 
+    from app.services.held_rows import held_note  # rows nobody accepted yet are in no figure above
+
+    final_text += await held_note(db, org_id)
     has_data = (
         starting_cash is not None
         or any(w.receivables or w.payables for w in radar.weeks)

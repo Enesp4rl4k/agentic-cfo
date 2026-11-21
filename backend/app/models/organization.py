@@ -52,6 +52,13 @@ class Organization(Base):
     country_code: Mapped[str] = mapped_column(String(2), default="US", nullable=False)
     base_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     locale: Mapped[str] = mapped_column(String(16), default="en-US", nullable=False)
+    # `base_currency` above is NOT NULL with a default, so a stored value is not a
+    # choice. These say whether an owner/admin actually confirmed it. Only a
+    # confirmed base currency may stand in for a currency a document did not state.
+    base_currency_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    base_currency_confirmed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # e.g. ["tr"] enables Turkey regional pack (SMMM, GIB, Paraşüt, THP)
     regional_packs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # A pilot company sees only the flow it is piloting (plan v10 §O0): the
@@ -59,6 +66,22 @@ class Organization(Base):
     focus_mode: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
+
+    # True once a person has chosen focus mode themselves (PATCH /org/me). A size
+    # profile only sets the default while this is false, and never overwrites it.
+    focus_mode_explicit: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
+    # Company size, as the company says it (services/size_profile.py). Null = not
+    # yet determined. Nothing in authorisation, thresholds or money reads these.
+    size_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    monthly_outflow_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    headcount_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    has_inhouse_finance: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    size_profile_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    size_profile_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    size_profile_set_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     # Tax identity. Decides an invoice's direction (we sold / we bought) and
     # names the e-Defter's owner; see app/services/org_identity.py.

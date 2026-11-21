@@ -34,7 +34,7 @@ export function useDeleteERPIntegration() {
     mutationFn: (id: string) => deleteERPIntegration(id),
     onSuccess:  () => qc.invalidateQueries({ queryKey: INTEGRATIONS_KEY }),
   });
-  return { remove: m.mutate, loading: m.isPending, error: m.error ? String(m.error) : null };
+  return { remove: m.mutate, loading: m.isPending, error: m.error instanceof Error ? m.error.message : null };
 }
 
 // ── Paraşüt hooks ─────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ export function useParasutSync() {
   return {
     result:  m.data ?? null,
     loading: m.isPending,
-    error:   m.error ? String(m.error) : null,
+    error:   m.error instanceof Error ? m.error.message : null,
     sync:    m.mutate,
     reset:   m.reset,
   };
@@ -63,7 +63,7 @@ export function useParasutDisconnect() {
     mutationFn: (integrationId: string) => disconnectParasut(integrationId),
     onSuccess:  () => qc.invalidateQueries({ queryKey: INTEGRATIONS_KEY }),
   });
-  return { disconnect: m.mutate, loading: m.isPending, error: m.error ? String(m.error) : null };
+  return { disconnect: m.mutate, loading: m.isPending, error: m.error instanceof Error ? m.error.message : null };
 }
 
 // ── Logo Tiger hooks ──────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ export function useLogoTigerConnect() {
     mutationFn: (displayName?: string) => connectLogoTiger(displayName),
     onSuccess:  () => qc.invalidateQueries({ queryKey: INTEGRATIONS_KEY }),
   });
-  return { connect: m.mutate, loading: m.isPending, error: m.error ? String(m.error) : null };
+  return { connect: m.mutate, loading: m.isPending, error: m.error instanceof Error ? m.error.message : null };
 }
 
 export function useLogoTigerSync() {
@@ -89,7 +89,7 @@ export function useLogoTigerSync() {
   return {
     result:  m.data ?? null,
     loading: m.isPending,
-    error:   m.error ? String(m.error) : null,
+    error:   m.error instanceof Error ? m.error.message : null,
     sync:    m.mutate,
     reset:   m.reset,
   };
@@ -109,7 +109,7 @@ export function useMikroSync() {
   return {
     result:  m.data ?? null,
     loading: m.isPending,
-    error:   m.error ? String(m.error) : null,
+    error:   m.error instanceof Error ? m.error.message : null,
     sync:    m.mutate,
     reset:   m.reset,
   };

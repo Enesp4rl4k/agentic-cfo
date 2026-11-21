@@ -79,7 +79,8 @@ def build_confidence_breakdown(
         )
 
     if not components:
-        aggregate = float(state.get("min_confidence") or 1.0)
+        mc = state.get("min_confidence")
+        aggregate = 1.0 if mc is None else float(mc)
         return {
             "aggregate": round(aggregate, 3),
             "threshold": thr,

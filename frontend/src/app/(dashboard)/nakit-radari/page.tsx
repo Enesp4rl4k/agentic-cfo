@@ -23,6 +23,7 @@ import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
 import { RadarAnswer } from "@/components/radar/RadarAnswer";
 import { WeekDetail } from "@/components/radar/WeekDetail";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { BasisSplitLine, formatDay, hasUnverifiedTax, StaleBalanceNotice, TaxRulesNote } from "@/components/radar/basis";
 
 const RADAR_KEY = ["cash-radar"];
@@ -309,6 +310,7 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
           <li key={line}>{line}</li>
         ))}
       </ul>
+      <HeldRowsLink />
       <dl className="space-y-1 text-sm">
         {amounts
           .filter(([, cents]) => cents > 0)

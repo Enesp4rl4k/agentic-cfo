@@ -84,6 +84,22 @@ async def test_a_run_held_at_the_verifier_has_a_dashboard_before_and_after_appro
     await _held_then_approved(client, tmp_path, "subat@example.com", "technova_subat_2024_zarar.csv")
 
 
-async def test_a_run_held_at_ingestion_is_still_analysed_for_the_reviewer(ortam):
+async def test_a_file_whose_every_row_is_unreadable_is_held_row_by_row_for_the_reviewer(ortam):
+    """Every date of bozuk_veri.csv is unreadable: nothing is analysed (no figure can honestly
+    be drawn), the run is held, and each row waits in the held-rows list with its reason."""
+    from sqlalchemy import select
+
+    from app.models.analysis_job import AnalysisJob
+    from app.models.transaction import Transaction
+    from app.worker import run_cfo_analysis
+
     client, tmp_path = ortam
-    await _held_then_approved(client, tmp_path, "bozuk@example.com", "bozuk_veri.csv")
+    headers, org_id, _ = await kullanici(client, "bozuk@example.com")
+    job_id = await _job(client, tmp_path, org_id, "bozuk_veri.csv")
+    out = await run_cfo_analysis({}, job_id)
+    assert out.get("ok") is True, out
+    async with client._maker() as db:
+        assert (await db.get(AnalysisJob, job_id)).status == "awaiting_review"
+        assert (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).first() is None
+    rows = (await client.get(f"/api/v1/held-rows?job_id={job_id}", headers=headers)).json()["data"]["rows"]
+    assert len(rows) == 4 and all("tarih okunamadı" in r["reason_labels"] for r in rows)

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { OneTapQueue, type OneTapDecision } from "@/components/approvals/OneTapQueue";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
@@ -152,6 +153,7 @@ export default function OnayPage() {
           ) : undefined
         }
       />
+      <HeldRowsLink />
 
       {failed && <p role="alert" className="text-sm text-destructive">{copy.failed}</p>}
       {actionFailed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}

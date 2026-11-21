@@ -3,10 +3,14 @@
 import { useEffect, useState } from "react";
 import { getPendingActions, approveAction, rejectAction, PendingAction } from "@/lib/api/actions";
 import { Check, X, Zap, AlertCircle } from "lucide-react";
+import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
+import { isForbidden } from "@/lib/forbidden";
 
 export function ActionCenter() {
   const { t } = useI18n();
+  const can = useCan("decide");
+  const refused = (err: Error) => err.message || t.roleGate.forbidden;
   const [notice, setNotice] = useState<string | null>(null);
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +43,7 @@ export function ActionCenter() {
     } catch (err: any) {
       // 501: no connector exists for this action; nothing ran, so it stays in the list.
       if (err?.status === 501) setNotice(t.onay.actionNotConnected);
+      else if (isForbidden(err)) setNotice(refused(err));
       else alert(`Onay başarısız: ${err.message}`);
     } finally {
       setProcessingId(null);
@@ -51,7 +56,8 @@ export function ActionCenter() {
       await rejectAction(id);
       setActions((prev) => prev.filter((a) => a.id !== id));
     } catch (err: any) {
-      alert(`Red başarısız: ${err.message}`);
+      if (isForbidden(err)) setNotice(refused(err));
+      else alert(`Red başarısız: ${err.message}`);
     } finally {
       setProcessingId(null);
     }
@@ -108,9 +114,11 @@ export function ActionCenter() {
 
             <div className="flex items-center space-x-3 mt-auto">
               <button
-                onClick={() => handleApprove(action.id)}
+                onClick={can.allowed ? () => handleApprove(action.id) : undefined}
                 disabled={processingId === action.id}
-                className="flex-1 inline-flex justify-center items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:opacity-50"
+                aria-disabled={can.allowed ? undefined : true}
+                title={can.reason ?? undefined}
+                className="flex-1 inline-flex justify-center items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               >
                 {processingId === action.id ? "İşleniyor..." : (
                   <>
@@ -120,9 +128,12 @@ export function ActionCenter() {
                 )}
               </button>
               <button
-                onClick={() => handleReject(action.id)}
+                onClick={can.allowed ? () => handleReject(action.id) : undefined}
                 disabled={processingId === action.id}
-                className="flex-none inline-flex items-center rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-secondary-foreground shadow-sm hover:bg-secondary/80 disabled:opacity-50"
+                aria-disabled={can.allowed ? undefined : true}
+                title={can.reason ?? undefined}
+                aria-label="Reddet"
+                className="flex-none inline-flex items-center rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-secondary-foreground shadow-sm hover:bg-secondary/80 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>

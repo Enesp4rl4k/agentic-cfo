@@ -29,7 +29,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.analysis_job import AnalysisJob, JobStatus
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
+from app.services.ledger_documents import (
+    DOCUMENT,
+    POSSIBLE_DUPLICATE,
+    load_aliases,
+    source_transaction,
+)
 from app.services.payment_plan import effective_dates
 from app.services.reconciliation import payment_behaviour
 
@@ -95,6 +102,37 @@ def _split(items: list[RadarItem]) -> BasisSplit:
 
 
 @dataclass(frozen=True)
+class HeldWeek:
+    week: int
+    payable_cents: int
+    receivable_cents: int
+
+
+@dataclass(frozen=True)
+class HeldDocuments:
+    """Documents waiting for a person's answer (possible duplicates): not in the radar, and said so.
+
+    A held row opens no open item, so the radar cannot see it; without this entry an unresolved queue
+    quietly under-counts outflows. Placed as the item would be if kept: on its due date (basis
+    `known`), an overdue payable in week 1 (`assumed`, as the radar places it), no date in `undated_*`.
+    Foreign currency is counted, never converted.
+    """
+
+    count: int
+    payable_cents: int
+    receivable_cents: int
+    weeks: list[HeldWeek]
+    payable_basis: BasisSplit
+    week1_payable_cents: int
+    undated_payable_cents: int
+    undated_receivable_cents: int
+    beyond_horizon_payable_cents: int
+    other_currency_count: int
+    other_currency_payable_count: int
+    review_path: str = "/onay"  # the screen where a person answers (frontend route)
+
+
+@dataclass(frozen=True)
 class OpeningCash:
     """The balance the radar starts from, and how old it is."""
 
@@ -150,6 +188,7 @@ class CashRadar:
     recurring_payables_cents: int = 0
     tax_obligations_cents: int = 0
     opening_cash: OpeningCash | None = None
+    held_documents: HeldDocuments | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -411,6 +450,15 @@ async def compute_cash_radar(
         not_included.append("Vergi ve SGK yükümlülükleri")
     if not has_cheques:
         not_included.append("Çek ve senetler")
+    from app.services.held_rows import pending_count
+
+    waiting = await pending_count(db, org_id)
+    if waiting:
+        # Extracted rows a person has not yet accepted: not in any figure here.
+        not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
+    held = await _held_documents(db, org_id, anchor, ranges)
+    if held is not None:
+        not_included.append(_held_line(held))
 
     weeks: list[RadarWeek] = []
     running = balance["balance_cents"] if balance else 0
@@ -476,4 +524,70 @@ async def compute_cash_radar(
         recurring_payables_cents=total_recurring_cents,
         tax_obligations_cents=total_tax_cents,
         opening_cash=_opening_cash(balance, anchor),
+        held_documents=held,
+    )
+
+
+def _held_line(held: HeldDocuments) -> str:
+    """The `not_included` line: what waits, in lira, and that a person must answer."""
+    parts = []
+    if held.payable_cents:
+        parts.append(f"{_fmt(held.payable_cents)} ödeme")
+    if held.receivable_cents:
+        parts.append(f"{_fmt(held.receivable_cents)} tahsilat")
+    if held.other_currency_count:
+        parts.append(f"{held.other_currency_count} döviz belgesi (tutar çevrilmedi)")
+    return f"Karar bekleyen {held.count} belge ({', '.join(parts)}): mükerrer olabilir, siz karar verene kadar radarda yok"
+
+
+async def _held_documents(
+    db: AsyncSession, org_id: str, anchor: date, ranges: list[tuple[date, date]]
+) -> HeldDocuments | None:
+    """Held invoices, by the week they would fall in if kept; None when nothing is held."""
+    rows = (await db.execute(
+        select(CanonicalTransaction).where(
+            CanonicalTransaction.org_id == org_id,
+            CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE,
+            CanonicalTransaction.basis == DOCUMENT,
+            CanonicalTransaction.amount_cents > 0,
+            money_rows(),
+        )
+    )).scalars().all()
+    rows = [r for r in rows if r.source_record_id.startswith(("doc:", "inv:"))]
+    if not rows:
+        return None
+    aliases, cache = await load_aliases(db, org_id), {}
+    horizon_end = ranges[-1][1]
+    weeks: dict[int, list[int]] = {}
+    known = assumed = week1 = undated_pay = undated_rec = beyond = foreign = foreign_pay = pay = rec = 0
+    for row in rows:
+        payable = row.direction != "income"
+        if row.currency != "TRY":
+            foreign += 1
+            foreign_pay += int(payable)
+            continue
+        pay, rec = pay + (row.amount_cents if payable else 0), rec + (0 if payable else row.amount_cents)
+        tx = await source_transaction(db, row, aliases, cache)
+        due = tx.due_date if tx else None
+        if due is None:
+            undated_pay += row.amount_cents if payable else 0
+            undated_rec += 0 if payable else row.amount_cents
+        elif due > horizon_end:
+            beyond += row.amount_cents if payable else 0
+        else:
+            overdue = due < anchor
+            index = 0 if overdue else (due - anchor).days // 7
+            slot = weeks.setdefault(index, [0, 0])
+            slot[0 if payable else 1] += row.amount_cents
+            if payable and overdue:
+                assumed += row.amount_cents
+            elif payable:
+                known += row.amount_cents
+            week1 += row.amount_cents if payable and index == 0 else 0
+    return HeldDocuments(
+        count=len(rows), payable_cents=pay, receivable_cents=rec,
+        weeks=[HeldWeek(week=i + 1, payable_cents=v[0], receivable_cents=v[1]) for i, v in sorted(weeks.items())],
+        payable_basis=BasisSplit(known_cents=known, estimated_cents=0, assumed_cents=assumed),
+        week1_payable_cents=week1, undated_payable_cents=undated_pay, undated_receivable_cents=undated_rec,
+        beyond_horizon_payable_cents=beyond, other_currency_count=foreign, other_currency_payable_count=foreign_pay,
     )

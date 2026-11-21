@@ -228,9 +228,12 @@ async def get_analysis_status(
             "status": job.status,
             "filename": job.filename,
             "awaiting_review": job.awaiting_review,
-            "min_confidence": float(job.min_confidence) if job.min_confidence else None,
+            "min_confidence": float(job.min_confidence) if job.min_confidence is not None else None,
             # What this upload added to the company ledger; None until it finished.
             "ledger": (job.result_metadata or {}).get("ledger"),
+            # "N kayıt işlendi, M kayıt incelemenizi bekliyor", the rows without a
+            # readable date, the rows whose currency was assumed.
+            "ingest": (job.result_metadata or {}).get("ingest"),
             "company_view": (job.result_metadata or {}).get("company_view"),
             "logs": job.logs or [],
             "error": job.error_message,
@@ -411,12 +414,14 @@ async def list_transactions(
                     "job_id": tx.job_id,
                     "amount_cents": tx.amount_kurus,
                     "currency": tx.currency,
+                    # True: the document did not say, the organisation's base currency was assumed.
+                    "currency_assumed": bool(tx.currency_assumed),
                     "type": tx.type,
                     "category": tx.category,
                     "description": tx.description,
                     "vendor": tx.vendor,
                     "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-                    "confidence": float(tx.confidence) if tx.confidence else None,
+                    "confidence": float(tx.confidence) if tx.confidence is not None else None,
                     # "user_rule" / "user_edit" / None — the user's own
                     # correction decided the category (plan v5 §F0).
                     "category_source": tx.category_source,

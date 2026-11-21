@@ -13,6 +13,7 @@ export type OrgSettings = {
   country_code?: string;
   regional_packs?: string[];
   focus_mode?: boolean;
+  size_profile?: "micro" | "small" | "medium" | null;
 };
 
 export const ORG_SETTINGS_KEY = ["org-settings"] as const;
@@ -70,6 +71,7 @@ export function useOrgSettings() {
     refresh,
     hasTrPack: Boolean(org?.regional_packs?.includes("tr")),
     focusMode: Boolean(org?.focus_mode),
+    sizeProfile: org?.size_profile ?? null,
     baseCurrency: org?.base_currency || "USD",
     locale: org?.locale || "en-US",
   };

@@ -18,6 +18,7 @@ export const orgSettingsModule = {
     refresh: () => {},
     hasTrPack: true,
     focusMode: false,
+    sizeProfile: null,
     baseCurrency: "TRY",
     locale: "tr-TR",
   }),
@@ -126,3 +127,52 @@ export const membershipsFor = (role: string) => ({
   active_org_id: "org1",
   memberships: [{ org_id: "org1", name: "Test Org", role, active: true }],
 });
+
+/**
+ * The held-rows API (rows the system would not book alone) as spies:
+ *
+ *   vi.mock("@/lib/api/heldRows", async () => (await import("./dashboard-mocks")).heldRowsModule);
+ *   import { heldRowsSpies } from "./dashboard-mocks";
+ */
+export const heldRowsSpies = {
+  listHeldRows: vi.fn().mockResolvedValue([]),
+  releaseHeldRows: vi.fn().mockResolvedValue(undefined),
+  rejectHeldRows: vi.fn().mockResolvedValue(undefined),
+  getBaseCurrency: vi.fn().mockResolvedValue({ currency: null, confirmed: false, waiting_for_currency: 0 }),
+  confirmBaseCurrency: vi.fn().mockResolvedValue(undefined),
+};
+
+export const heldRowsModule = {
+  listHeldRows: (...a: unknown[]) => heldRowsSpies.listHeldRows(...a),
+  releaseHeldRows: (...a: unknown[]) => heldRowsSpies.releaseHeldRows(...a),
+  rejectHeldRows: (...a: unknown[]) => heldRowsSpies.rejectHeldRows(...a),
+  getBaseCurrency: (...a: unknown[]) => heldRowsSpies.getBaseCurrency(...a),
+  confirmBaseCurrency: (...a: unknown[]) => heldRowsSpies.confirmBaseCurrency(...a),
+};
+
+/** A row held because its confidence is unknown, and one held because it has no currency, both from one upload. */
+export const heldRowFixture = {
+  id: "h1",
+  job_id: "j1",
+  source: { job_id: "j1", filename: "mart.csv", document_id: null },
+  reasons: ["confidence_unknown"],
+  reason_labels: ["güven bilinmiyor"],
+  confidence: null,
+  amount_cents: 150_000,
+  currency: "TRY",
+  type: "expense",
+  description: "Elektrik faturası",
+  vendor: null,
+  transaction_date: "2026-03-15",
+  document_id: null,
+};
+
+export const heldNoCurrencyFixture = {
+  ...heldRowFixture,
+  id: "h2",
+  reasons: ["currency_unknown"],
+  reason_labels: ["para birimi bilinmiyor"],
+  confidence: 0.95,
+  currency: null,
+  description: "Kira",
+};

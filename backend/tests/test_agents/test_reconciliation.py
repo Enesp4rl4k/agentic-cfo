@@ -91,3 +91,42 @@ async def test_node_patches_halt_and_log():
     assert out["reconciliation"]["action"] == "halt"
     assert out["logs"][-1].step == "reconciliation"
     assert out["logs"][-1].ok is False
+
+
+# ── a row corrected to a balance-sheet category is not revenue, and the check knows it ──────
+
+
+def _with_transfer(category: str = "transfer", type_: str = "income") -> tuple[dict, list[dict]]:
+    """The P&L the real `_compute_pnl` makes of the transactions, and those transactions."""
+    from app.agents.pnl_agent import _compute_pnl
+
+    txs = [*_txns(), {"type": type_, "amount_cents": 77_000, "category": category}]
+    return _compute_pnl(txs), txs
+
+
+def test_an_income_row_corrected_to_transfer_does_not_halt_the_pipeline():
+    pnl, txs = _with_transfer()
+    assert pnl["revenue"] == 100_000  # the P&L already leaves the transfer out
+    v = reconcile_cfo_state({"pnl": pnl, "transactions": txs})  # type: ignore[arg-type]
+    assert v.identity_failures == []
+    assert v.action != "halt"
+
+
+def test_an_income_row_corrected_to_tax_payment_does_not_halt_either():
+    pnl, txs = _with_transfer("tax_payment")
+    assert reconcile_cfo_state({"pnl": pnl, "transactions": txs}).action != "halt"  # type: ignore[arg-type]
+
+
+def test_a_transfer_that_is_revenue_in_the_pnl_still_halts():
+    """The invariant still bites: revenue that includes a transfer is the inconsistency."""
+    pnl, txs = _with_transfer()
+    pnl = {**pnl, "revenue": pnl["revenue"] + 77_000, "gross_profit": pnl["gross_profit"] + 77_000}
+    v = reconcile_cfo_state({"pnl": pnl, "transactions": txs})  # type: ignore[arg-type]
+    assert v.action == "halt"
+    assert any("revenue" in f for f in v.identity_failures)
+
+
+def test_a_transfer_expense_is_not_reported_as_lost_from_net_income():
+    pnl, txs = _with_transfer(type_="expense")
+    v = reconcile_cfo_state({"pnl": pnl, "transactions": txs})  # type: ignore[arg-type]
+    assert not any("outside all P&L categories" in n for n in v.notes)

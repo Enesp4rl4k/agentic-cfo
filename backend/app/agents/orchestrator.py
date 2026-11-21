@@ -144,7 +144,8 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
         patch["awaiting_review"] = True
     # Below the auto-proceed bar the run is held for a person — but still
     # analysed, so the person reviews numbers, not a blank (plan v7 §P0).
-    if float(patch.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN:
+    # (a measured 0.0 is the lowest confidence there is, not "unset")
+    if float(patch.get("min_confidence", 1.0)) < CONFIDENCE_AUTO_PROCEED_MIN:
         patch["awaiting_review"] = True
 
     # After ingestion, build routing plan for downstream agents
@@ -560,7 +561,7 @@ async def run_cfo_pipeline(
                     "min_confidence": result.get("min_confidence"),
                 },
                 narrative=(pnl.get("narrative") or "")[:300],
-                confidence=result.get("min_confidence") or 1.0,
+                confidence=1.0 if result.get("min_confidence") is None else result["min_confidence"],
                 tags=["pipeline", file_type],
             )
             _memory.save(episode)

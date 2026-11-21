@@ -44,6 +44,7 @@ export type MessageTree = {
     settleNo: string;
     keep: string;
     exclude: string;
+    actionError: string;
   };
   cashRadar: {
     title: string;
@@ -186,6 +187,7 @@ export type MessageTree = {
     moved: string;
     dragHint: string;
     toRoute: string;
+    byPlan: string;
     failed: string;
     send: string;
     apply: string;
@@ -249,6 +251,7 @@ export type MessageTree = {
       tools: string;
       portal: string;
     };
+    more: string;
     items: {
       takvim: string;
       onay: string;
@@ -517,6 +520,19 @@ export type MessageTree = {
     confirm: string;
     loadError: string;
     closeError: string;
+  };
+  roleGate: {
+    needContribute: string;
+    needWrite: string;
+    needDecide: string;
+    forbidden: string;
+    accountantAct: Record<"accountant" | "ownBooks" | "accountantExists" | "noRole", string>;
+    closePeriod: {
+      accountant: string;
+      ownBooks: string;
+      accountantExists: string;
+      noRole: string;
+    };
   };
   smmmCalendar: {
     title: string;
@@ -2156,6 +2172,29 @@ export type MessageTree = {
       unbalanced: string;
     };
   };
+  sizeProfile: {
+    title: string;
+    reason: string;
+    safety: string;
+    skip: string;
+    next: string;
+    questions: { outflow: string; headcount: string; inhouse: string };
+    yes: string;
+    no: string;
+    profiles: { micro: string; small: string; medium: string };
+    suggestion: {
+      title: string;
+      byVolume: string;
+      byHeadcount: string;
+      disagreement: string;
+      other: string;
+      confirm: string;
+    };
+    summary: { current: string; edit: string };
+    menu: { simplified: string; undo: string; restored: string };
+    saved: string;
+    error: string;
+  };
   baslangic: {
     title: string;
     subtitle: string;
@@ -2586,6 +2625,38 @@ export type MessageTree = {
     close: { title: string; note: string; cta: string; demo: string };
     footer: { sample: string; carpe: string; carpeSub: string };
   };
+  heldRows: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    failed: string;
+    actionFailed: string;
+    linkWaiting: string;
+    linkJob: string;
+    from: string;
+    release: string;
+    correct: string;
+    reject: string;
+    save: string;
+    cancel: string;
+    releaseGroup: string;
+    blocked: string;
+    direction: string;
+    income: string;
+    expense: string;
+    currency: string;
+    date: string;
+    amount: string;
+    unknownAmount: string;
+    unknownDate: string;
+    unknownDirection: string;
+    unknownCurrency: string;
+    currencyTitle: string;
+    currencyBody: string;
+    currencyConfirm: string;
+    currencyConfirmed: string;
+    reasons: Record<string, string>;
+  };
 };
 
 export const en: MessageTree = {
@@ -2632,6 +2703,7 @@ export const en: MessageTree = {
     settleNo: "No, separate money",
     keep: "Separate payment",
     exclude: "Same payment",
+    actionError: "The action could not be completed.",
   },
   cashRadar: {
     title: "Cash radar",
@@ -2774,6 +2846,7 @@ export const en: MessageTree = {
     moved: "{n} payments moved",
     dragHint: "Drag a payment to another week, or shift it one week with the buttons.",
     toRoute: "Back to the cash route",
+    byPlan: "per approved plan",
     failed: "The payment calendar could not be read.",
     send: "Send for approval",
     apply: "Change the plan",
@@ -2842,6 +2915,7 @@ export const en: MessageTree = {
       tools: "Tools",
       portal: "Portal",
     },
+    more: "More",
     items: {
       takvim: "Payment calendar",
       onay: "Awaiting approval",
@@ -3111,6 +3185,24 @@ export const en: MessageTree = {
     confirm: "Close {donem}? Its ledger will not change after this; late items go to the first open month.",
     loadError: "Closed months could not be loaded.",
     closeError: "The month could not be closed.",
+  },
+  roleGate: {
+    needContribute: "Viewers can't do this; an analyst role or above is needed",
+    needWrite: "This needs editing rights (viewer and analyst are read-only)",
+    needDecide: "This needs administrator rights",
+    forbidden: "Your role is not allowed to do this.",
+    accountantAct: {
+      accountant: "",
+      ownBooks: "",
+      accountantExists: "Your accountant does this",
+      noRole: "This is the accountant's to do (or, with no accountant, the owner's, admin's or CFO's)",
+    },
+    closePeriod: {
+      accountant: "You are this company's accountant: closing the month is yours.",
+      ownBooks: "This company has no accountant on Tiphys, so the owner, admin or CFO closes the month.",
+      accountantExists: "Your accountant closes the month",
+      noRole: "Closing the month is the accountant's (or, with no accountant, the owner's, admin's or CFO's)",
+    },
   },
   smmmCalendar: {
     title: "Upcoming deadlines",
@@ -4882,6 +4974,37 @@ export const en: MessageTree = {
       unbalanced: "Unbalanced",
     },
   },
+  sizeProfile: {
+    title: "Your company's size",
+    reason: "Why we ask: to simplify the screens and approval steps for your company.",
+    safety: "This only changes the menu; it never touches your access or approval rights.",
+    skip: "Not now",
+    next: "Continue",
+    questions: {
+      outflow: "Roughly how much do you pay out each month?",
+      headcount: "How many people work at the company?",
+      inhouse: "Is someone in charge of bookkeeping / finance?",
+    },
+    yes: "Yes",
+    no: "No",
+    profiles: { micro: "Micro business", small: "Small business", medium: "Mid-size business" },
+    suggestion: {
+      title: "Our suggestion: {profile}",
+      byVolume: "This suggestion is based on your monthly payments.",
+      byHeadcount: "This suggestion is based on your headcount.",
+      disagreement: "Your headcount points to a different profile; your monthly payments decided.",
+      other: "Choose a different profile",
+      confirm: "Confirm",
+    },
+    summary: { current: "Company size: {profile}", edit: "Change answers" },
+    menu: {
+      simplified: "We simplified the menu; every screen is under 'More'",
+      undo: "Undo",
+      restored: "The full menu is back.",
+    },
+    saved: "Your answers were saved.",
+    error: "Could not save. Please try again.",
+  },
   baslangic: {
     title: "Getting started",
     subtitle:
@@ -5428,5 +5551,45 @@ export const en: MessageTree = {
       demo: "Try the demo",
     },
     footer: { sample: "Figures on screen are samples", carpe: "Carpe diem.", carpeSub: "SEIZE THE DAY" },
+  },
+  heldRows: {
+    title: "Rows waiting for your review",
+    subtitle: "The system does not write a row it is unsure of into your books, and does not guess. These rows are in no total; they wait for your decision.",
+    empty: "No rows are waiting for review.",
+    failed: "Waiting rows could not be read.",
+    actionFailed: "Your decision could not be saved. Try again.",
+    linkWaiting: "{count} rows are waiting for your review",
+    linkJob: "{count} rows from this upload are waiting for your review",
+    from: "Source document",
+    release: "Accept as is",
+    correct: "Correct and accept",
+    reject: "Reject",
+    save: "Correct and accept",
+    cancel: "Cancel",
+    releaseGroup: "Accept the whole group",
+    blocked: "Correct the missing information first.",
+    direction: "Direction",
+    income: "Income",
+    expense: "Expense",
+    currency: "Currency",
+    date: "Date",
+    amount: "Amount (minor units)",
+    unknownAmount: "no amount",
+    unknownDate: "no date",
+    unknownDirection: "no direction",
+    unknownCurrency: "no currency",
+    currencyTitle: "What is your company's currency?",
+    currencyBody: "Some documents do not state a currency. If you confirm the company currency, only the rows waiting for that reason are released, marked as assumed.",
+    currencyConfirm: "Confirm",
+    currencyConfirmed: "Currency confirmed; waiting rows were released.",
+    reasons: {
+      confidence_unknown: "confidence unknown",
+      confidence_low: "low confidence",
+      currency_unknown: "currency unknown",
+      direction_unknown: "direction unclear",
+      amount_unreadable: "amount unreadable",
+      date_unreadable: "date unreadable",
+      document_held_together: "another row of the same document is waiting",
+    },
   },
 };

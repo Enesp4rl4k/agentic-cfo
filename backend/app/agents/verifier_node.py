@@ -58,7 +58,8 @@ def evaluate_cfo_state(
         if cfg.auto_proceed_min_confidence is not None
         else CONFIDENCE_AUTO_PROCEED_MIN
     )
-    min_conf = float(state.get("min_confidence") or 1.0)
+    mc = state.get("min_confidence")
+    min_conf = 1.0 if mc is None else float(mc)  # 0.0 is a measured value, not unset
     if min_conf < effective_min:
         hard_reasons.append(f"min_confidence {min_conf:.2f} < {effective_min:.2f}")
 

@@ -16,6 +16,7 @@ from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.connector_connection import ConnectorConnection
+from app.models.counterparty_alias import CounterpartyAlias
 from app.models.data_source import (
     DOMAIN_SOURCE_KWARGS,
     DataSource,
@@ -29,6 +30,7 @@ from app.models.donem_kilidi import DonemKilidi
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
 from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
+from app.models.held_transaction import HeldTransaction
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
 from app.models.journal import JournalEntry, JournalLine
@@ -75,6 +77,7 @@ __all__ = [
     "CompanySemanticSnapshotRow",
     "ComplianceCertification",
     "ConnectorConnection",
+    "CounterpartyAlias",
     "DataSource",
     "DataSourceDomain",
     "DataSourceType",
@@ -86,6 +89,7 @@ __all__ = [
     "ERPSyncLog",
     "EmailIngestAddress",
     "EmailIngestMessage",
+    "HeldTransaction",
     "InAppNotification",
     "InstitutionalizationSnapshot",
     "JobStatus",
