@@ -6,8 +6,8 @@ tell money from reclassification without parsing ids. `category_overrides` remem
 person's correction of one row by its ledger identity, so a rerun does not undo it.
 One nullable column, one index, one new table; downgrade drops them.
 
-Revision ID: 062_ledger_correction_link
-Revises: 061_donem_kilitleri
+Revision ID: 063_ledger_correction_link
+Revises: 062_org_erasure
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "062_ledger_correction_link"
-down_revision = "061_donem_kilitleri"
+revision = "063_ledger_correction_link"
+down_revision = "062_org_erasure"
 branch_labels = None
 depends_on = None
 
