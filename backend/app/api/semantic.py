@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.access import require_writer
 from app.api.auth import get_current_user, require_role
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
+from app.services.decisions import record_decision
 from app.services.semantic.catalog import catalog_list, is_known_metric
 from app.services.semantic.rebuild import rebuild_semantic_snapshot
 from app.services.semantic.store import (
@@ -156,9 +158,19 @@ async def approve_my_brief(
 
     ctx = await get_company_context(org_id, db)
     period = resolve_period_key(period_key or ctx.reporting_period)
+    before = await get_semantic_snapshot(org_id, period.key, db)
+    was_waiting = bool(before and before.brief and before.brief.awaiting_review)
     snap = await approve_semantic_brief(org_id, period.key, db)
     if snap is None or snap.brief is None:
         raise HTTPException(status_code=404, detail="No decision brief to approve")
+    if was_waiting:
+        # The held brief released by a person: the same decision as releasing a held analysis.
+        await record_decision(
+            db, org_id=org_id, kind=DecisionKind.HELD_RUN_RELEASE, target_type="decision_brief",
+            target_id=period.key, outcome="approved", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+            before={"awaiting_review": True}, after={"awaiting_review": False},
+        )
+        await db.commit()
     return {
         "data": {
             "brief": snap.brief.to_dict(),

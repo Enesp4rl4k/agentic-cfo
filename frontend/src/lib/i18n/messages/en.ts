@@ -534,6 +534,7 @@ export type MessageTree = {
       accountantExists: string;
       noRole: string;
     };
+    needProposeAccountant: string;
   };
   smmmCalendar: {
     title: string;
@@ -2409,6 +2410,7 @@ export type MessageTree = {
       cfo: string;
       analyst: string;
       viewer: string;
+      smmm: string;
     };
     errors: {
       noWorkspace: string;
@@ -2496,6 +2498,9 @@ export type MessageTree = {
       placeholder: string;
       button: string;
       hint: string;
+      roleLabel: string;
+      sent: string;
+      notSent: string;
     };
     pendingInvites: {
       title: string;
@@ -2503,6 +2508,7 @@ export type MessageTree = {
       copyAria: string;
       cancelAria: string;
     };
+    roleDescriptions: Record<"owner" | "admin" | "cfo" | "smmm" | "analyst" | "viewer", string>;
   };
   tetikler: {
     title: string;
@@ -2676,6 +2682,34 @@ export type MessageTree = {
     currencyConfirmed: string;
     reasons: Record<string, string>;
   };
+  acceptInvite: {
+    title: string;
+    loading: string;
+    loadFailed: string;
+    invitedTo: string;
+    forAddress: string;
+    states: {
+      unknownTitle: string;
+      unknownBody: string;
+      expiredTitle: string;
+      expiredBody: string;
+      usedTitle: string;
+      usedBody: string;
+      signIn: string;
+    };
+    wrongAccount: { title: string; body: string; signOut: string };
+    existing: { lead: string };
+    created: { lead: string; fullName: string };
+    signedIn: { lead: string };
+    password: string;
+    passwordHint: string;
+    join: string;
+    joinCreate: string;
+    joining: string;
+    wrongPassword: string;
+    failed: string;
+    switching: string;
+  },
   heldAnalysis: {
     title: string;
     hint: string;
@@ -3288,6 +3322,7 @@ export const en: MessageTree = {
       accountantExists: "Your accountant closes the month",
       noRole: "Closing the month is the accountant's (or, with no accountant, the owner's, admin's or CFO's)",
     },
+    needProposeAccountant: "Changing a payment date is the company's commercial decision: the accountant advises, the company proposes and the owner decides.",
   },
   smmmCalendar: {
     title: "Upcoming deadlines",
@@ -5319,6 +5354,7 @@ export const en: MessageTree = {
       cfo: "CFO",
       analyst: "Analyst",
       viewer: "Viewer",
+      smmm: "Accountant",
     },
     errors: {
       noWorkspace: "You are not a member of a workspace yet.",
@@ -5405,13 +5441,24 @@ export const en: MessageTree = {
       title: "Invite member",
       placeholder: "user@company.com",
       button: "Send invite",
-      hint: "The invite link is automatically copied to your clipboard.",
+      hint: "The invitation is sent by e-mail and is valid for 7 days. The person opens the link to create their account or sign in.",
+      roleLabel: "Role",
+      sent: "Invitation sent to {email}.",
+      notSent: "The invitation was saved but the e-mail could not be sent; check the e-mail settings and send it again.",
     },
     pendingInvites: {
       title: "Pending invites ({count})",
       expiresAt: "{role} · until {date}",
       copyAria: "Copy link",
       cancelAria: "Cancel invite",
+    },
+    roleDescriptions: {
+      owner: "Manages everything: members, the authority matrix, payment-plan approvals and deleting the company.",
+      admin: "Manages members and settings; approves payment-plan changes and actions. Cannot appoint an owner or an admin.",
+      cfo: "Edits data and the ledger, runs analyses, proposes payment dates; does not approve or manage members.",
+      smmm: "The company's accountant: approves or corrects entries, closes the month, releases the briefing. Advises on payment dates, does not propose them.",
+      analyst: "Uploads data, runs analyses, proposes payment dates; does not change the ledger.",
+      viewer: "Only looks; changes nothing.",
     },
   },
   tetikler: {
@@ -5693,6 +5740,45 @@ export const en: MessageTree = {
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
     },
+  },
+  acceptInvite: {
+    title: "Join the invitation",
+    loading: "Checking the invitation…",
+    loadFailed: "The invitation could not be read. Check your link and try again.",
+    invitedTo: "You are invited to {org} as {role}.",
+    forAddress: "This invitation is for {email}.",
+    states: {
+      unknownTitle: "This invitation was not found",
+      unknownBody: "The link is incomplete or wrong, or the invitation was cancelled. Ask the person who invited you for a new one.",
+      expiredTitle: "This invitation has expired",
+      expiredBody: "Invitations last 7 days. Ask the person who invited you for a new one.",
+      usedTitle: "This invitation was already used",
+      usedBody: "Someone already joined with this link. Sign in with your account and switch to the company.",
+      signIn: "Sign in",
+    },
+    wrongAccount: {
+      title: "This invitation is for another account",
+      body: "You are signed in as {current}; the invitation is for {email}. Sign out and continue with that address's account.",
+      signOut: "Sign out and continue",
+    },
+    existing: {
+      lead: "You already have an account at this address. Enter its password to join; your existing companies stay as they are.",
+    },
+    created: {
+      lead: "There is no account at this address yet. Enter your name and a password and we will create it and add you to the company.",
+      fullName: "Full name",
+    },
+    signedIn: {
+      lead: "You are signed in as {email}. Confirm to join; your existing companies stay as they are.",
+    },
+    password: "Password",
+    passwordHint: "At least 8 characters",
+    join: "Join the company",
+    joinCreate: "Create account and join",
+    joining: "Joining…",
+    wrongPassword: "Wrong password. You must use the account of the invited address.",
+    failed: "Joining could not be completed.",
+    switching: "Switching to your company…",
   },
   heldAnalysis: {
     title: "{n} analyses await your approval",

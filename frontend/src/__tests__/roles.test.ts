@@ -8,9 +8,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
-import { ROLE_CLASSES, ROUTE_RULES, hasRoleClass } from "@/lib/roles";
+import { INVITER_MAY_GRANT, ROLE_CLASSES, ROUTE_RULES, hasRoleClass, invitableRoles } from "@/lib/roles";
 
-const ACCESS_PY = path.resolve(__dirname, "../../../backend/app/api/access.py");
+const BACKEND = path.resolve(__dirname, "../../../backend/app");
+const ACCESS_PY = path.resolve(BACKEND, "api/access.py");
 
 /** `NAME = frozenset({"a", "b"})` in access.py, as a sorted list. */
 function backendSet(name: string): string[] {
@@ -68,5 +69,50 @@ describe("route rules", () => {
     expect(allowed("/upload", "viewer")).toBe(false);
     expect(allowed("/settings/workspace", "cfo")).toBe(false);
     expect(allowed("/settings/workspace", "admin")).toBe(true);
+  });
+});
+
+/** The quoted words of the first `frozenset({...})` after `anchor` in a backend file, sorted. */
+function frozenWords(file: string, anchor: string): string[] {
+  const src = readFileSync(path.resolve(BACKEND, file), "utf-8");
+  const at = src.indexOf(anchor);
+  if (at < 0) throw new Error(`${anchor} not found in ${file}`);
+  const m = /frozenset\(\{([^}]*)\}\)/.exec(src.slice(at));
+  if (!m) throw new Error(`no frozenset after ${anchor} in ${file}`);
+  return [...m[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort();
+}
+
+describe("proposer mirrors the backend's PROPOSER_ROLES", () => {
+  it("is exactly payment_plan.PROPOSER_ROLES: the accountant advises and does not propose", () => {
+    expect([...ROLE_CLASSES.proposer].sort()).toEqual(frozenWords("services/payment_plan.py", "PROPOSER_ROLES ="));
+    expect(hasRoleClass("smmm", "proposer")).toBe(false);
+    expect(hasRoleClass("analyst", "proposer")).toBe(true);
+    expect(hasRoleClass("viewer", "proposer")).toBe(false);
+  });
+});
+
+describe("what an inviter may grant mirrors the backend", () => {
+  const userRoles = (): string[] => {
+    const src = readFileSync(path.resolve(BACKEND, "models/user.py"), "utf-8");
+    const body = /class UserRole\(StrEnum\):([\s\S]*?)\n\n/.exec(src)?.[1] ?? "";
+    return [...body.matchAll(/^\s+[A-Z]+\s*=\s*"([a-z]+)"/gm)].map((x) => x[1]).sort();
+  };
+
+  it("an owner may grant every role, an admin only the ones below admin", () => {
+    expect([...INVITER_MAY_GRANT.owner].sort()).toEqual(userRoles());
+    expect([...INVITER_MAY_GRANT.admin].sort()).toEqual(frozenWords("api/org.py", '"admin": frozenset'));
+  });
+
+  it("offers the accountant and the CFO, which the form used to leave out", () => {
+    expect(invitableRoles("admin")).toEqual(expect.arrayContaining(["cfo", "smmm", "analyst", "viewer"]));
+    expect(invitableRoles("admin")).not.toContain("admin");
+    expect(invitableRoles("admin")).not.toContain("owner");
+    expect(invitableRoles("owner")).toEqual(expect.arrayContaining(["owner", "admin", "cfo", "smmm", "analyst", "viewer"]));
+  });
+
+  it("offers nothing to anyone who may not invite", () => {
+    for (const role of ["cfo", "smmm", "analyst", "viewer", "editor", undefined, null]) {
+      expect(invitableRoles(role)).toEqual([]);
+    }
   });
 });

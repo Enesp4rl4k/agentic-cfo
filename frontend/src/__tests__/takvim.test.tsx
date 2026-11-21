@@ -10,6 +10,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useSession } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { openingCashFixture, planChangeSpies } from "./dashboard-mocks";
 import { clampWeek, payables, runScenario } from "@/components/calendar/scenario";
@@ -247,5 +248,42 @@ describe("Ödeme takvimi: from scenario to a proposal", () => {
     show();
     await moveAndSend(user, "Onaya gönder");
     expect(await screen.findByText("Bu ödeme için karar bekleyen bir öneri zaten var.")).toBeInTheDocument();
+  });
+});
+
+describe("Ödeme takvimi: the accountant advises, the company proposes", () => {
+  // Moving a payment is the company's commercial decision (docs/payment-plan-approval.md): the API refuses
+  // smmm (PROPOSER_ROLES), so the screen does not offer her a button that can only answer 403.
+  const asRole = (role: string) =>
+    vi.mocked(useSession).mockReturnValue({
+      data: { user: { id: "1", email: "m@x.com", role, orgId: "o1" }, accessToken: "tok" },
+      status: "authenticated",
+    } as unknown as ReturnType<typeof useSession>);
+
+  it("lets the accountant try dates, but the send button is inert and says why", async () => {
+    asRole("smmm");
+    getCashRadar.mockResolvedValue(radar());
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    const send = await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" });
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    expect(send).toHaveAttribute("title", expect.stringMatching(/mali müşavir tavsiye eder/));
+    await user.click(send);
+    expect(proposePlanChange).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/ticari kararıdır/).length).toBeGreaterThan(0);
+  });
+
+  it.each(["owner", "admin", "cfo", "analyst"])("offers a %s the send button", async (role) => {
+    asRole(role);
+    getCashRadar.mockResolvedValue(radar());
+    proposePlanChange.mockResolvedValue({ id: "c1" });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    const send = await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" });
+    expect(send).not.toHaveAttribute("aria-disabled");
+    await user.click(send);
+    expect(proposePlanChange).toHaveBeenCalledTimes(1);
   });
 });
