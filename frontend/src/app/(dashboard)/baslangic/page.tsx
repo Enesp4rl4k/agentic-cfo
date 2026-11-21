@@ -27,6 +27,7 @@ import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/useI18n";
+import { SizeProfileCard } from "@/components/org/SizeProfileCard";
 
 type AdimDurumu = "tamam" | "sirada" | "bekliyor";
 
@@ -95,6 +96,7 @@ export default function BaslangicPage() {
 
       {suruyor && <Hesaplaniyor />}
       {durum === null ? <Yukleniyor /> : <Adimlar durum={durum} yenile={yukle} radar={radar} />}
+      {durum?.firma.var && <SizeProfileCard />}
     </div>
   );
 }

@@ -251,6 +251,7 @@ export type MessageTree = {
       tools: string;
       portal: string;
     };
+    more: string;
     items: {
       takvim: string;
       onay: string;
@@ -2171,6 +2172,29 @@ export type MessageTree = {
       unbalanced: string;
     };
   };
+  sizeProfile: {
+    title: string;
+    reason: string;
+    safety: string;
+    skip: string;
+    next: string;
+    questions: { outflow: string; headcount: string; inhouse: string };
+    yes: string;
+    no: string;
+    profiles: { micro: string; small: string; medium: string };
+    suggestion: {
+      title: string;
+      byVolume: string;
+      byHeadcount: string;
+      disagreement: string;
+      other: string;
+      confirm: string;
+    };
+    summary: { current: string; edit: string };
+    menu: { simplified: string; undo: string; restored: string };
+    saved: string;
+    error: string;
+  };
   baslangic: {
     title: string;
     subtitle: string;
@@ -2859,6 +2883,7 @@ export const en: MessageTree = {
       tools: "Tools",
       portal: "Portal",
     },
+    more: "More",
     items: {
       takvim: "Payment calendar",
       onay: "Awaiting approval",
@@ -4916,6 +4941,37 @@ export const en: MessageTree = {
       balanced: "Balanced",
       unbalanced: "Unbalanced",
     },
+  },
+  sizeProfile: {
+    title: "Your company's size",
+    reason: "Why we ask: to simplify the screens and approval steps for your company.",
+    safety: "This only changes the menu; it never touches your access or approval rights.",
+    skip: "Not now",
+    next: "Continue",
+    questions: {
+      outflow: "Roughly how much do you pay out each month?",
+      headcount: "How many people work at the company?",
+      inhouse: "Is someone in charge of bookkeeping / finance?",
+    },
+    yes: "Yes",
+    no: "No",
+    profiles: { micro: "Micro business", small: "Small business", medium: "Mid-size business" },
+    suggestion: {
+      title: "Our suggestion: {profile}",
+      byVolume: "This suggestion is based on your monthly payments.",
+      byHeadcount: "This suggestion is based on your headcount.",
+      disagreement: "Your headcount points to a different profile; your monthly payments decided.",
+      other: "Choose a different profile",
+      confirm: "Confirm",
+    },
+    summary: { current: "Company size: {profile}", edit: "Change answers" },
+    menu: {
+      simplified: "We simplified the menu; every screen is under 'More'",
+      undo: "Undo",
+      restored: "The full menu is back.",
+    },
+    saved: "Your answers were saved.",
+    error: "Could not save. Please try again.",
   },
   baslangic: {
     title: "Getting started",
