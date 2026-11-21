@@ -230,6 +230,7 @@ export type MessageTree = {
     planWithdraw: string;
     planReason: string;
     planWaiting: string;
+    actionNotConnected: string;
   };
   ooda: {
     label: string;
@@ -2812,6 +2813,7 @@ export const en: MessageTree = {
     planWithdraw: "Withdraw",
     planReason: "Reason (optional)",
     planWaiting: "Awaiting a decision: an owner or an admin can approve.",
+    actionNotConnected: "This action is not connected yet — nothing was done.",
   },
   ooda: {
     label: "Weekly loop",

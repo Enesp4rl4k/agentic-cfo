@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.alert_rule import AlertHistory
 from app.models.analysis_job import AnalysisJob
+from app.models.outbox_message import OutboxMessage
 from app.models.report import Report, ReportFormat, ReportType
 from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
 from app.services.triggers import (
@@ -270,7 +271,7 @@ async def test_unregistered_action_kind_reports_error(db, monkeypatch):
 # ── P4-2 actions ──────────────────────────────────────────────────────────────
 
 
-async def test_webhook_call_posts_to_url(db):
+async def test_webhook_call_is_queued_in_the_outbox_not_sent(db):
     await _mk_trigger(
         db, action_kind="webhook.call",
         action_params={"url": "https://dummy-webhook"},
@@ -280,9 +281,11 @@ async def test_webhook_call_posts_to_url(db):
         values={"finance.runway_months": 1.0}, payload={"message": "hi"},
     )
     assert outcomes[0].status == FIRED
-    # https://dummy… is treated as delivered without a real network call.
-    assert outcomes[0].action_result["delivered"] is True
-    assert outcomes[0].action_result["status_code"] == 200
+    result = outcomes[0].action_result
+    # The run says what it knows: queued. It does not claim a delivery it did not see.
+    assert result["queued"] is True and "delivered" not in result
+    row = (await db.execute(select(OutboxMessage))).scalar_one()
+    assert (row.channel, row.status, row.id) == ("webhook", "pending", result["outbox_id"])
 
 
 async def test_webhook_call_requires_url(db):

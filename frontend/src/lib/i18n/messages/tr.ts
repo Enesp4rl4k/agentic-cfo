@@ -231,6 +231,7 @@ export const tr: MessageTree = {
     planWithdraw: "Geri çek",
     planReason: "Gerekçe (isteğe bağlı)",
     planWaiting: "Karar bekliyor: sahip ya da yönetici onaylayabilir.",
+    actionNotConnected: "Bu işlem henüz bağlı değil — hiçbir şey yapılmadı.",
   },
   ooda: {
     label: "Haftalık döngü",
