@@ -152,6 +152,7 @@ def _org_dict(org: Organization) -> dict[str, Any]:
         "locale":               getattr(org, "locale", None) or "en-US",
         "regional_packs":       normalize_packs(getattr(org, "regional_packs", None)),
         "focus_mode":           bool(org.focus_mode),
+        "size_profile":         org.size_profile,
         "plan":                 org.plan,
         "max_members":          org.max_members,
         "max_jobs_per_month":   org.max_jobs_per_month,
@@ -303,6 +304,7 @@ async def update_org(
         org.regional_packs = normalize_packs(body.regional_packs)
     if body.focus_mode is not None:
         org.focus_mode = body.focus_mode
+        org.focus_mode_explicit = True  # a person chose; a size profile never overrides it
     if body.vkn is not None:
         from app.services.org_identity import normalize, vkn_gecerli
 

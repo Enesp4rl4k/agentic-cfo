@@ -28,6 +28,7 @@ import {
 } from "@/hooks/useNotifications";
 import { rebuildSemantic } from "@/lib/api/semantic";
 import { useI18n } from "@/hooks/useI18n";
+import { SizeProfileCard } from "@/components/org/SizeProfileCard";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import type { MessageTree } from "@/lib/i18n";
@@ -374,7 +375,8 @@ function LocaleSettingsPanel({
           base_currency: currency,
           country_code: country,
           regional_packs: packs,
-          focus_mode: focus,
+          // Only a changed switch is a choice; sending it on every save would pin the menu against a size profile.
+          ...(focus === Boolean(org.focus_mode) ? {} : { focus_mode: focus }),
         }),
       });
       const data = await res.json();
@@ -747,6 +749,8 @@ export default function WorkspaceSettingsPage() {
           </div>
         </div>
       )}
+
+      {org && loaded && !error && isAdmin && <SizeProfileCard />}
 
       {org && loaded && !error && (
         <LocaleSettingsPanel

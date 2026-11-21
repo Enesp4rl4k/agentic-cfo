@@ -44,6 +44,8 @@ class DecisionKind(StrEnum):
     AUTOMATION_RULE_CHANGE = "automation_rule_change"
     # What the owner says they did. A statement, not a proof: see `outcome`.
     OWNER_STATEMENT = "owner_statement"
+    # A person's company-size answers and the size profile they confirmed.
+    SIZE_PROFILE = "size_profile"
 
 
 class DecidedVia(StrEnum):
