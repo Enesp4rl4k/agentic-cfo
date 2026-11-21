@@ -14,13 +14,23 @@ from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.api.ledger_schema import LedgerSummaryOut
 from app.api.radar_schema import CashRadarOut
+from app.core.invoice_identity import key_number
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.user import User
 from app.services.cash_radar import compute_cash_radar
-from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, Period, ledger_summary
+from app.services.duplicate_resolution import settle_resolution
+from app.services.ledger import (
+    ACTIVE,
+    EXCLUDED,
+    POSSIBLE_DUPLICATE,
+    Period,
+    ledger_summary,
+    load_aliases,
+    source_transaction,
+)
 from app.services.reconciliation import (
     BY_SUM,
     CONFIRMED,
@@ -93,11 +103,31 @@ async def get_possible_duplicates(
         .where(CanonicalTransaction.org_id == org_id, CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE)
         .order_by(CanonicalTransaction.transaction_date)
     )).scalars().all()
+    aliases = await load_aliases(db, org_id)
     data = []
     for row in rows:
         match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
-        data.append({**_row(row), "matches": [_row(match)] if match and match.org_id == org_id else []})
+        match = match if match and match.org_id == org_id else None
+        data.append({
+            **await _with_counterparty(db, row, aliases),
+            "reason": _reason(row, match),
+            "matches": [await _with_counterparty(db, match, aliases)] if match else [],
+        })
     return {"data": data, "error": None}
+
+
+async def _with_counterparty(db: AsyncSession, row: CanonicalTransaction, aliases: dict[str, str]) -> dict[str, Any]:
+    """The row, and the counterparty its upload wrote (the ledger row keeps only the vendor)."""
+    tx = await source_transaction(db, row, aliases)
+    return {**_row(row), "counterparty": tx.counterparty if tx else None}
+
+
+def _reason(row: CanonicalTransaction, match: CanonicalTransaction | None) -> str:
+    """Why the row is held, in words the screen can show."""
+    number = key_number(row.source_record_id)
+    if match is not None and number and number == key_number(match.source_record_id):
+        return "same_number_may_be_a_different_document"  # "aynı numara, farklı belge olabilir"
+    return "same_amount_close_in_time"
 
 
 @router.get("/ledger/open-items", responses={400: {"description": "The user has no organisation."}})
@@ -288,7 +318,10 @@ async def resolve_possible_duplicate(
 ) -> dict[str, Any]:
     """A person's call: it is separate money (keep), or the same money (exclude).
 
-    An excluded row stays on record; it just is not counted.
+    An excluded row stays on record; it just is not counted. The call is recorded as a decision,
+    opens (keep) or removes (exclude) the row's open item in the same transaction, and, when two
+    spellings of one supplier's invoice number are the same document, teaches the ledger that the
+    two names are one supplier (`services/duplicate_resolution.py`).
     """
     _org(user)
     row = await db.get(CanonicalTransaction, row_id)
@@ -302,8 +335,11 @@ async def resolve_possible_duplicate(
         .values(ledger_status=ACTIVE if body.action == "keep" else EXCLUDED)
         .execution_options(synchronize_session=False)
     )
-    await db.commit()
     if won.rowcount != 1:
+        await db.rollback()
         raise HTTPException(409, "Bu kayıt karar beklemiyor.")
+    await db.refresh(row)
+    effects = await settle_resolution(db, user=user, row=row, action=body.action)
+    await db.commit()
     _refresh_view(org_id)
-    return {"data": {"id": row_id, "action": body.action}, "error": None}
+    return {"data": {"id": row_id, "action": body.action, **effects}, "error": None}

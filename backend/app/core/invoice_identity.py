@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 
 # GİB (Gelir İdaresi Başkanlığı) 16-character e-Fatura / e-Arşiv pattern:
 # 3 alphanumeric characters (series) + 4-digit year + 9-digit sequence
@@ -101,7 +102,8 @@ def canonical_invoice_id(
 # GİB 16-character number names its document; "A-001" or "2024-01" only names it among one
 # issuer's invoices, so the ledger and the open-item index add the counterparty and the side
 # (sale or purchase) to such a number. Everything below is the one definition of that key;
-# migration 065 carries a frozen copy and a test keeps the two equal.
+# migration 065 imports it, so a change to the normalisation or the key format changes what a fresh
+# upgrade writes: it needs its own data migration, and `tests/test_invoice_key_golden.py` fails first.
 
 _UUID_ONLY = re.compile(UUID_PATTERN.pattern.replace(r"\b", "^", 1).replace(r"\b", "$", 1), re.IGNORECASE)
 _GIB_ONLY = re.compile(r"^[A-Za-z0-9]{3}20\d{2}\d{9}$")
@@ -116,6 +118,13 @@ _LEGAL_FORMS: tuple[tuple[str, ...], ...] = (
     ("komandit", "sirketi"), ("ltd", "sti"), ("a", "s"),
     ("as",), ("ltd",), ("sti",), ("limited",), ("sirketi",), ("anonim",),
 )
+
+_FORM_CLASS: dict[tuple[str, ...], str] = {
+    ("anonim", "sirketi"): "as", ("a", "s"): "as", ("as",): "as", ("anonim",): "as",
+    ("limited", "sirketi"): "ltd", ("ltd", "sti"): "ltd", ("ltd",): "ltd", ("sti",): "ltd",
+    ("limited",): "ltd", ("sirketi",): "ltd", ("kollektif", "sirketi"): "kol",
+    ("komandit", "sirketi"): "kom",
+}
 
 _TURKISH = str.maketrans({
     "ı": "i", "İ": "i", "I": "i", "ğ": "g", "Ğ": "g", "ş": "s", "Ş": "s", "ö": "o", "Ö": "o",
@@ -167,16 +176,31 @@ def normalise_party(name: str | None) -> str | None:
     non-alphanumeric run a single space, and trailing legal forms removed ("A.Ş.", "AŞ",
     "Anonim Şirketi", "Ltd. Şti.", "Limited Şirketi"). Words inside the name are never dropped.
     """
+    return " ".join(_strip_legal_forms(name)[0]) or None
+
+
+def legal_form(name: str | None) -> str | None:
+    """The legal form class written after a name ("as", "ltd", "kol", "kom"), None if it has none.
+
+    "A.Ş.", "AŞ" and "Anonim Şirketi" are one class; "Ltd.", "Ltd. Şti." and "Limited Şirketi"
+    another. Two spellings of one name with different classes may be two companies.
+    """
+    return _strip_legal_forms(name)[1]
+
+
+def _strip_legal_forms(name: str | None) -> tuple[list[str], str | None]:
     tokens = _TOKEN.findall((name or "").lower().translate(_TURKISH))
+    first: str | None = None
     stripped = True
     while stripped and tokens:
         stripped = False
         for form in _LEGAL_FORMS:
             if len(tokens) >= len(form) and tuple(tokens[-len(form):]) == form:
                 tokens = tokens[: -len(form)]
+                first = first or _FORM_CLASS[form]
                 stripped = True
                 break
-    return " ".join(tokens) or None
+    return tokens, first
 
 
 def party_token(org_id: str, counterparty: str | None) -> str | None:
@@ -197,7 +221,11 @@ def party_token(org_id: str, counterparty: str | None) -> str | None:
 
 
 def document_key(
-    org_id: str, document_id: str, counterparty: str | None, direction: str | None
+    org_id: str,
+    document_id: str,
+    counterparty: str | None,
+    direction: str | None,
+    aliases: Mapping[str, str] | None = None,
 ) -> str:
     """The ledger identity (`source_record_id`) of an invoice.
 
@@ -209,6 +237,8 @@ def document_key(
     """
     number = canonical_invoice_id(document_id) or document_id
     side, party = _SIDE.get(direction or ""), party_token(org_id, counterparty)
+    if party is not None and aliases:
+        party = aliases.get(party, party)  # a person said these two names are one supplier
     if is_unique_id(number) or side is None or party is None:
         return f"doc:{number}"
     return f"inv:{side}:{party}:{number}"
@@ -230,3 +260,29 @@ def key_party(key: str) -> tuple[str, str] | None:
         return None
     parts = key.split(":", 3)
     return (parts[1], parts[2]) if len(parts) == 4 else None
+
+
+_VARIANT = re.compile(r"~v[0-9a-f]{8}$")
+
+
+def key_number(key: str) -> str | None:
+    """The free-form document number inside an `inv:` or weak `doc:` key; None for UUID/GİB/other keys."""
+    if key.startswith("inv:"):
+        parts = key.split(":", 3)
+        number = parts[3] if len(parts) == 4 else None
+    elif key.startswith("doc:") and not is_unique_id(_VARIANT.sub("", key[4:])):
+        number = key[4:]
+    else:
+        return None
+    return _VARIANT.sub("", number) if number else None
+
+
+def variant_key(key: str, amount_cents: int, day: str, raw_counterparty: str | None) -> str:
+    """A second identity for a document that arrives under a key already held by a different one.
+
+    Stable for one version of the document (amount, day, the words of its counterparty as written),
+    so reading the same file again finds the same variant instead of making another.
+    """
+    words = " ".join(_TOKEN.findall((raw_counterparty or "").lower().translate(_TURKISH)))
+    digest = hashlib.sha256(f"{amount_cents}|{day}|{words}".encode()).hexdigest()[:8]
+    return f"{key}~v{digest}"

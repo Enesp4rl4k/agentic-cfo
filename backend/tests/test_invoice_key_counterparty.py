@@ -244,12 +244,23 @@ async def test_the_same_number_from_one_party_in_two_directions_is_two_documents
 
 
 @pytest.mark.asyncio
-async def test_a_near_name_with_the_same_number_is_another_supplier(db):
+async def test_a_near_name_with_the_same_number_and_amount_is_held_for_a_person(db):
+    """Two suppliers that agree on number and amount cannot be told from one supplier's invoice read twice."""
     org_id = await _org(db)
     await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Sanayi A.Ş.", "cents": 100_000})
     counts = await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ticaret A.Ş.", "cents": 100_000})
-    assert counts["new"] == 1 and counts["possible_duplicate"] == 0   # same amount, same days: still not a repeat
-    assert len(await _rows(db, org_id)) == 2
+    assert (counts["new"], counts["possible_duplicate"]) == (0, 1)
+    assert len(await _rows(db, org_id)) == 2          # written, not dropped: a person decides
+    assert len(await _items(db, org_id)) == 1         # and the held one is not yet a payable
+
+
+@pytest.mark.asyncio
+async def test_a_near_name_with_the_same_number_and_another_amount_is_another_supplier(db):
+    org_id = await _org(db)
+    await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Sanayi A.Ş.", "cents": 100_000})
+    counts = await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ticaret A.Ş.", "cents": 120_000})
+    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
+    assert len(await _items(db, org_id)) == 2
 
 
 @pytest.mark.asyncio
@@ -325,6 +336,6 @@ async def test_open_item_unique_index_is_per_document_not_per_number(db):
     await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ltd", "cents": 100_000})
     n_before = (await db.execute(select(func.count()).select_from(OpenItem))).scalar_one()
     await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ltd", "cents": 100_000})   # again: no new item
-    await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Beta Ltd", "cents": 100_000})   # another: a new one
+    await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Beta Ltd", "cents": 130_000})   # another: a new one
     n_after = (await db.execute(select(func.count()).select_from(OpenItem))).scalar_one()
     assert n_after == n_before + 1

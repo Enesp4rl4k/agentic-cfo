@@ -39,10 +39,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import uuid
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -52,20 +51,61 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.invoice_identity import (
     document_key,
-    key_party,
     lacks_counterparty,
-    open_item_key,
 )
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
-from app.models.canonical_transaction import CanonicalTransaction, money_rows
+from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
 from app.models.organization import Organization
 from app.models.transaction import Transaction
+from app.services.ledger_documents import (
+    ACTIVE,
+    BOOK,
+    CASH,
+    DOCUMENT,
+    DUPLICATE_WINDOW_DAYS,
+    EXCLUDED,
+    POSSIBLE_DUPLICATE,
+    base_row_id,
+    basis_of,
+    day_of,
+    drop_open_item,
+    existing_rows,
+    job_transactions,
+    load_aliases,
+    open_item_for_row,
+    open_items,
+    others_by_money,
+    repeats,
+    same_number_rows,
+    source_transaction,
+    split_same_key,
+    variant_of,
+)
 from app.services.ledger_period import LedgerPeriod, Period, current_month, resolve_period
 
 logger = logging.getLogger(__name__)
+
+# Names other modules import from here; they live in `ledger_documents` (the 600-line ceiling, plan v11 F2).
+__all__ = [
+    "ACTIVE",
+    "BOOK",
+    "CASH",
+    "DOCUMENT",
+    "DUPLICATE_WINDOW_DAYS",
+    "EXCLUDED",
+    "POSSIBLE_DUPLICATE",
+    "Period",
+    "day_of",
+    "drop_open_item",
+    "job_transactions",
+    "load_aliases",
+    "open_item_for_row",
+    "source_transaction",
+    "variant_of",
+]
 
 # Rows identified by their content, across every file and source.
 SOURCE_FINGERPRINT = "fingerprint"
@@ -74,16 +114,9 @@ SOURCE_FINGERPRINT = "fingerprint"
 # upload, so duplicate detection and reconciliation leave them alone.
 SOURCE_CORRECTION = "correction"
 
-ACTIVE = "active"
-POSSIBLE_DUPLICATE = "possible_duplicate"
-EXCLUDED = "excluded"
 
-BOOK = "book"
-DOCUMENT = "document"
-CASH = "cash"
 
 _CHUNK = 500
-DUPLICATE_WINDOW_DAYS = 3    # as the anomaly agent's duplicate check
 
 
 async def lock_org(db: AsyncSession, org_id: str) -> None:
@@ -125,15 +158,8 @@ def _words(text: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", fold(text)).strip()
 
 
-def day_of(when: datetime) -> date:
-    """The UTC day: SQLite hands back naive datetimes, Postgres aware ones."""
-    return when.astimezone(UTC).date() if when.tzinfo else when.date()
 
 
-def _basis(tx: Transaction) -> str:
-    if tx.account_code:
-        return BOOK
-    return DOCUMENT if tx.document_id else CASH
 
 
 def _fingerprint(org_id: str, tx: Transaction) -> str:
@@ -147,75 +173,14 @@ def _fingerprint(org_id: str, tx: Transaction) -> str:
     return hashlib.sha256(material.encode()).hexdigest()
 
 
-async def _existing(db: AsyncSession, org_id: str, ids: list[str]) -> dict[str, CanonicalTransaction]:
-    found: dict[str, CanonicalTransaction] = {}
-    for i in range(0, len(ids), _CHUNK):
-        rows = await db.execute(
-            select(CanonicalTransaction).where(
-                CanonicalTransaction.org_id == org_id,
-                CanonicalTransaction.source_record_id.in_(ids[i:i + _CHUNK]),
-            )
-        )
-        found.update({r.source_record_id: r for r in rows.scalars()})
-    return found
 
 
-async def _others_by_money(
-    db: AsyncSession, org_id: str, job_id: str, days: list[date]
-) -> dict[tuple[int, str, str], list[tuple[date, str, str]]]:
-    """Rows from other uploads around these dates: what a new row might repeat."""
-    window = timedelta(days=DUPLICATE_WINDOW_DAYS)
-    rows = await db.execute(
-        select(
-            CanonicalTransaction.id,
-            CanonicalTransaction.source_record_id,
-            CanonicalTransaction.transaction_date,
-            CanonicalTransaction.amount_cents,
-            CanonicalTransaction.direction,
-            CanonicalTransaction.source_job_id,
-            CanonicalTransaction.basis,
-        ).where(
-            CanonicalTransaction.org_id == org_id,
-            CanonicalTransaction.ledger_status != EXCLUDED,
-            money_rows(),
-            CanonicalTransaction.transaction_date >= datetime.combine(min(days) - window, time.min, UTC),
-            CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
-        )
-    )
-    found: dict[tuple[int, str, str], list[tuple[date, str, str]]] = defaultdict(list)
-    for r in rows:
-        if r.source_job_id != job_id:
-            found[(r.amount_cents, r.direction, r.basis)].append(
-                (day_of(r.transaction_date), r.id, r.source_record_id)
-            )
-    return found
 
 
-def _other_supplier(record_id: str, other_record_id: str) -> bool:
-    """Both rows are invoices of the same side from counterparties known to differ.
-
-    Two suppliers' invoices of the same amount are not one payment seen twice. Only
-    tokens of the same kind (tax number or name) can be told apart: a name against a tax
-    number may be the same company, so that stays a suspicion.
-    """
-    mine, theirs = key_party(record_id), key_party(other_record_id)
-    return bool(
-        mine and theirs and mine[0] == theirs[0] and mine[1][0] == theirs[1][0] and mine[1] != theirs[1]
-    )
 
 
-def _repeats(
-    others: dict[tuple[int, str, str], list[tuple[date, str, str]]], tx: Transaction, record_id: str
-) -> str | None:
-    """The nearest row this one may repeat, if any is close enough."""
-    day = day_of(tx.transaction_date)
-    near = [
-        (abs((other - day).days), row_id)
-        for other, row_id, other_record_id in others.get((tx.amount_kurus, tx.type, _basis(tx)), [])
-        if abs((other - day).days) <= DUPLICATE_WINDOW_DAYS
-        and not _other_supplier(record_id, other_record_id)
-    ]
-    return min(near)[1] if near else None
+
+
 
 
 async def _insert_ignoring_races(db: AsyncSession, values: dict[str, Any]) -> int:
@@ -229,13 +194,11 @@ async def _insert_ignoring_races(db: AsyncSession, values: dict[str, Any]) -> in
     return int(result.rowcount or 0)
 
 
-async def job_transactions(db: AsyncSession, job_id: str) -> list[Transaction]:
-    return list((await db.execute(
-        select(Transaction).where(Transaction.job_id == job_id).order_by(Transaction.transaction_date)
-    )).scalars().all())
 
 
-def record_ids(org_id: str, txs: list[Transaction]) -> tuple[list[tuple[str, Transaction]], int]:
+def record_ids(
+    org_id: str, txs: list[Transaction], aliases: dict[str, str] | None = None
+) -> tuple[list[tuple[str, Transaction]], int]:
     """Each transaction the ledger counts, with its `source_record_id`; and how many had no date.
 
     The one place that says which ledger row a transaction is, so a correction finds the
@@ -256,12 +219,23 @@ def record_ids(org_id: str, txs: list[Transaction]) -> tuple[list[tuple[str, Tra
             # (file, ERP, e-invoice) brought it (G2). A free-form number also
             # carries its counterparty and side, as it is only unique among
             # one issuer's invoices (G23).
-            usable.append((document_key(org_id, tx.document_id, tx.counterparty, tx.type), tx))
+            usable.append((document_key(org_id, tx.document_id, tx.counterparty, tx.type, aliases), tx))
             continue
         print_ = _fingerprint(org_id, tx)
         seen[print_] += 1
         usable.append((f"fp:{print_}#{seen[print_]}", tx))
     return usable, no_date
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -276,7 +250,8 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         return counts
     org_id = str(job.org_id)
 
-    usable, counts["no_date"] = record_ids(org_id, await job_transactions(db, job_id))
+    aliases = await load_aliases(db, org_id)
+    usable, counts["no_date"] = record_ids(org_id, await job_transactions(db, job_id), aliases)
     if not usable:
         await _record(db, job, counts)
         return counts
@@ -292,29 +267,39 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             "ledger: %d invoice(s) with a free-form number and no counterparty (job %s)",
             counts["no_counterparty"], job_id,
         )
-    existing = await _existing(db, org_id, [rid for rid, _ in usable])
+    existing = await existing_rows(db, org_id, [rid for rid, _ in usable])
+    usable, variants = await split_same_key(db, org_id, job_id, usable, existing, aliases)
     # Months the accountant closed: their rows do not change, and money that belongs
     # to them but arrives now is written into the first open month.
     from app.services.donem_kilidi import ilk_acik_donem, kilitli_donemler
 
     kilitli = await kilitli_donemler(db, org_id)
-    others = await _others_by_money(
+    others = await others_by_money(
         db, org_id, job_id, [day_of(tx.transaction_date) for _, tx in usable],
     )
+    same_number = await same_number_rows(db, org_id, job_id, usable)
+    held: set[str] = set()  # rows waiting for a person: they put no money into the radar
 
     for record_id, tx in usable:
         row = existing.get(record_id)
         if row is not None:
+            if row.ledger_status != ACTIVE:
+                held.add(record_id)
             if month_of(row.transaction_date) in kilitli:
                 counts["already"] += 1  # a closed month is not rewritten
                 continue
             # Same money, newer reading of it (a correction, a better account).
             row.category = tx.category
             row.account_code = tx.account_code or row.account_code
-            row.basis = _basis(tx)
+            row.basis = basis_of(tx)
             counts["already"] += 1
             continue
-        duplicate_of = _repeats(others, tx, record_id)
+        duplicate_of = (
+            base_row_id(existing, record_id) if record_id in variants
+            else repeats(others, tx, record_id, same_number)
+        )
+        if duplicate_of:
+            held.add(record_id)
         tarih, asil_tarih, asil_donem = tx.transaction_date, None, None
         ay = month_of(tx.transaction_date)
         if ay in kilitli:
@@ -338,7 +323,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             "description": tx.description,
             "confidence": round(float(tx.confidence) * 100) if tx.confidence is not None else None,
             "ledger_status": POSSIBLE_DUPLICATE if duplicate_of else ACTIVE,
-            "basis": _basis(tx),
+            "basis": basis_of(tx),
             "duplicate_of": duplicate_of,
         })
         if not written:
@@ -347,7 +332,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             counts["possible_duplicate"] += 1
         else:
             counts["new"] += 1
-    await _open_items(db, org_id, job_id, usable)
+    await open_items(db, org_id, job_id, [(rid, tx) for rid, tx in usable if rid not in held])
     # Either side may arrive first: an invoice can close a line already here.
     from app.services.reconciliation import reconcile_org
 
@@ -356,43 +341,14 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     return counts
 
 
-async def _open_items(
-    db: AsyncSession, org_id: str, job_id: str, usable: list[tuple[str, Transaction]]
-) -> None:
-    """A document whose side we know opens an item; the same one twice does not.
 
-    The item is keyed as the ledger row is (`open_item_key`), so two suppliers' "A-001" are
-    two items under the unique (organisation, document) index.
-    """
-    insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
-    for record_id, tx in usable:
-        if not (tx.document_id and tx.counterparty):
-            continue
-        if tx.amount_kurus <= 0:
-            # A return (iade) is signed negative. It would be a negative receivable or
-            # payable; netting it against the invoice it returns is not modelled yet,
-            # so it opens no item (its ledger row still counts, signed).
-            continue
-        await db.execute(
-            insert(OpenItem).values(
-                id=str(uuid.uuid4()),
-                org_id=org_id,
-                direction="receivable" if tx.type == "income" else "payable",
-                instrument="invoice",
-                document_id=open_item_key(record_id),
-                source_job_id=job_id,
-                counterparty=tx.counterparty,
-                description=tx.description,
-                amount_cents=tx.amount_kurus,
-                paid_cents=0,
-                currency=tx.currency,
-                issue_date=day_of(tx.transaction_date),
-                due_date=tx.due_date,
-                payment_note=tx.payment_note,
-                status="open",
-                created_at=datetime.now(UTC),
-            ).on_conflict_do_nothing(index_elements=["org_id", "document_id"])
-        )
+
+
+
+
+
+
+
 
 
 async def _open_items_summary(db: AsyncSession, org_id: str) -> dict[str, int]:

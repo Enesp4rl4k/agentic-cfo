@@ -33,7 +33,8 @@ keys; nothing is invented here.
 
 The key function is imported from `app.core.invoice_identity`, not copied: an upgrade from an
 old database re-keys rows the way the application of this revision keys new ones. A later change
-to the normalisation therefore needs its own migration (the keys it changes are the rows' ids).
+to the normalisation therefore needs its own data migration (the keys it changes are the rows' ids);
+`tests/test_invoice_key_golden.py` pins the literal keys this migration wrote and fails first.
 
 Idempotent: a second run finds only the rows the first one could not key and does the same.
 Downgrade restores `doc:<number>` where it is free; a second row for the same number (the very

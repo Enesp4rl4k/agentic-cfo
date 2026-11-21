@@ -54,9 +54,11 @@ from app.services.ledger import (
     SOURCE_CORRECTION,
     correction_number,
     job_transactions,
+    load_aliases,
     lock_org,
     month_of,
     record_ids,
+    variant_of,
 )
 
 
@@ -89,7 +91,7 @@ async def apply_overrides(db: AsyncSession, org_id: str | None, job_id: str) -> 
     if not org_id:
         return 0
     await db.flush()
-    usable, _ = record_ids(str(org_id), await job_transactions(db, job_id))
+    usable, _ = record_ids(str(org_id), await job_transactions(db, job_id), await load_aliases(db, str(org_id)))
     if not usable:
         return 0
     kept = {
@@ -120,10 +122,11 @@ async def apply_category_correction(
         return {"ledger": "none"}
     org_id = str(org_id)
     await lock_org(db, org_id)
-    usable, _ = record_ids(org_id, await job_transactions(db, tx.job_id))
+    usable, _ = record_ids(org_id, await job_transactions(db, tx.job_id), await load_aliases(db, org_id))
     record_id = next((rid for rid, t in usable if t.id == tx.id), None)
     if record_id is None:
         return {"ledger": "none"}  # not counted by the ledger (no date, no amount)
+    record_id = await variant_of(db, org_id, record_id, tx)
     await _remember(db, org_id, record_id, new_category, user)
     row = (await db.execute(select(CanonicalTransaction).where(
         CanonicalTransaction.org_id == org_id,
