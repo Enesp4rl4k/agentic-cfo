@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # OpenAI — optional for dev/test without LLM
     openai_api_key: str = "llm-placeholder-dev"
 
+    # Cash radar: a bank-statement balance older than this many days is shown as
+    # "last known", not as today's cash. Plan v10/v11 name no value; 7 days (one
+    # week of the radar) is the working default.
+    radar_balance_stale_after_days: int = 7
+
     # PostgreSQL — optional, falls back to SQLite when not set
     postgres_host: str = "localhost"
     postgres_port: int = 5432

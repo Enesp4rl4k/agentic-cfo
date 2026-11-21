@@ -64,6 +64,9 @@ const briefing = (over: Record<string, unknown> = {}) => ({
   fallback_used: false,
   balance_known: true,
   has_data: true,
+  balance_as_of: "2025-01-30",
+  balance_age_days: 2,
+  balance_stale: false,
   fingerprint: "fp-seen",
   ...over,
 });
@@ -98,6 +101,20 @@ describe("Pazartesi bülteni", () => {
     expect(await screen.findByText(/20\.000,00 TL azalış/)).toBeTruthy();
     expect(screen.getByText(/Demir Çelik A\.Ş\., 40\.000,00 TL/)).toBeTruthy();
     expect(screen.getByText(/tahsilatı öne çekin/)).toBeTruthy();
+  });
+
+  it("labels the balance with its statement's day and warns when it is old", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    const fresh = show();
+    expect(await screen.findByText("30 Ocak ekstresine göre kasa")).toBeTruthy();
+    expect(screen.queryByText(/gün önceki ekstreye dayanıyor/)).toBeNull();
+    fresh.unmount();
+
+    getMondayBriefing.mockResolvedValue(briefing({ balance_as_of: "2024-12-23", balance_age_days: 40, balance_stale: true }));
+    show();
+    expect(await screen.findByText("23 Aralık ekstresine göre kasa")).toBeTruthy();
+    expect(screen.getByText("Bu bakiye 40 gün önceki ekstreye dayanıyor")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Yeni ekstre yükle" }).getAttribute("href")).toBe("/baglan");
   });
 
   it("names the week the briefing covers", async () => {
@@ -187,7 +204,7 @@ describe("Pazartesi bülteni", () => {
     show();
     const h1 = await screen.findByRole("heading", { level: 1 });
     expect(h1.textContent).toMatch(/20\.000,00 TL azalış/);
-    expect(screen.getByText("Bugünkü kasa")).toBeTruthy();
+    expect(screen.getByText("30 Ocak ekstresine göre kasa")).toBeTruthy();
     expect(screen.getByText("Hafta sonu kasa")).toBeTruthy();
     expect(screen.getByText("En yakın ödeme")).toBeTruthy();
   });
@@ -196,7 +213,7 @@ describe("Pazartesi bülteni", () => {
     getMondayBriefing.mockResolvedValue(briefing({ balance_known: false, starting_cash_cents: null }));
     show();
     await screen.findByRole("heading", { level: 1 });
-    expect(screen.queryByText("Bugünkü kasa")).toBeNull();
+    expect(screen.queryByText("30 Ocak ekstresine göre kasa")).toBeNull();
     expect(screen.queryByText("Hafta sonu kasa")).toBeNull();
     expect(screen.getByText("Bu hafta net değişim")).toBeTruthy();
   });

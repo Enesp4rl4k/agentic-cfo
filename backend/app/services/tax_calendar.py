@@ -36,6 +36,7 @@ class TaxObligationProjection:
     source_basis: str  # always "historical_cash_median"
     account_code: str | None = None
     due_rules_verified: bool = False
+    observed_payments: int = 0  # past payments the median was taken over
 
 
 # Day-of-month rules. UNVERIFIED against the official text: see the module docstring.
@@ -90,6 +91,11 @@ def _next_working_day(day: date) -> date:
 
 async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str, int]:
     """Median of past cash payments to the tax office / SGK, per kind of tax."""
+    return {kind: median for kind, (median, _) in (await get_historical_tax_stats(db, org_id)).items()}
+
+
+async def get_historical_tax_stats(db: AsyncSession, org_id: str) -> dict[str, tuple[int, int]]:
+    """Per kind of tax: (median of past cash payments, how many payments it is taken over)."""
     rows = (
         (
             await db.execute(
@@ -114,11 +120,11 @@ async def get_historical_tax_averages(db: AsyncSession, org_id: str) -> dict[str
         if kind:
             buckets[kind].append(r.amount_cents)
 
-    medians: dict[str, int] = {}
+    medians: dict[str, tuple[int, int]] = {}
     for kind, amounts in buckets.items():
         if amounts:
             s = sorted(amounts)
-            medians[kind] = s[len(s) // 2]
+            medians[kind] = (s[len(s) // 2], len(s))
     return medians
 
 
@@ -186,16 +192,18 @@ async def project_tax_obligations(
 ) -> list[TaxObligationProjection]:
     """Statutory deadlines inside the horizon, with amounts from past payments."""
     horizon_end = anchor + timedelta(days=7 * horizon_weeks - 1)
-    historical = await get_historical_tax_averages(db, org_id)
+    historical = await get_historical_tax_stats(db, org_id)
     return [
         TaxObligationProjection(
             id=f"tax_{d.kind}_{d.due.isoformat()}",
             tax_type=d.kind,
             title=d.label,
-            amount_cents=historical[d.kind],
+            amount_cents=historical[d.kind][0],
             expected_date=d.due,
             source_basis="historical_cash_median",
             account_code=d.account_code,
+            due_rules_verified=due_rules_verified,
+            observed_payments=historical[d.kind][1],
         )
         for d in statutory_deadlines(anchor, horizon_end)
         if d.kind in historical

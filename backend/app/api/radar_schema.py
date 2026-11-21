@@ -8,6 +8,8 @@ so a field added to the radar cannot be dropped from the response unnoticed.
 """
 from __future__ import annotations
 
+from typing import Any, Literal
+
 from pydantic import BaseModel
 
 
@@ -22,6 +24,27 @@ class RadarItemOut(BaseModel):
     is_overdue: bool
     instrument: str = "invoice"
     rescheduled: bool = False
+    # known: a document with a due date; estimated: from history; assumed: a placement rule.
+    basis: Literal["known", "estimated", "assumed"] = "known"
+    basis_reason: str = "document_due_date"
+    basis_inputs: dict[str, Any] = {}
+    rules_verified: bool | None = None
+
+
+class BasisSplitOut(BaseModel):
+    known_cents: int = 0
+    estimated_cents: int = 0
+    assumed_cents: int = 0
+
+
+class OpeningCashOut(BaseModel):
+    balance_cents: int
+    as_of: str
+    age_days: int
+    stale: bool
+    stale_after_days: int
+    source_job_id: str | None
+    source_filename: str | None
 
 
 class RadarWeekOut(BaseModel):
@@ -34,6 +57,8 @@ class RadarWeekOut(BaseModel):
     end_balance_cents: int
     receivables: list[RadarItemOut]
     payables: list[RadarItemOut]
+    inflow_basis: BasisSplitOut
+    outflow_basis: BasisSplitOut
 
 
 class RadarActionOut(BaseModel):
@@ -67,3 +92,4 @@ class CashRadarOut(BaseModel):
     not_included: list[str]
     recurring_payables_cents: int = 0
     tax_obligations_cents: int = 0
+    opening_cash: OpeningCashOut | None = None

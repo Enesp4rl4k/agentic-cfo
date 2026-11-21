@@ -149,6 +149,25 @@ export type MessageTree = {
     answerGap: string;
     answerClear: string;
     roadmapNote: string;
+    tagEstimated: string;
+    tagAssumed: string;
+    tagReasonLabel: string;
+    reasonRecurring: string;
+    reasonTax: string;
+    reasonTaxUnverified: string;
+    reasonDelay: string;
+    reasonOverdue: string;
+    reasonPlan: string;
+    reasonFallback: string;
+    taxUnverifiedNote: string;
+    cashAsOf: string;
+    staleTitle: string;
+    staleBody: string;
+    staleUpload: string;
+    answerStaleCaveat: string;
+    basisKnown: string;
+    basisEstimated: string;
+    basisAssumed: string;
   };
   takvim: {
     title: string;
@@ -2712,6 +2731,25 @@ export const en: MessageTree = {
     answerGap: "Your cash goes negative in week {week} ({start} – {end}). The lowest point is {amount}.",
     answerClear: "Your cash does not go negative in the weeks ahead.",
     roadmapNote: "The route is always computed from the latest uploaded documents.",
+    tagEstimated: "estimated",
+    tagAssumed: "assumed",
+    tagReasonLabel: "Why estimated: {reason}",
+    reasonRecurring: "A similar payment was seen in each of the last {months} months; median {median}, on day {day} of the month.",
+    reasonTax: "Median of your {count} past tax/social security payments: {median}.",
+    reasonTaxUnverified: " The due-day rules are not yet checked against the official text.",
+    reasonDelay: "This customer has paid invoices {days} days late on average; the date is the due date plus that delay.",
+    reasonOverdue: "A payable past its due date ({due}). The documents do not say when it will be paid; it is placed in week 1.",
+    reasonPlan: "An approved payment-plan change ({planned}) is taken as the expected date. Due date on the document: {due}.",
+    reasonFallback: "This date and amount come from a rule, not from a document.",
+    taxUnverifiedNote: "Tax and social security due days are not yet verified against the official calendar; the dates and amounts of these rows are estimates.",
+    cashAsOf: "Cash according to the {date} statement",
+    staleTitle: "This balance rests on a statement {days} days old",
+    staleBody: "Movements since {date} are not in the balance; your real cash may differ.",
+    staleUpload: "Upload a newer statement",
+    answerStaleCaveat: "This answer rests on the balance of an old statement dated {date}.",
+    basisKnown: "documented",
+    basisEstimated: "estimated",
+    basisAssumed: "assumed",
   },
   takvim: {
     title: "Payment calendar",
