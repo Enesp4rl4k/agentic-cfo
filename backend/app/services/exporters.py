@@ -14,10 +14,26 @@ from app.core.financial import cents_to_amount
 from app.core.interfaces import IReportExporter
 
 
-def _fmt(cents: float) -> str:
-    """Format integer cents into a currency string (₺XX,XXX.XX)."""
-    amt = cents_to_amount(cents)
-    return f"₺{amt:,.2f}"
+UNKNOWN = "currency unknown"
+
+
+def _code(currency: Any) -> str:
+    return str(currency or "").strip().upper()
+
+
+def _label(currency: Any) -> str:
+    """What a column header says about the unit: the code, or that it is unknown (never lira by default)."""
+    return _code(currency) or UNKNOWN
+
+
+def _fmt(cents: float, currency: Any = None) -> str:
+    """Integer cents as text in the figures' own currency: ₺1,234.56 for lira, 1,234.56 USD for the rest,
+    and the plain number with "(currency unknown)" when the run did not say."""
+    amt = f"{cents_to_amount(cents):,.2f}"
+    code = _code(currency)
+    if not code:
+        return f"{amt} ({UNKNOWN})"
+    return f"₺{amt}" if code == "TRY" else f"{amt} {code}"
 
 
 class ExcelReportExporter(IReportExporter):
@@ -48,7 +64,10 @@ class ExcelReportExporter(IReportExporter):
         ws_pnl = wb.active
         ws_pnl.title = "Profit & Loss"
         # The workbook's currency is the one the figures were computed in (`pnl["currency"]`), never assumed.
-        ws_pnl.append(["Line Item", f"Amount ({pnl.get('currency') or '₺'})"])
+        pnl_cur = pnl.get("currency")
+        cf_cur = cashflow.get("currency") or pnl_cur
+        fc_cur = forecast.get("currency") or cf_cur
+        ws_pnl.append(["Line Item", f"Amount ({_label(pnl_cur)})"])
         for cell in ws_pnl[1]:
             cell.fill = header_fill
             cell.font = header_font
@@ -66,7 +85,7 @@ class ExcelReportExporter(IReportExporter):
             if "Margin" in label:
                 ws_pnl.append([label, round(value, 2)])
             else:
-                ws_pnl.append([label, _fmt(int(value)) if isinstance(value, (int, float)) else value])
+                ws_pnl.append([label, _fmt(int(value), pnl_cur) if isinstance(value, (int, float)) else value])
 
         ws_pnl.column_dimensions["A"].width = 35
         ws_pnl.column_dimensions["B"].width = 18
@@ -87,7 +106,7 @@ class ExcelReportExporter(IReportExporter):
 
         # ── Sheet 2: Cash Flow ────────────────────────────────────────────────────
         ws_cf = wb.create_sheet("Cash Flow")
-        ws_cf.append(["Activity", "Amount (₺)"])
+        ws_cf.append(["Activity", f"Amount ({_label(cf_cur)})"])
         for cell in ws_cf[1]:
             cell.fill = header_fill
             cell.font = header_font
@@ -101,21 +120,21 @@ class ExcelReportExporter(IReportExporter):
             ("Net Cash Change", cashflow.get("net_change", 0)),
         ]
         for label, value in cf_rows:
-            ws_cf.append([label, _fmt(int(value))])
+            ws_cf.append([label, _fmt(int(value), cf_cur)])
 
         ws_cf.append([])
         ws_cf.append(["Monthly Cash Flow"])
         ws_cf.cell(row=ws_cf.max_row, column=1).font = Font(bold=True)
-        ws_cf.append(["Month", "Cash In (₺)", "Cash Out (₺)", "Net (₺)"])
+        ws_cf.append(["Month", f"Cash In ({_label(cf_cur)})", f"Cash Out ({_label(cf_cur)})", f"Net ({_label(cf_cur)})"])
         for cell in ws_cf[ws_cf.max_row]:
             cell.fill = subheader_fill
 
         for entry in cashflow.get("monthly_series", []):
             ws_cf.append([
                 entry["month"],
-                _fmt(entry["in"]),
-                _fmt(entry["out"]),
-                _fmt(entry["net"]),
+                _fmt(entry["in"], cf_cur),
+                _fmt(entry["out"], cf_cur),
+                _fmt(entry["net"], cf_cur),
             ])
 
         ws_cf.column_dimensions["A"].width = 30
@@ -131,16 +150,16 @@ class ExcelReportExporter(IReportExporter):
         for scenario in forecast.get("scenarios", {}).values():
             ws_fc.append([scenario["label"], scenario.get("description", "")])
             ws_fc.cell(row=ws_fc.max_row, column=1).font = Font(bold=True)
-            ws_fc.append(["Month", "Cash In (₺)", "Cash Out (₺)", "Net (₺)"])
+            ws_fc.append(["Month", f"Cash In ({_label(fc_cur)})", f"Cash Out ({_label(fc_cur)})", f"Net ({_label(fc_cur)})"])
             for cell in ws_fc[ws_fc.max_row]:
                 cell.fill = header_fill
                 cell.font = header_font
             for entry in scenario.get("months", []):
                 ws_fc.append([
                     entry["month"],
-                    _fmt(entry["in"]),
-                    _fmt(entry["out"]),
-                    _fmt(entry["net"]),
+                    _fmt(entry["in"], fc_cur),
+                    _fmt(entry["out"], fc_cur),
+                    _fmt(entry["net"], fc_cur),
                 ])
             ws_fc.append([])
 
@@ -196,13 +215,15 @@ class DashboardExporter(IReportExporter):
         return {
             "summary": {
                 "revenue_cents": pnl.get("revenue", 0),
-                "revenue_formatted": _fmt(pnl.get("revenue", 0)),
+                "revenue_formatted": _fmt(pnl.get("revenue", 0), pnl.get("currency")),
                 "net_income_cents": pnl.get("net_income", 0),
-                "net_income_formatted": _fmt(pnl.get("net_income", 0)),
+                "net_income_formatted": _fmt(pnl.get("net_income", 0), pnl.get("currency")),
                 "gross_margin_pct": pnl.get("gross_margin_pct", 0.0),
                 "net_margin_pct": pnl.get("net_margin_pct", 0.0),
                 "operating_cashflow_cents": cashflow.get("operating", 0),
-                "operating_cashflow_formatted": _fmt(cashflow.get("operating", 0)),
+                "operating_cashflow_formatted": _fmt(
+                    cashflow.get("operating", 0), cashflow.get("currency") or pnl.get("currency")
+                ),
                 "burn_rate_monthly_cents": forecast.get("burn_rate_monthly", 0),
                 "runway_months": forecast.get("runway_months", "N/A"),
                 "total_alerts": len(alerts or []),
