@@ -24,6 +24,7 @@ from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
 from app.core.currency_totals import fmt_money
+from app.services.coverage import usable_months
 from app.services.runway import (
     NO_BALANCE,
     RUNWAY_MIN_MONTHS,
@@ -408,9 +409,13 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
         opening = opening_cash_for(state)  # type: ignore[arg-type]
         ccy = state.get("base_currency")
         runway = compute_runway(opening, cashflow, ccy)
-        series = cashflow.get("monthly_series", [])
+        # Everything projected below is built from the latest run of consecutive COMPLETE months:
+        # a month the statement only starts or ends in is not a month of cash movement, and a
+        # skipped month is not "the previous one" (`app.services.coverage`). The runway block above
+        # names the months it used and the ones it left out.
+        series = usable_months(cashflow.get("monthly_series", []))
         limited_history = len(series) < RUNWAY_MIN_MONTHS
-        scenarios = _compute_scenarios(cashflow, pnl, runway)
+        scenarios = _compute_scenarios({**cashflow, "monthly_series": series}, pnl, runway)
         alerts = _build_forecast_alerts(scenarios, runway, limited_history=limited_history)
 
         # Monte Carlo simulation — runs in parallel with narrative generation
@@ -452,7 +457,7 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
             # projection from less than two years is not "no seasonality".
             "seasonality_note": (
                 None if has_seasonality else
-                f"Mevsimsellik için yetersiz veri: {len(cashflow.get('monthly_series') or [])} ay "
+                f"Mevsimsellik için yetersiz veri: {len(series)} tam ay "
                 f"(en az {SEASONALITY_MIN_MONTHS} ay gerekir); düz projeksiyon."
             ),
             "monte_carlo": monte_carlo if monte_carlo else None,

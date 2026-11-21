@@ -43,7 +43,7 @@ def _series(nets: list[int]) -> list[dict[str, Any]]:
     out = []
     for i, net in enumerate(nets):
         income = 5_000_000 + max(net, 0)
-        out.append({"month": f"2026-{i + 1:02d}", "in": income, "out": income - net, "net": net})
+        out.append({"month": f"2026-{i + 1:02d}", "in": income, "out": income - net, "net": net, "complete": True})
     return out
 
 
@@ -96,8 +96,9 @@ class TestRunwayFromProvenBalance:
     async def test_basis_is_stated_in_the_message(self) -> None:
         _, fc = await _forecast(_state([-3_000_000] * 3, 11_650_000, as_of="2026-11-19"))
         message = fc["runway"]["message"]
-        assert "19 Kasım 2026 ekstresindeki bakiyeye göre" in message
-        assert "₺116.500,00" in message and "₺30.000,00" in message and "son 3 ayın" in message
+        assert "19 Kasım 2026 ekstresindeki bakiyeye göre kasa ₺116.500,00" in message
+        assert "Ocak -₺30.000,00, Şubat -₺30.000,00, Mart -₺30.000,00" in message  # the months and their totals
+        assert "ortalama aylık net nakit çıkışı ₺30.000,00" in message
 
     async def test_a_healthy_company_with_a_negative_month_is_not_critical(self) -> None:
         # The e2e statement's shape: net slightly negative on average, ₺116.500 in the bank.
@@ -157,7 +158,7 @@ class TestNothingIsInvented:
         assert runway["status"] == "insufficient_history"
         assert runway["months_used"] == 2 and runway["months_needed"] == 3
         assert runway["runway_months"] is None
-        assert "en az 3 ay gerekir" in runway["message"]
+        assert "Üst üste 2 tam ay var" in runway["message"] and "en az 3 tam ay gerekir" in runway["message"]
         assert fc["limited_history"] is True
         assert all(sc["runway_months"] is None for sc in fc["scenarios"].values())
         assert not any(a["level"] == "critical" for a in fc["alerts"])
@@ -196,7 +197,7 @@ class TestDefaultsNeverAlert:
         nets = [100_000, -300_000, -100_000, -400_000, -100_000, -500_000, -200_000, -600_000]
         state = _state(nets, 1_000_000)
         state["cashflow"]["monthly_series"] = [
-            {"month": f"2026-{i + 1:02d}", "in": a, "out": 900_000, "net": a - 900_000}
+            {"month": f"2026-{i + 1:02d}", "in": a, "out": 900_000, "net": a - 900_000, "complete": True}
             for i, a in enumerate([1_000_000, 700_000, 900_000, 500_000, 800_000, 400_000, 600_000, 300_000])
         ]
         result, fc = await _forecast(state)
@@ -222,7 +223,7 @@ class TestBadNewsIsSurfacedNotHeld:
         assert runway["runway_months"] == pytest.approx(2.3, abs=0.05)
         critical = [a for a in fc["alerts"] if a["level"] == "critical"]
         assert len(critical) == 1 and critical[0]["basis"] == "runway"
-        for fact in ("19 Kasım 2026", "₺116.500,00", "₺50.000,00", "son 3 ayın", "yaklaşık 2,3 ay"):
+        for fact in ("19 Kasım 2026", "₺116.500,00", "Ocak -₺50.000,00", "ortalama aylık net nakit çıkışı ₺50.000,00", "yaklaşık 2,3 ay"):
             assert fact in critical[0]["message"]
         # ... and the books are not withheld because of it.
         assert result.needs_review is False
@@ -240,10 +241,11 @@ class TestBadNewsIsSurfacedNotHeld:
         assert result.needs_review is False and result.confidence >= 0.80
 
 
-def _statement(path: Path, balances_by_month: list[tuple[int, str, int]], *, currency: bool = True) -> str:
+def _statement(
+    path: Path, balances_by_month: list[tuple[int, str, int]], *, currency: bool = True, opening: int = 120_000
+) -> str:
     """A bank statement whose running balance chains. Rows: (days ago, text, signed lira)."""
     today = datetime.now(UTC).date()
-    opening = 120_000
     lines = ["Tarih;Açıklama;Tutar;Bakiye" + (";Para Birimi" if currency else "")]
     balance = opening
     for ago, text, amount in sorted(balances_by_month, reverse=True):
@@ -259,10 +261,10 @@ HEALTHY = [
     (75, "Ofis kirası", -12_000), (70, "Satış tahsilatı - Mavi Tekstil", 50_000), (40, "Ofis kirası", -12_000),
     (20, "Personel maaş ödemesi", -30_000), (5, "Ofis kirası", -12_000), (2, "Danışmanlık geliri - Kara Holding", 12_500),
 ]
-CASH_SHORT = [
-    (100, "Satış tahsilatı", 20_000), (95, "Personel maaş ödemesi", -60_000), (70, "Ofis kirası", -30_000),
-    (65, "Personel maaş ödemesi", -60_000), (40, "Ofis kirası", -30_000), (35, "Personel maaş ödemesi", -60_000),
-    (10, "Ofis kirası", -30_000), (5, "Personel maaş ödemesi", -60_000),
+# Five months of salary and rent against a small balance: every calendar month in between is complete.
+CASH_SHORT = [(150, "Satış tahsilatı", 20_000)] + [
+    (145 - 15 * k, "Personel maaş ödemesi" if k % 2 == 0 else "Ofis kirası", -60_000 if k % 2 == 0 else -30_000)
+    for k in range(10)
 ]
 
 
@@ -296,11 +298,11 @@ class TestPipelineHolds:
         assert result["forecast"]["runway"]["source_filename"] == "onceki.csv"
 
     async def test_a_genuinely_cash_short_company_is_told_so_and_is_not_held(self, tmp_path: Path) -> None:
-        path = _statement(tmp_path / "kisa.csv", CASH_SHORT)
+        path = _statement(tmp_path / "kisa.csv", CASH_SHORT, opening=550_000)
         result = await run_cfo_pipeline(job_id="short", file_path=path, file_type="csv", run_config=CFG)
         runway = result["forecast"]["runway"]
         assert runway["status"] == "computed" and runway["level"] == "critical"
-        assert runway["opening_cash_cents"] < 6_000_000 and runway["months_used"] == 3
+        assert runway["opening_cash_cents"] == 12_000_000 and runway["months_used"] == 3
         assert any(a["level"] == "critical" and a["basis"] == "runway" for a in result["forecast"]["alerts"])
         assert result["awaiting_review"] is False  # shown, not withheld
 

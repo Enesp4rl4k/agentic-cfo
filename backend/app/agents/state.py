@@ -139,6 +139,12 @@ class CFOState(TypedDict, total=False):
     # the caller since nodes hold no session. The forecast's runway starts from the newer of
     # this and the balance this run's own statement proves; None → no runway is claimed.
     opening_cash: dict[str, Any] | None
+    # {start, end, opening_cents, closing_cents}: the days this run's statement covers, proven
+    # over ALL its rows (like `statement_closing_balance`); and, for a company analysis that
+    # reads its ledger, the extents of every completed statement (loaded by the caller). They say
+    # which calendar months are complete (`app.services.coverage`).
+    statement_extent: dict[str, Any] | None
+    statement_extents: list[dict[str, Any]] | None
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None
     # Numeric reconciliation output (separate LangGraph step, runs before verifier)

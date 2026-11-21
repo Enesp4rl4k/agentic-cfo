@@ -4,8 +4,10 @@ A runway is a balance divided by a burn. Both must be the company's own:
 
 - the balance is the one a bank statement proves (`app.services.bank_balance`; the same
   source and the same staleness limit the cash radar uses, nothing computed a second time);
-- the burn is the average monthly net cash movement of the months actually present, at
-  least `RUNWAY_MIN_MONTHS` of them.
+- the burn is the average monthly net cash movement of the latest `RUNWAY_MIN_MONTHS`
+  COMPLETE, consecutive months: a month counts only when the statement(s) cover it from its
+  first day to its last (`app.services.coverage`). A month the data only starts or ends in is
+  named and left out; the burn says which months it used and what each came to.
 
 Missing either is said as missing: there is no runway then, not a runway of one month.
 Growth rates the forecast's scenarios assume are not measurements and never reach here.
@@ -19,6 +21,7 @@ from typing import Any
 from app.config import get_settings
 from app.core.currency_totals import fmt_money
 from app.services.bank_balance import balance_age, closing_balance, latest_balance
+from app.services.coverage import gaps, usable_months
 
 RUNWAY_MIN_MONTHS = 3  # months of cash movement the burn average needs (the forecast's baseline window)
 RUNWAY_CRITICAL_MONTHS = 3
@@ -30,6 +33,7 @@ NOT_BURNING = "not_burning"
 NO_BALANCE = "no_balance"
 INSUFFICIENT_HISTORY = "insufficient_history"
 NOT_CASH_BASIS = "not_cash_basis"
+COVERAGE_UNKNOWN = "coverage_unknown"
 
 _MONTHS_TR = (
     "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -78,6 +82,7 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         "source_filename": opening["filename"] if opening else None,
         "months_needed": RUNWAY_MIN_MONTHS,
         "months_used": 0,
+        "months": [],
         "avg_monthly_net_cents": None,
         "runway_months": None,
         "beyond_horizon": False,
@@ -87,15 +92,59 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
     }
 
 
+def _month_name(month: str, with_year: bool = False) -> str:
+    name = _MONTHS_TR[int(month[5:7]) - 1]
+    return f"{name} {month[:4]}" if with_year else name
+
+
+def _span(first: str, last: str) -> str:
+    return _month_name(first) if first == last else f"{_month_name(first)}–{_month_name(last)}"
+
+
+def _notes(series: list[dict[str, Any]], window: list[dict[str, Any]], opening: dict[str, Any]) -> str:
+    """What the burn left out, said plainly: partial months after the window, the balance's date."""
+    after = [m for m in series if m.get("complete") is False and (not window or m["month"] > window[-1]["month"])]
+    parts = []
+    for m in after:
+        days = m.get("covered")
+        span = f"yalnızca {days[0]}–{days[1]} arası" if days else "yalnızca kısmen"
+        parts.append(f"{_month_name(m['month'])} {span} var; hesaba katılmadı (hareketleri bakiyeye zaten yansımıştır)")
+    if window and not after:
+        end_of_window = f"{window[-1]['month']}-31"
+        if opening["as_of"] > end_of_window:
+            parts.append(
+                f"Bakiye {_date_tr(opening['as_of'])} tarihli, son tam ay {_month_name(window[-1]['month'])}; "
+                "aradaki hareketler bakiyeye yansımıştır ama aylık çıkış hesabına girmemiştir"
+            )
+    return "".join(f" {p}." for p in parts)
+
+
+def _one_off(window: list[dict[str, Any]], burn_total: int, currency: str | None) -> str:
+    """A plain note when one outflow is more than half of the window's net outflow; no adjustment."""
+    tops = [m["top_out"] for m in window if m.get("top_out")]
+    if not tops or burn_total <= 0:
+        return ""
+    top = max(tops, key=lambda t: t["amount_cents"])
+    if top["amount_cents"] * 2 <= burn_total:
+        return ""
+    what = f" ({top['description']})" if top.get("description") else ""
+    return (
+        f" Not: {_date_tr(top['date'])} tarihli {fmt_money(top['amount_cents'], currency)} tutarındaki "
+        f"çıkış{what}, bu aylardaki net çıkışın yarısından fazlası; tek seferlik olabilir, olduğu gibi hesaba katıldı."
+    )
+
+
 def compute_runway(
     opening: dict[str, Any] | None, cashflow: dict[str, Any], currency: str | None = None
 ) -> dict[str, Any]:
     """The runway of this company, or the reason there is none.
 
-    `status`: computed | not_burning | no_balance | insufficient_history | not_cash_basis.
-    `currency` is the company's currency the figures are written in (none known: bare numbers).
+    `status`: computed | not_burning | no_balance | insufficient_history | not_cash_basis |
+    coverage_unknown. The burn is the average net of the latest `RUNWAY_MIN_MONTHS` COMPLETE,
+    consecutive months (`app.services.coverage`); the months and their totals are in the block
+    and the message. `currency` is the one the figures are written in (none known: bare numbers).
     """
-    def _lira(cents: int) -> str:
+    def money(cents: int) -> str:
         return fmt_money(cents, currency)
 
     if opening is None:
@@ -105,7 +154,7 @@ def compute_runway(
             "Satır bakiyeleri birbirini tutan bir banka ekstresi yüklenince hesaplanır.",
             None,
         )
-    basis = f"{_date_tr(opening['as_of'])} ekstresindeki bakiyeye göre kasa {_lira(opening['balance_cents'])}"
+    basis = f"{_date_tr(opening['as_of'])} ekstresindeki bakiyeye göre kasa {money(opening['balance_cents'])}"
     stale_note = (
         f" Bu bakiye {opening['age_days']} gün önceki ekstreden; güncel olmayabilir."
         if opening["stale"] else ""
@@ -117,43 +166,62 @@ def compute_runway(
             f"çıkışı değil: nakit pisti hesaplanmadı.{stale_note}",
             opening,
         )
-    recent = list(cashflow.get("monthly_series") or [])[-RUNWAY_MIN_MONTHS:]
-    if len(recent) < RUNWAY_MIN_MONTHS:
+    series = list(cashflow.get("monthly_series") or [])
+    if series and all(m.get("complete") is None for m in series):
+        return _block(
+            COVERAGE_UNKNOWN,
+            f"{basis}. Ekstrenin hangi tarihleri kapsadığı bilinmediği için hangi ayların tam olduğu "
+            f"söylenemiyor: nakit pisti hesaplanmadı.{stale_note}",
+            opening,
+        )
+    window = usable_months(series)[-RUNWAY_MIN_MONTHS:]
+    months = [{"month": m["month"], "net_cents": int(m["net"])} for m in window]
+    notes = _notes(series, window, opening)
+    if len(window) < RUNWAY_MIN_MONTHS:
+        gap = "".join(f" {_span(a, b)} verisi yok." for a, b in gaps(series))
         return _block(
             INSUFFICIENT_HISTORY,
-            f"{basis}. Aylık nakit çıkışı için {len(recent)} aylık veri var; en az "
-            f"{RUNWAY_MIN_MONTHS} ay gerekir: nakit pisti hesaplanmadı.{stale_note}",
+            f"{basis}. Üst üste {len(window)} tam ay var; aylık nakit çıkışı için en az "
+            f"{RUNWAY_MIN_MONTHS} tam ay gerekir: nakit pisti hesaplanmadı.{gap}{notes}{stale_note}",
             opening,
-            months_used=len(recent),
+            months_used=len(window),
+            months=months,
         )
-    avg_net = int(statistics.mean(int(m["net"]) for m in recent))
+    nets = [int(m["net"]) for m in window]
+    avg_net = int(statistics.mean(nets))
+    with_year = len({m["month"][:4] for m in window}) > 1
+    listing = ", ".join(f"{_month_name(m['month'], with_year)} {money(int(m['net']))}" for m in window)
     if avg_net >= 0:
         return _block(
             NOT_BURNING,
-            f"{basis}. Son {len(recent)} ayda ortalama aylık net nakit akışı {_lira(avg_net)} "
-            f"(pozitif): nakit azalmıyor, nakit pisti hesaplanmadı.{stale_note}",
+            f"{basis}. {listing} → ortalama aylık net nakit akışı {money(avg_net)} (pozitif): nakit "
+            f"azalmıyor, nakit pisti hesaplanmadı.{notes}{stale_note}",
             opening,
-            months_used=len(recent),
+            months_used=len(window),
+            months=months,
             avg_monthly_net_cents=avg_net,
         )
-    runway = max(0.0, opening["balance_cents"] / -avg_net)
+    balance = opening["balance_cents"]
+    runway = balance / -avg_net if balance > 0 else 0.0
     beyond = runway > RUNWAY_LONG_MONTHS
     level = (
         "critical" if runway <= RUNWAY_CRITICAL_MONTHS
         else "warning" if runway <= RUNWAY_WARNING_MONTHS
         else None
     )
-    lasts = (
-        f"{RUNWAY_LONG_MONTHS} aydan uzun" if beyond
-        else "bitmiş (bakiye sıfırın altında)" if opening["balance_cents"] <= 0
-        else f"yaklaşık {runway:.1f} ay".replace(".", ",")
-    )
+    if balance <= 0:
+        verdict = "Kasa bakiyesi sıfırın altında: nakit bitmiş."
+    elif beyond:
+        verdict = f"Bu hızla nakit {RUNWAY_LONG_MONTHS} aydan uzun yeter."
+    else:
+        verdict = "Bu hızla nakit yaklaşık " + f"{runway:.1f}".replace(".", ",") + " ay yeter."
     return _block(
         COMPUTED,
-        f"{basis}; son {len(recent)} ayın ortalama aylık net nakit çıkışı {_lira(-avg_net)}. "
-        f"Bu hızla nakit {lasts} yeter.{stale_note}",
+        f"{basis}; {listing} → ortalama aylık net nakit çıkışı {money(-avg_net)}. {verdict}"
+        f"{_one_off(window, -sum(nets), currency)}{notes}{stale_note}",
         opening,
-        months_used=len(recent),
+        months_used=len(window),
+        months=months,
         avg_monthly_net_cents=avg_net,
         # Past the long horizon it is no figure: "longer than 36 months" is in the message.
         runway_months=None if beyond else round(runway, 1),
@@ -167,7 +235,7 @@ def runway_alert(runway: dict[str, Any]) -> dict[str, str] | None:
     status = runway["status"]
     if status == COMPUTED and runway["level"]:
         return {"level": runway["level"], "message": runway["message"], "basis": "runway"}
-    if status in (NO_BALANCE, INSUFFICIENT_HISTORY, NOT_CASH_BASIS):
+    if status in (NO_BALANCE, INSUFFICIENT_HISTORY, NOT_CASH_BASIS, COVERAGE_UNKNOWN):
         return {"level": "info", "message": runway["message"], "basis": "runway"}
     return None
 

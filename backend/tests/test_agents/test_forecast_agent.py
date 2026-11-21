@@ -239,7 +239,7 @@ class TestComputeScenarios:
 
     def test_runway_months_set_when_deficit(self):
         """Low income vs high expenses — pessimistic scenario should hit runway."""
-        cf = {"monthly_series": _make_series(6, base_in=500_000, base_out=900_000)}
+        cf = {"monthly_series": [{**m, "complete": True} for m in _make_series(6, base_in=500_000, base_out=900_000)]}
         # The balance the statement proves: the runway counts down from it, not from zero.
         runway = compute_runway(
             {"balance_cents": 1_500_000, "as_of": "2026-11-19", "age_days": 2, "stale": False, "filename": "e.csv"}, cf

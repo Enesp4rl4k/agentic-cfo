@@ -124,11 +124,17 @@ class TestCheckCashflow:
         liquidity = [a for a in alerts if a["type"] == "liquidity"]
         assert any(a["severity"] == "critical" for a in liquidity)
 
-    def test_critical_runway_triggers_critical_alert(self):
+    def test_a_measured_critical_runway_triggers_a_critical_alert(self):
         cf = {"operating": 100_000, "net_change": 100_000, "monthly_series": []}
-        alerts = _check_cashflow(cf, _forecast(runway=1))  # 1 month!
-        runway_alerts = [a for a in alerts if a["metric"] == "runway_months"]
+        forecast = {**_forecast(runway=1), "runway": {"status": "computed", "level": "critical"}}
+        runway_alerts = [a for a in _check_cashflow(cf, forecast) if a["metric"] == "runway_months"]
         assert any(a["severity"] == "critical" for a in runway_alerts)
+
+    def test_a_base_scenario_runway_alone_is_never_critical(self):
+        # The scenario assumes growth; only a measured runway (proven balance, complete months) is critical.
+        cf = {"operating": 100_000, "net_change": 100_000, "monthly_series": []}
+        runway_alerts = [a for a in _check_cashflow(cf, _forecast(runway=1)) if a["metric"] == "runway_months"]
+        assert runway_alerts and {a["severity"] for a in runway_alerts} == {"warning"}
 
     def test_warning_runway_triggers_warning(self):
         cf = {"operating": 100_000, "net_change": 100_000, "monthly_series": []}

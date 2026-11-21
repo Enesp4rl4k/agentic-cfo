@@ -242,10 +242,13 @@ def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
         return sonuc
     # Which rows wait for a person does not change what the bank says the account holds:
     # the running balances are proven over the whole file, in file order, before it is split.
-    from app.services.bank_balance import closing_balance
+    from app.services.bank_balance import closing_balance, statement_extent
 
     closing = closing_balance(rows)
+    extent = statement_extent(rows)
     whole = {"statement_closing_balance": closing} if closing is not None else {}
+    if extent is not None:
+        whole["statement_extent"] = extent
     waiting = f"{len(held)} kayıt incelemenizi bekliyor"
     if not accepted:
         return SkillResult(

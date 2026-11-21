@@ -494,6 +494,13 @@ async def run_cfo_analysis(
             )
             if closing is not None:
                 meta["closing_balance"] = closing
+            from app.services.bank_balance import statement_extent
+
+            # The days the statement covers (and the balances it opens and closes on): which
+            # months of the company's cash are complete is read from these later.
+            extent = result.get("statement_extent") or statement_extent(list(result.get("transactions") or []))
+            if extent is not None:
+                meta["statement_extent"] = extent
             try:
                 if meta.get("analysis_started_at"):
                     t0 = datetime.fromisoformat(meta["analysis_started_at"])

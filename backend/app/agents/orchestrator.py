@@ -479,6 +479,7 @@ async def run_cfo_pipeline(
     category_rules: list[dict[str, Any]] | None = None,
     ledger_view: dict[str, Any] | None = None,
     opening_cash: dict[str, Any] | None = None,
+    statement_extents: list[dict[str, Any]] | None = None,
     base_currency: str | None = None,
 ) -> CFOState:
     """
@@ -525,6 +526,7 @@ async def run_cfo_pipeline(
         "category_rule_hits": None,
         "ledger_view": ledger_view,
         "opening_cash": opening_cash,
+        "statement_extents": statement_extents,
         "base_currency": base_currency or await _stored_base_currency(org_id),
         "foreign_totals": None,
         "base_state": None,
