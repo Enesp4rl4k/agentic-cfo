@@ -333,3 +333,131 @@ async def test_a_scheduled_job_is_attributed_to_a_member_not_to_whoever_is_actin
         owner.org_id = None
         await db.commit()
         assert await job_owner_id(db, org) == owner_id
+
+
+# ── /ws/chat and the user lookup follow the membership on every request ─────
+
+class _Socket:
+    """Just enough of a WebSocket for `websocket_chat`."""
+
+    from starlette.websockets import WebSocketState
+
+    def __init__(self, messages):
+        self.client_state = self.WebSocketState.CONNECTED
+        self._messages = list(messages)
+        self.sent: list[str] = []
+        self.closed: int | None = None
+
+    async def accept(self):
+        return None
+
+    async def receive_text(self):
+        from starlette.websockets import WebSocketDisconnect
+
+        if not self._messages:
+            raise WebSocketDisconnect()
+        item = self._messages.pop(0)
+        if callable(item):
+            await item()
+            return await self.receive_text()
+        return item
+
+    async def send_text(self, text):
+        self.sent.append(text)
+
+    async def close(self, code=1000):
+        self.closed = code
+        self.client_state = self.WebSocketState.DISCONNECTED
+
+
+async def _chat(client, monkeypatch, headers_token: str, steps):
+    from app.api import ws_auth, ws_stream
+
+    monkeypatch.setattr(ws_auth, "session_factory", lambda: client._maker)
+    asked: list[str | None] = []
+
+    async def fake_prompt(question, job_id, org_id, user):
+        asked.append(org_id)
+        raise RuntimeError("stop before the model")
+
+    monkeypatch.setattr(ws_stream, "_build_chat_prompt", fake_prompt)
+    monkeypatch.setattr("app.services.llm_structured._is_placeholder_key", lambda _k: False)
+    ws = _Socket(steps)
+    await ws_stream.websocket_chat(ws, token=headers_token)  # type: ignore[arg-type]
+    return ws, asked
+
+
+def _token(headers):
+    return headers["Authorization"].split()[1]
+
+
+async def test_chat_socket_refuses_the_next_message_after_removal(client, monkeypatch):
+    headers, _a, b, uid = await viewer_in_a_owner_in_b(client)
+    await client.post(f"{P}/org/switch", headers=headers, json={"org_id": b})
+    boss = await client.post(f"{P}/auth/login", json={"email": "b-sahip@example.com", "password": PAROLA})
+    boss_headers = {"Authorization": f"Bearer {boss.json()['data']['access_token']}"}
+
+    async def remove():
+        assert (await client.delete(f"{P}/org/members/{uid}", headers=boss_headers)).status_code == 200
+
+    q = json.dumps({"type": "chat", "question": "ciro?"})
+    ws, asked = await _chat(client, monkeypatch, _token(headers), [q, remove, q])
+    assert asked == [b], "the first message, before removal, is answered for B"
+    assert ws.closed == 1008 and asked.count(b) == 1
+
+
+async def test_chat_socket_never_answers_about_the_old_company_after_a_switch(client, monkeypatch):
+    headers, a, b, _uid = await viewer_in_a_owner_in_b(client)
+    await client.post(f"{P}/org/switch", headers=headers, json={"org_id": b})
+
+    async def switch():
+        assert (await client.post(f"{P}/org/switch", headers=headers, json={"org_id": a})).status_code == 200
+
+    q = json.dumps({"type": "chat", "question": "ciro?"})
+    ws, asked = await _chat(client, monkeypatch, _token(headers), [switch, q])
+    assert asked == [] and ws.closed == 1008
+
+
+async def test_chat_socket_refuses_a_deactivated_user(client, monkeypatch):
+    headers, _a, _b, uid = await viewer_in_a_owner_in_b(client)
+
+    async def deactivate():
+        async with client._maker() as db:
+            (await db.get(User, uid)).is_active = False
+            await db.commit()
+
+    q = json.dumps({"type": "chat", "question": "ciro?"})
+    ws, asked = await _chat(client, monkeypatch, _token(headers), [deactivate, q])
+    assert asked == [] and ws.closed == 1008
+
+
+async def test_a_second_worker_sees_removal_and_deactivation_at_once(client):
+    """Two workers share nothing but the database: nothing about access may live in process memory."""
+    import app.api.auth as auth
+
+    assert not hasattr(auth, "_USER_CACHE"), "no per-process user cache"
+    headers, a, b, uid = await viewer_in_a_owner_in_b(client)
+    await client.post(f"{P}/org/switch", headers=headers, json={"org_id": b})
+    assert (await client.get(f"{P}/org/me", headers=headers)).json()["data"]["org_id"] == b  # 'worker 1' warm
+    # 'Worker 2' changes the facts straight in the database, as another process would.
+    async with client._maker() as db:
+        row = (await db.execute(select(OrgMembership).where(OrgMembership.user_id == uid, OrgMembership.org_id == b))).scalar_one()
+        await db.delete(row)
+        user = await db.get(User, uid)
+        user.org_id, user.role = a, "viewer"
+        await db.commit()
+    assert (await client.get(f"{P}/org/me", headers=headers)).json()["data"]["org_id"] == a
+    async with client._maker() as db:
+        (await db.get(User, uid)).is_active = False
+        await db.commit()
+    assert (await client.get(f"{P}/org/me", headers=headers)).status_code == 401
+
+
+async def test_a_token_with_an_outdated_role_claim_gets_the_membership_role(client):
+    from app.services.auth import create_access_token
+
+    _headers, _a, _b, uid = await viewer_in_a_owner_in_b(client)  # viewer in A, acting in A
+    forged = create_access_token(uid, "cok@example.com", "owner")  # claim says owner
+    h = {"Authorization": f"Bearer {forged}"}
+    assert (await client.post(f"{P}/org/invite", headers=h, json={"email": "x@example.com", "role": "viewer"})).status_code == 403
+    assert (await client.post(f"{P}/actions/nope/approve", headers=h)).status_code == 403

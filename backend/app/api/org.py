@@ -25,7 +25,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import _bearer, _cache_invalidate, get_current_user
+from app.api.auth import _bearer, get_current_user
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization, OrgInvite, OrgMembership
@@ -272,9 +272,6 @@ async def create_org(
     await db.commit()
     await db.refresh(org)
 
-    # Drop the stale cached copy so the next request sees the new org and role
-    # instead of the pre-creation snapshot.
-    _cache_invalidate(str(current_user.id))
 
     logger.info("Org created: %s (slug=%s) by user %s", org.name, org.slug, current_user.email)
 
@@ -418,7 +415,6 @@ async def remove_member(
     )
     await drop_membership(db, user_id=str(target.id), org_id=str(org.id))
     await db.commit()
-    _cache_invalidate(str(target.id))
 
     logger.info("User %s removed from org %s by %s", target.email, org.id, current_user.email)
     return {"data": {"removed": True}, "error": None}
@@ -650,7 +646,6 @@ async def accept_invite(
 
     await db.commit()
     await db.refresh(user)
-    _cache_invalidate(str(user.id))
 
     access  = create_access_token(user.id, user.email, user.role)
     refresh = create_refresh_token(user.id)
@@ -771,7 +766,6 @@ async def switch_org(
     user_row.org_id = org.id
     user_row.role = membership.role
     await db.commit()
-    _cache_invalidate(str(user_row.id))
     logger.info("Org switch: user=%s -> org=%s role=%s", user_row.email, org.id, membership.role)
     return {"data": {"org_id": org.id, "name": org.name, "role": membership.role}, "error": None}
 

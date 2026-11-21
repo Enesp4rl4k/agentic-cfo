@@ -58,46 +58,15 @@ _bearer = HTTPBearer(auto_error=False)
 # Note: lru_cache on an async function caches the coroutine object, not the
 # result. We use a plain dict + timestamp instead.
 
-import time as _time
 
 # PERF-2: one PK lookup per request adds up, so the resolved user is cached for
 # a minute. The catch is what gets cached.
 #
-# This used to hold the ORM instance straight out of the request's session.
-# After that request finished, the session closed and the cached object outlived
-# it: reads of already-loaded columns still worked, but a lazy relationship
-# raised DetachedInstanceError and a mutation raised "not persistent within this
-# Session". `POST /org/create` did exactly that, so creating a workspace failed
-# for every request after the first — and no test caught it, because each test
-# starts with a cold cache and takes the `db.get` branch, which returns a live
-# instance where everything works.
-#
-# The fix is to make both paths behave identically instead of only one of them
-# being broken: the instance is expunged before it is cached, so *every* caller
-# gets a detached user. Reads are fine, lazy loads and writes fail immediately
-# and on the first request. Endpoints that need to change the user re-load it
-# through their own session — see `create_org`.
-_USER_CACHE: dict[str, tuple[User, float]] = {}
-_USER_CACHE_TTL = 60  # seconds
-
-
-def _cache_get(user_id: str) -> User | None:
-    entry = _USER_CACHE.get(user_id)
-    if entry is None:
-        return None
-    user, ts = entry
-    if _time.monotonic() - ts > _USER_CACHE_TTL:
-        del _USER_CACHE[user_id]
-        return None
-    return user
-
-
-def _cache_set(user_id: str, user: User) -> None:
-    _USER_CACHE[user_id] = (user, _time.monotonic())
-
-
-def _cache_invalidate(user_id: str) -> None:
-    _USER_CACHE.pop(user_id, None)
+# There is no per-process user cache. One used to hold the user for 60 s, and
+# with two workers a removal, role change, deactivation or organisation switch
+# reached the other worker up to a minute late, while `acting_role` fell back
+# to the cached `users.role`. The facts that decide access (is_active, org_id,
+# role, membership) are read on every request: one primary-key select.
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -165,20 +134,13 @@ async def get_current_user(
         except JWTError:
             raise credentials_exception
 
-        # PERF-2: Check cache before hitting the DB
-        cached = _cache_get(user_id)
-        if cached is not None:
-            return cached
-
         user = await db.get(User, user_id)
         if not user or not user.is_active:
             raise credentials_exception
 
-        # Detach before caching *and* before returning, so the cached path and
-        # the fresh path hand back the same kind of object. Every column is
-        # already loaded by the get() above, so reads keep working.
+        # Detached, so every caller gets the same kind of object (reads work; endpoints
+        # that change the user re-load it through their own session, see `create_org`).
         db.expunge(user)
-        _cache_set(user_id, user)
         return user
 
     # ── Try API key ───────────────────────────────────────────────────────────
@@ -396,7 +358,6 @@ async def create_api_key(
     await db.commit()
 
     # Invalidate cache so next request reloads the updated user from DB
-    _cache_invalidate(str(current_user.id))
     logger.info("API key rotated for user: %s", current_user.email)
 
     return {
@@ -420,5 +381,4 @@ async def revoke_api_key(
         raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
     user_row.api_key = None
     await db.commit()
-    _cache_invalidate(str(current_user.id))
     return {"data": {"revoked": True}, "error": None}
