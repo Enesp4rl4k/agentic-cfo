@@ -65,8 +65,8 @@ describe("transactions page totals", () => {
     ];
     wrap(<TransactionsPage />);
 
-    expect(screen.getByText("Total In").parentElement?.textContent).toMatch(/100\.000/);   // TRY only
-    expect(screen.getByText("Total Out").parentElement?.textContent).toMatch(/30\.000/);
+    expect(screen.getByText("Toplam giriş").parentElement?.textContent).toMatch(/100\.000/);   // TRY only
+    expect(screen.getByText("Toplam çıkış").parentElement?.textContent).toMatch(/30\.000/);
     expect(screen.getByText("Net").parentElement?.textContent).toMatch(/70\.000/);
     expect(document.body.textContent).not.toMatch(/105\.000/);                            // no 100k + 5k
     const lines = screen.getByTestId("other-currency-lines");
@@ -79,7 +79,7 @@ describe("transactions page totals", () => {
     transactions.base = { state: "single_unconfirmed", currency: "TRY", confirmed: false, dominant: null, present: { TRY: 2 }, confirm_path: "/bekleyen-kayitlar" };
     transactions.current = [tx("a", "income", 100_000_00, "TRY"), tx("b", "expense", 30_000_00, "TRY")];
     wrap(<TransactionsPage />);
-    expect(screen.getByText("Total In").parentElement?.textContent).toMatch(/100\.000/);
+    expect(screen.getByText("Toplam giriş").parentElement?.textContent).toMatch(/100\.000/);
     expect(screen.getByTestId("base-currency-notice").textContent).toContain("henüz onaylanmadı");
     expect(screen.getByText("Para birimini onayla").closest("a")?.getAttribute("href")).toBe("/bekleyen-kayitlar");
     transactions.base = { state: "confirmed", currency: "TRY", confirmed: true, dominant: null, present: {}, confirm_path: "/bekleyen-kayitlar" };
@@ -89,7 +89,7 @@ describe("transactions page totals", () => {
     transactions.base = { state: "ambiguous", currency: null, confirmed: false, dominant: "TRY", present: { TRY: 1, USD: 1 }, confirm_path: "/bekleyen-kayitlar" };
     transactions.current = [tx("a", "income", 100_000_00, "TRY"), tx("c", "income", 5_000_00, "USD")];
     wrap(<TransactionsPage />);
-    expect(screen.queryByText("Total In")).toBeNull();
+    expect(screen.queryByText("Toplam giriş")).toBeNull();
     expect(screen.getByTestId("base-currency-notice").textContent).toContain("Şirket para biriminizi seçin");
     expect(screen.getByTestId("other-currency-lines").textContent).toMatch(/100\.000/);
     expect(screen.getByTestId("other-currency-lines").textContent).toMatch(/5\.000/);

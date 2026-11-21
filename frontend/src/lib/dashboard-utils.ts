@@ -14,12 +14,12 @@ export function valueToColor(
 }
 
 /**
- * Format a number as currency using org locale (default en-US / USD).
+ * Format a number as currency in the stated currency. There is no default: the caller says which.
  * Accepts "TRY", "USD", or legacy "₺" symbol string.
  */
 export function formatCurrency(
   value: number,
-  currency: string = "USD",
+  currency: string,
   locale: string = "en-US",
 ): string {
   const resolved = currency === "₺" ? "TRY" : currency;

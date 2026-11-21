@@ -29,6 +29,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 
@@ -399,7 +401,7 @@ class MultiPeriodComparisonEngine:
             sign = "artış" if rev_change.pct_change >= 0 else "düşüş"
             parts.append(
                 f"Gelir {abs(rev_change.pct_change * 100):.1f}% {sign} gösterdi "
-                f"({a.revenue:,.0f} → {b.revenue:,.0f} TRY)."
+                f"({fmt_amount(a.revenue, None)} → {fmt_amount(b.revenue, None)})."
             )
 
         if net_change and net_change.pct_change is not None:

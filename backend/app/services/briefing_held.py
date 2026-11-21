@@ -34,14 +34,14 @@ def held_caveat(radar: Any, week_outflow_cents: int) -> str:
     )
 
 
-def held_only_sentence(held: Any, currency: str = "TRY") -> str:
+def held_only_sentence(held: Any, currency: str | None = None) -> str:
     """The headline when the radar is empty only because every document is waiting for a decision."""
     size = f" ({_fmt(held.payable_cents, currency)} ödeme)" if held.payable_cents else ""
     return f"{held.count} belge{size} kararınızı bekliyor; radar bunlar olmadan boş."
 
 
-def held_line(held: Any, currency: str = "TRY") -> str:
-    """The `not_included` line: what waits, in lira, and that a person must answer."""
+def held_line(held: Any, currency: str | None = None) -> str:
+    """The `not_included` line: what waits (in the currency given, bare when none), and that a person must answer."""
     parts = []
     if held.payable_cents:
         parts.append(f"{_fmt(held.payable_cents, currency)} ödeme")

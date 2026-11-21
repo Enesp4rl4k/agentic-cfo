@@ -7,6 +7,9 @@ import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { formatCurrency } from "@/lib/dashboard-utils";
 
+// Plan prices are list prices in lira (backend `PlanConfig.price_monthly_try`), whatever currency the company reports in.
+const PLAN_PRICE_CURRENCY = "TRY";
+
 interface Plan {
   id: string;
   name: string;
@@ -36,7 +39,7 @@ function CheckIcon() {
 
 export default function BillingPage() {
   const { t } = useI18n();
-  const { baseCurrency, locale } = useOrgSettings();
+  const { locale } = useOrgSettings();
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
@@ -166,7 +169,7 @@ export default function BillingPage() {
               )}
               <h2 className="text-xl font-bold">{plan.name}</h2>
               <p className="mt-2 text-3xl font-bold">
-                {formatCurrency(price, baseCurrency ?? "USD", locale)}
+                {formatCurrency(price, PLAN_PRICE_CURRENCY, locale)}
                 <span className="text-sm font-normal text-muted-foreground">
                   /{interval === "month" ? "mo" : "yr"}
                 </span>

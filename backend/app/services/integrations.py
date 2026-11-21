@@ -298,7 +298,7 @@ class GoogleSheetsConnector:
         pnl = cfo_result.get("pnl", {})
         rows = [
             ["Metrik", "Değer", "Güncelleme"],
-            ["Gelir (TRY)", pnl.get("revenue", 0) / 100, datetime.now().strftime("%Y-%m-%d %H:%M")],
+            [f"Gelir ({pnl.get('currency')})" if pnl.get("currency") else "Gelir", pnl.get("revenue", 0) / 100, datetime.now().strftime("%Y-%m-%d %H:%M")],
             ["Brüt Marj %", round((pnl.get("gross_margin", 0)) * 100, 1), ""],
             ["Net Marj %",  round((pnl.get("net_margin", 0)) * 100, 1),  ""],
         ]

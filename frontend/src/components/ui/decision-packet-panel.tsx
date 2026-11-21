@@ -24,6 +24,7 @@ import {
   type PacketOption,
 } from "@/lib/api/decisionPacket";
 import { useCan } from "@/hooks/useCan";
+import { useCentsFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { failureMessage } from "@/lib/forbidden";
 import {
@@ -35,18 +36,6 @@ import {
 import { cn } from "@/lib/utils";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-
-const tl = new Intl.NumberFormat("tr-TR", {
-  style: "currency",
-  currency: "TRY",
-  maximumFractionDigits: 0,
-});
-
-/** Report money is kuruş — the UI shows lira. */
-function fmtTL(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return tl.format(value / 100);
-}
 
 function fmtAge(item: FreshnessItem): string {
   if (item.state === "never") return "hiç senkron yok";
@@ -116,6 +105,7 @@ function FreshnessStrip({ items }: { items: FreshnessItem[] }) {
 /** P3 — "did your forecasts actually hold?". Honest about thin data:
  *  below three closed windows it reports that, never a metric on noise. */
 function CalibrationLine({ cal }: { cal?: Calibration }) {
+  const fmtTL = useCentsFormat();
   if (!cal) return null;
   const ok = cal.status === "ok";
   return (
@@ -150,6 +140,7 @@ function CalibrationLine({ cal }: { cal?: Calibration }) {
 }
 
 function SituationRow({ packet }: { packet: DecisionPacket }) {
+  const fmtTL = useCentsFormat();
   const s = packet.situation;
   const cells: { label: string; value: string }[] = [
     { label: "12 ay gelir", value: fmtTL(s.revenue_12m) },
@@ -176,6 +167,7 @@ function SituationRow({ packet }: { packet: DecisionPacket }) {
 }
 
 function OptionsTable({ options }: { options: PacketOption[] }) {
+  const fmtTL = useCentsFormat();
   if (options.length === 0) return null;
   return (
     <section aria-label="Seçenekler">
@@ -223,7 +215,7 @@ function OptionsTable({ options }: { options: PacketOption[] }) {
                       (o.base_net_impact >= 0 ? "text-emerald-500" : "text-red-400")
                   )}
                 >
-                  {o.baseline ? "0 ₺ (referans)" : fmtTL(o.base_net_impact)}
+                  {o.baseline ? `${fmtTL(0)} (referans)` : fmtTL(o.base_net_impact)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {o.breakeven_months != null ? `${o.breakeven_months} ay` : "—"}
@@ -311,6 +303,7 @@ function DecisionRecorder({
   options: PacketOption[];
 }) {
   const { t } = useI18n();
+  const fmtTL = useCentsFormat();
   const can = useCan("edit");
   const [loading, setLoading] = useState(true);
   const [decision, setDecision] = useState<DecisionRecord | null>(null);

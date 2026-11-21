@@ -12,16 +12,20 @@ from app.services.unified_report import _build_cfo_section, _fmt_tl
 
 def test_formatters_disagree_only_on_the_unit() -> None:
     # kuruş input: divides once
-    assert _fmt(500_000) == "₺5K"
+    assert _fmt(500_000, "TRY") == "₺5K"
     # lira input: never divides
-    assert _fmt_lira(500_000) == "₺500K"
+    assert _fmt_lira(500_000, "TRY") == "₺500K"
     # true-cents input (CTO/CMO *_cents fields): divides once
-    assert _fmt_tl(500_000) == "₺5K"
+    assert _fmt_tl(500_000, "TRY") == "₺5K"
+    # No currency stated: the bare number, never a default symbol.
+    assert _fmt(500_000) == "5K"
+    assert _fmt_lira(500_000, "USD") == "500K USD"
 
 
 def test_pdf_html_keeps_lira_scalars_undivided() -> None:
     dash = {
         "pnl": {
+            "currency": "TRY",
             "revenue": 1_000_000,          # lira
             "net_income": 120_000,         # lira
             "opex": {"technology": 250_000},  # lira
@@ -48,7 +52,7 @@ def test_pdf_html_keeps_lira_scalars_undivided() -> None:
 
 def test_unified_cfo_section_keeps_lira_scalars() -> None:
     cfo = {
-        "pnl": {"revenue": 1_000_000, "net_income": 120_000},
+        "pnl": {"currency": "TRY", "revenue": 1_000_000, "net_income": 120_000},
         "forecast": {
             "scenarios": {"base": {"twelve_month_net": 2_400_000, "runway_months": 10}},
         },

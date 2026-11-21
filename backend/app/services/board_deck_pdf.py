@@ -29,13 +29,18 @@ except ImportError:  # pragma: no cover - exercised only in minimal installs
     REPORTLAB_AVAILABLE = False
 
 from app.core.branding import get_brand
+from app.core.currency_totals import fmt_amount
 from app.core.financial import cents_to_amount
 from app.core.interfaces import IReportExporter
 
 
-def _fmt(cents: int | float) -> str:
-    amt = cents_to_amount(cents)
-    return f"₺{amt:,.2f}"
+def _fmt(cents: int | float, currency: str | None = None) -> str:
+    """Kuruş, labelled with the currency the figures are in (`pnl["currency"]`), or bare when none is stated."""
+    return fmt_amount(cents_to_amount(cents), currency, 2)
+
+
+def _amount_col(currency: str | None) -> str:
+    return f"Tutar ({currency})" if currency else "Tutar"
 
 
 class BoardDeckPDFExporter(IReportExporter):
@@ -87,6 +92,7 @@ class BoardDeckPDFExporter(IReportExporter):
         **kwargs: Any,
     ) -> bytes:
         """Generate in-memory PDF buffer bytes."""
+        cur = pnl.get("currency")  # every amount is in the currency the P&L states, or bare
         buf = io.BytesIO()
         doc = SimpleDocTemplate(
             buf,
@@ -156,7 +162,7 @@ class BoardDeckPDFExporter(IReportExporter):
 
         kpi_data = [
             ["Toplam Gelir", "Net Kâr / Zarar", "FAVÖK (EBITDA)", "Brüt Kâr Marjı"],
-            [_fmt(rev_cents), _fmt(net_cents), _fmt(ebitda_cents), f"%{gross_margin:.1f}"],
+            [_fmt(rev_cents, cur), _fmt(net_cents, cur), _fmt(ebitda_cents, cur), f"%{gross_margin:.1f}"],
         ]
         kpi_table = Table(kpi_data, colWidths=[130, 130, 130, 130])
         kpi_table.setStyle(TableStyle([
@@ -190,12 +196,12 @@ class BoardDeckPDFExporter(IReportExporter):
         # ── P&L Statement Breakdown Table ─────────────────────────────────────
         story.append(Paragraph("Gelir Tablosu Özeti (P&L)", heading_style))
         pnl_table_data = [
-            ["Kalem", "Tutar (TL)", "Gelire Oran"],
-            ["Brüt Satış Gelirleri", _fmt(rev_cents), "%100.0"],
-            ["Satışların Maliyeti (COGS)", _fmt(-pnl.get("cogs", 0)), f"%{(pnl.get('cogs', 0) / max(1, rev_cents) * 100):.1f}"],
-            ["Brüt Faaliyet Kârı", _fmt(pnl.get("gross_profit", 0)), f"%{gross_margin:.1f}"],
-            ["Faaliyet Giderleri (OpEx)", _fmt(-pnl.get("operating_expenses", 0) or -pnl.get("total_opex", 0)), "%—"],
-            ["Net Dönem Kârı / (Zararı)", _fmt(net_cents), f"%{(net_cents / max(1, rev_cents) * 100):.1f}"],
+            ["Kalem", _amount_col(cur), "Gelire Oran"],
+            ["Brüt Satış Gelirleri", _fmt(rev_cents, cur), "%100.0"],
+            ["Satışların Maliyeti (COGS)", _fmt(-pnl.get("cogs", 0), cur), f"%{(pnl.get('cogs', 0) / max(1, rev_cents) * 100):.1f}"],
+            ["Brüt Faaliyet Kârı", _fmt(pnl.get("gross_profit", 0), cur), f"%{gross_margin:.1f}"],
+            ["Faaliyet Giderleri (OpEx)", _fmt(-pnl.get("operating_expenses", 0) or -pnl.get("total_opex", 0), cur), "%—"],
+            ["Net Dönem Kârı / (Zararı)", _fmt(net_cents, cur), f"%{(net_cents / max(1, rev_cents) * 100):.1f}"],
         ]
         pnl_tbl = Table(pnl_table_data, colWidths=[240, 160, 120])
         pnl_tbl.setStyle(TableStyle([
@@ -218,11 +224,11 @@ class BoardDeckPDFExporter(IReportExporter):
         runway_months = forecast.get("runway_months", "Stabil / Pozitif")
 
         cf_data = [
-            ["Nakit Akış Kalemi", "Tutar (TL)"],
-            ["İşletme Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("operating", 0))],
-            ["Yatırım Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("investing", 0))],
-            ["Finansman Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("financing", 0))],
-            ["Net Nakit Değişimi", _fmt(cf_net)],
+            ["Nakit Akış Kalemi", _amount_col(cur)],
+            ["İşletme Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("operating", 0), cur)],
+            ["Yatırım Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("investing", 0), cur)],
+            ["Finansman Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("financing", 0), cur)],
+            ["Net Nakit Değişimi", _fmt(cf_net, cur)],
             ["Tahmini Nakit Runway", f"{runway_months} Ay" if isinstance(runway_months, (int, float)) else str(runway_months)],
         ]
         cf_tbl = Table(cf_data, colWidths=[320, 200])
@@ -428,7 +434,7 @@ class BoardDeckPDFBuilder:
             story.append(Paragraph("CFO Snapshot", h2))
             cfo_rows = [
                 ["Metric", "Value"],
-                ["Revenue", _fmt(pnl.get("revenue", 0))],
+                ["Revenue", _fmt(pnl.get("revenue", 0), pnl.get("currency"))],
                 ["Net margin", f"{pnl.get('net_margin', 0) * 100:.1f}%"],
                 ["Runway (months)", str(cfo.get("runway_months", "-"))],
             ]

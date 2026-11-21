@@ -19,6 +19,7 @@ import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { CurrencyScope, useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { effectiveCurrencyOf } from "@/lib/effective-currency";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
@@ -127,7 +128,7 @@ function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
       </div>
       <div className="mt-1.5">
         {pnl.base_state !== "ambiguous" && <BaseCurrencyNotice state={pnl.base_state} base={pnl.currency} />}
-        <OtherCurrencyLines items={pnl.other_currencies} base={pnl.currency ?? org?.base_currency ?? "TRY"} ratios />
+        <OtherCurrencyLines items={pnl.other_currencies} base={pnl.currency ?? effectiveCurrencyOf(org) ?? ""} ratios />
         <LeftOutNote items={pnl.other_currencies} />
       </div>
     </>
