@@ -165,7 +165,7 @@ test.describe("Pilot flow", () => {
     expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
 
     // The forecast starts from that balance and says so; it does not announce one month of cash.
-    await page.goto("/forecast");
+    await page.goto(`/forecast?job=${S.bankJob}`);
     await expect(screen(page).getByText(new RegExp(`${asOfLong} \\d{4} ekstresindeki bakiyeye göre kasa ₺116\\.500`))).toBeVisible({ timeout: 60_000 });
     await expect(screen(page).getByText(/yalnızca 1 ay/)).toHaveCount(0);
   });
