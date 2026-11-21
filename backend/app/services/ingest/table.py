@@ -137,7 +137,11 @@ def tabloyu_bul(rows: list[list[Any]], bilinen: set[str], sayfa: str | None = No
     tagged: set[int] = set()
     heads = [anahtar(h) for h in header]
     for row in rows[best_i + 1:]:
-        row = (list(row) + [None] * width)[:width]
+        row = list(row) + [None] * max(0, width - len(row))
+        # Cells beyond the header's width are NOT cut away: a row whose only content sits in an unheaded
+        # column is a row (it reaches the statement reader, which holds it as misaligned), not a blank one.
+        if not any(not bos(c) for c in row[width:]):
+            row = row[:width]
         dolu = [c for c in row if not bos(c)]
         if not dolu:
             empty += 1

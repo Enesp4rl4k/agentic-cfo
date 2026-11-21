@@ -12,6 +12,7 @@ import re
 from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import signed_money
 
 
 class AkbankParser(BankParser):
@@ -55,15 +56,14 @@ class AkbankParser(BankParser):
         transactions: list[ParsedTransaction] = []
         # Match: date, description, optional debit, optional credit
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"   # date
-            r"(.+?)\s+"                     # description (non-greedy)
-            r"([\d.,]+)?\s*"                # debit (optional)
-            r"([\d.,]+)?\s*"                # credit (optional)
-            r"([\d.,]+)\s*$",               # balance
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+"   # date
+            r"(.+?)[ \t]+"                     # description (non-greedy)
+            r"(?:((?=[\d.,]*[.,])[\d.,]+)[ \t]+)?"            # debit (optional): a token ends at whitespace, never mid-number
+            r"(?:((?=[\d.,]*[.,])[\d.,]+)[ \t]+)?"            # credit (optional)
+            r"([+\-−]?[\d.,]+)[ \t]*$",      # balance
             re.MULTILINE,
         )
         for m in row_pattern.finditer(text):
-            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
             date = date or datetime.now(UTC)
@@ -76,8 +76,11 @@ class AkbankParser(BankParser):
             # open and read from the running balance (app.parsers.direction.settle_rows),
             # never assumed to be a debit.
             raw = debit_raw or credit_raw
-            amount = self.parse_turkish_amount(raw) if raw else None
-            amount = amount or 0
+            if not raw:
+                # One number only: it is the balance, there is no amount to book. The line is left to
+                # app.parsers.lines, which holds it with its raw text (never dropped, never booked at 0).
+                continue
+            amount = self.parse_turkish_amount(raw) or 0
             tx_type = ""
 
             transactions.append(ParsedTransaction(
@@ -85,7 +88,7 @@ class AkbankParser(BankParser):
                 description=description,
                 amount_cents=amount,
                 tx_type=tx_type,
-                balance_cents=self.parse_turkish_amount(m.group(5)),
+                balance_cents=signed_money(m.group(5)),
                 raw_row=m.group(0), date_estimated=estimated,
                 confidence_note="borç/alacak sütunu metinden ayırt edilemedi",
             ))

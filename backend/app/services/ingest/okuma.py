@@ -17,6 +17,10 @@ The buckets, and the only code that fills them:
   account_skipped  rows._csv_satiri                          a transfer/closing posting of an account-coded ledger
                                                              (the names are in `atlanan`)
   emitted          rows._try_parse_csv / bank parsers        a transaction row: booked or held by the hold step
+  continuation     parsers.lines.account_for_lines           a wrapped description line attached to its row
+  non_row_lines    parsers.lines.account_for_lines           page header / footer / address / rule
+  (text statements: `read` is parsers.lines.read_lines, the physical non-empty lines, independent of every row
+  pattern; a money-like line no pattern took is EMITTED as a held "satır okunamadı" row, never dropped)
 """
 from __future__ import annotations
 
@@ -25,7 +29,9 @@ from typing import Any
 
 MAX_LISTED = 25
 
-SUMMED = ("read", "blank", "header_repeats", "emitted", "summary_skipped", "account_skipped")
+SUMMED = (
+    "read", "blank", "header_repeats", "emitted", "summary_skipped", "account_skipped", "continuation", "non_row_lines",
+)
 
 
 @dataclass
@@ -36,15 +42,27 @@ class ReadLedger:
     emitted: int = 0
     summary_skipped: int = 0
     account_skipped: int = 0
+    continuation: int = 0       # a wrapped description attached to the row above it
+    non_row_lines: int = 0      # a page header, footer, address or rule of a text statement
     summary_lines: list[dict[str, str]] = field(default_factory=list)
     # The structured reader failed on this file and another reader took over (never silently).
     reader_failed: bool = False
+    # Text statements: was the running balance chain checked? "verified" | "unverified" | None (not a text statement).
+    balance_check: str | None = None
 
     def reset(self) -> None:
         """A reader gave up: the next one starts from nothing (the failure itself is remembered)."""
         failed = self.reader_failed
         self.__init__()  # type: ignore[misc]
         self.reader_failed = failed
+
+    def absorb(self, account: Any) -> None:
+        """Add what `parsers.lines.account_for_lines` found: the physical lines read, and where each went."""
+        self.read += account.read
+        self.continuation += account.continuation
+        self.non_row_lines += account.non_row
+        for line in account.summary:
+            self.skip_summary(line)
 
     def skip_summary(self, description: str, date: str = "") -> None:
         self.summary_skipped += 1
@@ -58,6 +76,7 @@ class ReadLedger:
     def as_dict(self) -> dict[str, Any]:
         return {k: getattr(self, k) for k in SUMMED} | {
             "summary_lines": list(self.summary_lines), "reader_failed": self.reader_failed,
+            "balance_check": self.balance_check,
         }
 
 
@@ -68,6 +87,8 @@ def merge_counts(a: dict[str, Any] | None, b: dict[str, Any] | None) -> dict[str
     out: dict[str, Any] = {k: int(a.get(k, 0)) + int(b.get(k, 0)) for k in SUMMED}
     out["summary_lines"] = [*a.get("summary_lines", []), *b.get("summary_lines", [])][:MAX_LISTED]
     out["reader_failed"] = bool(a.get("reader_failed") or b.get("reader_failed"))
+    checks = {c for c in (a.get("balance_check"), b.get("balance_check")) if c}
+    out["balance_check"] = None if not checks else "unverified" if "unverified" in checks else "verified"
     return out
 
 
@@ -80,3 +101,19 @@ def unaccounted(counts: dict[str, Any] | None) -> int:
     if "accepted" in counts:
         held_step = counts["emitted"] - int(counts["accepted"]) - int(counts.get("held", 0))
     return abs(gone) + abs(held_step)
+
+
+def reconcile(counts: dict[str, Any] | None, accepted: int, held: int) -> tuple[dict[str, Any] | None, int]:
+    """The counts with the hold step's numbers added, and how many rows are unaccounted for (logged when > 0)."""
+    if not counts:
+        return None, 0
+    done = {**counts, "accepted": accepted, "held": held}
+    lost = unaccounted(done)
+    done["unaccounted"] = lost
+    if lost:
+        import logging
+
+        logging.getLogger(__name__).error(
+            "ingest row count does not reconcile: %s", {k: v for k, v in done.items() if isinstance(v, int)},
+        )
+    return done, lost

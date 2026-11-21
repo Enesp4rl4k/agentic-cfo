@@ -33,6 +33,7 @@ DIRECTION_FILE = "direction_file_unknown"
 AMOUNT_UNREADABLE = "amount_unreadable"
 DATE_UNREADABLE = "date_unreadable"
 AMOUNT_ZERO = "amount_zero"
+LINE_UNREADABLE = "line_unreadable"
 MALFORMED_ROW = "malformed_row"
 SUMMARY_SUSPECT = "summary_suspect"   # looks like a total / carried-balance line but carries an amount
 BALANCE_MISMATCH = "balance_mismatch"   # this row's balance step does not reconcile
@@ -65,6 +66,8 @@ def row_reasons(row: dict[str, Any]) -> list[str]:
         reasons.append(CONFIDENCE_LOW)
     if not str(row.get("currency") or "").strip():
         reasons.append(CURRENCY_UNKNOWN)
+    if row.get("line_unreadable"):
+        reasons.append(LINE_UNREADABLE)
     if row.get("zero_amount"):
         reasons.append(AMOUNT_ZERO)
     if row.get("malformed_row"):

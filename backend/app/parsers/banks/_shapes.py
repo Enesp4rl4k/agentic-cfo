@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import ClassVar
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.parsers.direction import sign_is_informative
+from app.parsers.direction import sign_is_informative, signed_money
 
 _ACCOUNT_RE = re.compile(
     r"Hesap\s+(?:No|Numarası|Numarasi)\s*[:\-]?\s*(\d[\d\s\-]+)", re.IGNORECASE
@@ -37,10 +37,9 @@ class SingleSignedColumnParser(BankParser):
 
     # DD/MM/YYYY or DD.MM.YYYY, description, signed amount, running balance.
     _ROW = re.compile(
-        r"(\d{2}[./]\d{2}[./]\d{4})\s+"
-        r"(.+?)\s+"
-        r"([+\-−]?[\d.,]+)\s+"
-        r"([\d.,]+)\s*$",
+        r"(\d{2}[./]\d{2}[./]\d{4})[ \t]+"
+        r"(.+?)[ \t]+"
+        r"([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?(?:[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?)?[ \t]*$",
         re.MULTILINE,
     )
 
@@ -74,7 +73,6 @@ class SingleSignedColumnParser(BankParser):
         # signs: a column of all-positive amounts says nothing (app.parsers.direction).
         signed = sign_is_informative([self.is_negative_amount(m.group(3)) for m in found])
         for m in found:
-            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
             date = date or datetime.now(UTC)
@@ -96,7 +94,7 @@ class SingleSignedColumnParser(BankParser):
                     ) if signed else "",
                     # The statement's own currency line is read from its text (hold.resolve_currency);
                     # a bank statement saying nothing is not TRY.
-                    balance_cents=self.parse_turkish_amount(m.group(4)),
+                    balance_cents=signed_money(m.group(4)),
                     raw_row=m.group(0), date_estimated=estimated,
                 )
             )

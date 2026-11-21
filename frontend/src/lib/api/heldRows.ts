@@ -11,6 +11,9 @@ export type HeldReason =
   | "direction_file_unknown"
   | "balance_mismatch"
   | "summary_suspect"
+  | "line_unreadable"
+  | "amount_zero"
+  | "malformed_row"
   | "amount_unreadable"
   | "date_unreadable"
   | "document_held_together";

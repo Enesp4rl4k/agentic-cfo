@@ -2954,6 +2954,9 @@ export const tr: MessageTree = {
       direction_file_unknown: "yön belirsiz",
       summary_suspect: "özet satırı olabilir",
       balance_mismatch: "bakiye ile uyuşmuyor",
+      line_unreadable: "satır okunamadı",
+      amount_zero: "tutar sıfır",
+      malformed_row: "sütunlar kaymış olabilir",
     },
     fileTitle: "Bu ekstrede tutarlar hangi yönde?",
     fileBodyNoSignal: "Bu dosyada tutarın yönünü gösteren bir sütun ya da işaret yok; sistem giriş ile çıkışı ayıramaz ve tahmin etmez. Satırları tek tek düzeltebilir ya da yön ya da bakiye sütunu olan bir dosya yükleyebilirsiniz. Dosyada gerçekten yalnızca tek tür varsa aşağıdan belirtin.",
@@ -2996,6 +2999,8 @@ export const tr: MessageTree = {
     ingestSkippedTitle: "Atlanan özet satırları",
     ingestLost: "{count} satır hesaba katılamadı; dosyayı gözden geçirin.",
     ingestFallback: "Bu dosya beklenen biçimde okunamadı, alternatif okuyucu kullanıldı.",
+    ingestBalanceVerified: "Bakiye zinciriyle doğrulandı.",
+    ingestBalanceUnverified: "Bakiye ile doğrulanamadı: satırlar bakiye zinciriyle denetlenemedi.",
   },
   heldAnalysis: {
     title: "Onayınızı bekleyen {n} analiz",

@@ -5,7 +5,7 @@ import re
 from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.parsers.direction import sign_is_informative
+from app.parsers.direction import sign_is_informative, signed_money
 
 
 class ZiraatParser(BankParser):
@@ -44,11 +44,10 @@ class ZiraatParser(BankParser):
 
         # Try two-column format (borç/alacak separate)
         two_col = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+([\d.,]+|-)\s+([\d.,]+|-)\s+([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+(.+?)[ \t]+((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+([+\-−]?[\d.,]+)[ \t]*$",
             re.MULTILINE,
         )
         for m in two_col.finditer(text):
-            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
             date = date or datetime.now(UTC)
@@ -68,7 +67,7 @@ class ZiraatParser(BankParser):
             transactions.append(ParsedTransaction(
                 date=date, description=description,
                 amount_cents=amount, tx_type=tx_type, raw_row=m.group(0), date_estimated=estimated,
-                balance_cents=self.parse_turkish_amount(m.group(5)),
+                balance_cents=signed_money(m.group(5)),
             ))
 
         if transactions:
@@ -76,14 +75,12 @@ class ZiraatParser(BankParser):
 
         # Fallback: signed single-amount column
         one_col = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+([+-]?[\d.,]+)\s+([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+(.+?)[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?(?:[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?)?[ \t]*$",
             re.MULTILINE,
         )
-        self.matched = 0        # the fallback pass counts its own rows
         found = list(one_col.finditer(text))
         signed = sign_is_informative([m.group(3).startswith("-") for m in found])   # all-positive says nothing
         for m in found:
-            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
             date = date or datetime.now(UTC)
@@ -96,7 +93,7 @@ class ZiraatParser(BankParser):
                 date=date, description=description,
                 amount_cents=amount,
                 tx_type=("expense" if negative else "income") if signed else "",
-                balance_cents=self.parse_turkish_amount(m.group(4)),
+                balance_cents=signed_money(m.group(4)),
                 raw_row=m.group(0), date_estimated=estimated,
             ))
 

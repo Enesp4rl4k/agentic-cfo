@@ -166,3 +166,31 @@ def test_the_summary_says_where_every_row_went():
                                                  "summary_lines": [{"description": "Toplam", "date": ""}]})
     assert "8 satır okundu: 3 kaydedildi, 1 kararınızı bekliyor, 2 özet satırı atlandı, 1 geçiş/kapanış kaydı atlandı" in out["summary"]
     assert "1 satır hesaba katılamadı" in out["summary"] and out["skipped_lines"][0]["description"] == "Toplam"
+
+
+def test_a_summary_phrase_row_with_an_amount_and_an_unreadable_date_is_held_not_skipped():
+    from app.services.ingest.hold import row_reasons
+    from app.services.ingest.okuma import ReadLedger
+    from app.services.ingest.rows import _try_parse_csv
+
+    ledger = ReadLedger()
+    rows = _try_parse_csv(
+        "Tarih;Açıklama;Tutar\n01.03.2026;Kira;-400,00\n31.02.2026;Toplam;-700,00\n03.03.2026;Satış;900,00\n04.03.2026;Gaz;-50,00\n",
+        ledger=ledger,
+    ) or []
+    assert ledger.summary_skipped == 0 and len(rows) == 4          # it carries money: a transaction, not a skipped line
+    broken = next(r for r in rows if r["description"] == "Toplam")
+    assert "date_unreadable" in row_reasons({**broken, "currency": "TRY"})
+
+
+def test_a_row_with_content_only_in_an_unheaded_column_is_held_not_counted_blank(tmp_path):
+    from app.services.ingest.okuma import ReadLedger
+    from app.services.ingest.rows import _tablo_ekstresi
+
+    path = tmp_path / "e.csv"
+    path.write_text("Tarih;Açıklama;Tutar\n01.03.2026;Kira;-400,00\n;;;555,00\n02.03.2026;Satış;900,00\n03.03.2026;Gaz;-50,00\n", encoding="utf-8")
+    ledger = ReadLedger()
+    rows = _tablo_ekstresi(str(path), ledger=ledger) or []
+    assert ledger.blank == 0 and len(rows) == 4
+    stray = next(r for r in rows if r.get("malformed_row"))
+    assert "555" in stray["raw_text"]

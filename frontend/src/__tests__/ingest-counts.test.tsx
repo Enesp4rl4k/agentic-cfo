@@ -41,3 +41,16 @@ describe("IngestCounts", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe("IngestCounts: balance verification of a text statement", () => {
+  it("says a text statement could not be verified against its balance, and never presents it as reconciled", () => {
+    renderWithQuery(<IngestCounts ingest={{ ...base, balance_check: "unverified" }} />);
+    expect(screen.getByText(/Bakiye ile doğrulanamadı/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bakiye zinciriyle doğrulandı/)).toBeNull();
+  });
+
+  it("says when the balance chain verified it", () => {
+    renderWithQuery(<IngestCounts ingest={{ ...base, balance_check: "verified" }} />);
+    expect(screen.getByText("Bakiye zinciriyle doğrulandı.")).toBeInTheDocument();
+  });
+});

@@ -53,6 +53,7 @@ REASON_TEXT: dict[str, str] = {
     "balance_mismatch": "bakiye ile uyuşmuyor",
     "summary_suspect": "özet satırı olabilir",
     "amount_zero": "tutar sıfır",
+    "line_unreadable": "satır okunamadı",
     "malformed_row": "sütunlar kaymış olabilir",
     "amount_unreadable": "tutar okunamadı",
     "date_unreadable": "tarih okunamadı",

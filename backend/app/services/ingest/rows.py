@@ -77,28 +77,42 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             # balance the statement closes on (app.services.bank_balance).
             "balance_cents": tx.balance_cents,
             # A matched row whose amount could not be read is held, never booked at 0.
-            **({"zero_amount": True} if not tx.amount_cents and tx.account_code is None else {}),
+            **({"zero_amount": True} if not tx.amount_cents else {}),
+            # A line that looked like money and that no row pattern took: held with its raw text.
+            **({"line_unreadable": True} if tx.unread else {}),
         })
     return transactions
 
 
-def _pdf_yonu(transactions: list[dict[str, Any]], bank: str, raw_text: str, ambiguous: bool = False) -> None:
+def _pdf_yonu(
+    transactions: list[dict[str, Any]], bank: str, raw_text: str, ambiguous: bool = False,
+) -> str:
     """Text-parsed statements get the same checks as tables: the balance verifies the directions the
-    parser read (and reads them when it could not), and a statement nothing can place is held whole."""
-    from app.parsers.direction import settle_rows
+    parser read (and reads them when it could not), and a statement nothing can place is held whole.
 
+    Returns whether the running balance chain verified the statement: "verified" (three or more steps, 90%
+    reconcile) or "unverified". The upload summary says which; an unverified statement is never presented as
+    reconciled.
+    """
+    from app.parsers.direction import settle_rows, verdict
+
+    state = verdict(
+        [r.get("amount_cents") for r in transactions],
+        [r["type"] if r.get("type") in ("income", "expense") else None for r in transactions],
+        [r.get("balance_cents") for r in transactions], min_steps=3,
+    )
     identity = statement_identity(raw_text)
     hold = settle_rows(transactions, f"{bank}||{identity}", ambiguous=ambiguous, identity=bool(identity))
-    if hold is None:
-        return
-    key = hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16]
-    for n, tx in enumerate(transactions):
-        tx["direction_file"] = {
-            "key": key, "signature": hold["signature"], "reason": hold["reason"],
-            "read": tx.pop("direction_read", None), "balance": tx.pop("direction_balance", None),
-        }
-        if n == 0:
-            tx["direction_question"] = hold["question"]
+    if hold is not None:
+        key = hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16]
+        for n, tx in enumerate(transactions):
+            tx["direction_file"] = {
+                "key": key, "signature": hold["signature"], "reason": hold["reason"],
+                "read": tx.pop("direction_read", None), "balance": tx.pop("direction_balance", None),
+            }
+            if n == 0:
+                tx["direction_question"] = hold["question"]
+    return "verified" if state == "confirmed" and hold is None else "unverified"
 
 
 _HESAP_KODU_KOLONLARI = ("hesap kodu", "hesap no", "hesap", "account_code", "account code")
@@ -327,7 +341,7 @@ def _try_parse_csv(
                 and set(headers) & set(_TARIH_KOLONLARI)):
             return None
         rows: list[dict[str, str]] = []
-        malformed: set[int] = set()
+        malformed: dict[int, list[str]] = {}
         yielded = 0
         for row in reader:
             yielded += 1
@@ -335,8 +349,8 @@ def _try_parse_csv(
                 ledger.blank += 1
                 continue
             # Cells beyond the header's width mean the row's columns are misaligned (an unquoted delimiter).
-            if any(str(x).strip() for x in (row.get(None) or [])):
-                malformed.add(len(rows))
+            if extra := [str(x).strip() for x in (row.get(None) or []) if str(x).strip()]:
+                malformed[len(rows)] = extra
             rows.append({fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k})
         if count_read:
             ledger.read += yielded
@@ -351,7 +365,9 @@ def _try_parse_csv(
         phrased = {i for i in uncoded if is_summary_phrase(_ozet_metni(rows[i]))}
         notmoves = {
             i for i in phrased
-            if not _tutarli(rows[i]) or _parse_date(_ilk(rows[i], *date_keys)) is None
+            # no amount: a summary line. An amount but NO date cell at all: a totals row. An amount and a date
+            # cell that cannot be read ("31.02.2026") is money with a broken date: a transaction, held.
+            if not _tutarli(rows[i]) or not any(ch.isdigit() for ch in _ilk(rows[i], *date_keys))
         }
         suspects = phrased - notmoves
         has_balance = bool(set(names) & {"bakiye", "balance"})
@@ -375,6 +391,7 @@ def _try_parse_csv(
                 tx["summary_suspect"] = True
             if i in malformed:
                 tx["malformed_row"] = True
+                tx["raw_text"] += chr(10) + "[fazlalık hücreler] " + " | ".join(malformed[i])
             if mark := _dosya_isareti(settled, yonler.get(i), raw_text):
                 tx["direction_file"] = mark
                 if not asked and settled.hold is not None:

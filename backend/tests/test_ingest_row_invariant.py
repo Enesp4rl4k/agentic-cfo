@@ -13,11 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from app.parsers.banks.garanti import GarantiParser
-from app.parsers.banks.ziraat import ZiraatParser
 from app.services.ingest.hold import split_uncertain
 from app.services.ingest.okuma import ReadLedger, merge_counts, unaccounted
-from app.services.ingest.rows import _statement_to_transactions, _tablo_ekstresi, _try_parse_csv
+from app.services.ingest.rows import _tablo_ekstresi, _try_parse_csv
 
 DESCRIPTIONS = [
     "Kira", "Satış", "Elektrik faturası", "Toplam", "Toplam fatura ödemesi", "Devreden Bakiye", "Devreden KDV",
@@ -129,28 +127,3 @@ def test_the_properties_are_not_vacuous() -> None:
     assert unaccounted(counts) == 2                              # 2 rows vanished
     assert unaccounted({**counts, "emitted": 7, "accepted": 4, "held": 2}) == 1   # read and emitted agree; one row lost in the hold step
     assert merge_counts({"read": 1, "emitted": 1}, {"read": 2, "blank": 2})["read"] == 3  # type: ignore[index]
-
-
-PDF_LINES = [
-    "10.02.2024  15.02.2024  FATURA TAHSİLATI  +2.000,00  12.000,00",
-    "12.02.2024  12.02.2024  MAAŞ ÖDEMESİ  -4.500,00  7.500,00",
-    "31.02.2024  31.02.2024  GEÇERSİZ TARİHLİ  -100,00  7.400,00",     # the date cannot be read
-    "13.02.2024  13.02.2024  SIFIR TUTAR  +0,00  7.400,00",
-    "Sayfa 2 / 3",                                                      # a page-break artefact: not a row
-    "HESAP ÖZETİ ------------",
-    "",
-    "14.02.2024  14.02.2024  TOPLAM  -4.600,00  7.400,00",
-]
-
-
-@pytest.mark.parametrize("seed", range(100))
-@pytest.mark.parametrize("parser_cls", [GarantiParser, ZiraatParser])
-def test_the_pdf_text_path_turns_every_matched_row_into_a_transaction(seed: int, parser_cls) -> None:
-    rng = random.Random(seed)
-    lines = ["GARANTİ BBVA ZİRAAT BANKASI Hesap Ekstresi", *(rng.choice(PDF_LINES) for _ in range(rng.randint(1, 12)))]
-    parser = parser_cls()
-    statement = parser.parse("\n".join(lines) + "\n", "")
-    rows = _statement_to_transactions(statement)
-    assert parser.matched == len(statement.transactions) == len(rows)    # nothing the pattern found is dropped
-    accepted, held = split_uncertain(rows)
-    assert len(accepted) + len(held) == len(rows)

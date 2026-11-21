@@ -27,6 +27,7 @@ from app.core import tdhp
 from app.core.row_confidence import parse_confidence
 from app.parsers.base import ParsedStatement
 from app.parsers.invoice import TurkishInvoiceParser
+from app.parsers.lines import account_for_lines
 from app.parsers.registry import ParserRegistry
 from app.services.ingest.categories import (
     _CATEGORY_MAP,
@@ -44,7 +45,7 @@ from app.services.ingest.ebelge import (
     _try_parse_ubl_xml,
 )
 from app.services.ingest.hold import resolve_currency, split_uncertain
-from app.services.ingest.okuma import ReadLedger, merge_counts, unaccounted
+from app.services.ingest.okuma import ReadLedger, merge_counts, reconcile
 from app.services.ingest.readers import (
     _pdf_embedded_xml,
     _read_csv,
@@ -242,16 +243,12 @@ def _counts_reconcile(sonuc: SkillResult, accepted: int, held: int) -> SkillResu
     The equation is computed here, by the ingest step itself, and stored with the counts (`ingest.summary`).
     If it does not hold the run is marked for review: "N satır hesaba katılamadı". Never silent.
     """
-    counts = (sonuc.patch or {}).get("ingest_counts")
-    if not counts:
+    counts, lost = reconcile(sonuc.patch.get("ingest_counts") if sonuc.patch else None, accepted, held)
+    if counts is None:
         return sonuc
-    counts = {**counts, "accepted": accepted, "held": held}
-    lost = unaccounted(counts)
-    counts["unaccounted"] = lost
     patch = {**(sonuc.patch or {}), "ingest_counts": counts}
     if not lost:
         return SkillResult(sonuc.ok, patch, sonuc.confidence, sonuc.needs_review, sonuc.halt, sonuc.detail)
-    logger.error("ingest row count does not reconcile: %s", {k: v for k, v in counts.items() if isinstance(v, int)})
     return SkillResult(sonuc.ok, patch, sonuc.confidence, True, sonuc.halt, f"{lost} satır hesaba katılamadı. {sonuc.detail}")
 
 
@@ -481,12 +478,19 @@ async def _belgeyi_oku(
 
                 parser = detected_bank(own_vkn=await org_vkn(state.get("org_id")))
             statement: ParsedStatement = await asyncio.to_thread(parser.parse, raw_text, file_path)
+            if not issubclass(detected_bank, TurkishInvoiceParser):
+                # What was READ comes from the physical lines of the text, not from the row pattern: a line
+                # that looks like money and no pattern took is held ("satır okunamadı"), never dropped.
+                account = account_for_lines(raw_text, statement.transactions)
+                statement.transactions = account.transactions
+                ledger.absorb(account)
             transactions = _statement_to_transactions(statement)
             ambiguous = bool(getattr(detected_bank, "debit_credit_layout", False))
-            _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text, ambiguous)
-            if getattr(parser, "matched", 0):
-                ledger.read += parser.matched          # the rows the layout's pattern found ...
-                ledger.emitted += len(transactions)     # ... and the transactions they became: the same number
+            if not issubclass(detected_bank, TurkishInvoiceParser):
+                ledger.emitted += len(transactions)
+                ledger.balance_check = _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text, ambiguous)
+            else:
+                _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text, ambiguous)
 
             if transactions:
                 parseable = sum(

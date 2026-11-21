@@ -289,5 +289,6 @@ def standart_csv(tablo: Tablo, tur: str) -> tuple[str, dict[str, str]]:
             continue    # a total line of a staff list or a bill: not a record (statements keep it: rows.py judges it)
         vals = [(_deger(a, row[i], k) if a else ("" if bos(row[i]) else str(row[i]).strip()))
                 for i, _, a, k in cikis]
-        w.writerow(vals)
+        # Cells beyond the header travel on: the statement reader sees a row wider than its header and holds it.
+        w.writerow(vals + [str(c).strip() for c in row[len(tablo.basliklar):] if not bos(c)])
     return out.getvalue(), eslesme

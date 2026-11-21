@@ -12,7 +12,7 @@ import re
 from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.parsers.direction import sign_is_informative
+from app.parsers.direction import sign_is_informative, signed_money
 
 
 class GarantiParser(BankParser):
@@ -49,18 +49,16 @@ class GarantiParser(BankParser):
         transactions: list[ParsedTransaction] = []
         # Pattern: date, optional valor date, description, signed amount, balance
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"
-            r"(?:\d{2}\.\d{2}\.\d{4}\s+)?"   # optional valor date
-            r"(.+?)\s+"
-            r"([+-]?[\d.,]+)\s+"
-            r"([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+"
+            r"(?:\d{2}\.\d{2}\.\d{4}[ \t]+)?"   # optional valor date
+            r"(.+?)[ \t]+"
+            r"([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?(?:[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?)?[ \t]*$",
             re.MULTILINE,
         )
         found = list(row_pattern.finditer(text))
         # A column of all-positive amounts says nothing about direction (app.parsers.direction).
         signed = sign_is_informative([m.group(3).startswith("-") for m in found])
         for m in found:
-            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
             date = date or datetime.now(UTC)
@@ -75,7 +73,7 @@ class GarantiParser(BankParser):
                 description=description,
                 amount_cents=amount,
                 tx_type=("expense" if negative else "income") if signed else "",
-                balance_cents=self.parse_turkish_amount(m.group(4)),
+                balance_cents=signed_money(m.group(4)),
                 raw_row=m.group(0), date_estimated=estimated,
             ))
         return transactions

@@ -5,6 +5,7 @@ import re
 from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import signed_money
 
 
 class IsBankParser(BankParser):
@@ -41,15 +42,14 @@ class IsBankParser(BankParser):
         """
         transactions: list[ParsedTransaction] = []
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"
-            r"(.+?)\s+"
-            r"([\d.,]+|-)\s+"    # debit or dash
-            r"([\d.,]+|-)\s+"    # credit or dash
-            r"([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+"
+            r"(.+?)[ \t]+"
+            r"((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+"    # debit or dash
+            r"((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+"    # credit or dash
+            r"([+\-−]?[\d.,]+)[ \t]*$",
             re.MULTILINE,
         )
         for m in row_pattern.finditer(text):
-            self.matched += 1
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
             date = date or datetime.now(UTC)
@@ -73,7 +73,7 @@ class IsBankParser(BankParser):
                 description=description,
                 amount_cents=amount,
                 tx_type=tx_type,
-                balance_cents=self.parse_turkish_amount(m.group(5)),
+                balance_cents=signed_money(m.group(5)),
                 raw_row=m.group(0), date_estimated=estimated,
             ))
         return transactions

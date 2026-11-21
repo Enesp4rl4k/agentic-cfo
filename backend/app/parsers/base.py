@@ -41,6 +41,8 @@ class ParsedTransaction:
     # True when `date` is a placeholder because the document had no readable one:
     # the row leaves the parser undated and flagged, never dated "today".
     date_estimated: bool = False
+    # True when the line looked like money but no row pattern took it: held as a raw line (app.parsers.lines).
+    unread: bool = False
 
 
 @dataclass
@@ -72,9 +74,6 @@ class BankParser(ABC):
     # Subclasses set this to identify themselves in the registry
     bank_id: ClassVar[str] = ""
     bank_display_name: ClassVar[str] = ""
-    # Rows of the statement text the row pattern matched. Every one becomes a ParsedTransaction (an unreadable
-    # date or amount is held, never dropped): `app.services.ingest.okuma` checks the two counts agree.
-    matched: int = 0
 
     @classmethod
     @abstractmethod

@@ -2704,6 +2704,8 @@ export type MessageTree = {
     ingestSkippedTitle: string;
     ingestLost: string;
     ingestFallback: string;
+    ingestBalanceVerified: string;
+    ingestBalanceUnverified: string;
   };
   heldAnalysis: {
     title: string;
@@ -5728,6 +5730,9 @@ export const en: MessageTree = {
       direction_file_unknown: "direction unclear",
       summary_suspect: "may be a summary line",
       balance_mismatch: "does not reconcile with the balance",
+      line_unreadable: "line could not be read",
+      amount_zero: "amount is zero",
+      malformed_row: "columns may be misaligned",
     },
     fileTitle: "Which way do the amounts in this statement go?",
     fileBodyNoSignal: "This file has no column or sign that says which way an amount moved; the system cannot tell money in from money out and does not guess. You can correct the rows one by one, or upload a file with a direction or balance column. If the file really holds only one kind, say so below.",
@@ -5770,6 +5775,8 @@ export const en: MessageTree = {
     ingestSkippedTitle: "Skipped summary lines",
     ingestLost: "{count} rows could not be accounted for; please review the file.",
     ingestFallback: "This file could not be read in the expected format; another reader was used.",
+    ingestBalanceVerified: "Verified against the running balance.",
+    ingestBalanceUnverified: "Not verified against the balance: the rows could not be checked with the running balance.",
   },
   heldAnalysis: {
     title: "{n} analyses await your approval",
