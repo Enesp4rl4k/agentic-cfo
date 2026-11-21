@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import ensure_tenant
 from app.api.auth import _cache_invalidate, get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.models.erasure_record import OrgErasureRequest
 from app.models.organization import Organization, OrgMembership
@@ -49,6 +50,16 @@ class OrgErasureBody(BaseModel):
 
 class OrgErasureConfirm(BaseModel):
     confirmation_phrase: str
+
+
+def _require_mode_allowed(mode: str) -> None:
+    """`hard_delete` is off until ORG_ERASURE_HARD_DELETE_ENABLED is set (plan G19)."""
+    if mode == "hard_delete" and not get_settings().org_erasure_hard_delete_enabled:
+        raise HTTPException(
+            status_code=422,
+            detail="hard_delete bu sunucuda etkin değil (ORG_ERASURE_HARD_DELETE_ENABLED); "
+                   "yalnızca 'anonymise' kullanılabilir.",
+        )
 
 
 def _phrase(slug: str) -> str:
@@ -79,6 +90,7 @@ async def request_org_erasure(
 ) -> dict[str, Any]:
     """Step 1: record the request. Deletes nothing."""
     org_id = await _require(db, current_user, REQUESTERS)
+    _require_mode_allowed(body.mode)
     org = await db.get(Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
@@ -119,6 +131,7 @@ async def confirm_org_erasure(
     ensure_tenant(current_user, org_id=req.target_org_id)
     org_id = str(req.target_org_id)
     mode = req.mode
+    _require_mode_allowed(mode)
     if req.status != "pending":
         raise HTTPException(status_code=409, detail=f"Talep durumu: {req.status}.")
     now = datetime.now(UTC)

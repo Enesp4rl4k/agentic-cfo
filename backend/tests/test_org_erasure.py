@@ -361,7 +361,8 @@ async def client():
         yield c
 
 
-async def test_two_step_erasure_over_http(client) -> None:
+async def test_two_step_erasure_over_http(client, monkeypatch) -> None:
+    from app.config import get_settings
     from app.models.organization import Organization
     from app.models.transaction import Transaction  # noqa: F401  (table registered)
 
@@ -385,6 +386,7 @@ async def test_two_step_erasure_over_http(client) -> None:
         assert (await client.post(f"{url}/request", json={}, headers=h)).status_code == 403
     assert (await client.post(f"{url}/request", json={})).status_code in (401, 403)
 
+    monkeypatch.setattr(get_settings(), "org_erasure_hard_delete_enabled", True)
     r = await client.post(f"{url}/request", json={"mode": "hard_delete"}, headers=adm)
     assert r.status_code == 200, r.text
     data = r.json()["data"]
@@ -421,3 +423,33 @@ async def test_global_role_does_not_grant_erasure_in_another_org(client) -> None
     await _membership(client, uid, org, "smmm")
     r = await client.post("/api/v1/compliance/org-erasure/request", json={}, headers=hdr)
     assert r.status_code == 403
+
+
+async def test_hard_delete_is_rejected_unless_the_server_enables_it(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.models.erasure_record import OrgErasureRequest
+
+    hdr, org, uid = await kullanici(client, "own@example.com", role="owner")
+    await _membership(client, uid, org, "owner")
+    url = "/api/v1/compliance/org-erasure"
+    settings = get_settings()
+    assert settings.org_erasure_hard_delete_enabled is False  # the default
+
+    r = await client.post(f"{url}/request", json={"mode": "hard_delete"}, headers=hdr)
+    assert r.status_code == 422 and "hard_delete" in r.text  # rejected, not downgraded
+    async with client._maker() as db:
+        assert (await db.execute(select(OrgErasureRequest))).first() is None
+
+    monkeypatch.setattr(settings, "org_erasure_hard_delete_enabled", True)
+    ok = await client.post(f"{url}/request", json={"mode": "hard_delete"}, headers=hdr)
+    assert ok.status_code == 200 and ok.json()["data"]["mode"] == "hard_delete"
+    rid, phrase = ok.json()["data"]["request_id"], ok.json()["data"]["confirmation_phrase"]
+
+    # a request made while enabled cannot be confirmed after the switch is turned off
+    monkeypatch.setattr(settings, "org_erasure_hard_delete_enabled", False)
+    r = await client.post(f"{url}/{rid}/confirm", json={"confirmation_phrase": phrase}, headers=hdr)
+    assert r.status_code == 422
+
+    # anonymise needs no switch
+    r = await client.post(f"{url}/request", json={}, headers=hdr)
+    assert r.status_code == 200 and r.json()["data"]["mode"] == "anonymise"
