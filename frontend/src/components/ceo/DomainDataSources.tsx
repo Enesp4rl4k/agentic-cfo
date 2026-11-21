@@ -6,6 +6,8 @@ import {
   Trash2, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
+import { useCan } from "@/hooks/useCan";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -37,6 +39,7 @@ const DOMAINS = Object.keys(DOMAIN_SOURCES) as DataDomain[];
  * so neither route could be reached and every C-level stayed derived.
  */
 export function DomainDataSources() {
+  const canEdit = useCan("edit");
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [jobId, setJobId] = useState("");
   const [attached, setAttached] = useState<Record<string, AttachedSource[]>>({});
@@ -180,8 +183,10 @@ export function DomainDataSources() {
                     {Math.round(r.file_size_bytes / 1024)} KB
                   </span>
                   <button
-                    onClick={() => remove(r.source_id)}
+                    onClick={() => (canEdit.allowed ? remove(r.source_id) : undefined)}
                     disabled={busy === r.source_id}
+                    aria-disabled={canEdit.allowed ? undefined : true}
+                    title={canEdit.reason ?? undefined}
                     aria-label={`${r.filename} kaynağını kaldır`}
                     className="ml-auto text-muted-foreground hover:text-red-400"
                   >
@@ -206,7 +211,8 @@ export function DomainDataSources() {
                           e.target.value = "";
                         }}
                       />
-                      <Button
+                      <CanButton
+                        action="upload"
                         size="sm"
                         variant="outline"
                         disabled={!jobId || busy !== null}
@@ -219,7 +225,7 @@ export function DomainDataSources() {
                           <Plus className="h-3 w-3" />
                         )}
                         {t.label}
-                      </Button>
+                      </CanButton>
                     </div>
                   );
                 })}

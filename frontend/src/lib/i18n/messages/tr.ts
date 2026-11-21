@@ -45,6 +45,7 @@ export const tr: MessageTree = {
     settleNo: "Hayır, ayrı para",
     keep: "Ayrı ödeme",
     exclude: "Aynı ödeme",
+    actionError: "İşlem tamamlanamadı.",
   },
   cashRadar: {
     title: "Nakit Radarı",
@@ -187,6 +188,7 @@ export const tr: MessageTree = {
     moved: "{n} ödeme taşındı",
     dragHint: "Ödemeyi sürükleyip başka haftaya bırakabilir ya da düğmelerle bir hafta kaydırabilirsin.",
     toRoute: "Nakit rotasına dön",
+    byPlan: "onaylanan plana göre",
     failed: "Ödeme takvimi okunamadı.",
     send: "Onaya gönder",
     apply: "Planı değiştir",
@@ -524,6 +526,24 @@ export const tr: MessageTree = {
     confirm: "{donem} kapatılsın mı? Bundan sonra defteri değişmez; geç gelen kayıtlar ilk açık aya yazılır.",
     loadError: "Kapalı dönemler yüklenemedi.",
     closeError: "Dönem kapatılamadı.",
+  },
+  roleGate: {
+    needContribute: "Görüntüleyici bunu yapamaz; analist veya üstü bir rol gerekir",
+    needWrite: "Bu işlem için düzenleme yetkisi gerekir (görüntüleyici ve analist salt okunurdur)",
+    needDecide: "Bu işlem için yönetici yetkisi gerekir",
+    forbidden: "Rolünüz bu işleme izin vermiyor.",
+    accountantAct: {
+      accountant: "",
+      ownBooks: "",
+      accountantExists: "Bu işlemi mali müşaviriniz yapar",
+      noRole: "Bu işlem mali müşavirindir (mali müşaviri yoksa sahip, yönetici veya CFO'nundur)",
+    },
+    closePeriod: {
+      accountant: "Bu şirketin mali müşaviri sizsiniz: ay kapanışı sizindir.",
+      ownBooks: "Bu şirketin Tiphys'te mali müşaviri yok; ay kapanışını sahip, yönetici veya CFO yapar.",
+      accountantExists: "Ay kapanışını mali müşaviriniz yapar",
+      noRole: "Ay kapanışı mali müşavirindir (mali müşaviri yoksa sahip, yönetici veya CFO'nundur)",
+    },
   },
   smmmCalendar: {
     title: "Yaklaşan son günler",

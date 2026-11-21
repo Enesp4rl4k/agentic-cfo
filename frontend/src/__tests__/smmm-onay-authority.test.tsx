@@ -9,7 +9,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const get = vi.fn();
 const post = vi.fn();
@@ -64,7 +65,7 @@ describe("smmm-onay authority", () => {
       row("a"),
       row("b", { karar_verebilir: false, karar_engeli: OWNER_ONLY }),
     ]);
-    render(<SMMMonayPage />);
+    renderWithQuery(<SMMMonayPage />);
 
     expect(await screen.findByText(OWNER_ONLY)).toBeInTheDocument();
     const blocked = screen.getByText("islem b").closest("div.rounded-lg") as HTMLElement;
@@ -81,7 +82,7 @@ describe("smmm-onay authority", () => {
 
   it("select-all skips what the role cannot decide", async () => {
     serve([row("a"), row("b", { karar_verebilir: false, karar_engeli: OWNER_ONLY })]);
-    render(<SMMMonayPage />);
+    renderWithQuery(<SMMMonayPage />);
     await screen.findByText("islem a");
 
     fireEvent.click(screen.getByLabelText(/Tümünü Seç/));
@@ -94,7 +95,7 @@ describe("smmm-onay authority", () => {
   it("an approve the server refuses shows the server's reason, not a silence", async () => {
     serve([row("a")]);
     post.mockRejectedValue(refused(OWNER_ONLY));
-    render(<SMMMonayPage />);
+    renderWithQuery(<SMMMonayPage />);
     await screen.findByText("islem a");
 
     fireEvent.click(screen.getByRole("button", { name: "Onayla" }));
@@ -104,7 +105,7 @@ describe("smmm-onay authority", () => {
   it("any other failure gets the page's own wording, not a raw error string", async () => {
     serve([row("a")]);
     post.mockRejectedValue(Object.assign(new Error("Network Error"), { status: undefined }));
-    render(<SMMMonayPage />);
+    renderWithQuery(<SMMMonayPage />);
     await screen.findByText("islem a");
 
     fireEvent.click(screen.getByRole("button", { name: "Onayla" }));
@@ -116,7 +117,7 @@ describe("smmm-onay authority", () => {
   it("a successful approve refreshes the queue", async () => {
     serve([row("a")]);
     post.mockResolvedValue({ data: {} });
-    render(<SMMMonayPage />);
+    renderWithQuery(<SMMMonayPage />);
     await screen.findByText("islem a");
     const before = get.mock.calls.length;
 

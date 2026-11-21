@@ -4,6 +4,9 @@ import { useCallback, useState } from "react";
 import { ShieldCheck, Download, Loader2, Lock, FileSignature, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
+import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import { Card } from "@/components/ui/card";
 import {
   buildDefensibilityPacket,
@@ -25,6 +28,7 @@ const DS_LABEL: Record<string, string> = {
  * hand a tax inspector: every entry's basis, AI confidence, and who reviewed it.
  */
 export function DefensibilityPacketCard({ jobId, period }: { jobId: string; period?: string }) {
+  const { t } = useI18n();
   const [packet, setPacket] = useState<DefensibilityPacket | null>(null);
   const [statement, setStatement] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,11 +40,11 @@ export function DefensibilityPacketCard({ jobId, period }: { jobId: string; peri
     try {
       setPacket(await buildDefensibilityPacket(jobId, period));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "paket oluşturulamadı");
+      setErr(failureMessage(e, "paket oluşturulamadı", t.roleGate.forbidden));
     } finally {
       setBusy(false);
     }
-  }, [jobId, period]);
+  }, [jobId, period, t.roleGate.forbidden]);
 
   const finalize = useCallback(async () => {
     if (!packet || !statement.trim()) return;
@@ -49,11 +53,11 @@ export function DefensibilityPacketCard({ jobId, period }: { jobId: string; peri
     try {
       setPacket(await finalizeDefensibilityPacket(packet.id, statement.trim()));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "kesinleştirilemedi");
+      setErr(failureMessage(e, "kesinleştirilemedi", t.roleGate.forbidden));
     } finally {
       setBusy(false);
     }
-  }, [packet, statement]);
+  }, [packet, statement, t.roleGate.forbidden]);
 
   const download = useCallback(async () => {
     if (!packet) return;
@@ -81,10 +85,10 @@ export function DefensibilityPacketCard({ jobId, period }: { jobId: string; peri
       </div>
 
       {!packet && (
-        <Button onClick={build} disabled={busy} className="gap-2">
+        <CanButton action="edit" onClick={build} disabled={busy} className="gap-2">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
           Paketi oluştur
-        </Button>
+        </CanButton>
       )}
 
       {s && (
@@ -132,12 +136,12 @@ export function DefensibilityPacketCard({ jobId, period }: { jobId: string; peri
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               />
               <div className="flex gap-2">
-                <Button onClick={finalize} disabled={busy || !statement.trim()} className="gap-2">
+                <CanButton action="accountant" onClick={finalize} disabled={busy || !statement.trim()} className="gap-2">
                   <FileSignature className="h-4 w-4" /> Kesinleştir ve mühürle
-                </Button>
-                <Button onClick={build} disabled={busy} variant="outline">
+                </CanButton>
+                <CanButton action="edit" onClick={build} disabled={busy} variant="outline">
                   Yenile
-                </Button>
+                </CanButton>
               </div>
             </div>
           ) : (

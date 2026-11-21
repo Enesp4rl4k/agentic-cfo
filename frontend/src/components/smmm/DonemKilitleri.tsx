@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
+import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import { closePeriod, getClosedPeriods, type KapaliDonem } from "@/lib/api/smmm";
 
 /** The last twelve months, newest first, as "YYYY-MM" (the current month included). */
@@ -27,6 +29,7 @@ function lastMonths(now: Date, n = 12): string[] {
 export function DonemKilitleri({ now = new Date() }: { now?: Date }) {
   const { t } = useI18n();
   const p = t.periodLock;
+  const can = useCan("closePeriod");
   const [closed, setClosed] = useState<KapaliDonem[] | null>(null);
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,7 +63,11 @@ export function DonemKilitleri({ now = new Date() }: { now?: Date }) {
     } catch (e) {
       // A refusal the server explains (role, already closed, future month) is shown as given.
       const status = (e as Error & { status?: number }).status;
-      setError(status && status < 500 && e instanceof Error && e.message ? e.message : p.closeError);
+      setError(
+        status === 403
+          ? failureMessage(e, p.closeError, t.roleGate.forbidden)
+          : status && status < 500 && e instanceof Error && e.message ? e.message : p.closeError,
+      );
     } finally {
       setBusy(false);
     }
@@ -73,6 +80,7 @@ export function DonemKilitleri({ now = new Date() }: { now?: Date }) {
         <h2 className="text-base font-semibold">{p.title}</h2>
       </div>
       <p className="text-xs text-muted-foreground">{p.subtitle}</p>
+      {can.note && <p className="text-xs">{can.note}</p>}
 
       {error && (
         <p role="alert" className="text-xs text-red-400">
@@ -103,9 +111,9 @@ export function DonemKilitleri({ now = new Date() }: { now?: Date }) {
             </option>
           ))}
         </select>
-        <Button size="sm" variant="outline" disabled={!choice || busy} onClick={() => void close()}>
+        <CanButton action="closePeriod" size="sm" variant="outline" disabled={!choice || busy} onClick={() => void close()}>
           {p.close}
-        </Button>
+        </CanButton>
       </div>
     </Card>
   );

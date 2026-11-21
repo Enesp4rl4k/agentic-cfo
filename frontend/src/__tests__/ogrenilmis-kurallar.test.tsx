@@ -8,7 +8,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const get = vi.fn();
 const del = vi.fn();
@@ -44,7 +45,7 @@ beforeEach(() => {
 describe("OgrenilmisKurallar", () => {
   it("lists what was learned, how often, and whether it is in force", async () => {
     serve([kural("a"), kural("b", { aktif: false, onay_sayisi: 1 })]);
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
 
     expect(await screen.findByText("reklam gideri meta a")).toBeInTheDocument();
     expect(screen.getByText("Yürürlükte")).toBeInTheDocument();
@@ -55,14 +56,14 @@ describe("OgrenilmisKurallar", () => {
 
   it("says plainly when nothing has been learned", async () => {
     serve([]);
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
     expect(await screen.findByText(/Henüz öğrenilen bir şey yok/)).toBeInTheDocument();
   });
 
   it("asks first, then removes the rule from the list", async () => {
     serve([kural("a"), kural("b")]);
     del.mockResolvedValue({});
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
     await screen.findByText("reklam gideri meta a");
 
     fireEvent.click(screen.getByRole("button", { name: /reklam gideri meta a kuralını kaldır/ }));
@@ -75,7 +76,7 @@ describe("OgrenilmisKurallar", () => {
   it("does nothing when the person declines the confirmation", async () => {
     serve([kural("a")]);
     (window.confirm as ReturnType<typeof vi.fn>).mockReturnValue(false);
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
     await screen.findByText("reklam gideri meta a");
 
     fireEvent.click(screen.getByRole("button", { name: /kuralını kaldır/ }));
@@ -86,7 +87,7 @@ describe("OgrenilmisKurallar", () => {
   it("shows the server's reason when the role may not remove it, and keeps the rule", async () => {
     serve([kural("a")]);
     del.mockRejectedValue(refused("Bu rol öğrenilmiş kuralı silemez."));
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
     await screen.findByText("reklam gideri meta a");
 
     fireEvent.click(screen.getByRole("button", { name: /kuralını kaldır/ }));
@@ -97,7 +98,7 @@ describe("OgrenilmisKurallar", () => {
   it("any other failure gets our wording, not a raw error", async () => {
     serve([kural("a")]);
     del.mockRejectedValue(Object.assign(new Error("Network Error"), { status: undefined }));
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
     await screen.findByText("reklam gideri meta a");
 
     fireEvent.click(screen.getByRole("button", { name: /kuralını kaldır/ }));
@@ -108,7 +109,7 @@ describe("OgrenilmisKurallar", () => {
 
   it("says so when the list cannot be loaded", async () => {
     get.mockRejectedValue(new Error("boom"));
-    render(<OgrenilmisKurallar />);
+    renderWithQuery(<OgrenilmisKurallar />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Öğrenilmiş kurallar yüklenemedi.");
   });
 });

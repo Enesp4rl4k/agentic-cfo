@@ -44,6 +44,7 @@ export type MessageTree = {
     settleNo: string;
     keep: string;
     exclude: string;
+    actionError: string;
   };
   cashRadar: {
     title: string;
@@ -186,6 +187,7 @@ export type MessageTree = {
     moved: string;
     dragHint: string;
     toRoute: string;
+    byPlan: string;
     failed: string;
     send: string;
     apply: string;
@@ -517,6 +519,19 @@ export type MessageTree = {
     confirm: string;
     loadError: string;
     closeError: string;
+  };
+  roleGate: {
+    needContribute: string;
+    needWrite: string;
+    needDecide: string;
+    forbidden: string;
+    accountantAct: Record<"accountant" | "ownBooks" | "accountantExists" | "noRole", string>;
+    closePeriod: {
+      accountant: string;
+      ownBooks: string;
+      accountantExists: string;
+      noRole: string;
+    };
   };
   smmmCalendar: {
     title: string;
@@ -2632,6 +2647,7 @@ export const en: MessageTree = {
     settleNo: "No, separate money",
     keep: "Separate payment",
     exclude: "Same payment",
+    actionError: "The action could not be completed.",
   },
   cashRadar: {
     title: "Cash radar",
@@ -2774,6 +2790,7 @@ export const en: MessageTree = {
     moved: "{n} payments moved",
     dragHint: "Drag a payment to another week, or shift it one week with the buttons.",
     toRoute: "Back to the cash route",
+    byPlan: "per approved plan",
     failed: "The payment calendar could not be read.",
     send: "Send for approval",
     apply: "Change the plan",
@@ -3111,6 +3128,24 @@ export const en: MessageTree = {
     confirm: "Close {donem}? Its ledger will not change after this; late items go to the first open month.",
     loadError: "Closed months could not be loaded.",
     closeError: "The month could not be closed.",
+  },
+  roleGate: {
+    needContribute: "Viewers can't do this; an analyst role or above is needed",
+    needWrite: "This needs editing rights (viewer and analyst are read-only)",
+    needDecide: "This needs administrator rights",
+    forbidden: "Your role is not allowed to do this.",
+    accountantAct: {
+      accountant: "",
+      ownBooks: "",
+      accountantExists: "Your accountant does this",
+      noRole: "This is the accountant's to do (or, with no accountant, the owner's, admin's or CFO's)",
+    },
+    closePeriod: {
+      accountant: "You are this company's accountant: closing the month is yours.",
+      ownBooks: "This company has no accountant on Tiphys, so the owner, admin or CFO closes the month.",
+      accountantExists: "Your accountant closes the month",
+      noRole: "Closing the month is the accountant's (or, with no accountant, the owner's, admin's or CFO's)",
+    },
   },
   smmmCalendar: {
     title: "Upcoming deadlines",

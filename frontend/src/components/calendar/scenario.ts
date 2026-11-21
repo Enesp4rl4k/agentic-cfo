@@ -1,4 +1,4 @@
-import type { CashRadar } from "@/lib/api/ledger";
+import type { CashRadar, RadarItem } from "@/lib/api/ledger";
 
 /**
  * The payment calendar's scenario, as arithmetic.
@@ -20,6 +20,8 @@ export interface PayableRef {
   name: string | null;
   /** The date the radar expects the payment on today (ISO). */
   expectedDate: string;
+  /** The radar row itself: its basis and reason are shown beside the payment. */
+  item: RadarItem;
 }
 
 export function payables(radar: CashRadar): PayableRef[] {
@@ -30,6 +32,7 @@ export function payables(radar: CashRadar): PayableRef[] {
       amountCents: p.amount_cents,
       name: p.counterparty ?? p.description,
       expectedDate: p.expected_date,
+      item: p,
     })),
   );
 }
