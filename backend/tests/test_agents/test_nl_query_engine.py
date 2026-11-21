@@ -13,6 +13,7 @@ from app.agents.nl_query_engine import (
 
 DASHBOARD = {
     "pnl": {
+        "currency":    "TRY",
         "revenue":     2_000_000,
         "gross_profit": 1_400_000,
         "net_income":    400_000,
@@ -279,9 +280,9 @@ class TestInsightMoneyFormat:
         ))
         assert out["answer"] == "ok"
         prompt = seen[0]
-        assert "Gelir: 2,000,000 TL" in prompt    # lira — not 20,000
-        assert "Net Kâr: 400,000 TL" in prompt
-        assert "Net Nakit: 200,000 TL" in prompt
+        assert "Gelir: ₺2,000,000" in prompt    # lira — not 20,000
+        assert "Net Kâr: ₺400,000" in prompt
+        assert "Net Nakit: ₺200,000" in prompt
 
     def test_fallback_answers_value_without_dividing(self, monkeypatch):
         import asyncio
@@ -301,4 +302,25 @@ class TestInsightMoneyFormat:
              "metric_display": "Gelir", "context": {}},
             DASHBOARD, [], None,
         ))
-        assert out["answer"] == "Gelir: 250,000 TL"
+        assert out["answer"] == "Gelir: ₺250,000"
+
+
+    def test_a_dashboard_that_names_no_currency_gets_bare_numbers(self, monkeypatch):
+        import asyncio
+
+        from app.platform import model_gateway
+
+        async def boom(**_kwargs):
+            raise RuntimeError("no llm")
+
+        monkeypatch.setattr(model_gateway, "complete_text", boom)
+
+        from app.agents.nl_query_engine import generate_nl_insight
+
+        no_currency = {**DASHBOARD, "pnl": {k: v for k, v in DASHBOARD["pnl"].items() if k != "currency"}}
+        out = asyncio.run(generate_nl_insight(
+            "Gelir ne kadar?",
+            {"intent": "metric_lookup", "value": 250_000, "metric_display": "Gelir", "context": {}},
+            no_currency, [], None,
+        ))
+        assert out["answer"] == "Gelir: 250,000"     # no symbol the data does not prove

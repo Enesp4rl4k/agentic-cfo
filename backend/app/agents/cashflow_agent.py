@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.core.currency_totals import (
     DEFAULT_BASE,
     currency_note,
+    fmt_amount,
     foreign_summaries,
     normalise,
     split_by_currency,
@@ -35,8 +36,9 @@ INVESTING_CATEGORIES: set[str] = set()   # extend when asset purchases are added
 FINANCING_CATEGORIES = {"loan"}
 
 
-def _fmt(cents: int) -> str:
-    return f"₺{cents / 100:,.2f}"
+def _fmt(cents: int, currency: str | None = None) -> str:
+    """Kuruş as an amount labelled with the figures' own currency; bare when none is known."""
+    return fmt_amount(cents / 100, currency, 2)
 
 
 def _classify_cashflow(
@@ -104,7 +106,7 @@ def _classify_cashflow(
     # DSO (Days Sales Outstanding): how long to collect receivables
     # DIO (Days Inventory Outstanding): how long inventory sits (0 for service cos)
     # DPO (Days Payable Outstanding): how long to pay suppliers
-    ccc = _compute_ccc(transactions, operating_in, operating_out)
+    ccc = _compute_ccc(transactions, operating_in, operating_out, base)
 
     return {
         "operating": operating,
@@ -134,6 +136,7 @@ def _compute_ccc(
     transactions: list[dict[str, Any]],
     total_revenue_cents: int,
     total_expenses_cents: int,
+    currency: str | None = None,
 ) -> dict[str, Any]:
     """
     Nakit döngüsü — ölçüm değil, tahmin.
@@ -199,8 +202,8 @@ def _compute_ccc(
         "dpo_days": dpo_days,
         "ccc_days": ccc_days,
         "olcum": "tahmin",
-        "dayanak": (f"Ortalama tahsilat {avg_invoice_size / 100:,.0f} TL, ortalama ödeme "
-                    f"{avg_expense_size / 100:,.0f} TL; gün sayıları bu büyüklüklere göre seçilen bantlar."),
+        "dayanak": (f"Ortalama tahsilat {fmt_amount(avg_invoice_size / 100, currency)}, ortalama ödeme "
+                    f"{fmt_amount(avg_expense_size / 100, currency)}; gün sayıları bu büyüklüklere göre seçilen bantlar."),
         "interpretation": interpretation,
     }
 
@@ -212,7 +215,7 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
     if cashflow["net_change"] < 0:
         alerts.append({
             "level": "warning",
-            "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'])}. Nakit dengesini izleyin.",
+            "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'], cashflow.get('currency'))}. Nakit dengesini izleyin.",
         })
 
     if cashflow["operating"] < 0:
@@ -324,8 +327,8 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
             confidence=confidence,
             needs_review=False,
             detail=(
-                f"Cash flow: operating={_fmt(cashflow['operating'])}, "
-                f"net={_fmt(cashflow['net_change'])}, "
+                f"Cash flow: operating={_fmt(cashflow['operating'], cashflow.get('currency'))}, "
+                f"net={_fmt(cashflow['net_change'], cashflow.get('currency'))}, "
                 f"alerts={len(alerts)}"
             ),
         )

@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 # Which context keys each agent cares about
@@ -86,7 +88,7 @@ def build_cross_context_prompt_block(state: dict[str, Any], agent: str) -> str:
         if cfo.get("critical_anomalies"):
             lines.append(f"CFO Kritik Anomali: {cfo['critical_anomalies']} adet")
         if cfo.get("revenue") is not None:
-            lines.append(f"Gelir (CFO): ₺{cfo['revenue']/100:,.0f}")
+            lines.append(f"Gelir (CFO): {fmt_amount(cfo['revenue']/100, cfo.get('currency'))}")
 
     # CTO context
     cto = state.get("__cto_summary") or {}
@@ -104,7 +106,7 @@ def build_cross_context_prompt_block(state: dict[str, Any], agent: str) -> str:
         if cmo.get("overall_roas") is not None:
             lines.append(f"Pazarlama ROAS (CMO): {cmo['overall_roas']:.1f}x")
         if cmo.get("cac") is not None:
-            lines.append(f"Müşteri Edinme Maliyeti (CMO): ₺{cmo['cac']/100:,.0f}")
+            lines.append(f"Müşteri Edinme Maliyeti (CMO): {fmt_amount(cmo['cac']/100, None)}")
 
     # CHRO context
     chro = state.get("__chro_summary") or {}

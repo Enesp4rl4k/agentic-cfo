@@ -182,7 +182,7 @@ function AttritionSection({ data }: { data: CHROAttritionView }) {
         <StatBlock label={body.totalAttritions} value={String(data.total_departures)} />
         <StatBlock label={body.voluntary} value={String(data.voluntary)} />
         <StatBlock label={body.earlyRate} value={pct(data.early_rate)} />
-        <StatBlock label={body.attritionCost} value={"₺" + fmt(data.cost)} />
+        <StatBlock label={body.attritionCost} value={fmt(data.cost)} />
       </div>
 
       {data.top_reasons.length > 0 && (
@@ -210,10 +210,10 @@ function CompensationSection({ data }: { data: CHROCompensationView }) {
   return (
     <SectionCard title={t.roleDashboards.chro.sections.compensationAnalysis} icon={<DollarSign className="h-4 w-4 text-emerald-400" />}>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <StatBlock label={body.totalPayroll} value={"₺" + fmt(data.total_payroll)} />
-        <StatBlock label={body.avgSalary} value={"₺" + fmt(data.avg_salary)} />
-        <StatBlock label={body.equityBurn} value={"₺" + fmt(data.equity_burn)} />
-        <StatBlock label={body.benefitsCost} value={"₺" + fmt(data.benefits_cost)} />
+        <StatBlock label={body.totalPayroll} value={fmt(data.total_payroll)} />
+        <StatBlock label={body.avgSalary} value={fmt(data.avg_salary)} />
+        <StatBlock label={body.equityBurn} value={fmt(data.equity_burn)} />
+        <StatBlock label={body.benefitsCost} value={fmt(data.benefits_cost)} />
       </div>
 
       <div className="mb-3 grid grid-cols-2 gap-2">
@@ -237,7 +237,7 @@ function CompensationSection({ data }: { data: CHROCompensationView }) {
               <div key={level} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1 text-xs">
                 <span className="font-medium">{level}</span>
                 <span className="text-muted-foreground">
-                  ₺{fmt(avg_salary)} {body.avg}{count !== null ? ` · ${count} ${count === 1 ? body.employeeOne : body.employees}` : ""}
+                  {fmt(avg_salary)} {body.avg}{count !== null ? ` · ${count} ${count === 1 ? body.employeeOne : body.employees}` : ""}
                 </span>
               </div>
             ))}

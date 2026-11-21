@@ -30,7 +30,7 @@ def test_the_model_reads_the_real_revenue(dashboard):
 
 
 def test_a_transaction_in_the_context_is_still_converted_from_kurus(dashboard):
-    tx = {"amount_cents": 28_500_00, "type": "expense", "category": "rent",
+    tx = {"amount_cents": 28_500_00, "currency": "TRY", "type": "expense", "category": "rent",
           "description": "Kira", "transaction_date": "2024-01-08"}
     assert "₺28,500" in _build_financial_context(dashboard, [tx])
 

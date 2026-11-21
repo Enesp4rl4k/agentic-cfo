@@ -89,6 +89,9 @@ async def enrich_state(
                 "finance.critical_anomalies",
                 _count_critical_anomalies(cfo.get("anomalies") or []),
             ),
+            # The label of `revenue`: the P&L's own currency, and only when `revenue` came from the P&L
+            # (a semantic snapshot value carries a currency of its own, not proven to be this one).
+            "currency": None if "finance.revenue" in semantic_values else (dashboard.get("pnl") or {}).get("currency"),
         }
 
     # ── Inject CTO results (for CEO, CHRO cross-domain) ──────────────────────

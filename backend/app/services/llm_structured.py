@@ -31,6 +31,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 # ── Structured Output Schemas ─────────────────────────────────────────────────
@@ -187,6 +189,7 @@ def _pnl_narrative_template(pnl: dict[str, Any]) -> PnLNarrative:
     Used when LLM key is not configured.
     All thresholds are based on common Turkish KOBİ benchmarks.
     """
+    cur = pnl.get("currency")  # the currency the figures are in; bare when none is stated
     revenue = pnl.get("revenue", 0) / 100
     gross_margin = pnl.get("gross_margin", 0)
     net_margin = pnl.get("net_margin", 0)
@@ -197,18 +200,18 @@ def _pnl_narrative_template(pnl: dict[str, Any]) -> PnLNarrative:
     if net_income > 0 and net_margin > 0.10:
         summary = (
             f"Gelir tablosu güçlü görünüm sergilemektedir. "
-            f"₺{revenue:,.0f} gelir üzerinden %{net_margin*100:.1f} net marj elde edilmiştir. "
+            f"{fmt_amount(revenue, cur)} gelir üzerinden %{net_margin*100:.1f} net marj elde edilmiştir. "
             f"EBITDA marjı %{ebitda_margin*100:.1f} ile sektör ortalamasının yakınındadır."
         )
     elif net_income > 0:
         summary = (
-            f"₺{revenue:,.0f} gelirle kârlı bir dönem geçirilmiştir. "
+            f"{fmt_amount(revenue, cur)} gelirle kârlı bir dönem geçirilmiştir. "
             f"Net marj %{net_margin*100:.1f} ile kabul edilebilir aralıktadır. "
             f"Brüt kâr marjının %{gross_margin*100:.1f} ile iyileştirme potansiyeli taşıdığı değerlendirilmektedir."
         )
     else:
         summary = (
-            f"₺{revenue:,.0f} gelire karşın zarar edilmiştir (net marj: %{net_margin*100:.1f}). "
+            f"{fmt_amount(revenue, cur)} gelire karşın zarar edilmiştir (net marj: %{net_margin*100:.1f}). "
             f"Gider yapısının acil olarak gözden geçirilmesi önerilmektedir."
         )
 
@@ -267,7 +270,7 @@ def _pnl_narrative_template(pnl: dict[str, Any]) -> PnLNarrative:
     return PnLNarrative(
         summary=summary,
         highlights=[
-            f"Toplam gelir: ₺{revenue:,.0f}",
+            f"Toplam gelir: {fmt_amount(revenue, cur)}",
             f"Brüt kâr marjı: %{gross_margin*100:.1f}",
         ] if net_income > 0 else [],
         risks=risks[:3],
@@ -278,6 +281,7 @@ def _pnl_narrative_template(pnl: dict[str, Any]) -> PnLNarrative:
 
 def _cashflow_narrative_template(cashflow: dict[str, Any]) -> CashFlowNarrative:
     """Deterministic cash flow narrative."""
+    cur = cashflow.get("currency")  # the currency the figures are in; bare when none is stated
     operating = cashflow.get("operating", 0) / 100
     net_change = cashflow.get("net_change", 0) / 100
     alerts = cashflow.get("alerts", [])
@@ -286,20 +290,20 @@ def _cashflow_narrative_template(cashflow: dict[str, Any]) -> CashFlowNarrative:
         liquidity = "güvenli"
         summary = (
             f"Nakit akışı sağlıklı görünümdedir. "
-            f"Faaliyet nakit akışı ₺{operating:,.0f} ile pozitiftir. "
-            f"Net nakit değişimi ₺{net_change:,.0f} olarak gerçekleşmiştir."
+            f"Faaliyet nakit akışı {fmt_amount(operating, cur)} ile pozitiftir. "
+            f"Net nakit değişimi {fmt_amount(net_change, cur)} olarak gerçekleşmiştir."
         )
     elif operating > 0:
         liquidity = "dikkatli"
         summary = (
-            f"Faaliyet nakit akışı pozitif (₺{operating:,.0f}) olmasına rağmen, "
-            f"genel net nakit değişimi ₺{net_change:,.0f} ile negatiftir. "
+            f"Faaliyet nakit akışı pozitif ({fmt_amount(operating, cur)}) olmasına rağmen, "
+            f"genel net nakit değişimi {fmt_amount(net_change, cur)} ile negatiftir. "
             f"Yatırım veya finansman faaliyetleri incelenmelidir."
         )
     else:
         liquidity = "riskli"
         summary = (
-            f"Faaliyet nakit akışı ₺{operating:,.0f} ile negatiftir. "
+            f"Faaliyet nakit akışı {fmt_amount(operating, cur)} ile negatiftir. "
             f"İşletme kendi operasyonlarını finanse edememektedir. "
             f"Acil nakit yönetimi müdahalesi gereklidir."
         )
@@ -337,19 +341,20 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
     base = scenarios.get("base", {})
     pessimistic = scenarios.get("pessimistic", {})
 
+    cur = forecast.get("currency")  # the forecast states none today: bare, never assumed
     base_net = base.get("twelve_month_net", 0) / 100
     base_runway = base.get("runway_months")
     pess_runway = pessimistic.get("runway_months")
 
     if base_net > 0:
         summary = (
-            f"Baz senaryoda 12 aylık net nakit akışı ₺{base_net:,.0f} olarak öngörülmektedir. "
+            f"Baz senaryoda 12 aylık net nakit akışı {fmt_amount(base_net, cur)} olarak öngörülmektedir. "
             f"Mevcut trendler devam ederse şirket sağlıklı büyüme sergileyecektir."
         )
         base_comment = "Baz senaryo mevcut operasyonel parametrelerin korunmasını varsayar."
     else:
         summary = (
-            f"Baz senaryoda 12 aylık net nakit akışı ₺{base_net:,.0f} ile negatif öngörülmektedir. "
+            f"Baz senaryoda 12 aylık net nakit akışı {fmt_amount(base_net, cur)} ile negatif öngörülmektedir. "
             f"Mevcut gider yapısında köklü değişiklikler yapılmazsa zorluklar beklenmektedir."
         )
         base_comment = "Baz senaryoda yapısal iyileştirmeler yapılmazsa sürdürülebilirlik riski mevcuttur."
@@ -478,6 +483,7 @@ async def get_pnl_narrative(
         return _pnl_narrative_template(pnl)
 
     try:
+        cur = pnl.get("currency")  # the currency the figures are in; bare when none is stated
         revenue = pnl.get("revenue", 0) / 100
         gross_margin = pnl.get("gross_margin", 0)
         net_margin = pnl.get("net_margin", 0)
@@ -485,16 +491,16 @@ async def get_pnl_narrative(
         net_income = pnl.get("net_income", 0) / 100
 
         summary_text = (
-            f"Gelir: ₺{revenue:,.0f}\n"
+            f"Gelir: {fmt_amount(revenue, cur)}\n"
             f"Brüt Marj: %{gross_margin*100:.1f}\n"
             f"EBITDA Marjı: %{ebitda_margin*100:.1f}\n"
-            f"Net Kâr: ₺{net_income:,.0f} (%{net_margin*100:.1f})\n"
+            f"Net Kâr: {fmt_amount(net_income, cur)} (%{net_margin*100:.1f})\n"
         )
 
         opex = pnl.get("opex", {})
         if opex:
             opex_lines = "\n".join(
-                f"  - {k.replace('_', ' ').title()}: ₺{v/100:,.0f}"
+                f"  - {k.replace('_', ' ').title()}: {fmt_amount(v/100, cur)}"
                 for k, v in opex.items()
                 if v and v > 0
             )
@@ -531,6 +537,7 @@ async def get_cashflow_narrative(
         return _cashflow_narrative_template(cashflow)
 
     try:
+        cur = cashflow.get("currency")
         operating = cashflow.get("operating", 0) / 100
         investing = cashflow.get("investing", 0) / 100
         financing = cashflow.get("financing", 0) / 100
@@ -538,10 +545,10 @@ async def get_cashflow_narrative(
         alerts = cashflow.get("alerts", [])
 
         summary_text = (
-            f"Faaliyet Nakit Akışı: ₺{operating:,.0f}\n"
-            f"Yatırım Nakit Akışı: ₺{investing:,.0f}\n"
-            f"Finansman Nakit Akışı: ₺{financing:,.0f}\n"
-            f"Net Nakit Değişimi: ₺{net_change:,.0f}\n"
+            f"Faaliyet Nakit Akışı: {fmt_amount(operating, cur)}\n"
+            f"Yatırım Nakit Akışı: {fmt_amount(investing, cur)}\n"
+            f"Finansman Nakit Akışı: {fmt_amount(financing, cur)}\n"
+            f"Net Nakit Değişimi: {fmt_amount(net_change, cur)}\n"
         )
         if alerts:
             alert_text = "\n".join(f"  - {a.get('message', '')}" for a in alerts[:3])
@@ -575,13 +582,14 @@ async def get_forecast_narrative(
         return _forecast_narrative_template(forecast)
 
     try:
+        cur = forecast.get("currency")
         scenarios = forecast.get("scenarios", {})
         lines = []
         for name, s in scenarios.items():
             net = s.get("twelve_month_net", 0) / 100
             runway = s.get("runway_months")
             lines.append(
-                f"  {name}: 12 aylık net ₺{net:,.0f}"
+                f"  {name}: 12 aylık net {fmt_amount(net, cur)}"
                 + (f", nakit pisti {runway} ay" if runway else "")
             )
 

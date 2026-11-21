@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.core.currency_totals import (
     DEFAULT_BASE,
     currency_note,
+    fmt_amount,
     foreign_summaries,
     normalise,
     split_by_currency,
@@ -27,8 +28,9 @@ from app.services.telemetry import trace_agent
 logger = logging.getLogger(__name__)
 
 
-def _fmt(cents: int) -> str:
-    return f"₺{cents / 100:,.2f}"
+def _fmt(cents: int, currency: str | None = None) -> str:
+    """Kuruş as an amount labelled with the figures' own currency; bare when none is known."""
+    return fmt_amount(cents / 100, currency, 2)
 
 
 def _monthly_buckets(transactions: list[dict[str, Any]], tx_type: str) -> dict[str, int]:
@@ -256,8 +258,8 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
             patch={"pnl": pnl},
             confidence=confidence,
             detail=(
-                f"P&L computed: revenue={_fmt(pnl['revenue'])}, "
-                f"net_income={_fmt(pnl['net_income'])}, "
+                f"P&L computed: revenue={_fmt(pnl['revenue'], pnl.get('currency'))}, "
+                f"net_income={_fmt(pnl['net_income'], pnl.get('currency'))}, "
                 f"net_margin={pnl['net_margin']*100:.1f}%"
             ),
         )

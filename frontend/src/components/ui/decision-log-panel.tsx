@@ -21,23 +21,12 @@ import {
   type DecisionRecord,
 } from "@/lib/api/decisions";
 import { useCan } from "@/hooks/useCan";
+import { useCentsFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { failureMessage } from "@/lib/forbidden";
 import { cn } from "@/lib/utils";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-
-const tl = new Intl.NumberFormat("tr-TR", {
-  style: "currency",
-  currency: "TRY",
-  maximumFractionDigits: 0,
-});
-
-/** Ledger money is kuruş — the UI shows lira. */
-function fmtTL(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return tl.format(value / 100);
-}
 
 const STATUS_CHIP = {
   open: "border-amber-500/30 bg-amber-500/10 text-amber-500",
@@ -49,6 +38,7 @@ const STATUS_LABEL = { open: "açık", closed: "ölçüldü" } as const;
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export function DecisionLogPanel({ className }: { className?: string }) {
+  const fmtTL = useCentsFormat();
   const { t } = useI18n();
   const can = useCan("edit");
   const [rows, setRows] = useState<DecisionRecord[] | null>(null);

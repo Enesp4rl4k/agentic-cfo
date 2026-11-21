@@ -381,7 +381,7 @@ async def _llm_siniflandir(
         prompt = (
             f"Türkiye Tekdüzen Hesap Planı'na göre aşağıdaki işlemi sınıflandır.\n\n"
             f"İşlem: {description}\n"
-            f"Tutar: {amount_kurus / 100:.2f} TRY\n"
+            f"Tutar: {amount_kurus / 100:.2f}\n"
             f"Tür: {'Gelir' if transaction_type == 'income' else 'Gider'}\n"
             f"Tedarikçi/Kaynak: {vendor or 'Bilinmiyor'}\n\n"
             f"Hesap kodları:\n{hesap_listesi}\n\n"

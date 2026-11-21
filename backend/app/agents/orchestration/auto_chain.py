@@ -618,10 +618,10 @@ def _build_kri_csv_from_cfo(cfo: dict[str, Any]) -> str:
     if pnl.get("net_margin") is not None:
         rows.append(f"Net Profit Margin,{pnl['net_margin']:.1f},15,%,stable")
     if pnl.get("revenue") is not None:
-        rows.append(f"Revenue,{pnl['revenue']:.0f},0,TRY,stable")
+        rows.append(f"Revenue,{pnl['revenue']:.0f},0,{pnl.get('currency') or ''},stable")
     if cashflow.get("operating_cash_flow") is not None:
         ocf = cashflow["operating_cash_flow"]
-        rows.append(f"Operating Cash Flow,{ocf:.0f},0,TRY,stable")
+        rows.append(f"Operating Cash Flow,{ocf:.0f},0,{cashflow.get('currency') or ''},stable")
 
     return "\n".join(rows) if len(rows) > 1 else ""
 

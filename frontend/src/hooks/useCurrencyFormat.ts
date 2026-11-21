@@ -56,3 +56,12 @@ export function useCurrencySymbol(currency?: string | null): string {
     return code;
   }
 }
+
+/**
+ * Formatter for ledger money in kuruş/cents (an em dash for a missing value), in the organisation's effective
+ * currency, or a payload-stated one. For the decision and report panels that used to write lira unconditionally.
+ */
+export function useCentsFormat(currency?: string | null): (cents: number | null | undefined) => string {
+  const fmt = useCurrencyFormat(currency);
+  return useCallback((cents) => (cents === null || cents === undefined ? "—" : fmt(cents / 100)), [fmt]);
+}

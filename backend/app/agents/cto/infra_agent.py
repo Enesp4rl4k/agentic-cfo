@@ -147,7 +147,7 @@ def _compute_infra_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if cost > WASTE_THRESHOLD_CENTS and _detect_environment(svc) in ("dev", "staging"):
             waste_items.append({
                 "service": svc,
-                "reason": f"Non-production environment spending ₺{cost/100:,.0f}/month",
+                "reason": f"Non-production environment spending {cost/100:,.0f}/month",
                 "savings_cents": int(cost * 0.6),  # assume 60% reducible
             })
 
@@ -181,7 +181,7 @@ def _build_infra_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
         alerts.append({
             "level": "warning",
             "message": (
-                f"Estimated ₺{waste/100:,.0f}/month cloud waste detected. "
+                f"Estimated {waste/100:,.0f}/month cloud waste detected. "
                 "Review non-production environment sizing."
             ),
         })
@@ -209,7 +209,7 @@ async def _generate_infra_narrative(
 
     top = metrics.get("top_cost_drivers", [])[:5]
     top_text = "\n".join(
-        f"  - {d['service']}: ₺{d['cost_cents']/100:,.0f} ({d['pct']}%)"
+        f"  - {d['service']}: {d['cost_cents']/100:,.0f} ({d['pct']}%)"
         for d in top
     )
     alert_text = (
@@ -227,13 +227,13 @@ async def _generate_infra_narrative(
             "Yanıt şu yapıda olsun:\n"
             "1. Mevcut bulut harcamasının 1-2 cümlelik değerlendirmesi (MoM değişim ve israf odaklı)\n"
             "2. En kritik maliyet riski veya optimizasyon fırsatı\n"
-            "3. Ekibin hemen yapması gereken 2-3 somut maliyet iyileştirmesi (öncelik sırasıyla, TL cinsinden etki belirt)\n"
+            "3. Ekibin hemen yapması gereken 2-3 somut maliyet iyileştirmesi (öncelik sırasıyla, etkiyi sayıyla belirt; para birimi bilinmiyor, simge ekleme)\n"
             "FinOps perspektifinden pratik öneriler ekle."
         ),
         prompt=(
-            f"Aylık Toplam Bulut Harcaması: {metrics.get('total_cost_cents', 0)/100:,.0f} ₺\n"
+            f"Aylık Toplam Bulut Harcaması: {metrics.get('total_cost_cents', 0)/100:,.0f}\n"
             f"Aylık Değişim: {f'{mom:+.1f}%' if mom is not None else 'N/A'}\n"
-            f"Tahmini İsraf: {waste/100:,.0f} ₺/ay\n\n"
+            f"Tahmini İsraf: {waste/100:,.0f}/ay\n\n"
             f"En Yüksek Maliyetli Servisler:\n{top_text}\n\n"
             f"Uyarılar:\n{alert_text}"
         ),
@@ -282,7 +282,7 @@ async def run_infra_agent(
         confidence = 0.92 if not has_critical else 0.80
 
         logger.info(
-            "InfraAgent: job=%s total=₺%s waste=₺%s alerts=%d",
+            "InfraAgent: job=%s total=%s waste=%s alerts=%d",
             state.get("job_id"),
             f"{metrics['total_cost_cents'] / 100:,.0f}",
             f"{metrics['waste_estimate_cents'] / 100:,.0f}",
@@ -295,8 +295,8 @@ async def run_infra_agent(
             confidence=confidence,
             needs_review=has_critical,
             detail=(
-                f"Cloud spend: ₺{metrics['total_cost_cents']/100:,.0f}, "
-                f"waste: ₺{metrics['waste_estimate_cents']/100:,.0f}, "
+                f"Cloud spend: {metrics['total_cost_cents']/100:,.0f}, "
+                f"waste: {metrics['waste_estimate_cents']/100:,.0f}, "
                 f"alerts: {len(alerts)}"
             ),
         )

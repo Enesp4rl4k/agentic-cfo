@@ -16,6 +16,13 @@ const { packet, dec } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/decisionPacket", () => packet);
 vi.mock("@/lib/api/decisions", () => dec);
+// Money is written in the organisation's effective currency (formerly lira hard-coded): a lira company here.
+vi.mock("@/hooks/useOrgSettings", () => ({
+  useOrgSettings: () => ({
+    org: { org_id: "o", name: "T", locale: "tr-TR", base_currency: "TRY", base_currency_confirmed: true, effective_currency: "TRY" },
+    loading: false, error: null, refresh: () => {}, locale: "tr-TR",
+  }),
+}));
 
 import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";
 
@@ -149,7 +156,7 @@ describe("Karar Paketi paneli", () => {
     const optionsSection = within(screen.getByLabelText("Seçenekler"));
     expect(optionsSection.getByText("Hiçbir şey yapma")).toBeInTheDocument();
     expect(screen.getByText("referans")).toBeInTheDocument();
-    expect(screen.getByText("0 ₺ (referans)")).toBeInTheDocument();
+    expect(screen.getByText("₺0 (referans)")).toBeInTheDocument();
     expect(optionsSection.getByText("2 Kişi İşe Alma")).toBeInTheDocument();
     expect(screen.getByText(/240\.000/)).toBeInTheDocument(); // −240.000 ₺
     expect(screen.getByText("6 ay")).toBeInTheDocument(); // break-even
