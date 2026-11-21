@@ -98,7 +98,7 @@ test.describe("Pilot flow", () => {
     await expect(main.getByText(/tarihinde ₺/)).toHaveCount(0);
   });
 
-  test("3. the owner uploads the bank statement and the invoice list; both analyses complete", async ({ page }) => {
+  test("3. the owner uploads the bank statement and the invoice list; both analyses complete", async ({ page, request }) => {
     await loginInBrowser(page, OWNER);
     const jobs: string[] = [];
     for (const file of [bank, invoices]) {
@@ -111,16 +111,24 @@ test.describe("Pilot flow", () => {
       // Sent there while the run is still going, it says "Gelir tablosu verisi yok" and does not
       // refresh itself (a defect, reported); a person reloads, so the test does.
       const title = screen(page).getByText("Gelir Tablosu (P&L)", { exact: true });
-      await expect
-        .poll(
-          async () => {
-            if (await title.isVisible()) return true;
-            await page.reload();
-            return false;
-          },
-          { timeout: 180_000, intervals: [4_000] },
-        )
-        .toBe(true);
+      try {
+        await expect
+          .poll(
+            async () => {
+              if (await title.isVisible()) return true;
+              await page.reload();
+              return false;
+            },
+            { timeout: 180_000, intervals: [4_000] },
+          )
+          .toBe(true);
+      } catch (error) {
+        // Say what the product says about the run, so a red CI log explains itself.
+        const jobId = jobs[jobs.length - 1];
+        const owner = await login(request, OWNER);
+        const state = await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) });
+        throw new Error(`${file.name}: the result page never showed the analysis. GET /analysis/${jobId}: ${await state.text()}`, { cause: error });
+      }
       await expect(screen(page).getByText("Net Kâr").first()).toBeVisible({ timeout: 120_000 });
     }
     S.bankJob = jobs[0];
