@@ -23,11 +23,13 @@ from app.api.access import ensure_tenant
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.open_item import OpenItem
-from app.models.payment_plan_change import STATUSES, PaymentPlanChange
+from app.models.payment_plan_change import PENDING, STATUSES, PaymentPlanChange
 from app.models.user import User
 from app.services import payment_plan
 from app.services.acting_role import acting_role
+from app.services.decisions import record_decision
 from app.services.payment_plan import PlanChangeError
 
 router = APIRouter()
@@ -97,6 +99,27 @@ def _view(change: PaymentPlanChange, item: OpenItem | None) -> dict[str, Any]:
     }
 
 
+async def _record(
+    db: AsyncSession, change: PaymentPlanChange, user: User, outcome: str, *, reason: str | None = None,
+) -> None:
+    """One decision record per step of a proposal's life, in the caller's transaction.
+
+    `proposed` is the member's request; `approved`, `rejected` and `withdrawn` close it. An owner or an
+    admin who decides their own proposal (the rule: they hold the authority) leaves a `proposed` and an
+    `approved`, both theirs, and the approval says `self_decided` so nobody reads it as a second pair of eyes.
+    """
+    after: dict[str, Any] = {"from_date": change.from_date.isoformat(), "to_date": change.to_date.isoformat(), "status": change.status}
+    if outcome in ("approved", "rejected"):
+        after["self_decided"] = change.requested_by == str(user.id)
+    await record_decision(
+        db, org_id=str(change.org_id), kind=DecisionKind.PLAN_CHANGE, target_type="payment_plan_change",
+        target_id=str(change.id), outcome=outcome, decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+        reason=reason, evidence_refs=[{"type": "open_item", "id": str(change.open_item_id)}],
+        before=None if outcome == "proposed" else {"status": PENDING},
+        after=after,
+    )
+
+
 async def _load_change(db: AsyncSession, change_id: str) -> PaymentPlanChange:
     change = (
         await db.execute(select(PaymentPlanChange).where(PaymentPlanChange.id == change_id))
@@ -128,6 +151,7 @@ async def propose_change(
         )
     except PlanChangeError as exc:
         raise _fail(exc) from exc
+    await _record(db, change, current_user, "proposed", reason=change.request_note)
     await db.commit()
     return {"data": _view(change, await _item(db, change)), "error": None}
 
@@ -169,6 +193,7 @@ async def _apply_decision(
         )
     except PlanChangeError as exc:
         raise _fail(exc) from exc
+    await _record(db, change, user, "approved" if approve else "rejected", reason=change.decision_note)
     await db.commit()
     return {"data": _view(change, await _item(db, change)), "error": None}
 
@@ -209,5 +234,6 @@ async def withdraw_change(
         payment_plan.withdraw(change, user=current_user)
     except PlanChangeError as exc:
         raise _fail(exc) from exc
+    await _record(db, change, current_user, "withdrawn")
     await db.commit()
     return {"data": _view(change, await _item(db, change)), "error": None}

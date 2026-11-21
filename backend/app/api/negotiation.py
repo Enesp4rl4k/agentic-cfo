@@ -20,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.access import current_user_org_matches, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
 from app.platform.model_gateway import LLMUnavailable
+from app.services.decisions import record_decision
 
 router = APIRouter(tags=["negotiation"])
 logger = logging.getLogger(__name__)
@@ -211,6 +213,13 @@ async def resolve_conflict(
         row.status = "resolved"
         row.resolved_at = now
         row.resolution = json.dumps(existing)
+        if row.org_id:
+            await record_decision(
+                db, org_id=str(row.org_id), kind=DecisionKind.AGENT_CONFLICT_RESOLUTION, target_type="agent_conflict",
+                target_id=str(conflict_id), outcome=str(body.resolution)[:40], decided_via=DecidedVia.HUMAN,
+                decided_by=str(user.id), reason=body.note[:500] if body.note else None,
+                before={"status": "open"}, after={"status": "resolved"},
+            )
         await db.commit()
 
         return {

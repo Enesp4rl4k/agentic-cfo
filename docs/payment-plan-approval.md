@@ -8,6 +8,7 @@ the admin role**.
 
 - A member with write access (owner, admin, CFO, analyst) may **propose** a new date for a payable.
   A viewer may not.
+- The company's **accountant (`smmm`) does not propose**: moving a payment date is the company's commercial decision, so the accountant advises and the company proposes. The screen lets the accountant try dates in the scenario, but the send button is inert and says why; the API answers 403 (`PROPOSER_ROLES`, mirrored in `frontend/src/lib/roles.ts` and checked by a test).
 - Only an **owner or an admin** may **decide**. An owner or admin who proposes holds that authority
   themselves, so they may decide their own proposal: a company with one owner would otherwise never be
   able to move a payment. Everyone else's proposal waits for someone with the role.
@@ -16,7 +17,7 @@ the admin role**.
 - Only the person who proposed may withdraw, and only while it waits. A decision is made once.
 - One open proposal per payment. Only payables with a due date and money still owed can be moved,
   to a date from today to one year ahead. Receivables are never moved: their date is not ours to set.
-- Every proposal and decision is the row itself: who, when, for which date, and why.
+- Every proposal and decision is the row itself: who, when, for which date, and why. Each step also leaves a decision record (`kind=plan_change`, outcome `proposed`, `approved`, `rejected` or `withdrawn`); an owner or admin who decides their own proposal leaves `proposed` and `approved`, both theirs, and the approval carries `self_decided: true`.
 
 ## What is built (backend, `app/api/plan_changes.py`, `app/services/payment_plan.py`)
 

@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
-import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, invite, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
+import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
 import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, invoiceList, tr } from "./support/fixtures";
 
 /**
@@ -30,6 +30,7 @@ const S: {
   ownerId?: string;
   ownerOrg?: string | null;
   accountantId?: string;
+  accountantInviteToken?: string;
   briefingId?: string;
 } = {};
 
@@ -44,24 +45,39 @@ async function inNewContext<T>(browser: Browser, email: string, body: (page: Pag
   }
 }
 
-/**
- * A colleague joins the way the product lets a company add one: the owner invites them on the
- * workspace screen, they register, and they accept with the token from the invitation e-mail
- * (read from the database: the API only e-mails it, and there is no mail server here).
- */
-async function addColleague(browser: Browser, request: APIRequestContext, email: string, role: "analyst" | "viewer", fullName: string) {
+/** The owner invites someone on the workspace screen, as a person does; returns the token from the e-mail. */
+async function inviteOnScreen(browser: Browser, email: string, role: "smmm" | "analyst" | "viewer"): Promise<string> {
   await inNewContext(browser, OWNER, async (page) => {
     await page.goto("/settings/workspace");
     const form = page.locator("form").filter({ has: page.locator('input[type="email"]') });
     await form.locator('input[type="email"]').fill(email);
     await form.locator("select").selectOption(role);
     await form.getByRole("button").click();
-    await expect(page.getByText(email)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(email).first()).toBeVisible({ timeout: 30_000 });
   });
-  await register(request, email, fullName);
+  // The API only e-mails the token (there is no mail server here), so it is read from the database.
   const { token } = probe<{ token: string | null }>("invite-token", email);
   expect(token, "the invitation exists").toBeTruthy();
-  expect((await acceptInvite(request, token as string, fullName)).status()).toBe(201);
+  return token as string;
+}
+
+/**
+ * A colleague joins: the owner invites them on the workspace screen, they register, and they accept
+ * with the token from the invitation e-mail.
+ */
+async function addColleague(browser: Browser, request: APIRequestContext, email: string, role: "analyst" | "viewer", fullName: string) {
+  const token = await inviteOnScreen(browser, email, role);
+  await register(request, email, fullName);
+  expect((await acceptInvite(request, token, fullName)).status()).toBe(201);
+}
+
+/** The invitation link of the e-mail, opened in a browser with no session. */
+async function openInvitation(browser: Browser, token: string): Promise<{ page: Page; close: () => Promise<void> }> {
+  const ctx = await browser.newContext({ locale: "tr-TR", timezoneId: "Europe/Istanbul" });
+  const page = await ctx.newPage();
+  const res = await page.goto(`/auth/accept-invite?token=${token}`);
+  expect(res?.status(), "the page the e-mail links to exists").toBe(200);
+  return { page, close: () => ctx.close() };
 }
 
 /** The page's own content (the layout nests two <main> elements; the inner one is the page). */
@@ -235,16 +251,25 @@ test.describe("Pilot flow", () => {
     await expect.poll(expenseOnCard, { timeout: 60_000 }).toBe(before - 30_000);
   });
 
-  test("8. an accountant (SMMM) is added to the company through an invitation", async ({ request }) => {
-    const owner = { token: S.ownerToken as string, orgId: S.ownerOrg };
-    await register(request, ACCOUNTANT, "Murat Müşavir"); // an accountant with no company of their own yet
-    await invite(request, owner.token, ACCOUNTANT, "smmm");
+  test("8. an accountant (SMMM) is invited on the workspace screen and joins through the link in the e-mail", async ({ browser, request }) => {
+    const owner = { orgId: S.ownerOrg };
+    const token = await inviteOnScreen(browser, ACCOUNTANT, "smmm");
+    S.accountantInviteToken = token;
 
-    // The API only e-mails the token (there is no SMTP here), so the test reads it from the database.
-    const { token } = probe<{ token: string | null }>("invite-token", ACCOUNTANT);
-    expect(token, "the invitation exists").toBeTruthy();
-    const accepted = await acceptInvite(request, token as string, "Murat Müşavir");
-    expect(accepted.status(), await accepted.text()).toBe(201);
+    // The accountant has no account yet: the page names the company and the role, and asks for a name and a password.
+    const { page, close } = await openInvitation(browser, token);
+    try {
+      await expect(page.getByText(`${COMPANY} şirketine Mali müşavir olarak davet edildiniz.`)).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByText(`Davet ${ACCOUNTANT} adresi içindir.`)).toBeVisible();
+      await page.locator("#fullName").fill("Murat Müşavir");
+      await page.locator("#password").fill(PASSWORD);
+      await page.getByRole("button", { name: "Hesap oluştur ve katıl" }).click();
+      await page.waitForURL(/\/command-center/, { timeout: 60_000 });
+      noteSignIns(1);
+    } finally {
+      await close();
+    }
+
     const smmm = await login(request, ACCOUNTANT);
     expect(smmm.role).toBe("smmm");
     expect(smmm.orgId).toBe(owner.orgId);
@@ -344,23 +369,31 @@ test.describe("Pilot flow", () => {
     expect(data.some((d: { kind: string; decided_via: string }) => d.kind === "briefing_release" && d.decided_via === "system")).toBe(true);
   });
 
-  test.fixme("14b. the decision records list the owner's category correction, with who and when", async ({ request }) => {
-    // PATCH /transactions/{id}/category writes an audit-log line (ledger.category_correction) but no
-    // decision record, although DecisionKind.CATEGORY_CORRECTION exists.
+  test("14b. the decision records list the owner's category correction, with who and when", async ({ request }) => {
     const res = await request.get(`${API}/decision-records?kind=category_correction`, { headers: bearer(S.ownerToken as string) });
     const { data } = await res.json();
+    // One: the owner's correction in step 7. The viewer's attempt in step 12 was refused and left nothing.
     expect(data).toHaveLength(1);
     expect(data[0].decided_by).toBe(S.ownerId);
+    expect(data[0].decided_via).toBe("human");
+    expect(data[0].outcome).toBe("corrected");
+    expect(data[0].before).toEqual({ category: "salary" });
+    expect(data[0].after).toEqual({ category: "transfer" });
+    expect(Date.parse(data[0].decided_at)).not.toBeNaN();
   });
 
-  test.fixme("14c. the decision records list the owner's approval of the plan change, with who and when", async ({ request }) => {
-    // Approving a plan change updates the payment_plan_changes row (decided_by, decided_at) but
-    // writes no decision record, although DecisionKind.PLAN_CHANGE exists.
-    const res = await request.get(`${API}/decision-records?kind=plan_change`, { headers: bearer(S.ownerToken as string) });
+  test("14c. the decision records list the owner's approval of the plan change, with who and when", async ({ request }) => {
+    const res = await request.get(`${API}/decision-records?kind=plan_change&limit=100`, { headers: bearer(S.ownerToken as string) });
     const { data } = await res.json();
-    expect(data).toHaveLength(1);
-    expect(data[0].decided_by).toBe(S.ownerId);
-    expect(data[0].outcome).toMatch(/approved/);
+    const approvals = data.filter((d: { outcome: string }) => d.outcome === "approved");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0].decided_by).toBe(S.ownerId);
+    expect(approvals[0].after.self_decided).toBe(false); // the analyst proposed it; the owner decided
+    // The analyst's proposal is on record too, as theirs.
+    const proposals = data.filter((d: { outcome: string }) => d.outcome === "proposed");
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].decided_by).not.toBe(S.ownerId);
+    expect(proposals[0].target_id).toBe(approvals[0].target_id);
   });
 
   test("15. an approved action says plainly that it is not connected and that nothing was done", async ({ page, request }) => {
@@ -387,47 +420,92 @@ test.describe("Pilot flow", () => {
     await expect(page.getByText("1 Bekleyen")).toBeVisible();
   });
 
-  test.fixme("15b. the accountant (smmm) can propose a payment date change, like any other writer", async ({ browser }) => {
-    // The screen offers the accountant the button; the API answers 403 "Ödeme tarihi önermek için
-    // yazma yetkisi gerekir" because PROPOSER_ROLES (owner, admin, cfo, analyst) leaves out smmm,
-    // which every other writer check includes.
+  test("15b. the accountant (smmm) can try dates on the calendar, but sending is inert and says why: she advises, the company proposes", async ({ browser, request }) => {
+    // A payment-date change is the company's commercial decision (docs/payment-plan-approval.md): the
+    // API refuses smmm (PROPOSER_ROLES) and the screen no longer offers a button that can only answer 403.
     await inNewContext(browser, ACCOUNTANT, async (page) => {
       await page.goto("/takvim");
       await page.getByRole("button", { name: /1 hafta (ötele|öne al)/ }).first().click();
-      await page.getByRole("button", { name: /Onaya gönder/ }).first().click();
-      await expect(page.getByText(/Öneri onaya gönderildi|Ödeme planı değişti/)).toBeVisible();
+      const send = page.getByRole("button", { name: /: Onaya gönder$/ }).first();
+      await expect(send).toHaveAttribute("aria-disabled", "true");
+      await expect(send).toHaveAttribute("title", /mali müşavir tavsiye eder/);
+      await expect(page.getByText(/Ödeme tarihini değiştirmek şirketin ticari kararıdır/).first()).toBeVisible();
+      await send.click();
+      await expect(page.getByText(/Öneri onaya gönderildi|Ödeme planı değişti/)).toHaveCount(0);
     });
+    const accountant = await login(request, ACCOUNTANT);
+    const refused = await request.post(`${API}/ledger/plan-changes`, {
+      headers: bearer(accountant.token),
+      data: { open_item_id: "x", to_date: "2030-01-01" },
+    });
+    expect(refused.status()).toBe(403);
   });
 
-  test.fixme("16. the invitation link in the e-mail opens a page where the invitee accepts", async ({ page }) => {
-    // The e-mail says {frontend}/auth/accept-invite?token=…; the app has no such page (404), and
-    // the workspace screen copies /auth/register?invite=… (which the register page ignores).
-    const res = await page.goto("/auth/accept-invite?token=anything");
-    expect(res?.status()).toBe(200);
+  test("16. the invitation link in the e-mail opens a page that says what the invitation is: used, unknown", async ({ browser }) => {
+    // The e-mail says {frontend}/auth/accept-invite?token=…; it used to be a 404.
+    const used = await openInvitation(browser, S.accountantInviteToken as string);
+    try {
+      await expect(used.page.getByText("Bu davet zaten kullanılmış")).toBeVisible({ timeout: 60_000 });
+      await expect(used.page.getByRole("link", { name: "Giriş yap" })).toBeVisible();
+      await expect(used.page.getByRole("button", { name: /katıl/i })).toHaveCount(0);
+    } finally {
+      await used.close();
+    }
+    const unknown = await openInvitation(browser, "bu-davet-yok");
+    try {
+      await expect(unknown.page.getByText("Bu davet bulunamadı")).toBeVisible({ timeout: 60_000 });
+    } finally {
+      await unknown.close();
+    }
   });
 
-  test.fixme("17. the workspace screen can invite an accountant (smmm)", async ({ page }) => {
-    // The API accepts role smmm and the briefing flow depends on it, but the invite form offers
-    // only analyst, viewer and admin.
+  test("17. the workspace screen offers exactly the roles the owner may grant, each with a line on what it can do", async ({ page }) => {
     await loginInBrowser(page, OWNER);
     await page.goto("/settings/workspace");
+    const options = page.locator("form select option");
+    await expect(options.first()).toBeAttached({ timeout: 60_000 });
+    const values = await options.evaluateAll((all) => all.map((o) => (o as HTMLOptionElement).value));
+    expect(values.sort()).toEqual(["admin", "analyst", "cfo", "owner", "smmm", "viewer"]);
     await expect(page.locator("form select option[value='smmm']")).toHaveCount(1);
+    await expect(page.getByText(/Şirketin mali müşaviri: kayıtları onaylar/)).toBeVisible();
+    await expect(page.getByText("Yalnızca görüntüler; hiçbir şeyi değiştirmez.")).toBeVisible();
   });
 
-  test.fixme("18. an accountant who already has a company of their own can be added to a client and switch into it", async ({ browser, request }) => {
+  test("18. an accountant who already has a company of their own is added to a client through the link, lands in it, and switches between both", async ({ browser, request }) => {
     // Registering through the screen always creates a company, so an accountant normally has one;
-    // accepting an invitation then answers 400 "Zaten başka bir organizasyona üyesiniz", and the
-    // company switcher (shown only with two memberships) can never appear.
+    // accepting an invitation used to answer 400 "Zaten başka bir organizasyona üyesiniz".
     const email = `musavir2.${stamp}@example.com`;
+    const ownFirm = "Müşavirlik Bürosu";
     await register(request, email, "İkinci Müşavir");
     const own = await login(request, email);
-    await request.post(`${API}/org/create`, { headers: bearer(own.token), data: { name: "Müşavirlik Bürosu" } });
-    await invite(request, S.ownerToken as string, email, "smmm");
-    const { token } = probe<{ token: string | null }>("invite-token", email);
-    expect((await acceptInvite(request, token as string, "İkinci Müşavir")).status()).toBe(201);
-    await inNewContext(browser, email, async (page) => {
-      await page.goto("/command-center");
-      await expect(page.getByRole("button", { name: new RegExp(COMPANY) })).toBeVisible();
+    const created = await request.post(`${API}/org/create`, { headers: bearer(own.token), data: { name: ownFirm } });
+    expect(created.status(), await created.text()).toBe(201);
+    const token = await inviteOnScreen(browser, email, "smmm");
+
+    // Signed in as somebody else, the invitation says whose it is and does not let them accept.
+    await inNewContext(browser, OWNER, async (page) => {
+      await page.goto(`/auth/accept-invite?token=${token}`);
+      await expect(page.getByText("Bu davet başka bir hesap için")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole("button", { name: "Şirkete katıl" })).toHaveCount(0);
     });
+
+    const { page, close } = await openInvitation(browser, token);
+    try {
+      await expect(page.getByText(/Bu adreste bir hesabınız var/)).toBeVisible({ timeout: 60_000 });
+      await page.locator("#password").fill(PASSWORD);
+      await page.getByRole("button", { name: "Şirkete katıl" }).click();
+      await page.waitForURL(/\/command-center/, { timeout: 60_000 });
+      noteSignIns(1);
+
+      // They land in the client, with the switcher that two companies give them.
+      const switcher = page.getByRole("button", { name: "Şirket değiştir" });
+      await expect(switcher).toContainText(COMPANY, { timeout: 60_000 });
+      await switcher.click();
+      await expect(page.getByRole("menuitemradio", { name: new RegExp(`${COMPANY}.*Mali müşavir`) })).toBeVisible();
+      await page.getByRole("menuitemradio", { name: new RegExp(ownFirm) }).click();
+      await expect(page.getByRole("button", { name: "Şirket değiştir" })).toContainText(ownFirm, { timeout: 60_000 });
+    } finally {
+      await close();
+    }
   });
 });
