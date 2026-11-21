@@ -19,7 +19,7 @@ from app.database import get_db
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.classifier import learn
-from app.services.ledger_correction import apply_category_correction
+from app.services.ledger_correction import CorrectionConflict, apply_category_correction
 
 router = APIRouter()
 
@@ -63,7 +63,13 @@ async def correct_category(
     org_id = str(job.org_id) if job.org_id else None
     # The ledger row with the same source_record_id follows, in the same database
     # transaction (plan v10 G3): P&L, company_rows and the cash radar read the ledger.
-    ledger = await apply_category_correction(db, tx, org_id, body.category, current_user)
+    try:
+        ledger = await apply_category_correction(db, tx, org_id, body.category, current_user)
+    except CorrectionConflict as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Aynı kayıt şu anda başka bir düzeltmeyle güncelleniyor; tekrar deneyin."
+        ) from exc
     await db.commit()
 
     # Persist learning rule

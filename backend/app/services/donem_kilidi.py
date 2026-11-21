@@ -17,9 +17,11 @@ import re
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.donem_kilidi import DonemKilidi
+from app.models.organization import Organization
 
 _DONEM = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 
@@ -65,9 +67,15 @@ async def kilitle(db: AsyncSession, org_id: str, donem: str, user_id: str | None
         raise DonemHatasi("Dönem YYYY-AA biçiminde olmalı (ör. 2026-01).")
     if donem > datetime.now(UTC).strftime("%Y-%m"):
         raise DonemHatasi("Gelecekteki bir dönem kapatılamaz.")
+    # The same per-organisation lock the ledger correction takes: a close and a correction
+    # are serial, and two closes of one month cannot both pass the check below.
+    await db.execute(select(Organization.id).where(Organization.id == str(org_id)).with_for_update())
     if donem in await kilitli_donemler(db, org_id):
         raise DonemHatasi("Bu dönem zaten kapalı.")
     kilit = DonemKilidi(org_id=str(org_id), donem=donem, kilitleyen_user_id=user_id)
-    db.add(kilit)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(kilit)
+    except IntegrityError as exc:  # lost a race the lock could not see (no organisation row)
+        raise DonemHatasi("Bu dönem zaten kapalı.") from exc
     return kilit

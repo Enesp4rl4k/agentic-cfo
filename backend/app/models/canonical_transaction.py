@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.database import Base
 
@@ -91,6 +92,11 @@ class CanonicalTransaction(Base):
     # closed period it belongs to are kept here (services/donem_kilidi.py).
     asil_tarih: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     asil_donem: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    # A row written by a category correction on a closed month (services/ledger_correction.py)
+    # points at the row it corrects. It moves money between categories in the first open
+    # month and is NOT money: every reader that counts, sums or detects by amount filters
+    # `money_rows()`; only the by-category profit view reads these, through the original.
+    corrects_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
@@ -99,3 +105,11 @@ class CanonicalTransaction(Base):
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
 
+
+def money_rows() -> ColumnElement[bool]:
+    """The one predicate for "a row that is money": not a closed-month correction row.
+
+    Every aggregate, count, detector and matcher over `canonical_transactions` that does
+    not read categories adds this, so a correction can never create or change an amount.
+    """
+    return CanonicalTransaction.corrects_id.is_(None)

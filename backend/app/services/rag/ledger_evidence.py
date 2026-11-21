@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
 from app.models.canonical_transaction import CanonicalTransaction as CT
+from app.models.canonical_transaction import money_rows
 from app.platform.contracts import EvidenceBundle, EvidenceCitation
 
 SOURCE_TYPE = "ledger_row"
@@ -79,7 +80,7 @@ async def retrieve_ledger_evidence(
 
     scanned = (await db.execute(
         select(CT.id, CT.counterparty, CT.description, CT.category)
-        .where(CT.org_id == str(org_id), CT.ledger_status == "active")
+        .where(CT.org_id == str(org_id), CT.ledger_status == "active", money_rows())
         .order_by(CT.transaction_date.desc(), CT.id)
         .limit(_SCAN_LIMIT)
     )).all()

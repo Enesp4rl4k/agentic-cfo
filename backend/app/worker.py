@@ -415,6 +415,11 @@ async def run_cfo_analysis(
                 )
                 db.add(tx)
 
+            # A person's single-row corrections survive a rerun (the rows above are new).
+            from app.services.ledger_correction import apply_overrides
+
+            await apply_overrides(db, org_id_str, job_id)
+
             # Counted in the same transaction as the rows they categorised.
             from app.services.classifier import record_hits
 

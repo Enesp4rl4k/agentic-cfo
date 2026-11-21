@@ -48,7 +48,7 @@ from app.core.invoice_identity import canonical_invoice_id
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
-from app.models.canonical_transaction import CanonicalTransaction
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.models.transaction import Transaction
 
@@ -128,7 +128,7 @@ async def _others_by_money(
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
-            CanonicalTransaction.source_type != SOURCE_CORRECTION,
+            money_rows(),
             CanonicalTransaction.transaction_date >= datetime.combine(min(days) - window, time.min, UTC),
             CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
         )
@@ -395,29 +395,40 @@ async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
             CanonicalTransaction.description,
             CanonicalTransaction.ledger_status,
             CanonicalTransaction.basis,
+            CanonicalTransaction.corrects_id,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
         ).order_by(CanonicalTransaction.transaction_date, CanonicalTransaction.id)
     )).all()
     settling = await rows_settling_items(db, org_id)
-    counted = [r for r in rows if r.ledger_status != POSSIBLE_DUPLICATE]
+    # Correction rows (a closed-month category correction, `corrects_id` set) are not
+    # money: the money views, the months and the counts read the real rows only.
+    money = [r for r in rows if r.corrects_id is None]
+    counted = [r for r in money if r.ledger_status != POSSIBLE_DUPLICATE]
     book_months = {month_of(r.transaction_date) for r in counted if r.basis == BOOK}
     cash_months = {month_of(r.transaction_date) for r in counted if r.basis == CASH}
+    profit = [
+        r for r in counted
+        # The books already say what their month earned, and a settling line
+        # is an invoice already counted, arriving.
+        if (r.basis == BOOK or month_of(r.transaction_date) not in book_months)
+        and not (r.basis == CASH and r.id in settling)
+    ]
+    # The by-category profit view also reads each correction pair, which moves an amount
+    # between categories in an open month. The pair inherits the treatment of the row it
+    # corrects: counted in profit only if that row is, whatever month the pair sits in.
+    in_profit = {r.id for r in profit}
+    corrections = [r for r in rows if r.corrects_id in in_profit and r.ledger_status != POSSIBLE_DUPLICATE]
     return CompanyRows(
-        profit=[
-            r for r in counted
-            # The books already say what their month earned, and a settling line
-            # is an invoice already counted, arriving.
-            if (r.basis == BOOK or month_of(r.transaction_date) not in book_months)
-            and not (r.basis == CASH and r.id in settling)
-        ],
+        profit=profit + corrections,
         # A posting list with no bank statement beside it is the best view of cash.
+        # A reclassification moves no cash: the pairs are not here.
         cash=[
             r for r in counted
             if r.basis == CASH or (r.basis == BOOK and month_of(r.transaction_date) not in cash_months)
         ],
-        possible_duplicates=len(rows) - len(counted),
+        possible_duplicates=len(money) - len(counted),
         months=sorted({month_of(r.transaction_date) for r in counted}),
         rows=len(counted),
     )

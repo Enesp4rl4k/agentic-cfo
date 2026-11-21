@@ -483,7 +483,7 @@ async def get_onay_package(
 
     Paraşüt → canonical → CFO hattı için muhasebeci paket görünümü.
     """
-    from app.models.canonical_transaction import CanonicalTransaction
+    from app.models.canonical_transaction import CanonicalTransaction, money_rows
 
     # The old test skipped itself when the caller had no organisation.
     job = await load_owned_job(db, job_id, current_user)
@@ -510,7 +510,7 @@ async def get_onay_package(
     canonical_count = 0
     try:
         cq = select(func.count()).select_from(CanonicalTransaction).where(
-            CanonicalTransaction.org_id == str(job.org_id)
+            CanonicalTransaction.org_id == str(job.org_id), money_rows()
         )
         if sync_run_id:
             cq = cq.where(CanonicalTransaction.sync_run_id == str(sync_run_id))

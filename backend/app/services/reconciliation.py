@@ -31,7 +31,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
-from app.models.canonical_transaction import CanonicalTransaction
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 
@@ -237,7 +237,7 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
         .where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.basis == CASH,
-            CanonicalTransaction.source_type != "correction",  # ledger.SOURCE_CORRECTION
+            money_rows(),
             CanonicalTransaction.ledger_status == "active",
             CanonicalTransaction.amount_cents > 0,
         )
