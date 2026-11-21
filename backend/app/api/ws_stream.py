@@ -142,6 +142,17 @@ async def websocket_chat(
                 await _send(websocket, {"type": "pong"})
                 continue
 
+            # The token was checked once, at connect. Everything after it is asked again, per message:
+            # a removed, deactivated or switched-away person is refused and the socket closed, so the
+            # answer is never grounded in a company they no longer act in.
+            user = await ws_auth.websocket_caller(token)
+            if user is None or (user.org_id and str(user.org_id) != own_org_id) or (
+                own_org_id is not None and not await ws_auth.still_acting_in(str(user.id), own_org_id)
+            ) or (own_org_id is None and user.org_id):
+                await _send(websocket, {"type": "error", "message": "Oturum bu şirket için artık geçerli değil."})
+                await websocket.close(code=ws_auth.REFUSED)
+                return
+
             if msg_type == "chat":
                 question = msg.get("question", "").strip()
                 job_id = msg.get("job_id") or None

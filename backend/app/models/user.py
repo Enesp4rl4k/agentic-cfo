@@ -15,9 +15,10 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from app.core.email_address import normalize_email
 from app.database import Base
 
 if TYPE_CHECKING:
@@ -48,6 +49,11 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    @validates("email")
+    def _normalise_email(self, _key: str, value: str) -> str:
+        return normalize_email(value)
+
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default=UserRole.ANALYST, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -79,3 +85,8 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
+
+
+# One account per mailbox whatever the spelling: a backstop under `normalize_email`
+# (migration 069). A functional index, so it holds on Postgres and SQLite alike.
+Index("uq_users_email_lower", func.lower(User.email), unique=True)

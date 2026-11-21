@@ -19,13 +19,15 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import _bearer, _cache_invalidate, get_current_user
+from app.api.auth import _bearer, get_current_user
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization, OrgInvite, OrgMembership
@@ -272,9 +274,6 @@ async def create_org(
     await db.commit()
     await db.refresh(org)
 
-    # Drop the stale cached copy so the next request sees the new org and role
-    # instead of the pre-creation snapshot.
-    _cache_invalidate(str(current_user.id))
 
     logger.info("Org created: %s (slug=%s) by user %s", org.name, org.slug, current_user.email)
 
@@ -424,7 +423,6 @@ async def remove_member(
     )
     await drop_membership(db, user_id=str(target.id), org_id=str(org.id))
     await db.commit()
-    _cache_invalidate(str(target.id))
 
     logger.info("User %s removed from org %s by %s", target.email, org.id, current_user.email)
     return {"data": {"removed": True}, "error": None}
@@ -456,7 +454,7 @@ async def invite_member(
     old = await db.execute(
         select(OrgInvite).where(
             OrgInvite.org_id == org.id,
-            OrgInvite.email == str(body.email),
+            OrgInvite.email == normalize_email(str(body.email)),
             OrgInvite.accepted.is_(False),
         )
     )
@@ -465,7 +463,7 @@ async def invite_member(
 
     invite = OrgInvite(
         org_id=org.id,
-        email=str(body.email),
+        email=normalize_email(str(body.email)),
         role=body.role.value,
         token=secrets.token_hex(32),
         expires_at=datetime.now(UTC) + timedelta(days=INVITE_EXPIRE_DAYS),
@@ -530,23 +528,28 @@ def _invite_state(invite: OrgInvite | None) -> str:
     return "valid"
 
 
-@router.get("/org/invite/preview")
+class PreviewInviteRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/org/invite/preview")
 async def preview_invite(
-    token: str = Query(min_length=8, max_length=128),
+    body: PreviewInviteRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """What the invitation page needs before anyone signs in: whose invitation, in which role, in what state.
 
     The token is the secret (64 random hex characters, e-mailed to the invitee); whoever holds it
-    may read this. It says whether the invited address already has an account, so the page asks for
+    may read this. It is a POST so the token is in the body, not in a URL that access logs and proxies
+    keep. It says whether the invited address already has an account, so the page asks for
     a password to sign in or to create one.
     """
-    invite = (await db.execute(select(OrgInvite).where(OrgInvite.token == token))).scalar_one_or_none()
+    invite = (await db.execute(select(OrgInvite).where(OrgInvite.token == body.token))).scalar_one_or_none()
     state = _invite_state(invite)
     if invite is None:
         return {"data": {"state": state}, "error": None}
     org = await db.get(Organization, str(invite.org_id))
-    account = (await db.execute(select(User.id).where(User.email == invite.email))).first()
+    account = (await db.execute(select(User.id).where(User.email == normalize_email(invite.email)))).first()
     return {
         "data": {
             "state": state,
@@ -591,12 +594,26 @@ async def accept_invite(
         raise HTTPException(400, detail="Davetteki rol geçersiz; yeni bir davet isteyin.")
 
     # Find or create user
-    result = await db.execute(select(User).where(User.email == invite.email))
+    result = await db.execute(select(User).where(User.email == normalize_email(invite.email)))
     user = result.scalar_one_or_none()
 
+    async def claim() -> None:
+        # Single use, decided by the database: of two simultaneous accepts only the one whose UPDATE flips
+        # `accepted` goes on; the other changes nothing and is refused. Done after the caller has proved
+        # who they are (a wrong password must not burn the token) and before anything else is written.
+        claimed = await db.execute(
+            update(OrgInvite).where(OrgInvite.id == invite.id, OrgInvite.accepted.is_(False)).values(accepted=True)
+        )
+        if claimed.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(400, detail="Bu davet daha önce kullanılmış.")
+
     if user is not None:
+        if not user.is_active:
+            raise HTTPException(403, detail="Hesabınız devre dışı bırakılmış.")
         if not _proves_account(credentials, user, body.password):
             raise HTTPException(401, detail="Şifre yanlış. Bu davet için bu adresin hesabıyla giriş yapmalısınız.")
+        await claim()
         # First organisation of this account: act in it. Otherwise the person keeps working where
         # they were; the invitation page then switches them if they wish.
         if not user.org_id:
@@ -605,17 +622,22 @@ async def accept_invite(
     else:
         if not body.password:
             raise HTTPException(422, detail="Hesap oluşturmak için en az 8 karakterlik bir şifre gerekli.")
+        await claim()
         user = User(
-            email=invite.email,
+            email=normalize_email(invite.email),
             hashed_password=hash_password(body.password),
             full_name=body.full_name,
             role=invite.role,
             org_id=invite.org_id,
         )
         db.add(user)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Someone made an account for this address between the lookup and now.
+            await db.rollback()
+            raise HTTPException(409, detail="Bu adres için bir hesap az önce oluşturuldu; lütfen yeniden deneyin.") from None
 
-    invite.accepted = True
     from app.services.org_membership import ensure_membership
 
     membership = await ensure_membership(
@@ -632,7 +654,6 @@ async def accept_invite(
 
     await db.commit()
     await db.refresh(user)
-    _cache_invalidate(str(user.id))
 
     access  = create_access_token(user.id, user.email, user.role)
     refresh = create_refresh_token(user.id)
@@ -753,7 +774,6 @@ async def switch_org(
     user_row.org_id = org.id
     user_row.role = membership.role
     await db.commit()
-    _cache_invalidate(str(user_row.id))
     logger.info("Org switch: user=%s -> org=%s role=%s", user_row.email, org.id, membership.role)
     return {"data": {"org_id": org.id, "name": org.name, "role": membership.role}, "error": None}
 

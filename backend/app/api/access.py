@@ -34,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.organization import OrgMembership
@@ -177,8 +178,8 @@ async def require_platform_operator(user: User = Depends(get_current_user)) -> U
 
 
 def is_platform_operator(email: str | None, configured: str) -> bool:
-    allowed = {e.strip().lower() for e in (configured or "").split(",") if e.strip()}
-    return bool(email) and str(email).strip().lower() in allowed
+    allowed = {normalize_email(e) for e in (configured or "").split(",") if e.strip()}
+    return bool(email) and normalize_email(str(email)) in allowed
 
 
 async def require_decider(
@@ -247,7 +248,7 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/open-banking/callback"): "bank OAuth redirect; verifies state",
     ("GET", "/api/v1/pilot/invite/validate"): "checks an invite code before sign-up",
     ("POST", "/api/v1/org/invite/accept"): "accepts an invite by its token (an existing account also proves itself)",
-    ("GET", "/api/v1/org/invite/preview"): "reads an invitation by its secret token before sign-in: organisation, role, state",
+    ("POST", "/api/v1/org/invite/preview"): "reads an invitation by its secret token before sign-in: organisation, role, state",
     ("GET", "/api/v1/benchmark/sectors"): "static sector list, no tenant data",
     ("GET", "/api/v1/agent-graph/topology"): "static agent graph, no tenant data",
     ("GET", "/api/v1/open-banking/banks"): "static list of supported banks",

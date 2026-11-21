@@ -73,6 +73,16 @@ describe("the states of an invitation", () => {
     expect(screen.queryByRole("button", { name: /katıl/i })).toBeNull();
   });
 
+  it("sends the token in the body, never in a URL that access logs would keep", async () => {
+    fetchMock.mockResolvedValueOnce(preview());
+    render(<AcceptInvitePage />);
+    await screen.findByLabelText("Şifre");
+    const [url, init] = calls("/org/invite/preview")[0];
+    expect(String(url)).not.toContain("tok123");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ token: "tok123" });
+  });
+
   it("an invitation that was already used points to signing in", async () => {
     fetchMock.mockResolvedValueOnce(preview({ state: "used" }));
     render(<AcceptInvitePage />);
