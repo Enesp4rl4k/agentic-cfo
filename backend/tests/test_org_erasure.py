@@ -45,6 +45,7 @@ OVERRIDES: dict[str, dict[str, Any]] = {
     "open_items": {"status": "open", "direction": "receivable", "paid_cents": 0},
     "open_item_matches": {"status": "confirmed"},
     "smmm_onay_kayitlari": {"durum": "bekliyor"},
+    "decisions": {"supersedes_id": None, "decided_via": "human", "rule_id": None},
 }
 SCOPE = svc.derive_scope()
 
