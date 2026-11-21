@@ -140,6 +140,11 @@ RETAINED: dict[str, Retained] = {
         keep=("durum", "duzeltilmis_hesap_kodu", "duzeltilmis_hesap_adi", "otomatik_hesap_kodu",
               "otomatik_yontem"),
     ),
+    "decisions": Retained(
+        "who decided what on the retained records (the same retention duty as the books they act on)",
+        scrub=("decided_by", "reason", "before", "after"),
+        keep=("kind", "target_type", "outcome", "decided_via", "evidence_refs"),
+    ),
     "audit_logs": Retained(
         "security audit log (RETENTION_POLICY: 5 years; 'never deleted' in its model)",
         scrub=("user_id", "user_email", "request_body", "ip_address", "user_agent", "reason"),

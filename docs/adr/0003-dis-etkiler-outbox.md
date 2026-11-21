@@ -15,6 +15,7 @@ E-posta, bildirim, Slack/WhatsApp ve webhook gibi dış etkiler iş kodunun içi
 ## Sonuçlar
 - Her dış etki bir kez olur; olmayan etki gerekçesiyle görünür (`GET /briefing/monday/deliveries`).
 - SMTP istemcisini yalnız teslim servisi içe aktarır; uygunluk testi F3 bunu zorlar.
+- Risk uyarıları (Slack, e-posta) ve tetikleyici webhook'ları da outbox'tan çıkar (`slack` ve `webhook` kanalları; URL gövdede, alıcı yalnız ana makine adı). Doğrudan gönderim F3 testini kırar.
 - Etkinin kendisi ile iş mantığı ayrı test edilir.
 - Bekleyen bir mesaj en fazla 5 dakika gecikir; pazartesi gönderimi bu gecikmeyi beklemeden aynı koşuda teslim eder.
 

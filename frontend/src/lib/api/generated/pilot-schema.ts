@@ -151,6 +151,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BasisSplitOut */
+        BasisSplitOut: {
+            /**
+             * Assumed Cents
+             * @default 0
+             */
+            assumed_cents: number;
+            /**
+             * Estimated Cents
+             * @default 0
+             */
+            estimated_cents: number;
+            /**
+             * Known Cents
+             * @default 0
+             */
+            known_cents: number;
+        };
         /** Baslangic */
         Baslangic: {
             firma: components["schemas"]["Firma"];
@@ -202,6 +220,7 @@ export interface components {
             beyond_horizon_cents: number;
             /** Not Included */
             not_included: string[];
+            opening_cash?: components["schemas"]["OpeningCashOut"] | null;
             /** Other Currency Items */
             other_currency_items: number;
             /** Overdue Payables Cents */
@@ -314,10 +333,22 @@ export interface components {
             /** Approaching Title */
             approaching_title: string;
             /**
+             * Balance Age Days
+             * @default 0
+             */
+            balance_age_days: number;
+            /** Balance As Of */
+            balance_as_of?: string | null;
+            /**
              * Balance Known
              * @default true
              */
             balance_known: boolean;
+            /**
+             * Balance Stale
+             * @default false
+             */
+            balance_stale: boolean;
             /** Briefing Id */
             briefing_id: string;
             /** End Balance Cents */
@@ -360,6 +391,23 @@ export interface components {
             week_end: string;
             /** Week Start */
             week_start: string;
+        };
+        /** OpeningCashOut */
+        OpeningCashOut: {
+            /** Age Days */
+            age_days: number;
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /** Source Filename */
+            source_filename: string | null;
+            /** Source Job Id */
+            source_job_id: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Stale After Days */
+            stale_after_days: number;
         };
         /** Otomatik */
         Otomatik: {
@@ -439,6 +487,24 @@ export interface components {
         RadarItemOut: {
             /** Amount Cents */
             amount_cents: number;
+            /**
+             * Basis
+             * @default known
+             * @enum {string}
+             */
+            basis: "known" | "estimated" | "assumed";
+            /**
+             * Basis Inputs
+             * @default {}
+             */
+            basis_inputs: {
+                [key: string]: unknown;
+            };
+            /**
+             * Basis Reason
+             * @default document_due_date
+             */
+            basis_reason: string;
             /** Counterparty */
             counterparty: string | null;
             /** Delay Days */
@@ -463,6 +529,8 @@ export interface components {
              * @default false
              */
             rescheduled: boolean;
+            /** Rules Verified */
+            rules_verified?: boolean | null;
         };
         /** RadarWeekOut */
         RadarWeekOut: {
@@ -470,10 +538,12 @@ export interface components {
             end_balance_cents: number;
             /** End Date */
             end_date: string;
+            inflow_basis: components["schemas"]["BasisSplitOut"];
             /** Inflow Cents */
             inflow_cents: number;
             /** Net Cents */
             net_cents: number;
+            outflow_basis: components["schemas"]["BasisSplitOut"];
             /** Outflow Cents */
             outflow_cents: number;
             /** Payables */

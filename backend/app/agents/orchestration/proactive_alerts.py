@@ -26,13 +26,14 @@ Kullanim:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
+
+from app.services import outbox
 
 logger = logging.getLogger(__name__)
 
@@ -167,14 +168,14 @@ class ProactiveAlertOrchestrator:
             if not org_ids:
                 return {"scanned": 0}
 
-            # Paralel tara (max 10 org ayni anda)
-            semaphore = asyncio.Semaphore(10)
-
-            async def scan_one(oid: str) -> dict[str, Any]:
-                async with semaphore:
-                    return await self.scan_and_alert(oid)
-
-            results = await asyncio.gather(*[scan_one(o) for o in org_ids], return_exceptions=True)
+            # Sirayla tara: orglar tek AsyncSession'i paylasir ve outbox yazimlari
+            # eszamanli islem kabul etmez.
+            results: list[Any] = []
+            for oid in org_ids:
+                try:
+                    results.append(await self.scan_and_alert(oid))
+                except Exception as exc:
+                    results.append(exc)
 
             total_alerts = sum(
                 r.get("alerts_created", 0) for r in results if isinstance(r, dict)
@@ -342,67 +343,82 @@ class ProactiveAlertOrchestrator:
     # ── Dispatch ───────────────────────────────────────────────────────────────
 
     async def _dispatch_alert(self, alert: AlertEvent) -> None:
-        """Alert'i tum kanallara gonder."""
-        dispatch_tasks = []
+        """Alert'i tum kanallara ilet. Disa giden kanallar outbox'a yazilir (ADR 0003).
+
+        Hicbir sey burada gonderilmez: Slack ve e-posta outbox satiri olur, teslimi ve
+        yeniden denemeyi outbox gondericisi yapar. Bir kanal yazilamazsa hata
+        `dispatch_errors`ta kalir ve `dispatched` dogru olmaz; sessizce yutulmaz.
+        """
+        senders = {
+            "in_app": self._dispatch_in_app,
+            "slack": self._dispatch_slack,
+            "email": self._dispatch_email,
+        }
+        # One after another: the channels share one AsyncSession, which does not allow
+        # concurrent operations (gather made the second outbox write fail).
         for channel in alert.channels:
-            if channel == "in_app":
-                dispatch_tasks.append(self._dispatch_in_app(alert))
-            elif channel == "slack":
-                dispatch_tasks.append(self._dispatch_slack(alert))
-            elif channel == "email":
-                dispatch_tasks.append(self._dispatch_email(alert))
+            send = senders.get(channel)
+            if send is None:
+                continue
+            try:
+                await send(alert)
+            except Exception as exc:
+                alert.dispatch_errors.append(f"{channel}: {exc}")
+                logger.warning(
+                    "Alert dispatch hatasi: alert=%s channel=%s err=%s", alert.alert_id, channel, exc
+                )
 
-        if dispatch_tasks:
-            results = await asyncio.gather(*dispatch_tasks, return_exceptions=True)
-            errors  = [str(r) for r in results if isinstance(r, Exception)]
-            if errors:
-                alert.dispatch_errors.extend(errors)
-                logger.warning("Alert dispatch hatalari: alert=%s errors=%s", alert.alert_id, errors)
-
-        alert.dispatched = True
+        alert.dispatched = not alert.dispatch_errors
         await self._save_alert(alert)
         await self._set_cooldown(alert.org_id, alert.metadata.get("kri", {}).get("name", ""))
 
     async def _dispatch_in_app(self, alert: AlertEvent) -> None:
-        """In-app notification olustur."""
-        try:
-            from app.services.notification_service import create_notification
-            await create_notification(
-                org_id   = alert.org_id,
-                title    = alert.title,
-                body     = alert.body,
-                severity = alert.severity,
-                metadata = alert.metadata,
-            )
-        except Exception as exc:
-            logger.debug("In-app dispatch hatasi (non-fatal): %s", exc)
+        """In-app notification olustur. Hata yukari cikar; `_dispatch_alert` kaydeder."""
+        from app.services.notification_service import create_notification
+
+        await create_notification(
+            org_id   = alert.org_id,
+            title    = alert.title,
+            body     = alert.body,
+            severity = alert.severity,
+            metadata = alert.metadata,
+        )
 
     async def _dispatch_slack(self, alert: AlertEvent) -> None:
-        """Slack webhook'a gonder."""
-        try:
-            from app.services.alert_router import AlertRouter
-            router = AlertRouter()
-            await router._send_slack_message(
-                webhook_url = await self._get_slack_webhook(alert.org_id),
-                text        = f"*{alert.title}*\n{alert.body[:500]}",
-            )
-        except Exception as exc:
-            logger.debug("Slack dispatch hatasi (non-fatal): %s", exc)
+        """Slack mesajini outbox'a yaz (webhook'u org tercihinden)."""
+        if not self.db:
+            raise RuntimeError("slack: veritabani yok, outbox'a yazilamadi")
+        webhook_url = await self._get_slack_webhook(alert.org_id)
+        if not webhook_url:
+            raise RuntimeError("slack: org icin webhook tanimli degil")
+        await outbox.enqueue_slack(
+            self.db,
+            key=f"proactive_alert:{alert.alert_id}:slack",
+            org_id=alert.org_id,
+            webhook_url=webhook_url,
+            title=alert.title,
+            message=f"*{alert.title}*\n{alert.body[:500]}",
+            severity=alert.severity,
+            source="proactive_alert",
+            source_ref=alert.alert_id,
+        )
 
     async def _dispatch_email(self, alert: AlertEvent) -> None:
-        """Email gonder."""
-        try:
-            from app.services.alert_router import AlertRouter
-            router = AlertRouter()
-            emails = await self._get_alert_emails(alert.org_id)
-            for email in emails[:3]:
-                await router._send_email(
-                    to_email = email,
-                    subject  = alert.title,
-                    body     = alert.body,
-                )
-        except Exception as exc:
-            logger.debug("Email dispatch hatasi (non-fatal): %s", exc)
+        """E-postayi alici basina outbox'a yaz (en fazla 3 alici, eskisi gibi)."""
+        if not self.db:
+            raise RuntimeError("email: veritabani yok, outbox'a yazilamadi")
+        for address in (await self._get_alert_emails(alert.org_id))[:3]:
+            await outbox.enqueue(
+                self.db,
+                key=f"proactive_alert:{alert.alert_id}:email:{address}",
+                org_id=alert.org_id,
+                channel="email",
+                recipient=address,
+                subject=alert.title,
+                body=alert.body,
+                source="proactive_alert",
+                source_ref=alert.alert_id,
+            )
 
     # ── Yardimci metodlar ──────────────────────────────────────────────────────
 
@@ -425,59 +441,47 @@ class ProactiveAlertOrchestrator:
             except Exception:
                 pass
 
-    async def _get_alert_channels(self, org_id: str, severity: str) -> list[str]:
-        """Org'un alert kanallarini getir."""
-        channels = ["in_app"]  # Her zaman in-app
-        try:
-            if self.db:
-                from sqlalchemy import select
+    async def _preference(self, org_id: str) -> Any:
+        """The org's AlertPreference row, or None. A failed read is logged, not hidden."""
+        if not self.db:
+            return None
+        from sqlalchemy import select
 
-                from app.models.alert_preference import (
-                    AlertPreference,  # type: ignore[attr-defined]
-                )
-                stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
-                pref = (await self.db.execute(stmt)).scalar_one_or_none()
-                if pref:
-                    if pref.slack_webhook and severity in ("critical", "high"):
-                        channels.append("slack")
-                    if pref.email_addresses and severity in ("critical", "high", "medium"):
-                        channels.append("email")
-        except Exception:
-            pass
+        from app.models.alert_preference import AlertPreference
+
+        try:
+            stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
+            return (await self.db.execute(stmt)).scalar_one_or_none()
+        except Exception as exc:
+            logger.warning("Alert tercihi okunamadi: org=%s err=%s", org_id, exc)
+            return None
+
+    async def _get_alert_channels(self, org_id: str, severity: str) -> list[str]:
+        """Org'un alert kanallarini getir (tercihte tanimli hedefler)."""
+        channels = ["in_app"]  # Her zaman in-app
+        pref = await self._preference(org_id)
+        if pref:
+            if pref.slack_webhook_url and severity in ("critical", "high"):
+                channels.append("slack")
+            if pref.email_recipients and severity in ("critical", "high", "medium"):
+                channels.append("email")
         return channels
 
     async def _get_slack_webhook(self, org_id: str) -> str | None:
-        try:
-            if self.db:
-                from sqlalchemy import select
-
-                from app.models.alert_preference import (
-                    AlertPreference,  # type: ignore[attr-defined]
-                )
-                stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
-                pref = (await self.db.execute(stmt)).scalar_one_or_none()
-                return pref.slack_webhook if pref else None
-        except Exception:
-            return None
+        pref = await self._preference(org_id)
+        return pref.slack_webhook_url if pref else None
 
     async def _get_alert_emails(self, org_id: str) -> list[str]:
+        pref = await self._preference(org_id)
+        if not pref or not pref.email_recipients:
+            return []
         try:
-            if self.db:
-                from sqlalchemy import select
-
-                from app.models.alert_preference import (
-                    AlertPreference,  # type: ignore[attr-defined]
-                )
-                stmt = select(AlertPreference).where(AlertPreference.org_id == org_id)
-                pref = (await self.db.execute(stmt)).scalar_one_or_none()
-                if pref and pref.email_addresses:
-                    addrs = pref.email_addresses
-                    if isinstance(addrs, list):
-                        return addrs
-                    return [a.strip() for a in str(addrs).split(",")]
-        except Exception:
-            pass
-        return []
+            addrs = json.loads(pref.email_recipients)  # stored as a JSON array
+        except ValueError:
+            addrs = str(pref.email_recipients).split(",")
+        if not isinstance(addrs, list):
+            return []
+        return [str(a).strip() for a in addrs if str(a).strip()]
 
     async def _get_active_orgs(self) -> list[str]:
         """Orgs with an analysis or an agent job in the last 24 hours.

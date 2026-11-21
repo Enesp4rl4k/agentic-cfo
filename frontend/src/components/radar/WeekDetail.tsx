@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useI18n } from "@/hooks/useI18n";
 import type { RadarItem, RadarWeek } from "@/lib/api/ledger";
+import { BasisTag, hasUnverifiedTax, TaxRulesNote } from "@/components/radar/basis";
 
 type Copy = ReturnType<typeof useI18n>["t"]["cashRadar"];
 
-function Group({ label, items, copy, fmt }: { label: string; items: RadarItem[]; copy: Copy; fmt: (v: number) => string }) {
+function Group({ label, items, copy, fmt, locale }: { label: string; items: RadarItem[]; copy: Copy; fmt: (v: number) => string; locale: string }) {
   if (items.length === 0) return null;
   const total = items.reduce((sum, item) => sum + item.amount_cents, 0);
   return (
@@ -22,6 +23,7 @@ function Group({ label, items, copy, fmt }: { label: string; items: RadarItem[];
               <span>
                 {item.counterparty || item.description || copy.weekDetailItem}
                 {item.is_overdue && <span className="text-muted-foreground"> · {copy.weekDetailLate}</span>}
+                <BasisTag item={item} copy={copy} fmt={fmt} locale={locale} />
               </span>
               <span className="tc-mono shrink-0">{fmt(item.amount_cents / 100)}</span>
             </li>
@@ -32,7 +34,7 @@ function Group({ label, items, copy, fmt }: { label: string; items: RadarItem[];
 }
 
 /** What the chosen week is made of, item by item, with the way to the source documents. */
-export function WeekDetail({ week, copy, fmt }: { week: RadarWeek; copy: Copy; fmt: (v: number) => string }) {
+export function WeekDetail({ week, copy, fmt, locale }: { week: RadarWeek; copy: Copy; fmt: (v: number) => string; locale: string }) {
   const empty = week.payables.length === 0 && week.receivables.length === 0;
   return (
     <section
@@ -51,8 +53,9 @@ export function WeekDetail({ week, copy, fmt }: { week: RadarWeek; copy: Copy; f
         <p className="text-sm text-muted-foreground">{copy.weekDetailEmpty}</p>
       ) : (
         <>
-          <Group label={copy.weekDetailPayments} items={week.payables} copy={copy} fmt={fmt} />
-          <Group label={copy.weekDetailCollections} items={week.receivables} copy={copy} fmt={fmt} />
+          <Group label={copy.weekDetailPayments} items={week.payables} copy={copy} fmt={fmt} locale={locale} />
+          <Group label={copy.weekDetailCollections} items={week.receivables} copy={copy} fmt={fmt} locale={locale} />
+          {hasUnverifiedTax(week.payables) && <TaxRulesNote copy={copy} />}
         </>
       )}
       <Link href="/baglan" className="inline-flex min-h-[44px] items-center text-sm font-medium underline-offset-4 hover:underline" style={{ color: "var(--tc-ember-text)" }}>

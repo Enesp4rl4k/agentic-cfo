@@ -47,6 +47,32 @@ _OVERSIZED: frozenset[str] = frozenset(
 # F3: the modules allowed to import an SMTP client.
 _SMTP_ALLOWED: frozenset[str] = frozenset({"app.services.notification_service"})
 
+# F3 (outward effects): modules whose Slack, e-mail and webhook effects must be written
+# to the outbox (ADR 0003), never sent inline. The imports and calls below are senders.
+_OUTBOX_ONLY: frozenset[str] = frozenset(
+    {"app.agents.orchestration.proactive_alerts", "app.services.triggers.actions"}
+)
+_SENDER_MODULES = (
+    "httpx", "aiosmtplib", "smtplib", "requests", "app.services.alert_dispatcher",
+    "app.services.integrations", "app.services.notification_service.send_plain_email",
+)
+_SENDER_CALLS: frozenset[str] = frozenset(
+    {"dispatch_slack", "dispatch_webhook", "send_plain_email", "_send_slack_message",
+     "_send_email", "_send_slack", "send_slack", "send_teams"}
+)
+
+
+def _direct_senders(name: str, path: Path) -> set[str]:
+    found = {
+        i for i in _imports(name, path)
+        if any(i == m or i.startswith(m + ".") for m in _SENDER_MODULES)
+    }
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8", errors="replace"))):
+        if isinstance(node, ast.Attribute) and node.attr in _SENDER_CALLS:
+            found.add(f".{node.attr}")
+    return found
+
+
 # F5: modules nothing in app/ imports, on 2026-11-14. Some are reached only from
 # scripts, tests, a string in importlib or a CLI; each is examined before it is
 # deleted (plan v11 A0.2 removed the three that had no caller at all).
@@ -163,6 +189,30 @@ def test_f3_only_the_delivery_service_talks_smtp() -> None:
         f"SMTP used outside the delivery service: {sorted(importers - _SMTP_ALLOWED)}. "
         "Write the message to the delivery path instead (plan v11 C9, F3)."
     )
+
+
+def test_f3_alerts_and_trigger_webhooks_go_through_the_outbox() -> None:
+    modules = _modules()
+    assert set(modules) >= _OUTBOX_ONLY
+    direct = {m: sorted(_direct_senders(m, modules[m])) for m in _OUTBOX_ONLY}
+    assert not any(direct.values()), (
+        f"Outward effect sent inline: {direct}. Write an outbox row instead "
+        "(app.services.outbox.enqueue / enqueue_slack / enqueue_webhook; ADR 0003, F3)."
+    )
+
+
+def test_f3_the_check_sees_a_direct_send(tmp_path: Path) -> None:
+    sender = tmp_path / "sender.py"
+    sender.write_text(
+        "from app.services.alert_dispatcher import AlertDispatcher\n"
+        "async def f(url):\n    await AlertDispatcher.dispatch_slack(url, 't', 'm')\n",
+        encoding="utf-8",
+    )
+    assert _direct_senders("app.sender", sender) == {
+        "app.services.alert_dispatcher",
+        "app.services.alert_dispatcher.AlertDispatcher",
+        ".dispatch_slack",
+    }
 
 
 def test_f5_no_new_module_without_a_caller() -> None:

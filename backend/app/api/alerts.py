@@ -9,7 +9,7 @@ GET  /api/v1/alerts/digest/latest
      Latest digest across all recent jobs (last 24h).
 
 POST /api/v1/alerts/acknowledge/{job_id}/{alert_hash}
-     Mark an alert as acknowledged (stores in Redis or DB).
+     Mark an alert as acknowledged (stored in Redis; 503 if it was not stored).
 """
 from __future__ import annotations
 
@@ -355,8 +355,9 @@ async def acknowledge_alert(
     Mark an alert as acknowledged.
     The fingerprint comes from RawAlert.fingerprint (12-char hex).
 
-    Currently stores acknowledgement in Redis with 24h TTL.
-    If Redis is unavailable, returns 200 with a warning.
+    Stores the acknowledgement in Redis with a 24h TTL. If it could not be stored the
+    answer is 503: a person must not be told it is done when
+    it is not.
     """
     try:
         import json
@@ -374,17 +375,19 @@ async def acknowledge_alert(
             }),
             ex=86400,  # 24h
         )
-        ack_stored = True
     except Exception as exc:
         logger.warning("Could not store acknowledgement in Redis: %s", exc)
-        ack_stored = False
+        raise HTTPException(
+            status_code=503,
+            detail="Onay kaydedilemedi; uyarı onaylanmış sayılmadı. Biraz sonra yeniden deneyin.",
+        ) from exc
 
     return {
         "data": {
             "job_id": job_id,
             "fingerprint": alert_fingerprint,
             "acknowledged": True,
-            "stored_in_redis": ack_stored,
+            "stored_in_redis": True,
         },
         "error": None,
     }

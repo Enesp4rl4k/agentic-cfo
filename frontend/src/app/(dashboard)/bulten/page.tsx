@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { BriefingRelease } from "@/components/bulten/BriefingRelease";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
+import { formatDay, StaleBalanceNotice } from "@/components/radar/basis";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
@@ -42,11 +43,17 @@ function Stat({ label, value, negative }: Readonly<{ label: string; value: strin
 }
 
 function Stats({ briefing, copy, fmt }: Readonly<{ briefing: MondayBriefing; copy: Copy; fmt: Fmt }>) {
+  const { t } = useI18n();
+  const { org } = useOrgSettings();
   const known = briefing.balance_known;
+  // The opening balance is a statement's, not today's: it is labelled with the statement's day.
+  const cashLabel = briefing.balance_as_of
+    ? t.cashRadar.cashAsOf.replace("{date}", formatDay(briefing.balance_as_of, org?.locale || "en-US"))
+    : copy.statToday;
   return (
     <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
       {known && briefing.starting_cash_cents !== null && (
-        <Stat label={copy.statToday} value={fmt(briefing.starting_cash_cents / 100)} negative={briefing.starting_cash_cents < 0} />
+        <Stat label={cashLabel} value={fmt(briefing.starting_cash_cents / 100)} negative={briefing.starting_cash_cents < 0} />
       )}
       <Stat label={copy.statNet} value={fmt(briefing.net_change_cents / 100)} negative={briefing.net_change_cents < 0} />
       {known && <Stat label={copy.statEnd} value={fmt(briefing.end_balance_cents / 100)} negative={briefing.end_balance_cents < 0} />}
@@ -165,6 +172,7 @@ export default function BultenPage() {
   const { t } = useI18n();
   const copy = t.bulten;
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
   const { data: briefing, isLoading, isError } = useQuery({ queryKey: BRIEFING_KEY, queryFn: getMondayBriefing });
 
   return (
@@ -200,6 +208,9 @@ export default function BultenPage() {
           </header>
 
           <Stats briefing={briefing} copy={copy} fmt={fmt} />
+          {briefing.balance_known && briefing.balance_stale && briefing.balance_as_of && (
+            <StaleBalanceNotice asOf={briefing.balance_as_of} ageDays={briefing.balance_age_days ?? 0} locale={org?.locale || "en-US"} />
+          )}
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
             <Route copy={copy} fmt={fmt} />

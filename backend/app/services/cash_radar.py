@@ -20,13 +20,14 @@ Deterministic, and only from what the company's documents say:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item import OpenItem
 from app.services.payment_plan import effective_dates
@@ -40,6 +41,16 @@ NOT_INCLUDED_DEFAULT = (
     "Vergi ve SGK yükümlülükleri",
     "Çek ve senetler",
 )
+
+
+# How an item's date and amount are known. `known`: a document with a due date.
+# `estimated`: inferred from history (recurring, tax, a customer's usual delay).
+# `assumed`: placed by a rule, not by evidence (overdue payable in week 1, an approved
+# plan change taken as the date). The radar's arithmetic is the same for all three;
+# the basis only says how far each figure can be trusted.
+KNOWN = "known"
+ESTIMATED = "estimated"
+ASSUMED = "assumed"
 
 
 def _fmt(cents: int) -> str:
@@ -61,6 +72,39 @@ class RadarItem:
     is_overdue: bool
     instrument: str = "invoice"  # invoice | cheque | promissory_note | recurring | tax
     rescheduled: bool = False  # an approved plan change moved this payment off its document date
+    basis: str = KNOWN  # known | estimated | assumed
+    basis_reason: str = "document_due_date"  # machine-readable; see `_basis_of` and the projections
+    basis_inputs: dict[str, Any] = field(default_factory=dict)  # what the estimate was computed from
+    rules_verified: bool | None = None  # tax rows only: due-day rules checked against the official text
+
+
+@dataclass(frozen=True)
+class BasisSplit:
+    """One side of a week (money in or money out) by how well each part is known."""
+
+    known_cents: int = 0
+    estimated_cents: int = 0
+    assumed_cents: int = 0
+
+
+def _split(items: list[RadarItem]) -> BasisSplit:
+    totals = {KNOWN: 0, ESTIMATED: 0, ASSUMED: 0}
+    for it in items:
+        totals[it.basis] += it.amount_cents
+    return BasisSplit(totals[KNOWN], totals[ESTIMATED], totals[ASSUMED])
+
+
+@dataclass(frozen=True)
+class OpeningCash:
+    """The balance the radar starts from, and how old it is."""
+
+    balance_cents: int
+    as_of: str  # the statement's closing date
+    age_days: int  # anchor date minus as_of, never negative
+    stale: bool  # age_days is over `stale_after_days`
+    stale_after_days: int
+    source_job_id: str | None
+    source_filename: str | None
 
 
 @dataclass(frozen=True)
@@ -75,6 +119,8 @@ class RadarWeek:
     end_balance_cents: int
     receivables: list[dict[str, Any]]
     payables: list[dict[str, Any]]
+    inflow_basis: BasisSplit
+    outflow_basis: BasisSplit
 
 
 @dataclass(frozen=True)
@@ -103,6 +149,7 @@ class CashRadar:
     not_included: list[str]
     recurring_payables_cents: int = 0
     tax_obligations_cents: int = 0
+    opening_cash: OpeningCash | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -110,20 +157,54 @@ class CashRadar:
 
 async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
     """The latest closing balance a completed statement proved, if any did."""
-    metas = (
-        (
-            await db.execute(
-                select(AnalysisJob.result_metadata).where(
-                    AnalysisJob.org_id == org_id,
-                    AnalysisJob.status == JobStatus.COMPLETED,
-                )
+    jobs = (
+        await db.execute(
+            select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.result_metadata).where(
+                AnalysisJob.org_id == org_id,
+                AnalysisJob.status == JobStatus.COMPLETED,
             )
         )
-        .scalars()
-        .all()
-    )
-    found = [m["closing_balance"] for m in metas if m and m.get("closing_balance")]
+    ).all()
+    found = [
+        {**m["closing_balance"], "job_id": job_id, "filename": filename}
+        for job_id, filename, m in jobs
+        if m and m.get("closing_balance")
+    ]
     return max(found, key=lambda c: c["date"], default=None)
+
+
+def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash | None:
+    if balance is None:
+        return None
+    as_of = date.fromisoformat(str(balance["date"])[:10])
+    age = max(0, (anchor - as_of).days)
+    limit = get_settings().radar_balance_stale_after_days
+    return OpeningCash(
+        balance_cents=balance["balance_cents"],
+        as_of=as_of.isoformat(),
+        age_days=age,
+        stale=age > limit,
+        stale_after_days=limit,
+        source_job_id=balance.get("job_id"),
+        source_filename=balance.get("filename"),
+    )
+
+
+def _basis_of(
+    due: date, receivable: bool, delay: int, rescheduled: bool, expected: date, anchor: date
+) -> tuple[str, str, dict[str, Any]]:
+    """Why an open item sits where it does: (basis, reason, inputs)."""
+    if (not receivable) and expected < anchor:
+        # Owed now, but the documents give no day it will really be paid.
+        return ASSUMED, "overdue_payable_placed_in_week_1", {"due_date": due.isoformat()}
+    if rescheduled:
+        return ASSUMED, "payment_plan_change_taken_as_date", {
+            "document_due_date": due.isoformat(),
+            "planned_date": expected.isoformat(),
+        }
+    if delay > 0:
+        return ESTIMATED, "customer_average_delay", {"average_delay_days": delay}
+    return KNOWN, "document_due_date", {}
 
 
 def _weeks_from(anchor: date) -> list[tuple[date, date]]:
@@ -230,6 +311,9 @@ async def compute_cash_radar(
         rescheduled = (not receivable) and item.id in moved
         if rescheduled:
             expected = moved[item.id]
+        basis, basis_reason, basis_inputs = _basis_of(
+            item.due_date, receivable, delay, rescheduled, expected, anchor
+        )
         entry = RadarItem(
             id=item.id,
             counterparty=item.counterparty,
@@ -241,6 +325,9 @@ async def compute_cash_radar(
             is_overdue=expected < anchor,
             instrument=item.instrument,
             rescheduled=rescheduled,
+            basis=basis,
+            basis_reason=basis_reason,
+            basis_inputs=basis_inputs,
         )
         if expected > horizon_end:
             beyond += remaining
@@ -275,6 +362,13 @@ async def compute_cash_radar(
                 delay_days=0,
                 is_overdue=False,
                 instrument="recurring",
+                basis=ESTIMATED,
+                basis_reason="recurring_median",
+                basis_inputs={
+                    "months_observed": r_proj.evidence_count,
+                    "median_cents": r_proj.amount_cents,
+                    "day_of_month": r_proj.expected_date.day,
+                },
             )
             payables[idx].append(entry)
             total_recurring_cents += r_proj.amount_cents
@@ -297,6 +391,14 @@ async def compute_cash_radar(
                 delay_days=0,
                 is_overdue=False,
                 instrument="tax",
+                basis=ESTIMATED,
+                basis_reason="tax_historical_median",
+                basis_inputs={
+                    "payments_observed": t_proj.observed_payments,
+                    "median_cents": t_proj.amount_cents,
+                    "tax_type": t_proj.tax_type,
+                },
+                rules_verified=t_proj.due_rules_verified,
             )
             payables[idx].append(entry)
             total_tax_cents += t_proj.amount_cents
@@ -332,6 +434,8 @@ async def compute_cash_radar(
                 end_balance_cents=running,
                 receivables=[asdict(r) for r in receivables[i]],
                 payables=[asdict(p) for p in payables[i]],
+                inflow_basis=_split(receivables[i]),
+                outflow_basis=_split(payables[i]),
             )
         )
 
@@ -371,4 +475,5 @@ async def compute_cash_radar(
         not_included=not_included,
         recurring_payables_cents=total_recurring_cents,
         tax_obligations_cents=total_tax_cents,
+        opening_cash=_opening_cash(balance, anchor),
     )
