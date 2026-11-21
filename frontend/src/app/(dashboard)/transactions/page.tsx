@@ -385,7 +385,7 @@ export default function TransactionsPage() {
   const totalOut = inBase.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount_cents / 100, 0);
   const otherCurrencies: OtherCurrency[] = [
     ...new Set(allTransactions.map(currencyOf).filter((c) => c !== baseCurrency)),
-  ].sort().map((currency) => {
+  ].sort((a, b) => a.localeCompare(b)).map((currency) => {
     const rows = allTransactions.filter((t) => currencyOf(t) === currency);
     const sum = (type: string) => rows.filter((t) => t.type === type).reduce((s, t) => s + t.amount_cents, 0);
     return { currency, cash_in_cents: sum("income"), cash_out_cents: sum("expense"), rows: rows.length };
