@@ -394,7 +394,9 @@ async def run_cfo_analysis(
 
             held_rows: list[dict[str, Any]] = list(result.get("held_transactions") or [])
             persisted_rows: list[dict[str, Any]] = []
-            for tx_data in result.get("transactions") or []:
+            # Every row is stored, each in its own currency: the pipeline's figures read the rows of one
+            # currency (`agents/currency_split`), the transaction list and the journal lose nothing.
+            for tx_data in [*(result.get("transactions") or []), *(result.get("foreign_transactions") or [])]:
                 lacking = [
                     code for code, missing in (
                         ("currency_unknown", not str(tx_data.get("currency") or "").strip()),
@@ -568,7 +570,7 @@ async def run_cfo_analysis(
                     if not doc_text:
                         tx_raw_texts = [
                             (txd.get("raw_text") or "")
-                            for txd in (result.get("transactions") or [])
+                            for txd in [*(result.get("transactions") or []), *(result.get("foreign_transactions") or [])]
                         ]
                         doc_text = "\n".join(tx_raw_texts).strip()
                     doc_text = doc_text[:80_000]  # chunking truncates further

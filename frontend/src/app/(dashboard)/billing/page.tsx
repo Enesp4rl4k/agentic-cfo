@@ -166,7 +166,7 @@ export default function BillingPage() {
               )}
               <h2 className="text-xl font-bold">{plan.name}</h2>
               <p className="mt-2 text-3xl font-bold">
-                {formatCurrency(price, baseCurrency, locale)}
+                {formatCurrency(price, baseCurrency ?? "USD", locale)}
                 <span className="text-sm font-normal text-muted-foreground">
                   /{interval === "month" ? "mo" : "yr"}
                 </span>

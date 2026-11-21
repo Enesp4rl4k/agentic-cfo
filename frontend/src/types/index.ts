@@ -1,3 +1,4 @@
+import type { OtherCurrency } from "@/components/ui/other-currency-lines";
 // Global TypeScript types for AI CFO frontend
 
 export interface KPI {
@@ -48,6 +49,12 @@ export interface PnLData {
   net_margin: number;
   opex: OpEx;
   narrative: string;
+  /** The currency the figures above are in; amounts in any other are in `other_currencies`. */
+  currency?: string;
+  base_state?: string;
+  currency_note?: string | null;
+  /** Other currencies, summed on their own and never converted (no exchange-rate source). */
+  other_currencies?: OtherCurrency[];
 }
 
 export interface CashFlowData {
@@ -58,6 +65,10 @@ export interface CashFlowData {
   monthly_series: MonthlyEntry[];
   narrative: string;
   alerts: Alert[];
+  currency?: string;
+  base_state?: string;
+  currency_note?: string | null;
+  other_currencies?: OtherCurrency[];
 }
 
 /** Cash runway from the balance a bank statement proves (backend `app.services.runway`). */
@@ -152,6 +163,8 @@ export interface DashboardData {
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
+  /** Rows in other currencies that the lists and totals above were computed without. */
+  currency_scope?: { currency: string | null; base_state: string | null; left_out_rows: number; by_currency: OtherCurrency[]; note: string | null };
   // Anomaly data — present when anomaly agent ran
   anomalies?: AnomalyItem[];
   anomaly_narrative?: string;

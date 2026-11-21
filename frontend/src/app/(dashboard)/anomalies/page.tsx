@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   useAnomalies,
+  useDashboard,
   useScanAnomalies,
   useAcknowledgeAnomaly,
 } from "@/hooks/useCFO";
@@ -475,6 +476,9 @@ export default function AnomaliesPage() {
   const [showAcknowledged, setShowAcknowledged] = useState(false);
 
   const { data, isLoading } = useAnomalies(jobId);
+  // The checks ran on rows of one currency; how many rows in other currencies they did not read is said here.
+  const { data: dashboard } = useDashboard(jobId);
+  const leftOut = dashboard?.currency_scope?.note;
   const scan = useScanAnomalies(jobId);
   const canEdit = useCan("edit");
   const { t } = useI18n();
@@ -551,6 +555,7 @@ export default function AnomaliesPage() {
 
   return (
     <div className="space-y-4 p-5">
+      {leftOut && <p className="text-xs text-muted-foreground" data-testid="anomaly-left-out">{leftOut}</p>}
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

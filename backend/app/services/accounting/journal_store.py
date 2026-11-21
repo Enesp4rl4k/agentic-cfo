@@ -60,9 +60,15 @@ async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, 
                 data=full_result,
             )
         )
+    from app.services.accounting.currency_runs import entries_of
     from app.services.accounting.journal_tables import yaz
 
-    await yaz(db, job_id, full_result.get("yevmiye_kayitlari") or [])
+    # The journal tables feed the statutory books: the primary currency only (the raw journal JSON above
+    # keeps every entry, tagged); what was left out is said in the log and in the accountant's packet.
+    kept, left = entries_of(full_result.get("yevmiye_kayitlari") or [], full_result.get("birincil_para_birimi") or None)
+    if left:
+        logger.info("journal_tables: %s entries in another currency not written (job=%s)", left, job_id)
+    await yaz(db, job_id, kept)
 
 
 def _kurus(onay_item: dict[str, Any]) -> int | None:

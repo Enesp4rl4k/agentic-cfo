@@ -13,6 +13,7 @@ Usage:
 """
 from __future__ import annotations
 
+import html
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -114,6 +115,8 @@ def _build_html(
 
     # Narrative
     narrative = pnl.get("narrative") or ""
+    # What the figures leave out: other currencies (not converted), or a company currency not yet confirmed.
+    currency_note = html.escape(str(pnl.get("currency_note") or ""))
     forecast_narrative = forecast.get("narrative") or ""
 
     return f"""<!DOCTYPE html>
@@ -364,6 +367,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
 
 <!-- CFO Narrative -->
 {f'<div class="narrative-box">{narrative[:400]}</div>' if narrative else ""}
+{f'<div class="narrative-box" style="border-left-color:#d97706">{currency_note}</div>' if currency_note else ""}
 
 <!-- Main grid: Cash Flow + OpEx -->
 <div class="section-grid">

@@ -7,10 +7,14 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Format a number as currency in the given currency and locale.
- * Org screens pass the organisation's base currency (see useCurrencyFormat);
- * the USD default keeps legacy call sites stable until they migrate.
+ * Money screens pass the currency the data is in (see useCurrencyFormat); `null` formats the bare number;
+ * the USD default is only for legacy call sites that do not say.
  */
-export function formatCurrency(value: number, currency = "USD", locale = "en-US"): string {
+export function formatCurrency(value: number, currency: string | null = "USD", locale = "en-US"): string {
+  // No currency known (several, none confirmed): the number alone, never a symbol we cannot vouch for.
+  if (currency === null) {
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
+  }
   try {
     return new Intl.NumberFormat(locale, {
       style: "currency",
