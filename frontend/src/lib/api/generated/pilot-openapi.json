@@ -532,6 +532,13 @@
             "title": "Beyond Horizon Payable Cents",
             "type": "integer"
           },
+          "by_reason": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Reason",
+            "type": "object"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -591,7 +598,8 @@
           "beyond_horizon_payable_cents",
           "other_currency_count",
           "other_currency_payable_count",
-          "review_path"
+          "review_path",
+          "by_reason"
         ],
         "title": "HeldDocumentsOut",
         "type": "object"
