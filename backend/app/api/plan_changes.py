@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import ensure_tenant
 from app.api.auth import get_current_user
+from app.api.contract import Envelope
 from app.database import get_db
 from app.models.open_item import OpenItem
 from app.models.payment_plan_change import STATUSES, PaymentPlanChange
@@ -39,6 +40,31 @@ class ProposeRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+class PlanChangeView(BaseModel):
+    id: str
+    open_item_id: str
+    counterparty: str | None
+    description: str | None
+    amount_cents: int | None
+    from_date: str
+    to_date: str
+    status: str
+    requested_by: str
+    requested_at: str
+    request_note: str | None
+    decided_by: str | None
+    decided_at: str | None
+    decision_note: str | None
+
+
+class PlanChangeListMeta(BaseModel):
+    can_decide: bool
+
+
+class PlanChangeList(Envelope[list[PlanChangeView]]):
+    meta: PlanChangeListMeta  # type: ignore[assignment]  # narrows the envelope's free-form meta
 
 
 def _org(user: User) -> str:
@@ -83,7 +109,7 @@ async def _item(db: AsyncSession, change: PaymentPlanChange) -> OpenItem | None:
     return (await db.execute(select(OpenItem).where(OpenItem.id == change.open_item_id))).scalar_one_or_none()
 
 
-@router.post("/ledger/plan-changes", status_code=201)
+@router.post("/ledger/plan-changes", status_code=201, response_model=Envelope[PlanChangeView])
 async def propose_change(
     body: ProposeRequest,
     current_user: User = Depends(get_current_user),
@@ -105,7 +131,7 @@ async def propose_change(
     return {"data": _view(change, await _item(db, change)), "error": None}
 
 
-@router.get("/ledger/plan-changes")
+@router.get("/ledger/plan-changes", response_model=PlanChangeList)
 async def list_changes(
     status: str = Query(default="pending"),
     current_user: User = Depends(get_current_user),
@@ -144,7 +170,7 @@ async def _apply_decision(
     return {"data": _view(change, await _item(db, change)), "error": None}
 
 
-@router.post("/ledger/plan-changes/{change_id}/approve")
+@router.post("/ledger/plan-changes/{change_id}/approve", response_model=Envelope[PlanChangeView])
 async def approve_change(
     change_id: str,
     body: DecisionRequest | None = None,
@@ -156,7 +182,7 @@ async def approve_change(
     return await _apply_decision(db, change, True, body or DecisionRequest(), current_user)
 
 
-@router.post("/ledger/plan-changes/{change_id}/reject")
+@router.post("/ledger/plan-changes/{change_id}/reject", response_model=Envelope[PlanChangeView])
 async def reject_change(
     change_id: str,
     body: DecisionRequest | None = None,
@@ -168,7 +194,7 @@ async def reject_change(
     return await _apply_decision(db, change, False, body or DecisionRequest(), current_user)
 
 
-@router.post("/ledger/plan-changes/{change_id}/withdraw")
+@router.post("/ledger/plan-changes/{change_id}/withdraw", response_model=Envelope[PlanChangeView])
 async def withdraw_change(
     change_id: str,
     current_user: User = Depends(get_current_user),

@@ -6,9 +6,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * The weekly loop as the foot of an operational page: Observe, Orient, Decide, Act.
- * `current` is the step's index; it is marked, never a link to itself.
+ * `current` is the step's index; it is marked, never a link to itself. A page that is not a
+ * step (the Monday screen) passes none and every step is a link.
  */
-export function OodaFooter({ current }: { current: 0 | 1 | 2 | 3 }) {
+export function OodaFooter({ current }: { current?: 0 | 1 | 2 | 3 }) {
   const { t } = useI18n();
   const copy = t.ooda;
   return (

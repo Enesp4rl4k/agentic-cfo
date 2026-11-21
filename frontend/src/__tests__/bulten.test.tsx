@@ -17,6 +17,20 @@ vi.mock("@/lib/api/briefing", () => ({
   respondToMondayBriefing: (...args: unknown[]) => respondToMondayBriefing(...args),
 }));
 
+// The Monday screen also shows the route and the count of waiting decisions.
+const getCashRadar = vi.fn();
+const getProposedSettlements = vi.fn();
+const getPossibleDuplicates = vi.fn();
+const listPlanChanges = vi.fn();
+vi.mock("@/lib/api/ledger", () => ({
+  getCashRadar: (...a: unknown[]) => getCashRadar(...a),
+  getProposedSettlements: (...a: unknown[]) => getProposedSettlements(...a),
+  getPossibleDuplicates: (...a: unknown[]) => getPossibleDuplicates(...a),
+}));
+vi.mock("@/lib/api/planChanges", () => ({
+  listPlanChanges: (...a: unknown[]) => listPlanChanges(...a),
+}));
+
 vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
@@ -61,6 +75,14 @@ function show() {
 beforeEach(() => {
   getMondayBriefing.mockReset();
   respondToMondayBriefing.mockReset();
+  getCashRadar.mockReset();
+  getCashRadar.mockResolvedValue({ weeks: [], starting_cash_cents: null });
+  getProposedSettlements.mockReset();
+  getProposedSettlements.mockResolvedValue([]);
+  getPossibleDuplicates.mockReset();
+  getPossibleDuplicates.mockResolvedValue([]);
+  listPlanChanges.mockReset();
+  listPlanChanges.mockResolvedValue({ changes: [], canDecide: false });
 });
 
 describe("Pazartesi bülteni", () => {
@@ -88,7 +110,7 @@ describe("Pazartesi bülteni", () => {
   it("offers no answer and invents no calm when nothing is known about the company", async () => {
     getMondayBriefing.mockResolvedValue(briefing({ has_data: false }));
     show();
-    expect(await screen.findByText(/henüz bülten yok/i)).toBeTruthy();
+    expect(await screen.findByText(/henüz seyir defteri yok/i)).toBeTruthy();
     expect(screen.queryByText(/20\.000,00 TL azalış/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Yaptım" })).toBeNull();
     expect(screen.getByRole("link", { name: /Verilerimi bağla/ })).toBeTruthy();
@@ -152,5 +174,51 @@ describe("Pazartesi bülteni", () => {
     getMondayBriefing.mockRejectedValue(new Error("boom"));
     show();
     expect(await screen.findByText(/yüklenemedi/)).toBeTruthy();
+  });
+
+  it("makes the radar sentence the headline and shows the briefing's own figures", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    show();
+    const h1 = await screen.findByRole("heading", { level: 1 });
+    expect(h1.textContent).toMatch(/20\.000,00 TL azalış/);
+    expect(screen.getByText("Bugünkü kasa")).toBeTruthy();
+    expect(screen.getByText("Hafta sonu kasa")).toBeTruthy();
+    expect(screen.getByText("En yakın ödeme")).toBeTruthy();
+  });
+
+  it("shows no balance figure when the balance is not known", async () => {
+    getMondayBriefing.mockResolvedValue(briefing({ balance_known: false, starting_cash_cents: null }));
+    show();
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByText("Bugünkü kasa")).toBeNull();
+    expect(screen.queryByText("Hafta sonu kasa")).toBeNull();
+    expect(screen.getByText("Bu hafta net değişim")).toBeTruthy();
+  });
+
+  it("counts the decisions waiting across the lists the approvals page shows", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    getProposedSettlements.mockResolvedValue([{ id: "s1" }]);
+    getPossibleDuplicates.mockResolvedValue([{ id: "d1" }]);
+    listPlanChanges.mockResolvedValue({ changes: [{ id: "c1" }], canDecide: true });
+    show();
+    expect(await screen.findByText(/3 kalem senin kararını bekliyor/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Onay bekleyenleri incele" }).getAttribute("href")).toBe("/onay");
+  });
+
+  it("does not claim nothing waits when a list could not be read", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    getPossibleDuplicates.mockRejectedValue(new Error("down"));
+    show();
+    await screen.findByRole("heading", { level: 1 });
+    await waitFor(() => expect(getPossibleDuplicates).toHaveBeenCalled());
+    expect(screen.queryByText(/seni bekleyen bir karar yok/)).toBeNull();
+  });
+
+  it("ends with the weekly loop, every step a link from Monday", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    show();
+    const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
+    expect(loop.querySelectorAll("a")).toHaveLength(4);
+    expect(loop.querySelector("[aria-current='page']")).toBeNull();
   });
 });
