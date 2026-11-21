@@ -361,9 +361,6 @@ async def test_only_a_decider_or_the_accountant_remembers_or_forgets_a_mapping(e
             for m in (await db.execute(select(OrgMembership).where(OrgMembership.user_id == user.id))).scalars():
                 m.role = role
             await db.commit()
-        from app.api.auth import _cache_invalidate
-
-        _cache_invalidate(str(user.id))      # the user lookup is cached for a minute
 
     await become("cfo")
     assert (await client.delete(f"/api/v1/held-rows/direction-mappings/{mapping['id']}", headers=owner_headers)).status_code == 403
