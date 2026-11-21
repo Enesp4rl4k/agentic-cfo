@@ -2277,7 +2277,7 @@ export const tr: MessageTree = {
     retry: "Tekrar dene",
     progress: {
       complete: "Kurulum tamam",
-      count: "3 adımdan {done}'i tamam",
+      count: "{total} adımdan {done}'i tamam",
       aria: "Kurulum ilerlemesi",
     },
     steps: {
@@ -2287,7 +2287,7 @@ export const tr: MessageTree = {
       },
       data: {
         title: "Verilerinizi bağlayın",
-        body: "Muhasebe programınızdan ya da bankanızdan aldığınız dosyayı bırakmanız yeterli; ne olduğunu sistem anlar.",
+        body: "Muhasebe programınızdan aldığınız dosyayı ve bakiye sütunu olan banka ekstrenizi bırakmanız yeterli; hangisinin ne olduğunu sistem anlar.",
         cta: "Verilerimi bağla",
         parasutConnected: "Paraşüt bağlı",
         uploaded: "{count} veri yüklendi",
@@ -2297,6 +2297,17 @@ export const tr: MessageTree = {
         body: "Veriniz geldiğinde analiz kendiliğinden başlar.",
         done: "{count} analiz tamamlandı",
       },
+      radar: {
+        title: "Nakit radarının başlangıç bakiyesi",
+        body: "Radar, banka ekstrenizin kapanış bakiyesinden başlar; tahminle başlamaz.",
+        cta: "Bakiyeli ekstre yükle",
+        waiting: "İlk analiziniz bitince burada görünür.",
+        loading: "Bakiye okunuyor…",
+        loadError: "Radar okunamadı.",
+        unknownTitle: "Kanıtlanmış banka bakiyesi yok",
+        unknownBody: "Ekstrede bakiye sütunu yok ya da satır bakiyeleri birbirini tutmuyor. Bakiye sütunu olan bir ekstre yükleyin; o zamana kadar radar hareketleri gösterir ama nakit açığını hesaplamaz.",
+        known: "{date} tarihinde {amount}",
+      },
       auto: {
         title: "Verilerin kendiliğinden gelmesi",
         body: "Dosyaları her seferinde elle yüklemek yerine size özel e-posta adresine gönderin ya da Paraşüt bağlantınızı otomatiğe alın.",
@@ -2305,11 +2316,17 @@ export const tr: MessageTree = {
         parasutAuto: "Paraşüt otomatik",
       },
     },
-    doneBanner: {
-      body: "Kurulum tamamlandı. Şirketinizin durumu Komuta Merkezi'nde.",
-      cta: "Komuta Merkezi",
-    },
     optionalBadge: "isteğe bağlı",
+    calculating: {
+      title: "Rota hesaplanıyor",
+      body: "İlk rapor genelde birkaç dakika sürer. Bu sayfa açık kaldıkça kendiliğinden yenilenir; kapatırsan döndüğünde sonucu burada görürsün.",
+    },
+    ready: {
+      title: "İlk raporun hazır",
+      body: "İlk analizin tamamlandı ve nakit radarı gerçek banka bakiyenden başlıyor.",
+      toRadar: "Nakit radarını aç",
+      toLogbook: "Seyir Defteri'ni aç",
+    },
     status: {
       done: "tamamlandı",
       todo: "yapılacak",
