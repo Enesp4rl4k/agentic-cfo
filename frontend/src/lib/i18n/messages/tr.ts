@@ -174,6 +174,7 @@ export const tr: MessageTree = {
     awaitingRows: "İncelenmesi gereken kayıtlar",
     awaitingDocuments: "Mükerrer olabilecek belgeler",
     awaitingOpen: "Karar ver",
+    heldReview: "Belgeleri gör ve karar ver",
   },
   takvim: {
     title: "Ödeme takvimi",

@@ -374,6 +374,10 @@ export interface components {
         HeldDocumentsOut: {
             /** Beyond Horizon Payable Cents */
             beyond_horizon_payable_cents: number;
+            /** By Reason */
+            by_reason: {
+                [key: string]: number;
+            };
             /** Count */
             count: number;
             /** Other Currency Count */

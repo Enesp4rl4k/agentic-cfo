@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.invoice_identity import (
     document_key,
+    is_unique_id,
     key_number,
     key_party,
     lacks_counterparty,
@@ -64,8 +65,8 @@ DUPLICATE_WINDOW_DAYS = 3
 # "A-1" and an amount by chance far more often than a re-export lands a month away. 31 days = a
 # monthly file reaching the ledger a month late.
 SAME_NUMBER_DATE_WINDOW_DAYS = 31
-# A key that keeps meeting documents that are not it (OCR noise, a reused number) stops growing here
-# and asks for a person (`many_versions`) instead of writing a row per reading.
+# A key that keeps meeting documents that are not it (OCR noise, a reused number): past this many
+# variants every further document is still held, and the list says why ("çok sayıda sürüm").
 MAX_VARIANTS = 5
 
 
@@ -177,11 +178,14 @@ async def same_number_match(
     candidates: dict[tuple[str, int, str], list[CanonicalTransaction]],
     aliases: dict[str, str], cache: dict[str, list[Transaction]],
 ) -> str | None:
-    """A row with this number and amount under another counterparty that also agrees on the rest.
+    """A row with this number and amount under another counterparty, close in date: held for a person.
 
-    Number and amount alone are not enough (suppliers' numbers collide): the dates must be within
-    `SAME_NUMBER_DATE_WINDOW_DAYS`, and the counterparties must not be plainly different companies
-    (`names_agree`: one name inside the other, or the same tax number; an unknown one agrees).
+    Number and amount alone are not enough (suppliers' numbers collide), so the dates must be within
+    `SAME_NUMBER_DATE_WINDOW_DAYS`. The counterparties are NOT a gate: one name inside the other
+    ("Alfa Gıda" in "Alfa Gıda San. ve Tic.") is the likely re-spelling, but "Alfa Gıda" against
+    "Alfa Gıdacılık", or an OCR typo in the name, are the same invoice just as often, and a missed
+    one is a payable counted twice with no flag. Both are held; `hold_reason` tells the person which
+    it is ("aynı numara ve tutar, farklı unvan" when the names do not agree).
     """
     number = key_number(record_id)
     if not number:
@@ -192,10 +196,86 @@ async def same_number_match(
             continue
         if abs((day_of(row.asil_tarih or row.transaction_date) - day).days) > SAME_NUMBER_DATE_WINDOW_DAYS:
             continue
-        old = await source_transaction(db, row, aliases, cache)
-        if names_agree(old.counterparty if old else None, tx.counterparty):
-            return str(row.id)
+        return str(row.id)
     return None
+
+
+def _is_unique_document_key(record_id: str) -> bool:
+    """`doc:` + a UUID (ETTN) or GİB number: a name the document carries whoever issued it."""
+    return record_id.startswith("doc:") and is_unique_id(base_key(record_id)[4:])
+
+
+async def same_document_other_id(
+    db: AsyncSession, tx: Transaction, record_id: str,
+    others: dict[tuple[int, str, str], list[tuple[date, str, str]]],
+    aliases: dict[str, str], cache: dict[str, list[Transaction]],
+) -> str | None:
+    """The row this document may be, when it was read under a different kind of identity.
+
+    `repeats` never pairs two documents that carry numbers (instalments, recurring invoices and batch
+    billing share amounts and dates). The hole: one invoice read once with its ETTN/GİB number
+    (`doc:<uuid>`) and once with a free-form number (`inv:...` or a bare `doc:A-1`) has two keys and
+    no number to compare. Only that mixed pair is compared here, on what the two readings share:
+    amount, side, a date within the duplicate window, and a counterparty that is known on both and
+    agrees (`names_agree`). Two UUID-keyed invoices, or two free-form ones, are told apart by their
+    numbers as before.
+    """
+    if not _is_document_key(record_id):
+        return None
+    mine_unique = _is_unique_document_key(record_id)
+    day = day_of(tx.transaction_date)
+    for other_day, row_id, other_record_id in others.get(
+        (tx.amount_kurus, tx.type, basis_of(tx)), []
+    ):
+        if (
+            abs((other_day - day).days) > DUPLICATE_WINDOW_DAYS
+            or not _is_document_key(other_record_id)
+            or _is_unique_document_key(other_record_id) == mine_unique
+        ):
+            continue
+        row = await db.get(CanonicalTransaction, row_id)
+        old = await source_transaction(db, row, aliases, cache) if row is not None else None
+        if old and old.counterparty and tx.counterparty and names_agree(old.counterparty, tx.counterparty):
+            return row_id
+    return None
+
+
+# Why a row is held, in words the screen can show.
+HOLD_REASONS_TR = {
+    "many_versions": "çok sayıda sürüm",
+    "same_number_different_name": "aynı numara ve tutar, farklı unvan",
+    "same_document_different_id": "aynı belge farklı kimlikle okunmuş olabilir",
+    "same_number_may_be_a_different_document": "aynı numara, farklı belge olabilir",
+    "same_amount_close_in_time": "aynı tutar, yakın tarih",
+}
+
+
+async def hold_reason(
+    db: AsyncSession, row: CanonicalTransaction, aliases: dict[str, str],
+    cache: dict[str, list[Transaction]] | None = None,
+) -> str:
+    """Why this row is held as a possible duplicate: one of `HOLD_REASONS_TR`'s keys."""
+    org_id = str(row.org_id)
+    siblings = (await variant_rows(db, org_id, [base_key(row.source_record_id)])).get(
+        base_key(row.source_record_id), [])
+    if len(siblings) - 1 >= MAX_VARIANTS:
+        return "many_versions"
+    match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
+    if match is not None and str(match.org_id) != org_id:
+        match = None
+    if match is None:
+        return "same_amount_close_in_time"
+    number = key_number(row.source_record_id)
+    if number and number == key_number(match.source_record_id):
+        if base_key(row.source_record_id) != base_key(match.source_record_id) and match.amount_cents == row.amount_cents:
+            mine = await source_transaction(db, row, aliases, cache)
+            old = await source_transaction(db, match, aliases, cache)
+            if mine and old and not names_agree(old.counterparty, mine.counterparty):
+                return "same_number_different_name"
+        return "same_number_may_be_a_different_document"
+    if _is_document_key(row.source_record_id) and _is_document_key(match.source_record_id):
+        return "same_document_different_id"
+    return "same_amount_close_in_time"
 
 
 async def job_transactions(db: AsyncSession, job_id: str) -> list[Transaction]:
@@ -322,8 +402,9 @@ async def split_same_key(
     the row that holds the key (`variants`), so a person sees both versions and decides.
 
     Deterministic per file: the same job read again maps to the variant it wrote before (OCR noise
-    in the amount on a re-read never spawns another), and at `MAX_VARIANTS` a key stops growing: the
-    document joins its nearest version and is counted as `many_versions` for a person to look at.
+    in the amount on a re-read never spawns another). Past `MAX_VARIANTS` a document is still held
+    under a key of its own, never merged into the nearest version (its amount would then be in no
+    total and in no list): it is counted as `many_versions` and the held list says "çok sayıda sürüm".
     Another upload only: the job that wrote the row under the key is never split from it.
     """
     cache: dict[str, list[Transaction]] = {}
@@ -344,8 +425,7 @@ async def split_same_key(
         if own is not None:
             key = own                       # the file's own version, whatever its amount reads now
         elif key not in {k for k, _ in siblings} and len(siblings) >= MAX_VARIANTS:
-            key = min(siblings, key=lambda kv: abs(kv[1] - tx.amount_kurus))[0]
-            many += 1
+            many += 1   # beyond the cap: still held under a key of its own (never merged into a version)
         found = (await existing_rows(db, org_id, [key])).get(key)
         if found is not None:
             existing[key] = found

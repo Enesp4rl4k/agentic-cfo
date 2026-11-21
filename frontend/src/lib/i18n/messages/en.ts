@@ -173,6 +173,7 @@ export type MessageTree = {
     awaitingRows: string;
     awaitingDocuments: string;
     awaitingOpen: string;
+    heldReview: string;
   };
   takvim: {
     title: string;
@@ -2854,6 +2855,7 @@ export const en: MessageTree = {
     awaitingRows: "Rows to review",
     awaitingDocuments: "Possible duplicate documents",
     awaitingOpen: "Decide",
+    heldReview: "Review the documents and decide",
   },
   takvim: {
     title: "Payment calendar",

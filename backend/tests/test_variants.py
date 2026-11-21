@@ -1,7 +1,7 @@
 """G23 review S3: a number that keeps meeting documents that are not it.
 
 - the same file read again maps to the variant it wrote, whatever the OCR now says about the amount;
-- a key stops growing at MAX_VARIANTS and asks for a person ("çok sayıda sürüm");
+- past MAX_VARIANTS every further document is still held, and the list says why ("çok sayıda sürüm");
 - a category override recorded on a variant survives a rerun instead of reverting to the base row's.
 """
 
@@ -57,7 +57,7 @@ async def test_the_same_file_read_again_maps_to_its_variant_even_when_the_amount
     assert len([r for r in await _rows(client, org_id) if r.ledger_status == "possible_duplicate"]) == 1
 
 
-async def test_a_key_stops_growing_at_the_cap_and_says_so(client):
+async def test_past_the_cap_a_document_is_still_held_and_says_so(client):
     headers, org_id, _ = await kullanici(client, "var-cap@example.com")
     await _upload(client, org_id, who=SHORT, cents=100_000)
     for i in range(MAX_VARIANTS):
@@ -67,8 +67,8 @@ async def test_a_key_stops_growing_at_the_cap_and_says_so(client):
     assert n == 1 + MAX_VARIANTS
 
     _, counts = await _upload(client, org_id, who=SHORT, cents=333_333)          # one more reading
-    assert (counts["new"], counts["possible_duplicate"], counts["many_versions"]) == (0, 0, 1)
-    assert len(await _rows(client, org_id)) == n                                    # it joined the nearest version
+    assert (counts["new"], counts["possible_duplicate"], counts["many_versions"]) == (0, 1, 1)
+    assert len(await _rows(client, org_id)) == n + 1                                # held, not merged into a version
     summary = (await client.get("/api/v1/ledger/summary", headers=headers)).json()["data"]
     assert summary["last_upload"]["many_versions"] == 1
 

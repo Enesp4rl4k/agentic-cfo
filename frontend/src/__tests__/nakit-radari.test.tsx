@@ -166,8 +166,8 @@ describe("Nakit Radarı", () => {
     expect(await screen.findByText("Kararınızı bekleyenler")).toBeTruthy();
     expect(screen.getByText("İncelenmesi gereken kayıtlar:")).toBeTruthy();
     expect(screen.getByText("Mükerrer olabilecek belgeler:")).toBeTruthy();
-    const links = screen.getAllByRole("link", { name: "Karar ver" });
-    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/bekleyen-kayitlar", "/onay"]);
+    expect(screen.getByRole("link", { name: "Karar ver" }).getAttribute("href")).toBe("/bekleyen-kayitlar");
+    expect(screen.getByRole("link", { name: "Belgeleri gör ve karar ver" }).getAttribute("href")).toBe("/onay");
     // each sentence is said once: in the block, not again in the plain list
     expect(screen.getAllByText(/3 kayıt incelemenizi bekliyor/).length).toBe(1);
     expect(screen.getAllByText(/Karar bekleyen 1 belge/).length).toBe(1);
@@ -179,6 +179,16 @@ describe("Nakit Radarı", () => {
     show();
     await screen.findByText("Radara dahil değil");
     expect(screen.queryByText("Kararınızı bekleyenler")).toBeNull();
+  });
+
+  it("links the held-documents line to the screen where a person answers", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      not_included: ["Karar bekleyen 2 belge"],
+      held_documents: { count: 2, review_path: "/onay", by_reason: { many_versions: 2 } },
+    }));
+    show();
+    const link = await screen.findByText("Belgeleri gör ve karar ver");
+    expect(link.closest("a")?.getAttribute("href")).toBe("/onay");
   });
 
   it("points an empty company at its documents", async () => {

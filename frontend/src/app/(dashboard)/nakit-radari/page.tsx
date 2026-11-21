@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Calendar, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import {
@@ -312,7 +313,7 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
           <li key={line}>{line}</li>
         ))}
       </ul>
-      {awaiting && (
+      {awaiting ? (
         <div className="space-y-1 rounded-md border border-border p-3">
           <p className="text-sm font-semibold">{copy.awaitingTitle}</p>
           {[
@@ -323,12 +324,21 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
               <p key={label} className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{label}:</span> {line.text}{" "}
                 <Link href={line.path} className="font-medium underline underline-offset-2">
-                  {copy.awaitingOpen}
+                  {line === awaiting.documents ? copy.heldReview : copy.awaitingOpen}
                 </Link>
               </p>
             ) : null,
           )}
         </div>
+      ) : (
+        <>
+          {radar.held_documents && (
+            <Link href={radar.held_documents.review_path} className="text-sm font-medium underline underline-offset-2">
+              {copy.heldReview}
+            </Link>
+          )}
+          <HeldRowsLink />
+        </>
       )}
       <dl className="space-y-1 text-sm">
         {amounts
