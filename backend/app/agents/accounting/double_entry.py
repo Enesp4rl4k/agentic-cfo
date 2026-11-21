@@ -62,7 +62,13 @@ def _kaynak_parmak_izi(tx: dict[str, Any]) -> str:
         tx.get("document_id"),
         tx.get("counterparty"),
     )
-    return "|".join("" if p is None else str(p) for p in parts)
+    base = "|".join("" if p is None else str(p) for p in parts)
+    # The currency tells apart the same payment in two currencies (one agent run per currency, `sira`
+    # restarting at 0 in each). A lira row, or one that names no currency (a row stored before currencies
+    # were kept), adds nothing: its id, and every approval pointing at it, must not change.
+    if "currency" in tx and (code := str(tx["currency"] or "").strip().upper()) != "TRY":
+        return f"{base}|para_birimi={code or '?'}"
+    return base
 
 
 def kararli_kayit_id(tx: dict[str, Any], sira: int = 0) -> str:
