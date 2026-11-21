@@ -3,8 +3,8 @@
 A file whose amounts' direction cannot be placed waits for one answer for the whole file;
 the answer is remembered per organisation and header signature and can be revoked.
 
-Revision ID: 069_direction_mappings
-Revises: 068_held_transactions
+Revision ID: 070_direction_mappings
+Revises: 069_normalised_emails
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "069_direction_mappings"
-down_revision = "068_held_transactions"
+revision = "070_direction_mappings"
+down_revision = "069_normalised_emails"
 branch_labels = None
 depends_on = None
 
