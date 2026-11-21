@@ -30,6 +30,56 @@
         "title": "Analizler",
         "type": "object"
       },
+      "AwaitingDecisionOut": {
+        "description": "Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates.",
+        "properties": {
+          "documents": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AwaitingLineOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AwaitingLineOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "AwaitingDecisionOut",
+        "type": "object"
+      },
+      "AwaitingLineOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "text",
+          "path"
+        ],
+        "title": "AwaitingLineOut",
+        "type": "object"
+      },
       "BasisSplitOut": {
         "properties": {
           "assumed_cents": {
@@ -234,6 +284,16 @@
           "anchor_date": {
             "title": "Anchor Date",
             "type": "string"
+          },
+          "awaiting_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AwaitingDecisionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "base_state": {
             "default": "confirmed",
@@ -1838,6 +1898,18 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "ingest": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest"
           },
           "olusturma": {
             "anyOf": [

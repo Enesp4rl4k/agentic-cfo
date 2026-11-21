@@ -28,8 +28,16 @@ CONFIDENCE_UNKNOWN = "confidence_unknown"
 CONFIDENCE_LOW = "confidence_low"
 CURRENCY_UNKNOWN = "currency_unknown"
 DIRECTION_UNKNOWN = "direction_unknown"
+# The whole file's direction could not be placed (app.parsers.direction): one question for the file.
+DIRECTION_FILE = "direction_file_unknown"
 AMOUNT_UNREADABLE = "amount_unreadable"
 DATE_UNREADABLE = "date_unreadable"
+AMOUNT_ZERO = "amount_zero"
+LINE_UNREADABLE = "line_unreadable"
+AMOUNT_UNCERTAIN = "amount_uncertain"
+MALFORMED_ROW = "malformed_row"
+SUMMARY_SUSPECT = "summary_suspect"   # looks like a total / carried-balance line but carries an amount
+BALANCE_MISMATCH = "balance_mismatch"   # this row's balance step does not reconcile
 WITH_DOCUMENT = "document_held_together"
 
 
@@ -59,7 +67,21 @@ def row_reasons(row: dict[str, Any]) -> list[str]:
         reasons.append(CONFIDENCE_LOW)
     if not str(row.get("currency") or "").strip():
         reasons.append(CURRENCY_UNKNOWN)
-    if row.get("type") not in ("income", "expense"):
+    if row.get("amount_uncertain"):
+        reasons.append(AMOUNT_UNCERTAIN)
+    if row.get("line_unreadable"):
+        reasons.append(LINE_UNREADABLE)
+    if row.get("zero_amount"):
+        reasons.append(AMOUNT_ZERO)
+    if row.get("malformed_row"):
+        reasons.append(MALFORMED_ROW)
+    if row.get("summary_suspect"):
+        reasons.append(SUMMARY_SUSPECT)
+    elif row.get("balance_mismatch"):
+        reasons.append(BALANCE_MISMATCH)
+    if row.get("direction_file"):
+        reasons.append(DIRECTION_FILE)
+    elif row.get("type") not in ("income", "expense") and not row.get("balance_mismatch"):
         reasons.append(DIRECTION_UNKNOWN)  # income or expense is never assumed
     if "amount_cents" in row and row["amount_cents"] is None:
         reasons.append(AMOUNT_UNREADABLE)

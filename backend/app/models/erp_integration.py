@@ -56,7 +56,7 @@ class ERPIntegration(Base):
 
     # Sync istatistikleri
     last_sync_at      = Column(DateTime(timezone=True), nullable=True)
-    last_sync_status  = Column(String(20), nullable=True)   # success | error | partial
+    last_sync_status  = Column(String(20), nullable=True)   # success | error | partial | awaiting_review
     last_sync_count   = Column(Integer, nullable=True)       # kac islem sync edildi
     last_error        = Column(Text, nullable=True)          # son hata mesaji
     next_sync_at      = Column(DateTime(timezone=True), nullable=True)

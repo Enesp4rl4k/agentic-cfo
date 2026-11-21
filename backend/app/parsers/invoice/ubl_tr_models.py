@@ -96,7 +96,8 @@ class ParsedUBLInvoice(BaseModel):
     # sonra" means this date does not cover the whole amount.
     payment_due_date: date | None = None
     payment_note: str = ""
-    currency_code: str = "TRY"
+    # "" = the invoice carries no DocumentCurrencyCode: the row is held, not read as lira.
+    currency_code: str = ""
     supplier: InvoiceParty
     customer: InvoiceParty
     line_items: list[InvoiceLineItem] = Field(default_factory=list)

@@ -10,12 +10,37 @@ from __future__ import annotations
 from typing import Any
 
 
-def ingest_summary(accepted: list[dict[str, Any]], registered: dict[str, Any]) -> dict[str, Any]:
+def ingest_summary(
+    accepted: list[dict[str, Any]], registered: dict[str, Any], counts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     held_now = int(registered.get("new", 0)) + int(registered.get("already_waiting", 0))
     assumed = sum(1 for r in accepted if r.get("currency_assumed"))
-    parts = [f"{len(accepted)} kayıt işlendi"]
-    if held_now:
-        parts.append(f"{held_now} kayıt incelemenizi bekliyor (toplamlara dahil değil)")
+    counts = counts or {}
+    read = int(counts.get("read", 0))
+    skipped = int(counts.get("summary_skipped", 0))
+    transfers = int(counts.get("account_skipped", 0))
+    lost = int(counts.get("unaccounted", 0))
+    parts = []
+    if read:
+        # Every row the reader was handed is in exactly one of these: nothing disappears unseen.
+        head = f"{read} satır okundu: {len(accepted)} kaydedildi, {held_now} kararınızı bekliyor, {skipped} özet satırı atlandı"
+        if transfers:
+            head += f", {transfers} geçiş/kapanış kaydı atlandı"
+        parts.append(head)
+    else:
+        parts.append(f"{len(accepted)} kayıt işlendi")
+        if held_now:
+            parts.append(f"{held_now} kayıt incelemenizi bekliyor (toplamlara dahil değil)")
+    check = counts.get("balance_check")
+    if check == "verified":
+        parts.append("bakiye zinciriyle doğrulandı")
+    elif check == "unverified":
+        # A text (PDF) statement whose running balance could not be chained is never presented as reconciled.
+        parts.append("bakiye ile doğrulanamadı")
+    if lost:
+        parts.append(f"{lost} satır hesaba katılamadı; dosya gözden geçirilmeli")
+    if counts.get("reader_failed"):
+        parts.append("bu dosya beklenen biçimde okunamadı, alternatif okuyucu kullanıldı")
     if registered.get("currency_unknown"):
         parts.append(
             f"{registered['currency_unknown']} kaydın para birimi bilinmiyor; şirketin para birimini "
@@ -30,5 +55,12 @@ def ingest_summary(accepted: list[dict[str, Any]], registered: dict[str, Any]) -
         "held": held_now,
         "currency_assumed": assumed,
         "already_rejected": int(registered.get("already_rejected", 0)),
+        "rows_read": read,
+        "summary_lines_skipped": skipped,
+        "skipped_lines": list(counts.get("summary_lines", [])),
+        "account_lines_skipped": transfers,
+        "unaccounted": lost,
+        "reader_fallback": bool(counts.get("reader_failed")),
+        "balance_check": check,
         "summary": "; ".join(parts) + ".",
     }

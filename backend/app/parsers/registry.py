@@ -1,17 +1,20 @@
 """
 Parser registry — auto-detects which bank parser to use.
 
-Usage:
-    statement = ParserRegistry.parse(text, file_path)
+Usage (the upload entry point, `app.agents.data_ingestion._belgeyi_oku`):
+    parser_cls = ParserRegistry.detect(text)
 
 The registry tries each registered parser's can_parse() heuristic in order.
-First match wins. Falls back to GenericParser (LLM-based) if nothing matches.
+First match wins; None when nothing matches, and the caller falls through to the table
+reader (`app.services.ingest.rows`) and the LLM extraction in data_ingestion. There is no
+generic parser here: a second CSV/LLM implementation was reachable from nothing, and its
+direction logic never ran.
 """
 from __future__ import annotations
 
 import logging
 
-from app.parsers.base import BankParser, ParsedStatement
+from app.parsers.base import BankParser
 
 logger = logging.getLogger(__name__)
 
@@ -87,20 +90,3 @@ class ParserRegistry:
             except Exception:
                 continue
         return None
-
-    @staticmethod
-    def parse(text: str, file_path: str = "") -> ParsedStatement:
-        """
-        Auto-detect parser and parse the statement.
-        Falls back to GenericParser if no bank matches.
-        """
-        # Import here to avoid circular imports
-        from app.parsers.banks.generic import GenericParser
-
-        parser_cls = ParserRegistry.detect(text)
-        if parser_cls is None:
-            logger.warning("No bank-specific parser matched — using GenericParser (LLM fallback)")
-            parser_cls = GenericParser
-
-        parser = parser_cls()
-        return parser.parse(text, file_path)

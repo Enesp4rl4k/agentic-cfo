@@ -40,10 +40,12 @@ from app.services.ingest.cells import (
     _parse_amount,
     _parse_date,
 )
+from app.services.ingest.door import read_document, read_text_statement
 from app.services.ingest.ebelge import (
     _try_parse_ubl_xml,
 )
 from app.services.ingest.hold import resolve_currency, split_uncertain
+from app.services.ingest.okuma import ReadLedger, merge_counts, reconcile
 from app.services.ingest.readers import (
     _pdf_embedded_xml,
     _read_csv,
@@ -52,6 +54,7 @@ from app.services.ingest.readers import (
     _read_xml,
 )
 from app.services.ingest.rows import (
+    _pdf_yonu,
     _statement_to_transactions,
     _tablo_ekstresi,
     _try_parse_csv,
@@ -69,6 +72,7 @@ __all__ = [
     "_parse_amount",
     "_parse_date",
     "_pdf_embedded_xml",
+    "_pdf_yonu",
     "_read_csv",
     "_read_excel",
     "_read_pdf",
@@ -126,14 +130,22 @@ async def _extract_transactions_with_llm(
 
 def _csv_sonucu(
     csv_txs: list[dict[str, Any]], raw_text: str, job_id: Any, atlanan: list[str] | None = None,
+    ledger: ReadLedger | None = None,
 ) -> SkillResult:
+    if not csv_txs:
+        # A statement was read and every row of it was a summary or transfer line: said, not passed on silently.
+        skipped = (ledger.summary_skipped + ledger.account_skipped) if ledger else 0
+        return SkillResult(
+            ok=False, needs_review=True, confidence=0.0,
+            detail=f"{ledger.read if ledger else 0} satır okundu, {skipped} özet/geçiş satırı atlandı; işlenecek kayıt yok.",
+        )
     # Confidence must reflect data quality: rows with an unparseable
     # date or a zero amount are only partially usable. A file where
     # most dates failed to parse should NOT sail through the gate.
     # (A correction posted to an account carries a negative amount.)
     well_formed = sum(
         1 for tx in csv_txs
-        if tx.get("transaction_date") and tx.get("amount_cents", 0) != 0
+        if tx.get("transaction_date") and (tx.get("amount_cents") or 0) != 0
     )
     ratio = well_formed / len(csv_txs)
     overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
@@ -225,6 +237,21 @@ async def run_data_ingestion(
     return _uncertain_rows_wait(await _read_all_documents(state, config))
 
 
+def _counts_reconcile(sonuc: SkillResult, accepted: int, held: int) -> SkillResult:
+    """Every row the readers were handed is booked, held, or skipped and counted (app.services.ingest.okuma).
+
+    The equation is computed here, by the ingest step itself, and stored with the counts (`ingest.summary`).
+    If it does not hold the run is marked for review: "N satır hesaba katılamadı". Never silent.
+    """
+    counts, lost = reconcile(sonuc.patch.get("ingest_counts") if sonuc.patch else None, accepted, held)
+    if counts is None:
+        return sonuc
+    patch = {**(sonuc.patch or {}), "ingest_counts": counts}
+    if not lost:
+        return SkillResult(sonuc.ok, patch, sonuc.confidence, sonuc.needs_review, sonuc.halt, sonuc.detail)
+    return SkillResult(sonuc.ok, patch, sonuc.confidence, True, sonuc.halt, f"{lost} satır hesaba katılamadı. {sonuc.detail}")
+
+
 def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
     """Rows a person must look at leave the run; the rest carry on.
 
@@ -238,6 +265,7 @@ def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
     if not sonuc.ok or not rows:
         return sonuc
     accepted, held = split_uncertain(rows)
+    sonuc = _counts_reconcile(sonuc, len(accepted), len(held))
     if not held:
         return sonuc
     # Which rows wait for a person does not change what the bank says the account holds:
@@ -274,6 +302,7 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
     islemler: list[dict[str, Any]] = list((sonuc.patch or {}).get("transactions") or [])
     metinler: list[str] = [str((sonuc.patch or {}).get("raw_text") or "")]
     detaylar: list[str] = [f"1) {sonuc.detail}"]
+    sayimlar = (sonuc.patch or {}).get("ingest_counts")
     guven = sonuc.confidence if sonuc.ok else 1.0
     inceleme = bool(sonuc.needs_review)
 
@@ -283,6 +312,7 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
         detaylar.append(f"{i}) {ad}: {alt.detail}")
         if alt.ok:
             islemler.extend((alt.patch or {}).get("transactions") or [])
+            sayimlar = merge_counts(sayimlar, (alt.patch or {}).get("ingest_counts"))
             metinler.append(str((alt.patch or {}).get("raw_text") or ""))
             guven = min(guven, alt.confidence)
             inceleme = inceleme or bool(alt.needs_review)
@@ -299,7 +329,7 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
     return SkillResult(
         ok=True,
         patch={"raw_text": _BELGE_ARASI.join(t for t in metinler if t)[:_EN_FAZLA_METIN],
-               "transactions": islemler},
+               "transactions": islemler, **({"ingest_counts": sayimlar} if sayimlar else {})},
         confidence=guven,
         needs_review=inceleme,
         detail=f"{len(ekler) + 1} belge, {len(islemler)} işlem. " + " | ".join(detaylar),
@@ -316,8 +346,19 @@ async def _belgeyi_al(
     file_path: str, file_type: str, state: CFOState, config: AgentRunConfig
 ) -> SkillResult:
     """One document, with every row's currency settled (see app.services.ingest.hold)."""
-    sonuc = await _belgeyi_oku(file_path, file_type, state, config)
+    ledger = ReadLedger()
+    sonuc = await _belgeyi_oku(file_path, file_type, state, config, ledger)
+    if ledger.touched:
+        # The counts travel in the result, never on a row: they survive a file whose rows were all skipped.
+        sonuc.patch = {**(sonuc.patch or {}), "ingest_counts": ledger.as_dict()}
     rows = (sonuc.patch or {}).get("transactions") or []
+    if any(r.get("direction_file") for r in rows):
+        # A statement format this organisation already answered is not asked again.
+        from app.database import session_factory
+        from app.services.held_direction import apply_remembered
+
+        async with session_factory()() as db:
+            await apply_remembered(db, state.get("org_id"), rows)
     if sonuc.ok and any(not str(r.get("currency") or "").strip() for r in rows):
         from app.services.org_identity import own_base_currency
 
@@ -329,7 +370,7 @@ async def _belgeyi_al(
 
 
 async def _belgeyi_oku(
-    file_path: str, file_type: str, state: CFOState, config: AgentRunConfig
+    file_path: str, file_type: str, state: CFOState, config: AgentRunConfig, ledger: ReadLedger | None = None,
 ) -> SkillResult:
     """One document: read it, then parse by the strategies below.
 
@@ -339,6 +380,7 @@ async def _belgeyi_oku(
       3. If no bank match → fall back to LLM extraction
     """
     settings = get_settings()
+    ledger = ledger if ledger is not None else ReadLedger()
 
     if not os.path.exists(file_path):
         return SkillResult(ok=False, detail=f"File not found: {file_path}", halt=True)
@@ -416,9 +458,10 @@ async def _belgeyi_oku(
         # the whole file through Akbank's pattern. A table is read as a table.
         if file_type in ("csv", "xlsx"):
             atlanan: list[str] = []
-            table_txs = await asyncio.to_thread(_tablo_ekstresi, file_path, atlanan)
-            if table_txs:
-                return _csv_sonucu(table_txs, raw_text, state.get("job_id"), atlanan)
+            table_txs = await asyncio.to_thread(_tablo_ekstresi, file_path, atlanan, ledger)
+            if table_txs is not None:
+                return _csv_sonucu(table_txs, raw_text, state.get("job_id"), atlanan, ledger)
+            ledger.reset()
 
         # ── Strategy 1: Bank-specific rule-based parser ────────────────────
         detected_bank = await asyncio.to_thread(ParserRegistry.detect, raw_text)
@@ -434,8 +477,15 @@ async def _belgeyi_oku(
                 from app.services.org_identity import own_vkn as org_vkn
 
                 parser = detected_bank(own_vkn=await org_vkn(state.get("org_id")))
-            statement: ParsedStatement = await asyncio.to_thread(parser.parse, raw_text, file_path)
-            transactions = _statement_to_transactions(statement)
+            # ONE door (app.services.ingest.door): every line accounted for, a held row for what no pattern took.
+            ambiguous = bool(getattr(detected_bank, "debit_credit_layout", False))
+            if issubclass(detected_bank, TurkishInvoiceParser):
+                door = await asyncio.to_thread(read_document, parser, raw_text, file_path, ambiguous=ambiguous)
+            else:
+                door = await asyncio.to_thread(read_text_statement, parser, raw_text, file_path, ambiguous=ambiguous)
+                ledger.add(door.ledger)
+            statement: ParsedStatement = door.statement
+            transactions = door.rows
 
             if transactions:
                 parseable = sum(
@@ -465,9 +515,10 @@ async def _belgeyi_oku(
         # ── Strategy 1.5: Generic CSV parser (deterministic, fast, no LLM) ─
         if file_type in ("csv", "xlsx", "xls") or any(d in raw_text[:500] for d in (",", ";", "\t")):
             atlanan = []
-            csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text, atlanan)
-            if csv_txs:
-                return _csv_sonucu(csv_txs, raw_text, state.get("job_id"), atlanan)
+            csv_txs = await asyncio.to_thread(_try_parse_csv, raw_text, atlanan, "", ledger)
+            if csv_txs is not None:
+                return _csv_sonucu(csv_txs, raw_text, state.get("job_id"), atlanan, ledger)
+            ledger.reset()
 
         # ── Strategy 2: LLM fallback ───────────────────────────────────────
         logger.info("job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id"))

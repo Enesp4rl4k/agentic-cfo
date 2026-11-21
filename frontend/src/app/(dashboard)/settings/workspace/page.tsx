@@ -367,12 +367,21 @@ function LocaleSettingsPanel({
     setSaveMsg(null);
     try {
       const packs = trPack ? ["tr"] : [];
+      // The company currency decides how every currency-less document is read: changing it is a decision
+      // (owner or admin, recorded), not a field of the generic update.
+      if (currency !== (org.base_currency ?? "USD")) {
+        const confirmed = await fetch(`${API_BASE}/api/v1/org/base-currency`, {
+          method: "POST",
+          headers: await headers(),
+          body: JSON.stringify({ currency }),
+        });
+        if (!confirmed.ok) throw new Error(ws.locale.saveFailed);
+      }
       const res = await fetch(`${API_BASE}/api/v1/org/me`, {
         method: "PATCH",
         headers: await headers(),
         body: JSON.stringify({
           locale,
-          base_currency: currency,
           country_code: country,
           regional_packs: packs,
           // Only a changed switch is a choice; sending it on every save would pin the menu against a size profile.

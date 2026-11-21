@@ -122,39 +122,42 @@ def test_a_turkish_looking_document_has_not_stated_a_currency():
     assert _detect_currency("Tutar (₺)") == "TRY"
 
 
-# ── the rule-based CSV path never guesses a direction ────────────────────────
+# ── the table path never guesses a direction (the resolver is tested in test_statement_direction) ──
 
 def _csv(text: str):
-    from app.parsers.banks.generic import _parse_csv_transactions
+    from app.services.ingest.rows import _try_parse_csv
 
-    return _parse_csv_transactions(text)
+    return _try_parse_csv(text) or []
 
 
 def test_csv_direction_comes_from_the_sign_when_the_file_has_both():
     rows = _csv(NL.join(["Tarih,Açıklama,Tutar", "01.03.2026,Satış,1.000,00", "02.03.2026,Kira,-500,00"]).replace("1.000,00", '"1.000,00"').replace("-500,00", '"-500,00"'))
-    assert [r.tx_type for r in rows] == ["income", "expense"]
-    assert all(r.confidence == 0.95 for r in rows)      # derived by a rule: not certain
+    assert [r["type"] for r in rows] == ["income", "expense"]
+    assert all(r["confidence"] == 0.95 for r in rows)      # derived by a rule: not certain
 
 
-def test_csv_with_debit_and_credit_columns_reads_the_column():
+def test_csv_with_unambiguous_debit_and_credit_columns_reads_the_column():
+    rows = _csv(NL.join(["Tarih,Açıklama,Ödeme,Tahsilat", "01.03.2026,Kira,500,", "02.03.2026,Satış,,900"]))
+    assert [r["type"] for r in rows] == ["expense", "income"]
+
+
+def test_csv_with_borc_alacak_and_no_balance_is_asked_not_booked_as_the_customers_view():
     rows = _csv(NL.join(["Tarih,Açıklama,Borç,Alacak", "01.03.2026,Kira,500,", "02.03.2026,Satış,,900"]))
-    assert [r.tx_type for r in rows] == ["expense", "income"]
+    assert [r["type"] for r in rows] == [None, None]
+    assert {r["direction_file"]["reason"] for r in rows} == {"convention_unverified"}
 
 
 def test_csv_with_one_unsigned_column_cannot_tell_and_says_so():
     rows = _csv(NL.join(["Tarih,Açıklama,Tutar", "01.03.2026,Bir,100", "02.03.2026,İki,200"]))
-    assert [r.tx_type for r in rows] == ["", ""]
-    assert all(r.confidence is None for r in rows)       # never 1.0 for a guessed field
-    accepted, held = split_uncertain([
-        {"amount_cents": r.amount_cents, "currency": "TRY", "type": r.tx_type, "confidence": r.confidence,
-         "transaction_date": r.date.isoformat()} for r in rows
-    ])
-    assert not accepted and "direction_unknown" in held[0]["hold_reasons"]
+    assert [r["type"] for r in rows] == [None, None]       # never income by default
+    assert all(r["direction_file"]["reason"] == "no_signal" for r in rows)
+    accepted, held = split_uncertain([{**r, "currency": "TRY"} for r in rows])
+    assert not accepted and held[0]["hold_reasons"] == ["direction_file_unknown"]
 
 
 def test_csv_type_column_still_decides():
     rows = _csv(NL.join(["Tarih,Açıklama,Tutar,Tür", "01.03.2026,Bir,100,gider", "02.03.2026,İki,200,gelir"]))
-    assert [r.tx_type for r in rows] == ["expense", "income"]
+    assert [r["type"] for r in rows] == ["expense", "income"]
 
 
 def test_parser_rows_keep_unknown_as_unknown():
@@ -510,8 +513,12 @@ async def test_another_organisations_rows_are_invisible_and_untouchable(ortam, m
     await _upload(client, tmp_path, monkeypatch, UNSURE, org1)
     held = await _held(client, h1)
     assert (await client.get("/api/v1/held-rows", headers=h2)).json()["data"]["count"] == 0
-    res = await client.post("/api/v1/held-rows/release", json={"ids": [held["B"]["id"]]}, headers=h2)
-    assert res.json()["data"]["resolved"] == 0
+    for action in ("release", "reject"):
+        res = await client.post(f"/api/v1/held-rows/{action}", json={"ids": [held["B"]["id"]]}, headers=h2)
+        assert res.status_code == 404
+    # a made-up id is the same answer as another organisation's: 404, never "resolved: 0"
+    res = await client.post("/api/v1/held-rows/release", json={"ids": ["no-such-row"]}, headers=h2)
+    assert res.status_code == 404
     assert (await client.get("/api/v1/held-rows", headers=h1)).json()["data"]["count"] == 2
 
 

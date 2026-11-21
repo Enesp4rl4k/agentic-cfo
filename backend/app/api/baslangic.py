@@ -49,6 +49,8 @@ class SonAnaliz(BaseModel):
     dosya: str
     hata: str | None
     olusturma: str | None
+    # Where every row of the upload went: read, saved, waiting, skipped (app.services.ingest.summary).
+    ingest: dict[str, Any] | None = None
 
 
 class Otomatik(BaseModel):
@@ -147,6 +149,7 @@ async def baslangic(
                 "dosya": son.filename,
                 "hata": son.error_message,
                 "olusturma": son.created_at.isoformat() if son.created_at else None,
+                "ingest": (son.result_metadata or {}).get("ingest"),
             },
             "tamamlanan_analiz": tamamlanan,
             "analizler": {

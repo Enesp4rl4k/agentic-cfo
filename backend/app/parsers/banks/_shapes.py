@@ -13,9 +13,11 @@ marker in an existing one.
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from typing import ClassVar
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import sign_is_informative, signed_money
 
 _ACCOUNT_RE = re.compile(
     r"Hesap\s+(?:No|Numarası|Numarasi)\s*[:\-]?\s*(\d[\d\s\-]+)", re.IGNORECASE
@@ -35,10 +37,9 @@ class SingleSignedColumnParser(BankParser):
 
     # DD/MM/YYYY or DD.MM.YYYY, description, signed amount, running balance.
     _ROW = re.compile(
-        r"(\d{2}[./]\d{2}[./]\d{4})\s+"
-        r"(.+?)\s+"
-        r"([+\-−]?[\d.,]+)\s+"
-        r"([\d.,]+)\s*$",
+        r"(\d{2}[./]\d{2}[./]\d{4})[ \t]+"
+        r"(.+?)[ \t]+"
+        r"([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?(?:[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?)?[ \t]*$",
         re.MULTILINE,
     )
 
@@ -67,15 +68,18 @@ class SingleSignedColumnParser(BankParser):
 
     def _parse_table(self, text: str) -> list[ParsedTransaction]:
         transactions: list[ParsedTransaction] = []
-        for m in self._ROW.finditer(text):
+        found = list(self._ROW.finditer(text))
+        # One amount column carries the direction by its sign, but only when the statement has both
+        # signs: a column of all-positive amounts says nothing (app.parsers.direction).
+        signed = sign_is_informative([self.is_negative_amount(m.group(3)) for m in found])
+        for m in found:
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
 
             amount_raw = m.group(3)
             amount_cents = self.parse_turkish_amount(amount_raw)
-            if not amount_cents:
-                continue
+            amount_cents = amount_cents or 0
 
             # `parse_turkish_amount` returns a magnitude, so the sign is read
             # from the text. The three originals each also tested
@@ -85,10 +89,13 @@ class SingleSignedColumnParser(BankParser):
                     date=date,
                     description=m.group(2).strip(),
                     amount_cents=amount_cents,
-                    tx_type="expense" if self.is_negative_amount(amount_raw) else "income",
-                    currency="TRY",
-                    balance_cents=self.parse_turkish_amount(m.group(4)),
-                    raw_row=m.group(0),
+                    tx_type=(
+                        "expense" if self.is_negative_amount(amount_raw) else "income"
+                    ) if signed else "",
+                    # The statement's own currency line is read from its text (hold.resolve_currency);
+                    # a bank statement saying nothing is not TRY.
+                    balance_cents=signed_money(m.group(4)),
+                    raw_row=m.group(0), date_estimated=estimated,
                 )
             )
         return transactions

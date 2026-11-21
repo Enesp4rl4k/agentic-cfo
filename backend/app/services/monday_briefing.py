@@ -342,9 +342,9 @@ async def assemble_monday_briefing(
             fallback_used = True
             final_text = deterministic_full_text
 
-    from app.services.held_rows import held_note  # rows nobody accepted yet are in no figure above
+    from app.services.awaiting_decisions import closing_note
 
-    final_text += await held_note(db, org_id)
+    final_text += await closing_note(db, org_id, radar, bool(caveat) or held_only)
     has_data = has_radar_data or held_only
 
     briefing_id = f"brief_{org_id}_{anchor.strftime('%Y%W')}"

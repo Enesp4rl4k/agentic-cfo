@@ -109,7 +109,7 @@ def _try_parse_ubl_xml(
             "amount_cents": -abs(amount_cents) if inv.is_return else abs(amount_cents),
             "iade": inv.is_return,
             "kdv_cents": kdv_cents,
-            "currency": inv.currency_code or "TRY",
+            "currency": inv.currency_code or None,   # unstated: held, never lira by default
             "type": tx_type,
             "category": category,
             "description": (
@@ -185,7 +185,7 @@ def _try_parse_makbuz(
             # receipt was understood — otherwise the entry is held, not split.
             "kdv_cents": abs(amount_to_cents(m.kdv)) if understood else None,
             "stopaj_cents": abs(amount_to_cents(m.stopaj)) if understood else None,
-            "currency": m.currency or "TRY",
+            "currency": m.currency or None,   # unstated: held, never lira by default
             "type": "income" if is_income else "expense",
             "category": category,
             "description": f"{label} {m.number}: {who}{what}",
