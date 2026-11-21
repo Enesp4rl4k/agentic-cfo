@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.invoice_identity import key_number, key_party, party_token
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.counterparty_alias import CounterpartyAlias
-from app.models.decision import DecidedVia, DecisionKind
+from app.models.decision import DecidedVia, Decision, DecisionKind
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.decisions import record_decision
@@ -161,10 +161,11 @@ async def confirm_alias(db: AsyncSession, *, user: User, row: CanonicalTransacti
     existing = (await db.execute(select(CounterpartyAlias).where(
         CounterpartyAlias.org_id == org_id, CounterpartyAlias.alias_token == proposal.alias_token,
     ))).scalar_one_or_none()
-    repointed = (await db.execute(select(CounterpartyAlias.id).where(
+    repointed_rows = (await db.execute(select(CounterpartyAlias.id, CounterpartyAlias.canonical_token).where(
         CounterpartyAlias.org_id == org_id, CounterpartyAlias.canonical_token == proposal.alias_token,
         CounterpartyAlias.revoked_at.is_(None),
-    ))).scalars().all()
+    ))).all()
+    repointed = [str(i) for i, _ in repointed_rows]
     decision = await record_decision(
         db, org_id=org_id, kind=DecisionKind.COUNTERPARTY_ALIAS, target_type="counterparty_alias",
         target_id=existing.id if existing else f"{proposal.alias_token}>{proposal.canonical_token}",
@@ -174,7 +175,9 @@ async def confirm_alias(db: AsyncSession, *, user: User, row: CanonicalTransacti
         before={"active": bool(existing and existing.revoked_at is None), "canonical_token": existing.canonical_token if existing else None},
         after={"active": True, "alias_token": proposal.alias_token, "canonical_token": proposal.canonical_token,
                "alias_name": proposal.alias_name, "canonical_name": proposal.canonical_name,
-               "repointed": len(repointed)},
+               "repointed": len(repointed),
+               # What each re-pointed alias read as before, so revoking this alias restores the chain.
+               "repointed_from": {str(i): str(was) for i, was in repointed_rows}},
     )
     # Whatever pointed at the alias now points at the canonical token: one hop, always.
     if repointed:
@@ -232,19 +235,53 @@ async def rows_ingested_under(db: AsyncSession, alias: CounterpartyAlias) -> lis
     return listed
 
 
+async def _restore_repointed(db: AsyncSession, alias: CounterpartyAlias) -> list[str]:
+    """Give back the targets confirming `alias` took from other aliases (A->B was re-pointed to A->C).
+
+    Confirming B->C re-points every alias that read as B to C (one hop, never a chain). Revoking B->C
+    must undo exactly that, or A would keep reading as C, a supplier it was never declared to be.
+    The previous targets are in the decision that created the alias (`repointed_from`). One that is
+    itself an alias by now is read through it, and a restore that would loop is left alone.
+    """
+    created = await db.get(Decision, alias.decision_id) if alias.decision_id else None
+    was: dict[str, str] = ((created.after or {}).get("repointed_from") if created else None) or {}
+    if not was:
+        return []
+    org_id = str(alias.org_id)
+    active = {
+        str(a): str(c) for a, c in (await db.execute(
+            select(CounterpartyAlias.alias_token, CounterpartyAlias.canonical_token).where(
+                CounterpartyAlias.org_id == org_id, CounterpartyAlias.revoked_at.is_(None),
+                CounterpartyAlias.id != alias.id,
+            )
+        )).all()
+    }
+    restored: list[str] = []
+    for alias_id, previous in was.items():
+        row = await db.get(CounterpartyAlias, alias_id)
+        if row is None or str(row.org_id) != org_id or row.revoked_at is not None:
+            continue
+        target = active.get(previous, previous)
+        if target != row.alias_token and row.canonical_token != target:
+            row.canonical_token = target
+            restored.append(alias_id)
+    return restored
+
+
 async def revoke_alias(db: AsyncSession, *, user: User, alias: CounterpartyAlias) -> dict[str, Any]:
     """Stop applying an alias to future ingests; list what it touched. Does not commit."""
     if alias.revoked_at is not None:
         raise AliasRefused("already_revoked", "Bu eşleme zaten geri alınmış.")
     affected = await rows_ingested_under(db, alias)
+    restored = await _restore_repointed(db, alias)
     decision = await record_decision(
         db, org_id=str(alias.org_id), kind=DecisionKind.COUNTERPARTY_ALIAS, target_type="counterparty_alias",
         target_id=str(alias.id), outcome="revoked", decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
         reason=f"Bundan sonra {alias.alias_name or '?'} ve {alias.canonical_name or '?'} ayrı tedarikçi sayılacak.",
         before={"active": True, "alias_token": alias.alias_token, "canonical_token": alias.canonical_token},
-        after={"active": False, "rows_to_review": len(affected)},
+        after={"active": False, "rows_to_review": len(affected), "restored": restored},
     )
     alias.revoked_at, alias.revoked_by, alias.revoke_decision_id = datetime.now(UTC), str(user.id), str(decision.id)
     await db.flush()
-    return {"alias": alias_dict(alias), "rows_ingested_under": affected, "decision_id": str(decision.id),
+    return {"alias": alias_dict(alias), "rows_ingested_under": affected, "restored_aliases": restored, "decision_id": str(decision.id),
             "note": "Geçmiş kayıtlar değiştirilmedi; yukarıdaki satırları gözden geçirin. Sonraki yüklemeler ayrı tedarikçi olarak okunur."}

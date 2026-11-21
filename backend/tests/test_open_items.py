@@ -220,8 +220,9 @@ async def test_a_real_invoice_file_through_the_whole_pipeline_opens_an_item(clie
 async def test_open_items_are_listed_by_due_date_for_this_company_only(client):
     headers, org_id, _ = await kullanici(client, "liste@example.com")
     other, _, _ = await kullanici(client, "baskasi@example.com")
-    # Dates more than the duplicate window apart: same-day, same-amount invoices would be held
-    # as possible duplicates, and a held row opens no item (G23).
+    # Three different invoice numbers (UUIDs): told apart by their numbers, not by their dates
+    # (`repeats` never pairs two documents that carry numbers). The issue dates differ only so
+    # the three rows are easy to tell apart when this fails.
     await _analysed(client, org_id, _invoice(uuid="A", terms=_due("2024-05-01")))
     await _analysed(client, org_id, _invoice(uuid="B", terms=_due("2024-04-01"), issued="2024-03-10"))
     await _analysed(client, org_id, _invoice(uuid="C", issued="2024-03-20"))
