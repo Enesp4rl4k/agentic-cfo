@@ -12,7 +12,17 @@ export interface LedgerSummary {
   revenue_cents: number;
   expense_cents: number;
   possible_duplicates: number;
-  period: { start: string | null; end: string | null; months: number };
+  /** The period these figures cover: the last 12 months of data unless one was asked for. */
+  period: {
+    start: string | null;
+    end: string | null;
+    months: number;
+    label: string | null;
+    is_default: boolean;
+    available_start: string | null;
+    available_end: string | null;
+    available_months: number;
+  };
 }
 
 export interface LedgerRow {

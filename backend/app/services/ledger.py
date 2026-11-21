@@ -401,6 +401,76 @@ async def _last_upload(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
     return None
 
 
+DEFAULT_PERIOD_MONTHS = 12
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def add_months(month: str, n: int) -> str:
+    """"2026-01" plus n months (n may be negative)."""
+    index = int(month[:4]) * 12 + int(month[5:7]) - 1 + n
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+
+@dataclass(frozen=True)
+class Period:
+    """A requested period, in whole months ("YYYY-MM", both ends included).
+
+    Months are the ledger's own (`month_of`: the UTC day of the row, the same months a
+    period lock closes). Either end may be left out: no `end` is the month of the latest
+    data, no `start` is `DEFAULT_PERIOD_MONTHS` months ending at `end`.
+    """
+
+    start: str | None = None
+    end: str | None = None
+
+    def __post_init__(self) -> None:
+        for m in (self.start, self.end):
+            if m is not None and not _MONTH_RE.match(m):
+                raise ValueError(f"not a month (YYYY-MM): {m!r}")
+        if self.start and self.end and self.start > self.end:
+            raise ValueError("period start is after its end")
+
+
+@dataclass(frozen=True)
+class LedgerPeriod:
+    """The period actually used, for the screen: what it covers and what exists beyond it."""
+
+    start: str | None
+    end: str | None
+    months: int                 # months inside it that hold a counted row
+    label: str | None           # "2025-02 – 2026-01"
+    is_default: bool            # nobody asked for it: the last 12 months of data
+    available_start: str | None  # first and last month with any counted row, and how many
+    available_end: str | None
+    available_months: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "start": self.start, "end": self.end, "months": self.months, "label": self.label,
+            "is_default": self.is_default, "available_start": self.available_start,
+            "available_end": self.available_end, "available_months": self.available_months,
+        }
+
+
+def resolve_period(period: Period | None, available: list[str]) -> tuple[str | None, str | None, bool]:
+    """(start, end, is_default) for a request over the months that hold data.
+
+    Plan v10 S1.4: with nothing asked, the 12 months ending in the month of the latest
+    data (fewer when the ledger holds fewer).
+    """
+    req = period or Period()
+    is_default = req.start is None and req.end is None
+    end = req.end or (available[-1] if available else None)
+    if end is None:
+        return None, None, is_default
+    if req.start:
+        return req.start, end, is_default
+    start = add_months(end, 1 - DEFAULT_PERIOD_MONTHS)
+    if available and available[0] <= end:
+        start = max(start, available[0])    # no earlier than the first month of data
+    return start, end, is_default
+
+
 @dataclass(frozen=True)
 class CompanyRows:
     """What the ledger counts: profit and cash are different views of one money."""
@@ -408,16 +478,23 @@ class CompanyRows:
     profit: list[Any]       # book rows, or documents plus cash that pays no document
     cash: list[Any]         # bank movements, or postings where there is no statement
     possible_duplicates: int
-    months: list[str]       # every month a counted row falls in
+    months: list[str]       # every month a counted row falls in, inside the period
     rows: int               # rows the ledger counts, in either view or neither
+    period: LedgerPeriod    # the period these rows were read for
 
 
 def month_of(when: datetime) -> str:
     return day_of(when).strftime("%Y-%m")
 
 
-async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
-    """The one reading of the ledger; the summary and the company view both use it."""
+async def company_rows(db: AsyncSession, org_id: str, period: Period | None = None) -> CompanyRows:
+    """The one reading of the ledger; the summary and the company view both use it.
+
+    Only rows booked in the period are returned (default: the last 12 months of data).
+    A row belongs to the month it is booked in (`transaction_date`), so a late item
+    written into the first open month, and a correction pair booked there, count in that
+    month; adjacent periods therefore add up to their union.
+    """
     from app.services.reconciliation import rows_settling_items
 
     rows = (await db.execute(
@@ -459,23 +536,45 @@ async def company_rows(db: AsyncSession, org_id: str) -> CompanyRows:
     # corrects: counted in profit only if that row is, whatever month the pair sits in.
     in_profit = {r.id for r in profit}
     corrections = [r for r in rows if r.corrects_id in in_profit and r.ledger_status != POSSIBLE_DUPLICATE]
+    available = sorted({month_of(r.transaction_date) for r in counted})
+    # A correction pair is booked after the month it corrects, possibly after the last
+    # money: the default period still reaches it (the pair is no month of data itself).
+    booked = sorted(set(available) | {month_of(r.transaction_date) for r in corrections})
+    start, end, is_default = resolve_period(period, booked)
+
+    def inside(r: Any) -> bool:
+        return start is not None and end is not None and start <= month_of(r.transaction_date) <= end
+
+    in_money = [r for r in money if inside(r)]
+    in_counted = [r for r in counted if inside(r)]
+    months = sorted({month_of(r.transaction_date) for r in in_counted})
+    shown = LedgerPeriod(
+        start=start, end=end, months=len(months),
+        label=f"{start} – {end}" if start and end else None, is_default=is_default,
+        available_start=available[0] if available else None,
+        available_end=available[-1] if available else None, available_months=len(available),
+    )
     return CompanyRows(
-        profit=profit + corrections,
+        profit=[r for r in profit + corrections if inside(r)],
         # A posting list with no bank statement beside it is the best view of cash.
         # A reclassification moves no cash: the pairs are not here.
         cash=[
-            r for r in counted
+            r for r in in_counted
             if r.basis == CASH or (r.basis == BOOK and month_of(r.transaction_date) not in cash_months)
         ],
-        possible_duplicates=len(money) - len(counted),
-        months=sorted({month_of(r.transaction_date) for r in counted}),
-        rows=len(counted),
+        possible_duplicates=len(in_money) - len(in_counted),
+        months=months,
+        rows=len(in_counted),
+        period=shown,
     )
 
 
-async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
-    """The company's figures from the ledger, in kuruş. What awaits a person waits."""
-    view = await company_rows(db, org_id)
+async def ledger_summary(db: AsyncSession, org_id: str, period: Period | None = None) -> dict[str, Any]:
+    """The company's figures from the ledger, in kuruş, for one period (default: last 12 months).
+
+    What awaits a person waits: open items are not a period's figures.
+    """
+    view = await company_rows(db, org_id, period)
     months = {m: {"cash_in_cents": 0, "cash_out_cents": 0} for m in view.months}
     for r in view.cash:
         key = "cash_in_cents" if r.direction == "income" else "cash_out_cents"
@@ -488,8 +587,6 @@ async def ledger_summary(db: AsyncSession, org_id: str) -> dict[str, Any]:
         "revenue_cents": sum(r.amount_cents for r in earned if r.direction == "income"),
         "expense_cents": sum(r.amount_cents for r in earned if r.direction != "income"),
         "possible_duplicates": view.possible_duplicates,
-        "period": {"start": view.months[0] if view.months else None,
-                   "end": view.months[-1] if view.months else None,
-                   "months": len(view.months)},
+        "period": view.period.as_dict(),
         "months": [{"month": m, **months[m]} for m in view.months],
     }
