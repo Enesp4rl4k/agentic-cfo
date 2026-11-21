@@ -175,7 +175,7 @@ def test_a_lira_entry_keeps_the_id_it_was_stored_with() -> None:
     or every existing approval would stop matching. The value is pinned: it is what the old code gave."""
     import uuid
 
-    from app.agents.accounting import double_entry as de
+    from app.agents.accounting import kayit_kimlik as de
 
     old = str(uuid.uuid5(de._KAYIT_NS, "2026-09-01|150000|expense|Kira Eylül|Ofis A.Ş.||#0"))
     assert kararli_kayit_id(_SAME_DAY) == old
