@@ -133,7 +133,10 @@ def tabloyu_bul(rows: list[list[Any]], bilinen: set[str], sayfa: str | None = No
         if not dolu:
             continue
         # Totals and sums at the foot of an export are not records.
-        if isinstance(dolu[0], str) and anahtar(dolu[0]).startswith(_TOPLAM):
+        # (only a line of figures: a row whose other cells are words is a record that happens to start with it)
+        if isinstance(dolu[0], str) and anahtar(dolu[0]).startswith(_TOPLAM) and all(
+            not isinstance(c, str) or sayi(c) is not None for c in dolu[1:]
+        ):
             continue
         data.append(row)
     above = " ".join(str(c) for row in rows[:best_i] for c in row if not bos(c))

@@ -81,8 +81,8 @@ POSITIVE_WITH_BORC_ALACAK_WORDS_AND_BALANCE = _csv(
 )
 ISLEM_TIPI = _csv(
     "Tarih;Açıklama;İşlem Tipi;Tutar",
-    "01.03.2026;Maaş;Ödeme;12.000,00",
-    "02.03.2026;Satış;Tahsilat;30.000,00",
+    "01.03.2026;Maaş;Giden Havale;12.000,00",
+    "02.03.2026;Satış;Gelen Havale;30.000,00",
 )
 SPLIT_BLANKS = _csv(
     "Tarih;Açıklama;Borç;Alacak",
@@ -196,9 +196,10 @@ def test_all_negative_without_a_balance_is_a_guess_and_is_held() -> None:
 def test_a_stray_reversal_does_not_make_every_other_row_income() -> None:
     rows = _read(_csv("Tarih;Açıklama;Tutar", *[f"{d:02d}.03.2026;Satış {d};100,00" for d in range(1, 10)],
                       "10.03.2026;İade;-100,00"))
-    assert totals(rows) == (0, 0, 10) and {r["direction_file"]["reason"] for r in rows} == {"no_signal"}
-    assert sign_is_informative([False] * 9 + [True]) is False        # 10%: a reversal, not a direction
+    assert totals(rows) == (0, 0, 10) and {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"}
+    assert sign_is_informative([False] * 9 + [True]) is False        # one reversal: asked, not assumed
     assert sign_is_informative([False, True, False, True]) is True    # genuinely mixed
+    assert sign_is_informative([True] * 37 + [False] * 3) is True     # an ordinary month: 37 out, 3 in
     assert sign_is_informative([True, True, True]) is False and sign_is_informative([False] * 3) is False
 
 
@@ -405,12 +406,13 @@ def _pdf_rows(*items: tuple[str | None, int, int | None]) -> list[dict[str, Any]
 
 
 def test_text_parsed_statements_are_checked_against_their_balance_too() -> None:
-    rows = _pdf_rows(("expense", 100, 900), ("expense", 200, 1100), ("expense", 50, 1150))
+    rows = _pdf_rows(("expense", 100, 900), ("expense", 200, 1100), ("expense", 50, 1150),
+                     ("expense", 10, 1160), ("expense", 40, 1200))
     # every balance went UP by the amount the parser read as money out: it read the file backwards
     hold = settle_rows(rows, "Garanti")
     assert hold is not None and hold["reason"] == "balance_contradicts"
-    assert [r["type"] for r in rows] == [None, None, None]
-    assert [r["direction_balance"] for r in rows] == ["income", "income", "income"]
+    assert [r["type"] for r in rows] == [None] * 5
+    assert [r["direction_balance"] for r in rows] == ["income"] * 5
 
 
 def test_a_text_statement_that_agrees_with_its_balance_is_untouched() -> None:
@@ -454,9 +456,12 @@ def test_header_aliases() -> None:
     assert norm_header("İşlem Tipi") == "islem tipi"
     assert header_signature(["Tarih", "Tutar"]) == header_signature(["TARİH", "tutar"])
     assert header_signature(["Tarih", "Tutar"]) != header_signature(["Tutar", "Tarih"])
-    for word, direction in (("B", "expense"), ("Borç", "expense"), ("Çıkış", "expense"), ("Ödeme", "expense"),
+    for word, direction in (("B", "expense"), ("Borç", "expense"), ("Çıkış", "expense"),
                             ("Debit", "expense"), ("A", "income"), ("Alacak", "income"), ("Giriş", "income"),
-                            ("Tahsilat", "income"), ("Credit", "income"), ("EFT", None), ("", None)):
+                            ("Tahsilat", "income"), ("Credit", "income"), ("EFT", None), ("", None),
+                            ("Gelen Ödeme", "income"), ("Giden Ödeme", "expense"), ("Gelen Havale", "income"),
+                            ("Giden EFT", "expense"), ("Para Yatırma", "income"), ("Para Çekme", "expense"),
+                            ("Ödeme", None), ("Havale", None), ("FAST", None), ("Virman", None)):
         assert value_direction(word) == direction, word
 
 
@@ -539,3 +544,109 @@ def test_one_direction_implementation_exists() -> None:
         if "_kodsuz_yon" in p.read_text(encoding="utf-8") or "def _parse_csv_transactions" in p.read_text(encoding="utf-8")
     ]
     assert not offenders, offenders
+
+
+# ── round 3: nothing is dropped unseen, skew is not punished, vocabulary is kept ─────────────────────────────
+
+def test_real_rows_that_merely_begin_like_a_summary_line_are_booked() -> None:
+    rows = _read(_csv(
+        "Tarih;Açıklama;Tutar",
+        "01.03.2026;Toplam fatura ödemesi;-1.500,00",
+        "02.03.2026;Devreden KDV;-300,00",
+        "03.03.2026;Total Wireless;-80,00",
+        "04.03.2026;Satış;5.000,00",
+    ))
+    assert [r["description"] for r in rows] == ["Toplam fatura ödemesi", "Devreden KDV", "Total Wireless", "Satış"]
+    assert totals(rows) == (500000, 188000, 0) and not any("summary_lines_skipped" in r for r in rows)
+
+
+def test_exact_summary_lines_are_skipped_and_counted() -> None:
+    rows = _read(_csv(
+        "Tarih;Açıklama;Tutar;Bakiye",
+        ";Devreden Bakiye;;10.000,00",
+        "02.03.2026;Kira;-400,00;9.600,00",
+        "03.03.2026;Satış;1.000,00;10.600,00",
+        "04.03.2026;Elektrik;-250,00;10.350,00",
+        ";Genel Toplam;;10.350,00",
+    ))
+    assert [r["description"] for r in rows] == ["Kira", "Satış", "Elektrik"]
+    assert rows[0]["summary_lines_skipped"] == 2                  # reported, not silent
+    from app.services.ingest.summary import ingest_summary
+
+    assert "2 özet satırı atlandı" in ingest_summary(rows, {}, 2)["summary"]
+
+
+def test_a_summary_phrase_with_a_date_and_an_amount_is_held_when_it_does_not_fit() -> None:
+    lines, balance = ["Tarih;Açıklama;Tutar;Bakiye"], 10000
+    for d in range(1, 11):
+        amount = 100 if d % 2 else -50
+        balance += amount
+        lines.append(f"{d:02d}.03.2026;Hareket {d};{amount},00;{balance},00")
+    lines.append("11.03.2026;Toplam;777,00;99.999,00")      # a date and an amount that does not fit the chain
+    rows = _read(_csv(*lines))
+    held = [r for r in rows if r.get("summary_suspect")]
+    assert [r["description"] for r in held] == ["Toplam"]
+    assert row_reasons({**held[0], "currency": "TRY"}) == ["summary_suspect"]
+    assert len(rows) == 11                                   # not skipped, not booked: held
+
+
+def test_a_collections_light_month_is_booked_without_a_question() -> None:
+    lines = ["Tarih;Açıklama;Tutar"] + [f"{d:02d}.03.2026;Ödeme {d};-{d * 10},00" for d in range(1, 11)]
+    lines += ["11.03.2026;Tahsilat;500,00", "12.03.2026;Tahsilat;300,00", "13.03.2026;Tahsilat;200,00"]
+    rows = _read(_csv(*lines))
+    assert totals(rows) == (100000, 55000, 0) and not any("direction_file" in r for r in rows)
+
+
+def test_two_stray_positives_among_payments_ask_once_and_the_sign_answer_books_it() -> None:
+    lines = ["Tarih;Açıklama;Tutar"] + [f"{d:02d}.03.2026;Ödeme {d};-{d},00" for d in range(1, 21)]
+    lines += ["21.03.2026;Tahsilat;50,00", "22.03.2026;Tahsilat;70,00"]
+    rows = _read(_csv(*lines))
+    assert {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"} and totals(rows)[:2] == (0, 0)
+    q = next(r["direction_question"] for r in rows if "direction_question" in r)
+    assert {m["means"] for m in q["mapping"]} == {"expense", "income"}
+    apply_to_rows(rows, "sign_correct")
+    assert totals(rows) == (12000, 21000, 0)
+
+
+def test_unambiguous_words_book_after_normalisation_and_the_question_quotes_the_files_own_columns(tmp_path) -> None:
+    from openpyxl import Workbook
+
+    from app.services.ingest.rows import _tablo_ekstresi
+
+    def sheet(name: str, debit: str, credit: str):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Tarih", "Açıklama", debit, credit])
+        ws.append(["01.03.2026", "Kira", "1.500,00", None])
+        ws.append(["02.03.2026", "Satış", None, "4.000,00"])
+        path = tmp_path / name
+        wb.save(path)
+        return _tablo_ekstresi(str(path)) or []
+
+    assert totals(sheet("cikis.xlsx", "Çıkış", "Giriş")) == (400000, 150000, 0)
+    assert totals(sheet("giden.xlsx", "Giden Tutar", "Gelen Tutar")) == (400000, 150000, 0)
+    asked = sheet("borc.xlsx", "Borç Tutarı", "Alacak Tutarı")
+    q = next(r["direction_question"] for r in asked if "direction_question" in r)
+    assert [m["label"] for m in q["mapping"]] == ["Borç Tutarı", "Alacak Tutarı"]
+    assert [c["name"] for c in q["columns"]][2:] == ["Borç Tutarı", "Alacak Tutarı"]
+
+
+def test_a_bare_payment_type_value_is_not_a_direction() -> None:
+    rows = _read(_csv(
+        "Tarih;Açıklama;İşlem Tipi;Tutar",
+        "01.03.2026;Kira;Ödeme;-100,00",
+        "02.03.2026;Satış;Havale;300,00",
+        "03.03.2026;Gaz;EFT;-50,00",
+    ))
+    assert [r["type"] for r in rows] == ["expense", "income", "expense"]            # by the sign, since the column is no direction
+    assert all("direction_file" not in r for r in rows)
+
+
+def test_a_two_row_text_statement_is_unverified_and_a_debit_credit_layout_asks() -> None:
+    two = _pdf_rows(("expense", 100, 900), ("income", 200, 1100))
+    assert settle_rows(two, "Ziraat", ambiguous=False) is None and [r["type"] for r in two] == ["expense", "income"]
+    asked = settle_rows(_pdf_rows(("expense", 100, 900), ("income", 200, 1100)), "Ziraat", ambiguous=True)
+    assert asked is not None and asked["reason"] == "convention_unverified"
+    five = _pdf_rows(("expense", 100, 900), ("income", 200, 1100), ("expense", 50, 1050),
+                     ("income", 10, 1060), ("expense", 60, 1000))
+    assert settle_rows(five, "Ziraat", ambiguous=True) is None                       # enough steps, all reconcile

@@ -122,6 +122,28 @@ describe("Bu ekstrede tutarlar hangi yönde?", () => {
   });
 });
 
+describe("which account, and the sign question", () => {
+  it("says an answer cannot be remembered for a file that names no account, and offers no box", async () => {
+    listFileQuestions.mockResolvedValue({ files: [{ ...convention, identity: false }], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText(/hangi banka hesabına ait olduğunu söylemiyor/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Bu ekstre biçimi için cevabımı hatırla")).toBeNull();
+  });
+
+  it("asks whether the signs are right when only a few amounts are negative", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({
+      files: [{ ...fileQuestionFixture, reason: "sign_unconfirmed", options: ["sign_correct", "mixed"] }],
+      canRemember: true,
+    });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    await user.click(await screen.findByRole("button", { name: "Tutarların işareti doğru: eksi = çıkan, artı = giren" }));
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "sign_correct", remember: true }),
+    );
+  });
+});
+
 describe("hatırlanan ekstre yönleri", () => {
   it("lists a remembered answer and forgets it on request", async () => {
     const user = userEvent.setup();

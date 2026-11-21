@@ -10,7 +10,9 @@ from __future__ import annotations
 from typing import Any
 
 
-def ingest_summary(accepted: list[dict[str, Any]], registered: dict[str, Any]) -> dict[str, Any]:
+def ingest_summary(
+    accepted: list[dict[str, Any]], registered: dict[str, Any], skipped_summary_lines: int = 0,
+) -> dict[str, Any]:
     held_now = int(registered.get("new", 0)) + int(registered.get("already_waiting", 0))
     assumed = sum(1 for r in accepted if r.get("currency_assumed"))
     parts = [f"{len(accepted)} kayıt işlendi"]
@@ -23,6 +25,8 @@ def ingest_summary(accepted: list[dict[str, Any]], registered: dict[str, Any]) -
         )
     if registered.get("already_rejected"):
         parts.append(f"{registered['already_rejected']} kayıt daha önce reddedildiği için tekrar sorulmadı")
+    if skipped_summary_lines:
+        parts.append(f"{skipped_summary_lines} özet satırı atlandı")
     if assumed:
         parts.append(f"{assumed} kaydın para birimi belgede yok, şirketin onaylı para birimi kullanıldı")
     return {
@@ -30,5 +34,6 @@ def ingest_summary(accepted: list[dict[str, Any]], registered: dict[str, Any]) -
         "held": held_now,
         "currency_assumed": assumed,
         "already_rejected": int(registered.get("already_rejected", 0)),
+        "summary_lines_skipped": skipped_summary_lines,
         "summary": "; ".join(parts) + ".",
     }

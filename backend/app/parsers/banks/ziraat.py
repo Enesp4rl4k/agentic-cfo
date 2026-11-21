@@ -9,6 +9,8 @@ from app.parsers.direction import sign_is_informative
 
 class ZiraatParser(BankParser):
     bank_id = "ziraat"
+    # Printed as Borç/Alacak columns: whose book that is differs between banks, so it needs a balance to verify it.
+    debit_credit_layout = True
     bank_display_name = "Ziraat Bankası"
     _MARKERS = ["ZİRAAT BANKASI", "T.C. ZİRAAT", "Ziraat Bankası", "ZIRAAT"]
 

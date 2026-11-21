@@ -191,6 +191,7 @@ export const heldNoCurrencyFixture = {
 export const fileQuestionFixture = {
   job_id: "j9",
   file_key: "f9",
+  identity: true,
   reason: "no_signal",
   rows: 2,
   options: ["mixed", "only_expense", "only_income"],

@@ -8,6 +8,8 @@ from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 class IsBankParser(BankParser):
     bank_id = "isbank"
+    # Printed as Borç/Alacak columns: whose book that is differs between banks, so it needs a balance to verify it.
+    debit_credit_layout = True
     bank_display_name = "Türkiye İş Bankası"
     _MARKERS = ["TÜRKİYE İŞ BANKASI", "İş Bankası", "ISBANK", "İşCep", "İşBankası"]
 

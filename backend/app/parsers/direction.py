@@ -47,6 +47,8 @@ BALANCE_CONTRADICTS = "balance_contradicts"
 BALANCE_INCONCLUSIVE = "balance_inconclusive"
 # A direction from a debit/credit word (the bank's book or the customer's?) that no balance can verify.
 CONVENTION_UNVERIFIED = "convention_unverified"
+# One signed column whose rarer sign occurs only once or twice: probably right, but a stray reversal looks the same.
+SIGN_UNCONFIRMED = "sign_unconfirmed"
 
 # ── money ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,8 @@ _DIRECTION = frozenset({
 _DATE = frozenset({"tarih", "date", "islem tarihi", "transaction date", "valor"})
 _DESCRIPTION = frozenset({"aciklama", "description", "detay", "islem aciklamasi", "aciklama detayi"})
 
+DEBIT_ALIASES = _DEBIT
+CREDIT_ALIASES = _CREDIT
 AMOUNT_COLUMNS = _DEBIT | _CREDIT | _AMOUNT   # any of them makes a table a statement
 
 
@@ -136,14 +140,16 @@ def is_statement_header(headers: list[str]) -> bool:
 
 
 _OUT_VALUES = frozenset({
-    "b", "borc", "borclu", "debit", "d", "dr", "cikis", "cikan", "odeme", "gider", "expense", "withdrawal", "giden",
-    "para cikisi", "para cekme", "havale giden",
+    "b", "borc", "borclu", "debit", "d", "dr", "cikis", "cikan", "gider", "expense", "withdrawal", "giden",
+    "para cikisi", "para cekme", "havale giden", "giden odeme", "giden havale", "giden eft", "giden fast",
 })
+# A bare "Ödeme", "Havale", "EFT", "FAST" or "Virman" names the kind of transaction, not its direction.
 _IN_VALUES = frozenset({
     "a", "alacak", "alacakli", "credit", "c", "cr", "giris", "giren", "tahsilat", "gelir", "income", "deposit",
-    "gelen", "para girisi", "para yatirma", "havale gelen",
+    "gelen", "para girisi", "para yatirma", "havale gelen", "gelen odeme", "gelen havale", "gelen eft", "gelen fast",
 })
-_LEADING_WORDS = {"borc": EXPENSE, "alacak": INCOME, "debit": EXPENSE, "credit": INCOME}
+_LEADING_WORDS = {"borc": EXPENSE, "alacak": INCOME, "debit": EXPENSE, "credit": INCOME,
+                  "gelen": INCOME, "giden": EXPENSE}
 
 # Debit/credit words are the BOOK's words: whose book (the customer's or the bank's) differs between
 # exports. Words that name the movement itself (Çıkış, Giden, Ödeme, Withdrawal ...) do not.
@@ -168,7 +174,7 @@ def value_direction(raw: Any) -> str | None:
 def value_is_ambiguous(raw: Any) -> bool:
     """Whether a direction value is a debit/credit word (the convention is the bank's to choose)."""
     v = norm_header(str(raw or ""))
-    return v in _AMBIGUOUS_WORDS or (len(v.split()) > 1 and v.split()[0] in _LEADING_WORDS)
+    return v in _AMBIGUOUS_WORDS or (len(v.split()) > 1 and v.split()[0] in ("borc", "alacak", "debit", "credit"))
 
 
 def header_signature(headers: list[str], identity: str = "") -> str:
@@ -198,25 +204,36 @@ def statement_identity(text: str) -> str:
     return ""
 
 
-_NON_TRANSACTION = ("devreden", "devir", "toplam", "genel toplam", "ara toplam", "acilis bakiye", "kapanis bakiye",
-                    "donem sonu", "opening balance", "closing balance", "balance forward", "brought forward",
-                    "total", "subtotal")
+_SUMMARY_LINES = frozenset({
+    "devreden bakiye", "devir bakiye", "devreden", "devir", "toplam", "ara toplam", "genel toplam",
+    "donem sonu bakiye", "donem sonu bakiyesi", "acilis bakiyesi", "acilis bakiye", "kapanis bakiyesi", "kapanis bakiye",
+    "opening balance", "closing balance", "balance forward", "brought forward", "total", "subtotal", "grand total",
+})
+
+
+def is_summary_phrase(description: str) -> bool:
+    """The whole description is a summary phrase ("Devreden Bakiye", "Toplam"). Never a prefix: "Toplam fatura
+    ödemesi", "Devreden KDV" and a vendor called "Total Wireless" are transactions."""
+    return norm_header(description) in _SUMMARY_LINES
 
 
 def is_non_transaction(description: str) -> bool:
-    """A "Devreden Bakiye", "Toplam" or "Ara Toplam" line: a total or a carried balance, not a movement."""
-    words = norm_header(description)
-    return bool(words) and any(words == p or words.startswith(p + " ") for p in _NON_TRANSACTION)
+    """Kept for callers that only have the description: the exact summary phrase. A row also needs the
+    structural test in `app.services.ingest.rows` (no date, or no amount) before it is skipped."""
+    return is_summary_phrase(description)
 
 
 def sign_is_informative(negatives: list[bool]) -> bool:
-    """Whether the signs of one amount column say which way money went: both signs are present and the
-    rarer one is a real share (15%) of the rows. One reversal in a column of positives is not a direction,
-    and neither is a column of only negatives (the sign may just be how that export writes amounts)."""
+    """Whether the signs of one amount column say which way money went: both signs occur, and the rarer
+    one occurs at least three times or is 15% of the rows (an ordinary month: 40 payments out, 3 collections in).
+    One or two reversals in a column of positives are not a direction (that file is asked, `sign_unconfirmed`),
+    and neither is a column with no negative or only negatives (the sign may just be how that export writes
+    amounts)."""
     if not negatives:
         return False
     neg = sum(negatives)
-    return 0 < neg < len(negatives) and min(neg, len(negatives) - neg) / len(negatives) >= 0.15
+    rarer = min(neg, len(negatives) - neg)
+    return rarer >= 1 and (rarer >= 3 or rarer / len(negatives) >= 0.15)
 
 
 # ── per-file resolution ──────────────────────────────────────────────────────
@@ -296,10 +313,13 @@ def _chain(mags: list[int | None], dirs: list[str | None], bals: list[int | None
     return best
 
 
-def verdict(mags: list[int | None], dirs: list[str | None], bals: list[int | None]) -> str:
-    """confirmed | inverted | inconclusive | unverified: does the balance agree with the directions read?"""
+def verdict(
+    mags: list[int | None], dirs: list[str | None], bals: list[int | None], min_steps: int = 1,
+) -> str:
+    """confirmed | inverted | inconclusive | unverified: does the balance agree with the directions read?
+    Fewer than `min_steps` checkable steps is not evidence (text-parsed statements need three)."""
     c = _chain(mags, dirs, bals)
-    if c.total < 1:
+    if c.total < min_steps:
         return "unverified"
     if c.matches / c.total >= 0.9:
         return "confirmed"
@@ -340,10 +360,11 @@ def _from_balance(mags: list[int | None], bals: list[int | None]) -> list[str | 
 
 def _question(
     headers: list[str], roles: dict[str, str], rows: list[dict[str, str]], reason: str, note: str,
-    mapping: list[dict[str, str]] | None = None,
+    mapping: list[dict[str, str]] | None = None, display: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    shown_as = display or {}
     labels = {v: k for k, v in roles.items()}
-    columns = [{"name": h, "role": labels.get(h)} for h in headers if h and h.strip()]
+    columns = [{"name": shown_as.get(h, h), "role": labels.get(h)} for h in headers if h and h.strip()]
     shown = [r for r in ("date", "description", "amount", "debit", "credit", "direction", "balance") if r in roles]
     samples = [{r: str(row.get(roles[r], "")).strip() for r in shown} for row in rows[:3]]
     return {"reason": reason, "columns": columns, "samples": samples, "note": note, "mapping": mapping or []}
@@ -351,10 +372,12 @@ def _question(
 
 def _convention_mapping(
     roles: dict[str, str], rows: list[dict[str, str]], direction_column: str | None, split: bool,
+    display: dict[str, str] | None = None,
 ) -> list[dict[str, str]]:
     """What the detected reading says each debit/credit word means: [{label, means}]."""
     if split:
-        return [{"label": roles[k], "means": m} for k, m in (("debit", EXPENSE), ("credit", INCOME)) if k in roles]
+        return [{"label": (display or {}).get(roles[k], roles[k]), "means": m}
+                for k, m in (("debit", EXPENSE), ("credit", INCOME)) if k in roles]
     seen: dict[str, str] = {}
     for row in rows:
         value = str(row.get(direction_column or "", "")).strip()
@@ -365,6 +388,7 @@ def _convention_mapping(
 
 def resolve_file(
     headers: list[str], rows: list[dict[str, str]], skip: frozenset[int] = frozenset(), identity: str = "",
+    labels: dict[str, str] | None = None,
 ) -> FileDirection:
     """Direction and amount of every row of one statement table, by the precedence in the module doc.
 
@@ -397,7 +421,7 @@ def resolve_file(
     def hold_file(reason: str, note: str, out_reads: list[str | None], hints: list[str | None],
                   mapping: list[dict[str, str]] | None = None) -> FileDirection:
         hold = {"reason": reason, "signature": signature, "identity": bool(identity),
-                "question": _question(headers, roles, rows, reason, note, mapping)}
+                "question": _question(headers, roles, rows, reason, note, mapping, labels)}
         return FileDirection(
             [RowDirection(None, mags[i], out_reads[i], hints[i], notes_per_row[i]) for i in range(n)],
             [f"yön: dosya tek soruyla bekliyor ({reason})"], hold,
@@ -452,6 +476,15 @@ def resolve_file(
             reads[i] = EXPENSE if negative[i] else INCOME
 
     has_signal = split or direction_column is not None or sign_informative
+    if (not has_signal and sign_rows and 0 < sum(negative[i] for i in sign_rows) < len(sign_rows)
+            and not any(reads)):
+        tentative = [None] * n
+        for i in sign_rows:
+            tentative[i] = EXPENSE if negative[i] else INCOME
+        return hold_file(
+            SIGN_UNCONFIRMED,
+            "Eksi işaretli tutar çok az; işaret yönü gösteriyor olabilir ama tek bir iade de olabilir.",
+            tentative, [None] * n, [{"label": "-", "means": EXPENSE}, {"label": "+", "means": INCOME}])
     ambiguous = (split and any(norm_header(roles[k]) in _AMBIGUOUS_WORDS for k in ("debit", "credit") if k in roles)) or (
         direction_column is not None and any(value_is_ambiguous(v) for v in column_values if v)
     )
@@ -483,7 +516,7 @@ def resolve_file(
             BALANCE_INCONCLUSIVE,
             f"Bakiye hareketi satırların yalnızca %{rate}'ini doğruluyor; dosya güvenle okunamadı.", reads, [None] * n)
     if state == "unverified" and ambiguous:
-        mapping = _convention_mapping(roles, rows, direction_column, split)
+        mapping = _convention_mapping(roles, rows, direction_column, split, labels)
         return hold_file(
             CONVENTION_UNVERIFIED,
             "Borç/Alacak sözcükleri bankaya göre değişir ve bakiye sütunu olmadığından doğrulanamadı.",
@@ -503,8 +536,13 @@ def resolve_file(
     ], notes)
 
 
-def settle_rows(rows: list[dict[str, Any]], signature_material: str) -> dict[str, Any] | None:
+def settle_rows(
+    rows: list[dict[str, Any]], signature_material: str, *, ambiguous: bool = False, identity: bool = False,
+) -> dict[str, Any] | None:
     """The same checks for rows a text parser already read (type, amount_cents, balance_cents).
+
+    A text statement counts as verified only with at least three reconciling balance steps (>= 90%): two
+    rows prove nothing. Unverified and read from a Borç/Alacak layout (`ambiguous`): held, asked once.
 
     Mutates `rows` when the file is held whole (every `type` cleared, `direction_file` set by the
     caller) and returns the hold; returns None otherwise. A row a parser could not place has
@@ -517,7 +555,7 @@ def settle_rows(rows: list[dict[str, Any]], signature_material: str) -> dict[str
     samples = [{"description": str(r.get("description", "")), "amount": str(r.get("amount_cents"))} for r in rows[:3]]
 
     def hold(reason: str, note: str) -> dict[str, Any]:
-        return {"signature": signature, "reason": reason, "identity": False,
+        return {"signature": signature, "reason": reason, "identity": identity,
                 "question": {"columns": [], "samples": samples, "reason": reason, "note": note, "mapping": []}}
 
     if rows and not any(reads):
@@ -527,7 +565,7 @@ def settle_rows(rows: list[dict[str, Any]], signature_material: str) -> dict[str
         for r, d in zip(rows, derived, strict=True):
             r["type"] = d
         return None
-    state = verdict(mags, reads, bals)
+    state = verdict(mags, reads, bals, min_steps=3)
     if state == "inverted":
         for r, d in zip(rows, reads, strict=True):
             r["direction_read"], r["direction_balance"], r["type"] = d, _flip(d), None
@@ -540,4 +578,9 @@ def settle_rows(rows: list[dict[str, Any]], signature_material: str) -> dict[str
     if state == "confirmed":
         for i in _chain(mags, reads, bals).bad:
             rows[i]["type"], rows[i]["balance_mismatch"] = None, True
+    elif state == "unverified" and ambiguous:
+        for r, d in zip(rows, reads, strict=True):
+            r["direction_read"], r["direction_balance"], r["type"] = d, _flip(d), None
+        return hold(CONVENTION_UNVERIFIED,
+                    "Borç/Alacak sözcükleri bankaya göre değişir; yeterli bakiye adımı olmadığından doğrulanamadı.")
     return None

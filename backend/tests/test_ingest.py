@@ -82,7 +82,7 @@ def test_a_bank_export_under_its_title_rows():
     rows = _csv_rows(standart_csv(t.tablo, t.tur)[0])
     # The two columns reach the statement reader as they are: which way each moved the money is
     # decided there (app.parsers.direction), never by the column normaliser. TOPLAM is not a row.
-    assert [(r["tarih"], r["borç"], r["alacak"]) for r in rows] == [
+    assert [(r["tarih"], r["Borç"], r["Alacak"]) for r in rows] == [
         ("2024-01-05", "28500", ""), ("2024-01-06", "", "10000"),
     ]
 

@@ -439,7 +439,8 @@ async def _belgeyi_oku(
                 parser = detected_bank(own_vkn=await org_vkn(state.get("org_id")))
             statement: ParsedStatement = await asyncio.to_thread(parser.parse, raw_text, file_path)
             transactions = _statement_to_transactions(statement)
-            _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text)
+            ambiguous = bool(getattr(detected_bank, "debit_credit_layout", False))
+            _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text, ambiguous)
 
             if transactions:
                 parseable = sum(

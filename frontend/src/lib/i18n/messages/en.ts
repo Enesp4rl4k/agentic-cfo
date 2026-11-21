@@ -2669,6 +2669,8 @@ export type MessageTree = {
     fileConventionQuestion: string;
     fileConventionMapping: string;
     fileRememberDenied: string;
+    fileBodySign: string;
+    fileNoAccount: string;
     fileRows: string;
     fileColumns: string;
     fileSamples: string;
@@ -5619,6 +5621,7 @@ export const en: MessageTree = {
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
       direction_file_unknown: "direction unclear",
+      summary_suspect: "may be a summary line",
       balance_mismatch: "does not reconcile with the balance",
     },
     fileTitle: "Which way do the amounts in this statement go?",
@@ -5628,6 +5631,8 @@ export const en: MessageTree = {
     fileBodyInconclusive: "The balance column confirms only part of the rows; the file could not be read with confidence.",
     fileConventionQuestion: "In this statement, is \"{label}\" money going OUT of your account?",
     fileConventionMapping: "Read as: {mapping}",
+    fileBodySign: "There are very few negative amounts: the sign may show the direction, or it may be a single refund. Your one answer applies to every row of the file.",
+    fileNoAccount: "This file does not say which bank account it is from; the answer applies to this file and cannot be remembered for the format.",
     fileRememberDenied: "Remembering this answer for the format needs an owner, admin or the accountant.",
     fileRows: "{count} rows waiting",
     fileColumns: "Detected columns",
@@ -5647,6 +5652,7 @@ export const en: MessageTree = {
       only_expense: "This file holds only money out (expense)",
       as_read: "Yes, as the columns say",
       balance: "As the balance shows",
+      sign_correct: "The signs are right: minus = money out, plus = money in",
       inverted: "No, the opposite",
       mixed: "I will correct the rows one by one",
     },

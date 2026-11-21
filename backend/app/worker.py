@@ -458,7 +458,10 @@ async def run_cfo_analysis(
             meta = dict(job.result_metadata or {})
             from app.services.ingest.summary import ingest_summary
 
-            meta["ingest"] = ingest_summary(persisted_rows, registered)
+            meta["ingest"] = ingest_summary(
+                persisted_rows, registered,
+                sum(int(r.get("summary_lines_skipped") or 0) for r in [*persisted_rows, *held_rows]),
+            )
             if terminal == JobStatus.COMPLETED and job.org_id:
                 # What follows a completed analysis (ledger, company view,
                 # chain) is owed from the moment the job reads completed, so the

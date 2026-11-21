@@ -274,7 +274,10 @@ def standart_csv(tablo: Tablo, tur: str) -> tuple[str, dict[str, str]]:
         if ad and ad not in kullanilan:
             kullanilan.add(ad)
             eslesme[ad] = h
-            cikis.append((i, ad, alan_by_ad[ad], 12 if (tur, anahtar(h)) in _AYLIK else 1))
+            # A statement's debit/credit columns keep the file's own words: "Giden" and "Çıkış" name the
+            # movement, "Borç" and "Alacak" name a book, and the direction resolver must tell them apart.
+            shown = h if tur == S.BANKA_EKSTRESI and ad in ("borç", "alacak") else ad
+            cikis.append((i, shown, alan_by_ad[ad], 12 if (tur, anahtar(h)) in _AYLIK else 1))
         elif h:
             cikis.append((i, h, None, 1))
 

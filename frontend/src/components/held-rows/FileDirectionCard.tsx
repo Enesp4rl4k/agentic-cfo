@@ -34,7 +34,11 @@ export function FileDirectionCard({
   const shown = SAMPLE_COLUMNS.filter((role) => samples.some((s) => role in s));
   // Only a convention (or a balance that contradicts the columns) is a property of the statement FORMAT;
   // "this file holds only one kind" is a statement about one file and is never remembered.
-  const rememberable = file.reason === "convention_unverified" || file.reason === "balance_contradicts";
+  const rememberable =
+    file.reason === "convention_unverified" || file.reason === "balance_contradicts" || file.reason === "sign_unconfirmed";
+  // A convention or a sign answer is only worth remembering for a known account; without one it could never be checked.
+  const needsAccount = file.reason === "convention_unverified" || file.reason === "sign_unconfirmed";
+  const storable = rememberable && canRemember && (file.identity || !needsAccount);
   const mapping = file.question?.mapping ?? [];
   const outLabel = mapping.find((m) => m.means === "expense")?.label;
   const body = {
@@ -42,6 +46,7 @@ export function FileDirectionCard({
     balance_contradicts: copy.fileBodyBalance,
     convention_unverified: copy.fileBodyConvention,
     balance_inconclusive: copy.fileBodyInconclusive,
+    sign_unconfirmed: copy.fileBodySign,
   }[file.reason];
   const meaning = (m: { label: string; means: string }) =>
     `${m.label} → ${m.means === "expense" ? copy.expense : copy.income}`;
@@ -95,20 +100,23 @@ export function FileDirectionCard({
         </div>
       )}
 
-      {rememberable && canRemember && (
+      {storable && (
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
           {copy.fileRemember}
         </label>
       )}
       {rememberable && !canRemember && <p className="text-xs text-muted-foreground">{copy.fileRememberDenied}</p>}
+      {rememberable && canRemember && !storable && (
+        <p className="text-xs text-muted-foreground">{copy.fileNoAccount}</p>
+      )}
       <div className="flex flex-wrap gap-2">
         {file.options.map((answer) => (
           <Button
             key={answer}
             variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
             disabled={pending}
-            onClick={() => onAnswer(answer, rememberable && canRemember && remember && answer !== "mixed")}
+            onClick={() => onAnswer(answer, storable && remember && answer !== "mixed")}
           >
             {options[answer] ?? answer}
           </Button>

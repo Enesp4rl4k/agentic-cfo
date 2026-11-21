@@ -10,6 +10,7 @@ export type HeldReason =
   | "direction_unknown"
   | "direction_file_unknown"
   | "balance_mismatch"
+  | "summary_suspect"
   | "amount_unreadable"
   | "date_unreadable"
   | "document_held_together";
@@ -88,14 +89,16 @@ export async function confirmBaseCurrency(currency: string): Promise<void> {
 // A statement file whose direction nobody could place: ONE question for the file, answered once and
 // applied to every row (backend app/services/held_direction.py).
 
-export type FileAnswer = "only_income" | "only_expense" | "as_read" | "balance" | "inverted" | "mixed";
+export type FileAnswer = "only_income" | "only_expense" | "as_read" | "balance" | "inverted" | "sign_correct" | "mixed";
 
-export type FileReason = "no_signal" | "balance_contradicts" | "convention_unverified" | "balance_inconclusive";
+export type FileReason = "no_signal" | "balance_contradicts" | "convention_unverified" | "balance_inconclusive" | "sign_unconfirmed";
 
 export interface FileQuestion {
   job_id: string;
   file_key: string;
   reason: FileReason;
+  /** Whether the file names its bank account: without that an answer cannot be remembered for it. */
+  identity: boolean;
   rows: number;
   options: FileAnswer[];
   question: {

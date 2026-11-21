@@ -14,10 +14,13 @@ from app.core.turkish import fold
 from app.parsers.base import ParsedStatement
 from app.parsers.direction import (
     AMOUNT_COLUMNS,
+    CREDIT_ALIASES,
+    DEBIT_ALIASES,
     FileDirection,
     RowDirection,
-    is_non_transaction,
+    is_summary_phrase,
     norm_header,
+    parse_money,
     resolve_file,
     signed_money,
     statement_identity,
@@ -72,12 +75,13 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
     return transactions
 
 
-def _pdf_yonu(transactions: list[dict[str, Any]], bank: str, raw_text: str) -> None:
+def _pdf_yonu(transactions: list[dict[str, Any]], bank: str, raw_text: str, ambiguous: bool = False) -> None:
     """Text-parsed statements get the same checks as tables: the balance verifies the directions the
     parser read (and reads them when it could not), and a statement nothing can place is held whole."""
     from app.parsers.direction import settle_rows
 
-    hold = settle_rows(transactions, bank)
+    identity = statement_identity(raw_text)
+    hold = settle_rows(transactions, f"{bank}||{identity}", ambiguous=ambiguous, identity=bool(identity))
     if hold is None:
         return
     key = hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16]
@@ -233,7 +237,7 @@ def _csv_satiri(
     }
     if hesap is not None:
         raw_amt = _ilk(r_lower, "amount", "tutar") or "0"
-        borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
+        borc, alacak = _kolon(r_lower, DEBIT_ALIASES), _kolon(r_lower, CREDIT_ALIASES)
         satir = _hesap_kodlu_satir(hesap, borc, alacak, raw_amt, raw_desc, raw_cat)
         if satir is None:
             if atlanan is not None:
@@ -311,10 +315,18 @@ def _try_parse_csv(
         # A carried balance or a total line is not a movement: not booked, not held, but its balance anchors
         # the check of the rows around it.
         desc = ("description", "aciklama", "detay")
-        notmoves = {i for i in uncoded if is_non_transaction(_ilk(rows[i], *desc))}
+        # A line is a summary line only if it is structurally one: its WHOLE description is a summary phrase
+        # and it has no date or carries no amount. "Toplam fatura ödemesi" is a payment. A phrase line that
+        # has a date AND an amount is a transaction; if it does not fit the balance chain it is held
+        # ("özet satırı olabilir"), never skipped.
+        phrased = {i for i in uncoded if is_summary_phrase(_ilk(rows[i], *desc))}
+        notmoves = {i for i in phrased if not _tutarli(rows[i]) or _parse_date(_ilk(rows[i], "date", "tarih", "islem tarihi")) is None}
+        suspects = phrased - notmoves
+        has_balance = bool({norm_header(h) for h in headers} & {"bakiye", "balance"})
         settled = resolve_file(
             headers, [rows[i] for i in uncoded], frozenset(k for k, i in enumerate(uncoded) if i in notmoves),
             identity or statement_identity(raw_text.split(chr(10), 1)[0]),
+            {fold(f.strip()): f.strip() for f in reader.fieldnames if f},
         )
         yonler = dict(zip(uncoded, settled.rows, strict=True))
         transactions: list[dict[str, Any]] = []
@@ -325,14 +337,32 @@ def _try_parse_csv(
             tx = _csv_satiri(r, atlanan, yonler.get(i))
             if tx is None:
                 continue
+            if i in suspects and (not has_balance or (yonler.get(i) and yonler[i].mismatch)):
+                tx["summary_suspect"] = True
             if mark := _dosya_isareti(settled, yonler.get(i), raw_text):
                 tx["direction_file"] = mark
                 if not asked and settled.hold is not None:
                     tx["direction_question"], asked = settled.hold["question"], True
             transactions.append(tx)
+        if transactions and notmoves:
+            # Nothing disappears unseen: the upload result says how many summary lines were left out.
+            transactions[0]["summary_lines_skipped"] = len(notmoves)
         return transactions or None
     except Exception:
         return None
+
+
+def _kolon(r_lower: dict[str, str], aliases: frozenset[str]) -> str:
+    """The first non-empty cell of a column whose header is one of these (folded) aliases."""
+    return next((v for k, v in r_lower.items() if v and norm_header(k) in aliases), "")
+
+
+def _tutarli(row: dict[str, str]) -> bool:
+    """Whether the row carries a debit, credit or amount that is not zero."""
+    for key, cell in row.items():
+        if norm_header(key) in AMOUNT_COLUMNS and (m := parse_money(cell)) is not None and m[0]:
+            return True
+    return False
 
 
 def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:

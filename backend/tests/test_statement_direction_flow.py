@@ -103,7 +103,7 @@ async def test_a_debit_credit_file_is_asked_first_and_the_answer_is_remembered_f
     assert await _transactions(client, job_id) == []                       # the first upload books nothing unasked
     asked = (await _questions(client, headers))[0]
     assert asked["reason"] == "convention_unverified" and asked["options"] == ["as_read", "inverted", "mixed"]
-    assert asked["question"]["mapping"] == [{"label": "borc", "means": "expense"}, {"label": "alacak", "means": "income"}]
+    assert asked["question"]["mapping"] == [{"label": "Borç", "means": "expense"}, {"label": "Alacak", "means": "income"}]
     assert asked["question"]["samples"][0]["description"] == "Kira"
     res = await client.post("/api/v1/held-rows/file-direction", headers=headers,
                             json={"job_id": job_id, "file_key": asked["file_key"], "answer": "inverted"})

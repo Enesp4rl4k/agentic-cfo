@@ -37,6 +37,7 @@ from app.parsers.direction import (
     BALANCE_INCONCLUSIVE,
     CONVENTION_UNVERIFIED,
     NO_SIGNAL,
+    SIGN_UNCONFIRMED,
 )
 from app.services import held_rows
 from app.services.decisions import record_decision
@@ -48,11 +49,14 @@ ANSWERS: dict[str, frozenset[str]] = {
     BALANCE_CONTRADICTS: frozenset({"as_read", "balance", MIXED}),
     CONVENTION_UNVERIFIED: frozenset({"as_read", "inverted", MIXED}),
     BALANCE_INCONCLUSIVE: frozenset({"as_read", MIXED}),
+    SIGN_UNCONFIRMED: frozenset({"sign_correct", MIXED}),
 }
 _FIXED = {"only_income": "income", "only_expense": "expense"}
 # (reason, answer) pairs worth remembering: a statement format's convention, not a statement about one file.
 REMEMBERABLE = frozenset({(CONVENTION_UNVERIFIED, "as_read"), (CONVENTION_UNVERIFIED, "inverted"),
-                          (BALANCE_CONTRADICTS, "balance")})
+                          (BALANCE_CONTRADICTS, "balance"), (SIGN_UNCONFIRMED, "sign_correct")})
+# These need to know WHICH account the file is from, or the memory could never be checked.
+NEEDS_IDENTITY = frozenset({CONVENTION_UNVERIFIED, SIGN_UNCONFIRMED})
 
 
 class AnswerError(ValueError):
@@ -63,7 +67,7 @@ def _type_for(payload: dict[str, Any], answer: str) -> str | None:
     mark = payload.get("direction_file") or {}
     if answer in _FIXED:
         return _FIXED[answer]
-    if answer == "as_read":
+    if answer in ("as_read", "sign_correct"):
         return mark.get("read")
     return mark.get("balance") if answer in ("balance", "inverted") else None
 
@@ -121,7 +125,7 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
             continue
         sig, reason = mark["signature"], mark["reason"]
         answer: str | None = None
-        if reason == CONVENTION_UNVERIFIED and mark.get("identity"):
+        if reason in NEEDS_IDENTITY and mark.get("identity"):
             m = known.get((sig, reason))
             answer = m.answer if m else None
         elif reason == BALANCE_CONTRADICTS:
@@ -132,7 +136,7 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
                 answer = "balance"
             elif convention is not None and convention.answer == "inverted":
                 answer = "balance"                  # the bank-view reading is what this balance shows
-        if answer and (reason, answer) in REMEMBERABLE | {(BALANCE_CONTRADICTS, "balance")}:
+        if answer and (reason, answer) in REMEMBERABLE:
             apply_to_rows([row], answer)
             row["direction_remembered"] = answer
             settled += 1
@@ -163,7 +167,7 @@ async def list_questions(db: AsyncSession, org_id: str) -> list[dict[str, Any]]:
             continue
         entry = out.setdefault((row.job_id, mark["key"]), {
             "job_id": row.job_id, "file_key": mark["key"], "reason": mark["reason"],
-            "signature": mark["signature"], "rows": 0, "question": None,
+            "signature": mark["signature"], "identity": bool(mark.get("identity")), "rows": 0, "question": None,
             "options": sorted(ANSWERS.get(mark["reason"], frozenset())),
         })
         entry["rows"] += 1
@@ -203,16 +207,19 @@ async def answer_file(
         db, org_id, user_id=user_id, release=True, ids=releasable, corrections=fixes,
         note=note or f"file direction: {answer}",
     ) if releasable else ({"resolved": 0, "blocked": [], "already_resolved": 0}, set())
+    can_store = (mark["reason"], answer) in REMEMBERABLE and (
+        mark["reason"] not in NEEDS_IDENTITY or bool(mark.get("identity"))
+    )
     await record_decision(
         db, org_id=org_id, kind=DecisionKind.FILE_DIRECTION_ANSWER, target_type="statement_file",
         target_id=file_key, outcome=answer, decided_via=DecidedVia.HUMAN, decided_by=user_id, reason=note,
         evidence_refs=[{"type": "analysis_job", "id": job_id}],
         before={"reason": mark["reason"], "rows": len(rows), "signature": mark["signature"]},
         after={"answer": answer, "released": result["resolved"], "still_waiting_rows": len(waiting),
-               "remembered": bool(remember and (mark["reason"], answer) in REMEMBERABLE)},
+               "remembered": bool(remember and can_store)},
     )
     remembered = None
-    if remember and (mark["reason"], answer) in REMEMBERABLE:
+    if remember and can_store:
         asked = next((r.payload["direction_question"] for r in rows if r.payload.get("direction_question")), {})
         remembered = await _remember(db, org_id, user_id, mark, answer, asked)
     await db.commit()

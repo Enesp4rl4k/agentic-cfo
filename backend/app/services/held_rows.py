@@ -50,6 +50,7 @@ REASON_TEXT: dict[str, str] = {
     "direction_unknown": "yön belirsiz",
     "direction_file_unknown": "yön belirsiz",
     "balance_mismatch": "bakiye ile uyuşmuyor",
+    "summary_suspect": "özet satırı olabilir",
     "amount_unreadable": "tutar okunamadı",
     "date_unreadable": "tarih okunamadı",
     "document_held_together": "aynı belgenin başka bir satırı bekliyor",
