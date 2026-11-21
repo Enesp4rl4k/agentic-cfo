@@ -110,7 +110,7 @@ RETAINED: dict[str, Retained] = {
         "accounting record (TTK 82 / VUK 253; period undecided, G19)",
         scrub=("counterparty", "description"),
         keep=("source_type", "source_record_id", "currency", "direction", "category",
-              "account_code", "ledger_status", "duplicate_of", "basis"),
+              "account_code", "ledger_status", "duplicate_of", "basis", "asil_donem"),
     ),
     "journal_entries": Retained(
         "journal (TTK 82 / VUK 253; period undecided, G19)",
