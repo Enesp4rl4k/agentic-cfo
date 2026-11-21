@@ -19,7 +19,8 @@ DEMO = Path(__file__).resolve().parents[2] / "demo" / "data" / "logo_tiger_2024.
 
 @pytest.fixture
 def dashboard() -> dict:
-    txs = _tablo_ekstresi(str(DEMO))
+    # The Logo export states no currency; ingestion would settle it (hold.resolve_currency): lira here.
+    txs = [{**t, "currency": "TRY"} for t in _tablo_ekstresi(str(DEMO)) or []]
     return _build_dashboard_json({"transactions": txs, "pnl": _compute_pnl(txs)})
 
 

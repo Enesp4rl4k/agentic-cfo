@@ -13,6 +13,8 @@ SAMPLE_TRANSACTIONS = [
     {"type": "expense", "category": "utilities",  "amount_cents":  20_000},  # $200
     {"type": "expense", "category": "tax",        "amount_cents":  80_000},  # $800
 ]
+# After ingestion every row has a currency; a row with none is "unknown", not the base.
+SAMPLE_TRANSACTIONS = [{**t, "currency": "TRY"} for t in SAMPLE_TRANSACTIONS]
 
 
 def test_pnl_revenue():

@@ -371,6 +371,10 @@ async def _run_cfo_from_transactions(
     normalized: list[dict[str, Any]] = []
     for t in transactions:
         tx = dict(t)
+        if not str(tx.get("currency") or "").strip():
+            # The documented schema carries no currency: lira, said on the row as an assumption
+            # (like `hold.resolve_currency`), not left to a silent default in the totals.
+            tx["currency"], tx["currency_assumed"] = "TRY", True
         if tx.get("type") == "revenue":
             tx["type"] = "income"
         normalized.append(tx)
