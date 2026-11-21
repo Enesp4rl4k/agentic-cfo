@@ -11,9 +11,7 @@ shellcheck scripts/backup.sh scripts/restore-drill.sh scripts/check-prod-compose
 [[ -e .env ]] && { echo "check-prod-compose: refusing to overwrite an existing .env" >&2; exit 2; }
 trap 'rm -f .env' EXIT
 cp .env.example .env
-for key in POSTGRES_PASSWORD; do
-  echo "$key=$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env
-done
+echo "POSTGRES_PASSWORD=$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env
 printf '%s\n' APP_DOMAIN=app.example.test API_DOMAIN=api.example.test \
   ACME_EMAIL=ops@example.test >> .env
 docker compose -f docker-compose.prod.yml config -q
