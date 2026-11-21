@@ -146,6 +146,16 @@ describe("Nakit Radarı", () => {
     expect(screen.getByText("Başka para birimli kalem")).toBeTruthy();
   });
 
+  it("links the held-documents line to the screen where a person answers", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      not_included: ["Karar bekleyen 2 belge"],
+      held_documents: { count: 2, review_path: "/onay", by_reason: { many_versions: 2 } },
+    }));
+    show();
+    const link = await screen.findByText("Belgeleri gör ve karar ver");
+    expect(link.closest("a")?.getAttribute("href")).toBe("/onay");
+  });
+
   it("points an empty company at its documents", async () => {
     getCashRadar.mockResolvedValue(radar({
       starting_cash_cents: null, starting_cash_as_of: null,

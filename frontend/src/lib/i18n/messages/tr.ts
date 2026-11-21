@@ -170,6 +170,7 @@ export const tr: MessageTree = {
     basisKnown: "belgeli",
     basisEstimated: "tahmini",
     basisAssumed: "varsayım",
+    heldReview: "Belgeleri gör ve karar ver",
   },
   takvim: {
     title: "Ödeme takvimi",

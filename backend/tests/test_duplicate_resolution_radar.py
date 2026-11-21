@@ -224,12 +224,13 @@ async def test_two_suppliers_numbering_alike_months_apart_are_two_payables(clien
     assert await _radar_out(client, org_id) == 200_000
 
 
-async def test_the_same_number_and_amount_from_plainly_different_companies_is_not_held(client):
+async def test_the_same_number_and_amount_from_plainly_different_companies_is_held_for_a_person(client):
+    """The names are no longer a gate (G23 follow-up a): a person decides, and is told the names differ."""
     _, org_id, _ = await kullanici(client, "differentco@example.com")
     await _upload(client, org_id, who="Alfa Sanayi A.Ş.")
     _, counts = await _upload(client, org_id, who="Beta Ticaret A.Ş.")
-    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
-    assert await _radar_out(client, org_id) == 200_000
+    assert (counts["new"], counts["possible_duplicate"]) == (0, 1)
+    assert await _radar_out(client, org_id) == 100_000
 
 
 async def test_different_numbers_from_one_supplier_are_different_documents(client):

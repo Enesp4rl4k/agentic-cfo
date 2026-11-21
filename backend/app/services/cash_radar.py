@@ -33,7 +33,9 @@ from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.services.ledger_documents import (
     DOCUMENT,
+    HOLD_REASONS_TR,
     POSSIBLE_DUPLICATE,
+    hold_reason,
     load_aliases,
     source_transaction,
 )
@@ -130,6 +132,8 @@ class HeldDocuments:
     other_currency_count: int
     other_currency_payable_count: int
     review_path: str = "/onay"  # the screen where a person answers (frontend route)
+    # Why they are held: `hold_reason` code -> how many (the words are `HOLD_REASONS_TR`).
+    by_reason: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -531,7 +535,11 @@ def _held_line(held: HeldDocuments) -> str:
         parts.append(f"{_fmt(held.receivable_cents)} tahsilat")
     if held.other_currency_count:
         parts.append(f"{held.other_currency_count} döviz belgesi (tutar çevrilmedi)")
-    return f"Karar bekleyen {held.count} belge ({', '.join(parts)}): mükerrer olabilir, siz karar verene kadar radarda yok"
+    why = "; ".join(f"{HOLD_REASONS_TR[k]}: {n}" for k, n in sorted(held.by_reason.items()) if n)
+    return (
+        f"Karar bekleyen {held.count} belge ({', '.join(parts)}): mükerrer olabilir, "
+        f"siz karar verene kadar radarda yok" + (f" ({why})" if why else "")
+    )
 
 
 async def _held_documents(
@@ -554,7 +562,10 @@ async def _held_documents(
     horizon_end = ranges[-1][1]
     weeks: dict[int, list[int]] = {}
     known = assumed = week1 = undated_pay = undated_rec = beyond = foreign = foreign_pay = pay = rec = 0
+    by_reason: dict[str, int] = {}
     for row in rows:
+        reason = await hold_reason(db, row, aliases, cache)
+        by_reason[reason] = by_reason.get(reason, 0) + 1
         payable = row.direction != "income"
         if row.currency != "TRY":
             foreign += 1
@@ -584,4 +595,5 @@ async def _held_documents(
         payable_basis=BasisSplit(known_cents=known, estimated_cents=0, assumed_cents=assumed),
         week1_payable_cents=week1, undated_payable_cents=undated_pay, undated_receivable_cents=undated_rec,
         beyond_horizon_payable_cents=beyond, other_currency_count=foreign, other_currency_payable_count=foreign_pay,
+        by_reason=by_reason,
     )

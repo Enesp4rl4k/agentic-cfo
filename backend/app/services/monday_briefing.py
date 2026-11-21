@@ -24,10 +24,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.decision_log import DecisionLog
 from app.services import decisions
+from app.services.briefing_held import held_caveat, held_only_sentence
 from app.services.cash_radar import _fmt, compute_cash_radar
 from app.services.rag.grounding_validator import parse_numeric_token
 
@@ -128,32 +128,6 @@ def _balance_note(as_of: str | None, age_days: int, stale: bool) -> str:
             "güncel kasanız farklı olabilir"
         )
     return f"{_tr_date(as_of)} ekstresine göre"
-
-
-def held_caveat(radar: Any, week_outflow_cents: int) -> str:
-    """The headline caveat for documents waiting for a decision, "" when they do not matter yet.
-
-    Material (named setting `radar_held_material_ratio`, default 10%): what the held payables would add
-    to this week, plus held payables with no date (they could fall in it), is at least that share of
-    the week's outflow, or the week has no outflow at all; or a held payable's size is unknown
-    (foreign currency, never converted). A caveat is never dropped for an amount that cannot be
-    added up: unknown counts as material. Small queues stay in `not_included` only.
-    """
-    held = radar.held_documents
-    if held is None:
-        return ""
-    ratio = get_settings().radar_held_material_ratio
-    at_risk = held.week1_payable_cents + held.undated_payable_cents
-    unknown = held.other_currency_payable_count > 0
-    material = unknown or (at_risk > 0 and (week_outflow_cents <= 0 or at_risk >= ratio * week_outflow_cents))
-    if not material:
-        return ""
-    size = f" ({_fmt(held.payable_cents)} ödeme)" if held.payable_cents else ""
-    foreign = " Tutarı çevrilmemiş döviz belgeleri de var." if unknown else ""
-    return (
-        f" Karar bekleyen {held.count} belge{size} radara dahil değil; "
-        f"bu hafta çıkışlar olduğundan düşük görünebilir.{foreign}"
-    )
 
 
 def _generate_deterministic_sentences(
@@ -358,6 +332,19 @@ async def assemble_monday_briefing(
         horizon_estimated_share=_inflow_estimated_share([w.inflow_basis for w in radar.weeks]),
         held_caveat=caveat,
     )
+    # A company whose every document is held has an empty radar for a reason a person can fix:
+    # saying "nothing to report" (or sending no briefing at all) would hide the queue.
+    has_radar_data = (
+        starting_cash is not None
+        or any(w.receivables or w.payables for w in radar.weeks)
+        or bool(radar.overdue_receivables)
+        or radar.overdue_payables_cents > 0
+        or radar.undated_receivables_cents > 0
+        or radar.undated_payables_cents > 0
+    )
+    held_only = radar.held_documents is not None and not has_radar_data
+    if held_only and radar.held_documents is not None:
+        s1 = held_only_sentence(radar.held_documents)
     deterministic_full_text = f"{s1} {s2} {s3}"
 
     # If candidate narrative is provided (e.g. from LLM), run the anti-hallucination gate
@@ -365,7 +352,7 @@ async def assemble_monday_briefing(
     fallback_used = False
     final_text = deterministic_full_text
 
-    if candidate_narrative:
+    if candidate_narrative and not held_only:  # a queue to answer is not narrated around
         allowed_amounts = {
             abs(net_change),
             abs(end_balance),
@@ -394,14 +381,7 @@ async def assemble_monday_briefing(
             fallback_used = True
             final_text = deterministic_full_text
 
-    has_data = (
-        starting_cash is not None
-        or any(w.receivables or w.payables for w in radar.weeks)
-        or bool(radar.overdue_receivables)
-        or radar.overdue_payables_cents > 0
-        or radar.undated_receivables_cents > 0
-        or radar.undated_payables_cents > 0
-    )
+    has_data = has_radar_data or held_only
 
     briefing_id = f"brief_{org_id}_{anchor.strftime('%Y%W')}"
 

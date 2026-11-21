@@ -14,11 +14,11 @@ from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.api.ledger_schema import LedgerSummaryOut
 from app.api.radar_schema import CashRadarOut
-from app.core.invoice_identity import key_number
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.cash_radar import compute_cash_radar
 from app.services.duplicate_resolution import settle_resolution
@@ -31,7 +31,7 @@ from app.services.ledger import (
     load_aliases,
     source_transaction,
 )
-from app.services.ledger_documents import MAX_VARIANTS, MatchedMoney, base_key, variant_rows
+from app.services.ledger_documents import HOLD_REASONS_TR, MatchedMoney, hold_reason
 from app.services.reconciliation import (
     BY_SUM,
     CONFIRMED,
@@ -105,14 +105,15 @@ async def get_possible_duplicates(
         .order_by(CanonicalTransaction.transaction_date)
     )).scalars().all()
     aliases = await load_aliases(db, org_id)
-    versions = await variant_rows(db, org_id, [base_key(r.source_record_id) for r in rows])
+    cache: dict[str, list[Transaction]] = {}
     data = []
     for row in rows:
         match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
         match = match if match and match.org_id == org_id else None
         data.append({
             **await _with_counterparty(db, row, aliases),
-            "reason": _reason(row, match, len(versions.get(base_key(row.source_record_id), [])) - 1),
+            "reason": (reason := await hold_reason(db, row, aliases, cache)),
+            "reason_text": HOLD_REASONS_TR[reason],
             "matches": [await _with_counterparty(db, match, aliases)] if match else [],
         })
     return {"data": data, "error": None}
@@ -122,16 +123,6 @@ async def _with_counterparty(db: AsyncSession, row: CanonicalTransaction, aliase
     """The row, and the counterparty its upload wrote (the ledger row keeps only the vendor)."""
     tx = await source_transaction(db, row, aliases)
     return {**_row(row), "counterparty": tx.counterparty if tx else None}
-
-
-def _reason(row: CanonicalTransaction, match: CanonicalTransaction | None, variants: int = 0) -> str:
-    """Why the row is held, in words the screen can show."""
-    if variants >= MAX_VARIANTS:
-        return "many_versions"  # "çok sayıda sürüm": one number keeps meeting documents that are not it
-    number = key_number(row.source_record_id)
-    if match is not None and number and number == key_number(match.source_record_id):
-        return "same_number_may_be_a_different_document"  # "aynı numara, farklı belge olabilir"
-    return "same_amount_close_in_time"
 
 
 @router.get("/ledger/open-items", responses={400: {"description": "The user has no organisation."}})

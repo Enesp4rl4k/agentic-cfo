@@ -309,6 +309,11 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
           <li key={line}>{line}</li>
         ))}
       </ul>
+      {radar.held_documents && (
+        <Link href={radar.held_documents.review_path} className="text-sm font-medium underline underline-offset-2">
+          {copy.heldReview}
+        </Link>
+      )}
       <dl className="space-y-1 text-sm">
         {amounts
           .filter(([, cents]) => cents > 0)
