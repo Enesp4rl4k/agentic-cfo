@@ -31,6 +31,7 @@ from app.services.ledger import (
     load_aliases,
     source_transaction,
 )
+from app.services.ledger_documents import MAX_VARIANTS, MatchedMoney, base_key, variant_rows
 from app.services.reconciliation import (
     BY_SUM,
     CONFIRMED,
@@ -104,13 +105,14 @@ async def get_possible_duplicates(
         .order_by(CanonicalTransaction.transaction_date)
     )).scalars().all()
     aliases = await load_aliases(db, org_id)
+    versions = await variant_rows(db, org_id, [base_key(r.source_record_id) for r in rows])
     data = []
     for row in rows:
         match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
         match = match if match and match.org_id == org_id else None
         data.append({
             **await _with_counterparty(db, row, aliases),
-            "reason": _reason(row, match),
+            "reason": _reason(row, match, len(versions.get(base_key(row.source_record_id), [])) - 1),
             "matches": [await _with_counterparty(db, match, aliases)] if match else [],
         })
     return {"data": data, "error": None}
@@ -122,8 +124,10 @@ async def _with_counterparty(db: AsyncSession, row: CanonicalTransaction, aliase
     return {**_row(row), "counterparty": tx.counterparty if tx else None}
 
 
-def _reason(row: CanonicalTransaction, match: CanonicalTransaction | None) -> str:
+def _reason(row: CanonicalTransaction, match: CanonicalTransaction | None, variants: int = 0) -> str:
     """Why the row is held, in words the screen can show."""
+    if variants >= MAX_VARIANTS:
+        return "many_versions"  # "çok sayıda sürüm": one number keeps meeting documents that are not it
     number = key_number(row.source_record_id)
     if match is not None and number and number == key_number(match.source_record_id):
         return "same_number_may_be_a_different_document"  # "aynı numara, farklı belge olabilir"
@@ -319,9 +323,12 @@ async def resolve_possible_duplicate(
     """A person's call: it is separate money (keep), or the same money (exclude).
 
     An excluded row stays on record; it just is not counted. The call is recorded as a decision,
-    opens (keep) or removes (exclude) the row's open item in the same transaction, and, when two
-    spellings of one supplier's invoice number are the same document, teaches the ledger that the
-    two names are one supplier (`services/duplicate_resolution.py`).
+    opens (keep) or removes (exclude) the row's open item in the same transaction
+    (`services/duplicate_resolution.py`). Excluding says nothing about suppliers: when the two rows
+    have different counterparties the response carries a `proposed_alias` (both names and what it
+    would mean), which a decider or the accountant may confirm separately
+    (`POST /ledger/counterparty-aliases`). Money already confirmed against the document refuses the
+    answer (409 with the match ids) until `POST /ledger/settlements/{id}/undo`.
     """
     _org(user)
     row = await db.get(CanonicalTransaction, row_id)
@@ -339,7 +346,15 @@ async def resolve_possible_duplicate(
         await db.rollback()
         raise HTTPException(409, "Bu kayıt karar beklemiyor.")
     await db.refresh(row)
-    effects = await settle_resolution(db, user=user, row=row, action=body.action)
+    try:
+        effects = await settle_resolution(db, user=user, row=row, action=body.action)
+    except MatchedMoney as exc:
+        await db.rollback()
+        raise HTTPException(409, {
+            "reason": "matched_money",
+            "message": "Bu belgeye onaylı bir banka eşleşmesi bağlı; önce eşleşmeyi geri alın.",
+            "match_ids": exc.match_ids,
+        }) from exc
     await db.commit()
     _refresh_view(org_id)
     return {"data": {"id": row_id, "action": body.action, **effects}, "error": None}

@@ -8,7 +8,9 @@ at ingest, so the supplier does not split again next month.
 
 Per organisation (tokens are salted with it), one row per alias, never a chain (a canonical token is
 itself never an alias), and linked to the human decision that made it (`decisions`, append-only).
-Holds hashes only, so it carries no name or tax number.
+The tokens are hashes; the two names are kept as text for the list and the confirmation. Created only by
+a separate, explicit confirmation by an owner, admin or the accountant: excluding a duplicate does not
+create one. Revoking sets `revoked_at`; rows ingested while it was active are listed, never rewritten.
 """
 from __future__ import annotations
 
@@ -37,3 +39,10 @@ class CounterpartyAlias(Base):
     decision_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    # The two names as the person saw them when confirming (shown in the list; erased with the organisation).
+    alias_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    canonical_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Revoked, not deleted: the row stays as the audit of what was once confirmed. Ingest ignores it.
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    revoke_decision_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

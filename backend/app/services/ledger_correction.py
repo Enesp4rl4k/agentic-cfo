@@ -58,8 +58,8 @@ from app.services.ledger import (
     lock_org,
     month_of,
     record_ids,
-    variant_of,
 )
+from app.services.ledger_documents import override_keys
 
 
 def _correction_ids(record_id: str, n: int) -> tuple[str, str]:
@@ -94,17 +94,21 @@ async def apply_overrides(db: AsyncSession, org_id: str | None, job_id: str) -> 
     usable, _ = record_ids(str(org_id), await job_transactions(db, job_id), await load_aliases(db, str(org_id)))
     if not usable:
         return 0
+    # A document that arrived under a key another document held lives under `<key>~v<hash>`; its
+    # override is recorded under that key, so the rerun must look there, not at the base row's.
+    keys = await override_keys(db, str(org_id), job_id, usable)
     kept = {
         o.source_record_id: o.category
         for o in (await db.execute(select(CategoryOverride).where(
             CategoryOverride.org_id == str(org_id),
-            CategoryOverride.source_record_id.in_([rid for rid, _ in usable]),
+            CategoryOverride.source_record_id.in_(list(keys.values())),
         ))).scalars()
     }
     n = 0
-    for rid, t in usable:
-        if rid in kept and t.category != kept[rid]:
-            t.category = kept[rid]
+    for _rid, t in usable:
+        key = keys[t.id]
+        if key in kept and t.category != kept[key]:
+            t.category = kept[key]
             t.category_source = "user_edit"
             n += 1
     return n
@@ -126,7 +130,7 @@ async def apply_category_correction(
     record_id = next((rid for rid, t in usable if t.id == tx.id), None)
     if record_id is None:
         return {"ledger": "none"}  # not counted by the ledger (no date, no amount)
-    record_id = await variant_of(db, org_id, record_id, tx)
+    record_id = (await override_keys(db, org_id, tx.job_id, [(record_id, tx)]))[tx.id]
     await _remember(db, org_id, record_id, new_category, user)
     row = (await db.execute(select(CanonicalTransaction).where(
         CanonicalTransaction.org_id == org_id,

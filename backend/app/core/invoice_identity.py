@@ -286,3 +286,22 @@ def variant_key(key: str, amount_cents: int, day: str, raw_counterparty: str | N
     words = " ".join(_TOKEN.findall((raw_counterparty or "").lower().translate(_TURKISH)))
     digest = hashlib.sha256(f"{amount_cents}|{day}|{words}".encode()).hexdigest()[:8]
     return f"{key}~v{digest}"
+
+
+def names_agree(a: str | None, b: str | None) -> bool:
+    """Could these two counterparty texts be one company? Unknown agrees; plainly different does not.
+
+    True when either is empty or reduces to nothing, when both carry the same tax number, or when one
+    normalised name's words are all inside the other's ("alfa gida" in "alfa gida san ve tic").
+    "Alfa Sanayi" and "Beta Ticaret" do not agree. A tax number is taken out before the names are
+    compared, so a name written with and without one still agrees with itself.
+    """
+    tax_a, tax_b = tax_number_in(a), tax_number_in(b)
+    if tax_a and tax_b:
+        return tax_a == tax_b
+    words = [
+        set((normalise_party(_TAX_NUMBER.sub(" ", text or "")) or "").split()) for text in (a, b)
+    ]
+    if not words[0] or not words[1]:
+        return True
+    return words[0] <= words[1] or words[1] <= words[0]

@@ -240,6 +240,7 @@ export interface components {
             anchor_date: string;
             /** Beyond Horizon Cents */
             beyond_horizon_cents: number;
+            held_documents?: components["schemas"]["HeldDocumentsOut"] | null;
             /** Not Included */
             not_included: string[];
             opening_cash?: components["schemas"]["OpeningCashOut"] | null;
@@ -348,6 +349,44 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HeldDocumentsOut
+         * @description Possible duplicates waiting for a person: not in the radar, so they are listed here.
+         */
+        HeldDocumentsOut: {
+            /** Beyond Horizon Payable Cents */
+            beyond_horizon_payable_cents: number;
+            /** Count */
+            count: number;
+            /** Other Currency Count */
+            other_currency_count: number;
+            /** Other Currency Payable Count */
+            other_currency_payable_count: number;
+            payable_basis: components["schemas"]["BasisSplitOut"];
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
+            /** Review Path */
+            review_path: string;
+            /** Undated Payable Cents */
+            undated_payable_cents: number;
+            /** Undated Receivable Cents */
+            undated_receivable_cents: number;
+            /** Week1 Payable Cents */
+            week1_payable_cents: number;
+            /** Weeks */
+            weeks: components["schemas"]["HeldWeekOut"][];
+        };
+        /** HeldWeekOut */
+        HeldWeekOut: {
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
+            /** Week */
+            week: number;
+        };
         /** LastUploadOut */
         LastUploadOut: {
             /**
@@ -357,6 +396,11 @@ export interface components {
             already: number;
             /** Filename */
             filename?: string | null;
+            /**
+             * Many Versions
+             * @default 0
+             */
+            many_versions: number;
             /**
              * New
              * @default 0

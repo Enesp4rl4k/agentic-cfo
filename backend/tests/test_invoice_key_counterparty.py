@@ -244,14 +244,23 @@ async def test_the_same_number_from_one_party_in_two_directions_is_two_documents
 
 
 @pytest.mark.asyncio
-async def test_a_near_name_with_the_same_number_and_amount_is_held_for_a_person(db):
-    """Two suppliers that agree on number and amount cannot be told from one supplier's invoice read twice."""
+async def test_two_spellings_with_the_same_number_and_amount_are_held_for_a_person(db):
+    """One name inside the other, same number, same amount, same weeks: one supplier's invoice read twice, or not."""
     org_id = await _org(db)
-    await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Sanayi A.Ş.", "cents": 100_000})
-    counts = await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ticaret A.Ş.", "cents": 100_000})
+    await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Gıda San. ve Tic. A.Ş.", "cents": 100_000})
+    counts = await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Gıda A.Ş.", "cents": 100_000})
     assert (counts["new"], counts["possible_duplicate"]) == (0, 1)
     assert len(await _rows(db, org_id)) == 2          # written, not dropped: a person decides
     assert len(await _items(db, org_id)) == 1         # and the held one is not yet a payable
+
+
+@pytest.mark.asyncio
+async def test_plainly_different_companies_with_the_same_number_and_amount_are_not_held(db):
+    org_id = await _org(db)
+    await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Sanayi A.Ş.", "cents": 100_000})
+    counts = await _upload(db, org_id, {"document_id": "A-1", "counterparty": "Alfa Ticaret A.Ş.", "cents": 100_000})
+    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
+    assert len(await _items(db, org_id)) == 2
 
 
 @pytest.mark.asyncio

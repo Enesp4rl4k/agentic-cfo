@@ -93,6 +93,7 @@ _ROUTERS = [
     ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
     ("app.api.data_freshness",          "router", "data-freshness"),                # Org-level "as of" — shared with packet + OKR
     ("app.api.ledger",                  "router", "ledger"),                        # Plan v9 K1: company ledger
+    ("app.api.ledger_aliases",          "router", "ledger-aliases"),                # G23: counterparty aliases, undo of a confirmed match
     ("app.api.plan_changes",            "router", "plan-changes"),                  # Payment plan changes: propose, a senior executive decides
     ("app.api.decision_records",        "router", "decision-records"),              # Decision record: who decided what, when, on which evidence (read-only)
     ("app.api.decisions",               "router", "decisions"),                     # Karar Defteri: record → expected → outcome

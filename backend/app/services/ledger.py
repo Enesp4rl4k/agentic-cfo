@@ -79,6 +79,7 @@ from app.services.ledger_documents import (
     open_items,
     others_by_money,
     repeats,
+    same_number_match,
     same_number_rows,
     source_transaction,
     split_same_key,
@@ -243,7 +244,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     """Append a completed analysis to its company's ledger. Idempotent; commits."""
     counts = {
         "new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0,
-        "no_counterparty": 0,
+        "no_counterparty": 0, "many_versions": 0,
     }
     job = await db.get(AnalysisJob, job_id)
     if job is None or not job.org_id or job.status != JobStatus.COMPLETED:
@@ -268,7 +269,9 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             counts["no_counterparty"], job_id,
         )
     existing = await existing_rows(db, org_id, [rid for rid, _ in usable])
-    usable, variants = await split_same_key(db, org_id, job_id, usable, existing, aliases)
+    usable, variants, counts["many_versions"] = await split_same_key(
+        db, org_id, job_id, usable, existing, aliases
+    )
     # Months the accountant closed: their rows do not change, and money that belongs
     # to them but arrives now is written into the first open month.
     from app.services.donem_kilidi import ilk_acik_donem, kilitli_donemler
@@ -278,6 +281,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         db, org_id, job_id, [day_of(tx.transaction_date) for _, tx in usable],
     )
     same_number = await same_number_rows(db, org_id, job_id, usable)
+    tx_cache: dict[str, list[Transaction]] = {}
     held: set[str] = set()  # rows waiting for a person: they put no money into the radar
 
     for record_id, tx in usable:
@@ -296,7 +300,8 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             continue
         duplicate_of = (
             base_row_id(existing, record_id) if record_id in variants
-            else repeats(others, tx, record_id, same_number)
+            else repeats(others, tx, record_id)
+            or await same_number_match(db, org_id, tx, record_id, same_number, aliases, tx_cache)
         )
         if duplicate_of:
             held.add(record_id)

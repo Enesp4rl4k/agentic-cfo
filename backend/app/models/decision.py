@@ -42,6 +42,8 @@ class DecisionKind(StrEnum):
     SMMM_ONAY = "smmm_onay"
     ERASURE = "erasure"
     AUTOMATION_RULE_CHANGE = "automation_rule_change"
+    # Two counterparty spellings declared one supplier (or the declaration revoked): a standing rule at ingest.
+    COUNTERPARTY_ALIAS = "counterparty_alias"
     # What the owner says they did. A statement, not a proof: see `outcome`.
     OWNER_STATEMENT = "owner_statement"
 

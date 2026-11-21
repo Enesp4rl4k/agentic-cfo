@@ -78,6 +78,11 @@ async def _resolve(client, headers, row_id, action) -> dict:
     return res.json()["data"]
 
 
+async def _confirm(client, headers, row_id):
+    return await client.post("/api/v1/ledger/counterparty-aliases", headers=headers,
+                             json={"row_id": row_id, "confirm": True})
+
+
 async def _aliases(client, org_id) -> list[CounterpartyAlias]:
     async with client._maker() as db:
         return list((await db.execute(
@@ -105,23 +110,45 @@ async def test_a_split_is_held_and_counted_once_until_a_person_answers(client):
     assert {listed[0]["counterparty"], listed[0]["matches"][0]["counterparty"]} == {FULL, SHORT}
 
 
-async def test_same_document_leaves_one_payable_and_teaches_the_alias(client):
+async def test_exclude_alone_teaches_nothing_and_proposes_the_alias(client):
     headers, org_id, _ = await kullanici(client, "split2@example.com")
     await _upload(client, org_id, who=FULL)
-    job2, _ = await _upload(client, org_id, who=SHORT)
+    await _upload(client, org_id, who=SHORT)
     held = await _held(client, org_id)
 
     done = await _resolve(client, headers, held.id, "exclude")
 
     assert await _radar_out(client, org_id) == 100_000          # still once, after the answer
     assert len(await _items(client, org_id)) == 1
-    assert done["alias"] is not None
-    (alias,) = await _aliases(client, org_id)
-    assert (alias.org_id, alias.created_by) == (org_id, (await _user_id(client, "split2@example.com")))
+    assert await _aliases(client, org_id) == []                  # excluding is not a statement about suppliers
+    proposal = done["proposed_alias"]
+    assert {proposal["alias_name"], proposal["canonical_name"]} == {FULL, SHORT}
+    assert proposal["confirmation_text"] == f"Bundan sonra {SHORT} ve {FULL} aynı tedarikçi sayılacak."
     async with client._maker() as db:
-        decision = (await db.execute(select(Decision).where(Decision.org_id == org_id))).scalars().one()
-    assert (decision.kind, decision.outcome, decision.decided_via) == ("duplicate_resolution", "same_document", "human")
-    assert decision.target_id == held.id and alias.decision_id == decision.id
+        decisions = (await db.execute(select(Decision).where(Decision.org_id == org_id))).scalars().all()
+    assert [(d.kind, d.outcome, d.decided_via) for d in decisions] == [("duplicate_resolution", "same_document", "human")]
+
+
+async def test_confirming_the_alias_is_its_own_decision_and_stops_the_splitting(client):
+    headers, org_id, user_id = await kullanici(client, "split2b@example.com")
+    await _upload(client, org_id, who=FULL)
+    job2, _ = await _upload(client, org_id, who=SHORT)
+    held = await _held(client, org_id)
+    await _resolve(client, headers, held.id, "exclude")
+
+    res = await _confirm(client, headers, held.id)
+    assert res.status_code == 200, res.text
+    (alias,) = await _aliases(client, org_id)
+    assert (alias.org_id, alias.created_by, alias.revoked_at) == (org_id, user_id, None)
+    async with client._maker() as db:
+        decisions = (await db.execute(
+            select(Decision).where(Decision.org_id == org_id).order_by(Decision.decided_at))).scalars().all()
+    assert [(d.kind, d.outcome) for d in decisions] == [
+        ("duplicate_resolution", "same_document"), ("counterparty_alias", "created")]
+    own = decisions[1]
+    assert own.reason == f"Bundan sonra {SHORT} ve {FULL} aynı tedarikçi sayılacak."
+    assert own.before["active"] is False and own.after["active"] is True
+    assert alias.decision_id == own.id
 
     # The same invoice under either name, next month or on a rerun, is one document and no new question.
     _, again = await _upload(client, org_id, who=SHORT)
@@ -150,7 +177,7 @@ async def test_separate_documents_both_count_once_a_person_says_so(client):
 
     done = await _resolve(client, headers, held.id, "keep")
 
-    assert done["open_item"] == "opened" and done["alias"] is None
+    assert done["open_item"] == "opened" and done["proposed_alias"] is None
     assert len(await _items(client, org_id)) == 2
     assert await _radar_out(client, org_id) == 200_000
     assert await _aliases(client, org_id) == []
@@ -166,8 +193,10 @@ async def test_a_vkn_on_one_upload_and_a_name_on_the_next_are_one_supplier_once_
     _, counts = await _upload(client, org_id, who=SHORT)
     assert counts["possible_duplicate"] == 1 and await _radar_out(client, org_id) == 100_000
 
-    await _resolve(client, headers, (await _held(client, org_id)).id, "exclude")
+    held = await _held(client, org_id)
+    await _resolve(client, headers, held.id, "exclude")
     assert await _radar_out(client, org_id) == 100_000
+    assert (await _confirm(client, headers, held.id)).status_code == 200
     (alias,) = await _aliases(client, org_id)
     assert alias.canonical_token.startswith("t") and alias.alias_token.startswith("n")
 
@@ -175,16 +204,41 @@ async def test_a_vkn_on_one_upload_and_a_name_on_the_next_are_one_supplier_once_
     assert (again["new"], again["possible_duplicate"], again["already"]) == (0, 0, 1)
 
 
-async def test_the_same_invoice_more_than_three_days_apart_is_still_held(client):
+async def test_the_same_invoice_a_few_weeks_apart_is_still_held(client):
     headers, org_id, _ = await kullanici(client, "apart@example.com")
     await _upload(client, org_id, who=FULL, days_ago=40)
-    _, counts = await _upload(client, org_id, who=SHORT, days_ago=2)    # 38 days later: outside the duplicate window
+    _, counts = await _upload(client, org_id, who=SHORT, days_ago=20)   # 20 days later: outside the 3-day window
 
     assert counts["possible_duplicate"] == 1
     assert await _radar_out(client, org_id) == 100_000
     await _resolve(client, headers, (await _held(client, org_id)).id, "exclude")
     assert await _radar_out(client, org_id) == 100_000
-    assert len(await _aliases(client, org_id)) == 1
+
+
+async def test_two_suppliers_numbering_alike_months_apart_are_two_payables(client):
+    """E-invoice numbering restarts per supplier: same number and amount far apart in time is no evidence."""
+    _, org_id, _ = await kullanici(client, "months@example.com")
+    await _upload(client, org_id, who=FULL, days_ago=100)
+    _, counts = await _upload(client, org_id, who=SHORT, days_ago=20)
+    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
+    assert await _radar_out(client, org_id) == 200_000
+
+
+async def test_the_same_number_and_amount_from_plainly_different_companies_is_not_held(client):
+    _, org_id, _ = await kullanici(client, "differentco@example.com")
+    await _upload(client, org_id, who="Alfa Sanayi A.Ş.")
+    _, counts = await _upload(client, org_id, who="Beta Ticaret A.Ş.")
+    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
+    assert await _radar_out(client, org_id) == 200_000
+
+
+async def test_different_numbers_from_one_supplier_are_different_documents(client):
+    """Instalments, identical recurring invoices, batch billing: same supplier, amount and day."""
+    _, org_id, _ = await kullanici(client, "instalments@example.com")
+    await _upload(client, org_id, number="T-1", who=SHORT)
+    _, counts = await _upload(client, org_id, number="T-2", who=SHORT)
+    assert (counts["new"], counts["possible_duplicate"]) == (1, 0)
+    assert await _radar_out(client, org_id) == 200_000
 
 
 async def test_two_suppliers_with_one_number_and_different_amounts_are_two_payables(client):
@@ -200,12 +254,15 @@ async def test_an_alias_is_per_organisation(client):
     _, other_org, _ = await kullanici(client, "orgb@example.com")
     await _upload(client, org_id, who=FULL)
     await _upload(client, org_id, who=SHORT)
-    await _resolve(client, headers, (await _held(client, org_id)).id, "exclude")
+    held = await _held(client, org_id)
+    await _resolve(client, headers, held.id, "exclude")
+    assert (await _confirm(client, headers, held.id)).status_code == 200
 
     await _upload(client, other_org, who=FULL)
     _, counts = await _upload(client, other_org, who=SHORT)
     assert counts["possible_duplicate"] == 1                     # the other company's names were never confirmed
     assert await _aliases(client, other_org) == []
+    assert len(await _aliases(client, org_id)) == 1
 
 
 # ── the same key, not obviously the same document ────────────────────────────────────────────
@@ -263,7 +320,7 @@ async def test_the_same_document_a_person_confirms_stays_one_payable(client):
     await _upload(client, org_id, who=SHORT, cents=100_000)
     await _upload(client, org_id, who="Alfa Gıda Ltd. Şti.", cents=100_000)
     done = await _resolve(client, headers, (await _held(client, org_id)).id, "exclude")
-    assert done["alias"] is None                                 # one party token: nothing to alias
+    assert done["proposed_alias"] is None                        # one party token: nothing to alias
     assert await _radar_out(client, org_id) == 100_000
     _, again = await _upload(client, org_id, who="Alfa Gıda Ltd. Şti.", cents=100_000)
     assert (again["new"], again["possible_duplicate"]) == (0, 0)

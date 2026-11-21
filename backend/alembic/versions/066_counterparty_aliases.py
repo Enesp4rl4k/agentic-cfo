@@ -29,6 +29,11 @@ def upgrade() -> None:
         sa.Column("decision_id", sa.String(36), nullable=True),
         sa.Column("created_by", sa.String(36), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("alias_name", sa.String(300), nullable=True),
+        sa.Column("canonical_name", sa.String(300), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("revoked_by", sa.String(36), nullable=True),
+        sa.Column("revoke_decision_id", sa.String(36), nullable=True),
         sa.UniqueConstraint("org_id", "alias_token", name="uq_counterparty_alias_org_token"),
     )
     op.create_index("ix_counterparty_aliases_org_id", "counterparty_aliases", ["org_id"])

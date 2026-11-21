@@ -30,6 +30,7 @@ from app.core.invoice_identity import (
     key_party,
     lacks_counterparty,
     legal_form,
+    names_agree,
     open_item_key,
     party_token,
     variant_key,
@@ -51,7 +52,21 @@ DOCUMENT = "document"
 CASH = "cash"
 
 _CHUNK = 500
-DUPLICATE_WINDOW_DAYS = 3    # as the anomaly agent's duplicate check
+# One named window for "the same money seen twice": how far apart two ledger dates may be for a
+# bank line and its invoice, or one document read from two files, to be one thing (a January file's
+# invoice sat a day from the ledger's; plan v9 K1). 3 days is the anomaly agent's duplicate check,
+# kept so both detectors agree. It is NOT used to pair two invoices that have document numbers: those
+# are told apart by their numbers (`repeats`). It also bounds how far a re-read of the same number may
+# move before it is another document (`differs`).
+DUPLICATE_WINDOW_DAYS = 3
+# The same free-form number and amount from another counterparty is one supplier's invoice read twice
+# only if the dates also agree: e-invoice numbering restarts per supplier, so two suppliers meet on
+# "A-1" and an amount by chance far more often than a re-export lands a month away. 31 days = a
+# monthly file reaching the ledger a month late.
+SAME_NUMBER_DATE_WINDOW_DAYS = 31
+# A key that keeps meeting documents that are not it (OCR noise, a reused number) stops growing here
+# and asks for a person (`many_versions`) instead of writing a row per reading.
+MAX_VARIANTS = 5
 
 
 def day_of(when: datetime) -> date:
@@ -109,60 +124,40 @@ async def others_by_money(
     return found
 
 
-def other_supplier(record_id: str, other_record_id: str) -> bool:
-    """Both rows are invoices of the same side from different counterparties AND different numbers.
-
-    Two suppliers' invoices of the same amount are not one payment seen twice. The same number
-    is another matter: "Alfa A.Ş." and "Alfa Gıda San. ve Tic. A.Ş." writing "A-1" for the same
-    amount may be one supplier's invoice read twice (`_same_number`), so that is held. Only tokens
-    of the same kind (tax number or name) can be told apart: a name against a tax number may be
-    the same company, so that stays a suspicion too.
-    """
-    mine, theirs = key_party(record_id), key_party(other_record_id)
-    return bool(
-        mine and theirs and mine[0] == theirs[0] and mine[1][0] == theirs[1][0] and mine[1] != theirs[1]
-        and key_number(record_id) != key_number(other_record_id)
-    )
+def _is_document_key(record_id: str) -> bool:
+    return record_id.startswith(("doc:", "inv:"))
 
 
 def repeats(
-    others: dict[tuple[int, str, str], list[tuple[date, str, str]]], tx: Transaction, record_id: str,
-    same_number: dict[tuple[str, int, str], list[tuple[str, str]]] | None = None,
+    others: dict[tuple[int, str, str], list[tuple[date, str, str]]], tx: Transaction, record_id: str
 ) -> str | None:
-    """The nearest row this one may repeat, if any is close enough, else one that has its number."""
+    """The nearest row this one may repeat in the duplicate window, if any is close enough.
+
+    Only for money that has no document number to tell it apart: a bank line and the line another
+    upload already wrote. Two invoices with numbers (a UUID, a GİB number, a free-form number) are
+    different documents when their numbers differ, however alike their amounts and dates: instalments,
+    identical recurring invoices and batch billing would otherwise all be held. The same number is
+    `same_number_match`'s question.
+    """
     day = day_of(tx.transaction_date)
     near = [
         (abs((other - day).days), row_id)
         for other, row_id, other_record_id in others.get((tx.amount_kurus, tx.type, basis_of(tx)), [])
         if abs((other - day).days) <= DUPLICATE_WINDOW_DAYS
-        and not other_supplier(record_id, other_record_id)
+        and not (_is_document_key(record_id) and _is_document_key(other_record_id))
     ]
-    if near:
-        return min(near)[1]
-    # The same free-form number and amount from another counterparty, whatever the dates: one
-    # supplier's invoice under two spellings, or two suppliers that happen to agree on both.
-    # The machine cannot know; a person decides (and "same" teaches it the alias).
-    number = key_number(record_id)
-    if same_number and number:
-        for row_id, other_record_id in same_number.get((number, tx.amount_kurus, tx.type), []):
-            if other_record_id != record_id:
-                return row_id
-    return None
+    return min(near)[1] if near else None
 
 
 async def same_number_rows(
     db: AsyncSession, org_id: str, job_id: str, usable: list[tuple[str, Transaction]]
-) -> dict[tuple[str, int, str], list[tuple[str, str]]]:
-    """Counted rows of other uploads with these free-form numbers: (number, amount, side) -> (id, key)."""
+) -> dict[tuple[str, int, str], list[CanonicalTransaction]]:
+    """Counted rows of other uploads with these free-form numbers: (number, amount, side) -> rows."""
     numbers = sorted({n for rid, _ in usable if (n := key_number(rid))})
-    found: dict[tuple[str, int, str], list[tuple[str, str]]] = defaultdict(list)
+    found: dict[tuple[str, int, str], list[CanonicalTransaction]] = defaultdict(list)
     for i in range(0, len(numbers), 100):
         rows = await db.execute(
-            select(
-                CanonicalTransaction.id, CanonicalTransaction.source_record_id,
-                CanonicalTransaction.amount_cents, CanonicalTransaction.direction,
-                CanonicalTransaction.source_job_id,
-            ).where(
+            select(CanonicalTransaction).where(
                 CanonicalTransaction.org_id == org_id,
                 CanonicalTransaction.ledger_status != EXCLUDED,
                 money_rows(),
@@ -170,11 +165,37 @@ async def same_number_rows(
                       for n in numbers[i:i + 100]]),
             )
         )
-        for r in rows:
+        for r in rows.scalars():
             number = key_number(r.source_record_id)
             if number and r.source_job_id != job_id:
-                found[(number, r.amount_cents, r.direction)].append((r.id, r.source_record_id))
+                found[(number, r.amount_cents, r.direction)].append(r)
     return found
+
+
+async def same_number_match(
+    db: AsyncSession, org_id: str, tx: Transaction, record_id: str,
+    candidates: dict[tuple[str, int, str], list[CanonicalTransaction]],
+    aliases: dict[str, str], cache: dict[str, list[Transaction]],
+) -> str | None:
+    """A row with this number and amount under another counterparty that also agrees on the rest.
+
+    Number and amount alone are not enough (suppliers' numbers collide): the dates must be within
+    `SAME_NUMBER_DATE_WINDOW_DAYS`, and the counterparties must not be plainly different companies
+    (`names_agree`: one name inside the other, or the same tax number; an unknown one agrees).
+    """
+    number = key_number(record_id)
+    if not number:
+        return None
+    day = day_of(tx.transaction_date)
+    for row in candidates.get((number, tx.amount_kurus, tx.type), []):
+        if row.source_record_id == record_id:
+            continue
+        if abs((day_of(row.asil_tarih or row.transaction_date) - day).days) > SAME_NUMBER_DATE_WINDOW_DAYS:
+            continue
+        old = await source_transaction(db, row, aliases, cache)
+        if names_agree(old.counterparty if old else None, tx.counterparty):
+            return str(row.id)
+    return None
 
 
 async def job_transactions(db: AsyncSession, job_id: str) -> list[Transaction]:
@@ -187,9 +208,44 @@ async def load_aliases(db: AsyncSession, org_id: str) -> dict[str, str]:
     """This organisation's confirmed counterparty aliases: alias token -> canonical token."""
     rows = await db.execute(
         select(CounterpartyAlias.alias_token, CounterpartyAlias.canonical_token)
-        .where(CounterpartyAlias.org_id == org_id)
+        .where(CounterpartyAlias.org_id == org_id, CounterpartyAlias.revoked_at.is_(None))
     )
     return {str(a): str(c) for a, c in rows.all()}
+
+
+async def variant_rows(
+    db: AsyncSession, org_id: str, record_ids: list[str]
+) -> dict[str, list[tuple[str, int]]]:
+    """For each key: its own row and the variants split from it, as (key, amount), oldest first."""
+    found: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    wanted = sorted({r for r in record_ids if r.startswith(("doc:", "inv:"))})
+    for i in range(0, len(wanted), 100):
+        chunk = wanted[i:i + 100]
+        rows = await db.execute(
+            select(CanonicalTransaction.source_record_id, CanonicalTransaction.amount_cents)
+            .where(
+                CanonicalTransaction.org_id == org_id,
+                CanonicalTransaction.corrects_id.is_(None),
+                or_(CanonicalTransaction.source_record_id.in_(chunk),
+                    *[CanonicalTransaction.source_record_id.startswith(f"{k}~v", autoescape=True) for k in chunk]),
+            ).order_by(CanonicalTransaction.created_at, CanonicalTransaction.id)
+        )
+        for key, amount in rows:
+            base = base_key(key)
+            if base in chunk:
+                found[base].append((key, amount))
+    return found
+
+
+def pick_variant(rows: list[tuple[str, int]], record_id: str, tx: Transaction) -> str:
+    """The key of the row `tx` was written under, among a key and its variants."""
+    if len(rows) < 2:
+        return record_id
+    same_amount = [k for k, amount in rows if amount == tx.amount_kurus]
+    if len(same_amount) == 1:
+        return same_amount[0]
+    exact = variant_key(record_id, tx.amount_kurus, day_of(tx.transaction_date).isoformat(), tx.counterparty)
+    return exact if any(k == exact for k, _ in rows) else record_id
 
 
 async def variant_of(db: AsyncSession, org_id: str, record_id: str, tx: Transaction) -> str:
@@ -198,25 +254,8 @@ async def variant_of(db: AsyncSession, org_id: str, record_id: str, tx: Transact
     A document that arrived under a key another document held is stored under `<key>~v<hash>`
     (`split_same_key`); a correction of its transaction must reach that row, not the first one.
     """
-    rows = (await db.execute(
-        select(CanonicalTransaction.source_record_id, CanonicalTransaction.amount_cents)
-        .where(
-            CanonicalTransaction.org_id == org_id,
-            or_(CanonicalTransaction.source_record_id == record_id,
-                CanonicalTransaction.source_record_id.startswith(f"{record_id}~v", autoescape=True)),
-            CanonicalTransaction.corrects_id.is_(None),
-        )
-    )).all()
-    if len(rows) < 2:
-        return record_id
-    same_amount = [r.source_record_id for r in rows if r.amount_cents == tx.amount_kurus]
-    if len(same_amount) == 1:
-        return same_amount[0]
-    day = day_of(tx.transaction_date).isoformat()
-    for r in rows:
-        if r.source_record_id == variant_key(record_id, tx.amount_kurus, day, tx.counterparty):
-            return r.source_record_id
-    return record_id
+    rows = (await variant_rows(db, org_id, [record_id])).get(record_id, [])
+    return pick_variant(rows, record_id, tx)
 
 
 def base_key(record_id: str) -> str:
@@ -275,33 +314,78 @@ async def differs(
 async def split_same_key(
     db: AsyncSession, org_id: str, job_id: str, usable: list[tuple[str, Transaction]],
     existing: dict[str, CanonicalTransaction], aliases: dict[str, str],
-) -> tuple[list[tuple[str, Transaction]], set[str]]:
+) -> tuple[list[tuple[str, Transaction]], set[str], int]:
     """Give a document that is not obviously the one already under its key a key of its own.
 
     Without this the second document goes down the "already" path: only its category is read,
     its amount is ignored, and a payable disappears. It is written as a `possible_duplicate` of
     the row that holds the key (`variants`), so a person sees both versions and decides.
-    Another upload only: re-reading the same job never splits.
+
+    Deterministic per file: the same job read again maps to the variant it wrote before (OCR noise
+    in the amount on a re-read never spawns another), and at `MAX_VARIANTS` a key stops growing: the
+    document joins its nearest version and is counted as `many_versions` for a person to look at.
+    Another upload only: the job that wrote the row under the key is never split from it.
     """
     cache: dict[str, list[Transaction]] = {}
     out: list[tuple[str, Transaction]] = []
     variants: set[str] = set()
+    many = 0
     for record_id, tx in usable:
         row = existing.get(record_id)
         weak = record_id.startswith("inv:") or lacks_counterparty(record_id)
-        if row is not None and weak and row.source_job_id != job_id and row.corrects_id is None \
-                and await differs(db, org_id, row, tx, record_id, aliases, cache):
-            variant = variant_key(
-                record_id, tx.amount_kurus, day_of(tx.transaction_date).isoformat(), tx.counterparty
-            )
-            variants.add(variant)
-            found = (await existing_rows(db, org_id, [variant])).get(variant)
-            if found is not None:
-                existing[variant] = found
-            out.append((variant, tx))
+        if not (row is not None and weak and row.source_job_id != job_id and row.corrects_id is None
+                and await differs(db, org_id, row, tx, record_id, aliases, cache)):
+            out.append((record_id, tx))
             continue
-        out.append((record_id, tx))
-    return out, variants
+        siblings = [r for r in (await variant_rows(db, org_id, [record_id])).get(record_id, [])
+                    if r[0] != record_id]
+        key = variant_key(record_id, tx.amount_kurus, day_of(tx.transaction_date).isoformat(), tx.counterparty)
+        own = (await _variant_of_job(db, org_id, record_id, job_id))
+        if own is not None:
+            key = own                       # the file's own version, whatever its amount reads now
+        elif key not in {k for k, _ in siblings} and len(siblings) >= MAX_VARIANTS:
+            key = min(siblings, key=lambda kv: abs(kv[1] - tx.amount_kurus))[0]
+            many += 1
+        found = (await existing_rows(db, org_id, [key])).get(key)
+        if found is not None:
+            existing[key] = found
+        variants.add(key)
+        out.append((key, tx))
+    return out, variants, many
+
+
+async def _variant_of_job(db: AsyncSession, org_id: str, record_id: str, job_id: str) -> str | None:
+    """The variant of this key that this job's file wrote, if it wrote one."""
+    return (await db.execute(
+        select(CanonicalTransaction.source_record_id).where(
+            CanonicalTransaction.org_id == org_id,
+            CanonicalTransaction.source_job_id == job_id,
+            CanonicalTransaction.corrects_id.is_(None),
+            CanonicalTransaction.source_record_id.startswith(f"{record_id}~v", autoescape=True),
+        ).order_by(CanonicalTransaction.created_at).limit(1)
+    )).scalar_one_or_none()
+
+
+async def override_keys(
+    db: AsyncSession, org_id: str, job_id: str, usable: list[tuple[str, Transaction]]
+) -> dict[str, str]:
+    """Transaction id -> the ledger key its row (and so its remembered override) lives under.
+
+    The key itself, unless a variant was split from it: then the variant this job wrote, else the
+    one that matches by amount (`pick_variant`).
+    """
+    variants = await variant_rows(db, org_id, [rid for rid, _ in usable])
+    written = (await db.execute(
+        select(CanonicalTransaction.source_record_id).where(
+            CanonicalTransaction.org_id == org_id, CanonicalTransaction.source_job_id == job_id,
+            CanonicalTransaction.source_record_id.contains("~v", autoescape=True),
+            CanonicalTransaction.corrects_id.is_(None),
+        )
+    )).scalars().all()
+    own = {base_key(k): k for k in written}
+    return {
+        tx.id: own.get(rid) or pick_variant(variants.get(rid, []), rid, tx) for rid, tx in usable
+    }
 
 
 def base_row_id(existing: dict[str, CanonicalTransaction], variant: str) -> str | None:
@@ -369,18 +453,43 @@ async def open_item_for_row(db: AsyncSession, row: CanonicalTransaction) -> bool
     return True
 
 
-async def drop_open_item(db: AsyncSession, row: CanonicalTransaction) -> bool:
-    """Remove the item of a row a person says repeats another, unless money was matched to it."""
+class MatchedMoney(Exception):
+    """The item holds money a person (or the matcher) confirmed: the document cannot just disappear."""
+
+    def __init__(self, match_ids: list[str]) -> None:
+        super().__init__("confirmed matches: " + ", ".join(match_ids))
+        self.match_ids = match_ids
+
+
+async def drop_open_item(db: AsyncSession, row: CanonicalTransaction, decided_by: str) -> tuple[str, list[str]]:
+    """Take the item of a row a person says repeats another out of the books. (outcome, match ids).
+
+    - no item: `("none", [])`;
+    - only proposals (or nothing) against it: each proposal is rejected (the bank line goes back to
+      being its own money, as when a person answers "no" to it), then the item and its matches are
+      removed: `("removed", rejected ids)`;
+    - money confirmed against it (a bank movement settled this document): `MatchedMoney`. Nothing is
+      changed; the caller refuses the answer until the match is undone
+      (`POST /ledger/settlements/{id}/undo`), so money never stays matched to an excluded document
+      without a visible state.
+    """
     key = open_item_key(row.source_record_id)
     item = (await db.execute(
         select(OpenItem).where(OpenItem.org_id == row.org_id, OpenItem.document_id == key)
     )).scalar_one_or_none()
-    if item is None or item.paid_cents:
-        return False
-    matched = (await db.execute(
-        select(OpenItemMatch.id).where(OpenItemMatch.open_item_id == item.id).limit(1)
-    )).first()
-    if matched is not None:
-        return False
+    if item is None:
+        return "none", []
+    matches = (await db.execute(
+        select(OpenItemMatch).where(OpenItemMatch.open_item_id == item.id)
+    )).scalars().all()
+    confirmed = [m.id for m in matches if m.status == "confirmed"]
+    if confirmed or item.paid_cents:
+        raise MatchedMoney(confirmed)
+    rejected = [m.id for m in matches if m.status == "proposed"]
+    for m in matches:
+        if m.status == "proposed":
+            m.status, m.decided_by = "rejected", decided_by
+    await db.flush()
+    await db.execute(delete(OpenItemMatch).where(OpenItemMatch.open_item_id == item.id))
     await db.execute(delete(OpenItem).where(OpenItem.id == item.id))
-    return True
+    return "removed", rejected
