@@ -9,6 +9,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { freshToken } from "@/lib/authRefresh";
+import { syncIdentity } from "@/lib/sessionIdentity";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -98,7 +99,7 @@ export const authOptions: NextAuthOptions = {
     /**
      * Persist backend tokens + user metadata in the NextAuth JWT cookie.
      */
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.userId       = user.id;
         token.role         = user.role;
@@ -109,7 +110,10 @@ export const authOptions: NextAuthOptions = {
       }
       // Every getSession() passes here: trade the refresh token for a new
       // access token shortly before the 30-minute one expires.
-      return freshToken(token, { apiBase: API_BASE });
+      const fresh = await freshToken(token, { apiBase: API_BASE });
+      // `useSession().update()` after creating or switching organisation: the
+      // role and organisation in the cookie are the ones from sign-in.
+      return trigger === "update" ? syncIdentity(fresh, { apiBase: API_BASE }) : fresh;
     },
 
     /**

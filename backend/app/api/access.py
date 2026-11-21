@@ -84,14 +84,19 @@ async def owned_job(
 
 
 # ── Who may change what ─────────────────────────────────────────────────────
-# Three classes of state-changing route, by the least role that may use them.
+# Four classes of state-changing route, by the least role that may use them.
 # The role is the caller's *membership* role in the organisation they are
 # acting in (`users.org_id`), the same reading `org_erasure` and the briefing
 # release use — not `users.role`, one global value.
 #
-#   writer   changes working data: upload, rerun, correct a category, resolve a
-#            duplicate or settlement match, approve a held run. Not viewer or
-#            analyst.
+#   contributor  brings data in and runs computations on it: file / document
+#            upload, analysis start and rerun, data-source add. An `analyst` may
+#            (the documented meaning of the role: "upload, run analysis"); a
+#            viewer may not. Never a record-changing route.
+#   writer   changes working data: correct a category, resolve a duplicate or
+#            settlement match, approve a held run. Not viewer or analyst: an
+#            analyst brings data in, a person who answers for the books decides
+#            what it means.
 #   decider  an owner's or admin's decision: connecting a bank or ERP, approving
 #            an action that leaves the system, org-wide resets.
 #   smmm     binds the official record: closing a month, finalising the
@@ -106,6 +111,7 @@ async def owned_job(
 # guard reads the role in the caller's own organisation, then the handler
 # refuses the object that is not theirs.
 WRITER_ROLES = frozenset({"owner", "admin", "cfo", "smmm"})
+CONTRIBUTOR_ROLES = frozenset({"owner", "admin", "cfo", "smmm", "analyst"})  # WRITER_ROLES + analyst (tested)
 DECIDER_ROLES = frozenset({"owner", "admin"})
 OWN_BOOKS_ROLES = frozenset({"owner", "admin", "cfo"})
 
@@ -125,6 +131,40 @@ async def require_writer(
     if role is not None and role not in WRITER_ROLES:
         raise _refuse("veriyi değiştirme yetkisi (viewer ve analyst salt okunurdur)")
     return user
+
+
+async def require_contributor(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: owner, admin, cfo, smmm or analyst in the acting organisation, or 403.
+
+    ONLY for bringing data in and running computations on it (upload, analysis
+    start / rerun, data-source add). Anything that changes or decides a record
+    is `require_writer` or stricter.
+    """
+    role = await acting_role(db, user) if user.org_id else None
+    if role is not None and role not in CONTRIBUTOR_ROLES:
+        raise _refuse("veri yükleme ve analiz çalıştırma yetkisi (viewer salt okunurdur)")
+    return user
+
+
+async def require_platform_operator(user: User = Depends(get_current_user)) -> User:
+    """Dependency: a platform operator (e-mail in `PLATFORM_OPERATOR_EMAILS`), or 403.
+
+    Pilot invites and the pilot feedback of every company are platform-wide, not
+    a company's: a company owner is not an operator. Empty list (the default)
+    means nobody.
+    """
+    from app.config import get_settings
+
+    if not is_platform_operator(user.email, get_settings().platform_operator_emails):
+        raise _refuse("platform operatörü yetkisi")
+    return user
+
+
+def is_platform_operator(email: str | None, configured: str) -> bool:
+    allowed = {e.strip().lower() for e in (configured or "").split(",") if e.strip()}
+    return bool(email) and str(email).strip().lower() in allowed
 
 
 async def require_decider(
@@ -213,7 +253,6 @@ _COMPUTE_ROUTES = [
     ("POST", "/api/v1/authority/evaluate"),
     ("POST", "/api/v1/benchmark/compare"),
     ("POST", "/api/v1/benchmark/from-org"),
-    ("POST", "/api/v1/brief/morning/generate"),
     ("POST", "/api/v1/cascade/simulate"),
     ("POST", "/api/v1/ceo/analyze"),
     ("POST", "/api/v1/ceo/analyze-from-job/{job_id}"),
@@ -290,13 +329,11 @@ INLINE_GUARDED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/ledger/plan-changes"): "payment_plan.propose: owner, admin, cfo or analyst may propose",
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/approve"): "payment_plan: owner or admin decide",
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/reject"): "payment_plan: owner or admin decide",
-    ("POST", "/api/v1/ledger/plan-changes/{change_id}/withdraw"): "payment_plan: the proposer, or a decider",
+    ("POST", "/api/v1/ledger/plan-changes/{change_id}/withdraw"): "payment_plan.withdraw: only the person who proposed it, while it waits (the author check, not a role check)",
     ("POST", "/api/v1/org/invite"): "_require_admin: owner or admin",
     ("DELETE", "/api/v1/org/invites/{invite_id}"): "_require_admin: owner or admin",
     ("PATCH", "/api/v1/org/me"): "_require_admin: owner or admin",
     ("DELETE", "/api/v1/org/members/{user_id}"): "_require_admin: owner or admin; an admin cannot remove an admin or owner",
-    ("POST", "/api/v1/pilot/invite/generate"): "admin or owner, checked in the handler",
-    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "admin or owner, checked in the handler",
     ("POST", "/api/v1/related-parties"): "owner or admin, checked in the handler",
     ("DELETE", "/api/v1/related-parties/{party_id}"): "owner or admin, checked in the handler",
     ("PATCH", "/api/v1/related-parties/{party_id}"): "owner or admin, checked in the handler",

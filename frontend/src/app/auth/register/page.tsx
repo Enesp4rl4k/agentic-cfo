@@ -82,6 +82,10 @@ export default function RegisterPage() {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({ name: orgName }),
         });
+        // The session was signed in before the workspace existed, as an
+        // analyst with no organisation. Sign in again so its role and
+        // organisation are the owner's.
+        await signIn("credentials", { email, password, redirect: false });
       }
 
       // "/" is the marketing landing page (see lib/routes.ts). Someone who has
