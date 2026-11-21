@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, invite, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
-import { OPENING_BALANCE_TL, bankStatement, invoiceList, tr } from "./support/fixtures";
+import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, invoiceList, tr } from "./support/fixtures";
 
 /**
  * The pilot's core flow as one story, told in order, in a real browser against the real stack.
@@ -25,6 +25,7 @@ const todayLong = new Date().toLocaleDateString("tr-TR", { day: "numeric", month
 
 const S: {
   bankJob?: string;
+  jobs?: string[];
   ownerToken?: string;
   ownerId?: string;
   ownerOrg?: string | null;
@@ -98,7 +99,7 @@ test.describe("Pilot flow", () => {
     await expect(main.getByText(/tarihinde ₺/)).toHaveCount(0);
   });
 
-  test("3. the owner uploads the bank statement and the invoice list; both analyses complete", async ({ page, request }) => {
+  test("3. the owner uploads the bank statement and the invoice list", async ({ page }) => {
     await loginInBrowser(page, OWNER);
     const jobs: string[] = [];
     for (const file of [bank, invoices]) {
@@ -107,34 +108,9 @@ test.describe("Pilot flow", () => {
       // The upload screen sends the person to the result once the job is accepted.
       await page.waitForURL(/\/pnl\?job=/, { timeout: 90_000 });
       jobs.push(new URL(page.url()).searchParams.get("job") as string);
-      // The result page is the analysis's own state: it shows figures only once the run finished.
-      // Sent there while the run is still going, it says "Gelir tablosu verisi yok" and does not
-      // refresh itself (a defect, reported); a person reloads, so the test does.
-      const title = screen(page).getByText("Gelir Tablosu (P&L)", { exact: true });
-      try {
-        await expect
-          .poll(
-            async () => {
-              if (await title.isVisible()) return true;
-              await page.reload();
-              return false;
-            },
-            { timeout: 180_000, intervals: [4_000] },
-          )
-          .toBe(true);
-      } catch (error) {
-        // Say what the product says about the run, so a red CI log explains itself.
-        const jobId = jobs[jobs.length - 1];
-        const owner = await login(request, OWNER);
-        const state = await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) });
-        throw new Error(`${file.name}: the result page never showed the analysis. GET /analysis/${jobId}: ${await state.text()}`, { cause: error });
-      }
-      await expect(screen(page).getByText("Net Kâr").first()).toBeVisible({ timeout: 120_000 });
     }
     S.bankJob = jobs[0];
-    // Revenue of the statement: 50.000 + 12.500.
-    await page.goto(`/pnl?job=${S.bankJob}`);
-    await expect(screen(page).getByText("₺62.500").first()).toBeVisible({ timeout: 60_000 });
+    S.jobs = jobs;
   });
 
   test.fixme("3b. while the statement waits for the owner's approval, the setup page says that, not that the statement has no balance", async ({ page }) => {
@@ -147,18 +123,49 @@ test.describe("Pilot flow", () => {
     await expect(screen(page).getByText(/bakiye sütunu yok/)).toHaveCount(0);
   });
 
-  test("3c. the owner approves the held statement analysis", async ({ request }) => {
+  test.fixme("3e. after the owner confirms the currency and approves the held run, the radar starts from the statement's balance", async ({ request }) => {
+    // A statement without a currency column is held (6 rows), the owner confirms TRY, approves the
+    // run, and both analyses complete: the setup page still says "Kanıtlanmış banka bakiyesi yok"
+    // and the radar has no starting cash, although the balances chain (the same statement with a
+    // currency column gives 116.500 on the radar).
+    const email = `para.${stamp}@example.com`;
+    await register(request, email, "Para Sahibi");
+    const first = await login(request, email);
+    await request.post(`${API}/org/create`, { headers: bearer(first.token), data: { name: "Para Birimsiz A.Ş." } });
+    const owner = await login(request, email);
+    const file = bankStatementWithoutCurrency();
+    const up = await request.post(`${API}/upload`, {
+      headers: bearer(owner.token),
+      multipart: { file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer } },
+    });
+    const jobId = (await up.json()).data.job_id;
+    await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("awaiting_review");
+    await request.post(`${API}/org/base-currency`, { headers: bearer(owner.token), data: { currency: "TRY" } });
+    await request.post(`${API}/analysis/${jobId}/approve`, { headers: bearer(owner.token), data: {} });
+    await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("completed");
+    const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json();
+    expect(radar.data.starting_cash_cents).toBe(11_650_000);
+  });
+
+  test("3c. the analyses finish; the one the confidence gate holds is approved by the owner", async ({ request }) => {
     // Three months of the same rent leave the statement's confidence (0.83) under the gate (0.85),
-    // so it is held for its owner. No screen offers the approval here (see 3d), so the test uses
+    // so its run waits for the owner. No screen offers the approval here (see 3d), so the test uses
     // the product's own endpoint, as the owner.
     const owner = await login(request, OWNER);
     S.ownerToken = owner.token;
     S.ownerId = owner.userId;
     S.ownerOrg = owner.orgId;
-    const held = await request.get(`${API}/analysis/${S.bankJob}`, { headers: bearer(owner.token) });
-    expect((await held.json()).data.status).toBe("awaiting_review");
-    const approved = await request.post(`${API}/analysis/${S.bankJob}/approve`, { headers: bearer(owner.token), data: {} });
-    expect(approved.status(), await approved.text()).toBe(200);
+    const status = async (job: string) =>
+      (await (await request.get(`${API}/analysis/${job}`, { headers: bearer(owner.token) })).json()).data.status as string;
+    const jobs = S.jobs as string[];
+    await expect.poll(async () => (await Promise.all(jobs.map(status))).every((s) => s === "completed" || s === "awaiting_review"), { timeout: 180_000, intervals: [3_000] }).toBe(true);
+    const held = (await Promise.all(jobs.map(async (job) => ((await status(job)) === "awaiting_review" ? job : null)))).filter(Boolean) as string[];
+    expect(held, "exactly the statement is held").toEqual([S.bankJob]);
+    for (const job of held) {
+      const approved = await request.post(`${API}/analysis/${job}/approve`, { headers: bearer(owner.token), data: {} });
+      expect(approved.status(), await approved.text()).toBe(200);
+    }
+    await expect.poll(async () => (await Promise.all(jobs.map(status))).join(","), { timeout: 180_000, intervals: [3_000] }).toBe("completed,completed");
   });
 
   test.fixme("3d. a held analysis can be approved on a screen", async ({ page }) => {

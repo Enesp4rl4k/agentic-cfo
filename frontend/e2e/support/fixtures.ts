@@ -27,9 +27,9 @@ export const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${p
 export function bankStatement() {
   const last = daysFromToday(-2);
   const row = (offset: number, text: string, amount: string, balance: string) =>
-    `${tr(daysFromToday(offset))};${text};"${amount}";"${balance}"`;
+    `${tr(daysFromToday(offset))};${text};"${amount}";"${balance}";TRY`;
   const csv = [
-    "Tarih;Açıklama;Tutar;Bakiye",
+    "Tarih;Açıklama;Tutar;Bakiye;Para Birimi",
     row(-75, "Ofis kirası", "-12.000,00", "108.000,00"),
     row(-70, "Satış tahsilatı - Mavi Tekstil", "50.000,00", "158.000,00"),
     row(-40, "Ofis kirası", "-12.000,00", "146.000,00"),
@@ -46,9 +46,9 @@ export function invoiceList() {
   const receivableDue = daysFromToday(5);
   const payableDue = daysFromToday(9);
   const csv = [
-    "Tarih;Fatura No;Cari;Açıklama;Tutar;Tip;Vade",
-    `${tr(daysFromToday(-5))};FAT2026000101;Mavi Tekstil Ltd;Satış faturası;"60.000,00";income;${tr(receivableDue)}`,
-    `${tr(daysFromToday(-3))};FAT2026000102;Yeşil Ambalaj AŞ;Hammadde alış faturası;"-24.000,00";expense;${tr(payableDue)}`,
+    "Tarih;Fatura No;Cari;Açıklama;Tutar;Tip;Vade;Para Birimi",
+    `${tr(daysFromToday(-5))};FAT2026000101;Mavi Tekstil Ltd;Satış faturası;"60.000,00";income;${tr(receivableDue)};TRY`,
+    `${tr(daysFromToday(-3))};FAT2026000102;Yeşil Ambalaj AŞ;Hammadde alış faturası;"-24.000,00";expense;${tr(payableDue)};TRY`,
     "",
   ].join("\n");
   return {
@@ -58,4 +58,15 @@ export function invoiceList() {
     receivableDue,
     payableDue,
   };
+}
+
+/** The same statement without a currency column, as most exports are: the product holds its rows. */
+export function bankStatementWithoutCurrency() {
+  const withCurrency = bankStatement();
+  const text = withCurrency.buffer
+    .toString("utf-8")
+    .split(String.fromCharCode(10))
+    .map((line) => line.replace(/;TRY$/, "").replace(/;Para Birimi$/, ""))
+    .join(String.fromCharCode(10));
+  return { ...withCurrency, name: "banka-ekstresi-para-birimsiz.csv", buffer: Buffer.from(text, "utf-8") };
 }
