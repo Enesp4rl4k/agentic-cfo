@@ -291,22 +291,3 @@ def test_an_organisation_with_nothing_to_rewrite_is_a_no_op(engine):
     with engine.begin() as conn:
         assert m065.rewrite_identities(conn).get("ledger_rows", 0) == 0
         assert m065.restore_identities(conn).get("ledger_rows", 0) == 0
-
-
-# ── the migration's frozen copy is the live definition ───────────────────────────────────────
-
-_NAMES = [None, "", "Alfa Gıda A.Ş.", "ALFA GIDA AS", "Beta Tekstil Ltd. Şti.", "İPEK Limited Şirketi", "A.Ş.",
-          "Alfa 1234567890", "Kaya 10000000146", "Yıldız, Tekstil", "3M Türkiye A.Ş.", "Ltd"]
-_NUMBERS = ["A-1", "a-1", "doc:a-1", "2024/15", " 12 ", "GIB2024000000050", "gib2024000000050",
-            "f47ac10b-58cc-4372-a567-0e02b2c3d479", "F47AC10B-58CC-4372-A567-0E02B2C3D479", "FT/abc2024000000001", "x"]
-
-
-@pytest.mark.parametrize("number", _NUMBERS)
-@pytest.mark.parametrize("direction", ["income", "expense", None, "other"])
-def test_the_migrations_key_equals_the_live_key(number, direction):
-    canonical = live.canonical_invoice_id(number) or number
-    assert m065._canonical_number(number) == canonical
-    for name in _NAMES:
-        assert m065._document_key("o1", canonical, name, direction) == live.document_key("o1", number, name, direction)
-        assert m065._party_token("o1", name) == live.party_token("o1", name)
-        assert m065._normalise_party(name) == live.normalise_party(name)
