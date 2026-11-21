@@ -23,7 +23,6 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.currencies import is_currency_code
 from app.core.dates import parse_transaction_date
 from app.core.row_confidence import label, parse_confidence
 from app.core.turkish import fold
@@ -31,6 +30,7 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.held_transaction import PENDING, REJECTED, RELEASED, HeldTransaction
 from app.services.decisions import record_decision
+from app.services.ingest.currencies import is_currency_code
 from app.services.ingest.hold import (
     AMOUNT_UNCERTAIN,
     AMOUNT_UNREADABLE,

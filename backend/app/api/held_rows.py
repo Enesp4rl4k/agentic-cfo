@@ -31,7 +31,6 @@ from app.api.access import (
     require_writer,
 )
 from app.api.auth import get_current_user
-from app.core.currencies import is_currency_code
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
@@ -39,6 +38,7 @@ from app.models.user import User
 from app.services import held_direction, held_rows
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
+from app.services.ingest.currencies import is_currency_code
 
 router = APIRouter()
 
