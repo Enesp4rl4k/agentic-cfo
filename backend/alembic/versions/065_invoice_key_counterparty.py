@@ -52,7 +52,12 @@ from typing import Any
 import sqlalchemy as sa
 
 from alembic import op
-from app.core.invoice_identity import canonical_invoice_id, document_key, is_unique_id, open_item_key
+from app.core.invoice_identity import (
+    canonical_invoice_id,
+    document_key,
+    is_unique_id,
+    open_item_key,
+)
 
 revision = "065_invoice_key_counterparty"
 down_revision = "064_decisions_table"
