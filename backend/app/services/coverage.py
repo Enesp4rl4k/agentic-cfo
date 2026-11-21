@@ -64,18 +64,34 @@ no period; a stated period or a chain of statements is proof and needs no tolera
 def apply_period(
     extent: dict[str, Any] | None, period: dict[str, Any] | None, filename: str | None = None
 ) -> dict[str, Any] | None:
-    """The extent with the period the file STATES, when it states one that contains its rows.
+    """The extent with the period the file STATES, edge by edge, where the data agrees with it.
 
-    A stated period is proof of coverage (`stated`: True); without one the edges are the first and
-    last transaction (`stated`: False) and the edge tolerance may apply.
+    A header says what the statement is meant to cover; it is evidence for an edge only when the
+    rows say the same: the stated end counts when the last transaction (= the closing balance's
+    date) is within `EDGE_TOLERANCE_DAYS` of it, the stated start when the first transaction is.
+    Then that edge is proven (`start_stated` / `end_stated`) and the header explains the few quiet
+    days. When they disagree the header is ignored for that edge (the actual first/last
+    transaction stands, the tolerance rule applies) and the disagreement is recorded in `mismatch`
+    so the message can say it. Never proven on a contradicted header.
     """
     if extent is None:
         return None
-    out = {**extent, "stated": False}
+    out = {k: v for k, v in extent.items() if k not in ("stated", "mismatch")}
+    out.update(start_stated=False, end_stated=False)
     if filename and not out.get("filename"):
         out["filename"] = filename
     if period and period["start"] <= str(extent["start"]) and str(extent["end"]) <= period["end"]:
-        out.update(start=period["start"], end=period["end"], stated=True)
+        mismatch: list[dict[str, str]] = []
+        if (_day(extent["start"]) - _day(period["start"])).days <= EDGE_TOLERANCE_DAYS:
+            out.update(start=period["start"], start_stated=True)
+        else:
+            mismatch.append({"edge": "start", "stated": period["start"], "actual": str(extent["start"])})
+        if (_day(period["end"]) - _day(extent["end"])).days <= EDGE_TOLERANCE_DAYS:
+            out.update(end=period["end"], end_stated=True)
+        else:
+            mismatch.append({"edge": "end", "stated": period["end"], "actual": str(extent["end"])})
+        if mismatch:
+            out["mismatch"] = mismatch
     return out
 
 
@@ -94,6 +110,11 @@ def extents_for(state: dict[str, Any]) -> list[dict[str, Any]]:
     return [own] if own else []
 
 
+def _edge(extent: dict[str, Any], which: str) -> bool:
+    """Whether the extent's start/end edge is proven (a stated period the data agrees with)."""
+    return bool(extent.get(f"{which}_stated", extent.get("stated")))
+
+
 def _groups(extents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One group per account: statements whose balances meet are joined, the rest apart.
 
@@ -108,12 +129,12 @@ def _groups(extents: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 and e.get("opening_cents") == c["closing"]
                 and _day(e["start"]) >= _day(c["end"])
             ):
-                c.update(end=e["end"], closing=e.get("closing_cents"), end_proven=bool(e.get("stated")))
+                c.update(end=e["end"], closing=e.get("closing_cents"), end_proven=_edge(e, "end"))
                 break
         else:
             chains.append({
                 "start": e["start"], "end": e["end"], "closing": e.get("closing_cents"),
-                "start_proven": bool(e.get("stated")), "end_proven": bool(e.get("stated")),
+                "start_proven": _edge(e, "start"), "end_proven": _edge(e, "end"),
                 "name": e.get("filename") or "adsız ekstre",
             })
     return [
@@ -257,6 +278,7 @@ def annotate_series(
         if amount > (top.get(day[:7]) or {}).get("amount_cents", 0):
             top[day[:7]] = {"date": day, "amount_cents": amount, "description": str(r.get("description") or "")}
     have = {m["month"]: m for m in series}
+    mismatches = [x for e in extents for x in e.get("mismatch") or []]
     span = month_range(series[0]["month"], series[-1]["month"])
     flags = complete_months(extents, span)
     out: list[dict[str, Any]] = []
@@ -274,6 +296,9 @@ def annotate_series(
                 entry["short"] = short_accounts(extents, month)
         elif entry["complete"] and assumed_edges(extents, month):
             entry["assumed"] = assumed_edges(extents, month)
+        found = [x for x in mismatches if str(x["actual"])[:7] == month]
+        if found:
+            entry["header_mismatch"] = found
         if month in top:
             entry["top_out"] = top[month]
         out.append(entry)

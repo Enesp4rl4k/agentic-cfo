@@ -122,7 +122,22 @@ def _notes(series: list[dict[str, Any]], window: list[dict[str, Any]], opening: 
                 f"Bakiye {_date_tr(opening['as_of'])} tarihli, son tam ay {_month_name(window[-1]['month'])}; "
                 "aradaki hareketler bakiyeye yansımıştır ama aylık çıkış hesabına girmemiştir"
             )
-    return "".join(f" {p}." for p in parts)
+    return "".join(f" {p}." for p in parts) + _mismatch_note(series)
+
+
+def _mismatch_note(series: list[dict[str, Any]]) -> str:
+    """Where the file's header and its rows disagree: said, and the header was not trusted."""
+    seen: list[tuple[str, str, str]] = []
+    for m in series:
+        for x in m.get("header_mismatch") or []:
+            key = (x["edge"], x["stated"], x["actual"])
+            if key not in seen:
+                seen.append(key)
+    return "".join(
+        f" Ekstre başlığındaki {'başlangıç' if edge == 'start' else 'bitiş'} tarihi {_date_tr(stated)}, "
+        f"satırların {'ilk' if edge == 'start' else 'son'} tarihi {_date_tr(actual)}: başlığa güvenilmedi."
+        for edge, stated, actual in seen
+    )
 
 
 def _assumed_note(window: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:

@@ -91,7 +91,7 @@ class TestWhichMonthsAreComplete:
 
     def test_a_stated_period_needs_no_tolerance_and_a_short_one_gets_none(self) -> None:
         months = ["2026-02", "2026-03"]
-        stated = {"start": "2026-02-01", "end": "2026-03-31", "stated": True}
+        stated = {"start": "2026-02-01", "end": "2026-03-31", "start_stated": True, "end_stated": True}
         assert complete_months([stated], months) == dict.fromkeys(months, True)
         assert assumed_edges([stated], "2026-02") == []
         # The tolerance is for files that state nothing: a stated end of the 29th is the period.
@@ -134,7 +134,7 @@ class TestWhichMonthsAreComplete:
 
     def test_a_file_run_uses_its_own_extent_and_a_ledger_run_every_statement(self) -> None:
         rows = [_row("2026-02-03", 1), _row("2026-02-20", 1)]
-        assert extents_for({"transactions": rows}) == [{"start": "2026-02-03", "end": "2026-02-20", "stated": False}]
+        assert extents_for({"transactions": rows}) == [{"start": "2026-02-03", "end": "2026-02-20", "start_stated": False, "end_stated": False}]
         stored = [{"start": "2026-01-01", "end": "2026-03-31"}]
         assert extents_for({"transactions": rows, "ledger_view": {}, "statement_extents": stored}) == stored
 
@@ -190,15 +190,16 @@ class TestEvidenceOrder:
         assert block["months_used"] == 3 and block["level"] is not None  # may be critical, with the assumption said
 
     def test_a_stated_period_makes_the_same_statement_known(self) -> None:
-        rows = [_row("2026-01-20", 3_000_000), _row("2026-02-20", 3_000_000), _row("2026-03-10", 3_000_000)]
-        extent = apply_period({"start": "2026-01-20", "end": "2026-03-10"}, {"start": "2026-01-01", "end": "2026-03-31"}, "e.csv")
+        # First row on the 3rd, last on the 29th: the header (1 Jan - 31 Mar) explains the quiet days.
+        rows = [_row("2026-01-03", 3_000_000), _row("2026-02-20", 3_000_000), _row("2026-03-29", 3_000_000)]
+        extent = apply_period({"start": "2026-01-03", "end": "2026-03-29"}, {"start": "2026-01-01", "end": "2026-03-31"}, "e.csv")
         block = _runway(rows, [extent or {}])
         assert block["status"] == "computed" and block["basis"] == "known" and block["assumptions"] == []
         assert "varsayım" not in block["message"]
 
     def test_a_stated_period_the_rows_do_not_fit_in_is_not_used(self) -> None:
         out = apply_period({"start": "2026-01-02", "end": "2026-04-10"}, {"start": "2026-01-01", "end": "2026-03-31"})
-        assert out is not None and out["stated"] is False and out["end"] == "2026-04-10"
+        assert out is not None and out["end_stated"] is False and out["end"] == "2026-04-10"
 
     def test_two_chained_statements_complete_the_months_around_the_join_without_assumption(self) -> None:
         a = {"start": "2026-01-01", "end": "2026-02-20", "opening_cents": 0, "closing_cents": 500}
@@ -223,3 +224,48 @@ class TestEvidenceOrder:
         block = _runway(rows, [bank_a, bank_b])
         assert "ikinci-banka.csv ekstresi 1 Mart 2026 – 30 Haziran 2026 arasını kapsıyor; Ocak, Şubat bu hesap için eksik" in block["message"]
         assert "a-bank.csv" not in block["message"]
+
+
+class TestAHeaderIsCheckedAgainstTheRows:
+    PERIOD = {"start": "2025-12-01", "end": "2026-03-31"}
+
+    def test_a_truncated_export_does_not_make_the_missing_days_known(self) -> None:
+        # Header: 1 December to 31 March. Rows stop on 10 March: 21 quiet days is not "a few".
+        rows = [
+            _row("2025-12-02", 3_000_000), _row("2026-01-05", 3_000_000), _row("2026-02-05", 3_000_000),
+            _row("2026-03-10", 3_000_000),
+        ]
+        extent = apply_period({"start": "2025-12-02", "end": "2026-03-10"}, self.PERIOD, "kesik.csv")
+        assert extent is not None and extent["end_stated"] is False and extent["end"] == "2026-03-10"
+        assert extent["mismatch"] == [{"edge": "end", "stated": "2026-03-31", "actual": "2026-03-10"}]
+        block = _runway(rows, [extent])
+        assert [m["month"] for m in block["months"]] == ["2025-12", "2026-01", "2026-02"]
+        assert block["basis"] == "known"  # December's start edge agrees with the header; March is out
+        assert "Mart yalnızca 1–10 arası var; hesaba katılmadı" in block["message"]
+        assert "Ekstre başlığındaki bitiş tarihi 31 Mart 2026, satırların son tarihi 10 Mart 2026: başlığa güvenilmedi" in block["message"]
+
+    def test_a_header_that_agrees_within_the_tolerance_makes_the_edges_known(self) -> None:
+        rows = [
+            _row("2025-12-04", 3_000_000), _row("2026-01-05", 3_000_000), _row("2026-02-05", 3_000_000),
+            _row("2026-03-28", 3_000_000),
+        ]
+        extent = apply_period({"start": "2025-12-04", "end": "2026-03-28"}, self.PERIOD, "e.csv")
+        assert extent is not None and extent["start_stated"] and extent["end_stated"] and "mismatch" not in extent
+        assert (extent["start"], extent["end"]) == ("2025-12-01", "2026-03-31")
+        block = _runway(rows, [extent])
+        assert block["status"] == "computed" and block["basis"] == "known" and block["months_used"] == 3
+        assert "varsayım" not in block["message"] and "güvenilmedi" not in block["message"]
+
+    def test_a_header_start_the_rows_do_not_match_falls_back_for_that_edge(self) -> None:
+        # Header start 1 December; the first row is 20 December: December is not whole, and it is said.
+        rows = [
+            _row("2025-12-20", 3_000_000), _row("2026-01-05", 3_000_000), _row("2026-02-05", 3_000_000),
+            _row("2026-03-05", 3_000_000), _row("2026-03-30", 3_000_000),
+        ]
+        extent = apply_period({"start": "2025-12-20", "end": "2026-03-30"}, self.PERIOD, "e.csv")
+        assert extent is not None and extent["start_stated"] is False and extent["end_stated"] is True
+        assert extent["start"] == "2025-12-20"
+        block = _runway(rows, [extent])
+        assert [m["month"] for m in block["months"]] == ["2026-01", "2026-02", "2026-03"]
+        assert "Aralık yalnızca 20–31 arası var; hesaba katılmadı" in block["message"]
+        assert "Ekstre başlığındaki başlangıç tarihi 1 Aralık 2025, satırların ilk tarihi 20 Aralık 2025: başlığa güvenilmedi" in block["message"]
