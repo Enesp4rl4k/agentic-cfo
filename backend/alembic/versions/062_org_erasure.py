@@ -4,8 +4,8 @@ KVKK Md. 7 erasure of a whole organisation is a two-step operation (request,
 then owner confirmation) and leaves tamper-evident proof. Two new tables;
 nothing existing changes, so downgrade simply drops them.
 
-Revision ID: 061_org_erasure
-Revises: 060_journal_tables
+Revision ID: 062_org_erasure
+Revises: 061_donem_kilitleri
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "061_org_erasure"
-down_revision = "060_journal_tables"
+revision = "062_org_erasure"
+down_revision = "061_donem_kilitleri"
 branch_labels = None
 depends_on = None
 
