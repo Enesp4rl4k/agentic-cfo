@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "Analizler": {
+        "description": "Every analysis of the company by what became of it, not only the latest one.",
+        "properties": {
+          "basarisiz": {
+            "title": "Basarisiz",
+            "type": "integer"
+          },
+          "calisan": {
+            "title": "Calisan",
+            "type": "integer"
+          },
+          "onay_bekleyen": {
+            "title": "Onay Bekleyen",
+            "type": "integer"
+          },
+          "tamamlanan": {
+            "title": "Tamamlanan",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calisan",
+          "onay_bekleyen",
+          "tamamlanan",
+          "basarisiz"
+        ],
+        "title": "Analizler",
+        "type": "object"
+      },
       "BasisSplitOut": {
         "properties": {
           "assumed_cents": {
@@ -24,8 +53,18 @@
       },
       "Baslangic": {
         "properties": {
+          "analizler": {
+            "$ref": "#/components/schemas/Analizler"
+          },
           "firma": {
             "$ref": "#/components/schemas/Firma"
+          },
+          "onay_bekleyen": {
+            "items": {
+              "$ref": "#/components/schemas/BekleyenAnaliz"
+            },
+            "title": "Onay Bekleyen",
+            "type": "array"
           },
           "otomatik": {
             "$ref": "#/components/schemas/Otomatik"
@@ -53,9 +92,67 @@
           "veri",
           "son_analiz",
           "tamamlanan_analiz",
+          "analizler",
+          "onay_bekleyen",
           "otomatik"
         ],
         "title": "Baslangic",
+        "type": "object"
+      },
+      "BekleyenAnaliz": {
+        "properties": {
+          "bakiye_kanitli": {
+            "title": "Bakiye Kanitli",
+            "type": "boolean"
+          },
+          "dosya": {
+            "title": "Dosya",
+            "type": "string"
+          },
+          "guven": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guven"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "nedenler": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Nedenler",
+            "type": "array"
+          },
+          "olusturma": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Olusturma"
+          }
+        },
+        "required": [
+          "id",
+          "dosya",
+          "guven",
+          "nedenler",
+          "bakiye_kanitli",
+          "olusturma"
+        ],
+        "title": "BekleyenAnaliz",
         "type": "object"
       },
       "BriefingAnswer": {

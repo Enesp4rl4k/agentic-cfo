@@ -121,6 +121,10 @@ class CFOState(TypedDict, total=False):
     # Extracted rows waiting for a person (unknown/low confidence, unknown currency):
     # not in `transactions`, so no figure in this run includes them.
     held_transactions: list[dict[str, Any]]
+    # {date, balance_cents} the statement closes on, proven over ALL its rows as read
+    # (held ones included, in file order). Set only when rows were held: the balance is
+    # a fact of the file, not of which rows a person still has to look at.
+    statement_closing_balance: dict[str, Any] | None
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None
     # Numeric reconciliation output (separate LangGraph step, runs before verifier)

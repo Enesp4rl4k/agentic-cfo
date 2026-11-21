@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, invite, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
-import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, invoiceList, tr } from "./support/fixtures";
+import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, invoiceList, iso, tr } from "./support/fixtures";
 
 /**
  * The pilot's core flow as one story, told in order, in a real browser against the real stack.
@@ -113,21 +113,77 @@ test.describe("Pilot flow", () => {
     S.jobs = jobs;
   });
 
-  test.fixme("3b. while the statement waits for the owner's approval, the setup page says that, not that the statement has no balance", async ({ page }) => {
-    // The statement (6 rows, balances that chain) is held by the confidence gate. The setup page's
-    // radar step then says "Ekstrede bakiye sütunu yok ya da satır bakiyeleri birbirini tutmuyor":
-    // wrong, the statement is fine and is waiting for the owner.
+  test("3b. while the statement waits for the owner's approval, the setup page says that, not that the statement has no balance", async ({ page }) => {
+    // The statement (6 rows, balances that chain) is held; the invoice list completes. The radar step
+    // used to say "Ekstrede bakiye sütunu yok ya da satır bakiyeleri birbirini tutmuyor" because one
+    // analysis was complete and no balance was proven yet: wrong, the statement is fine and waits.
     await loginInBrowser(page, OWNER);
     await page.goto("/baslangic");
-    await expect(screen(page).getByText(/onay/i).first()).toBeVisible({ timeout: 60_000 });
-    await expect(screen(page).getByText(/bakiye sütunu yok/)).toHaveCount(0);
+    const main = screen(page);
+    // The page refreshes by itself while an analysis runs, then shows what became of each.
+    await expect(main.getByText("Ekstreniz onayınızı bekliyor")).toBeVisible({ timeout: 150_000 });
+    await expect(main.getByText(/satır bakiyeleri birbirini tutuyor, dosyada eksik yok/)).toBeVisible();
+    await expect(main.getByText("1 analiz onayınızı bekliyor")).toBeVisible();
+    await expect(main.getByText(/En zayıf halka: forecast/)).toBeVisible(); // why it was held, in the run's own words
+    await expect(main.getByText(/bakiye sütunu yok/)).toHaveCount(0);
+    await expect(main.getByText("Kanıtlanmış banka bakiyesi yok")).toHaveCount(0);
+    await expect(main.getByText("Kurulum tamam")).toHaveCount(0);
   });
 
-  test.fixme("3e. after the owner confirms the currency and approves the held run, the radar starts from the statement's balance", async ({ request }) => {
-    // A statement without a currency column is held (6 rows), the owner confirms TRY, approves the
-    // run, and both analyses complete: the setup page still says "Kanıtlanmış banka bakiyesi yok"
-    // and the radar has no starting cash, although the balances chain (the same statement with a
-    // currency column gives 116.500 on the radar).
+  test("3c. the analyses finish; the invoice list completes and the statement waits for the owner", async ({ request }) => {
+    // The forecast flags the statement's company as running out of cash within three months (its
+    // net flow is negative; the forecast does not weigh the 116.500 on the account), and a flagged
+    // step holds the whole run. The owner decides on the approvals screen (3d).
+    const owner = await login(request, OWNER);
+    S.ownerToken = owner.token;
+    S.ownerId = owner.userId;
+    S.ownerOrg = owner.orgId;
+    const status = async (job: string) =>
+      (await (await request.get(`${API}/analysis/${job}`, { headers: bearer(owner.token) })).json()).data.status as string;
+    const jobs = S.jobs as string[];
+    await expect.poll(async () => (await Promise.all(jobs.map(status))).every((s) => s === "completed" || s === "awaiting_review"), { timeout: 180_000, intervals: [3_000] }).toBe(true);
+    const held = (await Promise.all(jobs.map(async (job) => ((await status(job)) === "awaiting_review" ? job : null)))).filter(Boolean) as string[];
+    expect(held, "exactly the statement is held").toEqual([S.bankJob]);
+  });
+
+  test("3d. a held analysis is approved on the approvals screen, one click from the setup page", async ({ page, request }) => {
+    // The notice used to say the held analysis waited "in the Command Center", whose queue lists only
+    // agent jobs; the setup page's button showed only when nothing was completed. Now the setup page,
+    // the result page and the menu lead to the approvals screen, which lists every kind of decision.
+    await loginInBrowser(page, OWNER);
+    await page.goto("/baslangic");
+    await expect(screen(page).getByText("1 analiz onayınızı bekliyor")).toBeVisible({ timeout: 60_000 });
+    await screen(page).getByRole("link", { name: "Onay bekleyenleri aç" }).first().click();
+    await page.waitForURL(/\/onay/);
+
+    const main = screen(page);
+    await expect(main.getByText("1 karar sizi bekliyor")).toBeVisible({ timeout: 60_000 });
+    await expect(main.getByRole("heading", { name: "Onayınızı bekleyen 1 analiz" })).toBeVisible();
+    await expect(main.getByText("banka-ekstresi.csv")).toBeVisible();
+    await expect(main.getByText(/En zayıf halka: forecast/)).toBeVisible();
+    await expect(main.getByText(/kapanış bakiyesinden başlar/)).toBeVisible();
+    await main.getByRole("button", { name: "Onayla ve tamamla" }).click();
+    await page.getByRole("button", { name: "Evet, onayla" }).click();
+    await expect(main.getByText("Analiz onaylandı.")).toBeVisible({ timeout: 30_000 });
+    await expect(main.getByText("1 karar sizi bekliyor")).toHaveCount(0, { timeout: 30_000 });
+
+    const owner = { token: S.ownerToken as string };
+    const jobs = S.jobs as string[];
+    const status = async (job: string) =>
+      (await (await request.get(`${API}/analysis/${job}`, { headers: bearer(owner.token) })).json()).data.status as string;
+    await expect.poll(async () => (await Promise.all(jobs.map(status))).join(","), { timeout: 180_000, intervals: [3_000] }).toBe("completed,completed");
+
+    // The approval is on record: who, when, and why the run had been held.
+    const records = await request.get(`${API}/decision-records?kind=held_run_release&limit=10`, { headers: bearer(owner.token) });
+    const { data } = await records.json();
+    expect(data).toHaveLength(1);
+    expect(data[0]).toMatchObject({ decided_by: S.ownerId, decided_via: "human", outcome: "approved", target_id: S.bankJob });
+  });
+
+  test("3e. after the owner confirms the currency and approves the held run, the radar starts from the statement's balance", async ({ page, request }) => {
+    // A statement without a currency column is held whole (every row waits). The balances chain, but
+    // the proof was read only from rows already booked (none), so after the owner confirmed TRY and
+    // approved, the setup page said "Kanıtlanmış banka bakiyesi yok" and the radar had no starting cash.
     const email = `para.${stamp}@example.com`;
     await register(request, email, "Para Sahibi");
     const first = await login(request, email);
@@ -140,42 +196,33 @@ test.describe("Pilot flow", () => {
     });
     const jobId = (await up.json()).data.job_id;
     await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("awaiting_review");
-    await request.post(`${API}/org/base-currency`, { headers: bearer(owner.token), data: { currency: "TRY" } });
-    await request.post(`${API}/analysis/${jobId}/approve`, { headers: bearer(owner.token), data: {} });
-    await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("completed");
+
+    await loginInBrowser(page, email);
+    // Before any decision the radar has no start, and the setup page says why in the right words.
+    await page.goto("/baslangic");
+    await expect(screen(page).getByText("Ekstreniz onayınızı bekliyor")).toBeVisible({ timeout: 60_000 });
+    await expect(screen(page).getByText(/bakiye sütunu yok/)).toHaveCount(0);
+
+    // The company currency, on the held-rows screen (which releases the rows that waited only for it).
+    await page.goto("/bekleyen-kayitlar");
+    await page.getByLabel("Para birimi").first().fill("TRY");
+    await page.getByRole("button", { name: "Onayla", exact: true }).first().click();
+    await expect(page.getByText("Şirketinizin para birimi nedir?")).toHaveCount(0, { timeout: 30_000 });
+
+    // The run itself still waits for the owner, on the approvals screen.
+    await page.goto("/onay");
+    await expect(screen(page).getByRole("heading", { name: "Onayınızı bekleyen 1 analiz" })).toBeVisible({ timeout: 60_000 });
+    await screen(page).getByRole("button", { name: "Onayla ve tamamla" }).click();
+    await page.getByRole("button", { name: "Evet, onayla" }).click();
+    await expect(screen(page).getByText("Analiz onaylandı.")).toBeVisible({ timeout: 30_000 });
+
+    await page.goto("/nakit-radari");
+    await expect(screen(page).getByText("Başlangıç nakdi")).toBeVisible({ timeout: 60_000 });
+    await expect(screen(page).getByText(`₺${OPENING_BALANCE_TL.split(",")[0]}`).first()).toBeVisible();
+    await expect(screen(page).getByText(asOfLong).first()).toBeVisible();
     const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json();
     expect(radar.data.starting_cash_cents).toBe(11_650_000);
-  });
-
-  test("3c. the analyses finish; the one the confidence gate holds is approved by the owner", async ({ request }) => {
-    // Three months of the same rent leave the statement's confidence (0.83) under the gate (0.85),
-    // so its run waits for the owner. No screen offers the approval here (see 3d), so the test uses
-    // the product's own endpoint, as the owner.
-    const owner = await login(request, OWNER);
-    S.ownerToken = owner.token;
-    S.ownerId = owner.userId;
-    S.ownerOrg = owner.orgId;
-    const status = async (job: string) =>
-      (await (await request.get(`${API}/analysis/${job}`, { headers: bearer(owner.token) })).json()).data.status as string;
-    const jobs = S.jobs as string[];
-    await expect.poll(async () => (await Promise.all(jobs.map(status))).every((s) => s === "completed" || s === "awaiting_review"), { timeout: 180_000, intervals: [3_000] }).toBe(true);
-    const held = (await Promise.all(jobs.map(async (job) => ((await status(job)) === "awaiting_review" ? job : null)))).filter(Boolean) as string[];
-    expect(held, "exactly the statement is held").toEqual([S.bankJob]);
-    for (const job of held) {
-      const approved = await request.post(`${API}/analysis/${job}/approve`, { headers: bearer(owner.token), data: {} });
-      expect(approved.status(), await approved.text()).toBe(200);
-    }
-    await expect.poll(async () => (await Promise.all(jobs.map(status))).join(","), { timeout: 180_000, intervals: [3_000] }).toBe("completed,completed");
-  });
-
-  test.fixme("3d. a held analysis can be approved on a screen", async ({ page }) => {
-    // The notice on the result page says the held analysis waits for the owner in the Command
-    // Center, but that screen's queue lists only agent jobs. The setup page has an approval button,
-    // but it appears only when no analysis is completed yet. With one completed and one held there
-    // is no approval button anywhere.
-    await loginInBrowser(page, OWNER);
-    await page.goto("/command-center");
-    await expect(page.getByText(/Onayınızı bekleyen \d+ analiz/)).toBeVisible({ timeout: 30_000 });
+    expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
   });
 
   test("4. the setup page now shows the proven opening balance with its date", async ({ page }) => {
@@ -326,7 +373,9 @@ test.describe("Pilot flow", () => {
       await page.goto("/onay");
       await expect(page.getByText("Ödeme planı değişikliği önerileri")).toBeVisible({ timeout: 60_000 });
       await expect(page.getByText(/Yeşil Ambalaj AŞ/).first()).toBeVisible();
-      await page.getByRole("button", { name: "Onayla" }).first().click();
+      // The screen now lists every kind of decision (role results waiting for the owner too), each in
+      // its own section: the plan change's button is the one in the plan change section.
+      await page.getByRole("region", { name: "Ödeme planı değişikliği önerileri" }).getByRole("button", { name: "Onayla" }).click();
       await expect(page.getByText("Ödeme planı değişikliği önerileri")).toHaveCount(0, { timeout: 30_000 });
     });
   });

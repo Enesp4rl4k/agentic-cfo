@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
-from app.models.analysis_job import AnalysisJob
+from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.email_ingest import EmailIngestAddress
 from app.models.erp_integration import ERPIntegration
 from app.models.organization import Organization
@@ -56,11 +56,33 @@ class Otomatik(BaseModel):
     parasut_otomatik: bool
 
 
+class Analizler(BaseModel):
+    """Every analysis of the company by what became of it, not only the latest one."""
+
+    calisan: int
+    onay_bekleyen: int
+    tamamlanan: int
+    basarisiz: int
+
+
+class BekleyenAnaliz(BaseModel):
+    id: str
+    dosya: str
+    guven: float | None
+    # Reason codes with their numbers (app.services.held_analysis); the screen words them.
+    nedenler: list[dict[str, Any]]
+    # The run read a statement whose running balances chain: approving it gives the radar its start.
+    bakiye_kanitli: bool
+    olusturma: str | None
+
+
 class Baslangic(BaseModel):
     firma: Firma
     veri: Veri
     son_analiz: SonAnaliz | None
     tamamlanan_analiz: int
+    analizler: Analizler
+    onay_bekleyen: list[BekleyenAnaliz]
     otomatik: Otomatik
 
 
@@ -82,6 +104,14 @@ async def baslangic(
     tamamlanan = int(await db.scalar(
         select(func.count(AnalysisJob.id)).where(scope, AnalysisJob.status == "completed")
     ) or 0)
+
+    by_status = dict((await db.execute(
+        select(AnalysisJob.status, func.count(AnalysisJob.id)).where(scope).group_by(AnalysisJob.status)
+    )).all())
+    count = lambda *names: sum(int(by_status.get(n, 0)) for n in names)  # noqa: E731
+    from app.services import held_analysis
+
+    held = await held_analysis.list_held(db, org_id, current_user.id)
 
     parasut = None
     eposta = False
@@ -113,6 +143,23 @@ async def baslangic(
                 "olusturma": son.created_at.isoformat() if son.created_at else None,
             },
             "tamamlanan_analiz": tamamlanan,
+            "analizler": {
+                "calisan": count(JobStatus.PENDING, JobStatus.INGESTING, JobStatus.ANALYZING),
+                "onay_bekleyen": len(held),
+                "tamamlanan": tamamlanan,
+                "basarisiz": count(JobStatus.FAILED),
+            },
+            "onay_bekleyen": [
+                {
+                    "id": j.id,
+                    "dosya": j.filename,
+                    "guven": float(j.min_confidence) if j.min_confidence is not None else None,
+                    "nedenler": held_analysis.why_held(j),
+                    "bakiye_kanitli": held_analysis.proves_balance(j),
+                    "olusturma": j.created_at.isoformat() if j.created_at else None,
+                }
+                for j in held
+            ],
             "otomatik": {
                 "eposta": eposta,
                 "parasut_otomatik": bool(parasut_bagli and parasut is not None and parasut.auto_sync_enabled),

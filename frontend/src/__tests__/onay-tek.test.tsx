@@ -27,6 +27,10 @@ vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")
 
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
+vi.mock("@/lib/api/heldAnalyses", () => ({ listHeldAnalyses: async () => [], rejectAnalysis: vi.fn() }));
+vi.mock("@/lib/api/heldRows", () => ({ listHeldRows: async () => [] }));
+vi.mock("@/lib/api/agentReview", () => ({ getReviewQueue: async () => [], approveHeldJob: vi.fn(), rejectHeldJob: vi.fn() }));
+
 import OnayPage from "@/app/(dashboard)/onay/page";
 import { ledgerSpies, planChangeSpies, renderWithQuery, settlementFixture as settlement } from "./dashboard-mocks";
 

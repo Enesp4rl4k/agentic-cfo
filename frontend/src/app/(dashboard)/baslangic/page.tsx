@@ -10,15 +10,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { approveJob } from "@/lib/api/cfo";
 import { baslangicDurumu, firmaOlustur, type BaslangicDurumu } from "@/lib/api/baslangic";
-import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";
+import { HeldReasons } from "@/components/held-analyses/HeldReasons";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { SailMark } from "@/components/brand-landing/SailMark";
 import { StaleBalanceNotice } from "@/components/radar/basis";
@@ -65,8 +61,7 @@ export default function BaslangicPage() {
   useEffect(() => { void yukle(); }, [yukle]);
 
   // An analysis in flight finishes without the person reloading the page.
-  const suruyor = durum?.son_analiz?.durum === "analyzing" || durum?.son_analiz?.durum === "pending"
-    || durum?.son_analiz?.durum === "ingesting";
+  const suruyor = (durum?.analizler.calisan ?? 0) > 0;
   useEffect(() => {
     if (!suruyor) return;
     const timer = setInterval(() => { void yukle(); }, 5000);
@@ -166,13 +161,15 @@ function Adimlar({
 }: { durum: BaslangicDurumu; yenile: () => Promise<void>; radar: RadarDurumu }) {
   const { t } = useI18n();
   const bs = t.baslangic;
-  const analiz = durum.son_analiz;
   const firmaTamam = durum.firma.var;
   const veriTamam = durum.veri.analiz_sayisi > 0 || durum.veri.parasut_bagli;
-  const analizTamam = durum.tamamlanan_analiz > 0;
+  // Done means nothing of the person's is left in it: a completed analysis next to one that still
+  // waits for approval (or is running) is a step in progress, said as such inside the step.
+  const analizTamam = durum.tamamlanan_analiz > 0 && durum.onay_bekleyen.length === 0 && durum.analizler.calisan === 0;
   const otomatikTamam = durum.otomatik.eposta || durum.otomatik.parasut_otomatik;
 
-  const radarTamam = analizTamam && radar.data?.starting_cash_cents != null;
+  // The opening balance is a fact of a completed statement, whatever else is still waiting.
+  const radarTamam = durum.tamamlanan_analiz > 0 && radar.data?.starting_cash_cents != null;
 
   const zorunlu = [firmaTamam, veriTamam, analizTamam, radarTamam];
   const tamamSayisi = zorunlu.filter(Boolean).length;
@@ -236,7 +233,7 @@ function Adimlar({
             : undefined}
           aciklama={bs.steps.analysis.body}
         >
-          <AnalizAdimi analiz={analiz} veriTamam={veriTamam} yenile={yenile} />
+          <AnalizAdimi durum={durum} veriTamam={veriTamam} />
         </Adim>
 
         <>
@@ -248,7 +245,7 @@ function Adimlar({
           ozet={radarTamam && radar.data ? <RadarOzeti radar={radar.data} /> : undefined}
           aciklama={bs.steps.radar.body}
         >
-          <RadarAdimi analizTamam={analizTamam} radar={radar} />
+          <RadarAdimi durum={durum} radar={radar} />
         </Adim>
         {radarTamam && radar.data?.opening_cash?.stale && <RadarEskiBakiye opening={radar.data.opening_cash} />}
         </>
@@ -353,12 +350,42 @@ function RadarEskiBakiye({ opening }: { opening: NonNullable<CashRadar["opening_
   return <StaleBalanceNotice asOf={opening.as_of} ageDays={opening.age_days} locale={locale} />;
 }
 
-/** Where the radar's starting cash stands: waiting, loading, unreadable, or unproven. Never a typed-in number. */
-function RadarAdimi({ analizTamam, radar }: { analizTamam: boolean; radar: RadarDurumu }) {
+/**
+ * Where the radar starting cash stands, from what the analyses actually are: nothing yet, running, waiting
+ * for approval, completed without a proven balance, or unreadable. Never a typed-in number, and never
+ * "no balance column" said about a file that has not finished (or been approved).
+ */
+function RadarAdimi({ durum, radar }: { durum: BaslangicDurumu; radar: RadarDurumu }) {
   const { t } = useI18n();
   const copy = t.baslangic.steps.radar;
+  const held = t.heldAnalysis.setup;
+  const bekleyen = durum.onay_bekleyen;
+  const calisan = durum.analizler.calisan;
 
-  if (!analizTamam) return <p className="text-xs text-muted-foreground">{copy.waiting}</p>;
+  if (bekleyen.length > 0) {
+    const kanitli = bekleyen.some((a) => a.bakiye_kanitli);
+    return (
+      <Alert variant="warning">
+        <CircleAlert className="h-4 w-4" />
+        <AlertTitle>{kanitli ? held.waitingTitle : held.waitingUnknownTitle}</AlertTitle>
+        <AlertDescription className="mt-1 space-y-3">
+          <p className="text-muted-foreground">{kanitli ? held.waitingBody : held.waitingUnknownBody}</p>
+          <Button asChild size="sm" className="min-h-[44px]">
+            <Link href="/onay">{held.waitingCta} <ArrowRight className="h-4 w-4" /></Link>
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (calisan > 0) {
+    return (
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        {held.running}
+      </p>
+    );
+  }
+  if (durum.tamamlanan_analiz === 0) return <p className="text-xs text-muted-foreground">{copy.waiting}</p>;
   if (radar.isLoading) return <p className="text-xs text-muted-foreground">{copy.loading}</p>;
   if (radar.isError) {
     return (
@@ -430,20 +457,16 @@ function FirmaFormu({ yenile }: { yenile: () => Promise<void> }) {
   );
 }
 
-function AnalizAdimi({
-  analiz, veriTamam, yenile,
-}: {
-  analiz: BaslangicDurumu["son_analiz"];
-  veriTamam: boolean;
-  yenile: () => Promise<void>;
-}) {
-  const [onayAcik, setOnayAcik] = useState(false);
-  const [onaylaniyor, setOnaylaniyor] = useState(false);
-  const [hata, setHata] = useState<string | null>(null);
+/** The analyses by what became of them: waiting for approval (with why), running, failed, completed. */
+function AnalizAdimi({ durum, veriTamam }: { durum: BaslangicDurumu; veriTamam: boolean }) {
   const { t } = useI18n();
   const bs = t.baslangic;
+  const held = t.heldAnalysis;
+  const analiz = durum.son_analiz;
+  const bekleyen = durum.onay_bekleyen;
+  const { calisan, tamamlanan } = durum.analizler;
 
-  if (!analiz) {
+  if (!analiz && bekleyen.length === 0 && calisan === 0 && tamamlanan === 0) {
     return (
       <p className="text-xs text-muted-foreground">
         {veriTamam ? bs.analysis.startingSoon : bs.analysis.connectFirst}
@@ -451,88 +474,59 @@ function AnalizAdimi({
     );
   }
 
-  if (analiz.onay_bekliyor) {
-    const guven = analiz.guven === null ? null : Math.round(analiz.guven * 100);
-    return (
-      <>
+  return (
+    <div className="space-y-3">
+      {bekleyen.length > 0 && (
         <Alert variant="warning">
           <CircleAlert className="h-4 w-4" />
           <AlertTitle>{bs.analysis.approvalTitle}</AlertTitle>
           <AlertDescription className="mt-1 space-y-3">
-            <p className="text-muted-foreground">
-              {guven === null
-                ? bs.analysis.confidenceLow
-                : bs.analysis.confidenceWith.replace("{pct}", String(guven))}
-            </p>
+            <p className="font-medium">{held.setup.analysesHeld.replace("{count}", String(bekleyen.length))}</p>
+            <ul className="m-0 list-none space-y-2 p-0">
+              {bekleyen.map((a) => (
+                <li key={a.id}>
+                  <p className="m-0 text-sm font-medium">{a.dosya}</p>
+                  <HeldReasons reasons={a.nedenler} />
+                </li>
+              ))}
+            </ul>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/pnl?job=${analiz.id}`}>{bs.analysis.viewResults}</Link>
+              <Button size="sm" className="min-h-[44px]" asChild>
+                <Link href="/onay">{held.setup.waitingCta} <ArrowRight className="h-4 w-4" /></Link>
               </Button>
-              <Button size="sm" onClick={() => setOnayAcik(true)}>{bs.analysis.approveAndFinish}</Button>
+              <Button variant="outline" size="sm" className="min-h-[44px]" asChild>
+                <Link href={`/pnl?job=${bekleyen[0].id}`}>{bs.analysis.viewResults}</Link>
+              </Button>
             </div>
-            {hata && <p className="text-xs text-destructive">{hata}</p>}
           </AlertDescription>
         </Alert>
+      )}
 
-        {/* Imzalamadan önce: seçenekler, sonuçları, veri tazeliği, emsal. */}
-        <DecisionPacketPanel jobId={analiz.id} className="mt-3" />
+      {calisan > 0 && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          {analiz && (analiz.durum === "analyzing" || analiz.durum === "pending" || analiz.durum === "ingesting")
+            ? bs.analysis.processing.replace("{file}", analiz.dosya)
+            : held.setup.analysesRunning.replace("{count}", String(calisan))}
+        </p>
+      )}
 
-        <Dialog open={onayAcik} onOpenChange={setOnayAcik}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{bs.analysis.confirmTitle}</DialogTitle>
-              <DialogDescription>
-                {bs.analysis.confirmBody}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOnayAcik(false)}>{bs.analysis.cancel}</Button>
-              <Button
-                disabled={onaylaniyor}
-                onClick={async () => {
-                  setOnaylaniyor(true);
-                  setHata(null);
-                  try {
-                    await approveJob(analiz.id);
-                    setOnayAcik(false);
-                    await yenile();
-                  } catch (e) {
-                    setHata(e instanceof Error ? e.message : bs.analysis.approveError);
-                    setOnayAcik(false);
-                  } finally {
-                    setOnaylaniyor(false);
-                  }
-                }}
-              >
-                {onaylaniyor && <Loader2 className="h-4 w-4 animate-spin" />}
-                {bs.analysis.approve}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </>
-    );
-  }
+      {analiz?.durum === "failed" && bekleyen.length === 0 && (
+        <Alert variant="destructive">
+          <CircleAlert className="h-4 w-4" />
+          <AlertTitle>{bs.analysis.failedTitle}</AlertTitle>
+          <AlertDescription className="mt-1 space-y-3">
+            <p>{analiz.hata ?? bs.analysis.noReason}</p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/baglan">{bs.analysis.reconnect}</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
-  if (analiz.durum === "failed") {
-    return (
-      <Alert variant="destructive">
-        <CircleAlert className="h-4 w-4" />
-        <AlertTitle>{bs.analysis.failedTitle}</AlertTitle>
-        <AlertDescription className="mt-1 space-y-3">
-          <p>{analiz.hata ?? bs.analysis.noReason}</p>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/baglan">{bs.analysis.reconnect}</Link>
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  return (
-    <p className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      {bs.analysis.processing.replace("{file}", analiz.dosya)}
-    </p>
+      {tamamlanan > 0 && (bekleyen.length > 0 || calisan > 0) && (
+        <p className="text-xs text-muted-foreground">{held.setup.analysesDone.replace("{count}", String(tamamlanan))}</p>
+      )}
+    </div>
   );
 }

@@ -7,14 +7,10 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const { api, cfo, packet } = vi.hoisted(() => ({
+const { api } = vi.hoisted(() => ({
   api: { baslangicDurumu: vi.fn(), firmaOlustur: vi.fn() },
-  cfo: { approveJob: vi.fn() },
-  packet: { getDecisionPacket: vi.fn() },
 }));
 vi.mock("@/lib/api/baslangic", () => api);
-vi.mock("@/lib/api/cfo", () => cfo);
-vi.mock("@/lib/api/decisionPacket", () => packet);
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 vi.mock("@/lib/api/ledger", async () => (await import("./dashboard-mocks")).ledgerModule);
 // The page renders through useI18n, which resolves the org locale — these assertions pin a tr-TR org's copy.
@@ -23,16 +19,38 @@ vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")
 import BaslangicPage from "@/app/(dashboard)/baslangic/page";
 import { ledgerSpies, renderWithQuery } from "./dashboard-mocks";
 
-const durum = (over: Record<string, unknown> = {}) => ({
-  firma: { var: true, ad: "Kobi A.Ş." },
-  veri: { analiz_sayisi: 1, parasut_bagli: false },
-  son_analiz: null,
-  tamamlanan_analiz: 0,
-  otomatik: { eposta: false, parasut_otomatik: false },
+type Over = Record<string, unknown>;
+
+/** What the API answers; the per-status counts are derived from the parts the test sets, as the server does. */
+const durum = (over: Over = {}) => {
+  const merged = {
+    firma: { var: true, ad: "Kobi A.Ş." },
+    veri: { analiz_sayisi: 1, parasut_bagli: false },
+    son_analiz: null as { durum: string } | null,
+    tamamlanan_analiz: 0,
+    onay_bekleyen: [] as unknown[],
+    otomatik: { eposta: false, parasut_otomatik: false },
+    ...over,
+  };
+  const running = ["pending", "ingesting", "analyzing"].includes(merged.son_analiz?.durum ?? "");
+  return {
+    analizler: {
+      calisan: running ? 1 : 0,
+      onay_bekleyen: merged.onay_bekleyen.length,
+      tamamlanan: merged.tamamlanan_analiz,
+      basarisiz: merged.son_analiz?.durum === "failed" ? 1 : 0,
+    },
+    ...merged,
+  };
+};
+
+/** One analysis waiting for the owner, as `onay_bekleyen` lists it. */
+const bekleyen = (over: Over = {}) => ({
+  id: "job-1", dosya: "ekstre.csv", guven: null, bakiye_kanitli: true, olusturma: null,
+  nedenler: [{ code: "rows_waiting", count: 6, all_rows: true, summary: "6 kaydın para birimi bilinmiyor." }],
   ...over,
 });
 
-// The decision-packet panel polls with useQuery; its mock rejects and the panel stays hidden.
 const renderPage = () => renderWithQuery(<BaslangicPage />);
 
 /** The radar as the API answers it: starting cash proven by a statement, or unknown. */
@@ -45,13 +63,8 @@ const radar = (over: Record<string, unknown> = {}) => ({
 describe("Başlangıç", () => {
   beforeEach(() => {
     Object.values(api).forEach((f) => f.mockReset());
-    cfo.approveJob.mockReset();
     ledgerSpies.getCashRadar.mockReset();
     ledgerSpies.getCashRadar.mockResolvedValue(radar());
-    // The packet is optional furniture: reject so the panel renders nothing
-    // and the assertions below stay about the approval flow itself.
-    packet.getDecisionPacket.mockReset();
-    packet.getDecisionPacket.mockRejectedValue(new Error("no packet"));
   });
 
   it("counts the steps the organisation has actually finished", async () => {
@@ -71,29 +84,77 @@ describe("Başlangıç", () => {
     await waitFor(() => expect(api.firmaOlustur).toHaveBeenCalledWith("Yıldız Tekstil"));
   });
 
-  it("says an analysis is waiting for approval, with the confidence and the threshold", async () => {
+  it("says an analysis is waiting for approval, with why, and links to the one place that decides", async () => {
     api.baslangicDurumu.mockResolvedValue(durum({
       son_analiz: { id: "job-1", durum: "awaiting_review", onay_bekliyor: true, guven: 0.62,
                     dosya: "ekstre.csv", hata: null, olusturma: null },
+      onay_bekleyen: [bekleyen({ guven: 0.62, nedenler: [{ code: "confidence_low", min_confidence: 0.62, threshold: 0.8 }] })],
     }));
     renderPage();
-    expect(await screen.findByText(/güven puanı %62/)).toBeInTheDocument();
-    expect(screen.getByText(/%80'in altındaki/)).toBeInTheDocument();
+    expect(await screen.findByText("Analiz onayınızı bekliyor")).toBeInTheDocument();
+    expect(screen.getByText("Güven puanı %62; %80 altındaki sonuçlar onayla kullanılır.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Önce sonuçlara bakayım/ })).toHaveAttribute("href", "/pnl?job=job-1");
+    // One click to where it is answered; the setup page itself does not approve.
+    expect(screen.getAllByRole("link", { name: /Onay bekleyenleri aç/ })[0]).toHaveAttribute("href", "/onay");
+    expect(screen.queryByRole("button", { name: /Onayla/ })).toBeNull();
   });
 
-  it("approves only after the confirmation is accepted", async () => {
+  it("with one analysis completed and a statement held, the setup is not done and the held one is shown", async () => {
     api.baslangicDurumu.mockResolvedValue(durum({
-      son_analiz: { id: "job-1", durum: "awaiting_review", onay_bekliyor: true, guven: 0.62,
+      tamamlanan_analiz: 1,
+      son_analiz: { id: "job-1", durum: "awaiting_review", onay_bekliyor: true, guven: null,
+                    dosya: "ekstre.csv", hata: null, olusturma: null },
+      onay_bekleyen: [bekleyen()],
+    }));
+    ledgerSpies.getCashRadar.mockResolvedValue(radar({ starting_cash_cents: null, starting_cash_as_of: null }));
+    renderPage();
+    expect(await screen.findByText("1 analiz onayınızı bekliyor")).toBeInTheDocument();
+    expect(screen.getByText("1 analiz tamamlandı.")).toBeInTheDocument();
+    expect(screen.queryByText("Kurulum tamam")).toBeNull();
+    expect(screen.getByText("2/4")).toBeInTheDocument();
+  });
+
+  it("says the statement is waiting for approval, not that it has no balance, while it is held", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({
+      tamamlanan_analiz: 1,
+      onay_bekleyen: [bekleyen()],
+    }));
+    ledgerSpies.getCashRadar.mockResolvedValue(radar({ starting_cash_cents: null, starting_cash_as_of: null }));
+    renderPage();
+    expect(await screen.findByText("Ekstreniz onayınızı bekliyor")).toBeInTheDocument();
+    expect(screen.getByText(/satır bakiyeleri birbirini tutuyor, dosyada eksik yok/)).toBeInTheDocument();
+    expect(screen.queryByText(/bakiye sütunu yok/)).toBeNull();
+    expect(screen.queryByText("Kanıtlanmış banka bakiyesi yok")).toBeNull();
+  });
+
+  it("does not claim the held file proves a balance when the run does not say so", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({
+      tamamlanan_analiz: 1,
+      onay_bekleyen: [bekleyen({ bakiye_kanitli: false })],
+    }));
+    ledgerSpies.getCashRadar.mockResolvedValue(radar({ starting_cash_cents: null, starting_cash_as_of: null }));
+    renderPage();
+    expect(await screen.findByText("Onayınızı bekleyen analiz var")).toBeInTheDocument();
+    expect(screen.queryByText("Ekstreniz onayınızı bekliyor")).toBeNull();
+  });
+
+  it("says the opening balance waits for the running analysis, not that there is none", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({
+      tamamlanan_analiz: 1,
+      son_analiz: { id: "job-2", durum: "analyzing", onay_bekliyor: false, guven: null,
                     dosya: "ekstre.csv", hata: null, olusturma: null },
     }));
-    cfo.approveJob.mockResolvedValue(undefined);
+    ledgerSpies.getCashRadar.mockResolvedValue(radar({ starting_cash_cents: null, starting_cash_as_of: null }));
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Onayla ve tamamla" }));
-    expect(await screen.findByText("Analizi onaylıyor musunuz?")).toBeInTheDocument();
-    expect(cfo.approveJob).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Onayla" }));
-    await waitFor(() => expect(cfo.approveJob).toHaveBeenCalledWith("job-1"));
+    expect(await screen.findByText("Analiz sürüyor; bitince başlangıç bakiyesi burada görünür.")).toBeInTheDocument();
+    expect(screen.queryByText("Kanıtlanmış banka bakiyesi yok")).toBeNull();
+  });
+
+  it("keeps the balance a completed statement proved even while another analysis waits", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1, onay_bekleyen: [bekleyen({ bakiye_kanitli: false })] }));
+    renderPage();
+    expect(await screen.findByText(/14\.11\.2026 tarihinde .*1\.250\.000/)).toBeInTheDocument();
+    expect(screen.getByText("1 analiz onayınızı bekliyor")).toBeInTheDocument();
   });
 
   it("shows a failed analysis with its reason and a way to retry", async () => {
@@ -186,6 +247,7 @@ describe("Başlangıç", () => {
     renderPage();
     expect(await screen.findByText("Kanıtlanmış banka bakiyesi yok")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Bakiyeli ekstre yükle/ })).toHaveAttribute("href", "/baglan");
+    expect(screen.getByText(/Tamamlanan analizlerin hiçbirinde, satır bakiyeleri birbirini tutan bir banka ekstresi yok/)).toBeInTheDocument();
     expect(screen.queryByText("İlk raporun hazır")).toBeNull();
     expect(screen.getByText("3/4")).toBeInTheDocument();
   });
