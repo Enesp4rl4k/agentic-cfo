@@ -138,6 +138,11 @@ async def build_backtest(db: AsyncSession, *, org_id: str | None) -> dict[str, A
         return _insufficient(0)
 
     earliest = min(c[0] for c in claims)
+    # The claims were made in the currency the forecast runs on; the realised flows are compared in that
+    # one currency only (a USD receipt is not lira), as every other figure (`core/currency_totals`).
+    from app.services.ledger import base_currency_of
+
+    currency = await base_currency_of(db, str(org_id))
     flows = (
         await db.execute(
             select(
@@ -147,6 +152,7 @@ async def build_backtest(db: AsyncSession, *, org_id: str | None) -> dict[str, A
             ).where(
                 Transaction.job_id == data_job.id,
                 Transaction.transaction_date > earliest,
+                Transaction.currency == currency,
             )
         )
     ).all()

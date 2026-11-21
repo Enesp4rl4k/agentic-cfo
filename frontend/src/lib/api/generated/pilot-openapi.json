@@ -235,9 +235,19 @@
             "title": "Anchor Date",
             "type": "string"
           },
+          "base_state": {
+            "default": "confirmed",
+            "title": "Base State",
+            "type": "string"
+          },
           "beyond_horizon_cents": {
             "title": "Beyond Horizon Cents",
             "type": "integer"
+          },
+          "currency": {
+            "default": "TRY",
+            "title": "Currency",
+            "type": "string"
           },
           "held_documents": {
             "anyOf": [
@@ -269,6 +279,14 @@
           "other_currency_items": {
             "title": "Other Currency Items",
             "type": "integer"
+          },
+          "other_currency_totals": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OtherCurrencyTotalOut"
+            },
+            "title": "Other Currency Totals",
+            "type": "array"
           },
           "overdue_payables_cents": {
             "title": "Overdue Payables Cents",
@@ -354,6 +372,50 @@
           "not_included"
         ],
         "title": "CashRadarOut",
+        "type": "object"
+      },
+      "CurrencySubtotalOut": {
+        "description": "One non-base currency, summed on its own. Never added to the base figures.",
+        "properties": {
+          "assumed_rows": {
+            "default": 0,
+            "title": "Assumed Rows",
+            "type": "integer"
+          },
+          "cash_in_cents": {
+            "title": "Cash In Cents",
+            "type": "integer"
+          },
+          "cash_out_cents": {
+            "title": "Cash Out Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "expense_cents": {
+            "title": "Expense Cents",
+            "type": "integer"
+          },
+          "revenue_cents": {
+            "title": "Revenue Cents",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "revenue_cents",
+          "expense_cents",
+          "cash_in_cents",
+          "cash_out_cents",
+          "rows"
+        ],
+        "title": "CurrencySubtotalOut",
         "type": "object"
       },
       "DecisionRequest": {
@@ -906,6 +968,36 @@
       },
       "LedgerSummaryOut": {
         "properties": {
+          "base_confirmed": {
+            "title": "Base Confirmed",
+            "type": "boolean"
+          },
+          "base_state": {
+            "title": "Base State",
+            "type": "string"
+          },
+          "confirm_path": {
+            "title": "Confirm Path",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "currency_totals": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencySubtotalOut"
+            },
+            "title": "Currency Totals",
+            "type": "array"
+          },
           "expense_cents": {
             "title": "Expense Cents",
             "type": "integer"
@@ -930,6 +1022,13 @@
           "open_items": {
             "$ref": "#/components/schemas/OpenItemsOut"
           },
+          "other_currencies": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencySubtotalOut"
+            },
+            "title": "Other Currencies",
+            "type": "array"
+          },
           "period": {
             "$ref": "#/components/schemas/LedgerPeriodOut"
           },
@@ -950,8 +1049,14 @@
           "last_upload",
           "open_items",
           "rows",
+          "currency",
+          "base_state",
+          "base_confirmed",
+          "confirm_path",
           "revenue_cents",
           "expense_cents",
+          "other_currencies",
+          "currency_totals",
           "possible_duplicates",
           "period",
           "months"
@@ -1200,6 +1305,35 @@
           "source_filename"
         ],
         "title": "OpeningCashOut",
+        "type": "object"
+      },
+      "OtherCurrencyTotalOut": {
+        "description": "Open items in a currency other than the radar's: counted with their own totals, never converted.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "payable_cents": {
+            "title": "Payable Cents",
+            "type": "integer"
+          },
+          "receivable_cents": {
+            "title": "Receivable Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "receivable_cents",
+          "payable_cents",
+          "count"
+        ],
+        "title": "OtherCurrencyTotalOut",
         "type": "object"
       },
       "Otomatik": {

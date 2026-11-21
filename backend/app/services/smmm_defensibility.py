@@ -76,6 +76,8 @@ def _item(entry: dict[str, Any], onay: SMMMOnayKaydi | None) -> dict[str, Any]:
         "date": entry.get("tarih"),
         "description": entry.get("aciklama"),
         "amount_kurus": entry.get("toplam_borc"),
+        # The currency the entry is kept in: the accountant sees every entry, each in its own.
+        "currency": entry.get("para_birimi"),
         "balanced": entry.get("dengeli"),
         "account_code": entry.get("thp_hesap_kodu"),
         "classification_confidence": entry.get("confidence"),
@@ -141,7 +143,15 @@ async def build_packet(
     for it in items:
         counts[it["decision_source"]] = counts.get(it["decision_source"], 0) + 1
 
-    total_amount = sum(int(it["amount_kurus"] or 0) for it in items)
+    # Totals per currency: an entry in USD is never added to one in TRY. `total_amount_kurus` is the
+    # journal's primary currency (an untagged, older journal is all one currency).
+    primary = str(journal.get("birincil_para_birimi") or "")
+    by_currency: dict[str, int] = {}
+    for it in items:
+        cur = str(it.get("currency") or primary or "TRY")
+        by_currency[cur] = by_currency.get(cur, 0) + int(it["amount_kurus"] or 0)
+    primary = primary or next(iter(by_currency), "TRY")
+    total_amount = by_currency.get(primary, 0)
     human_touched = counts.get(DS_HUMAN_OK, 0) + counts.get(DS_HUMAN_FIX, 0)
 
     summary = {
@@ -149,6 +159,9 @@ async def build_packet(
         "job_id": job_id,
         "entry_count": len(items),
         "total_amount_kurus": total_amount,
+        "primary_currency": primary,
+        "total_amount_by_currency": by_currency,
+        "currency_balance": journal.get("para_birimleri") or {},
         "by_decision_source": counts,
         "human_reviewed": human_touched,
         "ai_auto_posted": counts.get(DS_AI_AUTO, 0),

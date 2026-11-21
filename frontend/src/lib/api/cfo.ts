@@ -85,6 +85,8 @@ export interface TransactionsPage {
   total: number;
   limit: number;
   offset: number;
+  /** The effective base for this job's currencies (backend `effective_base`). */
+  base?: { state: string; currency: string | null; confirmed: boolean; dominant: string | null; present: Record<string, number>; confirm_path: string };
   transactions: (Transaction & { id: string })[];
 }
 

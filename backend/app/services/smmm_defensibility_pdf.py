@@ -31,7 +31,7 @@ def _lines(packet: Any) -> list[str]:
         f"Durum: {packet.status}    İçerik özeti (SHA-256): {packet.content_hash}",
         "",
         f"Kayıt sayısı: {s.get('entry_count', 0)}    Toplam tutar: "
-        f"{(s.get('total_amount_kurus', 0) or 0) / 100:,.2f} TRY",
+        f"{(s.get('total_amount_kurus', 0) or 0) / 100:,.2f} {s.get('primary_currency') or 'TRY'}",
         f"İnsan incelemesi: {s.get('human_reviewed', 0)}    "
         f"AI otomatik: {s.get('ai_auto_posted', 0)}    "
         f"Reddedilen: {s.get('rejected', 0)}    Bekleyen: {s.get('pending_review', 0)}",

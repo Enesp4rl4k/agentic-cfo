@@ -17,10 +17,12 @@ import { Upload, TrendingUp, TrendingDown, ChevronDown, ChevronRight, BarChart3,
 import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
-import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { CurrencyScope, useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import { BaseCurrencyNotice, DominantCaption, LeftOutNote, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
 import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { SailMark } from "@/components/brand-landing/SailMark";
 import type { PnLData, ProvenanceBlock } from "@/types";
@@ -64,6 +66,7 @@ function titleCaseKey(key: string): string {
 
 function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
   const { t } = useI18n();
   const { kpi } = t.pnl;
 
@@ -121,6 +124,11 @@ function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
           {item.margin != null && <MarginBar value={item.margin} />}
         </div>
       ))}
+      </div>
+      <div className="mt-1.5">
+        {pnl.base_state !== "ambiguous" && <BaseCurrencyNotice state={pnl.base_state} base={pnl.currency} />}
+        <OtherCurrencyLines items={pnl.other_currencies} base={pnl.currency ?? org?.base_currency ?? "TRY"} ratios />
+        <LeftOutNote items={pnl.other_currencies} />
       </div>
     </>
   );
@@ -601,7 +609,17 @@ export default function PnLPage() {
 
   const pnl = dashboard!.pnl;
 
+  // Several currencies and none confirmed: no single headline. Each currency stands alone, and the figures
+  // below (computed on the dominant one) are labelled with it.
+  const ambiguous = pnl.base_state === "ambiguous";
+  const dominant = {
+    currency: pnl.currency ?? "",
+    revenue_cents: Math.round(pnl.revenue * 100),
+    expense_cents: Math.round((pnl.revenue - pnl.net_income) * 100),
+  };
+
   return (
+    <CurrencyScope currency={pnl.currency}>
     <div className="space-y-4 p-5">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">{t.pnl.title}</h1>
@@ -615,12 +633,20 @@ export default function PnLPage() {
       {/* Rows from this upload that wait for a person are in none of the figures below. */}
       <HeldRowsLink jobId={jobId} />
 
+      {ambiguous && (
+        <div className="space-y-1" data-testid="pnl-per-currency">
+          <BaseCurrencyNotice state="ambiguous" base={pnl.currency} />
+          <OtherCurrencyLines base="" items={[dominant, ...(pnl.other_currencies ?? [])]} />
+          <DominantCaption currency={pnl.currency} />
+        </div>
+      )}
       <KPIStrip pnl={pnl} prov={dashboard!.provenance?.pnl} />
       <WaterfallChart pnl={pnl} />
       <OpExDrillDown pnl={pnl} />
       <PnLStatement pnl={pnl} />
       <BenchmarkPanel jobId={jobId} />
     </div>
+    </CurrencyScope>
   );
 }
 

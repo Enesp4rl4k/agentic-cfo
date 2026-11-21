@@ -29,6 +29,7 @@ from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.acting_role import acting_role
+from app.services.ledger import base_currency_of
 from app.services.related_party import (
     group_counterparties,
     load_active_parties,
@@ -247,6 +248,7 @@ async def suggest_counterparties(
             Transaction.transaction_date,
             Transaction.amount_kurus.label("amount_kurus"),
             Transaction.type,
+            Transaction.currency.label("currency"),
         )
         .join(AnalysisJob, Transaction.job_id == AnalysisJob.id)
         .where(
@@ -264,15 +266,17 @@ async def suggest_counterparties(
                 tekil.c.vendor,
                 func.count().label("tx_count"),
                 func.sum(func.abs(tekil.c.amount_kurus)).label("total_kurus"),
+                tekil.c.currency,
             )
-            .group_by(tekil.c.vendor)
+            .group_by(tekil.c.vendor, tekil.c.currency)
             .order_by(func.count().desc())
         )
     ).all()
 
     known = {p.normalized_name for p in await load_active_parties(org_id, db)}
     suggestions = group_counterparties(
-        [(v, int(c or 0), int(t or 0)) for v, c, t in rows], known, limit=limit
+        [(v, int(c or 0), int(t or 0), cur) for v, c, t, cur in rows], known, limit=limit,
+        base=await base_currency_of(db, org_id),
     )
 
     return {

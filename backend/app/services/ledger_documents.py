@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency_totals import normalise, same_currency
 from app.core.invoice_identity import (
     document_key,
     is_unique_id,
@@ -96,7 +97,7 @@ async def existing_rows(db: AsyncSession, org_id: str, ids: list[str]) -> dict[s
 
 async def others_by_money(
     db: AsyncSession, org_id: str, job_id: str, days: list[date]
-) -> dict[tuple[int, str, str], list[tuple[date, str, str]]]:
+) -> dict[tuple[int, str, str], list[tuple[date, str, str, str]]]:
     """Rows from other uploads around these dates: what a new row might repeat."""
     window = timedelta(days=DUPLICATE_WINDOW_DAYS)
     rows = await db.execute(
@@ -108,6 +109,7 @@ async def others_by_money(
             CanonicalTransaction.direction,
             CanonicalTransaction.source_job_id,
             CanonicalTransaction.basis,
+            CanonicalTransaction.currency,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
@@ -116,11 +118,11 @@ async def others_by_money(
             CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
         )
     )
-    found: dict[tuple[int, str, str], list[tuple[date, str, str]]] = defaultdict(list)
+    found: dict[tuple[int, str, str], list[tuple[date, str, str, str]]] = defaultdict(list)
     for r in rows:
         if r.source_job_id != job_id:
             found[(r.amount_cents, r.direction, r.basis)].append(
-                (day_of(r.transaction_date), r.id, r.source_record_id)
+                (day_of(r.transaction_date), r.id, r.source_record_id, normalise(r.currency))
             )
     return found
 
@@ -130,7 +132,7 @@ def _is_document_key(record_id: str) -> bool:
 
 
 def repeats(
-    others: dict[tuple[int, str, str], list[tuple[date, str, str]]], tx: Transaction, record_id: str
+    others: dict[tuple[int, str, str], list[tuple[date, str, str, str]]], tx: Transaction, record_id: str
 ) -> str | None:
     """The nearest row this one may repeat in the duplicate window, if any is close enough.
 
@@ -143,9 +145,10 @@ def repeats(
     day = day_of(tx.transaction_date)
     near = [
         (abs((other - day).days), row_id)
-        for other, row_id, other_record_id in others.get((tx.amount_kurus, tx.type, basis_of(tx)), [])
+        for other, row_id, other_record_id, other_currency in others.get((tx.amount_kurus, tx.type, basis_of(tx)), [])
         if abs((other - day).days) <= DUPLICATE_WINDOW_DAYS
         and not (_is_document_key(record_id) and _is_document_key(other_record_id))
+        and same_currency(tx.currency, other_currency)
     ]
     return min(near)[1] if near else None
 
@@ -155,7 +158,7 @@ async def same_number_rows(
 ) -> dict[tuple[str, int, str], list[CanonicalTransaction]]:
     """Counted rows of other uploads with these free-form numbers: (number, amount, side) -> rows."""
     numbers = sorted({n for rid, _ in usable if (n := key_number(rid))})
-    found: dict[tuple[str, int, str], list[CanonicalTransaction]] = defaultdict(list)
+    found: dict[tuple[str, int, str, str], list[CanonicalTransaction]] = defaultdict(list)
     for i in range(0, len(numbers), 100):
         rows = await db.execute(
             select(CanonicalTransaction).where(
@@ -175,7 +178,7 @@ async def same_number_rows(
 
 async def same_number_match(
     db: AsyncSession, org_id: str, tx: Transaction, record_id: str,
-    candidates: dict[tuple[str, int, str], list[CanonicalTransaction]],
+    candidates: dict[tuple[str, int, str, str], list[CanonicalTransaction]],
     aliases: dict[str, str], cache: dict[str, list[Transaction]],
 ) -> str | None:
     """A row with this number and amount under another counterparty, close in date: held for a person.
@@ -192,7 +195,7 @@ async def same_number_match(
         return None
     day = day_of(tx.transaction_date)
     for row in candidates.get((number, tx.amount_kurus, tx.type), []):
-        if row.source_record_id == record_id:
+        if row.source_record_id == record_id or not same_currency(tx.currency, row.currency):
             continue
         if abs((day_of(row.asil_tarih or row.transaction_date) - day).days) > SAME_NUMBER_DATE_WINDOW_DAYS:
             continue
@@ -207,7 +210,7 @@ def _is_unique_document_key(record_id: str) -> bool:
 
 async def same_document_other_id(
     db: AsyncSession, tx: Transaction, record_id: str,
-    others: dict[tuple[int, str, str], list[tuple[date, str, str]]],
+    others: dict[tuple[int, str, str], list[tuple[date, str, str, str]]],
     aliases: dict[str, str], cache: dict[str, list[Transaction]],
 ) -> str | None:
     """The row this document may be, when it was read under a different kind of identity.
@@ -224,13 +227,14 @@ async def same_document_other_id(
         return None
     mine_unique = _is_unique_document_key(record_id)
     day = day_of(tx.transaction_date)
-    for other_day, row_id, other_record_id in others.get(
+    for other_day, row_id, other_record_id, other_currency in others.get(
         (tx.amount_kurus, tx.type, basis_of(tx)), []
     ):
         if (
             abs((other_day - day).days) > DUPLICATE_WINDOW_DAYS
             or not _is_document_key(other_record_id)
             or _is_unique_document_key(other_record_id) == mine_unique
+            or not same_currency(tx.currency, other_currency)
         ):
             continue
         row = await db.get(CanonicalTransaction, row_id)

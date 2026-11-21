@@ -156,6 +156,9 @@ async def test_an_undated_held_payable_counts_as_material_when_the_week_has_no_o
 async def test_a_held_payable_whose_size_is_unknown_is_never_dropped_from_the_headline(client):
     """Foreign currency is counted, never converted: an amount that cannot be added up is material."""
     _headers, org_id, _ = await kullanici(client, "briefusd@example.com")
+    from tests.test_cash_radar import _confirm_try
+
+    await _confirm_try(client, org_id)
     await _other_payable(client, org_id, 50_000_000)                      # a huge week: 100 USD could not matter... in TRY
     async with client._maker() as db:
         for number, who in (("A-1", FULL), ("A-1", SHORT)):
