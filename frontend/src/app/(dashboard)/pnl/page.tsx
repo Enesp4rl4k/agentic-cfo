@@ -16,10 +16,12 @@ import { Upload, TrendingUp, TrendingDown, ChevronDown, ChevronRight, BarChart3,
 import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import { BaseCurrencyNotice, LeftOutNote, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
 import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import type { PnLData, ProvenanceBlock } from "@/types";
 
@@ -62,6 +64,7 @@ function titleCaseKey(key: string): string {
 
 function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
   const { t } = useI18n();
   const { kpi } = t.pnl;
 
@@ -119,6 +122,11 @@ function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
           {item.margin != null && <MarginBar value={item.margin} />}
         </div>
       ))}
+      </div>
+      <div className="mt-1.5">
+        <BaseCurrencyNotice state={pnl.base_state} base={pnl.currency} />
+        <OtherCurrencyLines items={pnl.other_currencies} base={pnl.currency ?? org?.base_currency ?? "TRY"} ratios />
+        <LeftOutNote items={pnl.other_currencies} />
       </div>
     </>
   );

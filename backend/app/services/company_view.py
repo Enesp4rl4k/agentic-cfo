@@ -25,6 +25,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency_totals import foreign_summaries, split_by_currency
 from app.services.ledger import Period, company_rows, day_of
 
 _MONTH = re.compile(r"^\d{4}-\d{2}$")
@@ -38,9 +39,21 @@ class LedgerView:
     cash: list[dict[str, Any]]
     period: dict[str, Any]
     signature: str
+    # The pipeline reads base-currency rows only: `profit` and `cash` hold no other currency, so
+    # no sum, ranking or ratio downstream can mix them. What was left out is `foreign`: one
+    # sub-total per other currency, reported beside the base figures and never added to them.
+    base_currency: str = "TRY"
+    foreign: list[dict[str, Any]] | None = None
+    # How `base_currency` was decided (`core/currency_totals.effective_base`): confirmed, single_unconfirmed,
+    # or ambiguous (the dominant currency by row count, labelled as such: no single headline exists).
+    base_state: str = "confirmed"
 
-    def for_pipeline(self) -> dict[str, list[dict[str, Any]]]:
-        return {"profit": self.profit, "cash": self.cash}
+    def for_pipeline(self) -> dict[str, Any]:
+        return {
+            "profit": self.profit, "cash": self.cash,
+            "base_currency": self.base_currency, "foreign": self.foreign or [],
+            "base_state": self.base_state,
+        }
 
 
 def _as_transaction(row: Any, reclass_of_period: str | None = None) -> dict[str, Any]:
@@ -63,7 +76,7 @@ def _as_transaction(row: Any, reclass_of_period: str | None = None) -> dict[str,
     }
 
 
-def _signature(profit: list[Any], cash: list[Any]) -> str:
+def _signature(profit: list[Any], cash: list[Any], foreign: list[dict[str, Any]] | None = None) -> str:
     """What the figures say, not which row ids say it.
 
     A row's id is random, so a ledger rebuilt from the same uploads has other ids and
@@ -71,13 +84,15 @@ def _signature(profit: list[Any], cash: list[Any]) -> str:
     which is the document id or the content fingerprint) and sorts, so neither a
     rebuild nor the order rows are read in moves it.
     """
-    said = [
+    said: list[Any] = [
         sorted(
             [r.source_record_id, day_of(r.transaction_date).isoformat(), r.amount_cents, r.direction, r.category]
             for r in rows
         )
         for rows in (profit, cash)
     ]
+    if foreign:  # other currencies move the picture too, even though they are not in its totals
+        said.append(foreign)
     return hashlib.sha256(json.dumps(said).encode()).hexdigest()
 
 
@@ -87,11 +102,18 @@ async def ledger_view(db: AsyncSession, org_id: str, period: Period | None = Non
     rows = await company_rows(db, org_id, period)
     if not rows.profit and not rows.cash:
         return None
+    base = rows.base_currency
+    profit, _ = split_by_currency(rows.profit, base)
+    cash, _ = split_by_currency(rows.cash, base)
+    foreign = foreign_summaries(rows.profit, rows.cash, base)
     return LedgerView(
-        profit=[_as_transaction(r, rows.reclass_of_period.get(r.id)) for r in rows.profit],
-        cash=[_as_transaction(r) for r in rows.cash],
+        profit=[_as_transaction(r, rows.reclass_of_period.get(r.id)) for r in profit],
+        cash=[_as_transaction(r) for r in cash],
         period=rows.period.as_dict(),
-        signature=_signature(rows.profit, rows.cash),
+        signature=_signature(profit, cash, foreign),
+        base_currency=base,
+        foreign=foreign,
+        base_state=rows.effective.state,
     )
 
 

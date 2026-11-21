@@ -403,11 +403,25 @@ async def list_transactions(
     )
     txs = result.scalars().all()
 
+    # How this list's currencies are read: the same effective-base rule every surface uses, over the whole
+    # job (not the page). The list itself holds every row, each in its own currency, nothing left out.
+    from app.core.currency_totals import effective_base
+    from app.services.ledger import confirmed_base_of
+
+    job_counts = {
+        str(c): int(n) for c, n in (await db.execute(
+            select(Transaction.currency, func.count()).where(Transaction.job_id == job_id)
+            .group_by(Transaction.currency)
+        )).all()
+    }
+    base = effective_base(await confirmed_base_of(db, str(job.org_id)) if job.org_id else None, job_counts)
+
     return {
         "data": {
             "total": total,
             "limit": limit,
             "offset": offset,
+            "base": base.as_dict(),
             "transactions": [
                 {
                     "id": tx.id,

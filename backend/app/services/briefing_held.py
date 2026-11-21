@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import get_settings
-from app.services.cash_radar import _fmt
+from app.core.currency_totals import fmt_money as _fmt
+from app.services.ledger_documents import HOLD_REASONS_TR
 
 
 def held_caveat(radar: Any, week_outflow_cents: int) -> str:
@@ -25,7 +26,7 @@ def held_caveat(radar: Any, week_outflow_cents: int) -> str:
     material = unknown or (at_risk > 0 and (week_outflow_cents <= 0 or at_risk >= ratio * week_outflow_cents))
     if not material:
         return ""
-    size = f" ({_fmt(held.payable_cents)} ödeme)" if held.payable_cents else ""
+    size = f" ({_fmt(held.payable_cents, radar.currency)} ödeme)" if held.payable_cents else ""
     foreign = " Tutarı çevrilmemiş döviz belgeleri de var." if unknown else ""
     return (
         f" Karar bekleyen {held.count} belge{size} radara dahil değil; "
@@ -33,7 +34,23 @@ def held_caveat(radar: Any, week_outflow_cents: int) -> str:
     )
 
 
-def held_only_sentence(held: Any) -> str:
+def held_only_sentence(held: Any, currency: str = "TRY") -> str:
     """The headline when the radar is empty only because every document is waiting for a decision."""
-    size = f" ({_fmt(held.payable_cents)} ödeme)" if held.payable_cents else ""
+    size = f" ({_fmt(held.payable_cents, currency)} ödeme)" if held.payable_cents else ""
     return f"{held.count} belge{size} kararınızı bekliyor; radar bunlar olmadan boş."
+
+
+def held_line(held: Any, currency: str = "TRY") -> str:
+    """The `not_included` line: what waits, in lira, and that a person must answer."""
+    parts = []
+    if held.payable_cents:
+        parts.append(f"{_fmt(held.payable_cents, currency)} ödeme")
+    if held.receivable_cents:
+        parts.append(f"{_fmt(held.receivable_cents, currency)} tahsilat")
+    if held.other_currency_count:
+        parts.append(f"{held.other_currency_count} döviz belgesi (tutar çevrilmedi)")
+    why = "; ".join(f"{HOLD_REASONS_TR[k]}: {n}" for k, n in sorted(held.by_reason.items()) if n)
+    return (
+        f"Karar bekleyen {held.count} belge ({', '.join(parts)}): mükerrer olabilir, "
+        f"siz karar verene kadar radarda yok" + (f" ({why})" if why else "")
+    )
