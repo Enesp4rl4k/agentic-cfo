@@ -189,6 +189,7 @@ class CashRadar:
     tax_obligations_cents: int = 0
     opening_cash: OpeningCash | None = None
     held_documents: HeldDocuments | None = None
+    awaiting_decision: Any = None  # AwaitingDecisions: both queues of waiting decisions, one block
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -450,6 +451,7 @@ async def compute_cash_radar(
         not_included.append("Vergi ve SGK yükümlülükleri")
     if not has_cheques:
         not_included.append("Çek ve senetler")
+    from app.services.awaiting_decisions import block
     from app.services.held_rows import pending_count
 
     waiting = await pending_count(db, org_id)
@@ -525,6 +527,7 @@ async def compute_cash_radar(
         tax_obligations_cents=total_tax_cents,
         opening_cash=_opening_cash(balance, anchor),
         held_documents=held,
+        awaiting_decision=block(waiting, held, _held_line(held) if held else ""),
     )
 
 

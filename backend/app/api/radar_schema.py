@@ -100,6 +100,19 @@ class HeldDocumentsOut(BaseModel):
     review_path: str
 
 
+class AwaitingLineOut(BaseModel):
+    count: int
+    text: str
+    path: str
+
+
+class AwaitingDecisionOut(BaseModel):
+    """Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates."""
+
+    rows: AwaitingLineOut | None = None
+    documents: AwaitingLineOut | None = None
+
+
 class CashRadarOut(BaseModel):
     anchor_date: str
     starting_cash_cents: int | None
@@ -117,3 +130,4 @@ class CashRadarOut(BaseModel):
     tax_obligations_cents: int = 0
     opening_cash: OpeningCashOut | None = None
     held_documents: HeldDocumentsOut | None = None
+    awaiting_decision: AwaitingDecisionOut | None = None

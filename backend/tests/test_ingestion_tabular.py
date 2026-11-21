@@ -28,8 +28,9 @@ def test_a_payment_without_a_type_column_is_an_expense():
 
 @pytest.mark.parametrize("written", ["-1.500,00", "1.500,00-", "(1.500,00)"])
 def test_every_way_of_writing_money_out(written):
-    text = f'tarih;açıklama;tutar\n05.01.2024;Kira;{written}\n'
-    assert _rows(text) == [("expense", 150_000, "2024-01-05")]
+    # among a statement's usual mixed signs (a file of only negatives has no direction: it is asked)
+    text = f'tarih;açıklama;tutar\n05.01.2024;Kira;{written}\n06.01.2024;Satış;2.000,00\n'
+    assert _rows(text) == [("expense", 150_000, "2024-01-05"), ("income", 200_000, "2024-01-06")]
 
 
 def test_a_sheet_read_tab_separated_with_excel_dates_and_numbers():
@@ -50,7 +51,7 @@ def test_a_running_balance_alone_is_not_an_amount():
 
 @pytest.mark.parametrize("header", ["DATE,DESCRIPTION,AMOUNT", "TARİH,AÇIKLAMA,TUTAR"])
 def test_capitalised_headers(header):
-    got = _try_parse_csv(f"{header}\n2024-01-05,Kira,-100\n")
+    got = _try_parse_csv(f"{header}\n2024-01-05,Kira,-100\n2024-01-06,Satış,300\n")
     assert got and got[0]["type"] == "expense" and got[0]["description"] == "Kira"
 
 

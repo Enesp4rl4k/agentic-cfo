@@ -52,6 +52,7 @@ from app.services.ingest.readers import (
     _read_xml,
 )
 from app.services.ingest.rows import (
+    _pdf_yonu,
     _statement_to_transactions,
     _tablo_ekstresi,
     _try_parse_csv,
@@ -69,6 +70,7 @@ __all__ = [
     "_parse_amount",
     "_parse_date",
     "_pdf_embedded_xml",
+    "_pdf_yonu",
     "_read_csv",
     "_read_excel",
     "_read_pdf",
@@ -133,7 +135,7 @@ def _csv_sonucu(
     # (A correction posted to an account carries a negative amount.)
     well_formed = sum(
         1 for tx in csv_txs
-        if tx.get("transaction_date") and tx.get("amount_cents", 0) != 0
+        if tx.get("transaction_date") and (tx.get("amount_cents") or 0) != 0
     )
     ratio = well_formed / len(csv_txs)
     overall_confidence = 0.95 if ratio >= 0.9 else (0.78 if ratio >= 0.6 else 0.5)
@@ -312,6 +314,13 @@ async def _belgeyi_al(
     """One document, with every row's currency settled (see app.services.ingest.hold)."""
     sonuc = await _belgeyi_oku(file_path, file_type, state, config)
     rows = (sonuc.patch or {}).get("transactions") or []
+    if any(r.get("direction_file") for r in rows):
+        # A statement format this organisation already answered is not asked again.
+        from app.database import session_factory
+        from app.services.held_direction import apply_remembered
+
+        async with session_factory()() as db:
+            await apply_remembered(db, state.get("org_id"), rows)
     if sonuc.ok and any(not str(r.get("currency") or "").strip() for r in rows):
         from app.services.org_identity import own_base_currency
 
@@ -430,6 +439,7 @@ async def _belgeyi_oku(
                 parser = detected_bank(own_vkn=await org_vkn(state.get("org_id")))
             statement: ParsedStatement = await asyncio.to_thread(parser.parse, raw_text, file_path)
             transactions = _statement_to_transactions(statement)
+            _pdf_yonu(transactions, detected_bank.bank_display_name, raw_text)
 
             if transactions:
                 parseable = sum(

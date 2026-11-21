@@ -89,6 +89,7 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
     ("PATCH", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
     ("DELETE", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    ("DELETE", "/api/v1/held-rows/direction-mappings/{mapping_id}"): "writer; services.held_direction.revoke_mapping answers 404 unless mapping.org_id == caller's org",
 }
 
 

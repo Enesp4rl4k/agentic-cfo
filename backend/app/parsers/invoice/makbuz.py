@@ -75,7 +75,7 @@ class ParsedMakbuz(BaseModel):
     number: str
     uuid: str = ""
     issue_date: date | None = None
-    currency: str = "TRY"
+    currency: str = ""   # "" = not stated
     # Who wrote the receipt, and who is on the other side of it.
     issuer: InvoiceParty
     counterparty: InvoiceParty
@@ -134,7 +134,9 @@ def _side(own_vkn: str, payer: InvoiceParty, payee: InvoiceParty) -> tuple[Invoi
 def _entries(m: ParsedMakbuz) -> tuple[list[TDHPJournalEntry], str]:
     if m.direction == "unknown":
         return [], "makbuzda hangi taraf olduğumuz belirlenemedi — kayıt üretilmedi"
-    if m.currency.upper() != "TRY":
+    # An unstated currency is not lira, but it is not a reason to withhold the suggestion either: the row
+    # itself is held for its currency (app.services.ingest.hold) and the journal re-checks the booked row.
+    if m.currency and m.currency.upper() != "TRY":
         return [], f"makbuz {m.currency} cinsinden — TRY deftere kursuz işlenmez"
     if m.other_taxes:
         codes = ", ".join(sorted(m.other_taxes))
@@ -237,7 +239,7 @@ def _parse_mustahsil(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
         number=root.findtext("cbc:ID", "", _NS).strip(),
         uuid=root.findtext("cbc:UUID", "", _NS).strip(),
         issue_date=_date(root.findtext("cbc:IssueDate", "", _NS)),
-        currency=(root.findtext("cbc:DocumentCurrencyCode", "", _NS).strip() or "TRY"),
+        currency=(root.findtext("cbc:DocumentCurrencyCode", "", _NS).strip()),
         issuer=issuer, counterparty=farmer, payer=issuer, payee=farmer,
         gross=gross, kdv=kdv, stopaj=stopaj, other_taxes=other, payable=payable,
         items=[
@@ -318,7 +320,7 @@ def _parse_smm(root: ET.Element, own_vkn: str) -> ParsedMakbuz:
         number=_text(smm, "makbuzNo"),
         uuid=_text(smm, "ETTN"),
         issue_date=_date(_text(smm, "belgeTarihi")),
-        currency=_text(smm, "paraBirimi") or "TRY",
+        currency=_text(smm, "paraBirimi"),
         issuer=professional, counterparty=client, payer=client, payee=professional,
         gross=_dec(_text(smm, "toplamTutar")),
         kdv=kdv, stopaj=stopaj, other_taxes=other, withholding=withholding,

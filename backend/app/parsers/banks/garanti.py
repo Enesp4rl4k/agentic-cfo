@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import sign_is_informative
 
 
 class GarantiParser(BankParser):
@@ -54,7 +55,10 @@ class GarantiParser(BankParser):
             r"([\d.,]+)\s*$",
             re.MULTILINE,
         )
-        for m in row_pattern.finditer(text):
+        found = list(row_pattern.finditer(text))
+        # A column of all-positive amounts says nothing about direction (app.parsers.direction).
+        signed = sign_is_informative([m.group(3).startswith("-") for m in found])
+        for m in found:
             date = self.parse_turkish_date(m.group(1))
             if not date:
                 continue
@@ -69,7 +73,8 @@ class GarantiParser(BankParser):
                 date=date,
                 description=description,
                 amount_cents=amount,
-                tx_type="expense" if negative else "income",
+                tx_type=("expense" if negative else "income") if signed else "",
+                balance_cents=self.parse_turkish_amount(m.group(4)),
                 raw_row=m.group(0),
             ))
         return transactions

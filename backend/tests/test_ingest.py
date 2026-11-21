@@ -80,8 +80,11 @@ def test_a_bank_export_under_its_title_rows():
     t = tani(BANKA, "ekstre.xlsx")
     assert (t.durum, t.tur, t.alan, t.satir_sayisi) == (KESIN, S.BANKA_EKSTRESI, "cfo", 2)
     rows = _csv_rows(standart_csv(t.tablo, t.tur)[0])
-    # Debit leaves the account, credit arrives; the TOPLAM row is not a transaction.
-    assert [(r["tarih"], r["tutar"]) for r in rows] == [("2024-01-05", "-28500"), ("2024-01-06", "10000")]
+    # The two columns reach the statement reader as they are: which way each moved the money is
+    # decided there (app.parsers.direction), never by the column normaliser. TOPLAM is not a row.
+    assert [(r["tarih"], r["borç"], r["alacak"]) for r in rows] == [
+        ("2024-01-05", "28500", ""), ("2024-01-06", "", "10000"),
+    ]
 
 
 def test_a_turkish_staff_list_in_windows_1254_with_semicolons():

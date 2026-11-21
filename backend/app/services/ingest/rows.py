@@ -6,11 +6,22 @@ re-exports what its callers import from it.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from app.core import tdhp
 from app.core.turkish import fold
 from app.parsers.base import ParsedStatement
+from app.parsers.direction import (
+    AMOUNT_COLUMNS,
+    FileDirection,
+    RowDirection,
+    is_non_transaction,
+    norm_header,
+    resolve_file,
+    signed_money,
+    statement_identity,
+)
 from app.services.ingest.categories import (
     INCOME_CATEGORIES,
     KNOWN_CATEGORIES,
@@ -32,10 +43,12 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             "amount_cents": tx.amount_cents,
             # "" = the document did not say; resolved or held by app.services.ingest.hold.
             "currency": tx.currency or None,
-            "type": tx.tx_type,
+            # "" = the parser could not place the direction: held, never defaulted.
+            "type": tx.tx_type or None,
             "category": (
                 _kodlu_kategori(hesap, tx.description) if hesap is not None
-                else _guess_category(tx.description, tx.tx_type)
+                else _guess_category(tx.description, tx.tx_type) if tx.tx_type
+                else None   # chosen once a person gives the direction
             ),
             "account_code": tx.account_code,
             "description": tx.description,
@@ -57,6 +70,24 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             "balance_cents": tx.balance_cents,
         })
     return transactions
+
+
+def _pdf_yonu(transactions: list[dict[str, Any]], bank: str, raw_text: str) -> None:
+    """Text-parsed statements get the same checks as tables: the balance verifies the directions the
+    parser read (and reads them when it could not), and a statement nothing can place is held whole."""
+    from app.parsers.direction import settle_rows
+
+    hold = settle_rows(transactions, bank)
+    if hold is None:
+        return
+    key = hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16]
+    for n, tx in enumerate(transactions):
+        tx["direction_file"] = {
+            "key": key, "signature": hold["signature"], "reason": hold["reason"],
+            "read": tx.pop("direction_read", None), "balance": tx.pop("direction_balance", None),
+        }
+        if n == 0:
+            tx["direction_question"] = hold["question"]
 
 
 _HESAP_KODU_KOLONLARI = ("hesap kodu", "hesap no", "hesap", "account_code", "account code")
@@ -106,17 +137,6 @@ def _ilk(r_lower: dict[str, str], *anahtarlar: str) -> str:
     return next((r_lower[k] for k in anahtarlar if r_lower.get(k)), "")
 
 
-def _isaretli_kurus(raw_amt: str) -> int:
-    """Kuruş of an amount cell, negative when the cell says so."""
-    amount_cents = _parse_amount(raw_amt)
-    if amount_cents is None:
-        try:
-            amount_cents = round(float(raw_amt) * 100)
-        except ValueError:
-            amount_cents = 0
-    return -abs(amount_cents) if _is_negative(raw_amt) else amount_cents
-
-
 def _yukleyenin_kategorisi(raw_cat: str, raw_desc: str, tx_type: str) -> str:
     """Category of a row without an account code.
 
@@ -135,24 +155,6 @@ def _yukleyenin_kategorisi(raw_cat: str, raw_desc: str, tx_type: str) -> str:
     if category == "tax" and _guess_category(raw_desc, tx_type) == "tax_payment":
         return "tax_payment"
     return category
-
-
-def _tutar_hucresi(r_lower: dict[str, str]) -> str:
-    """The row's signed amount as text. Bank statements split it: "Borç" is
-    money leaving the account, "Alacak" money arriving."""
-    raw_amt = _ilk(r_lower, "amount", "tutar")
-    borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
-    if not raw_amt and (borc or alacak):
-        raw_amt = f"-{borc.lstrip('-')}" if (_parse_amount(borc) or 0) > 0 else alacak
-    return raw_amt or "0"
-
-
-def _kodsuz_yon(r_lower: dict[str, str], amount_cents: int) -> str:
-    """Direction of a row without an account: its type column, else its sign."""
-    raw_type = _ilk(r_lower, "type", "tip")
-    if raw_type in ("income", "expense"):
-        return raw_type
-    return "expense" if amount_cents < 0 else "income"
 
 
 _FATURA_NO_KOLONLARI = ("fatura no", "invoice_no", "invoice no", "document_id")
@@ -195,12 +197,20 @@ def _para_birimi(raw: str) -> str | None:
     return code if len(code) == 3 and code.isalpha() else None
 
 
-def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any] | None:
-    """One CSV row as a pipeline transaction; None for an empty or skipped row."""
-    if not row or not any(row.values()):
-        return None
-    r_lower = {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
-    raw_amt = _tutar_hucresi(r_lower)
+def _kodlu_mu(r_lower: dict[str, str]) -> bool:
+    """A row whose account the map knows: the account decides its direction (`_hesap_kodlu_satir`)."""
+    code = tdhp.ana_hesap(_ilk(r_lower, *_HESAP_KODU_KOLONLARI))
+    return bool(code) and tdhp.hesap(code) is not None
+
+
+def _csv_satiri(
+    r_lower: dict[str, str], atlanan: list[str] | None, yon: RowDirection | None = None,
+) -> dict[str, Any] | None:
+    """One statement row (headers folded) as a pipeline transaction; None for a skipped row.
+
+    `yon` is what `app.parsers.direction` settled for a row without a known account: its
+    direction (None = held), its amount (None = unreadable), and why.
+    """
     raw_desc = _ilk(r_lower, "description", "aciklama", "detay")
     raw_cat = _ilk(r_lower, "category", "kategori")
     account_code = tdhp.ana_hesap(_ilk(r_lower, *_HESAP_KODU_KOLONLARI))
@@ -215,13 +225,14 @@ def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any
         "description": raw_desc,
         "vendor": _ilk(r_lower, "vendor", "tedarikci") or raw_desc,
         "transaction_date": parsed_dt.isoformat() if parsed_dt else None,
-        "raw_text": str(row),
+        "raw_text": str(r_lower),
         "account_code": account_code,
         # A code this map does not know is an income-statement account nobody
         # has classified: the row is read by its words and its sign, and says so.
         "confidence": 0.6 if account_code and hesap is None else 0.95,
     }
     if hesap is not None:
+        raw_amt = _ilk(r_lower, "amount", "tutar") or "0"
         borc, alacak = r_lower.get("borc", ""), r_lower.get("alacak", "")
         satir = _hesap_kodlu_satir(hesap, borc, alacak, raw_amt, raw_desc, raw_cat)
         if satir is None:
@@ -231,22 +242,48 @@ def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any
         tx["type"], tx["amount_cents"], tx["category"] = satir
         return tx
 
-    amount_cents = _isaretli_kurus(raw_amt)
-    tx["type"] = _kodsuz_yon(r_lower, amount_cents)
-    tx["amount_cents"] = abs(amount_cents)
-    tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, tx["type"])
+    if yon is None:
+        raise ValueError("a row without a known account needs its settled direction")
+    tx["type"] = yon.type
+    tx["amount_cents"] = yon.amount_cents
+    if yon.mismatch:
+        tx["balance_mismatch"] = True      # its balance step does not reconcile: held on its own
+    if yon.note:
+        tx["raw_text"] += f"\n[yön] {yon.note}"
+    if yon.type is None:
+        # The category depends on the direction a person is yet to give: it is chosen when they do.
+        tx["category"], tx["category_hint"] = None, raw_cat
+    else:
+        tx["category"] = _yukleyenin_kategorisi(raw_cat, raw_desc, yon.type)
     _fatura_alanlari(tx, r_lower)
-    bakiye = _ilk(r_lower, "bakiye", "balance")
-    if bakiye:
-        tx["balance_cents"] = _isaretli_kurus(bakiye)
+    bakiye = signed_money(_ilk(r_lower, "bakiye", "balance"))
+    if bakiye is not None:
+        tx["balance_cents"] = bakiye
     return tx
 
 
-def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
+def _dosya_isareti(settled: FileDirection, yon: RowDirection | None, raw_text: str) -> dict[str, Any] | None:
+    """What a row of a file held whole carries: which file, why, and what the columns / the balance said."""
+    if settled.hold is None or yon is None:
+        return None
+    return {
+        "key": hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16],
+        "signature": settled.hold["signature"], "reason": settled.hold["reason"],
+        "identity": settled.hold.get("identity", False),
+        "read": yon.read, "balance": yon.balance,
+    }
+
+
+def _try_parse_csv(
+    raw_text: str, atlanan: list[str] | None = None, identity: str = "",
+) -> list[dict[str, Any]] | None:
     """Attempt deterministic CSV parsing if the text is structured CSV.
 
     A row naming a transfer or closing account (7x1, 690/692) is not read — it
     moves what is already counted — and is reported in `atlanan` instead.
+    The direction of every other row comes from `app.parsers.direction`: one
+    resolver for every upload path, and a file it cannot place is held whole,
+    with one question for the file (`direction_file` / `direction_question`).
     """
     import csv
     import io
@@ -261,10 +298,38 @@ def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict
         # Headers are folded (app.core.turkish): "İşlem Tarihi", "AÇIKLAMA" and
         # "Borç" match "islem tarihi", "aciklama", "borc". A running balance
         # ("bakiye") is not a transaction amount; it is kept beside the row.
-        field_lower = {fold(f.strip()) for f in reader.fieldnames if f}
-        if not (field_lower & set(_TUTAR_KOLONLARI) and field_lower & set(_TARIH_KOLONLARI)):
+        headers = [fold(f.strip()) for f in reader.fieldnames if f]
+        names = {norm_header(h) for h in headers}
+        if not ((set(headers) & set(_TUTAR_KOLONLARI) or names & AMOUNT_COLUMNS)
+                and set(headers) & set(_TARIH_KOLONLARI)):
             return None
-        transactions = [tx for row in reader if (tx := _csv_satiri(row, atlanan)) is not None]
+        rows = [
+            {fold(k.strip()): (v.strip() if v else "") for k, v in row.items() if k}
+            for row in reader if row and any(row.values())
+        ]
+        uncoded = [i for i, r in enumerate(rows) if not _kodlu_mu(r)]
+        # A carried balance or a total line is not a movement: not booked, not held, but its balance anchors
+        # the check of the rows around it.
+        desc = ("description", "aciklama", "detay")
+        notmoves = {i for i in uncoded if is_non_transaction(_ilk(rows[i], *desc))}
+        settled = resolve_file(
+            headers, [rows[i] for i in uncoded], frozenset(k for k, i in enumerate(uncoded) if i in notmoves),
+            identity or statement_identity(raw_text.split(chr(10), 1)[0]),
+        )
+        yonler = dict(zip(uncoded, settled.rows, strict=True))
+        transactions: list[dict[str, Any]] = []
+        asked = False
+        for i, r in enumerate(rows):
+            if i in notmoves:
+                continue
+            tx = _csv_satiri(r, atlanan, yonler.get(i))
+            if tx is None:
+                continue
+            if mark := _dosya_isareti(settled, yonler.get(i), raw_text):
+                tx["direction_file"] = mark
+                if not asked and settled.hold is not None:
+                    tx["direction_question"], asked = settled.hold["question"], True
+            transactions.append(tx)
         return transactions or None
     except Exception:
         return None
@@ -284,4 +349,6 @@ def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[di
         return None
     if tablo is None or not tablo.satirlar:
         return None
-    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan)
+    from app.parsers.direction import statement_identity as _identity
+
+    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan, _identity(tablo.ust_metin))

@@ -140,6 +140,10 @@ export const heldRowsSpies = {
   rejectHeldRows: vi.fn().mockResolvedValue(undefined),
   getBaseCurrency: vi.fn().mockResolvedValue({ currency: null, confirmed: false, waiting_for_currency: 0 }),
   confirmBaseCurrency: vi.fn().mockResolvedValue(undefined),
+  listFileQuestions: vi.fn().mockResolvedValue({ files: [], canRemember: true }),
+  answerFileDirection: vi.fn().mockResolvedValue(undefined),
+  listDirectionMappings: vi.fn().mockResolvedValue([]),
+  revokeDirectionMapping: vi.fn().mockResolvedValue(undefined),
 };
 
 export const heldRowsModule = {
@@ -148,6 +152,10 @@ export const heldRowsModule = {
   rejectHeldRows: (...a: unknown[]) => heldRowsSpies.rejectHeldRows(...a),
   getBaseCurrency: (...a: unknown[]) => heldRowsSpies.getBaseCurrency(...a),
   confirmBaseCurrency: (...a: unknown[]) => heldRowsSpies.confirmBaseCurrency(...a),
+  listFileQuestions: (...a: unknown[]) => heldRowsSpies.listFileQuestions(...a),
+  answerFileDirection: (...a: unknown[]) => heldRowsSpies.answerFileDirection(...a),
+  listDirectionMappings: (...a: unknown[]) => heldRowsSpies.listDirectionMappings(...a),
+  revokeDirectionMapping: (...a: unknown[]) => heldRowsSpies.revokeDirectionMapping(...a),
 };
 
 /** A row held because its confidence is unknown, and one held because it has no currency, both from one upload. */
@@ -165,6 +173,8 @@ export const heldRowFixture = {
   vendor: null,
   transaction_date: "2026-03-15",
   document_id: null,
+  currency_assumed: false,
+  direction_file: null,
 };
 
 export const heldNoCurrencyFixture = {
@@ -175,4 +185,33 @@ export const heldNoCurrencyFixture = {
   confidence: 0.95,
   currency: null,
   description: "Kira",
+};
+
+/** A statement whose amounts are all positive with no column saying which way they went: one question for the file. */
+export const fileQuestionFixture = {
+  job_id: "j9",
+  file_key: "f9",
+  reason: "no_signal",
+  rows: 2,
+  options: ["mixed", "only_expense", "only_income"],
+  question: {
+    columns: [
+      { name: "tarih", role: "date" },
+      { name: "açıklama", role: "description" },
+      { name: "tutar", role: "amount" },
+    ],
+    samples: [
+      { date: "01.03.2026", description: "Kira", amount: "1500" },
+      { date: "02.03.2026", description: "Elektrik", amount: "250" },
+    ],
+  },
+};
+
+export const directionMappingFixture = {
+  id: "m9",
+  signature: "abc",
+  reason: "convention_unverified",
+  answer: "inverted",
+  columns: "tarih, açıklama, tutar",
+  created_at: "2026-03-05T10:00:00+00:00",
 };

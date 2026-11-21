@@ -30,6 +30,7 @@ class Tablo:
     satirlar: list[list[Any]]
     sayfa: str | None = None
     baslik_satiri: int = 0          # 0-based row of the header in the original
+    ust_metin: str = ""             # what the rows above the header say (bank, account): the statement's identity
 
 
 def anahtar(baslik: str) -> str:
@@ -135,7 +136,8 @@ def tabloyu_bul(rows: list[list[Any]], bilinen: set[str], sayfa: str | None = No
         if isinstance(dolu[0], str) and anahtar(dolu[0]).startswith(_TOPLAM):
             continue
         data.append(row)
-    return Tablo(basliklar=header, satirlar=data, sayfa=sayfa, baslik_satiri=best_i)
+    above = " ".join(str(c) for row in rows[:best_i] for c in row if not bos(c))
+    return Tablo(basliklar=header, satirlar=data, sayfa=sayfa, baslik_satiri=best_i, ust_metin=above)
 
 
 # ── Values ──────────────────────────────────────────────────────────────────

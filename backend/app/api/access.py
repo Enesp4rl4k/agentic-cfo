@@ -133,6 +133,20 @@ async def require_writer(
     return user
 
 
+async def require_member(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency for reads of an organisation's own queue: any member of the acting organisation.
+
+    A viewer may read; a caller with no organisation has nothing to read (400, as the ledger's
+    read routes answer). The rows are then selected by that organisation only, so another
+    organisation's are never visible.
+    """
+    if not user.org_id:
+        raise HTTPException(status_code=400, detail="Bu işlem için bir organizasyon gerekli.")
+    return user
+
+
 async def require_contributor(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -174,6 +188,22 @@ async def require_decider(
     role = await acting_role(db, user) if user.org_id else None
     if role is not None and role not in DECIDER_ROLES:
         raise _refuse("owner veya admin rolü")
+    return user
+
+
+def may_set_standing_rules(role: str | None) -> bool:
+    """Creating or revoking a remembered statement mapping changes how every later statement of that
+    format is booked: an owner, admin or the accountant."""
+    return role in DECIDER_ROLES or role == UserRole.SMMM.value
+
+
+async def require_decider_or_smmm(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: owner, admin or smmm in the acting organisation, or 403."""
+    role = await acting_role(db, user) if user.org_id else None
+    if role is not None and not may_set_standing_rules(role):
+        raise _refuse("owner, admin veya mali müşavir (smmm) rolü")
     return user
 
 

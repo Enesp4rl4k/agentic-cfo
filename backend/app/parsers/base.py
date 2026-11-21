@@ -2,8 +2,9 @@
 Bank statement parser — base types and parsed data models.
 
 Each bank parser produces a list of ParsedTransaction objects.
-The LLM is only used as a fallback (GenericParser) when no bank-specific
-parser matches. Structured parsers are faster and more reliable.
+The LLM is only used as a fallback (app.agents.data_ingestion) when no bank-specific
+parser matches. Structured parsers are faster and more reliable. Direction is never defaulted:
+see app.parsers.direction.
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ class ParsedTransaction:
     description: str
     amount_cents: int          # Positive, sign by tx_type; negative only for a correction posted to an income-statement account
     tx_type: str               # "income" | "expense"
-    currency: str = "TRY"
+    # "" = the document did not state it. Never defaulted to TRY: see app.services.ingest.hold.
+    currency: str = ""
     vendor: str | None = None
     balance_cents: int | None = None   # Running balance if available
     reference: str | None = None       # Bank reference / cheque number
