@@ -49,6 +49,8 @@ from app.agents.alert_agent import run_alerts
 from app.agents.anomaly_agent import run_anomaly_detection
 from app.agents.budget_agent import run_budget
 from app.agents.cashflow_agent import run_cashflow
+from app.agents.currency_split import keep_base_currency as _keep_base_currency
+from app.agents.currency_split import stored_base_currency as _stored_base_currency
 from app.agents.data_ingestion import run_data_ingestion
 from app.agents.forecast_agent import run_forecast
 from app.agents.multi_period_agent import run_multi_period
@@ -137,6 +139,8 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
                 "data_ingestion: %d transaction(s) categorised by %d user rule(s)",
                 sum(hits.values()), len(hits),
             )
+
+    _keep_base_currency(state, patch)
 
     if not result.ok:
         patch.update({"halted": True, "awaiting_review": True, "error": result.detail})
@@ -473,7 +477,8 @@ async def run_cfo_pipeline(
     period: str | None = None,
     ek_belgeler: list[dict[str, str]] | None = None,
     category_rules: list[dict[str, Any]] | None = None,
-    ledger_view: dict[str, list[dict[str, Any]]] | None = None,
+    ledger_view: dict[str, Any] | None = None,
+    base_currency: str | None = None,
 ) -> CFOState:
     """
     Run the full CFO analysis pipeline.
@@ -517,6 +522,9 @@ async def run_cfo_pipeline(
         "category_rules": category_rules or [],
         "category_rule_hits": None,
         "ledger_view": ledger_view,
+        "base_currency": base_currency or await _stored_base_currency(org_id),
+        "foreign_totals": None,
+        "base_state": None,
         "routing_plan": None,
         "reflection_scores": None,
         "memory_episode_ids": None,

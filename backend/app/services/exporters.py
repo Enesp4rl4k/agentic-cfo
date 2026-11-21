@@ -47,7 +47,8 @@ class ExcelReportExporter(IReportExporter):
         # ── Sheet 1: P&L ──────────────────────────────────────────────────────────
         ws_pnl = wb.active
         ws_pnl.title = "Profit & Loss"
-        ws_pnl.append(["Line Item", "Amount (₺)"])
+        # The workbook's currency is the one the figures were computed in (`pnl["currency"]`), never assumed.
+        ws_pnl.append(["Line Item", f"Amount ({pnl.get('currency') or '₺'})"])
         for cell in ws_pnl[1]:
             cell.fill = header_fill
             cell.font = header_font
@@ -69,6 +70,12 @@ class ExcelReportExporter(IReportExporter):
 
         ws_pnl.column_dimensions["A"].width = 35
         ws_pnl.column_dimensions["B"].width = 18
+
+        # What the figures leave out (other currencies, an unconfirmed company currency), in words.
+        if pnl.get("currency_note"):
+            ws_pnl.append([])
+            ws_pnl.append([pnl["currency_note"]])
+            ws_pnl.cell(row=ws_pnl.max_row, column=1).alignment = Alignment(wrap_text=True)
 
         if pnl.get("narrative"):
             ws_pnl.append([])

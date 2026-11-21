@@ -40,6 +40,15 @@ class MorningFacts:
     week_net_cents: int | None = None
     week_end_balance_cents: int | None = None
     shortfall_cents: int | None = None
+    # (currency, revenue, expense) of every other currency in the period: never added to the
+    # lira figures, and said so in a line of their own.
+    other_currencies: tuple[tuple[str, int, int], ...] = ()
+    # The currency the figures are in (the same effective base as the P&L and the radar) and how it was
+    # decided: confirmed | single_unconfirmed | ambiguous | no_data. Ambiguous: no headline revenue exists.
+    currency: str | None = None
+    radar_currency: str | None = None
+    base_state: str = "confirmed"
+    confirm_path: str = "/bekleyen-kayitlar"
 
     @property
     def profit_cents(self) -> int | None:
@@ -51,7 +60,7 @@ class MorningFacts:
     def has_figures(self) -> bool:
         return any(
             v is not None
-            for v in (self.revenue_cents, self.opening_cash_cents, self.week_net_cents)
+            for v in (self.revenue_cents, self.opening_cash_cents, self.week_net_cents, self.other_currencies or None)
         )
 
     def allowed_cents(self) -> set[int]:
@@ -59,7 +68,8 @@ class MorningFacts:
             self.revenue_cents, self.expense_cents, self.profit_cents, self.opening_cash_cents,
             self.week_net_cents, self.week_end_balance_cents, self.shortfall_cents,
         )
-        return {abs(v) for v in known if v is not None}
+        foreign = {abs(v) for _code, rev, exp in self.other_currencies for v in (rev, exp) if v}
+        return {abs(v) for v in known if v is not None} | foreign
 
     def allowed_plain(self) -> set[int]:
         plain = {self.job_count, self.critical_count, self.high_count}
@@ -80,12 +90,24 @@ async def build_facts(
     summary = await ledger_summary(db, org_id)
     if summary["rows"] > 0:
         period = summary["period"]
+        headline = summary["currency"] is not None
         fields.update(
-            revenue_cents=int(summary["revenue_cents"]),
-            expense_cents=int(summary["expense_cents"]),
             period_start=period["start"], period_end=period["end"], period_months=period["months"],
+            base_state=summary["base_state"], confirm_path=summary["confirm_path"],
+            currency=summary["currency"],
+            # No headline (several currencies, none confirmed): every currency stands on its own line.
+            other_currencies=tuple(
+                (o["currency"], int(o["revenue_cents"]), int(o["expense_cents"]))
+                for o in (summary["other_currencies"] if headline else summary["currency_totals"])
+            ),
         )
+        if headline:
+            fields.update(
+                revenue_cents=int(summary["revenue_cents"]), expense_cents=int(summary["expense_cents"]),
+            )
     radar = await compute_cash_radar(db, org_id, anchor_date=today)
+    if fields.get("currency") is None and radar.currency:
+        fields["radar_currency"] = radar.currency
     if radar.opening_cash is not None:
         fields.update(
             opening_cash_cents=radar.opening_cash.balance_cents,
@@ -108,25 +130,51 @@ def _data_date_line(facts: MorningFacts) -> str:
     return f"{_tr_date(facts.data_date)} tarihli verilere göre."
 
 
+def _radar_cur(facts: MorningFacts) -> str | None:
+    return facts.currency or facts.radar_currency
+
+
+def _plain(cents: int) -> str:
+    """An amount as the Turkish text writes it, without a currency sign: 12.400,00."""
+    return f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
+
+
 def facts_lines(facts: MorningFacts) -> list[str]:
     """One sentence per known figure. An unknown figure has no sentence."""
     lines: list[str] = []
     if facts.revenue_cents is not None and facts.expense_cents is not None:
         lines.append(
             f"Defterde {facts.period_start} – {facts.period_end} arasında "
-            f"{_fmt(facts.revenue_cents)} gelir, {_fmt(facts.expense_cents)} gider görünüyor."
+            f"{_fmt(facts.revenue_cents, facts.currency)} gelir, {_fmt(facts.expense_cents, facts.currency)} gider görünüyor."
         )
+    if facts.base_state == "single_unconfirmed":
+        lines.append(
+            f"Şirket para biriminiz henüz onaylanmadı; veride yalnızca {facts.currency} var. "
+            f"Onaylamak için {facts.confirm_path}."
+        )
+    elif facts.base_state == "ambiguous":
+        lines.append(
+            "Şirket para biriminizi seçin: birden fazla para birimi var ve hiçbiri onaylı değil, "
+            f"bu yüzden tek bir toplam gösterilmiyor ({facts.confirm_path})."
+        )
+    for code, revenue, expense in facts.other_currencies:
+        parts = [f"{_plain(v)} {code} {word}" for v, word in ((revenue, "gelir"), (expense, "gider")) if v]
+        if parts:
+            if facts.currency is None:
+                lines.append(f"{code}: {' ve '.join(parts)}; başka para birimine çevrilmedi.")
+            else:
+                lines.append(f"Ayrıca {' ve '.join(parts)} var; {facts.currency}'ye çevrilmedi, yukarıdaki toplamlara girmedi.")
     if facts.opening_cash_cents is not None and facts.opening_as_of:
         lines.append(
-            f"Banka bakiyesi {_fmt(facts.opening_cash_cents)} "
+            f"Banka bakiyesi {_fmt(facts.opening_cash_cents, _radar_cur(facts))} "
             f"({_tr_date(facts.opening_as_of)} ekstresine göre)."
         )
     if facts.week_net_cents:
         word = "giriş" if facts.week_net_cents > 0 else "çıkış"
-        lines.append(f"Bu hafta radarda {_fmt(abs(facts.week_net_cents))} net {word} bekleniyor.")
+        lines.append(f"Bu hafta radarda {_fmt(abs(facts.week_net_cents), _radar_cur(facts))} net {word} bekleniyor.")
     if facts.shortfall_cents is not None:
         lines.append(
-            f"Radar, bakiyenin en düşük noktada {_fmt(abs(facts.shortfall_cents))} "
+            f"Radar, bakiyenin en düşük noktada {_fmt(abs(facts.shortfall_cents), _radar_cur(facts))} "
             "açığa düşebileceğini gösteriyor."
         )
     return lines
