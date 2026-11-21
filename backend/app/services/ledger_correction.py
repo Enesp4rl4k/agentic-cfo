@@ -47,13 +47,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit_log import AuditLog
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.category_override import CategoryOverride
-from app.models.organization import Organization
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.donem_kilidi import ilk_acik_donem, kilitli_donemler
 from app.services.ledger import (
     SOURCE_CORRECTION,
+    correction_number,
     job_transactions,
+    lock_org,
     month_of,
     record_ids,
 )
@@ -65,11 +66,6 @@ def _correction_ids(record_id: str, n: int) -> tuple[str, str]:
 
 class CorrectionConflict(RuntimeError):
     """Two corrections of the same row collided; nothing was written, the caller may retry."""
-
-
-async def _lock_org(db: AsyncSession, org_id: str) -> None:
-    """Serialise ledger corrections and month closes of one organisation (no-op on SQLite)."""
-    await db.execute(select(Organization.id).where(Organization.id == org_id).with_for_update())
 
 
 async def _remember(db: AsyncSession, org_id: str, record_id: str, category: str, user: User) -> None:
@@ -123,7 +119,7 @@ async def apply_category_correction(
     if not org_id:
         return {"ledger": "none"}
     org_id = str(org_id)
-    await _lock_org(db, org_id)
+    await lock_org(db, org_id)
     usable, _ = record_ids(org_id, await job_transactions(db, tx.job_id))
     record_id = next((rid for rid, t in usable if t.id == tx.id), None)
     if record_id is None:
@@ -158,7 +154,7 @@ async def apply_category_correction(
             CanonicalTransaction.source_record_id.like("%-yeni"),
         )
     )).scalars())
-    latest = max(news, key=lambda r: int(r.source_record_id.rsplit("~k", 1)[1].split("-")[0]), default=None)
+    latest = max(news, key=lambda r: correction_number(r.source_record_id), default=None)
     effective = latest.category if latest is not None else row.category
     if effective == new_category:
         return {"ledger": "unchanged", "source_record_id": record_id}

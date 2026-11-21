@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from app.agents.state import AgentRunConfig, CFOState, SkillResult
+from app.agents.state import AgentRunConfig, CFOState, SkillResult, is_correction_row
 from app.core.turkish import fold
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,8 @@ def detect_duplicates(
 ) -> list[dict[str, Any]]:
     """Same vendor + same amount within DUPLICATE_WINDOW_DAYS = probable duplicate."""
     anomalies: list[dict[str, Any]] = []
-    expenses = [t for t in transactions if t.get("type") == "expense"]
+    # A correction row is a reclassification of a payment already here, not a payment.
+    expenses = [t for t in transactions if t.get("type") == "expense" and not is_correction_row(t)]
     # Only an earlier payment of the same amount to the same vendor can match,
     # so each payment is compared with those alone, in the order they were seen.
     seen: dict[tuple[str, Any], list[dict[str, Any]]] = defaultdict(list)
@@ -154,7 +155,7 @@ def detect_unusual_amounts(
 
     by_group: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for tx in transactions:
-        if tx.get("type") == "expense":
+        if tx.get("type") == "expense" and not is_correction_row(tx):
             cat = tx.get("category", "other_expense")
             by_group[(cat, str(tx.get("account_code") or ""))].append(tx)
 
@@ -453,7 +454,8 @@ async def run_anomaly_detection(
     Anomaly Detection Skill.
     done_when: state['anomalies'] is a list (may be empty = no anomalies found)
     """
-    transactions = state.get("transactions", [])
+    # Closed-month correction rows reclassify money; no detector may read them as payments.
+    transactions = [t for t in state.get("transactions", []) if not is_correction_row(t)]
     cashflow = state.get("cashflow", {})
 
     if not transactions:

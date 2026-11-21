@@ -21,6 +21,7 @@ from app.core.turkish import fold
 from app.models.canonical_transaction import CanonicalTransaction as CT
 from app.models.canonical_transaction import money_rows
 from app.platform.contracts import EvidenceBundle, EvidenceCitation
+from app.services.ledger import effective_categories
 
 SOURCE_TYPE = "ledger_row"
 VERSION = "ledger_v1"
@@ -85,8 +86,12 @@ async def retrieve_ledger_evidence(
         .limit(_SCAN_LIMIT)
     )).all()
 
+    # A closed month's original row keeps its old category; the question is matched
+    # against the one a person gave it since. The correction pair is not money (above).
+    effective = await effective_categories(db, str(org_id))
     ranked: list[tuple[float, str]] = []
     for row_id, counterparty, description, category in scanned:
+        category = effective.get(row_id, category)
         s = _score(words, set(_tokens(f"{counterparty or ''} {description or ''} {category or ''}")))
         if s >= _MIN_SCORE:
             ranked.append((s, row_id))

@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.category_override import CategoryOverride
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.decision_log import DecisionLog
@@ -291,6 +292,8 @@ async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
 
     ledger = await db.execute(delete(CanonicalTransaction).where(CanonicalTransaction.org_id == org_id))
     counts["ledger"] = int(ledger.rowcount or 0)
+    # A person's single-row corrections belong to the data they corrected.
+    await db.execute(delete(CategoryOverride).where(CategoryOverride.org_id == org_id))
     await db.execute(delete(OpenItem).where(OpenItem.org_id == org_id))
     await db.execute(delete(OpenItemMatch).where(OpenItemMatch.org_id == org_id))
 
