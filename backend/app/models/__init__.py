@@ -22,6 +22,7 @@ from app.models.data_source import (
     DataSourceDomain,
     DataSourceType,
 )
+from app.models.decision import Decision
 from app.models.decision_log import DecisionLog
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.donem_kilidi import DonemKilidi
@@ -77,6 +78,7 @@ __all__ = [
     "DataSource",
     "DataSourceDomain",
     "DataSourceType",
+    "Decision",
     "DecisionLog",
     "DefensibilityPacket",
     "DonemKilidi",
