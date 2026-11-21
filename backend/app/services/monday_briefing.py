@@ -394,14 +394,9 @@ async def assemble_monday_briefing(
             fallback_used = True
             final_text = deterministic_full_text
 
-    # Rows nobody has accepted yet are in none of the figures above; say so in the
-    # text itself, whichever branch wrote it (a narrative cannot drop it).
-    from app.services.held_rows import pending_count
+    from app.services.held_rows import held_note  # rows nobody accepted yet are in no figure above
 
-    held_waiting = await pending_count(db, org_id)
-    if held_waiting:
-        final_text += f" Not: {held_waiting} kayıt incelemenizi bekliyor; bu rakamlara dahil değil."
-
+    final_text += await held_note(db, org_id)
     has_data = (
         starting_cash is not None
         or any(w.receivables or w.payables for w in radar.weeks)

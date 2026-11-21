@@ -140,6 +140,12 @@ async def pending_count(db: AsyncSession, org_id: str, job_id: str | None = None
     return int((await db.execute(stmt)).scalar() or 0)
 
 
+async def held_note(db: AsyncSession, org_id: str) -> str:
+    """The sentence the Monday briefing appends when rows wait; "" when none do."""
+    waiting = await pending_count(db, org_id)
+    return f" Not: {waiting} kayıt incelemenizi bekliyor; bu rakamlara dahil değil." if waiting else ""
+
+
 def describe(row: HeldTransaction, filename: str | None = None) -> dict[str, Any]:
     p = row.payload
     confidence = parse_confidence(p.get("confidence"))
