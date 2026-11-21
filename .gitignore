@@ -72,3 +72,8 @@ backend/scripts/_*.py
 
 # graphify knowledge-graph output (regenerated locally; .graphifyignore says what it reads)
 graphify-out/
+
+# Browser test (frontend/e2e): its database, uploads and Playwright output
+frontend/e2e/.run/
+frontend/test-results/
+frontend/playwright-report/
