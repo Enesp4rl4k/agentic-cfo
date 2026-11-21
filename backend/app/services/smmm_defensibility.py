@@ -17,9 +17,11 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_run import AgentRun
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.report import Report, ReportFormat
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
+from app.services.decisions import record_decision
 
 _JOURNAL_REPORT = "tr_muhasebe_journal"
 
@@ -231,5 +233,14 @@ async def finalize_packet(
         {"payload": packet.payload, "statement": packet.smmm_statement,
          "finalized_by": user_id}
     )
+    if packet.org_id:
+        # The accountant's seal is a decision: recorded with the seal itself, so one cannot exist without the other.
+        await record_decision(
+            db, org_id=str(packet.org_id), kind=DecisionKind.PACKET_FINALIZATION,
+            target_type="defensibility_packet", target_id=str(packet.id), outcome="finalized",
+            decided_via=DecidedVia.HUMAN, decided_by=user_id,
+            evidence_refs=[{"type": "analysis_job", "id": str(packet.job_id)}],
+            before={"status": "draft"}, after={"status": "finalized", "content_hash": packet.content_hash},
+        )
     await db.commit()
     return packet

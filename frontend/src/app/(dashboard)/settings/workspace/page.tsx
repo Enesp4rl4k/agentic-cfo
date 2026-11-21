@@ -9,7 +9,6 @@ import {
   Mail,
   Trash2,
   Loader2,
-  Copy,
   Check,
   Crown,
   Shield,
@@ -32,6 +31,7 @@ import { SizeProfileCard } from "@/components/org/SizeProfileCard";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import type { MessageTree } from "@/lib/i18n";
+import { invitableRoles } from "@/lib/roles";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -591,8 +591,8 @@ export default function WorkspaceSettingsPage() {
   const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const { data: session } = useSession();
   const accessToken = (session as { accessToken?: string } | null)?.accessToken;
-  // Only an owner can hand out admin; the server answers 403 to an admin who tries.
-  const isOwner = session?.user?.role === "owner";
+  // What this inviter may grant (lib/roles.ts, mirrored from the backend); the server refuses the rest.
+  const grantable = invitableRoles(session?.user?.role);
 
   const [org, setOrg]           = useState<OrgData | null>(null);
   const [members, setMembers]   = useState<Member[]>([]);
@@ -606,7 +606,7 @@ export default function WorkspaceSettingsPage() {
   const [inviteRole, setInviteRole]   = useState("analyst");
   const [inviting, setInviting]       = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
 
   async function headers() {
     return {
@@ -656,6 +656,7 @@ export default function WorkspaceSettingsPage() {
     if (!inviteEmail) return;
     setInviting(true);
     setInviteError(null);
+    setInviteNotice(null);
     try {
       const res = await fetch(`${API_BASE}/api/v1/org/invite`, {
         method: "POST",
@@ -677,14 +678,10 @@ export default function WorkspaceSettingsPage() {
         ...prev,
       ]);
 
-      // Copy invite token to clipboard
-      if (data.data.token) {
-        const inviteUrl = `${window.location.origin}/auth/register?invite=${data.data.token}`;
-        await navigator.clipboard.writeText(inviteUrl).catch(() => {});
-        setCopiedToken(data.data.invite_id);
-        setTimeout(() => setCopiedToken(null), 3000);
-      }
-
+      // The invitation link is only ever e-mailed to the invitee: it is not shown or copied here.
+      setInviteNotice(
+        data.data.email_sent ? ws.invite.sent.replace("{email}", data.data.email) : ws.invite.notSent,
+      );
       setInviteEmail("");
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : ws.errors.generic);
@@ -841,11 +838,12 @@ export default function WorkspaceSettingsPage() {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value)}
+              aria-label={ws.invite.roleLabel}
               className="h-8 rounded-md border border-border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <option value="analyst">{ws.roles.analyst}</option>
-              <option value="viewer">{ws.roles.viewer}</option>
-              {isOwner && <option value="admin">{ws.roles.admin}</option>}
+              {grantable.map((r) => (
+                <option key={r} value={r}>{roleLabel(r, ws.roles)}</option>
+              ))}
             </select>
             <button
               type="submit"
@@ -860,9 +858,22 @@ export default function WorkspaceSettingsPage() {
             </button>
           </form>
 
+          {inviteNotice && (
+            <p role="status" className="mt-2 text-xs text-foreground">{inviteNotice}</p>
+          )}
+
           <p className="mt-2 text-xs text-muted-foreground">
             {ws.invite.hint}
           </p>
+
+          <dl className="mt-3 space-y-1.5 text-xs">
+            {grantable.map((r) => (
+              <div key={r} className={cn("flex gap-2", r === inviteRole ? "text-foreground" : "text-muted-foreground")}>
+                <dt className="w-24 shrink-0 font-medium">{roleLabel(r, ws.roles)}</dt>
+                <dd className="m-0">{ws.roleDescriptions[r as keyof typeof ws.roleDescriptions]}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       )}
 
@@ -884,22 +895,6 @@ export default function WorkspaceSettingsPage() {
                       .replace("{date}", new Date(inv.expires_at).toLocaleDateString(dateTag))}
                   </p>
                 </div>
-                <button
-                  onClick={async () => {
-                    const url = `${window.location.origin}/auth/register?invite=${inv.invite_id}`;
-                    await navigator.clipboard.writeText(url).catch(() => {});
-                    setCopiedToken(inv.invite_id);
-                    setTimeout(() => setCopiedToken(null), 2000);
-                  }}
-                  className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-                  aria-label={ws.pendingInvites.copyAria}
-                >
-                  {copiedToken === inv.invite_id ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </button>
                 <button
                   onClick={() => cancelInvite(inv.invite_id)}
                   className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"

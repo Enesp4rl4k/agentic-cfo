@@ -57,6 +57,18 @@ class DecisionKind(StrEnum):
     OWNER_STATEMENT = "owner_statement"
     # A person's company-size answers and the size profile they confirmed.
     SIZE_PROFILE = "size_profile"
+    # Who may approve what: the company's authority policy (owner/admin edit it).
+    AUTHORITY_POLICY_CHANGE = "authority_policy_change"
+    # Someone joined, was invited, or was removed: who may act in the company at all.
+    MEMBER_CHANGE = "member_change"
+    # A person's yes or no to a proposed action or queued agent job (what the system wants to do).
+    ACTION_DECISION = "action_decision"
+    # The accountant seals a defensibility packet.
+    PACKET_FINALIZATION = "packet_finalization"
+    # A person's pick between two agents' conflicting views (accept one, or their own resolution).
+    AGENT_CONFLICT_RESOLUTION = "agent_conflict_resolution"
+    # A person makes a finished analysis the company's picture (the system did not apply it alone).
+    COMPANY_VIEW_ADOPTION = "company_view_adoption"
 
 
 class DecidedVia(StrEnum):

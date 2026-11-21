@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
 import { BasisTag, formatDay, StaleBalanceNotice } from "@/components/radar/basis";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { clampWeek, payables, runScenario, shiftDate, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
+import { useCan } from "@/hooks/useCan";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
@@ -39,6 +41,9 @@ export default function TakvimPage() {
 
   const { data: pending } = useQuery({ queryKey: ["plan-changes", "pending"], queryFn: () => listPlanChanges("pending") });
   const canDecide = Boolean(pending?.canDecide);
+  // Moving a payment is the company's commercial decision: the accountant may try dates here (a scenario)
+  // and advise, but proposing is for owner, admin, CFO and analyst (docs/payment-plan-approval.md).
+  const propose = useCan("propose");
 
   // A payment moved in the scenario becomes a proposal. Someone who may decide holds the authority
   // themselves, so their proposal is approved at once; everyone else's waits in the approvals.
@@ -230,20 +235,22 @@ export default function TakvimPage() {
                           <span className="font-medium">{name}</span>{" "}
                           <span className="tc-mono text-muted-foreground">{fmt(i.amountCents / 100)} · {copy.toDate.replace("{date}", toDate)}</span>
                         </span>
-                        <Button
+                        <CanButton
+                          action="propose"
                           className="min-h-[44px]"
                           disabled={send.isPending}
                           onClick={() => send.mutate({ id: i.id, toDate })}
                           aria-label={`${name}: ${canDecide ? copy.apply : copy.send}`}
                         >
                           {canDecide ? copy.apply : copy.send}
-                        </Button>
+                        </CanButton>
                       </li>
                     );
                   })}
               </ul>
             </section>
           )}
+          {!propose.allowed && movedCount > 0 && <p className="m-0 text-sm text-muted-foreground">{propose.reason}</p>}
           {sentMessage && <p role="status" className="m-0 text-sm text-success">{sentMessage}</p>}
           {sendError && <p role="alert" className="m-0 text-sm text-destructive">{sendError}</p>}
 
