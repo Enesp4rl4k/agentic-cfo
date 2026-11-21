@@ -2,10 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import {
   getLedgerSummary,
   getPossibleDuplicates,
@@ -44,6 +45,8 @@ export function LedgerCard() {
     },
   });
 
+  const failure = settle.error ?? decide.error;
+
   if (!summary?.rows && !duplicates?.length) return null;
 
   return (
@@ -55,6 +58,11 @@ export function LedgerCard() {
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{copy.body}</p>
       </div>
+      {failure && (
+        <p role="alert" className="text-xs text-red-400">
+          {failureMessage(failure, copy.actionError, t.roleGate.forbidden)}
+        </p>
+      )}
       {summary && (
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div>
@@ -112,14 +120,14 @@ export function LedgerCard() {
                   ))}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button size="sm" variant="outline" disabled={settle.isPending}
+                  <CanButton action="edit" size="sm" variant="outline" disabled={settle.isPending}
                     onClick={() => settle.mutate({ id: s.id, action: "confirm" })}>
                     {copy.settleYes}
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={settle.isPending}
+                  </CanButton>
+                  <CanButton action="edit" size="sm" variant="outline" disabled={settle.isPending}
                     onClick={() => settle.mutate({ id: s.id, action: "reject" })}>
                     {copy.settleNo}
-                  </Button>
+                  </CanButton>
                 </div>
               </li>
             ))}
@@ -144,22 +152,22 @@ export function LedgerCard() {
                   ))}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button
+                  <CanButton action="edit"
                     size="sm"
                     variant="outline"
                     disabled={decide.isPending}
                     onClick={() => decide.mutate({ id: row.id, action: "keep" })}
                   >
                     {copy.keep}
-                  </Button>
-                  <Button
+                  </CanButton>
+                  <CanButton action="edit"
                     size="sm"
                     variant="outline"
                     disabled={decide.isPending}
                     onClick={() => decide.mutate({ id: row.id, action: "exclude" })}
                   >
                     {copy.exclude}
-                  </Button>
+                  </CanButton>
                 </div>
               </li>
             ))}

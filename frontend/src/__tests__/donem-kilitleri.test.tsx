@@ -8,7 +8,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const get = vi.fn();
 const post = vi.fn();
@@ -43,7 +44,7 @@ beforeEach(() => {
 describe("DonemKilitleri", () => {
   it("lists closed months and offers neither them nor a future month", async () => {
     serve(["2026-01"]);
-    render(<DonemKilitleri now={NOW} />);
+    renderWithQuery(<DonemKilitleri now={NOW} />);
     expect(await screen.findByText("Kapalı: 2026-01")).toBeInTheDocument();
     const options = Array.from(screen.getByLabelText("Dönemi kapat").querySelectorAll("option")).map(
       (o) => o.textContent,
@@ -57,18 +58,18 @@ describe("DonemKilitleri", () => {
   it("asks first, closes, and reloads", async () => {
     serve([]);
     post.mockResolvedValue({ data: {} });
-    render(<DonemKilitleri now={NOW} />);
+    renderWithQuery(<DonemKilitleri now={NOW} />);
     await screen.findByText("Henüz kapatılmış bir dönem yok.");
     await chooseAndClose("2026-02");
     await waitFor(() => expect(post).toHaveBeenCalledWith("/smmm/donem-kilitleri", { donem: "2026-02" }));
     expect(window.confirm).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(get.mock.calls.filter(([url]) => String(url).includes("donem-kilitleri"))).toHaveLength(2));
   });
 
   it("does nothing when the person declines", async () => {
     serve([]);
     (window.confirm as ReturnType<typeof vi.fn>).mockReturnValue(false);
-    render(<DonemKilitleri now={NOW} />);
+    renderWithQuery(<DonemKilitleri now={NOW} />);
     await screen.findByText("Henüz kapatılmış bir dönem yok.");
     await chooseAndClose("2026-02");
     expect(post).not.toHaveBeenCalled();
@@ -77,7 +78,7 @@ describe("DonemKilitleri", () => {
   it("shows the server's reason when it refuses", async () => {
     serve([]);
     post.mockRejectedValue(Object.assign(new Error("Bu rol dönem kapatamaz."), { status: 403 }));
-    render(<DonemKilitleri now={NOW} />);
+    renderWithQuery(<DonemKilitleri now={NOW} />);
     await screen.findByText("Henüz kapatılmış bir dönem yok.");
     await chooseAndClose("2026-02");
     expect(await screen.findByRole("alert")).toHaveTextContent("Bu rol dönem kapatamaz.");
@@ -86,7 +87,7 @@ describe("DonemKilitleri", () => {
   it("any other failure gets our wording", async () => {
     serve([]);
     post.mockRejectedValue(Object.assign(new Error("Network Error"), { status: undefined }));
-    render(<DonemKilitleri now={NOW} />);
+    renderWithQuery(<DonemKilitleri now={NOW} />);
     await screen.findByText("Henüz kapatılmış bir dönem yok.");
     await chooseAndClose("2026-02");
     const alert = await screen.findByRole("alert");

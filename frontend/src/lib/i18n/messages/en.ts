@@ -44,6 +44,7 @@ export type MessageTree = {
     settleNo: string;
     keep: string;
     exclude: string;
+    actionError: string;
   };
   cashRadar: {
     title: string;
@@ -186,6 +187,7 @@ export type MessageTree = {
     moved: string;
     dragHint: string;
     toRoute: string;
+    byPlan: string;
     failed: string;
     send: string;
     apply: string;
@@ -249,6 +251,7 @@ export type MessageTree = {
       tools: string;
       portal: string;
     };
+    more: string;
     items: {
       takvim: string;
       onay: string;
@@ -517,6 +520,19 @@ export type MessageTree = {
     confirm: string;
     loadError: string;
     closeError: string;
+  };
+  roleGate: {
+    needContribute: string;
+    needWrite: string;
+    needDecide: string;
+    forbidden: string;
+    accountantAct: Record<"accountant" | "ownBooks" | "accountantExists" | "noRole", string>;
+    closePeriod: {
+      accountant: string;
+      ownBooks: string;
+      accountantExists: string;
+      noRole: string;
+    };
   };
   smmmCalendar: {
     title: string;
@@ -2156,6 +2172,29 @@ export type MessageTree = {
       unbalanced: string;
     };
   };
+  sizeProfile: {
+    title: string;
+    reason: string;
+    safety: string;
+    skip: string;
+    next: string;
+    questions: { outflow: string; headcount: string; inhouse: string };
+    yes: string;
+    no: string;
+    profiles: { micro: string; small: string; medium: string };
+    suggestion: {
+      title: string;
+      byVolume: string;
+      byHeadcount: string;
+      disagreement: string;
+      other: string;
+      confirm: string;
+    };
+    summary: { current: string; edit: string };
+    menu: { simplified: string; undo: string; restored: string };
+    saved: string;
+    error: string;
+  };
   baslangic: {
     title: string;
     subtitle: string;
@@ -2664,6 +2703,7 @@ export const en: MessageTree = {
     settleNo: "No, separate money",
     keep: "Separate payment",
     exclude: "Same payment",
+    actionError: "The action could not be completed.",
   },
   cashRadar: {
     title: "Cash radar",
@@ -2806,6 +2846,7 @@ export const en: MessageTree = {
     moved: "{n} payments moved",
     dragHint: "Drag a payment to another week, or shift it one week with the buttons.",
     toRoute: "Back to the cash route",
+    byPlan: "per approved plan",
     failed: "The payment calendar could not be read.",
     send: "Send for approval",
     apply: "Change the plan",
@@ -2874,6 +2915,7 @@ export const en: MessageTree = {
       tools: "Tools",
       portal: "Portal",
     },
+    more: "More",
     items: {
       takvim: "Payment calendar",
       onay: "Awaiting approval",
@@ -3143,6 +3185,24 @@ export const en: MessageTree = {
     confirm: "Close {donem}? Its ledger will not change after this; late items go to the first open month.",
     loadError: "Closed months could not be loaded.",
     closeError: "The month could not be closed.",
+  },
+  roleGate: {
+    needContribute: "Viewers can't do this; an analyst role or above is needed",
+    needWrite: "This needs editing rights (viewer and analyst are read-only)",
+    needDecide: "This needs administrator rights",
+    forbidden: "Your role is not allowed to do this.",
+    accountantAct: {
+      accountant: "",
+      ownBooks: "",
+      accountantExists: "Your accountant does this",
+      noRole: "This is the accountant's to do (or, with no accountant, the owner's, admin's or CFO's)",
+    },
+    closePeriod: {
+      accountant: "You are this company's accountant: closing the month is yours.",
+      ownBooks: "This company has no accountant on Tiphys, so the owner, admin or CFO closes the month.",
+      accountantExists: "Your accountant closes the month",
+      noRole: "Closing the month is the accountant's (or, with no accountant, the owner's, admin's or CFO's)",
+    },
   },
   smmmCalendar: {
     title: "Upcoming deadlines",
@@ -4913,6 +4973,37 @@ export const en: MessageTree = {
       balanced: "Balanced",
       unbalanced: "Unbalanced",
     },
+  },
+  sizeProfile: {
+    title: "Your company's size",
+    reason: "Why we ask: to simplify the screens and approval steps for your company.",
+    safety: "This only changes the menu; it never touches your access or approval rights.",
+    skip: "Not now",
+    next: "Continue",
+    questions: {
+      outflow: "Roughly how much do you pay out each month?",
+      headcount: "How many people work at the company?",
+      inhouse: "Is someone in charge of bookkeeping / finance?",
+    },
+    yes: "Yes",
+    no: "No",
+    profiles: { micro: "Micro business", small: "Small business", medium: "Mid-size business" },
+    suggestion: {
+      title: "Our suggestion: {profile}",
+      byVolume: "This suggestion is based on your monthly payments.",
+      byHeadcount: "This suggestion is based on your headcount.",
+      disagreement: "Your headcount points to a different profile; your monthly payments decided.",
+      other: "Choose a different profile",
+      confirm: "Confirm",
+    },
+    summary: { current: "Company size: {profile}", edit: "Change answers" },
+    menu: {
+      simplified: "We simplified the menu; every screen is under 'More'",
+      undo: "Undo",
+      restored: "The full menu is back.",
+    },
+    saved: "Your answers were saved.",
+    error: "Could not save. Please try again.",
   },
   baslangic: {
     title: "Getting started",

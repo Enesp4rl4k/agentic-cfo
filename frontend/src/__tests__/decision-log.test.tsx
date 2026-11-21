@@ -10,7 +10,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const { dec, packet } = vi.hoisted(() => ({
   dec: { listDecisions: vi.fn(), createDecision: vi.fn(), measureOutcome: vi.fn() },
@@ -143,7 +144,7 @@ beforeEach(() => {
 describe("DecisionLogPanel", () => {
   it("lists the ledger: an open decision offers measurement, a closed one shows the variance", async () => {
     dec.listDecisions.mockResolvedValue([openRec, closedRec]);
-    render(<DecisionLogPanel />);
+    renderWithQuery(<DecisionLogPanel />);
 
     expect(await screen.findByText("Karar Defteri")).toBeInTheDocument();
     expect(screen.getByText("Bütçe kesintisi")).toBeInTheDocument();
@@ -169,7 +170,7 @@ describe("DecisionLogPanel", () => {
       variance: { realized_net_kurus: -12_500_000, runway_delta: -0.5 },
       actual: { ...closedRec.actual!, realized_net_kurus: -12_500_000 },
     });
-    render(<DecisionLogPanel />);
+    renderWithQuery(<DecisionLogPanel />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Sonucu ölç" }));
     await waitFor(() =>
@@ -186,7 +187,7 @@ describe("DecisionLogPanel", () => {
 
   it("renders the empty state when the ledger is empty", async () => {
     dec.listDecisions.mockResolvedValue([]);
-    render(<DecisionLogPanel />);
+    renderWithQuery(<DecisionLogPanel />);
     expect(await screen.findByText(/Kayıtlı karar yok/)).toBeInTheDocument();
   });
 });
@@ -205,7 +206,7 @@ describe("DecisionPacketPanel — kararı deftere yaz", () => {
       variance: { realized_net_kurus: 30_000_000, runway_delta: 1.5 },
       actual: closedRec.actual,
     });
-    render(<DecisionPacketPanel jobId="job-1" />);
+    renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
 
     const select = await screen.findByLabelText("Karar seçeneği");
     fireEvent.change(select, { target: { value: "preset_1" } });
@@ -235,7 +236,7 @@ describe("DecisionPacketPanel — kararı deftere yaz", () => {
   it("prefills with the job's existing decision instead of showing a fresh form", async () => {
     packet.getDecisionPacket.mockResolvedValue(packetFull);
     dec.listDecisions.mockResolvedValue([openRec]);
-    render(<DecisionPacketPanel jobId="job-1" />);
+    renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
 
     expect(await screen.findByText("Bütçe kesintisi")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sonucu ölç" })).toBeInTheDocument();

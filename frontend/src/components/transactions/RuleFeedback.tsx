@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { Loader2, RefreshCw, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
+import { failureMessage, isForbidden } from "@/lib/forbidden";
 import { rerunAnalysis } from "@/lib/api/cfo";
 import type { Transaction } from "@/types";
 
@@ -42,6 +44,8 @@ export function RuleRerunBanner({
   const queryClient = useQueryClient();
   const [state, setState] = useState<"idle" | "running" | "done">("idle");
   const [started, setStarted] = useState(0);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const can = useCan("analyze");
 
   if (jobIds.length === 0) return null;
   const n = String(jobIds.length);
@@ -53,6 +57,8 @@ export function RuleRerunBanner({
     const results = await Promise.allSettled(jobIds.map((id) => rerunAnalysis(id)));
     const ok = results.filter((res) => res.status === "fulfilled").length;
     setStarted(ok);
+    const denied = results.find((res) => res.status === "rejected" && isForbidden(res.reason));
+    setRefusal(denied && denied.status === "rejected" ? failureMessage(denied.reason, "", t.roleGate.forbidden) : null);
     setState("done");
     for (const id of jobIds) {
       void queryClient.invalidateQueries({ queryKey: ["dashboard", id] });
@@ -73,14 +79,21 @@ export function RuleRerunBanner({
         ) : (
           <p className="text-xs text-muted-foreground">{r.bannerBody}</p>
         )}
+        {refusal && (
+          <p role="alert" className="text-xs text-red-400">
+            {refusal}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {state !== "done" && (
           <button
             type="button"
-            onClick={() => void rerunAll()}
+            onClick={can.allowed ? () => void rerunAll() : undefined}
             disabled={state === "running"}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+            aria-disabled={can.allowed ? undefined : true}
+            title={can.reason ?? undefined}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           >
             {state === "running" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />

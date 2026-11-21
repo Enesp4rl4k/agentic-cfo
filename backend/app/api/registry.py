@@ -46,6 +46,7 @@ _ROUTERS = [
     ("app.api.audit",               "router", "audit"),
     ("app.api.demo",                "router", "demo"),
     ("app.api.org",                 "router", "org"),
+    ("app.api.size_profile",        "router", "org"),                         # company size answers + confirmed profile
     ("app.api.pilot",               "router", "pilot"),
     ("app.api.monday_briefing",     "router", "briefing"),  # Pazartesi Bülteni
     ("app.api.context",             "router", "context"),

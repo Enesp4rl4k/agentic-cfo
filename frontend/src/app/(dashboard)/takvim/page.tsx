@@ -6,11 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { BasisTag, formatDay, StaleBalanceNotice } from "@/components/radar/basis";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { clampWeek, payables, runScenario, shiftDate, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { getCashRadar } from "@/lib/api/ledger";
 import { decidePlanChange, listPlanChanges, planChangeError, proposePlanChange } from "@/lib/api/planChanges";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,8 @@ import { cn } from "@/lib/utils";
  */
 export default function TakvimPage() {
   const { t } = useI18n();
+  const { org } = useOrgSettings();
+  const locale = org?.locale || "en-US";
   const copy = t.takvim;
   const weekCopy = t.cashRadar;
   const fmt = useCurrencyFormat();
@@ -92,8 +96,15 @@ export default function TakvimPage() {
         </Card>
       )}
 
+      {radar?.opening_cash?.stale && (
+        <StaleBalanceNotice asOf={radar.opening_cash.as_of} ageDays={radar.opening_cash.age_days} locale={locale} />
+      )}
+
       {radar && result && (
         <>
+          {radar.opening_cash && (
+            <p className="m-0 text-xs text-muted-foreground">{weekCopy.cashAsOf.replace("{date}", formatDay(radar.opening_cash.as_of, locale))}</p>
+          )}
           <div className="flex flex-wrap items-end justify-between gap-4">
             <dl className="flex flex-wrap gap-6">
               <div>
@@ -167,6 +178,12 @@ export default function TakvimPage() {
                           )}
                         >
                           <p className="m-0 truncate font-medium" title={name}>{name}</p>
+                          <p className="m-0">
+                            <BasisTag item={item.item} copy={weekCopy} fmt={(v) => fmt(v)} locale={locale} />
+                            {item.item.basis_reason === "payment_plan_change_taken_as_date" && (
+                              <span className="ml-1.5 text-[11px] text-muted-foreground">{copy.byPlan}</span>
+                            )}
+                          </p>
                           <p className="tc-mono m-0 text-muted-foreground">{fmt(item.amountCents / 100)}</p>
                           <div className="mt-1 flex gap-1">
                             <Button

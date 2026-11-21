@@ -18,6 +18,7 @@ export const orgSettingsModule = {
     refresh: () => {},
     hasTrPack: true,
     focusMode: false,
+    sizeProfile: null,
     baseCurrency: "TRY",
     locale: "tr-TR",
   }),

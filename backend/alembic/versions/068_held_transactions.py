@@ -7,8 +7,8 @@ was the organisation's base currency, not what the document said.
 `base_currency_confirmed_at/_by` record that an owner or admin chose the base
 currency: the stored value alone is only the column default.
 
-Revision ID: 067_held_transactions
-Revises: 066_counterparty_aliases
+Revision ID: 068_held_transactions
+Revises: 067_org_size_profile
 """
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "067_held_transactions"
-down_revision = "066_counterparty_aliases"
+revision = "068_held_transactions"
+down_revision = "067_org_size_profile"
 branch_labels = None
 depends_on = None
 
