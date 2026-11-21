@@ -2641,6 +2641,7 @@ export type MessageTree = {
     confirmLink: string;
     leftOut: string;
     perCurrency: string;
+    unknown: string;
   };
   heldRows: {
     title: string;
@@ -5584,6 +5585,7 @@ export const en: MessageTree = {
     confirmLink: "Confirm the currency",
     leftOut: "{n} foreign-currency transactions are not included ({currencies}).",
     perCurrency: "Totals by currency",
+    unknown: "currency unknown",
   },
   heldRows: {
     title: "Rows waiting for your review",

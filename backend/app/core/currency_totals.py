@@ -30,6 +30,8 @@ from typing import Any, TypeVar
 from app.core.tdhp import BILANCO_KATEGORILERI
 
 DEFAULT_BASE = "TRY"
+# What a figure says when its currency is unknown. The wire code for that case is "?" (see foreign_summaries).
+CURRENCY_UNKNOWN_TR = "para birimi bilinmiyor"
 
 R = TypeVar("R")
 
@@ -239,10 +241,14 @@ def count_currencies(rows: Iterable[Any]) -> dict[str, int]:
 
 
 def fmt_money(cents: int, currency: str | None = None) -> str:
-    """An amount as the Turkish text writes it: ₺1.234,56 for lira, 1.234,56 USD for the rest."""
+    """An amount as the Turkish text writes it: ₺1.234,56 for lira, 1.234,56 USD for the rest.
+
+    No currency given means the currency is unknown, not lira: the plain number and the words say so."""
     sign = "-" if cents < 0 else ""
     swapped = f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
-    code = normalise(currency) or DEFAULT_BASE
+    code = normalise(currency)
+    if not code:
+        return f"{sign}{swapped} ({CURRENCY_UNKNOWN_TR})"
     return f"{sign}₺{swapped}" if code == "TRY" else f"{sign}{swapped} {code}"
 
 

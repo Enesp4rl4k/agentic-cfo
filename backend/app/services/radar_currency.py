@@ -23,12 +23,9 @@ def usable_balance(balance: dict[str, Any] | None, cur: str) -> tuple[dict[str, 
     code = normalise(balance.get("currency"))
     if code == cur:
         return balance, None
-    if code:
-        what = f"{fmt_money(balance['balance_cents'], code)} {code} cinsinden"
-    else:
-        what = f"{balance['balance_cents'] / 100:,.2f} tutarında, para birimi bilinmeyen"
+    what = fmt_money(balance["balance_cents"], code)  # an unknown currency reads "(para birimi bilinmiyor)"
     return None, (
-        f"{what} banka bakiyesi ({balance['date']}) {cur} radarına eklenmedi: "
+        f"{what} tutarındaki banka bakiyesi ({balance['date']}) {cur} radarına eklenmedi: "
         f"{cur} cinsinden kanıtlanmış başlangıç nakdi yok"
     )
 

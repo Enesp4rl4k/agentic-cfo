@@ -2906,6 +2906,7 @@ export const tr: MessageTree = {
     confirmLink: "Para birimini onayla",
     leftOut: "{n} dövizli işlem dahil değil ({currencies}).",
     perCurrency: "Para birimine göre toplamlar",
+    unknown: "para birimi bilinmiyor",
   },
   heldRows: {
     title: "İncelemenizi bekleyen kayıtlar",
