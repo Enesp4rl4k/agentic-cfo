@@ -10,11 +10,15 @@ import re
 from datetime import UTC, datetime
 
 
-def _detect_currency(raw_text: str) -> str:
+def _detect_currency(raw_text: str) -> str | None:
     """
-    Detect the primary currency from document text.
-    Returns ISO-4217 code: "TRY", "USD", "EUR", "GBP" etc.
-    Defaults to "TRY" for documents that appear to be Turkish.
+    The currency a document *states*, as an ISO-4217 code, or None.
+
+    Only an explicit marker counts (₺, TL, TRY, €, EUR, £, GBP, $, USD ...). A
+    document that merely reads as Turkish has not said TRY, and used to be
+    given it: that guess reached the books looking like a fact. The caller
+    decides what to do when nothing is stated (organisation base currency,
+    marked as assumed, else the row waits for a person).
     """
     text_upper = raw_text[:2000].upper()  # Only scan the header
 
@@ -30,13 +34,7 @@ def _detect_currency(raw_text: str) -> str:
     # USD
     if any(marker in text_upper for marker in ["$", "USD ", " USD\n", "DOLLAR"]):
         return "USD"
-
-    # Turkish document heuristics (common Turkish words in financial docs)
-    turkish_markers = ["HESAP", "BANKA", "FATURA", "TARİH", "TUTAR", "BORÇ", "ALACAK"]
-    if sum(1 for m in turkish_markers if m in text_upper) >= 2:
-        return "TRY"
-
-    return "TRY"  # safe default for this product's target market
+    return None
 
 
 def _parse_amount(raw: str) -> int | None:

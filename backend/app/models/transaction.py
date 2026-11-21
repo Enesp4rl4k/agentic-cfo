@@ -59,6 +59,11 @@ class Transaction(Base):
     # All amounts stored in kuruş (smallest unit) as integer
     amount_kurus: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="TRY", nullable=False)
+    # True when the document did not state the currency and the organisation's
+    # base currency was assumed (app.services.ingest.hold): shown, correctable.
+    currency_assumed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="0"
+    )
     type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # income | expense
     category: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -450,6 +450,12 @@ async def compute_cash_radar(
         not_included.append("Vergi ve SGK yükümlülükleri")
     if not has_cheques:
         not_included.append("Çek ve senetler")
+    from app.services.held_rows import pending_count
+
+    waiting = await pending_count(db, org_id)
+    if waiting:
+        # Extracted rows a person has not yet accepted: not in any figure here.
+        not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
     held = await _held_documents(db, org_id, anchor, ranges)
     if held is not None:
         not_included.append(_held_line(held))

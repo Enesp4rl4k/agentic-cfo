@@ -274,6 +274,8 @@ function buildRows<T>(arr: T[]) {
     type: string;
     amount_cents: number;
     date_is_estimated?: boolean;
+    currency?: string;
+    currency_assumed?: boolean;
     kdv_cents?: number | null;
     stopaj_cents?: number | null;
     raw_text?: string | null;
@@ -614,6 +616,15 @@ export default function TransactionsPage() {
                   >
                     {tx.type === "income" ? "+" : "−"}
                     {formatCurrency(tx.amount_cents / 100)}
+                    {/* The document did not state a currency; the organisation's was assumed. */}
+                    {tx.currency_assumed && (
+                      <span
+                        className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[10px] font-medium text-amber-400"
+                        title="The document did not state a currency; the organisation's base currency was assumed."
+                      >
+                        {tx.currency} assumed
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

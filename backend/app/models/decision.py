@@ -36,6 +36,11 @@ class DecisionKind(StrEnum):
     DUPLICATE_RESOLUTION = "duplicate_resolution"
     SETTLEMENT_MATCH = "settlement_match"
     HELD_RUN_RELEASE = "held_run_release"
+    # A person's answer to one extracted row the system would not book alone.
+    HELD_ROW_RESOLUTION = "held_row_resolution"
+    # An owner/admin confirms the company's currency: the one fact that lets a
+    # currency-less document be read in it.
+    BASE_CURRENCY_CONFIRMATION = "base_currency_confirmation"
     PLAN_CHANGE = "plan_change"
     BRIEFING_RELEASE = "briefing_release"
     MONTH_CLOSE = "month_close"
