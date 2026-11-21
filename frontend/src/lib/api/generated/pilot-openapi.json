@@ -1,6 +1,27 @@
 {
   "components": {
     "schemas": {
+      "BasisSplitOut": {
+        "properties": {
+          "assumed_cents": {
+            "default": 0,
+            "title": "Assumed Cents",
+            "type": "integer"
+          },
+          "estimated_cents": {
+            "default": 0,
+            "title": "Estimated Cents",
+            "type": "integer"
+          },
+          "known_cents": {
+            "default": 0,
+            "title": "Known Cents",
+            "type": "integer"
+          }
+        },
+        "title": "BasisSplitOut",
+        "type": "object"
+      },
       "Baslangic": {
         "properties": {
           "firma": {
@@ -127,6 +148,16 @@
             },
             "title": "Not Included",
             "type": "array"
+          },
+          "opening_cash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpeningCashOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "other_currency_items": {
             "title": "Other Currency Items",
@@ -593,6 +624,21 @@
             ],
             "title": "End"
           },
+          "future_latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Future Latest"
+          },
+          "future_rows": {
+            "title": "Future Rows",
+            "type": "integer"
+          },
           "is_default": {
             "title": "Is Default",
             "type": "boolean"
@@ -632,7 +678,9 @@
           "is_default",
           "available_start",
           "available_end",
-          "available_months"
+          "available_months",
+          "future_rows",
+          "future_latest"
         ],
         "title": "LedgerPeriodOut",
         "type": "object"
@@ -729,9 +777,30 @@
             "title": "Approaching Title",
             "type": "string"
           },
+          "balance_age_days": {
+            "default": 0,
+            "title": "Balance Age Days",
+            "type": "integer"
+          },
+          "balance_as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance As Of"
+          },
           "balance_known": {
             "default": true,
             "title": "Balance Known",
+            "type": "boolean"
+          },
+          "balance_stale": {
+            "default": false,
+            "title": "Balance Stale",
             "type": "boolean"
           },
           "briefing_id": {
@@ -855,6 +924,63 @@
           "other_currency"
         ],
         "title": "OpenItemsOut",
+        "type": "object"
+      },
+      "OpeningCashOut": {
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "integer"
+          },
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance_cents": {
+            "title": "Balance Cents",
+            "type": "integer"
+          },
+          "source_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Filename"
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "stale_after_days": {
+            "title": "Stale After Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "balance_cents",
+          "as_of",
+          "age_days",
+          "stale",
+          "stale_after_days",
+          "source_job_id",
+          "source_filename"
+        ],
+        "title": "OpeningCashOut",
         "type": "object"
       },
       "Otomatik": {
@@ -1111,6 +1237,27 @@
             "title": "Amount Cents",
             "type": "integer"
           },
+          "basis": {
+            "default": "known",
+            "enum": [
+              "known",
+              "estimated",
+              "assumed"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "basis_inputs": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Basis Inputs",
+            "type": "object"
+          },
+          "basis_reason": {
+            "default": "document_due_date",
+            "title": "Basis Reason",
+            "type": "string"
+          },
           "counterparty": {
             "anyOf": [
               {
@@ -1169,6 +1316,17 @@
             "default": false,
             "title": "Rescheduled",
             "type": "boolean"
+          },
+          "rules_verified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules Verified"
           }
         },
         "required": [
@@ -1194,6 +1352,9 @@
             "title": "End Date",
             "type": "string"
           },
+          "inflow_basis": {
+            "$ref": "#/components/schemas/BasisSplitOut"
+          },
           "inflow_cents": {
             "title": "Inflow Cents",
             "type": "integer"
@@ -1201,6 +1362,9 @@
           "net_cents": {
             "title": "Net Cents",
             "type": "integer"
+          },
+          "outflow_basis": {
+            "$ref": "#/components/schemas/BasisSplitOut"
           },
           "outflow_cents": {
             "title": "Outflow Cents",
@@ -1238,7 +1402,9 @@
           "net_cents",
           "end_balance_cents",
           "receivables",
-          "payables"
+          "payables",
+          "inflow_basis",
+          "outflow_basis"
         ],
         "title": "RadarWeekOut",
         "type": "object"

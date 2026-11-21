@@ -52,6 +52,7 @@ from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.models.organization import Organization
 from app.models.transaction import Transaction
+from app.services.ledger_period import LedgerPeriod, Period, current_month, resolve_period
 
 logger = logging.getLogger(__name__)
 
@@ -401,76 +402,6 @@ async def _last_upload(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
     return None
 
 
-DEFAULT_PERIOD_MONTHS = 12
-_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-
-
-def add_months(month: str, n: int) -> str:
-    """"2026-01" plus n months (n may be negative)."""
-    index = int(month[:4]) * 12 + int(month[5:7]) - 1 + n
-    return f"{index // 12:04d}-{index % 12 + 1:02d}"
-
-
-@dataclass(frozen=True)
-class Period:
-    """A requested period, in whole months ("YYYY-MM", both ends included).
-
-    Months are the ledger's own (`month_of`: the UTC day of the row, the same months a
-    period lock closes). Either end may be left out: no `end` is the month of the latest
-    data, no `start` is `DEFAULT_PERIOD_MONTHS` months ending at `end`.
-    """
-
-    start: str | None = None
-    end: str | None = None
-
-    def __post_init__(self) -> None:
-        for m in (self.start, self.end):
-            if m is not None and not _MONTH_RE.match(m):
-                raise ValueError(f"not a month (YYYY-MM): {m!r}")
-        if self.start and self.end and self.start > self.end:
-            raise ValueError("period start is after its end")
-
-
-@dataclass(frozen=True)
-class LedgerPeriod:
-    """The period actually used, for the screen: what it covers and what exists beyond it."""
-
-    start: str | None
-    end: str | None
-    months: int                 # months inside it that hold a counted row
-    label: str | None           # "2025-02 – 2026-01"
-    is_default: bool            # nobody asked for it: the last 12 months of data
-    available_start: str | None  # first and last month with any counted row, and how many
-    available_end: str | None
-    available_months: int
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "start": self.start, "end": self.end, "months": self.months, "label": self.label,
-            "is_default": self.is_default, "available_start": self.available_start,
-            "available_end": self.available_end, "available_months": self.available_months,
-        }
-
-
-def resolve_period(period: Period | None, available: list[str]) -> tuple[str | None, str | None, bool]:
-    """(start, end, is_default) for a request over the months that hold data.
-
-    Plan v10 S1.4: with nothing asked, the 12 months ending in the month of the latest
-    data (fewer when the ledger holds fewer).
-    """
-    req = period or Period()
-    is_default = req.start is None and req.end is None
-    end = req.end or (available[-1] if available else None)
-    if end is None:
-        return None, None, is_default
-    if req.start:
-        return req.start, end, is_default
-    start = add_months(end, 1 - DEFAULT_PERIOD_MONTHS)
-    if available and available[0] <= end:
-        start = max(start, available[0])    # no earlier than the first month of data
-    return start, end, is_default
-
-
 @dataclass(frozen=True)
 class CompanyRows:
     """What the ledger counts: profit and cash are different views of one money."""
@@ -481,10 +412,17 @@ class CompanyRows:
     months: list[str]       # every month a counted row falls in, inside the period
     rows: int               # rows the ledger counts, in either view or neither
     period: LedgerPeriod    # the period these rows were read for
+    # Correction-pair rows in `profit` whose original belongs to a period outside this one:
+    # row id -> that period ("2025-09"), so a screen can say "correction from an earlier period".
+    reclass_of_period: dict[str, str]
 
 
 def month_of(when: datetime) -> str:
+    """The row's month. `transaction_date` is the document's calendar day at 00:00 UTC by
+    construction (`core.dates.parse_transaction_date`: the only ingest path), so the UTC
+    month is the calendar month, and it is the same month a period lock closes."""
     return day_of(when).strftime("%Y-%m")
+
 
 
 async def company_rows(db: AsyncSession, org_id: str, period: Period | None = None) -> CompanyRows:
@@ -512,6 +450,7 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
             CanonicalTransaction.ledger_status,
             CanonicalTransaction.basis,
             CanonicalTransaction.corrects_id,
+            CanonicalTransaction.asil_donem,
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
@@ -537,10 +476,12 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
     in_profit = {r.id for r in profit}
     corrections = [r for r in rows if r.corrects_id in in_profit and r.ledger_status != POSSIBLE_DUPLICATE]
     available = sorted({month_of(r.transaction_date) for r in counted})
-    # A correction pair is booked after the month it corrects, possibly after the last
-    # money: the default period still reaches it (the pair is no month of data itself).
-    booked = sorted(set(available) | {month_of(r.transaction_date) for r in corrections})
-    start, end, is_default = resolve_period(period, booked)
+    # The default period is anchored on money only (`counted` has no correction rows): a
+    # pair booked after the last money month does not move the window, it is read when a
+    # period reaches the month it is booked in.
+    today = current_month()
+    start, end, is_default = resolve_period(period, available, today)
+    future = [r for r in counted if month_of(r.transaction_date) > today]
 
     def inside(r: Any) -> bool:
         return start is not None and end is not None and start <= month_of(r.transaction_date) <= end
@@ -553,9 +494,17 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
         label=f"{start} – {end}" if start and end else None, is_default=is_default,
         available_start=available[0] if available else None,
         available_end=available[-1] if available else None, available_months=len(available),
+        future_rows=len(future),
+        future_latest=max((month_of(r.transaction_date) for r in future), default=None),
     )
+    shown_profit = [r for r in profit + corrections if inside(r)]
+    reclass = {
+        r.id: r.asil_donem for r in shown_profit
+        if r.corrects_id is not None and r.asil_donem and start and end
+        and not start <= r.asil_donem <= end
+    }
     return CompanyRows(
-        profit=[r for r in profit + corrections if inside(r)],
+        profit=shown_profit,
         # A posting list with no bank statement beside it is the best view of cash.
         # A reclassification moves no cash: the pairs are not here.
         cash=[
@@ -566,6 +515,7 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
         months=months,
         rows=len(in_counted),
         period=shown,
+        reclass_of_period=reclass,
     )
 
 

@@ -22,6 +22,7 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item_match import OpenItemMatch
 from app.models.transaction import Transaction
 from app.services.company_context import get_company_context
+from app.services.company_view import ledger_view
 from app.services.ledger import ledger_summary
 from tests.api_helpers import arka_plan_bitsin, bellek_istemcisi, kullanici
 from tests.test_bank_reconciliation import _bank, _sale
@@ -303,3 +304,29 @@ async def test_with_nothing_dated_the_files_own_result_still_gives_a_first_view(
     job = await _upload(client, org_id, [])
     assert (await _note(client, job))["reason"] == "no_current_view"
     assert (await _view(client, org_id))["job_id"] == job
+
+
+async def test_a_category_correction_refreshes_the_persisted_view(ortam):
+    """The stored P&L / Command Center view follows a correction: same ledger and window as the card."""
+    client, org_id, _ = ortam
+    await _upload(client, org_id, _demo_rows("01"))
+    before = (await _view(client, org_id))["ledger_signature"]
+    async with client._maker() as db:
+        row = (await db.execute(
+            select(Transaction).where(Transaction.type == "expense", Transaction.category != "marketing")
+            .order_by(Transaction.amount_kurus.desc())
+        )).scalars().first()
+        tx_id = row.id
+    res = await client.patch(f"/api/v1/transactions/{tx_id}/category", json={"category": "marketing"},
+                             headers=client.headers_of_owner)
+    assert res.status_code == 200, res.text
+    await arka_plan_bitsin()
+
+    view = await _view(client, org_id)
+    async with client._maker() as db:
+        summary = await ledger_summary(db, org_id)
+        now = await ledger_view(db, org_id)
+    assert now is not None
+    assert view["ledger_signature"] == now.signature != before               # the correction is in it
+    assert view["dashboard"]["pnl"]["revenue"] == summary["revenue_cents"] / 100
+    assert view["dashboard"]["period"] == summary["period"]                  # the window it labels

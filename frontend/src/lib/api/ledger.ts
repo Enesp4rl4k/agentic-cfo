@@ -22,6 +22,9 @@ export interface LedgerSummary {
     available_start: string | null;
     available_end: string | null;
     available_months: number;
+    /** Rows dated after the current month: outside the default period, in any explicit one. */
+    future_rows: number;
+    future_latest: string | null;
   };
 }
 

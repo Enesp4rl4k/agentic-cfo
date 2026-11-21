@@ -61,6 +61,8 @@ export const ledgerSpies = {
   resolveSettlement: vi.fn(),
   resolveDuplicate: vi.fn(),
   getCashRadar: vi.fn(),
+  getMondayBriefing: vi.fn().mockResolvedValue(null),
+  respondToMondayBriefing: vi.fn(),
 };
 
 export const ledgerModule = {
@@ -69,6 +71,20 @@ export const ledgerModule = {
   resolveSettlement: (...a: unknown[]) => ledgerSpies.resolveSettlement(...a),
   resolveDuplicate: (...a: unknown[]) => ledgerSpies.resolveDuplicate(...a),
   getCashRadar: (...a: unknown[]) => ledgerSpies.getCashRadar(...a),
+  getMondayBriefing: (...a: unknown[]) => ledgerSpies.getMondayBriefing(...a),
+  respondToMondayBriefing: (...a: unknown[]) => ledgerSpies.respondToMondayBriefing(...a),
+};
+
+/** The radar's "how well is this known" parts of a week with nothing estimated, and a fresh opening balance. */
+export const noBasis = { known_cents: 0, estimated_cents: 0, assumed_cents: 0 };
+export const openingCashFixture = {
+  balance_cents: 100_000_00,
+  as_of: "2025-01-01",
+  age_days: 0,
+  stale: false,
+  stale_after_days: 7,
+  source_job_id: "j1",
+  source_filename: "ekstre.csv",
 };
 
 /** A bank movement the ledger proposes to close an invoice with. */

@@ -13,6 +13,8 @@ class LedgerPeriodOut(BaseModel):
     available_start: str | None
     available_end: str | None
     available_months: int
+    future_rows: int
+    future_latest: str | None
 
 
 class LastUploadOut(BaseModel):

@@ -43,7 +43,7 @@ class LedgerView:
         return {"profit": self.profit, "cash": self.cash}
 
 
-def _as_transaction(row: Any) -> dict[str, Any]:
+def _as_transaction(row: Any, reclass_of_period: str | None = None) -> dict[str, Any]:
     """A ledger row in the shape the pipeline's own ingestion produces."""
     return {
         "amount_cents": row.amount_cents,
@@ -57,6 +57,9 @@ def _as_transaction(row: Any) -> dict[str, Any]:
         "ledger_basis": row.basis,
         # Set on a closed-month correction row: category totals read it, detectors do not.
         "corrects_id": row.corrects_id,
+        # A correction row whose original sits in a period outside the view's: it moves an
+        # amount out of that period's category, so it is not a bare negative.
+        "reclass_of_period": reclass_of_period,
     }
 
 
@@ -85,7 +88,7 @@ async def ledger_view(db: AsyncSession, org_id: str, period: Period | None = Non
     if not rows.profit and not rows.cash:
         return None
     return LedgerView(
-        profit=[_as_transaction(r) for r in rows.profit],
+        profit=[_as_transaction(r, rows.reclass_of_period.get(r.id)) for r in rows.profit],
         cash=[_as_transaction(r) for r in rows.cash],
         period=rows.period.as_dict(),
         signature=_signature(rows.profit, rows.cash),
