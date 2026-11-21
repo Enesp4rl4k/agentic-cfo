@@ -6,26 +6,75 @@ company* may change it. Before `require_writer` / `require_decider` /
 category and finalise the accountant's packet.
 
 1. Structural: every POST / PUT / PATCH / DELETE route is public, guarded by a
-   role dependency, guarded inline (listed, with how) or open to any member
+   role dependency (the real guard function, by identity — a dependency that
+   merely shares a name does not count), guarded inline (listed, with how; the
+   handler must actually reach the role resolver) or open to any member
    (listed, with why). A new route that is none of these fails here by name.
 2. Behavioural: viewer and analyst are refused (403) on a route of each class;
    the right role passes; an accountant of company A gets 404 on company B.
 """
 from __future__ import annotations
 
+import ast
+import importlib
+import inspect
+import textwrap
+import types
+
 import pytest
 import pytest_asyncio
 
+from app.api import access
 from app.api.access import INLINE_GUARDED, OPEN_ROUTES, PUBLIC_ROUTES
 from app.models.analysis_job import AnalysisJob
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.organization import Organization, OrgMembership
 from app.models.user import User
+from app.services import payment_plan
 from tests.api_helpers import PAROLA, bellek_istemcisi, kullanici
-from tests.test_route_access import ROUTES, _deps
+from tests.test_route_access import ROUTES
 
 STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
-GUARDS = {"require_writer", "require_decider", "require_smmm", "_check"}  # _check = require_role
+# The real guard functions. `require_role(...)` builds a closure per call, so it
+# is recognised by where it is defined, not by its (common) name `_check`.
+GUARD_FUNCS = {
+    access.require_contributor,
+    access.require_writer,
+    access.require_decider,
+    access.require_smmm,
+    access.require_platform_operator,
+}
+
+
+def _is_role_closure(call) -> bool:
+    return (
+        getattr(call, "__module__", "") == "app.api.auth"
+        and getattr(call, "__qualname__", "").startswith("require_role.<locals>.")
+    )
+
+
+def _calls(route) -> set:
+    dependant = getattr(route, "dependant", None) or getattr(
+        getattr(route, "original_route", None), "dependant", None
+    )
+    out: set = set()
+
+    def walk(d):
+        for sub in d.dependencies:
+            out.add(sub.call)
+            walk(sub)
+
+    if dependant is not None:
+        walk(dependant)
+    return out
+
+
+def _guarded(route) -> bool:
+    return any(c in GUARD_FUNCS or _is_role_closure(c) for c in _calls(route))
+
+
+def _guards_of(route) -> set:
+    return {c for c in _calls(route) if c in GUARD_FUNCS}
 
 
 def _changing():
@@ -35,7 +84,7 @@ def _changing():
 def test_every_state_changing_route_declares_who_may_use_it() -> None:
     offenders = [
         f"{m} {p}" for (m, p), r in _changing()
-        if not (_deps(r) & GUARDS)
+        if not _guarded(r)
         and (m, p) not in PUBLIC_ROUTES
         and (m, p) not in OPEN_ROUTES
         and (m, p) not in INLINE_GUARDED
@@ -49,7 +98,7 @@ def test_every_state_changing_route_declares_who_may_use_it() -> None:
 
 def test_the_allow_lists_name_routes_that_exist_and_do_not_overlap() -> None:
     keys = {k for k, _ in _changing()}
-    guarded = {k for k, r in _changing() if _deps(r) & GUARDS}
+    guarded = {k for k, r in _changing() if _guarded(r)}
     for name, table in (("OPEN_ROUTES", OPEN_ROUTES), ("INLINE_GUARDED", INLINE_GUARDED)):
         assert not [k for k in table if k not in keys], f"{name}: artık olmayan rota"
         assert not [k for k in table if k in guarded], f"{name}: zaten korunan rota"
@@ -57,9 +106,73 @@ def test_the_allow_lists_name_routes_that_exist_and_do_not_overlap() -> None:
     assert not set(OPEN_ROUTES) & set(INLINE_GUARDED)
 
 
-def test_the_three_role_classes_are_all_in_use() -> None:
-    used = set().union(*(_deps(r) for _, r in _changing()))
-    assert {"require_writer", "require_decider", "require_smmm"} <= used
+def test_the_role_classes_are_all_in_use() -> None:
+    used = set().union(*(_guards_of(r) for _, r in _changing()))
+    assert used == GUARD_FUNCS
+
+
+def test_a_look_alike_dependency_is_not_a_guard() -> None:
+    """The old test accepted any dependency called `_check`."""
+
+    async def _check() -> None: ...
+
+    assert not _is_role_closure(_check)
+    assert _check not in GUARD_FUNCS
+
+
+# What counts as "the handler really checks the role": it reaches the one
+# resolver of the acting role (membership role in the acting organisation), or
+# reads the caller's membership row itself (briefing release, org erasure).
+_RESOLVERS = {access.acting_role, access.OrgMembership}
+
+
+def _reachable(fn, seen=None, depth=0) -> set:
+    """Functions and classes a handler references, followed through functions
+    defined in the app (resolved by the module's own globals), a few levels deep."""
+    seen = set() if seen is None else seen
+    if fn in seen or depth > 4:
+        return seen
+    seen.add(fn)
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    except (OSError, TypeError):
+        return seen
+    scope = dict(fn.__globals__)
+    for node in ast.walk(tree):  # imports made inside the handler
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("app."):
+            module = importlib.import_module(node.module)
+            for alias in node.names:
+                if hasattr(module, alias.name):
+                    scope[alias.asname or alias.name] = getattr(module, alias.name)
+    targets: list = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in scope:
+            targets.append(scope[node.id])
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            owner = scope.get(node.value.id)  # `payment_plan.propose(...)`
+            if isinstance(owner, types.ModuleType) and owner.__name__.startswith("app."):
+                targets.append(getattr(owner, node.attr, None))
+    for obj in targets:
+        if isinstance(obj, types.FunctionType) and obj.__module__.startswith("app."):
+            _reachable(obj, seen, depth + 1)
+        elif isinstance(obj, type):
+            seen.add(obj)
+    return seen
+
+
+# A handler whose check is "you are the author", not a role: the function that
+# makes it must be reachable instead.
+_AUTHOR_CHECKED = {("POST", "/api/v1/ledger/plan-changes/{change_id}/withdraw"): payment_plan.withdraw}
+
+
+def test_every_inline_guarded_handler_reaches_the_role_resolver() -> None:
+    """INLINE_GUARDED was asserted by string; a handler could lose its check and pass."""
+    routes = dict(_changing())
+    missing = [
+        f"{m} {p}" for (m, p) in INLINE_GUARDED
+        if not (_reachable(routes[(m, p)].endpoint) & (_RESOLVERS | {_AUTHOR_CHECKED.get((m, p))}))
+    ]
+    assert not missing, "satır içi korumalı ama rol çözücüye ulaşmıyor:\n  " + "\n  ".join(missing)
 
 
 # ── behaviour ────────────────────────────────────────────────────────────────
@@ -113,6 +226,7 @@ async def _company(client, name: str, *, roles: tuple[str, ...]) -> tuple[str, d
 
 
 ALL = ("viewer", "analyst", "cfo", "admin", "owner", "smmm")
+CONTRIBUTORS = {"analyst", "cfo", "admin", "owner", "smmm"}  # everyone but a viewer
 
 
 @pytest.mark.asyncio
@@ -125,6 +239,15 @@ ALL = ("viewer", "analyst", "cfo", "admin", "owner", "smmm")
         ("POST", "/api/v1/analysis/nope/approve", None, {"cfo", "admin", "owner", "smmm"}),
         # decider: an action that leaves the system
         ("POST", "/api/v1/actions/nope/approve", None, {"admin", "owner"}),
+        # contributor: bringing data in and running an analysis on it — an analyst may
+        ("POST", "/api/v1/upload", None, CONTRIBUTORS),
+        ("POST", "/api/v1/analyze/nope", None, CONTRIBUTORS),
+        ("POST", "/api/v1/analysis/nope/rerun", None, CONTRIBUTORS),
+        ("POST", "/api/v1/datasource/nope/sales/csv", None, CONTRIBUTORS),
+        ("POST", "/api/v1/erp/mikro/sync", None, CONTRIBUTORS),
+        # ...but not what changes or decides a record
+        ("DELETE", "/api/v1/datasource/nope/nope", None, {"cfo", "admin", "owner", "smmm"}),
+        ("POST", "/api/v1/erp/logo-tiger/connect", {}, {"admin", "owner"}),
     ],
 )
 async def test_read_only_roles_are_refused_and_writers_pass(client, method, path, body, allowed) -> None:

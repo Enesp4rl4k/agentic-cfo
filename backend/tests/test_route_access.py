@@ -70,7 +70,7 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("DELETE", "/api/v1/smmm/clients/{client_id}"): "selected WHERE id AND muhasebeci == caller's SMMM record",
     ("DELETE", "/api/v1/chat/sessions/{session_id}"): "session store is keyed by the caller's user id",
     ("GET", "/api/v1/chat/sessions/{session_id}/history"): "session store is keyed by the caller's user id",
-    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "admin-only; pilot invites are platform-wide, not tenant data",
+    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "platform operator only (require_platform_operator); pilot invites are platform-wide, not tenant data",
     ("POST", "/api/v1/alerts/acknowledge/{job_id}/{alert_fingerprint}"): "job resolved by owned_job; fingerprint is a hash",
     ("GET", "/api/v1/benchmark/{job_id}/metric/{metric}"): "job resolved by owned_job; metric is a name",
     ("POST", "/api/v1/datasource/{job_id}/{domain}/{source_type}"): "job resolved by owned_job; domain/type are names",

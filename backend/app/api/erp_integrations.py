@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import require_decider, require_writer
+from app.api.access import require_contributor, require_decider, require_writer
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -302,7 +302,7 @@ async def _csv_sync(kaynak: str, file: UploadFile, current_user: User, db: Async
 
 
 @router.post("/erp/logo-tiger/sync",
-    dependencies=[Depends(require_writer)])
+    dependencies=[Depends(require_contributor)])
 async def logo_tiger_sync(
     file:         UploadFile = File(..., description="Logo Tiger CSV export dosyasi"),
     current_user: User = Depends(get_current_user),
@@ -313,7 +313,7 @@ async def logo_tiger_sync(
 
 
 @router.post("/erp/mikro/sync",
-    dependencies=[Depends(require_writer)])
+    dependencies=[Depends(require_contributor)])
 async def mikro_sync(
     file:         UploadFile = File(..., description="Mikro ERP CSV export"),
     current_user: User = Depends(get_current_user),

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import require_writer
+from app.api.access import require_contributor
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -39,7 +39,7 @@ router = APIRouter()
 
 
 @router.post("/upload",
-    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
+    dependencies=[Depends(require_contributor)], status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = File(description="Financial document: PDF, Excel, or CSV"),
     client_id: str | None = Form(
