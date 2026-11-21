@@ -201,7 +201,8 @@ test.describe("Pilot flow", () => {
     await main.getByRole("link", { name: "Onay bekleyenleri aç" }).first().click();
     await page.waitForURL(/\/onay/);
     const approvals = screen(page);
-    await expect(approvals.getByText("1 karar sizi bekliyor")).toBeVisible({ timeout: 60_000 });
+    // The six rows that wait for the currency are decisions too, so the total is more than the one analysis.
+    await expect(approvals.getByText(/karar sizi bekliyor/)).toBeVisible({ timeout: 60_000 });
     await expect(approvals.getByRole("heading", { name: "Onayınızı bekleyen 1 analiz" })).toBeVisible();
     await expect(approvals.getByText("banka-ekstresi-para-birimsiz.csv")).toBeVisible();
     await expect(approvals.getByText(/kapanış bakiyesinden başlar/)).toBeVisible();
@@ -226,7 +227,7 @@ test.describe("Pilot flow", () => {
     await screen(page).getByRole("button", { name: "Onayla ve tamamla" }).click();
     await page.getByRole("button", { name: "Evet, onayla" }).click();
     await expect(screen(page).getByText("Analiz onaylandı.")).toBeVisible({ timeout: 30_000 });
-    await expect(screen(page).getByText("1 karar sizi bekliyor")).toHaveCount(0, { timeout: 30_000 });
+    await expect(screen(page).getByText(/karar sizi bekliyor/)).toHaveCount(0, { timeout: 30_000 });
 
     await page.goto("/nakit-radari");
     await expect(screen(page).getByText("Başlangıç nakdi")).toBeVisible({ timeout: 60_000 });

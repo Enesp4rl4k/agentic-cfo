@@ -403,7 +403,7 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
         # One balance, as the cash radar reads it: the proven closing balance of a statement.
         # None when no statement proves one: then there is no runway to claim.
         opening = opening_cash_for(state)  # type: ignore[arg-type]
-        runway = compute_runway(opening, cashflow)
+        runway = compute_runway(opening, cashflow, state.get("base_currency"))
         series = cashflow.get("monthly_series", [])
         limited_history = len(series) < RUNWAY_MIN_MONTHS
         scenarios = _compute_scenarios(cashflow, pnl, runway)

@@ -53,6 +53,7 @@ def _state(nets: list[int], balance_cents: int | None, *, as_of: str | None = No
         cashflow["esas"] = esas
     return {
         "job_id": "t",
+        "base_currency": "TRY",
         "cashflow": cashflow,
         "pnl": {"revenue": 1},
         "opening_cash": (
@@ -96,7 +97,7 @@ class TestRunwayFromProvenBalance:
         _, fc = await _forecast(_state([-3_000_000] * 3, 11_650_000, as_of="2026-11-19"))
         message = fc["runway"]["message"]
         assert "19 Kasım 2026 ekstresindeki bakiyeye göre" in message
-        assert "₺116.500" in message and "₺30.000" in message and "son 3 ayın" in message
+        assert "₺116.500,00" in message and "₺30.000,00" in message and "son 3 ayın" in message
 
     async def test_a_healthy_company_with_a_negative_month_is_not_critical(self) -> None:
         # The e2e statement's shape: net slightly negative on average, ₺116.500 in the bank.
@@ -221,7 +222,7 @@ class TestBadNewsIsSurfacedNotHeld:
         assert runway["runway_months"] == pytest.approx(2.3, abs=0.05)
         critical = [a for a in fc["alerts"] if a["level"] == "critical"]
         assert len(critical) == 1 and critical[0]["basis"] == "runway"
-        for fact in ("19 Kasım 2026", "₺116.500", "₺50.000", "son 3 ayın", "yaklaşık 2,3 ay"):
+        for fact in ("19 Kasım 2026", "₺116.500,00", "₺50.000,00", "son 3 ayın", "yaklaşık 2,3 ay"):
             assert fact in critical[0]["message"]
         # ... and the books are not withheld because of it.
         assert result.needs_review is False

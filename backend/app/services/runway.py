@@ -17,6 +17,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from app.config import get_settings
+from app.core.currency_totals import fmt_money
 from app.services.bank_balance import balance_age, closing_balance, latest_balance
 
 RUNWAY_MIN_MONTHS = 3  # months of cash movement the burn average needs (the forecast's baseline window)
@@ -34,12 +35,6 @@ _MONTHS_TR = (
     "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
     "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 )
-
-
-def _lira(cents: int) -> str:
-    """Lira as the Turkish text around it writes it: ₺1.234."""
-    sign = "-" if cents < 0 else ""
-    return f"{sign}₺{abs(cents) / 100:,.0f}".replace(",", ".")
 
 
 def _date_tr(iso: str) -> str:
@@ -92,11 +87,17 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
     }
 
 
-def compute_runway(opening: dict[str, Any] | None, cashflow: dict[str, Any]) -> dict[str, Any]:
+def compute_runway(
+    opening: dict[str, Any] | None, cashflow: dict[str, Any], currency: str | None = None
+) -> dict[str, Any]:
     """The runway of this company, or the reason there is none.
 
     `status`: computed | not_burning | no_balance | insufficient_history | not_cash_basis.
+    `currency` is the company's currency the figures are written in (none known: bare numbers).
     """
+    def _lira(cents: int) -> str:
+        return fmt_money(cents, currency)
+
     if opening is None:
         return _block(
             NO_BALANCE,
