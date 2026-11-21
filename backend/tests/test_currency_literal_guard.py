@@ -71,7 +71,6 @@ ALLOWED: dict[str, str] = {
     "app/services/bot_gateways.py": "static demo approval card (sample amount, not the user's data)",
     "app/services/benchmark_intelligence.py": "benchmark metric unit label for a revenue-per-employee peer figure",
     # ── DEBT: literal known to be unproven; not fixed here ────────────────────────────────────────────
-    "app/agents/forecast_agent.py": "DEBT: `_fmt` labels forecast narratives with the lira sign; owned by the forecast agent's PR",
     "app/api/radar_schema.py": "DEBT: `currency: str = \"TRY\"` schema default, always overridden; changing it regenerates the OpenAPI contract",
     "app/services/cash_radar.py": "DEBT: RadarResult.currency default, always set from effective_base_of",
     "app/services/company_view.py": "DEBT: CompanyView.base_currency default, always set by the ledger view",

@@ -23,6 +23,7 @@ from app.agents.forecast_montecarlo import _monte_carlo_simulation
 from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core.currency_totals import fmt_money
 from app.services.runway import (
     NO_BALANCE,
     RUNWAY_MIN_MONTHS,
@@ -36,8 +37,9 @@ from app.services.telemetry import trace_agent
 logger = logging.getLogger(__name__)
 
 
-def _fmt(cents: int) -> str:
-    return f"₺{cents / 100:,.0f}"
+def _fmt(cents: int, currency: str | None) -> str:
+    """The amount in the company's own currency; no currency known: the bare number."""
+    return fmt_money(cents, currency)
 
 
 SEASONALITY_MIN_MONTHS = 24   # every calendar month observed at least twice
@@ -318,6 +320,7 @@ async def _generate_forecast_narrative(
 def _build_scenario_explanation(
     scenarios: dict[str, Any],
     monte_carlo: dict[str, Any] | None,
+    currency: str | None = None,
 ) -> dict[str, str]:
     """
     S1-3: Human-readable explanation of what each scenario assumes.
@@ -349,7 +352,7 @@ def _build_scenario_explanation(
 
         explanations[name] = (
             f"{label}: {assumption}. "
-            f"12 aylık net nakit: {_fmt(twelve_net)}. "
+            f"12 aylık net nakit: {_fmt(twelve_net, currency)}. "
             f"{runway_text}."
         )
 
@@ -403,7 +406,8 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
         # One balance, as the cash radar reads it: the proven closing balance of a statement.
         # None when no statement proves one: then there is no runway to claim.
         opening = opening_cash_for(state)  # type: ignore[arg-type]
-        runway = compute_runway(opening, cashflow, state.get("base_currency"))
+        ccy = state.get("base_currency")
+        runway = compute_runway(opening, cashflow, ccy)
         series = cashflow.get("monthly_series", [])
         limited_history = len(series) < RUNWAY_MIN_MONTHS
         scenarios = _compute_scenarios(cashflow, pnl, runway)
@@ -424,7 +428,7 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
                 "basis": "monte_carlo",
                 "message": (
                     f"Monte Carlo simülasyonunun %{risk_pct:.0f}'inde kasa 6 ay içinde sıfırın "
-                    f"altına iniyor (başlangıç: {_fmt(runway['opening_cash_cents'])}; büyüme ve "
+                    f"altına iniyor (başlangıç: {_fmt(runway['opening_cash_cents'], ccy)}; büyüme ve "
                     f"oynaklık geçmiş aylardan tahmin edildi, 1000 senaryo)."
                 ),
             })
@@ -434,7 +438,7 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
         has_seasonality = scenarios.get("base", {}).get("seasonality_applied", False)
 
         # S1-3: scenario explanation + confidence interval
-        scenario_explanation = _build_scenario_explanation(scenarios, monte_carlo)
+        scenario_explanation = _build_scenario_explanation(scenarios, monte_carlo, ccy)
 
         forecast = {
             "scenarios": scenarios,
@@ -459,9 +463,9 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
                 "p90": monte_carlo.get("p90_12m_net") if monte_carlo else None,
                 "interpretation": (
                     f"1000 Monte Carlo simülasyonunda: "
-                    f"%10 olasılıkla {_fmt(monte_carlo['p10_12m_net'])}'ın altında, "
-                    f"%50 olasılıkla {_fmt(monte_carlo['p50_12m_net'])}, "
-                    f"%90 olasılıkla {_fmt(monte_carlo['p90_12m_net'])}'ın altında"
+                    f"%10 olasılıkla {_fmt(monte_carlo['p10_12m_net'], ccy)}'ın altında, "
+                    f"%50 olasılıkla {_fmt(monte_carlo['p50_12m_net'], ccy)}, "
+                    f"%90 olasılıkla {_fmt(monte_carlo['p90_12m_net'], ccy)}'ın altında"
                     if monte_carlo and monte_carlo.get("p50_12m_net") is not None
                     else "Monte Carlo simülasyonu çalıştırılamadı"
                 ),
@@ -483,7 +487,7 @@ async def run_forecast(state: CFOState, config: AgentRunConfig) -> SkillResult:
             confidence=confidence,
             needs_review=False,
             detail=(
-                f"Tahmin oluşturuldu: baz 12a net={_fmt(scenarios['base']['twelve_month_net'])}, "
+                f"Tahmin oluşturuldu: baz 12a net={_fmt(scenarios['base']['twelve_month_net'], ccy)}, "
                 f"nakit pisti={_runway_detail(runway)}, "
                 f"uyarı={len(alerts)}, mevsimsellik={'uygulandı' if has_seasonality else 'yok'}, "
                 f"monte_carlo={'ok' if monte_carlo else 'atlandı'}"
