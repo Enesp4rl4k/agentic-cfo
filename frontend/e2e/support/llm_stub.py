@@ -79,5 +79,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get("E2E_LLM_PORT", "8099"))
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    # Loopback only, a test double: plain HTTP is what the app's provider client speaks to it.
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()  # NOSONAR
     sys.exit(0)
