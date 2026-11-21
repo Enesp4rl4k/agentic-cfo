@@ -21,6 +21,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.core.dates import parse_transaction_date
+from app.core.invoice_identity import document_key, open_item_key
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item import OpenItem
 from app.models.transaction import Transaction
@@ -136,7 +137,9 @@ async def test_the_sale_is_counted_once_when_the_bank_receipt_arrives(client, pa
         items = (await db.execute(select(OpenItem).where(OpenItem.org_id == org_id))).scalars().all()
 
     assert summary["revenue_cents"] == 1_180_000          # once, not 2 x 11.800
-    assert [(i.document_id, i.status) for i in items] == [("A-1", "settled")]
+    assert [(i.document_id, i.status) for i in items] == [
+        (open_item_key(document_key(org_id, "A-1", "Acme Ltd", "income")), "settled")
+    ]
 
 
 def test_an_invoice_without_a_readable_contact_is_still_reported_not_hidden():

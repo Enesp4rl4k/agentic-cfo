@@ -77,6 +77,29 @@ class ShortfallOut(BaseModel):
     actions: list[RadarActionOut]
 
 
+class HeldWeekOut(BaseModel):
+    week: int
+    payable_cents: int
+    receivable_cents: int
+
+
+class HeldDocumentsOut(BaseModel):
+    """Possible duplicates waiting for a person: not in the radar, so they are listed here."""
+
+    count: int
+    payable_cents: int
+    receivable_cents: int
+    weeks: list[HeldWeekOut]
+    payable_basis: BasisSplitOut
+    week1_payable_cents: int
+    undated_payable_cents: int
+    undated_receivable_cents: int
+    beyond_horizon_payable_cents: int
+    other_currency_count: int
+    other_currency_payable_count: int
+    review_path: str
+
+
 class CashRadarOut(BaseModel):
     anchor_date: str
     starting_cash_cents: int | None
@@ -93,3 +116,4 @@ class CashRadarOut(BaseModel):
     recurring_payables_cents: int = 0
     tax_obligations_cents: int = 0
     opening_cash: OpeningCashOut | None = None
+    held_documents: HeldDocumentsOut | None = None

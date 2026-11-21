@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # week of the radar) is the working default.
     radar_balance_stale_after_days: int = 7
 
+    # Documents held as possible duplicates are not in the radar (a held row opens no open item). The
+    # Monday briefing says so in its headline when what they would add to the week's payments, or to
+    # payments with no date, is at least this share of the week's outflow (or the outflow is nil), or
+    # when a held payable's size cannot be added up (foreign currency). 10% is a working default: no
+    # plan names one, and a smaller share is rounding for a company's weekly cash.
+    radar_held_material_ratio: float = 0.10
+
     # PostgreSQL — optional, falls back to SQLite when not set
     postgres_host: str = "localhost"
     postgres_port: int = 5432

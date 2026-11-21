@@ -24,7 +24,7 @@ from app.models.transaction import Transaction
 from app.services.cash_radar import HORIZON_WEEKS, compute_cash_radar
 from app.services.ledger import append_job
 from app.services.reconciliation import CONFIRMED
-from tests.api_helpers import bellek_istemcisi, kullanici
+from tests.api_helpers import bellek_istemcisi, by_number, kullanici
 
 ANCHOR = date(2025, 1, 1)
 
@@ -123,7 +123,7 @@ async def test_a_customer_who_pays_late_is_expected_late(client):
     await _upload(client, org_id,
                   _sale("PAST", 10_000_00, "2024-11-01", customer="Geciktiren AS", issued="2024-10-01"))
     async with client._maker() as db:
-        item = (await db.execute(select(OpenItem).where(OpenItem.document_id == "PAST"))).scalars().one()
+        item = (await db.execute(select(OpenItem).where(by_number(OpenItem.document_id, "PAST")))).scalars().one()
         item.status, item.paid_cents = "settled", item.amount_cents
         # Paid 15 November against 1 November: 14 days late.
         db.add(OpenItemMatch(org_id=org_id, open_item_id=item.id, ledger_row_id="row",

@@ -177,7 +177,7 @@ async def test_an_invoice_on_an_unknown_side_opens_nothing(client, monkeypatch):
 async def test_the_summary_totals_what_is_open_and_says_what_has_no_date(client):
     _, org_id, _ = await kullanici(client, "toplam@example.com")
     await _analysed(client, org_id, _invoice(uuid="A", terms=_due("2024-04-15")))
-    await _analysed(client, org_id, _invoice(uuid="B"))
+    await _analysed(client, org_id, _invoice(uuid="B", issued="2024-03-10"))
     await _analysed(client, org_id, _invoice(uuid="C", supplier=THEM, customer=BIZ, terms=_due("2024-05-01")))
     async with client._maker() as db:
         open_items = (await ledger_summary(db, org_id))["open_items"]
@@ -220,9 +220,11 @@ async def test_a_real_invoice_file_through_the_whole_pipeline_opens_an_item(clie
 async def test_open_items_are_listed_by_due_date_for_this_company_only(client):
     headers, org_id, _ = await kullanici(client, "liste@example.com")
     other, _, _ = await kullanici(client, "baskasi@example.com")
+    # Dates more than the duplicate window apart: same-day, same-amount invoices would be held
+    # as possible duplicates, and a held row opens no item (G23).
     await _analysed(client, org_id, _invoice(uuid="A", terms=_due("2024-05-01")))
-    await _analysed(client, org_id, _invoice(uuid="B", terms=_due("2024-04-01")))
-    await _analysed(client, org_id, _invoice(uuid="C"))
+    await _analysed(client, org_id, _invoice(uuid="B", terms=_due("2024-04-01"), issued="2024-03-10"))
+    await _analysed(client, org_id, _invoice(uuid="C", issued="2024-03-20"))
 
     data = (await client.get("/api/v1/ledger/open-items", headers=headers)).json()["data"]
     assert [i["due_date"] for i in data] == ["2024-04-01", "2024-05-01", None]
