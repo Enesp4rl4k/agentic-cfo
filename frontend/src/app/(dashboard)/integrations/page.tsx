@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/card";
 import { EFaturaCard } from "@/components/integrations/EFaturaCard";
 import { ParasutKarti } from "@/components/integrations/ParasutKarti";
 import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
+import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
 import type { MessageTree } from "@/lib/i18n";
 import {
@@ -66,7 +68,7 @@ function useRelativeTime(isoString: string | null | undefined): string {
 // ── Integration card ───────────────────────────────────────────────────────────
 
 function IntegrationCard({ integration }: { integration: ERPIntegration }) {
-  const { remove, loading: removing } = useDeleteERPIntegration();
+  const { remove, loading: removing, error: removeError } = useDeleteERPIntegration();
   const [confirm, setConfirm] = useState(false);
   const { t } = useI18n();
   const ig = t.integrations;
@@ -122,13 +124,15 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
 
       <div className="flex items-center gap-2 pt-1">
         {!confirm ? (
-          <Button
+          <CanButton
+            action="decide"
             size="sm" variant="ghost"
             onClick={() => setConfirm(true)}
             className="text-muted-foreground hover:text-red-400"
+            aria-label={ig.card.confirmRemove}
           >
             <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          </CanButton>
         ) : (
           <Button
             size="sm" variant="destructive"
@@ -139,6 +143,7 @@ function IntegrationCard({ integration }: { integration: ERPIntegration }) {
           </Button>
         )}
       </div>
+      {removeError && <p role="alert" className="text-xs text-red-400">{removeError}</p>}
     </div>
   );
 }
@@ -156,10 +161,13 @@ function AddIntegrationCard({
 }) {
   const { t } = useI18n();
   const ig = t.integrations;
+  const can = useCan("decide");
   return (
     <button
-      onClick={() => onSelect(provider)}
-      className="rounded-xl border border-dashed border-border p-4 text-left hover:border-primary/50 hover:bg-primary/5 transition-colors w-full space-y-1"
+      onClick={() => can.allowed && onSelect(provider)}
+      aria-disabled={can.allowed ? undefined : true}
+      title={can.reason ?? undefined}
+      className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 rounded-xl border border-dashed border-border p-4 text-left hover:border-primary/50 hover:bg-primary/5 transition-colors w-full space-y-1"
     >
       <p className="font-semibold text-sm">{ig.providers[provider]?.label ?? provider}</p>
       <p className="text-xs text-muted-foreground">{ig.providers[provider]?.description ?? ""}</p>
@@ -228,6 +236,7 @@ function CSVUploadSync({ provider }: { provider: "logo_tiger" | "mikro" }) {
 
   // The Mikro panel used to have no sync behind its button at all.
   const result = provider === "logo_tiger" ? logoSync.result : mikroSync.result;
+  const syncError = provider === "logo_tiger" ? logoSync.error : mikroSync.error;
   const loading = provider === "logo_tiger" ? logoSync.loading : mikroSync.loading;
 
   return (
@@ -245,10 +254,11 @@ function CSVUploadSync({ provider }: { provider: "logo_tiger" | "mikro" }) {
           <p className="text-xs text-muted-foreground mt-1">{ig.file.logoHint}</p>
         </label>
       </div>
-      <Button onClick={handleSync} disabled={!file || loading} className="w-full" size="sm">
+      <CanButton action="upload" onClick={handleSync} disabled={!file || loading} className="w-full" size="sm">
         <Zap className={cn("h-3.5 w-3.5 mr-1", loading && "animate-pulse")} />
         {loading ? ig.file.processing : ig.file.submit}
-      </Button>
+      </CanButton>
+      {syncError && <p role="alert" className="text-xs text-red-400">{syncError}</p>}
       {result && (
         <div className={cn("rounded-lg border p-3 text-sm",
           result.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-red-500/30 bg-red-500/10 text-red-400"

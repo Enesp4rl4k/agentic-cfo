@@ -153,9 +153,10 @@ RETAINED: dict[str, Retained] = {
     "organizations": Retained(
         "anchor for the retained rows' org_id",
         scrub=("name", "slug", "logo_url", "description", "vkn", "legal_title",
-               "stripe_customer_id", "stripe_subscription_id"),
+               "stripe_customer_id", "stripe_subscription_id", "size_profile_set_by"),
         keep=("country_code", "base_currency", "locale", "regional_packs", "plan",
-              "subscription_plan", "subscription_status"),
+              "subscription_plan", "subscription_status",
+              "size_profile", "monthly_outflow_band", "headcount_band", "size_profile_source"),
     ),
 }
 

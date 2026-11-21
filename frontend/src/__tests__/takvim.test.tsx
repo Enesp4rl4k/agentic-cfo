@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { planChangeSpies } from "./dashboard-mocks";
+import { openingCashFixture, planChangeSpies } from "./dashboard-mocks";
 import { clampWeek, payables, runScenario } from "@/components/calendar/scenario";
 import type { CashRadar } from "@/lib/api/ledger";
 
@@ -30,6 +30,7 @@ import TakvimPage from "@/app/(dashboard)/takvim/page";
 const item = (id: string, name: string, amount: number) => ({
   id, counterparty: name, description: null, amount_cents: amount * 100, due_date: null,
   expected_date: "2026-12-01", delay_days: 0, is_overdue: false,
+  basis: "known", basis_reason: "document_due_date", basis_inputs: {}, instrument: "invoice", rules_verified: null,
 });
 
 /** Four weeks: start 100k; week 2 pays 150k (the dip), week 3 collects 80k. */
@@ -101,6 +102,56 @@ beforeEach(() => {
   listPlanChanges.mockResolvedValue({ changes: [], canDecide: false });
   proposePlanChange.mockReset();
   decidePlanChange.mockReset();
+});
+
+describe("Ödeme takvimi: how each payment is known", () => {
+  const withP = (p: Record<string, unknown>, opening?: Record<string, unknown>) =>
+    radar({
+      opening_cash: { ...openingCashFixture, ...opening },
+      weeks: radar().weeks.map((w) => (w.week === 2 ? { ...w, payables: [{ ...item("p1", "Ana Tedarikçi", 150_000), ...p }] } : w)),
+    } as Partial<CashRadar>);
+
+  it("marks an estimated and an assumed payment with the radar's own tags, and a documented one with none", async () => {
+    getCashRadar.mockResolvedValue(withP({ basis: "estimated", basis_reason: "recurring_median", basis_inputs: { months_observed: 4, median_cents: 15_000_000, day_of_month: 5 } }));
+    show();
+    expect(await screen.findByRole("button", { name: /Neden tahmini: Son 4 ayda/ })).toHaveTextContent("tahmini");
+  });
+
+  it("marks an assumed payment as a varsayım", async () => {
+    getCashRadar.mockResolvedValue(withP({ basis: "assumed", basis_reason: "overdue_payable_placed_in_week_1", basis_inputs: { due_date: "2026-11-10" } }));
+    show();
+    expect(await screen.findByRole("button", { name: /Neden tahmini/ })).toHaveTextContent("varsayım");
+  });
+
+  it("shows no tag on a documented payment", async () => {
+    getCashRadar.mockResolvedValue(withP({}));
+    show();
+    await screen.findByText("Ana Tedarikçi");
+    expect(screen.queryByText("tahmini")).toBeNull();
+    expect(screen.queryByText("varsayım")).toBeNull();
+    expect(screen.queryByText("onaylanan plana göre")).toBeNull();
+  });
+
+  it("says an approved plan change is by the plan, not a confirmed bank date", async () => {
+    getCashRadar.mockResolvedValue(withP({ basis: "assumed", basis_reason: "payment_plan_change_taken_as_date", basis_inputs: { planned_date: "2026-12-15", document_due_date: "2026-12-01" } }));
+    show();
+    expect(await screen.findByText("onaylanan plana göre")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Onaylanan ödeme planı değişikliği/ })).toHaveTextContent("varsayım");
+  });
+
+  it("states the balance's statement date, and warns when it is stale", async () => {
+    getCashRadar.mockResolvedValue(withP({}, { as_of: "2026-11-12", age_days: 20, stale: true }));
+    show();
+    expect(await screen.findByText("Bu bakiye 20 gün önceki ekstreye dayanıyor")).toBeInTheDocument();
+    expect(screen.getByText("12 Kasım ekstresine göre kasa")).toBeInTheDocument();
+  });
+
+  it("does not warn about a fresh balance", async () => {
+    getCashRadar.mockResolvedValue(withP({}));
+    show();
+    await screen.findByText("Ana Tedarikçi");
+    expect(screen.queryByText(/gün önceki ekstreye dayanıyor/)).toBeNull();
+  });
 });
 
 describe("Ödeme takvimi", () => {

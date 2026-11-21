@@ -21,11 +21,13 @@ import { baslangicDurumu, firmaOlustur, type BaslangicDurumu } from "@/lib/api/b
 import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { SailMark } from "@/components/brand-landing/SailMark";
+import { StaleBalanceNotice } from "@/components/radar/basis";
 import { getCashRadar, type CashRadar } from "@/lib/api/ledger";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/useI18n";
+import { SizeProfileCard } from "@/components/org/SizeProfileCard";
 
 type AdimDurumu = "tamam" | "sirada" | "bekliyor";
 
@@ -94,6 +96,7 @@ export default function BaslangicPage() {
 
       {suruyor && <Hesaplaniyor />}
       {durum === null ? <Yukleniyor /> : <Adimlar durum={durum} yenile={yukle} radar={radar} />}
+      {durum?.firma.var && <SizeProfileCard />}
     </div>
   );
 }
@@ -236,6 +239,7 @@ function Adimlar({
           <AnalizAdimi analiz={analiz} veriTamam={veriTamam} yenile={yenile} />
         </Adim>
 
+        <>
         <Adim
           numara="04"
           durumu={d(3)}
@@ -246,6 +250,8 @@ function Adimlar({
         >
           <RadarAdimi analizTamam={analizTamam} radar={radar} />
         </Adim>
+        {radarTamam && radar.data?.opening_cash?.stale && <RadarEskiBakiye opening={radar.data.opening_cash} />}
+        </>
 
         <Adim
           numara="05"
@@ -339,6 +345,12 @@ function RadarOzeti({ radar }: { radar: CashRadar }) {
         .replace("{date}", tarih)}
     </>
   );
+}
+
+/** The radar page's own warning, when the statement the balance rests on is old. */
+function RadarEskiBakiye({ opening }: { opening: NonNullable<CashRadar["opening_cash"]> }) {
+  const { locale } = useOrgSettings();
+  return <StaleBalanceNotice asOf={opening.as_of} ageDays={opening.age_days} locale={locale} />;
 }
 
 /** Where the radar's starting cash stands: waiting, loading, unreadable, or unproven. Never a typed-in number. */

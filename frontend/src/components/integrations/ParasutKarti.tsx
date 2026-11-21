@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Loader2, RefreshCw, Unplug } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
+import { useCan } from "@/hooks/useCan";
 import {
   disconnectParasut, parasutBaglan, parasutDurum, parasutFirmaSec, parasutOtomatik, syncParasut,
   type OtomatikAralik, type ParasutDurum, type ParasutSyncSonucu,
@@ -26,6 +27,7 @@ const DONUS: Record<string, { tur: "ok" | "hata"; metin: string }> = {
  */
 export function ParasutKarti() {
   const params = useSearchParams();
+  const decide = useCan("decide");
   const donus = DONUS[params.get("parasut") ?? ""];
   const [durum, setDurum] = useState<ParasutDurum | null>(null);
   const [mesgul, setMesgul] = useState<string | null>(null);
@@ -86,6 +88,8 @@ export function ParasutKarti() {
               aria-label="Firma"
               value={firma}
               onChange={(e) => setFirma(e.target.value)}
+              disabled={!decide.allowed}
+              title={decide.reason ?? undefined}
               className="rounded-md border border-border bg-card px-2 py-1 text-xs"
             >
               <option value="">Firma seçin…</option>
@@ -96,23 +100,27 @@ export function ParasutKarti() {
               aria-label="Paraşüt firma numarası"
               inputMode="numeric"
               placeholder="Paraşüt firma numarası"
+              disabled={!decide.allowed}
+              title={decide.reason ?? undefined}
               value={firma}
               onChange={(e) => setFirma(e.target.value.replace(/\D/g, ""))}
               className="rounded-md border border-border bg-card px-2 py-1 text-xs"
             />
           )}
-          <Button
+          <CanButton
+            action="decide"
             size="sm"
             disabled={!firma || mesgul !== null}
             onClick={() => calistir("firma", async () => { await parasutFirmaSec(firma); yukle(); })}
           >
             Kaydet
-          </Button>
+          </CanButton>
         </div>
       ) : bagli && b ? (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            <Button
+            <CanButton
+              action="edit"
               size="sm"
               disabled={mesgul !== null}
               onClick={() => calistir("sync", async () => { setSonuc(await syncParasut(b.id)); yukle(); })}
@@ -121,22 +129,24 @@ export function ParasutKarti() {
                 ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                 : <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />}
               Faturaları şimdi al
-            </Button>
-            <Button
+            </CanButton>
+            <CanButton
+              action="decide"
               size="sm"
               variant="ghost"
               disabled={mesgul !== null}
               onClick={() => calistir("kes", async () => { await disconnectParasut(b.id); yukle(); })}
             >
               <Unplug className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Bağlantıyı kes
-            </Button>
+            </CanButton>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <label htmlFor="parasut-otomatik">Otomatik al:</label>
             <select
               id="parasut-otomatik"
               value={!b.auto_sync_enabled ? "kapali" : b.sync_interval_hours >= 168 ? "haftalik" : "gunluk"}
-              disabled={mesgul !== null}
+              disabled={mesgul !== null || !decide.allowed}
+              title={decide.reason ?? undefined}
               onChange={(e) => {
                 const aralik = e.target.value as OtomatikAralik;
                 void calistir("otomatik", async () => { await parasutOtomatik(aralik); yukle(); });
@@ -164,14 +174,15 @@ export function ParasutKarti() {
           )}
         </div>
       ) : (
-        <Button
+        <CanButton
+          action="decide"
           size="sm"
           disabled={mesgul !== null}
           onClick={() => calistir("baglan", async () => { window.location.href = await parasutBaglan(); })}
         >
           {mesgul === "baglan" && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
           Paraşüt ile bağlan
-        </Button>
+        </CanButton>
       )}
 
       {hata && <p role="alert" className="text-xs text-red-400">{hata}</p>}

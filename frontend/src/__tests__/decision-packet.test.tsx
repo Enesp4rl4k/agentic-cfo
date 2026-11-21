@@ -7,7 +7,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const { packet, dec } = vi.hoisted(() => ({
   packet: { getDecisionPacket: vi.fn() },
@@ -130,7 +131,7 @@ describe("Karar Paketi paneli", () => {
 
   it("answers the four questions on one screen", async () => {
     packet.getDecisionPacket.mockResolvedValue(full);
-    render(<DecisionPacketPanel jobId="job-1" />);
+    renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
     expect(packet.getDecisionPacket).toHaveBeenCalledWith("job-1");
 
     expect(await screen.findByText("Karar Paketi")).toBeInTheDocument();
@@ -172,7 +173,7 @@ describe("Karar Paketi paneli", () => {
 
   it("renders nothing when the packet cannot be loaded", async () => {
     packet.getDecisionPacket.mockRejectedValue(new Error("backend kapalı"));
-    const { container } = render(<DecisionPacketPanel jobId="job-1" />);
+    const { container } = renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
     await waitFor(() => expect(container).toBeEmptyDOMElement());
     expect(screen.queryByText("Karar Paketi")).not.toBeInTheDocument();
   });

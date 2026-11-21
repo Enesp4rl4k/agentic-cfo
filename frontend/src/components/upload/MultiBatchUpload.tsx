@@ -17,6 +17,7 @@ import {
 import { validateAndUpload, type ValidateAndUploadResult } from "@/lib/api/data_quality";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/hooks/useCan";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ function formatBytes(bytes: number): string {
 
 function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
   const [dragging, setDragging] = useState(false);
+  const can = useCan("upload");
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -70,9 +72,9 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
       const dropped = Array.from(e.dataTransfer.files as FileList).filter(
         (f: File) => f.name.match(/\.(csv|xlsx|xls|pdf|xml)$/i)
       );
-      if (dropped.length) onFiles(dropped);
+      if (dropped.length && can.allowed) onFiles(dropped);
     },
-    [onFiles]
+    [onFiles, can.allowed]
   );
 
   return (
@@ -88,6 +90,8 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
       )}
       role="region"
       aria-label="Dosya yükleme alanı"
+      aria-disabled={can.allowed ? undefined : true}
+      title={can.reason ?? undefined}
     >
       <div className="mb-3 rounded-full bg-muted p-3">
         <Upload className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
@@ -107,6 +111,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
           multiple
           accept=".csv,.xlsx,.xls,.pdf,.xml"
           className="sr-only"
+          disabled={!can.allowed}
           onChange={(e) => {
             const input = e.target as HTMLInputElement;
             const files = Array.from((input.files ?? []) as FileList) as File[];
@@ -119,6 +124,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
       <p className="mt-3 text-[10px] text-muted-foreground">
         CSV, Excel (.xlsx/.xls), PDF banka ekstresi, GİB e-Fatura XML · Maks 10 MB/dosya
       </p>
+      {!can.allowed && <p className="mt-2 text-xs font-medium">{can.reason}</p>}
     </div>
   );
 }

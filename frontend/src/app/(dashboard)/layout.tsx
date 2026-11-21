@@ -32,7 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
-import { visibleNavGroups } from "@/lib/nav-focus";
+import { hiddenNavItems, visibleNavGroups } from "@/lib/nav-focus";
 import { NAV_GROUPS } from "@/lib/nav-items";
 import { useI18n } from "@/hooks/useI18n";
 
@@ -160,7 +160,7 @@ function SidebarContent({
   const { data: jobs } = useJobs();
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
-  const { hasTrPack, focusMode } = useOrgSettings();
+  const { hasTrPack, focusMode, sizeProfile } = useOrgSettings();
   const { t, locale } = useI18n();
 
   function navHref(href: string) {
@@ -170,7 +170,42 @@ function SidebarContent({
 
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
 
-  const groups = visibleNavGroups(NAV_GROUPS, { hasTrPack, focusMode });
+  const navOptions = { hasTrPack, focusMode, sizeProfile };
+  const groups = visibleNavGroups(NAV_GROUPS, navOptions);
+  // Focus mode hides entries from the menu, never from the product: they wait under "Daha fazla".
+  const more = focusMode ? hiddenNavItems(NAV_GROUPS, navOptions) : [];
+
+  const entry = (navItem: (typeof allNavItems)[number]) => {
+    const { href, labelKey, icon: Icon } = navItem;
+    const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
+    return (
+      <Link
+        key={href}
+        href={navHref(href)}
+        onClick={onNavigate}
+        className={cn(
+          "group relative flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-[14.5px]",
+          "transition-[color,background-color] duration-150 ease-out",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          isActive
+            ? "bg-foreground font-semibold text-background"
+            : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
+        )}
+        aria-current={isActive ? "page" : undefined}
+      >
+        <Icon className="h-4 w-4 shrink-0 text-current opacity-90" aria-hidden="true" />
+        <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
+        {href === "/anomalies" && anomalyCritical > 0 && (
+          <span
+            className="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-destructive-foreground"
+            aria-label={`${anomalyCritical} kritik anomali`}
+          >
+            {anomalyCritical}
+          </span>
+        )}
+      </Link>
+    );
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -197,46 +232,21 @@ function SidebarContent({
               <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
             </summary>
             <div className="space-y-0.5 px-2 pb-1">
-              {group.items.map((navItem) => {
-                const { href, labelKey, icon: Icon } = navItem;
-                const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
-                return (
-                  <Link
-                    key={href}
-                    href={navHref(href)}
-                    onClick={onNavigate}
-                    className={cn(
-                      "group relative flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-[14.5px]",
-                      "transition-[color,background-color] duration-150 ease-out",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      isActive
-                        ? "bg-foreground font-semibold text-background"
-                        : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                    aria-current={isActive ? "page" : undefined}
-                  >
-                    <Icon
-                      className="h-4 w-4 shrink-0 text-current opacity-90"
-                      aria-hidden="true"
-                    />
-
-                    <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
-
-                    {href === "/anomalies" && anomalyCritical > 0 && (
-                      <span
-                        className="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-destructive-foreground"
-                        aria-label={`${anomalyCritical} kritik anomali`}
-                      >
-                        {anomalyCritical}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+              {group.items.map(entry)}
             </div>
           </details>
           );
         })}
+
+        {more.length > 0 && (
+          <details className="group/nav mb-1" open={more.some(({ href }) => pathname.startsWith(href))}>
+            <summary className="tc-eyebrow mx-2 flex min-h-[36px] cursor-pointer list-none items-center justify-between rounded-md px-2 text-[10px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <span>{t.menu.more.toLocaleUpperCase(locale)}</span>
+              <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="space-y-0.5 px-2 pb-1">{more.map(entry)}</div>
+          </details>
+        )}
 
         {/* Recent analyses */}
         {jobs && jobs.length > 0 && (

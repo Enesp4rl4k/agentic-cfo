@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import {
   deleteOgrenilmisKural,
   getOgrenilmisKurallar,
@@ -22,6 +24,7 @@ import {
 export function OgrenilmisKurallar() {
   const { t } = useI18n();
   const k = t.learnedRules;
+  const can = useCan("accountant");
   const [rows, setRows] = useState<OgrenilmisKural[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -40,7 +43,7 @@ export function OgrenilmisKurallar() {
   }, [load]);
 
   async function remove(row: OgrenilmisKural) {
-    if (!confirm(k.confirm)) return;
+    if (!can.allowed || !confirm(k.confirm)) return;
     setBusy(row.id);
     setError(null);
     try {
@@ -48,8 +51,7 @@ export function OgrenilmisKurallar() {
       setRows((prev) => (prev ?? []).filter((r) => r.id !== row.id));
     } catch (e) {
       // A role that may not decide is told why (403); anything else gets our wording.
-      const status = (e as Error & { status?: number }).status;
-      setError(status === 403 && e instanceof Error && e.message ? e.message : k.deleteError);
+      setError(failureMessage(e, k.deleteError, t.roleGate.forbidden));
     } finally {
       setBusy(null);
     }
@@ -102,8 +104,9 @@ export function OgrenilmisKurallar() {
                   type="button"
                   onClick={() => void remove(row)}
                   disabled={busy === row.id}
-                  className="shrink-0 rounded p-1.5 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-                  title={k.delete}
+                  aria-disabled={can.allowed ? undefined : true}
+                  className="shrink-0 rounded p-1.5 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  title={can.reason ?? k.delete}
                   aria-label={k.deleteAria.replace("{name}", row.anahtar)}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />

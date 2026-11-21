@@ -152,6 +152,27 @@ describe("Başlangıç", () => {
     expect(ledgerSpies.getCashRadar).toHaveBeenCalledTimes(1);
   });
 
+  it("warns, as the radar page does, when the statement the balance rests on is old", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1 }));
+    ledgerSpies.getCashRadar.mockResolvedValue(
+      radar({ opening_cash: { balance_cents: 1_250_000_00, as_of: "2026-11-14", age_days: 21, stale: true, stale_after_days: 7 } }),
+    );
+    renderPage();
+    expect(await screen.findByText("Bu bakiye 21 gün önceki ekstreye dayanıyor")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Yeni ekstre yükle" })).toHaveAttribute("href", "/baglan");
+    expect(screen.getByText(/14.11.2026 tarihinde/)).toBeInTheDocument();
+  });
+
+  it("says nothing about age when the balance is fresh", async () => {
+    api.baslangicDurumu.mockResolvedValue(durum({ tamamlanan_analiz: 1 }));
+    ledgerSpies.getCashRadar.mockResolvedValue(
+      radar({ opening_cash: { balance_cents: 1_250_000_00, as_of: "2026-11-14", age_days: 1, stale: false, stale_after_days: 7 } }),
+    );
+    renderPage();
+    await screen.findByText(/14.11.2026 tarihinde/);
+    expect(screen.queryByText(/gün önceki ekstreye dayanıyor/)).toBeNull();
+  });
+
   it("waits for the first analysis and does not read the radar before it", async () => {
     api.baslangicDurumu.mockResolvedValue(durum());
     renderPage();

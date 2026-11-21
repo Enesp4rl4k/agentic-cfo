@@ -23,6 +23,9 @@ import {
   type FreshnessState,
   type PacketOption,
 } from "@/lib/api/decisionPacket";
+import { useCan } from "@/hooks/useCan";
+import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import {
   createDecision,
   listDecisions,
@@ -307,6 +310,8 @@ function DecisionRecorder({
   jobId: string;
   options: PacketOption[];
 }) {
+  const { t } = useI18n();
+  const can = useCan("edit");
   const [loading, setLoading] = useState(true);
   const [decision, setDecision] = useState<DecisionRecord | null>(null);
   const [optionId, setOptionId] = useState("");
@@ -333,7 +338,7 @@ function DecisionRecorder({
   }, [jobId]);
 
   const save = async () => {
-    if (!optionId || saving) return;
+    if (!optionId || saving || !can.allowed) return;
     setSaving(true);
     setError(null);
     try {
@@ -343,23 +348,27 @@ function DecisionRecorder({
         rationale: rationale.trim() || undefined,
       });
       setDecision(created);
-    } catch {
-      setError("Karar kaydedilemedi — tekrar deneyin.");
+    } catch (e) {
+      setError(failureMessage(e, "Karar kaydedilemedi — tekrar deneyin.", t.roleGate.forbidden));
     } finally {
       setSaving(false);
     }
   };
 
   const measure = async () => {
-    if (!decision || measuring) return;
+    if (!decision || measuring || !can.allowed) return;
     setMeasuring(true);
     setError(null);
     try {
       const updated = await measureOutcome(decision.id);
       setDecision(updated);
-    } catch {
+    } catch (e) {
       setError(
-        "Sonuç ölçülemedi — ölçüm için tamamlanmış bir analiz gerekiyor olabilir."
+        failureMessage(
+          e,
+          "Sonuç ölçülemedi — ölçüm için tamamlanmış bir analiz gerekiyor olabilir.",
+          t.roleGate.forbidden,
+        ),
       );
     } finally {
       setMeasuring(false);
@@ -427,7 +436,9 @@ function DecisionRecorder({
               type="button"
               onClick={measure}
               disabled={measuring}
-              className="mt-1.5 rounded-md border px-2 py-0.5 text-[11px] hover:bg-muted/40 disabled:opacity-50"
+              aria-disabled={can.allowed ? undefined : true}
+              title={can.reason ?? undefined}
+              className="mt-1.5 rounded-md border px-2 py-0.5 text-[11px] hover:bg-muted/40 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
             >
               {measuring ? "Ölçülüyor…" : "Sonucu ölç"}
             </button>
@@ -462,7 +473,9 @@ function DecisionRecorder({
             type="button"
             onClick={save}
             disabled={!optionId || saving}
-            className="h-8 rounded-md border px-2.5 text-xs font-medium hover:bg-muted/40 disabled:opacity-50"
+            aria-disabled={can.allowed ? undefined : true}
+            title={can.reason ?? undefined}
+            className="h-8 rounded-md border px-2.5 text-xs font-medium hover:bg-muted/40 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           >
             {saving ? "Kaydediliyor…" : "Kararı deftere yaz"}
           </button>

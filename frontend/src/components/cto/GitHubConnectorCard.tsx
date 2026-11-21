@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Github, RefreshCw, Plug, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
+import { useCan } from "@/hooks/useCan";
+import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import {
   listConnectors,
   connectConnector,
@@ -17,6 +20,8 @@ import {
  * and re-runs the CTO kernel — which flips its provenance badge to "Bağlı veri".
  */
 export function GitHubConnectorCard({ onSynced }: { onSynced?: () => void }) {
+  const { t } = useI18n();
+  const decide = useCan("decide");
   const [status, setStatus] = useState<ConnectorStatus | null>(null);
   const [owner, setOwner] = useState("");
   const [repo, setRepo] = useState("");
@@ -51,11 +56,11 @@ export function GitHubConnectorCard({ onSynced }: { onSynced?: () => void }) {
       setToken("");
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "bağlantı başarısız");
+      setErr(failureMessage(e, "bağlantı başarısız", t.roleGate.forbidden));
     } finally {
       setBusy(false);
     }
-  }, [owner, repo, token, refresh]);
+  }, [owner, repo, token, refresh, t.roleGate.forbidden]);
 
   const sync = useCallback(async () => {
     setBusy(true);
@@ -70,11 +75,11 @@ export function GitHubConnectorCard({ onSynced }: { onSynced?: () => void }) {
       await refresh();
       onSynced?.();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "sync başarısız");
+      setErr(failureMessage(e, "sync başarısız", t.roleGate.forbidden));
     } finally {
       setBusy(false);
     }
-  }, [refresh, onSynced]);
+  }, [refresh, onSynced, t.roleGate.forbidden]);
 
   const connected = status?.connected ?? false;
 
@@ -101,10 +106,10 @@ export function GitHubConnectorCard({ onSynced }: { onSynced?: () => void }) {
               : "—"}
             {status?.last_record_count != null && ` · ${status.last_record_count} kayıt`}
           </span>
-          <Button onClick={sync} disabled={busy} variant="outline" className="ml-auto gap-2">
+          <CanButton action="edit" onClick={sync} disabled={busy} variant="outline" className="ml-auto gap-2">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Şimdi senkronize et
-          </Button>
+          </CanButton>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -112,12 +117,14 @@ export function GitHubConnectorCard({ onSynced }: { onSynced?: () => void }) {
             value={owner}
             onChange={(e) => setOwner(e.target.value)}
             placeholder="owner (org/kullanıcı)"
+            disabled={!decide.allowed}
             className="rounded-md border bg-background px-3 py-2 text-sm"
           />
           <input
             value={repo}
             onChange={(e) => setRepo(e.target.value)}
             placeholder="repo"
+            disabled={!decide.allowed}
             className="rounded-md border bg-background px-3 py-2 text-sm"
           />
           <input
@@ -125,16 +132,18 @@ export function GitHubConnectorCard({ onSynced }: { onSynced?: () => void }) {
             onChange={(e) => setToken(e.target.value)}
             type="password"
             placeholder="Personal Access Token"
+            disabled={!decide.allowed}
             className="rounded-md border bg-background px-3 py-2 text-sm"
           />
-          <Button
+          <CanButton
+            action="decide"
             onClick={connect}
             disabled={busy || !owner || !repo || !token}
             className="gap-2 sm:col-span-3"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
             Bağlan ve doğrula
-          </Button>
+          </CanButton>
         </div>
       )}
 

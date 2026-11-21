@@ -60,6 +60,22 @@ class Organization(Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
 
+    # True once a person has chosen focus mode themselves (PATCH /org/me). A size
+    # profile only sets the default while this is false, and never overwrites it.
+    focus_mode_explicit: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
+    # Company size, as the company says it (services/size_profile.py). Null = not
+    # yet determined. Nothing in authorisation, thresholds or money reads these.
+    size_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    monthly_outflow_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    headcount_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    has_inhouse_finance: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    size_profile_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    size_profile_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    size_profile_set_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
     # Tax identity. Decides an invoice's direction (we sold / we bought) and
     # names the e-Defter's owner; see app/services/org_identity.py.
     vkn: Mapped[str | None] = mapped_column(String(11), nullable=True)
