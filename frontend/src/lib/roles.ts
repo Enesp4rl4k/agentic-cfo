@@ -42,3 +42,45 @@ export const ROUTE_RULES: ReadonlyArray<{ prefix: string; cls: RoleClass }> = [
   // is not at least a decider and the server refuses the rest.
   { prefix: "/pilot", cls: "decider" },
 ];
+
+/**
+ * What a control does, by the backend class that guards its route. The UI asks
+ * about the action ("may I upload?"), never about role names, so a control
+ * cannot hard-code a list that drifts from `ROLE_CLASSES`.
+ *
+ *   upload / analyze     contributor  (upload, analysis start / rerun, data-source add)
+ *   edit                 writer       (resolve ledger rows, corrections, packets, decisions, sync)
+ *   decide               decider      (connect or remove a connector, org context, approvals)
+ *   closePeriod          see `canClosePeriod`; "accountant" is any other act that is `require_smmm`
+ *                        (seal a defensibility packet, take back a learned rule): same who, other words
+ */
+export type GatedAction = "upload" | "analyze" | "edit" | "decide" | "closePeriod" | "accountant";
+
+export const ACTION_CLASS: Record<Exclude<GatedAction, "closePeriod" | "accountant">, RoleClass> = {
+  upload: "contributor",
+  analyze: "contributor",
+  edit: "writer",
+  decide: "decider",
+};
+
+export type PeriodCloseVerdict = {
+  allowed: boolean;
+  /** Which of the owner's two cases applies to this caller. */
+  case: "accountant" | "ownBooks" | "accountantExists" | "noRole";
+};
+
+/**
+ * Month close, mirrored from `require_smmm` (+ the approval-authority floor):
+ * the company's `smmm` always; owner, admin or cfo only when the company has no
+ * `smmm`. `hasSmmm === null` is "not known yet": owner/admin/cfo are let through
+ * and the server answers for them.
+ */
+export function canClosePeriod(role: string | null | undefined, hasSmmm: boolean | null): PeriodCloseVerdict {
+  if (role === "smmm") return { allowed: true, case: "accountant" };
+  if (role === "owner" || role === "admin" || role === "cfo") {
+    return hasSmmm === true
+      ? { allowed: false, case: "accountantExists" }
+      : { allowed: true, case: "ownBooks" };
+  }
+  return { allowed: false, case: "noRole" };
+}

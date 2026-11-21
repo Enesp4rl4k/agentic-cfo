@@ -4,7 +4,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const { api } = vi.hoisted(() => ({
   api: { getPendingActions: vi.fn(), approveAction: vi.fn(), rejectAction: vi.fn() },
@@ -39,7 +40,7 @@ describe("ActionCenter approve", () => {
     api.approveAction.mockRejectedValue(
       Object.assign(new Error("Bu işlem henüz bağlı değil — hiçbir şey yapılmadı."), { status: 501 }),
     );
-    render(<ActionCenter />);
+    renderWithQuery(<ActionCenter />);
     fireEvent.click(await screen.findByText("Onayla"));
     expect(await screen.findByRole("status")).toHaveTextContent(getMessages("tr").onay.actionNotConnected);
     await waitFor(() => expect(screen.getByText(action.description)).toBeTruthy());
