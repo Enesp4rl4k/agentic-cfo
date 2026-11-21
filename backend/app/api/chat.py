@@ -14,9 +14,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.chat_money import amount, currency_lines, figure_currency
 from app.api.access import load_owned_job, owned_job
 from app.api.auth import get_current_user
 from app.config import get_settings
+from app.core.currency_totals import fmt_amount
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.report import Report, ReportFormat
@@ -89,6 +91,7 @@ async def chat(
     tx_dicts = [
         {
             "amount_cents": tx.amount_kurus,
+            "currency": tx.currency,
             "type": tx.type,
             "category": tx.category,
             "description": tx.description,
@@ -203,6 +206,7 @@ async def chat_ceo(
             tx_dicts = [
                 {
                     "amount_cents": tx.amount_kurus,
+                    "currency": tx.currency,
                     "type": tx.type,
                     "category": tx.category,
                     "description": tx.description,
@@ -476,13 +480,16 @@ def _build_agent_system_prompt(
         pnl = cfo.get("pnl", {})
         cashflow = cfo.get("cashflow", {})
         forecast = cfo.get("forecast", {})
+        # The currency the stored analysis states, never an assumed one (chat_money).
+        cur = figure_currency(pnl, cashflow, cfo.get("currency_scope"))
         lines += [
             "=== CFO — FİNANSAL DURUM ===",
-            f"Gelir: {pnl.get('revenue', 0):,.0f} TRY",
+            *currency_lines(cur),
+            f"Gelir: {amount(pnl.get('revenue', 0), cur)}",
             f"Brüt Marj: {pnl.get('gross_margin', 0)*100:.1f}%",
             f"Net Marj: {pnl.get('net_margin', 0)*100:.1f}%",
-            f"FAVÖK: {pnl.get('ebitda', 0):,.0f} TRY ({pnl.get('ebitda_margin', 0)*100:.1f}%)",
-            f"Nakit Akışı (İşletme): {cashflow.get('operating', 0):,.0f} TRY",
+            f"FAVÖK: {amount(pnl.get('ebitda', 0), cur)} ({pnl.get('ebitda_margin', 0)*100:.1f}%)",
+            f"Nakit Akışı (İşletme): {amount(cashflow.get('operating', 0), cur)}",
         ]
         base_fc = (forecast.get("scenarios") or {}).get("base", {})
         if base_fc.get("runway_months"):
@@ -504,9 +511,9 @@ def _build_agent_system_prompt(
             if summary.get("overall_health_score"):
                 lines.append(f"Teknoloji Sağlık Skoru: {summary['overall_health_score']:.1f}/10")
             if infra.get("total_cost_cents"):
-                lines.append(f"Bulut Maliyeti: {infra['total_cost_cents']/100:,.0f} TRY")
+                lines.append(f"Bulut Maliyeti: {fmt_amount(infra['total_cost_cents']/100, None)} (para birimi belirtilmemiş)")
             if infra.get("waste_estimate_cents"):
-                lines.append(f"Tahmini İsraf: {infra['waste_estimate_cents']/100:,.0f} TRY")
+                lines.append(f"Tahmini İsraf: {fmt_amount(infra['waste_estimate_cents']/100, None)} (para birimi belirtilmemiş)")
             if summary.get("quick_wins"):
                 for w in summary["quick_wins"][:2]:
                     lines.append(f"  • Hızlı Kazanım: {w.get('action','')}")
@@ -524,7 +531,7 @@ def _build_agent_system_prompt(
             if campaigns.get("overall_roas"):
                 lines.append(f"ROAS: {campaigns['overall_roas']:.2f}x")
             if campaigns.get("blended_cac_cents"):
-                lines.append(f"CAC: {campaigns['blended_cac_cents']/100:,.0f} TRY")
+                lines.append(f"CAC: {fmt_amount(campaigns['blended_cac_cents']/100, None)} (para birimi belirtilmemiş)")
             lines.append("")
 
     # COO data

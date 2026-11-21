@@ -59,6 +59,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
@@ -544,7 +546,7 @@ def _fallback_observations(data: dict[str, Any], question: str) -> list[str]:
     """Generate basic observations when LLM is unavailable."""
     obs = []
     if data.get("revenue"):
-        obs.append(f"Gelir: {data['revenue']:,.0f} TRY")
+        obs.append(f"Gelir: {fmt_amount(data['revenue'], data.get('currency'))}")
     if data.get("net_margin") is not None:
         obs.append(f"Net marj: {data['net_margin'] * 100:.1f}%")
     if data.get("runway_months"):
@@ -582,7 +584,7 @@ def _execute_calculation(step: PlanStep, data: dict[str, Any]) -> str:
     if "cac" in desc:
         cac = data.get("cac_cents", 0)
         if cac:
-            results.append(f"CAC: {cac / 100:,.0f} TRY")
+            results.append(f"CAC: {fmt_amount(cac / 100, None)}")
 
     return ", ".join(results) if results else "Hesaplama için yeterli veri yok."
 
@@ -603,7 +605,7 @@ def _execute_lookup(step: PlanStep, context: dict[str, Any]) -> str:
         scenarios = forecast.get("scenarios") or {}
         base = scenarios.get("base") or {}
         if base.get("revenue_12m"):
-            findings.append(f"12 aylık gelir tahmini: {base['revenue_12m']:,.0f} TRY")
+            findings.append(f"12 aylık gelir tahmini: {fmt_amount(base['revenue_12m'], (context.get('pnl') or {}).get('currency'))}")
 
     return ", ".join(findings) if findings else "İlgili veri bulunamadı."
 

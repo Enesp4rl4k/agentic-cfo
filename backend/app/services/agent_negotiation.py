@@ -279,7 +279,7 @@ class CFONegotiationScenarios(AgentNegotiator):
                 "revised_runway":  round(revised_runway, 1),
                 "actions_taken":   [
                     f"CHRO: {chro_data.get('planned_hires', 0)} ise alim ertelendi",
-                    f"CTO: aylık ₺{cto_data.get('savings_try', 0):,.0f} tasarruf",
+                    f"CTO: aylık {cto_data.get('savings_try', 0):,.0f} tasarruf",
                     f"CMO: pazarlama %{cmo_data.get('reducible_pct', 0)*100:.0f} azaltildi",
                 ],
             },
@@ -471,7 +471,7 @@ class CTONegotiationResponder(AgentNegotiator):
             # The 0.8 factor below is a rule of thumb, not a measured relation.
             "velocity_olcum":          "kural",
             "recommendation": (
-                f"Cloud optimizasyonu ile aylik ₺{cloud_savings:,.0f} tasarruf guvenli. "
+                f"Cloud optimizasyonu ile aylik {cloud_savings:,.0f} tasarruf guvenli. "
                 f"Bunun otesinde velocity %{velocity_loss*100:.0f} duser."
             ),
         }

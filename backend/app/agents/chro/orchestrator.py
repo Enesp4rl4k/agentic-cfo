@@ -166,7 +166,7 @@ async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
     total_comp_millions = comp.get("total_annual_comp", 0) / 100 / 1_000_000
     narrative = (
         f"Organizasyonda {hc.get('total_headcount', 0)} çalışan var, ortalama kıdem {hc.get('avg_tenure_years', 0):.1f} yıl. "
-        f"Yıllık ücret taahhüdü: {total_comp_millions:.1f}M ₺, %{comp.get('equity_penetration', 0)*100:.0f} hisse katılımı. "
+        f"Yıllık ücret taahhüdü: {total_comp_millions:.1f}M, %{comp.get('equity_penetration', 0)*100:.0f} hisse katılımı. "
         f"{'Dikkat: %' + str(int(early_rate*100)) + ' erken ayrılma oranı tespit edildi. ' if early_rate > 0.10 else ''}"
         f"{str(len(top_risks)) + ' önemli İK riski mevcut.' if top_risks else 'Kritik İK riski tespit edilmedi.'}"
     )

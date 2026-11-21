@@ -1,289 +1,19 @@
-"use client";
-
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ChevronsUpDown,
-  Upload,
-  Loader2,
-  Search,
-  X,
-  Download,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
-import { useTransactions, useCorrectCategory } from "@/hooks/useCFO";
+import { Search, X, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { useTransactions } from "@/hooks/useCFO";
 import { RuleRerunBanner, UserRuleBadge } from "@/components/transactions/RuleFeedback";
+import {
+  CATEGORIES, CategoryEditor, EmptyState, SortTh, buildRows, exportCsv,
+  type SortDir, type SortKey,
+} from "@/components/transactions/TransactionParts";
 import { BaseCurrencyNotice, OtherCurrencyLines, type OtherCurrency } from "@/components/ui/other-currency-lines";
+import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { effectiveCurrencyOf } from "@/lib/effective-currency";
 import { formatCurrency, cn } from "@/lib/utils";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
 const PAGE_SIZE = 50;
-
-const CATEGORIES = [
-  "revenue",
-  "cogs",
-  "salary",
-  "rent",
-  "utilities",
-  "marketing",
-  "technology",
-  "tax",
-  "loan",
-  "other_expense",
-  "other_income",
-  "tax_payment",
-  "transfer",
-] as const;
-
-type Category = (typeof CATEGORIES)[number];
-
-type SortKey = "transaction_date" | "description" | "vendor" | "category" | "amount_cents";
-type SortDir = "asc" | "desc";
-
-const CATEGORY_COLORS: Record<string, string> = {
-  revenue:       "bg-emerald-950/50 text-emerald-400 ring-emerald-500/20",
-  cogs:          "bg-orange-950/50 text-orange-400 ring-orange-500/20",
-  salary:        "bg-blue-950/50 text-blue-400 ring-blue-500/20",
-  rent:          "bg-violet-950/50 text-violet-400 ring-violet-500/20",
-  utilities:     "bg-cyan-950/50 text-cyan-400 ring-cyan-500/20",
-  marketing:     "bg-pink-950/50 text-pink-400 ring-pink-500/20",
-  technology:    "bg-indigo-950/50 text-indigo-400 ring-indigo-500/20",
-  tax:           "bg-red-950/50 text-red-400 ring-red-500/20",
-  loan:          "bg-amber-950/50 text-amber-400 ring-amber-500/20",
-  other_expense: "bg-zinc-800 text-zinc-400 ring-zinc-600/20",
-  other_income:  "bg-teal-950/50 text-teal-400 ring-teal-500/20",
-  tax_payment:   "bg-zinc-800 text-zinc-300 ring-zinc-500/20",
-  transfer:      "bg-zinc-800 text-zinc-500 ring-zinc-600/20",
-};
-
-// ── Category editor ───────────────────────────────────────────────────────────
-
-function CategoryEditor({
-  txId,
-  current,
-  jobId,
-  onAffected,
-}: {
-  txId: string;
-  current: string;
-  jobId: string;
-  onAffected: (jobIds: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [applyAlways, setApplyAlways] = useState(false);
-  const correct = useCorrectCategory(jobId);
-
-  function select(cat: Category) {
-    correct.mutate(
-      { transactionId: txId, category: cat, applyAlways },
-      {
-        onSuccess: (res) => {
-          setOpen(false);
-          if (res?.affected_job_ids?.length) onAffected(res.affected_job_ids);
-        },
-      }
-    );
-  }
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset",
-          "transition-colors hover:ring-primary/50",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          CATEGORY_COLORS[current] ?? CATEGORY_COLORS.other_expense
-        )}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        {correct.isPending ? (
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-        ) : null}
-        {current.replace(/_/g, " ")}
-        <ChevronDown className="h-3 w-3 opacity-60" aria-hidden="true" />
-      </button>
-
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            aria-hidden="true"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            role="listbox"
-            aria-label="Select category"
-            className={cn(
-              "absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-card",
-              "shadow-lg py-1"
-            )}
-          >
-            <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
-              <input
-                type="checkbox"
-                checked={applyAlways}
-                onChange={(e) => setApplyAlways(e.target.checked)}
-                className="h-3 w-3 rounded border-border"
-              />
-              Apply to all from vendor
-            </label>
-            <div className="my-1 border-t border-border/50" />
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                role="option"
-                aria-selected={cat === current}
-                onClick={() => select(cat)}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-                  cat === current ? "text-primary" : "text-foreground"
-                )}
-              >
-                {cat === current ? (
-                  <Check className="h-3 w-3 shrink-0" aria-hidden="true" />
-                ) : (
-                  <span className="w-3" />
-                )}
-                {cat.replace(/_/g, " ")}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Sort header cell ──────────────────────────────────────────────────────────
-
-function SortTh({
-  label,
-  sortKey,
-  current,
-  dir,
-  align = "left",
-  onSort,
-}: {
-  label: string;
-  sortKey: SortKey;
-  current: SortKey;
-  dir: SortDir;
-  align?: "left" | "right";
-  onSort: (key: SortKey) => void;
-}) {
-  const active = current === sortKey;
-  const Icon = active ? (dir === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
-
-  return (
-    <th
-      className={cn(
-        "px-4 py-2.5 text-xs font-medium text-muted-foreground",
-        align === "right" ? "text-right" : "text-left"
-      )}
-    >
-      <button
-        onClick={() => onSort(sortKey)}
-        className={cn(
-          "inline-flex items-center gap-1 rounded transition-colors hover:text-foreground",
-          active && "text-foreground",
-          align === "right" && "flex-row-reverse"
-        )}
-        aria-label={`Sort by ${label}`}
-      >
-        {label}
-        <Icon className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
-      </button>
-    </th>
-  );
-}
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center px-6">
-      <div className="mb-4 rounded-full bg-muted p-4">
-        <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
-      </div>
-      <h2 className="text-base font-semibold">No transactions yet</h2>
-      <p className="mt-1.5 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Upload a financial document and run an analysis to see and edit transactions.
-      </p>
-      <a
-        href="/upload"
-        className={cn(
-          "mt-5 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground",
-          "transition-opacity hover:opacity-90",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        )}
-      >
-        Upload document
-      </a>
-    </div>
-  );
-}
-
-// ── CSV export helper ─────────────────────────────────────────────────────────
-
-function exportCsv(rows: ReturnType<typeof buildRows>, filename: string) {
-  // The export carries the same provenance the table shows. A file taken to
-  // an accountant that drops "this date was invented" is a different record.
-  const header = [
-    "Date", "Date estimated", "Description", "Vendor", "Category", "Type",
-    "Amount", "KDV (stated)", "Stopaj (stated)", "Currency",
-  ];
-  const money = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
-  const lines = rows.map((tx) =>
-    [
-      tx.transaction_date?.slice(0, 10) ?? "",
-      tx.date_is_estimated ? "yes" : "no",
-      `"${(tx.description ?? "").replace(/"/g, '""')}"`,
-      `"${(tx.vendor ?? "").replace(/"/g, '""')}"`,
-      tx.category,
-      tx.type,
-      (tx.amount_cents / 100).toFixed(2),
-      money(tx.kdv_cents),
-      money(tx.stopaj_cents),
-      tx.currency ?? "",
-    ].join(",")
-  );
-  const blob = new Blob([header.join(",") + "\n" + lines.join("\n")], {
-    type: "text/csv;charset=utf-8;",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Typed helper so exportCsv knows the shape
-function buildRows<T>(arr: T[]) {
-  return arr as (T & {
-    id: string;
-    transaction_date: string | null;
-    description: string | null;
-    vendor: string | null;
-    category: string;
-    type: string;
-    amount_cents: number;
-    date_is_estimated?: boolean;
-    currency?: string | null;
-    currency_assumed?: boolean;
-    kdv_cents?: number | null;
-    stopaj_cents?: number | null;
-    raw_text?: string | null;
-  })[];
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -291,6 +21,8 @@ export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
   const { org } = useOrgSettings();
+  const { t } = useI18n();
+  const tp = t.transactionsPage;
 
   // Filters
   const [search, setSearch] = useState("");
@@ -381,21 +113,26 @@ export default function TransactionsPage() {
   // currency present; else (several, none confirmed) there is no headline and each currency stands alone.
   // Every row stays in the list below, in its own currency.
   const base = data!.base;
-  const headline = base ? base.currency : (org?.base_currency || "TRY").toUpperCase();
-  const currencyOf = (t: { currency?: string | null }) => (t.currency || headline || "").toUpperCase();
+  // `data.base` is the backend's verdict; an older payload without it falls back to the effective currency
+  // (never the stored `org.base_currency`, whose column default is USD). null: no single currency.
+  const headline: string | null = base ? base.currency : effectiveCurrencyOf(org);
+  // A row is in its OWN currency. One that names none is unknown: it is neither summed into the headline nor
+  // given a symbol (formerly it silently took the headline, or "TRY").
+  const currencyOf = (t: { currency?: string | null }) => (t.currency || "").toUpperCase();
+  const locale = org?.locale || "en-US";
   const sumOf = (rows: typeof allTransactions, type: string) =>
     rows.filter((t) => t.type === type).reduce((s, t) => s + t.amount_cents, 0);
-  const inBase = allTransactions.filter((t) => currencyOf(t) === headline);
+  const inBase = headline ? allTransactions.filter((t) => currencyOf(t) === headline) : [];
   const totalIn = sumOf(inBase, "income") / 100;
   const totalOut = sumOf(inBase, "expense") / 100;
-  const currenciesPresent = [...new Set(allTransactions.map(currencyOf))].sort((a, b) => a.localeCompare(b));
+  const currenciesPresent = [...new Set(allTransactions.map(currencyOf).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const perCurrency: OtherCurrency[] = currenciesPresent.map((currency) => {
     const rows = allTransactions.filter((t) => currencyOf(t) === currency);
     return { currency, cash_in_cents: sumOf(rows, "income"), cash_out_cents: sumOf(rows, "expense"), rows: rows.length };
   });
   const otherCurrencies = perCurrency.filter((c) => c.currency !== headline);
-  const money = (value: number, currency: string | null = headline) =>
-    formatCurrency(value, currency ?? "TRY", org?.locale || "en-US");
+  const money = (value: number, currency: string | null = headline) => formatCurrency(value, currency || null, locale);
+  const rowMoney = (cents: number, tx: { currency?: string | null }) => money(cents / 100, currencyOf(tx) || null);
 
   const hasFilter = search || filterCat !== "all" || filterType !== "all";
 
@@ -404,13 +141,12 @@ export default function TransactionsPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Transactions</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{tp.title}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {hasFilter
-              ? `${filtered.length} of ${allTransactions.length}`
-              : allTransactions.length}{" "}
-            transactions
-            {!hasFilter && " · click a category badge to correct it"}
+              ? tp.countFiltered.replace("{shown}", String(filtered.length)).replace("{total}", String(allTransactions.length))
+              : tp.count.replace("{count}", String(allTransactions.length))}
+            {!hasFilter && ` · ${tp.editHint}`}
           </p>
         </div>
 
@@ -418,19 +154,19 @@ export default function TransactionsPage() {
         <div className="flex items-center gap-4 sm:gap-6">
           {headline && (<>
           <div className="hidden text-right sm:block">
-            <p className="text-xs text-muted-foreground">Total In</p>
+            <p className="text-xs text-muted-foreground">{tp.totalIn}</p>
             <p className="text-sm font-semibold tabular-nums text-emerald-400">
               {money(totalIn)}
             </p>
           </div>
           <div className="hidden text-right sm:block">
-            <p className="text-xs text-muted-foreground">Total Out</p>
+            <p className="text-xs text-muted-foreground">{tp.totalOut}</p>
             <p className="text-sm font-semibold tabular-nums text-destructive">
               {money(totalOut)}
             </p>
           </div>
           <div className="hidden text-right sm:block">
-            <p className="text-xs text-muted-foreground">Net</p>
+            <p className="text-xs text-muted-foreground">{tp.net}</p>
             <p
               className={cn(
                 "text-sm font-semibold tabular-nums",
@@ -455,10 +191,10 @@ export default function TransactionsPage() {
               "text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             )}
-            aria-label="Export transactions as CSV"
+            aria-label={tp.exportAria}
           >
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
-            Export CSV
+            {tp.exportCsv}
           </button>
         </div>
       </div>
@@ -478,14 +214,14 @@ export default function TransactionsPage() {
           />
           <input
             type="search"
-            placeholder="Search description or vendor…"
+            placeholder={tp.searchPlaceholder}
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className={cn(
               "h-8 w-full rounded-md border border-border bg-card pl-8 pr-3 text-sm",
               "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             )}
-            aria-label="Search transactions"
+            aria-label={tp.searchAria}
           />
         </div>
 
@@ -496,11 +232,11 @@ export default function TransactionsPage() {
             "h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           )}
-          aria-label="Filter by type"
+          aria-label={tp.filterTypeAria}
         >
-          <option value="all">All types</option>
-          <option value="income">Income</option>
-          <option value="expense">Expense</option>
+          <option value="all">{tp.allTypes}</option>
+          <option value="income">{tp.income}</option>
+          <option value="expense">{tp.expense}</option>
         </select>
 
         <select
@@ -510,9 +246,9 @@ export default function TransactionsPage() {
             "h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           )}
-          aria-label="Filter by category"
+          aria-label={tp.filterCategoryAria}
         >
-          <option value="all">All categories</option>
+          <option value="all">{tp.allCategories}</option>
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>
               {c.replace(/_/g, " ")}
@@ -529,10 +265,10 @@ export default function TransactionsPage() {
               setPage(1);
             }}
             className="flex h-8 items-center gap-1 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="Clear filters"
+            aria-label={tp.clearAria}
           >
             <X className="h-3 w-3" aria-hidden="true" />
-            Clear
+            {tp.clear}
           </button>
         )}
       </div>
@@ -542,39 +278,39 @@ export default function TransactionsPage() {
       {/* Table */}
       <div className="rounded-lg border border-border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" role="table" aria-label="Transaction list">
+          <table className="w-full text-sm" role="table" aria-label={tp.listAria}>
             <thead>
               <tr className="border-b border-border">
                 <SortTh
-                  label="Date"
+                  label={tp.colDate}
                   sortKey="transaction_date"
                   current={sortKey}
                   dir={sortDir}
                   onSort={handleSort}
                 />
                 <SortTh
-                  label="Description"
+                  label={tp.colDescription}
                   sortKey="description"
                   current={sortKey}
                   dir={sortDir}
                   onSort={handleSort}
                 />
                 <SortTh
-                  label="Vendor"
+                  label={tp.colVendor}
                   sortKey="vendor"
                   current={sortKey}
                   dir={sortDir}
                   onSort={handleSort}
                 />
                 <SortTh
-                  label="Category"
+                  label={tp.colCategory}
                   sortKey="category"
                   current={sortKey}
                   dir={sortDir}
                   onSort={handleSort}
                 />
                 <SortTh
-                  label="Amount"
+                  label={tp.colAmount}
                   sortKey="amount_cents"
                   current={sortKey}
                   dir={sortDir}
@@ -596,9 +332,9 @@ export default function TransactionsPage() {
                     {tx.date_is_estimated && (
                       <span
                         className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[10px] font-medium text-amber-400"
-                        title="The source had no readable date. This is a placeholder; the entry is held for review."
+                        title={tp.estimatedTitle}
                       >
-                        estimated
+                        {tp.estimated}
                       </span>
                     )}
                   </td>
@@ -609,13 +345,13 @@ export default function TransactionsPage() {
                     {(tx.kdv_cents != null || tx.stopaj_cents != null) && (
                       <div className="mt-0.5 flex gap-1.5 text-[10px] text-muted-foreground">
                         {tx.kdv_cents != null && (
-                          <span title="KDV as the source document states it">
-                            KDV {formatCurrency(tx.kdv_cents / 100, currencyOf(tx), org?.locale || "en-US")}
+                          <span title={tp.kdvTitle}>
+                            KDV {rowMoney(tx.kdv_cents, tx)}
                           </span>
                         )}
                         {tx.stopaj_cents != null && tx.stopaj_cents > 0 && (
-                          <span title="Income-tax withholding as the source document states it">
-                            · stopaj {formatCurrency(tx.stopaj_cents / 100, currencyOf(tx), org?.locale || "en-US")}
+                          <span title={tp.stopajTitle}>
+                            · stopaj {rowMoney(tx.stopaj_cents, tx)}
                           </span>
                         )}
                       </div>
@@ -642,14 +378,14 @@ export default function TransactionsPage() {
                     )}
                   >
                     {tx.type === "income" ? "+" : "−"}
-                    {formatCurrency(tx.amount_cents / 100, currencyOf(tx), org?.locale || "en-US")}
+                    {rowMoney(tx.amount_cents, tx)}
                     {/* The document did not state a currency; the organisation's was assumed. */}
                     {tx.currency_assumed && (
                       <span
                         className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[10px] font-medium text-amber-400"
-                        title="The document did not state a currency; the organisation's base currency was assumed."
+                        title={tp.assumedTitle}
                       >
-                        {tx.currency} assumed
+                        {tp.assumed.replace("{currency}", tx.currency ?? "")}
                       </span>
                     )}
                   </td>
@@ -660,7 +396,7 @@ export default function TransactionsPage() {
 
           {!sorted.length && (
             <div className="py-10 text-center text-sm text-muted-foreground">
-              No transactions match the current filters.
+              {tp.noMatch}
             </div>
           )}
         </div>
@@ -669,8 +405,10 @@ export default function TransactionsPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
             <p className="text-xs text-muted-foreground">
-              Showing {(safePage - 1) * PAGE_SIZE + 1}–
-              {Math.min(safePage * PAGE_SIZE, sorted.length)} of {sorted.length}
+              {tp.showing
+                .replace("{from}", String((safePage - 1) * PAGE_SIZE + 1))
+                .replace("{to}", String(Math.min(safePage * PAGE_SIZE, sorted.length)))
+                .replace("{total}", String(sorted.length))}
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -680,7 +418,7 @@ export default function TransactionsPage() {
                   "flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground transition-colors",
                   "hover:border-primary/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                 )}
-                aria-label="Previous page"
+                aria-label={tp.prev}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
@@ -717,7 +455,7 @@ export default function TransactionsPage() {
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
                       )}
-                      aria-label={`Page ${p}`}
+                      aria-label={tp.page.replace("{n}", String(p))}
                       aria-current={p === safePage ? "page" : undefined}
                     >
                       {p}
@@ -732,7 +470,7 @@ export default function TransactionsPage() {
                   "flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground transition-colors",
                   "hover:border-primary/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                 )}
-                aria-label="Next page"
+                aria-label={tp.next}
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>

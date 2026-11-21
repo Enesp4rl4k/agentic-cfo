@@ -146,9 +146,9 @@ async def build_packet(
     primary = str(journal.get("birincil_para_birimi") or "")
     by_currency: dict[str, int] = {}
     for it in items:
-        cur = str(it.get("currency") or primary or "TRY")
+        cur = str(it.get("currency") or primary or "")
         by_currency[cur] = by_currency.get(cur, 0) + int(it["amount_kurus"] or 0)
-    primary = primary or next(iter(by_currency), "TRY")
+    primary = primary or next(iter(by_currency), "")
     total_amount = by_currency.get(primary, 0)
     human_touched = counts.get(DS_HUMAN_OK, 0) + counts.get(DS_HUMAN_FIX, 0)
 

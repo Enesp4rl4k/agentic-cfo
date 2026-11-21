@@ -167,8 +167,6 @@ SAFE: dict[str, tuple[str, Callable[[], None] | None]] = {
         "domain: an uploaded trial balance is one company's statutory TRY document (VUK)", None),
     "services/ingest/mizan.py::_ust_hesaplari_ayir": (
         "domain: parent-account totals inside that one TRY trial balance", None),
-    "agents/ceo/board_deck_agent.py::_build_slides": (
-        "domain: adds the strategic priorities' own impact estimates, which are not ledger rows", None),
     "agents/cmo/campaign_agent.py::_compute_campaign_metrics": (
         "domain: ad-campaign records (spend/revenue) from the marketing input, which has no currency field", None),
     "agents/cmo/campaign_agent.py::_build_campaign_alerts": (
