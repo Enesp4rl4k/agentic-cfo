@@ -4,12 +4,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useCallback } from "react";
 import { apiClient } from "@/lib/api/client";
+import { effectiveCurrencyOf } from "@/lib/effective-currency";
 
 export type OrgSettings = {
   org_id: string;
   name: string;
   locale?: string;
   base_currency?: string;
+  /** The stored `base_currency` is a column default until an owner confirms it. */
+  base_currency_confirmed?: boolean;
+  /** The currency money is labelled in (backend `effective_base`); null when several are present and none confirmed. */
+  effective_currency?: string | null;
+  base_state?: string;
   country_code?: string;
   regional_packs?: string[];
   focus_mode?: boolean;
@@ -72,7 +78,7 @@ export function useOrgSettings() {
     hasTrPack: Boolean(org?.regional_packs?.includes("tr")),
     focusMode: Boolean(org?.focus_mode),
     sizeProfile: org?.size_profile ?? null,
-    baseCurrency: org?.base_currency || "USD",
+    baseCurrency: effectiveCurrencyOf(org),
     locale: org?.locale || "en-US",
   };
 }
