@@ -10,8 +10,9 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
+from app.core.email_address import normalize_email
 from app.database import Base
 
 
@@ -33,6 +34,10 @@ class PilotInvite(Base):
         String(32), unique=True, nullable=False, index=True
     )
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)  # optional: pre-assign to email
+    @validates("email")
+    def _normalise_email(self, _key: str, value: str | None) -> str | None:
+        return normalize_email(value) if value else value
+
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)   # admin note (e.g. company name)
 
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

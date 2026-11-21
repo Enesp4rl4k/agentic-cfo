@@ -24,8 +24,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.services.auth import (
@@ -200,7 +202,7 @@ async def register(
 ) -> dict[str, Any]:
     """Register a new user account."""
     # Check duplicate email
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(select(User).where(User.email == normalize_email(str(body.email))))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
@@ -208,13 +210,18 @@ async def register(
         )
 
     user = User(
-        email=str(body.email),
+        email=normalize_email(str(body.email)),
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
         role=UserRole.ANALYST,
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Two sign-ups for one address at once: the loser gets the ordinary answer.
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.") from None
     await db.refresh(user)
 
     logger.info("New user registered: %s (role=%s)", user.email, user.role)
@@ -235,7 +242,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Email/password login → returns access + refresh tokens."""
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(select(User).where(User.email == normalize_email(str(body.email))))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(body.password, user.hashed_password):

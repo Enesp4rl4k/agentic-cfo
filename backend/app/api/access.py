@@ -34,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.organization import OrgMembership
@@ -163,8 +164,8 @@ async def require_platform_operator(user: User = Depends(get_current_user)) -> U
 
 
 def is_platform_operator(email: str | None, configured: str) -> bool:
-    allowed = {e.strip().lower() for e in (configured or "").split(",") if e.strip()}
-    return bool(email) and str(email).strip().lower() in allowed
+    allowed = {normalize_email(e) for e in (configured or "").split(",") if e.strip()}
+    return bool(email) and normalize_email(str(email)) in allowed
 
 
 async def require_decider(

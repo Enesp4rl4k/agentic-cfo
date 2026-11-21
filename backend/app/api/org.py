@@ -22,10 +22,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import _bearer, get_current_user
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization, OrgInvite, OrgMembership
@@ -446,7 +448,7 @@ async def invite_member(
     old = await db.execute(
         select(OrgInvite).where(
             OrgInvite.org_id == org.id,
-            OrgInvite.email == _address(str(body.email)),
+            OrgInvite.email == normalize_email(str(body.email)),
             OrgInvite.accepted.is_(False),
         )
     )
@@ -455,7 +457,7 @@ async def invite_member(
 
     invite = OrgInvite(
         org_id=org.id,
-        email=_address(str(body.email)),
+        email=normalize_email(str(body.email)),
         role=body.role.value,
         token=secrets.token_hex(32),
         expires_at=datetime.now(UTC) + timedelta(days=INVITE_EXPIRE_DAYS),
@@ -505,11 +507,6 @@ async def invite_member(
     }
 
 
-def _address(email: str) -> str:
-    """The form an address is compared in: `Ada@Example.com ` and `ada@example.com` are one mailbox."""
-    return email.strip().lower()
-
-
 def _utc(moment: datetime) -> datetime:
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
@@ -546,7 +543,7 @@ async def preview_invite(
     if invite is None:
         return {"data": {"state": state}, "error": None}
     org = await db.get(Organization, str(invite.org_id))
-    account = (await db.execute(select(User.id).where(func.lower(User.email) == _address(invite.email)))).first()
+    account = (await db.execute(select(User.id).where(User.email == normalize_email(invite.email)))).first()
     return {
         "data": {
             "state": state,
@@ -591,7 +588,7 @@ async def accept_invite(
         raise HTTPException(400, detail="Davetteki rol geçersiz; yeni bir davet isteyin.")
 
     # Find or create user
-    result = await db.execute(select(User).where(func.lower(User.email) == _address(invite.email)))
+    result = await db.execute(select(User).where(User.email == normalize_email(invite.email)))
     user = result.scalar_one_or_none()
 
     async def claim() -> None:
@@ -621,14 +618,19 @@ async def accept_invite(
             raise HTTPException(422, detail="Hesap oluşturmak için en az 8 karakterlik bir şifre gerekli.")
         await claim()
         user = User(
-            email=_address(invite.email),
+            email=normalize_email(invite.email),
             hashed_password=hash_password(body.password),
             full_name=body.full_name,
             role=invite.role,
             org_id=invite.org_id,
         )
         db.add(user)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Someone made an account for this address between the lookup and now.
+            await db.rollback()
+            raise HTTPException(409, detail="Bu adres için bir hesap az önce oluşturuldu; lütfen yeniden deneyin.") from None
 
     from app.services.org_membership import ensure_membership
 
