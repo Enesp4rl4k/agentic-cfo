@@ -98,6 +98,8 @@ class HeldDocumentsOut(BaseModel):
     other_currency_count: int
     other_currency_payable_count: int
     review_path: str
+    # Why they are held: reason code -> count (`HOLD_REASONS_TR` has the words).
+    by_reason: dict[str, int]
 
 
 class OtherCurrencyTotalOut(BaseModel):

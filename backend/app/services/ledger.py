@@ -87,6 +87,7 @@ from app.services.ledger_documents import (
     open_items,
     others_by_money,
     repeats,
+    same_document_other_id,
     same_number_match,
     same_number_rows,
     source_transaction,
@@ -313,6 +314,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             base_row_id(existing, record_id) if record_id in variants
             else repeats(others, tx, record_id)
             or await same_number_match(db, org_id, tx, record_id, same_number, aliases, tx_cache)
+            or await same_document_other_id(db, tx, record_id, others, aliases, tx_cache)
         )
         if duplicate_of:
             held.add(record_id)

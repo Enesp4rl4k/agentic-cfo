@@ -169,6 +169,7 @@ export type MessageTree = {
     basisKnown: string;
     basisEstimated: string;
     basisAssumed: string;
+    heldReview: string;
   };
   takvim: {
     title: string;
@@ -2844,6 +2845,7 @@ export const en: MessageTree = {
     basisKnown: "documented",
     basisEstimated: "estimated",
     basisAssumed: "assumed",
+    heldReview: "Review the documents and decide",
   },
   takvim: {
     title: "Payment calendar",
