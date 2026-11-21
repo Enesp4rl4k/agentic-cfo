@@ -24,7 +24,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.decision_log import DecisionLog
+from app.services import decisions
 from app.services.cash_radar import _fmt, compute_cash_radar
 from app.services.rag.grounding_validator import parse_numeric_token
 
@@ -83,6 +85,10 @@ def briefing_fingerprint(briefing: MondayBriefing) -> str:
     shown = {k: v for k, v in asdict(briefing).items() if k != "fingerprint"}
     payload = json.dumps(shown, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+OWNER_STATED_DONE_LABEL = "Yaptım (sahibi yaptığını bildirdi)"
+_STATEMENT_OUTCOME = {"done": "reported_done", "deferred": "deferred", "dismissed": "dismissed"}
 
 
 class BriefingChanged(Exception):
@@ -422,8 +428,10 @@ async def record_briefing_response(
             "Güncel bülteni okuyup yeniden yanıtlayın."
         )
 
+    # "Yaptım" is the owner's word, not a verified fact: nothing here has seen the payment.
+    # The label says so wherever it is read, until a bank-statement line confirms it.
     response_labels = {
-        "done": "Yaptım",
+        "done": OWNER_STATED_DONE_LABEL,
         "deferred": "Ertele",
         "dismissed": "Gerek Yok",
     }
@@ -491,6 +499,8 @@ async def record_briefing_response(
         "owner_response_label": response_labels[response],
         "responded_at": datetime.now(UTC).isoformat(),
         "note": note,
+        # A statement by the owner until a bank-statement line confirms it.
+        "verification": "owner_stated" if response == "done" else None,
     }
 
     decision_status = "open" if response == "deferred" else "closed"
@@ -504,6 +514,7 @@ async def record_briefing_response(
         existing.status = decision_status
         existing.outcome_note = note
         await db.flush()
+        await _record_statement(db, org_id, user_id, briefing, response, note)
         return existing
 
     decision = DecisionLog(
@@ -521,4 +532,33 @@ async def record_briefing_response(
     )
     db.add(decision)
     await db.flush()
+    await _record_statement(db, org_id, user_id, briefing, response, note)
     return decision
+
+
+async def _record_statement(
+    db: AsyncSession, org_id: str, user_id: str, briefing: MondayBriefing, response: str,
+    note: str | None,
+) -> None:
+    """The owner's answer as a human statement in the decision record (same transaction).
+
+    Answering again supersedes the earlier statement, so the record reads as a line."""
+    standing, _ = await decisions.list_decisions(
+        db, org_id, kind=DecisionKind.OWNER_STATEMENT.value, target_type="briefing",
+        target_id=briefing.briefing_id, current_only=True, limit=1,
+    )
+    await decisions.record_decision(
+        db, org_id=org_id, kind=DecisionKind.OWNER_STATEMENT, target_type="briefing",
+        target_id=briefing.briefing_id, outcome=_STATEMENT_OUTCOME[response],
+        decided_via=DecidedVia.HUMAN, decided_by=user_id, reason=note,
+        evidence_refs=[
+            {"type": "briefing", "id": briefing.briefing_id},
+            {"type": "fingerprint", "id": briefing.fingerprint},
+        ],
+        after={
+            "action_type": briefing.action_type, "action_title": briefing.action_title[:200],
+            "action_amount_cents": briefing.action_amount_cents,
+            "verification": "owner_stated" if response == "done" else None,
+        },
+        supersedes_id=standing[0].id if standing else None,
+    )

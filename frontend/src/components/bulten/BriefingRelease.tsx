@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { getBriefingDeliveries, releaseMondayBriefing, type MondayBriefing } from "@/lib/api/briefing";
+import {
+  getBriefingDeliveries, releaseMondayBriefing, type BriefingReleaseResult, type MondayBriefing,
+} from "@/lib/api/briefing";
 import { getMemberships } from "@/lib/api/orgs";
 import { useI18n } from "@/hooks/useI18n";
 
@@ -39,11 +41,14 @@ export function BriefingRelease({ briefing }: Readonly<{ briefing: MondayBriefin
   const memberships = useQuery({ queryKey: ["org-memberships"], queryFn: getMemberships, retry: false, staleTime: 60_000 });
   const isAccountant = memberships.data?.memberships.find((m) => m.active)?.role === SMMM_ROLE;
 
+  // Set when the figures moved since the e-mail was written: what changed, to be confirmed.
+  const [moved, setMoved] = useState<BriefingReleaseResult | null>(null);
   const release = useMutation({
-    mutationFn: () => releaseMondayBriefing(briefing.briefing_id),
+    mutationFn: () => releaseMondayBriefing(briefing.briefing_id, moved?.fingerprint),
+    onSuccess: (result) => setMoved(result.needs_confirmation ? result : null),
     // Released or already released by someone else: either way the truth is the server's list.
-    onSettled: () => {
-      setConfirming(false);
+    onSettled: (result) => {
+      if (!result?.needs_confirmation) setConfirming(false);
       void queryClient.invalidateQueries({ queryKey: key });
     },
   });
@@ -63,7 +68,7 @@ export function BriefingRelease({ briefing }: Readonly<{ briefing: MondayBriefin
       )}
       {phase === "sending" && <p className="m-0 text-sm">{copy.sending}</p>}
       {phase === "sent" && <p className="m-0 text-sm">{copy.sent}</p>}
-      {release.isSuccess && release.data.released === 0 && phase !== "held" && (
+      {release.isSuccess && release.data.released === 0 && !release.data.needs_confirmation && phase !== "held" && (
         <p className="m-0 text-xs text-muted-foreground">{copy.alreadyReleased}</p>
       )}
 
@@ -82,12 +87,25 @@ export function BriefingRelease({ briefing }: Readonly<{ briefing: MondayBriefin
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{copy.confirmTitle}</DialogTitle>
-            <DialogDescription>{copy.confirmBody.replace("{week}", week)}</DialogDescription>
+            <DialogTitle>{moved ? copy.changedTitle : copy.confirmTitle}</DialogTitle>
+            <DialogDescription>
+              {moved ? copy.changedBody : copy.confirmBody.replace("{week}", week)}
+            </DialogDescription>
           </DialogHeader>
+          {moved && (
+            <ul className="m-0 space-y-1 pl-4 text-sm">
+              {(moved.changes ?? []).map((c) => (
+                <li key={c.field}>
+                  {copy.changeLine.replace("{label}", c.label).replace("{old}", c.old).replace("{new}", c.new)}
+                </li>
+              ))}
+            </ul>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)}>{copy.cancel}</Button>
-            <Button disabled={release.isPending} onClick={() => release.mutate()}>{copy.confirm}</Button>
+            <Button variant="outline" onClick={() => { setMoved(null); setConfirming(false); }}>{copy.cancel}</Button>
+            <Button disabled={release.isPending} onClick={() => release.mutate()}>
+              {moved ? copy.changedConfirm : copy.confirm}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -7,6 +7,7 @@ tax payment deadlines, and high-severity fraud/anomalies.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -30,7 +31,30 @@ class DispatchedAlert:
 
 
 class AlertDispatcher:
-    """Dispatches financial warnings across communication channels."""
+    """Dispatches financial warnings across communication channels.
+
+    A delivery is reported only when an HTTP endpoint answered. Tests that must not
+    reach the network inject `transport` (an `httpx.MockTransport`); nothing in the
+    application sets it, and it is refused outside a pytest run, so a URL can never be
+    "delivered" without a request having been made.
+    """
+
+    transport: httpx.AsyncBaseTransport | None = None
+
+    @classmethod
+    def _client(cls) -> httpx.AsyncClient:
+        if cls.transport is not None and "PYTEST_CURRENT_TEST" not in os.environ:
+            raise RuntimeError("AlertDispatcher.transport is a test seam; refused outside pytest")
+        return httpx.AsyncClient(timeout=10.0, transport=cls.transport)
+
+    @staticmethod
+    def _not_configured(channel: str, severity: str, title: str, message: str) -> DispatchedAlert:
+        """No destination: nothing was sent, and the result says so."""
+        return DispatchedAlert(
+            alert_id=f"alert-{channel}-{int(datetime.now().timestamp())}",
+            channel=channel, target="", severity=severity, title=title, message=message,
+            delivered=False, status_code=0, timestamp=datetime.now(UTC).isoformat(),
+        )
 
     @staticmethod
     def format_slack_payload(
@@ -91,21 +115,11 @@ class AlertDispatcher:
         payload = cls.format_slack_payload(title, message, severity, fields)
         ts = datetime.now(UTC).isoformat()
 
-        if not webhook_url or webhook_url.startswith("https://dummy"):
-            return DispatchedAlert(
-                alert_id=f"alert-slack-{int(datetime.now().timestamp())}",
-                channel="slack",
-                target=webhook_url or "dummy_slack",
-                severity=severity,
-                title=title,
-                message=message,
-                delivered=True,
-                status_code=200,
-                timestamp=ts,
-            )
+        if not webhook_url:
+            return cls._not_configured("slack", severity, title, message)
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with cls._client() as client:
                 resp = await client.post(webhook_url, json=payload)
                 return DispatchedAlert(
                     alert_id=f"alert-slack-{int(datetime.now().timestamp())}",
@@ -147,21 +161,14 @@ class AlertDispatcher:
             "data": data,
         }
 
-        if not webhook_url or webhook_url.startswith("https://dummy"):
-            return DispatchedAlert(
-                alert_id=f"alert-wh-{int(datetime.now().timestamp())}",
-                channel="webhook",
-                target=webhook_url or "dummy_webhook",
-                severity=data.get("severity", "info"),
-                title=f"Webhook: {event_type}",
-                message=f"Event {event_type} dispatched",
-                delivered=True,
-                status_code=200,
-                timestamp=ts,
+        if not webhook_url:
+            return cls._not_configured(
+                "webhook", data.get("severity", "info"), f"Webhook: {event_type}",
+                f"Event {event_type} not sent: no URL",
             )
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with cls._client() as client:
                 resp = await client.post(webhook_url, json=payload)
                 return DispatchedAlert(
                     alert_id=f"alert-wh-{int(datetime.now().timestamp())}",
