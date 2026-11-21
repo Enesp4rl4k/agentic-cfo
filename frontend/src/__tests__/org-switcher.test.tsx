@@ -27,8 +27,9 @@ vi.mock("@/hooks/useOrgSettings", () => ({
   }),
 }));
 
+const updateSession = vi.fn().mockResolvedValue(null);
 vi.mock("next-auth/react", () => ({
-  useSession: () => ({ status: "authenticated", data: { user: { email: "m@x.com" } } }),
+  useSession: () => ({ status: "authenticated", data: { user: { email: "m@x.com" } }, update: updateSession }),
 }));
 
 const clearWorkspace = vi.fn();
@@ -100,6 +101,8 @@ describe("OrgSwitcher", () => {
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/command-center"));
     expect(switchOrg).toHaveBeenCalledWith("kaya");
     expect(clearWorkspace).toHaveBeenCalledTimes(1);
+    // the session's role is re-read before the reload
+    expect(updateSession).toHaveBeenCalledTimes(1);
   });
 
   it("choosing the organisation you are already in does nothing", async () => {

@@ -115,7 +115,19 @@ class UpdateOrgRequest(BaseModel):
 
 class InviteRequest(BaseModel):
     email: EmailStr
-    role: str = "analyst"  # analyst | viewer | admin
+    # An enum, not a string: a junk value used to be stored and then raised
+    # ValueError (500) when the invite was accepted. Pydantic answers 422.
+    role: UserRole = UserRole.ANALYST
+
+
+# Who may hand out which role. Only an owner makes an owner or an admin; an admin
+# may invite anything below them. `smmm` is invitable: a company adds its own
+# accountant that way (the accountant who adds a *client* gets `smmm` in it
+# through /smmm/clients instead).
+_INVITER_MAY_GRANT: dict[str, frozenset[str]] = {
+    "owner": frozenset(r.value for r in UserRole),
+    "admin": frozenset({"cfo", "smmm", "analyst", "viewer"}),
+}
 
 
 class AcceptInviteRequest(BaseModel):
@@ -148,12 +160,35 @@ def _org_dict(org: Organization) -> dict[str, Any]:
     }
 
 
-def _member_dict(u: User) -> dict[str, Any]:
+async def _org_members(db: AsyncSession, org_id: str) -> list[tuple[User, str]]:
+    """Members of an organisation with their role *in it*, oldest first.
+
+    Listed by membership rows, not `users.org_id`: that column is only the
+    organisation a user is acting in, so an accountant switched into another
+    client would vanish from this one while `require_smmm` still counts them.
+    A user with `users.org_id` here and no membership row (older than migration
+    050) is included with `users.role`.
+    """
+    rows = (
+        await db.execute(
+            select(User, OrgMembership.role)
+            .join(OrgMembership, OrgMembership.user_id == User.id)
+            .where(OrgMembership.org_id == org_id)
+        )
+    ).all()
+    members: dict[str, tuple[User, str]] = {str(u.id): (u, str(r)) for u, r in rows}
+    legacy = (await db.execute(select(User).where(User.org_id == org_id))).scalars().all()
+    for u in legacy:
+        members.setdefault(str(u.id), (u, str(getattr(u.role, "value", u.role))))
+    return sorted(members.values(), key=lambda m: m[0].created_at)
+
+
+def _member_dict(u: User, role: str) -> dict[str, Any]:
     return {
         "user_id":      u.id,
         "email":        u.email,
         "full_name":    u.full_name,
-        "role":         u.role,
+        "role":         role,
         "is_active":    u.is_active,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "joined_at":    u.created_at.isoformat(),
@@ -236,10 +271,7 @@ async def get_my_org(
     """Get the current user's organization."""
     org = await _require_org(current_user, db)
     # Count members
-    result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active)
-    )
-    members = result.scalars().all()
+    members = [u for u, _ in await _org_members(db, str(org.id)) if u.is_active]
     data = _org_dict(org)
     data["member_count"] = len(members)
     return {"data": data, "error": None}
@@ -314,14 +346,11 @@ async def list_members(
 ) -> dict[str, Any]:
     """List all members of the current user's org."""
     org = await _require_org(current_user, db)
-    result = await db.execute(
-        select(User).where(User.org_id == org.id).order_by(User.created_at)
-    )
-    members = result.scalars().all()
+    members = await _org_members(db, str(org.id))
     return {
         "data": {
             "org_id":  org.id,
-            "members": [_member_dict(m) for m in members],
+            "members": [_member_dict(m, role) for m, role in members],
             "total":   len(members),
         },
         "error": None,
@@ -341,16 +370,29 @@ async def remove_member(
         raise HTTPException(400, detail="Kendinizi org'dan çıkaramazsınız.")
 
     target = await db.get(User, user_id)
-    if not target or target.org_id != org.id:
+    membership = (
+        await db.execute(
+            select(OrgMembership).where(
+                OrgMembership.user_id == user_id, OrgMembership.org_id == str(org.id)
+            )
+        )
+    ).scalar_one_or_none()
+    # A member is whoever holds a membership row here (an accountant switched
+    # into another client has `users.org_id` elsewhere), or a legacy user with
+    # no row whose acting organisation this is.
+    if not target or (membership is None and str(target.org_id) != str(org.id)):
         raise HTTPException(404, detail="Kullanıcı bu org'da bulunamadı.")
 
     # Admins cannot remove other admins or owners
-    if await acting_role(db, current_user) == UserRole.ADMIN and target.role in (UserRole.OWNER, UserRole.ADMIN):
+    target_role = membership.role if membership is not None else str(getattr(target.role, "value", target.role))
+    if await acting_role(db, current_user) == UserRole.ADMIN and target_role in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(403, detail="Admin, başka bir admin veya owner'ı çıkaramaz.")
 
-    target.org_id = None
-    target.role = UserRole.ANALYST  # reset to default
+    from app.services.org_membership import drop_membership
+
+    await drop_membership(db, user_id=str(target.id), org_id=str(org.id))
     await db.commit()
+    _cache_invalidate(str(target.id))
 
     logger.info("User %s removed from org %s by %s", target.email, org.id, current_user.email)
     return {"data": {"removed": True}, "error": None}
@@ -365,11 +407,16 @@ async def invite_member(
     """Invite someone to join the org by email."""
     org = await _require_admin(current_user, db)
 
+    inviter_role = str(await acting_role(db, current_user))
+    if body.role.value not in _INVITER_MAY_GRANT.get(inviter_role, frozenset()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"'{body.role.value}' rolünü bu rolünüzle veremezsiniz "
+                   "(owner ve admin rolünü yalnızca owner verir).",
+        )
+
     # Check member limit
-    result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active)
-    )
-    count = len(result.scalars().all())
+    count = len([u for u, _ in await _org_members(db, str(org.id)) if u.is_active])
     if count >= org.max_members:
         raise HTTPException(400, detail=f"Üye limiti doldu ({org.max_members}).")
 
@@ -387,7 +434,7 @@ async def invite_member(
     invite = OrgInvite(
         org_id=org.id,
         email=str(body.email),
-        role=body.role,
+        role=body.role.value,
         token=secrets.token_hex(32),
         expires_at=datetime.now(UTC) + timedelta(days=INVITE_EXPIRE_DAYS),
     )
@@ -395,7 +442,7 @@ async def invite_member(
     await db.commit()
     await db.refresh(invite)
 
-    logger.info("Invite sent: %s → %s (role=%s)", org.name, body.email, body.role)
+    logger.info("Invite sent: %s → %s (role=%s)", org.name, body.email, body.role.value)
 
     email_sent = False
     try:
@@ -450,8 +497,12 @@ async def accept_invite(
     if not invite:
         raise HTTPException(400, detail="Geçersiz veya süresi dolmuş davet bağlantısı.")
 
-    if invite.expires_at < datetime.now(UTC):
+    expires_at = invite.expires_at if invite.expires_at.tzinfo else invite.expires_at.replace(tzinfo=UTC)
+    if expires_at < datetime.now(UTC):
         raise HTTPException(400, detail="Davet bağlantısının süresi dolmuş.")
+    if invite.role not in {r.value for r in UserRole}:
+        # An invite stored before the role was validated.
+        raise HTTPException(400, detail="Davetteki rol geçersiz; yeni bir davet isteyin.")
 
     # Find or create user
     result = await db.execute(select(User).where(User.email == invite.email))

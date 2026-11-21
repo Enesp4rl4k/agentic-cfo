@@ -1,7 +1,7 @@
 """
 Pilot Program API
 
-POST /api/v1/pilot/invite/generate   — admin generates invite codes
+POST /api/v1/pilot/invite/generate   — platform operator generates invite codes
 GET  /api/v1/pilot/invite/validate   — validate invite code before registration
 POST /api/v1/pilot/invite/use        — mark invite as used after registration
 GET  /api/v1/pilot/invites           — admin: list all invites + usage stats
@@ -24,12 +24,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_platform_operator
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.user import User
-from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -58,12 +58,6 @@ class FeedbackRequest(BaseModel):
     biggest_benefit: str | None = Field(default=None, max_length=1000)
     biggest_gap: str | None = Field(default=None, max_length=1000)
     page_context: str | None = Field(default=None, max_length=100)
-
-
-async def _require_admin(user: User, db: AsyncSession) -> User:
-    if await acting_role(db, user) not in ("admin", "owner"):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
-    return user
 
 
 # ── Pilot status (public) ────────────────────────────────────────────────────
@@ -110,15 +104,13 @@ async def pilot_status(db: AsyncSession = Depends(get_db), current_user: User = 
 
 # ── Invite management (admin) ─────────────────────────────────────────────────
 
-@router.post("/pilot/invite/generate", status_code=201)
+@router.post("/pilot/invite/generate", status_code=201, dependencies=[Depends(require_platform_operator)])
 async def generate_invites(
     body: GenerateInviteRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: generate one or more invite codes."""
-    await _require_admin(current_user, db)
-
     expires = datetime.now(UTC) + timedelta(days=body.expire_days)
     codes = []
 
@@ -191,13 +183,12 @@ async def use_invite(
     return {"data": {"used": True}, "error": None}
 
 
-@router.get("/pilot/invites")
+@router.get("/pilot/invites", dependencies=[Depends(require_platform_operator)])
 async def list_invites(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: list all invite codes with usage info."""
-    await _require_admin(current_user, db)
     result = await db.execute(
         select(PilotInvite).order_by(PilotInvite.created_at.desc())
     )
@@ -221,14 +212,13 @@ async def list_invites(
     }
 
 
-@router.delete("/pilot/invite/{invite_id}")
+@router.delete("/pilot/invite/{invite_id}", dependencies=[Depends(require_platform_operator)])
 async def revoke_invite(
     invite_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: revoke an unused invite."""
-    await _require_admin(current_user, db)
     invite = await db.get(PilotInvite, invite_id)
     if not invite:
         raise HTTPException(404, detail="Davet bulunamadı.")
@@ -276,7 +266,7 @@ async def submit_feedback(
     return {"data": {"feedback_id": fb.id}, "error": None}
 
 
-@router.get("/pilot/feedback")
+@router.get("/pilot/feedback", dependencies=[Depends(require_platform_operator)])
 async def list_feedback(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -284,7 +274,6 @@ async def list_feedback(
     offset: int = 0,
 ) -> dict[str, Any]:
     """Admin: list all feedback entries."""
-    await _require_admin(current_user, db)
     result = await db.execute(
         select(UserFeedback)
         .order_by(UserFeedback.created_at.desc())
@@ -322,14 +311,12 @@ async def list_feedback(
     }
 
 
-@router.get("/pilot/feedback/summary")
+@router.get("/pilot/feedback/summary", dependencies=[Depends(require_platform_operator)])
 async def feedback_summary(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: aggregate NPS + ratings summary."""
-    await _require_admin(current_user, db)
-
     result = await db.execute(select(UserFeedback))
     all_fb = result.scalars().all()
 
