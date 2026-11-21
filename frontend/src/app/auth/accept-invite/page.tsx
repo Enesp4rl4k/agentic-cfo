@@ -61,7 +61,11 @@ function AcceptInvite() {
       return;
     }
     let cancelled = false;
-    fetch(`${API_BASE}/api/v1/org/invite/preview?token=${encodeURIComponent(token)}`)
+    fetch(`${API_BASE}/api/v1/org/invite/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    })
       .then(async (res) => {
         const body = await res.json().catch(() => null);
         if (!res.ok || !body?.data) throw new Error("preview");

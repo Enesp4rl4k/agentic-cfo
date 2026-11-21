@@ -42,6 +42,32 @@ async def user_for_token(db: AsyncSession, token: str | None) -> User | None:
     return user
 
 
+async def still_acting_in(user_id: str, org_id: str) -> bool:
+    """Whether `user_id` is still active, still acting in `org_id` and still a member of it.
+
+    A socket authenticates once, at connect. Leaving the company (removal) or
+    switching to another must end the live feed, so long-lived sockets ask again.
+    """
+    from sqlalchemy import select
+
+    from app.models.organization import OrgMembership
+
+    async with session_factory()() as db:
+        user = await db.get(User, str(user_id))
+        if user is None or not user.is_active or not user.org_id or str(user.org_id) != str(org_id):
+            return False
+        has_row = (
+            await db.execute(
+                select(OrgMembership.id).where(
+                    OrgMembership.user_id == str(user_id), OrgMembership.org_id == str(org_id)
+                )
+            )
+        ).first()
+        has_any = (await db.execute(select(OrgMembership.id).where(OrgMembership.user_id == str(user_id)))).first()
+        # A user with no membership rows at all is a pre-membership account: their column is all there is.
+        return has_row is not None or has_any is None
+
+
 async def websocket_caller(token: str | None) -> User | None:
     """`user_for_token` on a short-lived session.
 

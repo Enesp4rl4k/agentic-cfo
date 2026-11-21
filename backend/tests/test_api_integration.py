@@ -354,7 +354,7 @@ async def test_tr_vertical_board_deck_requires_tr_pack(test_client):
 
     async with test_client._test_sessionmaker() as db:
         user = (await db.execute(
-            select(User).where(User.email == "noPack@buro.com")
+            select(User).where(User.email == "nopack@buro.com")
         )).scalar_one()
         org = Organization(name="No Pack Ltd", slug="no-pack-ltd", regional_packs=[])
         db.add(org)

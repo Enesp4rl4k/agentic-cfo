@@ -51,6 +51,7 @@ from typing import Any
 from sqlalchemy import JSON, ColumnElement, MetaData, Table, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.email_address import normalize_email
 from app.database import Base
 from app.models.erasure_record import OrgErasureRecord
 
@@ -454,7 +455,7 @@ async def _erase(
         else:
             await drop("audit_logs", audit.c.user_id.in_(chunk))
     for chunk in _chunks(erase_emails):
-        await drop("pilot_invites", func.lower(tables["pilot_invites"].c.email).in_([e.lower() for e in chunk]))
+        await drop("pilot_invites", func.lower(tables["pilot_invites"].c.email).in_([normalize_email(e) for e in chunk]))
     for chunk in _chunks(erase_users):
         await drop("users", users.c.id.in_(chunk))
 
