@@ -7,8 +7,14 @@ AnalysisJobs are scoped to an org so members share data.
 Roles within an org:
   owner   — full control, can invite/remove members, delete org
   admin   — can invite members, manage jobs
-  analyst — can upload, run analysis, view results
+  cfo     — changes working data (writer); does not decide or manage members
+  smmm    — the company's accountant: writer, and binds the official record
+  analyst — can upload, run analysis, view results; does not change or decide
+            a record (category corrections, matches, approvals, month close)
   viewer  — read-only access to completed jobs
+
+The classes the API enforces (contributor / writer / decider / smmm) are in
+`app/api/access.py`; the browser's copy is `frontend/src/lib/roles.ts`.
 """
 from __future__ import annotations
 
