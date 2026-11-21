@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { APPROVAL_AFFECTED_KEYS } from "@/hooks/useWaitingCounts";
 import {
   getDashboard,
   getJobStatus,
@@ -76,6 +77,8 @@ export function useApproveJob() {
       // After approval, invalidate dashboard so it refetches when SSE signals done
       queryClient.invalidateQueries({ queryKey: ["dashboard", jobId] });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      // The held list, its counts, the radar and the company view change with an approval too.
+      for (const key of APPROVAL_AFFECTED_KEYS) queryClient.invalidateQueries({ queryKey: [...key] });
     },
   });
 }

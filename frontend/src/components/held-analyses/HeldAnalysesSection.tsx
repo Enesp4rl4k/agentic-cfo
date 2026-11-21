@@ -13,13 +13,20 @@ import {
 } from "@/components/ui/dialog";
 import { HeldReasons } from "@/components/held-analyses/HeldReasons";
 import { useI18n } from "@/hooks/useI18n";
+import { APPROVAL_AFFECTED_KEYS } from "@/hooks/useWaitingCounts";
 import { approveJob } from "@/lib/api/cfo";
 import { listHeldAnalyses, rejectAnalysis, type HeldAnalysis } from "@/lib/api/heldAnalyses";
 
 export const HELD_ANALYSES_KEY = ["held-analyses"];
 
-/** What an answer changes: the setup page, the radar, the company view and the result pages. */
-const AFFECTED = [["baslangic"], ["cash-radar"], ["ledger-summary"], ["jobs"], ["job"], ["dashboard"]];
+/** What an answer changes besides the waiting lists (APPROVAL_AFFECTED_KEYS): the result pages. */
+const AFFECTED = [["jobs"], ["job"], ["dashboard"]];
+
+/** Rows of the file that stay held after approval, when the payload says how many (reason rows_waiting). */
+function heldRowCount(analysis: HeldAnalysis): number | null {
+  const reason = analysis.reasons.find((r) => r.code === "rows_waiting");
+  return typeof reason?.count === "number" && reason.count > 0 ? reason.count : null;
+}
 
 type Pending = { analysis: HeldAnalysis; action: "approve" | "reject" } | null;
 
@@ -35,25 +42,40 @@ export function HeldAnalysesSection() {
   const [pending, setPending] = useState<Pending>(null);
   const [reason, setReason] = useState("");
   const [done, setDone] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failedText, setFailedText] = useState<string | null>(null);
 
   const { data } = useQuery({ queryKey: HELD_ANALYSES_KEY, queryFn: listHeldAnalyses });
 
   const decide = useMutation({
     mutationFn: ({ analysis, action }: NonNullable<Pending>) =>
       action === "approve" ? approveJob(analysis.id) : rejectAnalysis(analysis.id, reason),
+    onMutate: () => { setFailedText(null); setDone(null); },
     onSuccess: (_void, { action }) => {
-      setFailed(false);
+      setFailedText(null);
       setDone(action === "approve" ? copy.approved : copy.rejected);
       setPending(null);
       setReason("");
-      for (const key of [HELD_ANALYSES_KEY, ...AFFECTED]) queryClient.invalidateQueries({ queryKey: key });
+      for (const key of [HELD_ANALYSES_KEY, ...APPROVAL_AFFECTED_KEYS, ...AFFECTED]) queryClient.invalidateQueries({ queryKey: [...key] });
     },
-    onError: () => {
-      setFailed(true);
+    onError: async (error, { analysis }) => {
+      // The card may be stale (decided in another tab: 409). Refetch first; an error stays only if the item does.
       setPending(null);
+      const conflict = (error as { status?: number }).status === 409;
+      await Promise.all([HELD_ANALYSES_KEY, ...APPROVAL_AFFECTED_KEYS].map((key) =>
+        queryClient.refetchQueries({ queryKey: [...key] }).catch(() => undefined)));
+      const still = queryClient.getQueryData<HeldAnalysis[]>(HELD_ANALYSES_KEY)?.some((a) => a.id === analysis.id);
+      if (still) {
+        setFailedText(conflict ? copy.alreadyDecided : copy.actionFailed);
+      } else if (conflict) {
+        setDone(copy.alreadyDecided);
+      }
     },
   });
+
+  const balanceNote = (analysis: HeldAnalysis) => {
+    const count = heldRowCount(analysis);
+    return count === null ? copy.confirmBalanceNote : copy.confirmBalanceNoteRows.replace("{count}", String(count));
+  };
 
   const held = data ?? [];
   if (held.length === 0 && !done) return null;
@@ -67,7 +89,7 @@ export function HeldAnalysesSection() {
         </>
       )}
       {done && <p role="status" className="text-sm font-medium">{done}</p>}
-      {failed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}
+      {failedText && <p role="alert" className="text-sm text-destructive">{failedText}</p>}
       <ul className="space-y-3">
         {held.map((analysis) => (
           <li key={analysis.id}>
@@ -99,6 +121,11 @@ export function HeldAnalysesSection() {
             <DialogDescription>
               {pending?.action === "reject" ? copy.confirmRejectBody : copy.confirmBody}
             </DialogDescription>
+            {pending?.action === "approve" && pending.analysis.proves_balance && (
+              <p className="m-0 text-sm">
+                {balanceNote(pending.analysis)}
+              </p>
+            )}
           </DialogHeader>
           {pending?.action === "reject" && (
             <input

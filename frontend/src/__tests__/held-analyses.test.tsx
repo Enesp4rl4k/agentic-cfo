@@ -188,3 +188,71 @@ describe("the approvals screen is the one place for everything waiting", () => {
     expect(screen.queryByText(getMessages("tr").onay.empty)).toBeNull();
   });
 });
+
+describe("honesty and stale cards", () => {
+  const rejectedWith = (status: number) => Object.assign(new Error("x"), { status });
+
+  it("tells the approver the closing balance covers rows still waiting, with their count when known", async () => {
+    held.listHeldAnalyses.mockResolvedValue([
+      analysis({ reasons: [{ code: "rows_waiting", count: 4, all_rows: false, summary: "" }] }),
+    ]);
+    const user = userEvent.setup();
+    renderWithQuery(<HeldAnalysesSection />);
+    await user.click(await screen.findByRole("button", { name: copy.approve }));
+    expect(await screen.findByText(copy.confirmBalanceNoteRows.replace("{count}", "4"))).toBeInTheDocument();
+  });
+
+  it("uses the count-free wording when the payload gives no held-row count", async () => {
+    held.listHeldAnalyses.mockResolvedValue([analysis()]);
+    const user = userEvent.setup();
+    renderWithQuery(<HeldAnalysesSection />);
+    await user.click(await screen.findByRole("button", { name: copy.approve }));
+    expect(await screen.findByText(copy.confirmBalanceNote)).toBeInTheDocument();
+  });
+
+  it("refetches the list when a decision fails, and drops a card decided elsewhere (409)", async () => {
+    held.listHeldAnalyses.mockResolvedValue([analysis()]);
+    cfo.approveJob.mockRejectedValue(rejectedWith(409));
+    const user = userEvent.setup();
+    renderWithQuery(<HeldAnalysesSection />);
+    await user.click(await screen.findByRole("button", { name: copy.approve }));
+    const before = held.listHeldAnalyses.mock.calls.length;
+    held.listHeldAnalyses.mockResolvedValue([]);
+    await user.click(screen.getByRole("button", { name: copy.confirmApprove }));
+    expect(await screen.findByText(copy.alreadyDecided)).toBeInTheDocument();
+    expect(held.listHeldAnalyses.mock.calls.length).toBeGreaterThan(before);
+    expect(screen.queryByText("banka-ekstresi.csv")).toBeNull();
+    expect(screen.queryByText(copy.actionFailed)).toBeNull();
+  });
+
+  it("keeps the error when the item is still waiting after the refetch", async () => {
+    held.listHeldAnalyses.mockResolvedValue([analysis()]);
+    cfo.approveJob.mockRejectedValue(rejectedWith(409));
+    const user = userEvent.setup();
+    renderWithQuery(<HeldAnalysesSection />);
+    await user.click(await screen.findByRole("button", { name: copy.approve }));
+    await user.click(await screen.findByRole("button", { name: copy.confirmApprove }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.alreadyDecided);
+    expect(screen.getByText("banka-ekstresi.csv")).toBeInTheDocument();
+  });
+});
+
+describe("useApproveJob refreshes everything an approval changes", () => {
+  it("invalidates the held list, the waiting counts, the radar and the company view", async () => {
+    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+    const { renderHook, act } = await import("@testing-library/react");
+    const { useApproveJob } = await import("@/hooks/useCFO");
+    const { WAITING_KEYS } = await import("@/hooks/useWaitingCounts");
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useApproveJob(), { wrapper });
+    await act(async () => { await result.current.mutateAsync("job-1"); });
+    const keys = spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
+    for (const key of [...Object.values(WAITING_KEYS), ["cash-radar"], ["ledger-summary"], ["dashboard", "job-1"], ["jobs"]]) {
+      expect(keys).toContain(JSON.stringify(key));
+    }
+  });
+});

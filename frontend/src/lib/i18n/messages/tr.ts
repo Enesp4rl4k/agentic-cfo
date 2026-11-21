@@ -2952,6 +2952,9 @@ export const tr: MessageTree = {
     rejected: "Analiz reddedildi.",
     actionFailed: "Karar kaydedilemedi. Kayıt yetkiniz olduğundan emin olun ve tekrar deneyin.",
     balanceProven: "Bu ekstrenin satır bakiyeleri birbirini tutuyor: onaylarsanız nakit radarı ekstrenin kapanış bakiyesinden başlar.",
+    confirmBalanceNote: "Radar, ekstrenin kapanış bakiyesinden başlar. Bu rakam bankanın tüm ekstre için verdiği rakamdır; kararınızı bekleyen satırlar da içine dahildir.",
+    confirmBalanceNoteRows: "Radar, ekstrenin kapanış bakiyesinden başlar. Bu rakam bankanın tüm ekstre için verdiği rakamdır; kararınızı bekleyen {count} satır da içine dahildir.",
+    alreadyDecided: "Bu analiz için karar zaten verilmiş; büyük olasılıkla başka bir sekmede ya da başka biri tarafından. Liste yenilendi.",
     reasons: {
       rowsAll: "Dosyadaki {count} satırın hepsi bir kişinin kararını bekliyor. {summary}",
       rows: "{count} satır bir kişinin kararını bekliyor (toplamlara dahil değil).",

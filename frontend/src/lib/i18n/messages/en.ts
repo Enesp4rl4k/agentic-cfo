@@ -2676,6 +2676,9 @@ export type MessageTree = {
     rejected: string;
     actionFailed: string;
     balanceProven: string;
+    confirmBalanceNote: string;
+    confirmBalanceNoteRows: string;
+    alreadyDecided: string;
     reasons: {
       rowsAll: string;
       rows: string;
@@ -5676,6 +5679,9 @@ export const en: MessageTree = {
     rejected: "Analysis rejected.",
     actionFailed: "The decision was not saved. Make sure you may edit the books, and try again.",
     balanceProven: "This statement's running balances chain: if you approve it, the cash radar starts from its closing balance.",
+    confirmBalanceNote: "The radar will start from the statement's closing balance. That is the bank's figure for the whole statement, so it also includes any rows still waiting for a decision.",
+    confirmBalanceNoteRows: "The radar will start from the statement's closing balance. That is the bank's figure for the whole statement, so it also includes the {count} rows still waiting for a decision.",
+    alreadyDecided: "This analysis was already decided, probably in another tab or by someone else. The list has been refreshed.",
     reasons: {
       rowsAll: "All {count} rows in the file wait for a person's decision. {summary}",
       rows: "{count} rows wait for a person's decision (not in the totals).",

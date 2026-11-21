@@ -18,6 +18,16 @@ export const WAITING_KEYS = {
   agents: ["agent-review-queue"],
 } as const;
 
+/**
+ * Everything an approval changes: the waiting lists and counts, the radar and the company view. The setup
+ * page (/baslangic) reloads its own state when opened, so it has no cached query to invalidate here.
+ */
+export const APPROVAL_AFFECTED_KEYS: readonly (readonly string[])[] = [
+  ...Object.values(WAITING_KEYS),
+  ["cash-radar"],
+  ["ledger-summary"],
+];
+
 export type WaitingCounts = {
   analyses: number;
   rows: number;
