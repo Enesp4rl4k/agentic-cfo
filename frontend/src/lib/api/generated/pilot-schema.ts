@@ -174,21 +174,18 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * AwaitingDecisionOut
-         * @description Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates.
+         * Analizler
+         * @description Every analysis of the company by what became of it, not only the latest one.
          */
-        AwaitingDecisionOut: {
-            documents?: components["schemas"]["AwaitingLineOut"] | null;
-            rows?: components["schemas"]["AwaitingLineOut"] | null;
-        };
-        /** AwaitingLineOut */
-        AwaitingLineOut: {
-            /** Count */
-            count: number;
-            /** Path */
-            path: string;
-            /** Text */
-            text: string;
+        Analizler: {
+            /** Basarisiz */
+            basarisiz: number;
+            /** Calisan */
+            calisan: number;
+            /** Onay Bekleyen */
+            onay_bekleyen: number;
+            /** Tamamlanan */
+            tamamlanan: number;
         };
         /** BasisSplitOut */
         BasisSplitOut: {
@@ -210,12 +207,32 @@ export interface components {
         };
         /** Baslangic */
         Baslangic: {
+            analizler: components["schemas"]["Analizler"];
             firma: components["schemas"]["Firma"];
+            /** Onay Bekleyen */
+            onay_bekleyen: components["schemas"]["BekleyenAnaliz"][];
             otomatik: components["schemas"]["Otomatik"];
             son_analiz: components["schemas"]["SonAnaliz"] | null;
             /** Tamamlanan Analiz */
             tamamlanan_analiz: number;
             veri: components["schemas"]["Veri"];
+        };
+        /** BekleyenAnaliz */
+        BekleyenAnaliz: {
+            /** Bakiye Kanitli */
+            bakiye_kanitli: boolean;
+            /** Dosya */
+            dosya: string;
+            /** Guven */
+            guven: number | null;
+            /** Id */
+            id: string;
+            /** Nedenler */
+            nedenler: {
+                [key: string]: unknown;
+            }[];
+            /** Olusturma */
+            olusturma: string | null;
         };
         /** BriefingAnswer */
         BriefingAnswer: {
@@ -255,7 +272,6 @@ export interface components {
         CashRadarOut: {
             /** Anchor Date */
             anchor_date: string;
-            awaiting_decision?: components["schemas"]["AwaitingDecisionOut"] | null;
             /** Beyond Horizon Cents */
             beyond_horizon_cents: number;
             held_documents?: components["schemas"]["HeldDocumentsOut"] | null;

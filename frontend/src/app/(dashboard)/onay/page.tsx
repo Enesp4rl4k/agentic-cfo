@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
-import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
+import Link from "next/link";
+import { HeldAnalysesSection } from "@/components/held-analyses/HeldAnalysesSection";
+import { WaitingSummary } from "@/components/approvals/WaitingSummary";
+import { ReviewQueueCard } from "@/components/command-center/ReviewQueueCard";
+import { useWaitingCounts } from "@/hooks/useWaitingCounts";
 import { OneTapQueue, type OneTapDecision } from "@/components/approvals/OneTapQueue";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
@@ -88,8 +92,13 @@ export default function OnayPage() {
   const duplicateRows: LedgerRow[] = duplicates.data ?? [];
   const planRows = plans.data?.changes ?? [];
   const canDecide = Boolean(plans.data?.canDecide);
-  const nothing = !loading && !failed && settlementRows.length === 0 && duplicateRows.length === 0 && planRows.length === 0;
-  const waiting = settlementRows.length + duplicateRows.length + planRows.length;
+  // Every kind of decision, not only the three lists below: held analyses, held rows and role results too.
+  const counts = useWaitingCounts();
+  // The lists appear together, once every kind has answered: a late kind would push a button the person
+  // is about to press out from under their finger.
+  const settled = !loading && !counts.loading;
+  const nothing = !failed && settled && counts.total === 0;
+  const waiting = counts.total;
 
   // The same decisions as the lists, one card each. A plan change is offered only to someone who may
   // decide it; anyone else's stays in the list where they can see it waits.
@@ -153,7 +162,28 @@ export default function OnayPage() {
           ) : undefined
         }
       />
-      <HeldRowsLink />
+      {settled && (<>
+      <WaitingSummary counts={counts} />
+
+      <div id="analizler" className="scroll-mt-20">
+        <HeldAnalysesSection />
+      </div>
+
+      {counts.rows > 0 && (
+        <section id="kayitlar" aria-label={t.heldAnalysis.queues.rowsTitle.replace("{n}", String(counts.rows))} className="scroll-mt-20 space-y-2">
+          <h2 className="tc-display m-0 text-[26px] leading-[1.1]">
+            {t.heldAnalysis.queues.rowsTitle.replace("{n}", String(counts.rows))}
+          </h2>
+          <p className="m-0 text-sm text-muted-foreground">{t.heldAnalysis.queues.rowsHint}</p>
+          <Button asChild variant="outline" className="min-h-[44px]">
+            <Link href="/bekleyen-kayitlar">{t.heldAnalysis.queues.openRows}</Link>
+          </Button>
+        </section>
+      )}
+
+      <div id="rol-sonuclari" className="scroll-mt-20">
+        <ReviewQueueCard />
+      </div>
 
       {failed && <p role="alert" className="text-sm text-destructive">{copy.failed}</p>}
       {actionFailed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}
@@ -165,7 +195,7 @@ export default function OnayPage() {
       )}
 
       {settlementRows.length > 0 && (
-        <section aria-label={ledger.settlementsTitle.replace("{n}", String(settlementRows.length))} className="space-y-3">
+        <section id="eslesmeler" aria-label={ledger.settlementsTitle.replace("{n}", String(settlementRows.length))} className="scroll-mt-20 space-y-3">
           <h2 className="tc-display m-0 text-[26px] leading-[1.1]">
             {ledger.settlementsTitle.replace("{n}", String(settlementRows.length))}
           </h2>
@@ -213,7 +243,7 @@ export default function OnayPage() {
       )}
 
       {duplicateRows.length > 0 && (
-        <section aria-label={ledger.duplicatesTitle.replace("{n}", String(duplicateRows.length))} className="space-y-3">
+        <section id="mukerrer" aria-label={ledger.duplicatesTitle.replace("{n}", String(duplicateRows.length))} className="scroll-mt-20 space-y-3">
           <h2 className="tc-display m-0 text-[26px] leading-[1.1]">
             {ledger.duplicatesTitle.replace("{n}", String(duplicateRows.length))}
           </h2>
@@ -259,7 +289,7 @@ export default function OnayPage() {
       )}
 
       {planRows.length > 0 && (
-        <section aria-label={copy.planTitle} className="space-y-3">
+        <section id="odeme-plani" aria-label={copy.planTitle} className="scroll-mt-20 space-y-3">
           <h2 className="tc-display m-0 text-[26px] leading-[1.1]">{copy.planTitle}</h2>
           <p className="m-0 text-sm text-muted-foreground">{copy.planHint}</p>
           <ul className="space-y-3">
@@ -322,6 +352,8 @@ export default function OnayPage() {
           </ul>
         </section>
       )}
+
+      </>)}
 
       <OodaFooter current={2} />
     </div>

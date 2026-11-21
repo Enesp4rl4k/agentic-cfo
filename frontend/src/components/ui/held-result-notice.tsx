@@ -17,7 +17,7 @@ export function HeldResultNotice({ gate }: Readonly<{ gate?: GateDecision | null
         {gate.reasons.map((reason) => (
           <p key={reason} className="mt-0.5 text-muted-foreground">{reason}</p>
         ))}
-        <Link href="/command-center" className="mt-1 inline-block font-medium underline underline-offset-2">
+        <Link href="/onay" className="mt-1 inline-block font-medium underline underline-offset-2">
           {t.reviewQueue.goToQueue}
         </Link>
       </div>

@@ -21,6 +21,11 @@ vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")
 
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
+// The other kinds of decision the screen counts: nothing waits in them here.
+vi.mock("@/lib/api/heldAnalyses", () => ({ listHeldAnalyses: async () => [], rejectAnalysis: vi.fn() }));
+vi.mock("@/lib/api/heldRows", () => ({ listHeldRows: async () => [] }));
+vi.mock("@/lib/api/agentReview", () => ({ getReviewQueue: async () => [], approveHeldJob: vi.fn(), rejectHeldJob: vi.fn() }));
+
 import OnayPage from "@/app/(dashboard)/onay/page";
 
 const duplicate = {
@@ -80,7 +85,7 @@ describe("Onay bekleyenler", () => {
     getProposedSettlements.mockResolvedValue([]);
     getPossibleDuplicates.mockResolvedValue([]);
     show();
-    expect(await screen.findByText(/kararını bekleyen bir eşleşme/)).toBeInTheDocument();
+    expect(await screen.findByText(/kararını bekleyen bir analiz, kayıt, eşleşme/)).toBeInTheDocument();
   });
 
   it("does not claim an empty queue when the list failed to load", async () => {
@@ -88,7 +93,7 @@ describe("Onay bekleyenler", () => {
     getPossibleDuplicates.mockResolvedValue([]);
     show();
     expect(await screen.findByText("Onay bekleyenler okunamadı.")).toBeInTheDocument();
-    expect(screen.queryByText(/kararını bekleyen bir eşleşme/)).toBeNull();
+    expect(screen.queryByText(/kararını bekleyen bir analiz, kayıt, eşleşme/)).toBeNull();
   });
 
   it("tells the person when their decision could not be saved", async () => {

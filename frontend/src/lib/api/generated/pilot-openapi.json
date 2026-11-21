@@ -1,54 +1,33 @@
 {
   "components": {
     "schemas": {
-      "AwaitingDecisionOut": {
-        "description": "Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates.",
+      "Analizler": {
+        "description": "Every analysis of the company by what became of it, not only the latest one.",
         "properties": {
-          "documents": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AwaitingLineOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rows": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AwaitingLineOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "AwaitingDecisionOut",
-        "type": "object"
-      },
-      "AwaitingLineOut": {
-        "properties": {
-          "count": {
-            "title": "Count",
+          "basarisiz": {
+            "title": "Basarisiz",
             "type": "integer"
           },
-          "path": {
-            "title": "Path",
-            "type": "string"
+          "calisan": {
+            "title": "Calisan",
+            "type": "integer"
           },
-          "text": {
-            "title": "Text",
-            "type": "string"
+          "onay_bekleyen": {
+            "title": "Onay Bekleyen",
+            "type": "integer"
+          },
+          "tamamlanan": {
+            "title": "Tamamlanan",
+            "type": "integer"
           }
         },
         "required": [
-          "count",
-          "text",
-          "path"
+          "calisan",
+          "onay_bekleyen",
+          "tamamlanan",
+          "basarisiz"
         ],
-        "title": "AwaitingLineOut",
+        "title": "Analizler",
         "type": "object"
       },
       "BasisSplitOut": {
@@ -74,8 +53,18 @@
       },
       "Baslangic": {
         "properties": {
+          "analizler": {
+            "$ref": "#/components/schemas/Analizler"
+          },
           "firma": {
             "$ref": "#/components/schemas/Firma"
+          },
+          "onay_bekleyen": {
+            "items": {
+              "$ref": "#/components/schemas/BekleyenAnaliz"
+            },
+            "title": "Onay Bekleyen",
+            "type": "array"
           },
           "otomatik": {
             "$ref": "#/components/schemas/Otomatik"
@@ -103,9 +92,67 @@
           "veri",
           "son_analiz",
           "tamamlanan_analiz",
+          "analizler",
+          "onay_bekleyen",
           "otomatik"
         ],
         "title": "Baslangic",
+        "type": "object"
+      },
+      "BekleyenAnaliz": {
+        "properties": {
+          "bakiye_kanitli": {
+            "title": "Bakiye Kanitli",
+            "type": "boolean"
+          },
+          "dosya": {
+            "title": "Dosya",
+            "type": "string"
+          },
+          "guven": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guven"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "nedenler": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Nedenler",
+            "type": "array"
+          },
+          "olusturma": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Olusturma"
+          }
+        },
+        "required": [
+          "id",
+          "dosya",
+          "guven",
+          "nedenler",
+          "bakiye_kanitli",
+          "olusturma"
+        ],
+        "title": "BekleyenAnaliz",
         "type": "object"
       },
       "BriefingAnswer": {
@@ -187,16 +234,6 @@
           "anchor_date": {
             "title": "Anchor Date",
             "type": "string"
-          },
-          "awaiting_decision": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AwaitingDecisionOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "beyond_horizon_cents": {
             "title": "Beyond Horizon Cents",

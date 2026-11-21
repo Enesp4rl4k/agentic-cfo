@@ -242,17 +242,23 @@ def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
     accepted, held = split_uncertain(rows)
     if not held:
         return sonuc
+    # Which rows wait for a person does not change what the bank says the account holds:
+    # the running balances are proven over the whole file, in file order, before it is split.
+    from app.services.bank_balance import closing_balance
+
+    closing = closing_balance(rows)
+    whole = {"statement_closing_balance": closing} if closing is not None else {}
     waiting = f"{len(held)} kayıt incelemenizi bekliyor"
     if not accepted:
         return SkillResult(
             ok=False, needs_review=True, confidence=0.0,
-            patch={**(sonuc.patch or {}), "transactions": [], "held_transactions": held},
+            patch={**(sonuc.patch or {}), **whole, "transactions": [], "held_transactions": held},
             detail=f"0 kayıt işlendi, {waiting}. {sonuc.detail}",
         )
     known = [c for c in (parse_confidence(r.get("confidence")) for r in accepted) if c is not None]
     return SkillResult(
         ok=True,
-        patch={**(sonuc.patch or {}), "transactions": accepted, "held_transactions": held},
+        patch={**(sonuc.patch or {}), **whole, "transactions": accepted, "held_transactions": held},
         confidence=min([sonuc.confidence, *known]),
         needs_review=sonuc.needs_review,
         detail=f"{len(accepted)} kayıt işlendi, {waiting}. {sonuc.detail}",
