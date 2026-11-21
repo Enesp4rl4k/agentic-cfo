@@ -147,6 +147,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ledger/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Summary
+         * @description Figures for one period of whole months (`start`, `end` as YYYY-MM).
+         *
+         *     With neither, the last 12 months of data; the period used is in `data.period`.
+         */
+        get: operations["get_summary_api_v1_ledger_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -284,6 +306,16 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** Envelope[LedgerSummaryOut] */
+        Envelope_LedgerSummaryOut_: {
+            data: components["schemas"]["LedgerSummaryOut"];
+            /** Error */
+            error?: string | null;
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** Envelope[MondayBriefing] */
         Envelope_MondayBriefing_: {
             data: components["schemas"]["MondayBriefing"];
@@ -315,6 +347,89 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LastUploadOut */
+        LastUploadOut: {
+            /**
+             * Already
+             * @default 0
+             */
+            already: number;
+            /** Filename */
+            filename?: string | null;
+            /**
+             * New
+             * @default 0
+             */
+            new: number;
+            /**
+             * No Date
+             * @default 0
+             */
+            no_date: number;
+            /**
+             * Possible Duplicate
+             * @default 0
+             */
+            possible_duplicate: number;
+            /**
+             * Proposed
+             * @default 0
+             */
+            proposed: number;
+            /**
+             * Settled
+             * @default 0
+             */
+            settled: number;
+        };
+        /** LedgerMonthOut */
+        LedgerMonthOut: {
+            /** Cash In Cents */
+            cash_in_cents: number;
+            /** Cash Out Cents */
+            cash_out_cents: number;
+            /** Month */
+            month: string;
+        };
+        /** LedgerPeriodOut */
+        LedgerPeriodOut: {
+            /** Available End */
+            available_end: string | null;
+            /** Available Months */
+            available_months: number;
+            /** Available Start */
+            available_start: string | null;
+            /** End */
+            end: string | null;
+            /** Future Latest */
+            future_latest: string | null;
+            /** Future Rows */
+            future_rows: number;
+            /** Is Default */
+            is_default: boolean;
+            /** Label */
+            label: string | null;
+            /** Months */
+            months: number;
+            /** Start */
+            start: string | null;
+        };
+        /** LedgerSummaryOut */
+        LedgerSummaryOut: {
+            /** Expense Cents */
+            expense_cents: number;
+            last_upload: components["schemas"]["LastUploadOut"] | null;
+            /** Months */
+            months: components["schemas"]["LedgerMonthOut"][];
+            open_items: components["schemas"]["OpenItemsOut"];
+            period: components["schemas"]["LedgerPeriodOut"];
+            /** Possible Duplicates */
+            possible_duplicates: number;
+            /** Revenue Cents */
+            revenue_cents: number;
+            /** Rows */
+            rows: number;
         };
         /** MondayBriefing */
         MondayBriefing: {
@@ -391,6 +506,17 @@ export interface components {
             week_end: string;
             /** Week Start */
             week_start: string;
+        };
+        /** OpenItemsOut */
+        OpenItemsOut: {
+            /** No Due Date */
+            no_due_date: number;
+            /** Other Currency */
+            other_currency: number;
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
         };
         /** OpeningCashOut */
         OpeningCashOut: {
@@ -937,6 +1063,47 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Envelope_PlanChangeView_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_summary_api_v1_ledger_summary_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_LedgerSummaryOut_"];
+                };
+            };
+            /** @description The user has no organisation, or the period is not valid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

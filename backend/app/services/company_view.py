@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.ledger import company_rows, day_of
+from app.services.ledger import Period, company_rows, day_of
 
 _MONTH = re.compile(r"^\d{4}-\d{2}$")
 
@@ -43,7 +43,7 @@ class LedgerView:
         return {"profit": self.profit, "cash": self.cash}
 
 
-def _as_transaction(row: Any) -> dict[str, Any]:
+def _as_transaction(row: Any, reclass_of_period: str | None = None) -> dict[str, Any]:
     """A ledger row in the shape the pipeline's own ingestion produces."""
     return {
         "amount_cents": row.amount_cents,
@@ -57,6 +57,9 @@ def _as_transaction(row: Any) -> dict[str, Any]:
         "ledger_basis": row.basis,
         # Set on a closed-month correction row: category totals read it, detectors do not.
         "corrects_id": row.corrects_id,
+        # A correction row whose original sits in a period outside the view's: it moves an
+        # amount out of that period's category, so it is not a bare negative.
+        "reclass_of_period": reclass_of_period,
     }
 
 
@@ -78,15 +81,16 @@ def _signature(profit: list[Any], cash: list[Any]) -> str:
     return hashlib.sha256(json.dumps(said).encode()).hexdigest()
 
 
-async def ledger_view(db: AsyncSession, org_id: str) -> LedgerView | None:
-    """What the ledger says about this company; None when it says nothing."""
-    rows = await company_rows(db, org_id)
+async def ledger_view(db: AsyncSession, org_id: str, period: Period | None = None) -> LedgerView | None:
+    """What the ledger says about this company in a period (default: the last 12 months
+    of data, plan v10 S1.4); None when it says nothing there."""
+    rows = await company_rows(db, org_id, period)
     if not rows.profit and not rows.cash:
         return None
     return LedgerView(
-        profit=[_as_transaction(r) for r in rows.profit],
+        profit=[_as_transaction(r, rows.reclass_of_period.get(r.id)) for r in rows.profit],
         cash=[_as_transaction(r) for r in rows.cash],
-        period={"start": rows.months[0], "end": rows.months[-1], "months": len(rows.months)},
+        period=rows.period.as_dict(),
         signature=_signature(rows.profit, rows.cash),
     )
 

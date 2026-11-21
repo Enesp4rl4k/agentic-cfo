@@ -72,6 +72,13 @@ async def correct_category(
             status_code=409, detail="Aynı kayıt şu anda başka bir düzeltmeyle güncelleniyor; tekrar deneyin."
         ) from exc
     await db.commit()
+    if org_id and ledger["ledger"] in ("updated", "booked_in_open_month"):
+        # The ledger moved, so the company's persisted view (P&L, Command Center) follows,
+        # as after every decision on the ledger (api/ledger.py `_refresh_view`).
+        from app.core.background import spawn
+        from app.post_completion import refresh_company_view_detached
+
+        spawn(refresh_company_view_detached(org_id), name=f"ledger-view-{org_id[:8]}")
 
     # Persist learning rule
     rule = await learn(

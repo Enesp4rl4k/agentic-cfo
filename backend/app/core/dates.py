@@ -17,7 +17,8 @@ document. That is the one fact a reviewer can establish and the machine cannot.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Formats a Turkish statement, ERP export or ISO source realistically carries.
 _FORMATS = (
@@ -27,6 +28,27 @@ _FORMATS = (
     "%Y/%m/%d",
     "%d-%m-%Y",
 )
+
+
+def istanbul() -> tzinfo:
+    """The company's calendar: Europe/Istanbul (fixed UTC+3 where the tz database is missing)."""
+    try:
+        return ZoneInfo("Europe/Istanbul")
+    except ZoneInfoNotFoundError:   # slim images carry no tz database; Turkey has been UTC+3 since 2016
+        return timezone(timedelta(hours=3))
+
+
+def _calendar_day(value: datetime) -> datetime:
+    """Midnight UTC of the calendar day the document states.
+
+    The ledger's one date convention (`ledger.month_of`, period locks, fingerprints): a row's
+    `transaction_date` is the document's calendar day at 00:00 UTC, never a clock time. A
+    timestamp that carries an offset is read on the Istanbul calendar first, so 00:30 on the
+    1st (+03:00) is the 1st, not the previous UTC day. A naive one already is a calendar day.
+    """
+    if value.tzinfo is not None:
+        value = value.astimezone(istanbul())
+    return datetime(value.year, value.month, value.day, tzinfo=UTC)
 
 
 def parse_transaction_date(
@@ -39,7 +61,7 @@ def parse_transaction_date(
     broken date must still reach a reviewer rather than disappear.
     """
     if isinstance(raw, datetime):
-        return (raw if raw.tzinfo else raw.replace(tzinfo=UTC)), False
+        return _calendar_day(raw), False
 
     text = (raw or "").strip() if isinstance(raw, str) else ""
     if text:
@@ -50,7 +72,7 @@ def parse_transaction_date(
                 continue
         try:
             parsed = datetime.fromisoformat(text)
-            return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)), False
+            return _calendar_day(parsed), False
         except ValueError:
             pass
 

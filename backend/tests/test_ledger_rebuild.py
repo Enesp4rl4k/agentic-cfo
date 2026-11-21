@@ -92,8 +92,8 @@ async def test_the_signature_moves_when_the_money_does(client):
 
 async def test_the_order_files_arrive_in_does_not_change_the_figures(client):
     """Same three uploads, two orders, two companies: the same revenue, expense and cash."""
-    invoice = _sale("F9", issued="2025-03-01", due="2025-03-31", no="GIB2025000000009")
-    receipt = _bank("EFT GIB2025000000009 ODEME", 285_000_00, "2025-04-10")
+    invoice = _sale("F9", issued="2024-11-01", due="2024-11-30", no="GIB2024000000009")
+    receipt = _bank("EFT GIB2024000000009 ODEME", 285_000_00, "2024-12-10")
 
     _, first, _ = await kullanici(client, "sira-bir@example.com")
     await _append(client, await _analysed(client, first, _demo_rows("01")))

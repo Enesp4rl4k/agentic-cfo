@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.access import ensure_tenant, require_writer
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
+from app.api.ledger_schema import LedgerSummaryOut
 from app.api.radar_schema import CashRadarOut
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
@@ -19,7 +20,7 @@ from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.user import User
 from app.services.cash_radar import compute_cash_radar
-from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, ledger_summary
+from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, Period, ledger_summary
 from app.services.reconciliation import (
     BY_SUM,
     CONFIRMED,
@@ -58,12 +59,26 @@ def _row(r: CanonicalTransaction) -> dict[str, Any]:
     }
 
 
-@router.get("/ledger/summary", responses={400: {"description": "The user has no organisation."}})
+@router.get(
+    "/ledger/summary",
+    response_model=Envelope[LedgerSummaryOut],
+    responses={400: {"description": "The user has no organisation, or the period is not valid."}},
+)
 async def get_summary(
+    start: str | None = None,
+    end: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    return {"data": await ledger_summary(db, _org(user)), "error": None}
+    """Figures for one period of whole months (`start`, `end` as YYYY-MM).
+
+    With neither, the last 12 months of data; the period used is in `data.period`.
+    """
+    try:
+        period = Period(start or None, end or None)
+    except ValueError:
+        raise HTTPException(400, "Geçersiz dönem (YYYY-AA biçiminde, başlangıç bitişten sonra olamaz).") from None
+    return {"data": await ledger_summary(db, _org(user), period), "error": None}
 
 
 @router.get("/ledger/possible-duplicates", responses={400: {"description": "The user has no organisation."}})

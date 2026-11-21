@@ -372,6 +372,41 @@
         "title": "Envelope[CashRadarOut]",
         "type": "object"
       },
+      "Envelope_LedgerSummaryOut_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LedgerSummaryOut"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[LedgerSummaryOut]",
+        "type": "object"
+      },
       "Envelope_MondayBriefing_": {
         "properties": {
           "data": {
@@ -478,6 +513,231 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LastUploadOut": {
+        "properties": {
+          "already": {
+            "default": 0,
+            "title": "Already",
+            "type": "integer"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "new": {
+            "default": 0,
+            "title": "New",
+            "type": "integer"
+          },
+          "no_date": {
+            "default": 0,
+            "title": "No Date",
+            "type": "integer"
+          },
+          "possible_duplicate": {
+            "default": 0,
+            "title": "Possible Duplicate",
+            "type": "integer"
+          },
+          "proposed": {
+            "default": 0,
+            "title": "Proposed",
+            "type": "integer"
+          },
+          "settled": {
+            "default": 0,
+            "title": "Settled",
+            "type": "integer"
+          }
+        },
+        "title": "LastUploadOut",
+        "type": "object"
+      },
+      "LedgerMonthOut": {
+        "properties": {
+          "cash_in_cents": {
+            "title": "Cash In Cents",
+            "type": "integer"
+          },
+          "cash_out_cents": {
+            "title": "Cash Out Cents",
+            "type": "integer"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "cash_in_cents",
+          "cash_out_cents"
+        ],
+        "title": "LedgerMonthOut",
+        "type": "object"
+      },
+      "LedgerPeriodOut": {
+        "properties": {
+          "available_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available End"
+          },
+          "available_months": {
+            "title": "Available Months",
+            "type": "integer"
+          },
+          "available_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "future_latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Future Latest"
+          },
+          "future_rows": {
+            "title": "Future Rows",
+            "type": "integer"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "months": {
+            "title": "Months",
+            "type": "integer"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "months",
+          "label",
+          "is_default",
+          "available_start",
+          "available_end",
+          "available_months",
+          "future_rows",
+          "future_latest"
+        ],
+        "title": "LedgerPeriodOut",
+        "type": "object"
+      },
+      "LedgerSummaryOut": {
+        "properties": {
+          "expense_cents": {
+            "title": "Expense Cents",
+            "type": "integer"
+          },
+          "last_upload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastUploadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerMonthOut"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "open_items": {
+            "$ref": "#/components/schemas/OpenItemsOut"
+          },
+          "period": {
+            "$ref": "#/components/schemas/LedgerPeriodOut"
+          },
+          "possible_duplicates": {
+            "title": "Possible Duplicates",
+            "type": "integer"
+          },
+          "revenue_cents": {
+            "title": "Revenue Cents",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "last_upload",
+          "open_items",
+          "rows",
+          "revenue_cents",
+          "expense_cents",
+          "possible_duplicates",
+          "period",
+          "months"
+        ],
+        "title": "LedgerSummaryOut",
         "type": "object"
       },
       "MondayBriefing": {
@@ -636,6 +896,34 @@
           "full_text"
         ],
         "title": "MondayBriefing",
+        "type": "object"
+      },
+      "OpenItemsOut": {
+        "properties": {
+          "no_due_date": {
+            "title": "No Due Date",
+            "type": "integer"
+          },
+          "other_currency": {
+            "title": "Other Currency",
+            "type": "integer"
+          },
+          "payable_cents": {
+            "title": "Payable Cents",
+            "type": "integer"
+          },
+          "receivable_cents": {
+            "title": "Receivable Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "receivable_cents",
+          "payable_cents",
+          "no_due_date",
+          "other_currency"
+        ],
+        "title": "OpenItemsOut",
         "type": "object"
       },
       "OpeningCashOut": {
@@ -1904,6 +2192,96 @@
         "summary": "Withdraw Change",
         "tags": [
           "plan-changes"
+        ]
+      }
+    },
+    "/api/v1/ledger/summary": {
+      "get": {
+        "description": "Figures for one period of whole months (`start`, `end` as YYYY-MM).\n\nWith neither, the last 12 months of data; the period used is in `data.period`.",
+        "operationId": "get_summary_api_v1_ledger_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_LedgerSummaryOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The user has no organisation, or the period is not valid."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Summary",
+        "tags": [
+          "ledger"
         ]
       }
     }

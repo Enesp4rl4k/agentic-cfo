@@ -25,7 +25,7 @@ from app.services.donem_kilidi import kilitle
 from app.services.ledger import append_job
 from app.services.ledger_correction import apply_overrides
 from app.services.rag.ledger_evidence import retrieve_ledger_evidence
-from tests.test_ledger_category_correction import _job, _ledger, _org, _patch
+from tests.test_ledger_category_correction import EVERYTHING, _job, _ledger, _org, _patch
 from tests.test_ledger_correction_readers import _closed_jan
 
 
@@ -53,7 +53,7 @@ async def test_pipeline_from_the_ledger_flags_nothing_for_a_corrected_closed_mon
         client, "f1@x.com", [((2026, 1, 15), "other_expense", "expense", 10_000)])
     await _patch(client, h, t1, "rent")
     async with client._maker() as db:
-        view = await ledger_view(db, org)
+        view = await ledger_view(db, org, EVERYTHING)
     assert view is not None
     assert sum(1 for t in view.profit if t["corrects_id"]) == 2
     rows = [{**t, "vendor": "Levent"} for t in view.profit]

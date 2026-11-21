@@ -30,6 +30,7 @@ PILOT_PATHS: tuple[str, ...] = (
     "/api/v1/briefing/monday",
     "/api/v1/briefing/monday/respond",
     "/api/v1/ledger/cash-radar",
+    "/api/v1/ledger/summary",
     "/api/v1/ledger/plan-changes",
     "/api/v1/ledger/plan-changes/{change_id}/approve",
     "/api/v1/ledger/plan-changes/{change_id}/reject",

@@ -12,8 +12,12 @@ from app.models.canonical_transaction import CanonicalTransaction
 from app.models.organization import Organization
 from app.models.transaction import Transaction
 from app.services.donem_kilidi import kilitle
-from app.services.ledger import append_job, company_rows, ledger_summary, month_of
+from app.services.ledger import Period, append_job, company_rows, ledger_summary, month_of
 from tests.api_helpers import kullanici
+
+# Every period there is: a closed-month correction pair is booked after the last money month,
+# which the default period (anchored on money) does not reach.
+EVERYTHING = Period("2000-01", "2099-12")
 
 
 async def _org(client, email):
@@ -76,7 +80,7 @@ async def test_correction_updates_open_month_row_and_totals(client):
     assert r.status_code == 200, r.text
     assert r.json()["data"]["ledger"] == "updated"
     async with client._maker() as db:
-        view = await company_rows(db, org)
+        view = await company_rows(db, org, EVERYTHING)
         after = await ledger_summary(db, org)
         audit = await _audits(db)
     assert _by_cat(view.profit) == {"rent": 10_000, "revenue": 50_000}
@@ -131,7 +135,7 @@ async def test_closed_month_keeps_original_and_books_correction_in_open_month(cl
     assert (await _patch(client, h, t1, "technology")).json()["data"]["ledger"] == "booked_in_open_month"
     async with client._maker() as db:
         rows = await _ledger(db, org)
-        view = await company_rows(db, org)
+        view = await company_rows(db, org, EVERYTHING)
     assert len(rows) == 5
     assert _by_cat(view.profit) == {"other_expense": 0, "rent": 0, "technology": 10_000}
 
@@ -147,7 +151,7 @@ async def test_rereading_the_job_does_not_undo_a_closed_month_correction(client)
     await _patch(client, h, t1, "rent")
     async with client._maker() as db:
         await append_job(db, job)
-        view = await company_rows(db, org)
+        view = await company_rows(db, org, EVERYTHING)
     assert _by_cat(view.profit) == {"other_expense": 0, "rent": 10_000}
 
 

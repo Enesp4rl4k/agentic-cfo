@@ -22,7 +22,7 @@ from app.services.ledger_correction import apply_overrides
 from app.services.recurring_obligations import detect_recurring_obligations
 from app.services.semantic.rebuild import _load_canonical
 from app.services.tax_calendar import get_historical_tax_averages
-from tests.test_ledger_category_correction import _by_cat, _job, _ledger, _org, _patch
+from tests.test_ledger_category_correction import EVERYTHING, _by_cat, _job, _ledger, _org, _patch
 
 
 def _correction_rows(rows):
@@ -42,7 +42,7 @@ async def _closed_jan(client, email, rows):
 
 async def _per_month(client, org):
     async with client._maker() as db:
-        view = await company_rows(db, org)
+        view = await company_rows(db, org, EVERYTHING)
     out: dict[tuple[str, str | None], int] = {}
     for r in view.profit:
         key = (month_of(r.transaction_date), r.category)
@@ -159,12 +159,12 @@ async def test_a_settling_cash_row_keeps_its_treatment_for_the_pair(client):
                              amount_cents=10_000, method="by_amount", status="confirmed",
                              matched_on=datetime(2026, 1, 15, tzinfo=UTC).date()))
         await db.commit()
-        before = _by_cat((await company_rows(db, org)).profit)
+        before = _by_cat((await company_rows(db, org, EVERYTHING)).profit)
     assert before == {"revenue": 70_000}                         # the settling row is cash, not profit
     await _patch(client, h, t1, "rent")
     async with client._maker() as db:
-        after = _by_cat((await company_rows(db, org)).profit)
-        cash = _by_cat((await company_rows(db, org)).cash)
+        after = _by_cat((await company_rows(db, org, EVERYTHING)).profit)
+        cash = _by_cat((await company_rows(db, org, EVERYTHING)).cash)
     assert after == {"revenue": 70_000}                          # the pair follows the original out
     assert cash == {"other_expense": 10_000, "revenue": 70_000}  # a reclassification moves no cash
 
@@ -280,7 +280,7 @@ async def test_a_rerun_keeps_a_single_row_correction_open_and_closed(client):
         await db.commit()
         await append_job(db, job)
         rows = await _ledger(db, org)
-        view = await company_rows(db, org)
+        view = await company_rows(db, org, EVERYTHING)
     originals = {r.amount_cents: r for r in rows if r.corrects_id is None}
     assert originals[10_000].category == "rent"                  # open month: stays corrected
     assert originals[20_000].category == "other_expense"         # closed month: untouched
