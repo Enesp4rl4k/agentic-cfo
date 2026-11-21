@@ -143,7 +143,7 @@ test.describe("Pilot flow", () => {
     // No decision is asked for, and the radar needs no approval to know the opening cash.
     await loginInBrowser(page, OWNER);
     await page.goto("/onay");
-    await expect(screen(page).getByText("Şu an kararınızı bekleyen bir şey yok.")).toBeVisible({ timeout: 60_000 });
+    await expect(screen(page).getByText("Şu an kararını bekleyen bir analiz, kayıt, eşleşme ya da öneri yok.")).toBeVisible({ timeout: 60_000 });
     const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json();
     expect(radar.data.starting_cash_cents).toBe(11_650_000);
     expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
