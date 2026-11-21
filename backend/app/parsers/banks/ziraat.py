@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import sign_is_informative
 
 
 class ZiraatParser(BankParser):
@@ -76,7 +77,7 @@ class ZiraatParser(BankParser):
             re.MULTILINE,
         )
         found = list(one_col.finditer(text))
-        signed = any(m.group(3).startswith("-") for m in found)   # all-positive says nothing
+        signed = sign_is_informative([m.group(3).startswith("-") for m in found])   # all-positive says nothing
         for m in found:
             date = self.parse_turkish_date(m.group(1))
             if not date:

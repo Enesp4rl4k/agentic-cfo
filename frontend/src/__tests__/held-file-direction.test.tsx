@@ -1,7 +1,8 @@
 /**
  * A statement file whose direction nobody could place is ONE question: the person sees what was detected and
- * a few sample rows, answers once, and the answer applies to every row. A remembered answer is listed and
- * can be forgotten. The file's rows are not asked about one by one.
+ * a few sample rows, answers once, and the answer applies to every row. A debit/credit reading nothing can
+ * verify is asked as "is Borç money out of your account?". A remembered answer is listed and can be forgotten
+ * by those allowed to; a file with no signal never offers to remember. The file's rows are not asked one by one.
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -26,11 +27,23 @@ const { listHeldRows, listFileQuestions, answerFileDirection, listDirectionMappi
   heldRowsSpies;
 
 const fileRow = { ...heldRowFixture, id: "f1", description: "Kira", type: null, direction_file: "f9", reasons: ["direction_file_unknown"] };
+const convention = {
+  ...fileQuestionFixture,
+  reason: "convention_unverified",
+  options: ["as_read", "inverted", "mixed"],
+  question: {
+    ...fileQuestionFixture.question,
+    mapping: [
+      { label: "borc", means: "expense" },
+      { label: "alacak", means: "income" },
+    ],
+  },
+};
 
 beforeEach(() => {
   for (const fn of [listHeldRows, listFileQuestions, answerFileDirection, listDirectionMappings, revokeDirectionMapping]) fn.mockClear();
   listHeldRows.mockResolvedValue([fileRow]);
-  listFileQuestions.mockResolvedValue([fileQuestionFixture]);
+  listFileQuestions.mockResolvedValue({ files: [fileQuestionFixture], canRemember: true });
   listDirectionMappings.mockResolvedValue([]);
   getBaseCurrency.mockResolvedValue({ currency: "TRY", confirmed: true, waiting_for_currency: 0 });
 });
@@ -46,35 +59,63 @@ describe("Bu ekstrede tutarlar hangi yönde?", () => {
     expect(screen.queryByText("İncelemenizi bekleyen kayıt yok.")).toBeNull();
   });
 
-  it("sends the answer once for the file, remembered by default", async () => {
+  it("says honestly that a file with no signal cannot be split, and never offers to remember", async () => {
     const user = userEvent.setup();
     renderWithQuery(<BekleyenKayitlarPage />);
-    await user.click(await screen.findByRole("button", { name: "Tutarların hepsi çıkış (gider)" }));
+    expect(await screen.findByText(/sistem giriş ile çıkışı ayıramaz ve tahmin etmez/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Bu ekstre biçimi için cevabımı hatırla")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Bu dosyada yalnızca çıkış (gider) var" }));
     await waitFor(() =>
-      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "all_expense", remember: true }),
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "only_expense", remember: false }),
     );
     expect(answerFileDirection).toHaveBeenCalledTimes(1);
   });
 
-  it("does not remember when the box is cleared, and never remembers a mixed answer", async () => {
+  it("leaves the rows to be corrected one by one when asked", async () => {
     const user = userEvent.setup();
     renderWithQuery(<BekleyenKayitlarPage />);
-    await user.click(await screen.findByLabelText("Bu ekstre biçimi için cevabımı hatırla"));
-    await user.click(screen.getByRole("button", { name: "Tutarların hepsi giriş (gelir)" }));
+    await user.click(await screen.findByRole("button", { name: "Satırları tek tek düzelteceğim" }));
     await waitFor(() =>
-      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "all_income", remember: false }),
-    );
-    await user.click(screen.getByLabelText("Bu ekstre biçimi için cevabımı hatırla"));
-    await user.click(screen.getByRole("button", { name: "Karışık: satırları tek tek karara bağlayacağım" }));
-    await waitFor(() =>
-      expect(answerFileDirection).toHaveBeenLastCalledWith({ job_id: "j9", file_key: "f9", answer: "mixed", remember: false }),
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "mixed", remember: false }),
     );
   });
 
+  it("asks whether Borç is money out of the account, showing how it was read and sample descriptions", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [convention], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText('Bu ekstrede "borc" hesabınızdan ÇIKAN para mı?')).toBeInTheDocument();
+    expect(screen.getByText(/Okunan: borc → Gider · alacak → Gelir/)).toBeInTheDocument();
+    expect(screen.getByText("Kira")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hayır, tersi" }));
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "inverted", remember: true }),
+    );
+  });
+
+  it("does not remember when the box is cleared, or when the person may not make a standing rule", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [convention], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    await user.click(await screen.findByLabelText("Bu ekstre biçimi için cevabımı hatırla"));
+    await user.click(screen.getByRole("button", { name: "Evet, sütunların dediği gibi" }));
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "as_read", remember: false }),
+    );
+  });
+
+  it("hides the remember box and explains why for a writer without authority", async () => {
+    listFileQuestions.mockResolvedValue({ files: [convention], canRemember: false });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText(/sahip, yönetici ya da mali müşavir yetkisi ister/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Bu ekstre biçimi için cevabımı hatırla")).toBeNull();
+  });
+
   it("explains a balance contradiction in its own words", async () => {
-    listFileQuestions.mockResolvedValue([
-      { ...fileQuestionFixture, reason: "balance_contradicts", options: ["as_read", "balance", "mixed"] },
-    ]);
+    listFileQuestions.mockResolvedValue({
+      files: [{ ...fileQuestionFixture, reason: "balance_contradicts", options: ["as_read", "balance", "mixed"] }],
+      canRemember: true,
+    });
     renderWithQuery(<BekleyenKayitlarPage />);
     expect(await screen.findByText(/Bakiye sütunu, tutar sütunlarından okunan yönün tersini gösteriyor/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Bakiyenin gösterdiği gibi" })).toBeInTheDocument();
@@ -84,7 +125,7 @@ describe("Bu ekstrede tutarlar hangi yönde?", () => {
 describe("hatırlanan ekstre yönleri", () => {
   it("lists a remembered answer and forgets it on request", async () => {
     const user = userEvent.setup();
-    listFileQuestions.mockResolvedValue([]);
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: true });
     listHeldRows.mockResolvedValue([]);
     listDirectionMappings.mockResolvedValue([directionMappingFixture]);
     renderWithQuery(<BekleyenKayitlarPage />);
@@ -94,8 +135,17 @@ describe("hatırlanan ekstre yönleri", () => {
     await waitFor(() => expect(revokeDirectionMapping).toHaveBeenCalledWith("m9"));
   });
 
+  it("does not offer to forget to someone who may not", async () => {
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: false });
+    listHeldRows.mockResolvedValue([]);
+    listDirectionMappings.mockResolvedValue([directionMappingFixture]);
+    renderWithQuery(<BekleyenKayitlarPage />);
+    await screen.findByText("Hatırlanan ekstre yönleri");
+    expect(screen.queryByRole("button", { name: "Unut" })).toBeNull();
+  });
+
   it("shows nothing when no answer is remembered", async () => {
-    listFileQuestions.mockResolvedValue([]);
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: true });
     listHeldRows.mockResolvedValue([]);
     renderWithQuery(<BekleyenKayitlarPage />);
     expect(await screen.findByText("İncelemenizi bekleyen kayıt yok.")).toBeInTheDocument();

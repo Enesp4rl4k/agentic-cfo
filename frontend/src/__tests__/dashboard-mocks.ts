@@ -140,7 +140,7 @@ export const heldRowsSpies = {
   rejectHeldRows: vi.fn().mockResolvedValue(undefined),
   getBaseCurrency: vi.fn().mockResolvedValue({ currency: null, confirmed: false, waiting_for_currency: 0 }),
   confirmBaseCurrency: vi.fn().mockResolvedValue(undefined),
-  listFileQuestions: vi.fn().mockResolvedValue([]),
+  listFileQuestions: vi.fn().mockResolvedValue({ files: [], canRemember: true }),
   answerFileDirection: vi.fn().mockResolvedValue(undefined),
   listDirectionMappings: vi.fn().mockResolvedValue([]),
   revokeDirectionMapping: vi.fn().mockResolvedValue(undefined),
@@ -193,7 +193,7 @@ export const fileQuestionFixture = {
   file_key: "f9",
   reason: "no_signal",
   rows: 2,
-  options: ["all_expense", "all_income", "mixed"],
+  options: ["mixed", "only_expense", "only_income"],
   question: {
     columns: [
       { name: "tarih", role: "date" },
@@ -210,8 +210,8 @@ export const fileQuestionFixture = {
 export const directionMappingFixture = {
   id: "m9",
   signature: "abc",
-  reason: "no_signal",
-  answer: "all_expense",
+  reason: "convention_unverified",
+  answer: "inverted",
   columns: "tarih, açıklama, tutar",
   created_at: "2026-03-05T10:00:00+00:00",
 };

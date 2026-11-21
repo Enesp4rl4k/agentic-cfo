@@ -33,6 +33,7 @@ from app.models.held_transaction import PENDING, REJECTED, RELEASED, HeldTransac
 from app.services.decisions import record_decision
 from app.services.ingest.hold import (
     AMOUNT_UNREADABLE,
+    BALANCE_MISMATCH,
     CURRENCY_UNKNOWN,
     DATE_UNREADABLE,
     DIRECTION_FILE,
@@ -48,6 +49,7 @@ REASON_TEXT: dict[str, str] = {
     "currency_unknown": "para birimi bilinmiyor",
     "direction_unknown": "yön belirsiz",
     "direction_file_unknown": "yön belirsiz",
+    "balance_mismatch": "bakiye ile uyuşmuyor",
     "amount_unreadable": "tutar okunamadı",
     "date_unreadable": "tarih okunamadı",
     "document_held_together": "aynı belgenin başka bir satırı bekliyor",
@@ -203,7 +205,7 @@ class UnknownRows(LookupError):
 
 # Which open question each corrected field answers.
 _FIXES = {
-    "type": (DIRECTION_UNKNOWN, DIRECTION_FILE),
+    "type": (DIRECTION_UNKNOWN, DIRECTION_FILE, BALANCE_MISMATCH),
     "currency": (CURRENCY_UNKNOWN,),
     "transaction_date": (DATE_UNREADABLE,),
     "amount_cents": (AMOUNT_UNREADABLE,),
@@ -246,6 +248,7 @@ def apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | Non
     if "type" in fixed:
         out.pop("direction_file", None)
         out.pop("direction_question", None)
+        out.pop("balance_mismatch", None)
         if out.get("category") is None:        # chosen now that the direction is known
             from app.services.ingest.rows import _yukleyenin_kategorisi
 

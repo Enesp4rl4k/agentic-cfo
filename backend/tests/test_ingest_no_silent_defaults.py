@@ -136,9 +136,15 @@ def test_csv_direction_comes_from_the_sign_when_the_file_has_both():
     assert all(r["confidence"] == 0.95 for r in rows)      # derived by a rule: not certain
 
 
-def test_csv_with_debit_and_credit_columns_reads_the_column():
-    rows = _csv(NL.join(["Tarih,Açıklama,Borç,Alacak", "01.03.2026,Kira,500,", "02.03.2026,Satış,,900"]))
+def test_csv_with_unambiguous_debit_and_credit_columns_reads_the_column():
+    rows = _csv(NL.join(["Tarih,Açıklama,Ödeme,Tahsilat", "01.03.2026,Kira,500,", "02.03.2026,Satış,,900"]))
     assert [r["type"] for r in rows] == ["expense", "income"]
+
+
+def test_csv_with_borc_alacak_and_no_balance_is_asked_not_booked_as_the_customers_view():
+    rows = _csv(NL.join(["Tarih,Açıklama,Borç,Alacak", "01.03.2026,Kira,500,", "02.03.2026,Satış,,900"]))
+    assert [r["type"] for r in rows] == [None, None]
+    assert {r["direction_file"]["reason"] for r in rows} == {"convention_unverified"}
 
 
 def test_csv_with_one_unsigned_column_cannot_tell_and_says_so():

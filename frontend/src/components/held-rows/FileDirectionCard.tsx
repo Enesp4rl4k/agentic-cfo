@@ -16,10 +16,12 @@ const SAMPLE_COLUMNS = ["date", "description", "amount", "debit", "credit", "dir
 export function FileDirectionCard({
   file,
   pending,
+  canRemember,
   onAnswer,
 }: Readonly<{
   file: FileQuestion;
   pending: boolean;
+  canRemember: boolean;
   onAnswer: (answer: FileAnswer, remember: boolean) => void;
 }>) {
   const { t } = useI18n();
@@ -30,6 +32,19 @@ export function FileDirectionCard({
   const columns = file.question?.columns ?? [];
   const samples = file.question?.samples ?? [];
   const shown = SAMPLE_COLUMNS.filter((role) => samples.some((s) => role in s));
+  // Only a convention (or a balance that contradicts the columns) is a property of the statement FORMAT;
+  // "this file holds only one kind" is a statement about one file and is never remembered.
+  const rememberable = file.reason === "convention_unverified" || file.reason === "balance_contradicts";
+  const mapping = file.question?.mapping ?? [];
+  const outLabel = mapping.find((m) => m.means === "expense")?.label;
+  const body = {
+    no_signal: copy.fileBodyNoSignal,
+    balance_contradicts: copy.fileBodyBalance,
+    convention_unverified: copy.fileBodyConvention,
+    balance_inconclusive: copy.fileBodyInconclusive,
+  }[file.reason];
+  const meaning = (m: { label: string; means: string }) =>
+    `${m.label} → ${m.means === "expense" ? copy.expense : copy.income}`;
 
   return (
     <Card className="space-y-3 p-4">
@@ -37,9 +52,18 @@ export function FileDirectionCard({
         <p className="text-sm font-semibold">{copy.fileTitle}</p>
         <p className="text-xs text-muted-foreground">{copy.fileRows.replace("{count}", String(file.rows))}</p>
       </div>
-      <p className="text-sm text-muted-foreground">
-        {file.reason === "balance_contradicts" ? copy.fileBodyBalance : copy.fileBodyNoSignal}
-      </p>
+      {file.reason === "convention_unverified" && outLabel && (
+        <p className="text-sm font-medium">{copy.fileConventionQuestion.replace("{label}", outLabel)}</p>
+      )}
+      <p className="text-sm text-muted-foreground">{body}</p>
+      {mapping.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {copy.fileConventionMapping.replace("{mapping}", mapping.map(meaning).join(" · "))}
+        </p>
+      )}
+      {file.question?.note && file.reason === "balance_inconclusive" && (
+        <p className="text-xs text-muted-foreground">{file.question.note}</p>
+      )}
 
       {columns.length > 0 && (
         <p className="text-xs text-muted-foreground">
@@ -71,17 +95,20 @@ export function FileDirectionCard({
         </div>
       )}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-        {copy.fileRemember}
-      </label>
+      {rememberable && canRemember && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          {copy.fileRemember}
+        </label>
+      )}
+      {rememberable && !canRemember && <p className="text-xs text-muted-foreground">{copy.fileRememberDenied}</p>}
       <div className="flex flex-wrap gap-2">
         {file.options.map((answer) => (
           <Button
             key={answer}
-            variant={answer === "mixed" ? "outline" : "default"}
+            variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
             disabled={pending}
-            onClick={() => onAnswer(answer, remember && answer !== "mixed")}
+            onClick={() => onAnswer(answer, rememberable && canRemember && remember && answer !== "mixed")}
           >
             {options[answer] ?? answer}
           </Button>

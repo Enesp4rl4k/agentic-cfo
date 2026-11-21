@@ -9,8 +9,9 @@ import type { DirectionMapping } from "@/lib/api/heldRows";
 export function DirectionMappings({
   mappings,
   pending,
+  canRevoke,
   onRevoke,
-}: Readonly<{ mappings: DirectionMapping[]; pending: boolean; onRevoke: (id: string) => void }>) {
+}: Readonly<{ mappings: DirectionMapping[]; pending: boolean; canRevoke: boolean; onRevoke: (id: string) => void }>) {
   const { t } = useI18n();
   const copy = t.heldRows;
   const options = copy.fileOptions as Record<string, string>;
@@ -27,9 +28,11 @@ export function DirectionMappings({
               {" — "}
               {options[m.answer] ?? m.answer}
             </span>
-            <Button variant="outline" disabled={pending} onClick={() => onRevoke(m.id)}>
-              {copy.mappingRevoke}
-            </Button>
+            {canRevoke && (
+              <Button variant="outline" disabled={pending} onClick={() => onRevoke(m.id)}>
+                {copy.mappingRevoke}
+              </Button>
+            )}
           </li>
         ))}
       </ul>

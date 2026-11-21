@@ -16,6 +16,7 @@ import re
 from typing import ClassVar
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import sign_is_informative
 
 _ACCOUNT_RE = re.compile(
     r"Hesap\s+(?:No|Numarası|Numarasi)\s*[:\-]?\s*(\d[\d\s\-]+)", re.IGNORECASE
@@ -70,7 +71,7 @@ class SingleSignedColumnParser(BankParser):
         found = list(self._ROW.finditer(text))
         # One amount column carries the direction by its sign, but only when the statement has both
         # signs: a column of all-positive amounts says nothing (app.parsers.direction).
-        signed = any(self.is_negative_amount(m.group(3)) for m in found)
+        signed = sign_is_informative([self.is_negative_amount(m.group(3)) for m in found])
         for m in found:
             date = self.parse_turkish_date(m.group(1))
             if not date:

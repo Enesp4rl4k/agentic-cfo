@@ -9,6 +9,7 @@ export type HeldReason =
   | "currency_unknown"
   | "direction_unknown"
   | "direction_file_unknown"
+  | "balance_mismatch"
   | "amount_unreadable"
   | "date_unreadable"
   | "document_held_together";
@@ -87,33 +88,38 @@ export async function confirmBaseCurrency(currency: string): Promise<void> {
 // A statement file whose direction nobody could place: ONE question for the file, answered once and
 // applied to every row (backend app/services/held_direction.py).
 
-export type FileAnswer = "all_income" | "all_expense" | "as_read" | "balance" | "mixed";
+export type FileAnswer = "only_income" | "only_expense" | "as_read" | "balance" | "inverted" | "mixed";
+
+export type FileReason = "no_signal" | "balance_contradicts" | "convention_unverified" | "balance_inconclusive";
 
 export interface FileQuestion {
   job_id: string;
   file_key: string;
-  reason: "no_signal" | "balance_contradicts";
+  reason: FileReason;
   rows: number;
   options: FileAnswer[];
   question: {
     columns: Array<{ name: string; role: string | null }>;
     samples: Array<Record<string, string>>;
     note?: string;
+    /** For a debit/credit reading nobody could verify: what each word was read as. */
+    mapping?: Array<{ label: string; means: "income" | "expense" }>;
   } | null;
 }
 
 export interface DirectionMapping {
   id: string;
   signature: string;
-  reason: "no_signal" | "balance_contradicts";
+  reason: FileReason;
   answer: FileAnswer;
   columns: string;
   created_at: string | null;
 }
 
-export async function listFileQuestions(): Promise<FileQuestion[]> {
-  const res = await apiClient.get<Envelope<{ files: FileQuestion[] }>>("/held-rows/file-questions");
-  return res.data.data.files;
+/** `canRemember`: only an owner, admin or the accountant may make an answer a standing rule for a format. */
+export async function listFileQuestions(): Promise<{ files: FileQuestion[]; canRemember: boolean }> {
+  const res = await apiClient.get<Envelope<{ files: FileQuestion[]; can_remember: boolean }>>("/held-rows/file-questions");
+  return { files: res.data.data.files, canRemember: res.data.data.can_remember };
 }
 
 export async function answerFileDirection(body: {

@@ -91,7 +91,8 @@ export default function BekleyenKayitlarPage() {
 
   // Rows of a file waiting on its one question are answered through that question, not one by one.
   const list = (rows.data ?? []).filter((r) => !r.direction_file);
-  const fileList = files.data ?? [];
+  const fileList = files.data?.files ?? [];
+  const canRemember = files.data?.canRemember ?? false;
   const waitingForCurrency = list.some((r) => r.reasons.includes("currency_unknown"));
   const reasonText = (code: string) => (copy.reasons as Record<string, string>)[code] ?? code;
   const sameDocument = (row: HeldRow) =>
@@ -128,6 +129,7 @@ export default function BekleyenKayitlarPage() {
           key={`${file.job_id}-${file.file_key}`}
           file={file}
           pending={fileAnswer.isPending}
+          canRemember={canRemember}
           onAnswer={(answer, remember) =>
             fileAnswer.mutate({ job_id: file.job_id, file_key: file.file_key, answer, remember })
           }
@@ -138,7 +140,7 @@ export default function BekleyenKayitlarPage() {
         <p className="text-sm text-muted-foreground">{copy.empty}</p>
       )}
 
-      <DirectionMappings mappings={mappings.data ?? []} pending={forget.isPending} onRevoke={(id) => forget.mutate(id)} />
+      <DirectionMappings mappings={mappings.data ?? []} pending={forget.isPending} canRevoke={canRemember} onRevoke={(id) => forget.mutate(id)} />
 
       <ul className="space-y-3">
         {list.map((row) => {

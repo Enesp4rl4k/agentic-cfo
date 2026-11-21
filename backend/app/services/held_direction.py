@@ -1,17 +1,25 @@
 """One question for a statement file whose direction cannot be placed, and the answer remembered.
 
-`app.parsers.direction` holds a file whole when nothing in it says which way the money went
-(`no_signal`) or when its running balance contradicts what its columns said
-(`balance_contradicts`). Asking per row would be an approval pile; the file is asked once:
+`app.parsers.direction` holds a file whole when it cannot say which way the money went:
 
-  no_signal            all_income | all_expense | mixed (rows stay held, one by one)
-  balance_contradicts  as_read (the columns are right) | balance (the balance is right) | mixed
+  no_signal             nothing in the file says                          only_income | only_expense | mixed
+  balance_contradicts   the balance shows the opposite of the columns     as_read | balance | mixed
+  convention_unverified a Borç/Alacak (B/A, D/C, Debit/Credit) reading    as_read | inverted | mixed
+                        that no balance column can verify
+  balance_inconclusive  the balance reconciles only part of the rows      as_read | mixed
 
-The answer applies to every row of the file in one transaction, each row's change recorded as a
-decision, and the file's answer is a decision of its own. It is remembered for the same
-organisation, header signature and reason (`DirectionMapping`) so that bank's format is not asked
-again; the mapping is listed and revocable, and its use is applied to the rows exactly as a
-person's answer would be (`apply_remembered`).
+Asking per row would be an approval pile; the file is asked once. The answer applies to every row in
+one transaction, each row's change a decision, the file's answer a decision of its own. `mixed` leaves
+the rows held one by one (the honest answer for a statement the system cannot split: correct them, or
+upload a file with a direction or balance column). `only_income` / `only_expense` are the user stating
+the file contains one kind only.
+
+An answer that fixes a CONVENTION or a balance contradiction can be remembered, for the same
+organisation, header signature and bank/account identity (`DirectionMapping`); creating or revoking one
+needs a decider or the accountant, because it changes how every later statement of that format is
+booked. A memory is applied only when it can still be checked: a file whose identity is unknown is asked
+again, and a memory that says "as read" never overrides a balance that contradicts the columns (the
+override is recorded).
 """
 from __future__ import annotations
 
@@ -24,17 +32,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.direction_mapping import DirectionMapping
 from app.models.held_transaction import HeldTransaction
-from app.parsers.direction import BALANCE_CONTRADICTS, NO_SIGNAL
+from app.parsers.direction import (
+    BALANCE_CONTRADICTS,
+    BALANCE_INCONCLUSIVE,
+    CONVENTION_UNVERIFIED,
+    NO_SIGNAL,
+)
 from app.services import held_rows
 from app.services.decisions import record_decision
 from app.services.ingest.hold import row_reasons
 
 MIXED = "mixed"
 ANSWERS: dict[str, frozenset[str]] = {
-    NO_SIGNAL: frozenset({"all_income", "all_expense", MIXED}),
+    NO_SIGNAL: frozenset({"only_income", "only_expense", MIXED}),
     BALANCE_CONTRADICTS: frozenset({"as_read", "balance", MIXED}),
+    CONVENTION_UNVERIFIED: frozenset({"as_read", "inverted", MIXED}),
+    BALANCE_INCONCLUSIVE: frozenset({"as_read", MIXED}),
 }
-_FIXED = {"all_income": "income", "all_expense": "expense"}
+_FIXED = {"only_income": "income", "only_expense": "expense"}
+# (reason, answer) pairs worth remembering: a statement format's convention, not a statement about one file.
+REMEMBERABLE = frozenset({(CONVENTION_UNVERIFIED, "as_read"), (CONVENTION_UNVERIFIED, "inverted"),
+                          (BALANCE_CONTRADICTS, "balance")})
 
 
 class AnswerError(ValueError):
@@ -45,7 +63,9 @@ def _type_for(payload: dict[str, Any], answer: str) -> str | None:
     mark = payload.get("direction_file") or {}
     if answer in _FIXED:
         return _FIXED[answer]
-    return mark.get("read") if answer == "as_read" else mark.get("balance") if answer == "balance" else None
+    if answer == "as_read":
+        return mark.get("read")
+    return mark.get("balance") if answer in ("balance", "inverted") else None
 
 
 def _individual(payload: dict[str, Any]) -> dict[str, Any]:
@@ -84,21 +104,46 @@ async def active_mappings(db: AsyncSession, org_id: str) -> list[DirectionMappin
 async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict[str, Any]]) -> int:
     """Rows of a file held for its direction, whose format this organisation already answered: answer them.
 
-    Returns how many rows were settled. Same organisation, same header signature, same reason.
+    Same organisation, header signature (which includes the bank account when the file names it) and
+    reason. Returns how many rows were settled. Never applied blindly:
+    - a convention answer is used only when the file names its account; without that it is asked again;
+    - an "as read" memory never overrides a balance that contradicts the columns: it is ignored, and
+      the override is recorded.
     """
     if not org_id or not any(r.get("direction_file") for r in rows):
         return 0
-    known = {(m.signature, m.reason): m.answer for m in await active_mappings(db, org_id)}
+    known = {(m.signature, m.reason): m for m in await active_mappings(db, org_id)}
     settled = 0
+    overridden: set[str] = set()
     for row in rows:
         mark = row.get("direction_file")
         if not mark:
             continue
-        answer = known.get((mark["signature"], mark["reason"]))
-        if answer and answer in ANSWERS.get(mark["reason"], frozenset()):
+        sig, reason = mark["signature"], mark["reason"]
+        answer: str | None = None
+        if reason == CONVENTION_UNVERIFIED and mark.get("identity"):
+            m = known.get((sig, reason))
+            answer = m.answer if m else None
+        elif reason == BALANCE_CONTRADICTS:
+            direct, convention = known.get((sig, BALANCE_CONTRADICTS)), known.get((sig, CONVENTION_UNVERIFIED))
+            if convention is not None and convention.answer == "as_read":
+                overridden.add(convention.id)       # this file's balance contradicts what was remembered
+            if direct is not None:
+                answer = "balance"
+            elif convention is not None and convention.answer == "inverted":
+                answer = "balance"                  # the bank-view reading is what this balance shows
+        if answer and (reason, answer) in REMEMBERABLE | {(BALANCE_CONTRADICTS, "balance")}:
             apply_to_rows([row], answer)
             row["direction_remembered"] = answer
             settled += 1
+    for mapping_id in sorted(overridden):
+        await record_decision(
+            db, org_id=org_id, kind=DecisionKind.DIRECTION_MAPPING, target_type="direction_mapping",
+            target_id=mapping_id, outcome="overridden", decided_via=DecidedVia.SYSTEM,
+            reason="the new file's balance contradicts the remembered reading; the memory was not applied",
+        )
+    if overridden:
+        await db.commit()
     return settled
 
 
@@ -164,10 +209,10 @@ async def answer_file(
         evidence_refs=[{"type": "analysis_job", "id": job_id}],
         before={"reason": mark["reason"], "rows": len(rows), "signature": mark["signature"]},
         after={"answer": answer, "released": result["resolved"], "still_waiting_rows": len(waiting),
-               "remembered": bool(remember and answer != MIXED)},
+               "remembered": bool(remember and (mark["reason"], answer) in REMEMBERABLE)},
     )
     remembered = None
-    if remember and answer != MIXED:
+    if remember and (mark["reason"], answer) in REMEMBERABLE:
         asked = next((r.payload["direction_question"] for r in rows if r.payload.get("direction_question")), {})
         remembered = await _remember(db, org_id, user_id, mark, answer, asked)
     await db.commit()

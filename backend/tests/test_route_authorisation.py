@@ -42,6 +42,7 @@ GUARD_FUNCS = {
     access.require_writer,
     access.require_decider,
     access.require_smmm,
+    access.require_decider_or_smmm,
     access.require_platform_operator,
 }
 

@@ -2663,6 +2663,11 @@ export type MessageTree = {
     fileTitle: string;
     fileBodyNoSignal: string;
     fileBodyBalance: string;
+    fileBodyConvention: string;
+    fileBodyInconclusive: string;
+    fileConventionQuestion: string;
+    fileConventionMapping: string;
+    fileRememberDenied: string;
     fileRows: string;
     fileColumns: string;
     fileSamples: string;
@@ -5612,10 +5617,16 @@ export const en: MessageTree = {
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
       direction_file_unknown: "direction unclear",
+      balance_mismatch: "does not reconcile with the balance",
     },
     fileTitle: "Which way do the amounts in this statement go?",
-    fileBodyNoSignal: "The file has no column or sign that says which way an amount moved; the system does not guess. Your one answer applies to every row of the file.",
+    fileBodyNoSignal: "This file has no column or sign that says which way an amount moved; the system cannot tell money in from money out and does not guess. You can correct the rows one by one, or upload a file with a direction or balance column. If the file really holds only one kind, say so below.",
     fileBodyBalance: "The balance column shows the opposite of the direction read from the amount columns. Your one answer applies to every row of the file.",
+    fileBodyConvention: "Which party's books the debit/credit words follow differs from bank to bank, and this file has no balance column to check it against. Your one answer applies to every row of the file.",
+    fileBodyInconclusive: "The balance column confirms only part of the rows; the file could not be read with confidence.",
+    fileConventionQuestion: "In this statement, is \"{label}\" money going OUT of your account?",
+    fileConventionMapping: "Read as: {mapping}",
+    fileRememberDenied: "Remembering this answer for the format needs an owner, admin or the accountant.",
     fileRows: "{count} rows waiting",
     fileColumns: "Detected columns",
     fileSamples: "Sample rows",
@@ -5630,11 +5641,12 @@ export const en: MessageTree = {
       balance: "balance",
     },
     fileOptions: {
-      all_income: "All amounts are money in (income)",
-      all_expense: "All amounts are money out (expense)",
-      as_read: "As the columns say",
+      only_income: "This file holds only money in (income)",
+      only_expense: "This file holds only money out (expense)",
+      as_read: "Yes, as the columns say",
       balance: "As the balance shows",
-      mixed: "Mixed: I will decide the rows one by one",
+      inverted: "No, the opposite",
+      mixed: "I will correct the rows one by one",
     },
     mappingsTitle: "Remembered statement directions",
     mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",

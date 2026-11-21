@@ -191,6 +191,22 @@ async def require_decider(
     return user
 
 
+def may_set_standing_rules(role: str | None) -> bool:
+    """Creating or revoking a remembered statement mapping changes how every later statement of that
+    format is booked: an owner, admin or the accountant."""
+    return role in DECIDER_ROLES or role == UserRole.SMMM.value
+
+
+async def require_decider_or_smmm(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: owner, admin or smmm in the acting organisation, or 403."""
+    role = await acting_role(db, user) if user.org_id else None
+    if role is not None and not may_set_standing_rules(role):
+        raise _refuse("owner, admin veya mali müşavir (smmm) rolü")
+    return user
+
+
 async def require_smmm(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:

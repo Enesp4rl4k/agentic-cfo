@@ -64,14 +64,14 @@ async def test_an_unplaceable_file_is_one_question_and_the_answer_applies_to_eve
     assert await _transactions(client, job_id) == []                       # nothing booked as income
     asked = await _questions(client, headers)
     assert len(asked) == 1 and asked[0]["rows"] == 2 and asked[0]["reason"] == "no_signal"
-    assert asked[0]["options"] == ["all_expense", "all_income", "mixed"]
+    assert asked[0]["options"] == ["mixed", "only_expense", "only_income"]
     assert [c["role"] for c in asked[0]["question"]["columns"]][:3] == ["date", "description", "amount"]
     assert asked[0]["question"]["samples"][0]["amount"] == "1500"
     rows = (await client.get("/api/v1/held-rows", headers=headers)).json()["data"]["rows"]
     assert {r["reason_labels"][0] for r in rows} == {"yön belirsiz"} and all(r["type"] is None for r in rows)
 
     res = await client.post("/api/v1/held-rows/file-direction", headers=headers, json={
-        "job_id": job_id, "file_key": asked[0]["file_key"], "answer": "all_expense",
+        "job_id": job_id, "file_key": asked[0]["file_key"], "answer": "only_expense",
     })
     data = res.json()["data"]
     assert res.status_code == 200 and data["resolved"] == 2 and data["still_waiting"] == 0
@@ -83,44 +83,78 @@ async def test_an_unplaceable_file_is_one_question_and_the_answer_applies_to_eve
     assert len(per_row) == 2 and {d.outcome for d in per_row} == {"corrected_released"}
     assert (per_row[0].before["type"], per_row[0].after["type"]) == (None, "expense")
     file_answer = await _decisions(client, DecisionKind.FILE_DIRECTION_ANSWER)
-    assert len(file_answer) == 1 and file_answer[0].outcome == "all_expense"
-    assert file_answer[0].before["rows"] == 2 and file_answer[0].after["remembered"] is True
+    assert len(file_answer) == 1 and file_answer[0].outcome == "only_expense"
+    assert file_answer[0].before["rows"] == 2 and file_answer[0].after["remembered"] is False
     assert await _questions(client, headers) == []
 
 
-async def test_the_answer_is_remembered_for_the_same_format_and_revocable(env, monkeypatch):
+def _bank(*rows: str, title: str = "AKBANK Hesap No: 1234567", header: str = "Tarih;Açıklama;Borç;Alacak;Para Birimi") -> str:
+    return NL.join([title, header, *rows]) + NL
+
+
+ACCOUNT_1 = _bank("01.03.2026;Kira;1.500,00;;TRY", "02.03.2026;Satış;;4.000,00;TRY")
+ACCOUNT_2 = _bank("09.03.2026;Su;75,00;;TRY", "10.03.2026;Tahsilat;;300,00;TRY")
+
+
+async def test_a_debit_credit_file_is_asked_first_and_the_answer_is_remembered_for_that_account(env, monkeypatch):
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "f2@x.com")
-    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=FIRST, name="a.csv")
-    key = (await _questions(client, headers))[0]["file_key"]
-    await client.post("/api/v1/held-rows/file-direction", headers=headers,
-                      json={"job_id": job_id, "file_key": key, "answer": "all_expense"})
+    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=ACCOUNT_1, name="a.csv")
+    assert await _transactions(client, job_id) == []                       # the first upload books nothing unasked
+    asked = (await _questions(client, headers))[0]
+    assert asked["reason"] == "convention_unverified" and asked["options"] == ["as_read", "inverted", "mixed"]
+    assert asked["question"]["mapping"] == [{"label": "borc", "means": "expense"}, {"label": "alacak", "means": "income"}]
+    assert asked["question"]["samples"][0]["description"] == "Kira"
+    res = await client.post("/api/v1/held-rows/file-direction", headers=headers,
+                            json={"job_id": job_id, "file_key": asked["file_key"], "answer": "inverted"})
+    assert res.json()["data"]["remembered"] and res.json()["data"]["resolved"] == 2
+    assert sorted((t.type, t.amount_kurus) for t in await _transactions(client, job_id)) == [
+        ("expense", 400000), ("income", 150000)]                          # the bank's view: Borç is money in
 
     mappings = (await client.get("/api/v1/held-rows/direction-mappings", headers=headers)).json()["data"]["mappings"]
-    assert len(mappings) == 1 and mappings[0]["answer"] == "all_expense" and "Tutar" in mappings[0]["columns"].title()
+    assert len(mappings) == 1 and mappings[0]["answer"] == "inverted"
 
-    # the next upload of that bank's format is not asked again
-    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=SECOND, name="b.csv")
+    # the same account's next statement is not asked again, and is read the same way
+    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=ACCOUNT_2, name="b.csv")
     assert await _questions(client, headers) == []
-    assert sorted(t.type for t in await _transactions(client, job2)) == ["expense", "expense"]
+    assert sorted((t.type, t.amount_kurus) for t in await _transactions(client, job2)) == [
+        ("expense", 30000), ("income", 7500)]
 
-    # another organisation's identical format is asked: the memory is per organisation
+    # another account of the same bank, and a file that names no account at all, are asked: the memory is
+    # specific, and without an identity it can never be checked
+    job3, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, name="c.csv",
+                            content=_bank("11.03.2026;Gaz;40,00;;TRY", title="AKBANK Hesap No: 7654321"))
+    job4, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, name="d.csv",
+                            content=_bank("12.03.2026;Gaz;40,00;;TRY", title="Hesap hareketleri"))
+    assert {q["job_id"] for q in await _questions(client, headers)} == {job3, job4}
+
+    # another organisation with the identical file is asked: the memory is per organisation
     headers2, org2, _ = await kullanici(client, "f2b@x.com")
-    await _upload(client, tmp_path, monkeypatch, [], org2, content=SECOND, name="c.csv")
+    await _upload(client, tmp_path, monkeypatch, [], org2, content=ACCOUNT_2, name="e.csv")
     assert len(await _questions(client, headers2)) == 1
-    assert (await client.get("/api/v1/held-rows/direction-mappings", headers=headers2)).json()["data"]["mappings"] == []
-    gone = await client.delete(f"/api/v1/held-rows/direction-mappings/{mappings[0]['id']}", headers=headers2)
-    assert gone.status_code == 404                                              # not theirs
+    assert (await client.delete(f"/api/v1/held-rows/direction-mappings/{mappings[0]['id']}", headers=headers2)).status_code == 404
 
-    # revoke: the format is asked again, and the revocation is a decision
+    # revoke: that account is asked again, and the revocation is a decision
     assert (await client.delete(f"/api/v1/held-rows/direction-mappings/{mappings[0]['id']}", headers=headers)).status_code == 200
-    assert (await client.get("/api/v1/held-rows/direction-mappings", headers=headers)).json()["data"]["mappings"] == []
-    await _upload(client, tmp_path, monkeypatch, [], org_id, content=_statement("11.03.2026;Gaz;40,00;TRY"), name="d.csv")
-    assert len(await _questions(client, headers)) == 1
-    outcomes = sorted(d.outcome for d in await _decisions(client, DecisionKind.DIRECTION_MAPPING))
-    assert outcomes == ["remembered", "revoked"]
+    await _upload(client, tmp_path, monkeypatch, [], org_id, name="f.csv",
+                  content=_bank("13.03.2026;Gaz;40,00;;TRY"))
+    assert len(await _questions(client, headers)) == 3
+    assert sorted(d.outcome for d in await _decisions(client, DecisionKind.DIRECTION_MAPPING)) == ["remembered", "revoked"]
     async with client._maker() as db:      # revoked, never deleted: the decision that made it still has its subject
         assert (await db.execute(select(DirectionMapping).where(DirectionMapping.revoked_at.is_not(None)))).scalars().first()
+
+
+async def test_a_no_signal_answer_is_never_remembered(env, monkeypatch):
+    client, tmp_path = env
+    headers, org_id, _ = await kullanici(client, "f2n@x.com")
+    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=FIRST, name="a.csv")
+    key = (await _questions(client, headers))[0]["file_key"]
+    res = await client.post("/api/v1/held-rows/file-direction", headers=headers,
+                            json={"job_id": job_id, "file_key": key, "answer": "only_expense", "remember": True})
+    assert res.json()["data"]["remembered"] is None
+    assert (await client.get("/api/v1/held-rows/direction-mappings", headers=headers)).json()["data"]["mappings"] == []
+    await _upload(client, tmp_path, monkeypatch, [], org_id, content=SECOND, name="b.csv")
+    assert len(await _questions(client, headers)) == 1                      # asked again: most statements are mixed
 
 
 async def test_not_remembering_asks_again_and_mixed_leaves_the_rows_to_be_decided_one_by_one(env, monkeypatch):
@@ -175,7 +209,7 @@ async def test_rows_that_keep_waiting_for_another_reason_record_the_change(env, 
     job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
     key = (await _questions(client, headers))[0]["file_key"]
     res = await client.post("/api/v1/held-rows/file-direction", headers=headers,
-                            json={"job_id": job_id, "file_key": key, "answer": "all_expense", "remember": False})
+                            json={"job_id": job_id, "file_key": key, "answer": "only_expense", "remember": False})
     assert res.json()["data"]["resolved"] == 0 and res.json()["data"]["still_waiting"] == 2
     rows = (await client.get("/api/v1/held-rows", headers=headers)).json()["data"]["rows"]
     assert all(r["type"] == "expense" and r["reasons"] == ["currency_unknown"] for r in rows)
@@ -228,7 +262,7 @@ async def test_confirmation_is_one_transaction(env, monkeypatch):
 
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "t1@x.com")
-    content = NL.join(["Tarih;Açıklama;Tutar", "01.03.2026;Kira;-1.500,00"]) + NL
+    content = NL.join(["Tarih;Açıklama;Tutar", "01.03.2026;Kira;-1.500,00", "02.03.2026;Satış;250,00"]) + NL
     await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
 
     async def boom(*a: Any, **k: Any):
@@ -241,7 +275,7 @@ async def test_confirmation_is_one_transaction(env, monkeypatch):
         org = await db.get(Organization, org_id)
         assert org.base_currency_confirmed_at is None                         # the confirmation did not survive
         pending = (await db.execute(select(HeldTransaction).where(HeldTransaction.status == "pending"))).scalars().all()
-        assert len(pending) == 1 and pending[0].payload.get("currency") is None   # and the row was not half-filled
+        assert len(pending) == 2 and pending[0].payload.get("currency") is None   # and the row was not half-filled
     assert await _decisions(client, DecisionKind.BASE_CURRENCY_CONFIRMATION) == []
 
 
@@ -291,3 +325,75 @@ async def test_another_organisations_ids_and_the_read_guard(env, monkeypatch):
     res = await client.post("/api/v1/held-rows/file-direction", headers=other,
                             json={"job_id": job_id, "file_key": key, "answer": "mixed"})
     assert res.status_code == 404
+
+
+# ── who may set a standing rule, and a memory that no longer fits ────────────
+
+async def test_only_a_decider_or_the_accountant_remembers_or_forgets_a_mapping(env, monkeypatch):
+    client, tmp_path = env
+    cfo, org_id, _ = await kullanici(client, "r1@x.com", role="cfo")
+    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=ACCOUNT_1, name="a.csv")
+    listing = (await client.get("/api/v1/held-rows/file-questions", headers=cfo)).json()["data"]
+    assert listing["can_remember"] is False
+    key = listing["files"][0]["file_key"]
+    res = await client.post("/api/v1/held-rows/file-direction", headers=cfo,
+                            json={"job_id": job_id, "file_key": key, "answer": "as_read", "remember": True})
+    data = res.json()["data"]
+    assert data["resolved"] == 2 and data["remembered"] is None and data["remember_refused"] is True   # answering for the file is fine
+    assert (await client.get("/api/v1/held-rows/direction-mappings", headers=cfo)).json()["data"]["mappings"] == []
+
+    owner_headers, owner_org, _ = await kullanici(client, "r2@x.com", role="owner")
+    job2, _ = await _upload(client, tmp_path, monkeypatch, [], owner_org, content=ACCOUNT_1, name="b.csv")
+    listing = (await client.get("/api/v1/held-rows/file-questions", headers=owner_headers)).json()["data"]
+    assert listing["can_remember"] is True
+    await client.post("/api/v1/held-rows/file-direction", headers=owner_headers, json={
+        "job_id": job2, "file_key": listing["files"][0]["file_key"], "answer": "as_read", "remember": True})
+    mapping = (await client.get("/api/v1/held-rows/direction-mappings", headers=owner_headers)).json()["data"]["mappings"][0]
+
+    # once the same person is only a writer (cfo), the mapping cannot be forgotten; as owner again it can
+    from app.models.organization import OrgMembership
+    from app.models.user import User
+
+    async def become(role: str) -> None:
+        async with client._maker() as db:
+            user = (await db.execute(select(User).where(User.email == "r2@x.com"))).scalar_one()
+            user.role = role
+            for m in (await db.execute(select(OrgMembership).where(OrgMembership.user_id == user.id))).scalars():
+                m.role = role
+            await db.commit()
+        from app.api.auth import _cache_invalidate
+
+        _cache_invalidate(str(user.id))      # the user lookup is cached for a minute
+
+    await become("cfo")
+    assert (await client.delete(f"/api/v1/held-rows/direction-mappings/{mapping['id']}", headers=owner_headers)).status_code == 403
+    await become("smmm")
+    assert (await client.delete(f"/api/v1/held-rows/direction-mappings/{mapping['id']}", headers=owner_headers)).status_code == 200
+
+
+async def test_a_remembered_reading_is_not_applied_when_the_new_files_balance_contradicts_it(env, monkeypatch):
+    from app.models.direction_mapping import DirectionMapping as Mapping
+    from app.parsers.direction import header_signature, statement_identity
+
+    client, tmp_path = env
+    headers, org_id, _ = await kullanici(client, "o1@x.com")
+    job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=ACCOUNT_1, name="a.csv")
+    key = (await _questions(client, headers))[0]["file_key"]
+    await client.post("/api/v1/held-rows/file-direction", headers=headers,
+                      json={"job_id": job_id, "file_key": key, "answer": "as_read"})        # remembered: customer's view
+
+    balance_header = "Tarih;Açıklama;Borç;Alacak;Bakiye;Para Birimi"
+    contradicting = _bank(
+        "01.03.2026;Satış;3.000,00;;13.000,00;TRY", "02.03.2026;Kira;;1.200,00;11.800,00;TRY",
+        "03.03.2026;Satış;2.000,00;;13.800,00;TRY", header=balance_header)
+    # the header words differ from the remembered file's, so this exercises the memory lookup directly too
+    async with client._maker() as db:
+        db.add(Mapping(org_id=org_id, signature=header_signature(
+            ["tarih", "aciklama", "borc", "alacak", "bakiye", "para birimi"], statement_identity("AKBANK Hesap No: 1234567")),
+            reason="convention_unverified", answer="as_read", columns="x"))
+        await db.commit()
+    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=contradicting, name="b.csv")
+    asked = [q for q in await _questions(client, headers) if q["job_id"] == job2]
+    assert len(asked) == 1 and asked[0]["reason"] == "balance_contradicts"           # held and asked again
+    assert await _transactions(client, job2) == []
+    assert [d.outcome for d in await _decisions(client, DecisionKind.DIRECTION_MAPPING) if d.outcome == "overridden"] == ["overridden"]

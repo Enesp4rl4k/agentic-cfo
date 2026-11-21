@@ -23,7 +23,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import require_decider, require_member, require_writer
+from app.api.access import (
+    may_set_standing_rules,
+    require_decider,
+    require_decider_or_smmm,
+    require_member,
+    require_writer,
+)
 from app.api.auth import get_current_user
 from app.core.currencies import is_currency_code
 from app.database import get_db
@@ -31,6 +37,7 @@ from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
 from app.models.user import User
 from app.services import held_direction, held_rows
+from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 
 router = APIRouter()
@@ -83,7 +90,12 @@ async def list_held_rows(
 async def list_file_questions(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
-    return {"data": {"files": await held_direction.list_questions(db, _org(user))}, "error": None}
+    role = await acting_role(db, user)
+    return {"data": {
+        "files": await held_direction.list_questions(db, _org(user)),
+        # Remembering an answer is a standing rule for that statement format: not every writer may.
+        "can_remember": may_set_standing_rules(role),
+    }, "error": None}
 
 
 async def _answer(body: HeldAction, user: User, db: AsyncSession, *, release: bool) -> dict:
@@ -118,15 +130,17 @@ async def reject_held_rows(
 async def answer_file_direction(
     body: FileDirectionAnswer, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
+    remember = body.remember and may_set_standing_rules(await acting_role(db, user))
     try:
         out = await held_direction.answer_file(
             db, _org(user), user.id, body.job_id, body.file_key, body.answer,
-            remember=body.remember, note=body.note,
+            remember=remember, note=body.note,
         )
     except held_rows.UnknownRows as exc:
         raise _not_found() from exc
     except (held_direction.AnswerError, held_rows.CorrectionError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    out["remember_refused"] = bool(body.remember and not remember)
     return {"data": out, "error": None}
 
 
@@ -138,7 +152,7 @@ async def list_direction_mappings(
     return {"data": {"mappings": [held_direction.describe_mapping(m) for m in found]}, "error": None}
 
 
-@router.delete("/held-rows/direction-mappings/{mapping_id}", dependencies=[Depends(require_writer)])
+@router.delete("/held-rows/direction-mappings/{mapping_id}", dependencies=[Depends(require_decider_or_smmm)])
 async def revoke_direction_mapping(
     mapping_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:

@@ -16,10 +16,13 @@ import pytest
 
 from app.parsers.direction import (
     header_signature,
+    is_non_transaction,
     norm_header,
     parse_money,
     resolve_file,
     settle_rows,
+    sign_is_informative,
+    statement_identity,
     value_direction,
 )
 from app.services.held_direction import apply_to_rows
@@ -131,18 +134,22 @@ NO_SIGNAL = _csv(
 )
 
 CASES = [
-    # layout, inflow, outflow, waiting
+    # layout, inflow, outflow, waiting: booked with no question
     ("signed single column", SIGNED_SINGLE, 700000, 155050, 0),
     ("signed single column with balance", SIGNED_SINGLE_BALANCE, 700000, 155050, 0),
-    ("all-positive amounts, B/A column", POSITIVE_WITH_BA, 400000, 65000, 0),
     ("all-positive, Borç/Alacak words, balance agrees", POSITIVE_WITH_BORC_ALACAK_WORDS_AND_BALANCE, 400000, 65000, 0),
-    ("İşlem Tipi column", ISLEM_TIPI, 3000000, 1200000, 0),
-    ("separate Borç/Alacak with blanks", SPLIT_BLANKS, 400000, 175050, 0),
-    ("separate columns with 0,00", SPLIT_ZEROS, 400000, 175050, 0),
+    ("İşlem Tipi column (Ödeme/Tahsilat)", ISLEM_TIPI, 3000000, 1200000, 0),
     ("separate columns with balance, agrees", SPLIT_WITH_BALANCE, 400000, 175050, 0),
     ("English Withdrawal/Deposit", ENGLISH_SPLIT, 400000, 150000, 0),
     ("Ödeme/Tahsilat", PAYMENT_COLLECTION, 400000, 150000, 0),
-    ("all-negative single column", ALL_NEGATIVE, 0, 35050, 0),
+]
+
+# Debit/credit words with no balance to verify them: whose book is "Borç"? Held with ONE question; the totals
+# are what each answer gives: (layout, as the columns say: in, out; inverted: in, out)
+CONVENTION_CASES = [
+    ("all-positive amounts, B/A column", POSITIVE_WITH_BA, (400000, 65000), (65000, 400000)),
+    ("separate Borç/Alacak with blanks", SPLIT_BLANKS, (400000, 175050), (175050, 400000)),
+    ("separate columns with 0,00", SPLIT_ZEROS, (400000, 175050), (175050, 400000)),
 ]
 
 
@@ -151,6 +158,128 @@ def test_layout_totals(name: str, text: str, inflow: int, outflow: int, waiting:
     rows = _read(text)
     assert totals(rows) == (inflow, outflow, waiting), name
     assert all("direction_file" not in r for r in rows)
+
+
+@pytest.mark.parametrize(("name", "text", "as_read", "inverted"), CONVENTION_CASES, ids=[c[0] for c in CONVENTION_CASES])
+def test_a_debit_credit_reading_nothing_can_verify_is_asked_not_booked(name, text, as_read, inverted) -> None:
+    rows = _read(text)
+    assert totals(rows)[:2] == (0, 0) and all(r["type"] is None for r in rows), name   # nothing in a total
+    assert {r["direction_file"]["reason"] for r in rows} == {"convention_unverified"}
+    q = next(r["direction_question"] for r in rows if "direction_question" in r)
+    assert q["mapping"] and {m["means"] for m in q["mapping"]} == {"expense", "income"}
+    assert all(s.get("description") for s in q["samples"])                              # the person sees descriptions
+    assert [r["direction_file"]["identity"] for r in rows] == [False] * len(rows)
+    for answer, expected in (("as_read", as_read), ("inverted", inverted)):
+        copy = [{**r, "direction_file": dict(r["direction_file"])} for r in rows]
+        apply_to_rows(copy, answer)
+        assert totals(copy) == (*expected, 0), (name, answer)
+
+
+def test_the_bank_view_without_a_balance_is_asked_and_the_inverted_answer_books_it_right() -> None:
+    bank_view = _csv(
+        "Tarih;Açıklama;Borç;Alacak",
+        "01.03.2026;Satış;3.000,00;",       # the bank's "Borç": it owes the customer, money came in
+        "02.03.2026;Kira;;1.200,00",
+        "03.03.2026;Satış;2.000,00;",
+    )
+    rows = _read(bank_view)
+    assert totals(rows) == (0, 0, 3)                       # not booked as the customer's view
+    apply_to_rows(rows, "inverted")
+    assert totals(rows) == (500000, 120000, 0)
+
+
+def test_all_negative_without_a_balance_is_a_guess_and_is_held() -> None:
+    rows = _read(ALL_NEGATIVE)
+    assert totals(rows) == (0, 0, 3) and {r["direction_file"]["reason"] for r in rows} == {"no_signal"}
+
+
+def test_a_stray_reversal_does_not_make_every_other_row_income() -> None:
+    rows = _read(_csv("Tarih;Açıklama;Tutar", *[f"{d:02d}.03.2026;Satış {d};100,00" for d in range(1, 10)],
+                      "10.03.2026;İade;-100,00"))
+    assert totals(rows) == (0, 0, 10) and {r["direction_file"]["reason"] for r in rows} == {"no_signal"}
+    assert sign_is_informative([False] * 9 + [True]) is False        # 10%: a reversal, not a direction
+    assert sign_is_informative([False, True, False, True]) is True    # genuinely mixed
+    assert sign_is_informative([True, True, True]) is False and sign_is_informative([False] * 3) is False
+
+
+def test_a_balance_can_make_a_rare_sign_informative() -> None:
+    lines = ["Tarih;Açıklama;Tutar;Bakiye"]
+    balance = 1000
+    for d in range(1, 10):
+        balance += 100
+        lines.append(f"{d:02d}.03.2026;Satış {d};100,00;{balance},00")
+    balance -= 50
+    lines.append(f"10.03.2026;İade;-50,00;{balance},00")
+    rows = _read(_csv(*lines))
+    assert totals(rows) == (90000, 5000, 0)
+
+
+def test_rows_that_do_not_reconcile_with_the_balance_are_held_one_by_one() -> None:
+    lines, balance = ["Tarih;Açıklama;Tutar;Bakiye"], 10000
+    for d in range(1, 13):
+        amount = 100 if d % 2 else -50
+        balance += amount
+        shown = amount
+        if d == 7:
+            shown = 70                      # the statement says 70, the balance moved 100: a row is wrong or missing
+        lines.append(f"{d:02d}.03.2026;Hareket {d};{shown},00;{balance},00")
+    rows = _read(_csv(*lines))
+    held = [r for r in rows if r["type"] is None]
+    assert [r["description"] for r in held] == ["Hareket 7"] and held[0]["balance_mismatch"] is True
+    assert row_reasons({**held[0], "currency": "TRY"}) == ["balance_mismatch"]
+    assert len(rows) - len(held) == 11                 # the rest of a verified statement is booked
+
+
+def test_a_verified_statement_leaves_no_row_held_and_the_first_row_is_not_asked() -> None:
+    for text in (SIGNED_SINGLE_BALANCE, SPLIT_WITH_BALANCE, POSITIVE_WITH_BORC_ALACAK_WORDS_AND_BALANCE):
+        assert [r for r in _read(text) if r["type"] is None] == []
+
+
+def test_a_balance_that_reconciles_only_part_of_the_rows_holds_the_file_with_the_rate() -> None:
+    rows = _read(_csv(
+        "Tarih;Açıklama;Tutar;Bakiye",
+        "01.03.2026;Satış;1.000,00;11.000,00",
+        "02.03.2026;Kira;-400,00;10.600,00",
+        "03.03.2026;Bir;-250,00;5.000,00",
+        "04.03.2026;İki;500,00;1.000,00",
+    ))
+    assert {r["direction_file"]["reason"] for r in rows} == {"balance_inconclusive"}
+    q = next(r["direction_question"] for r in rows if "direction_question" in r)
+    assert "%33" in q["note"]
+
+
+def test_carried_balance_and_total_lines_are_skipped_and_anchor_the_chain() -> None:
+    rows = _read(_csv(
+        "Tarih;Açıklama;Tutar;Bakiye",
+        "01.03.2026;Devreden Bakiye;;10.000,00",
+        "02.03.2026;Kira;400,00;9.600,00",
+        "03.03.2026;Satış;1.000,00;10.600,00",
+        "04.03.2026;Elektrik;250,00;10.350,00",
+        "05.03.2026;Toplam;;10.350,00",
+    ))
+    assert [r["description"] for r in rows] == ["Kira", "Satış", "Elektrik"]       # no row held for a total line
+    assert [r["type"] for r in rows] == ["expense", "income", "expense"]            # the opening balance read the first row
+    assert is_non_transaction("Devreden Bakiye") and is_non_transaction("Genel Toplam") and not is_non_transaction("Toplu ödeme")
+
+
+def test_an_amount_column_beside_debit_credit_columns_must_agree() -> None:
+    rows = _read(_csv(
+        "Tarih;Açıklama;Tutar;Ödeme;Tahsilat",
+        "01.03.2026;Kira;1.500,00;1.500,00;",
+        "02.03.2026;Satış;4.000,00;;4.000,00",
+        "03.03.2026;Tutmayan;999,00;1.500,00;",       # the two sources disagree: held
+        "04.03.2026;Ters;-300,00;;300,00",            # a negative "Tutar" on a credit: disagree
+    ))
+    assert [r["type"] for r in rows] == ["expense", "income", None, None]
+
+
+def test_the_identity_of_a_statement_is_in_its_signature() -> None:
+    assert statement_identity("Akbank A.Ş. Hesap No: 1234567 IBAN TR33 0006 1005 1978 6457 8413 26").startswith("iban:TR33")
+    assert statement_identity("Hesap No: 1234-567").startswith("acct:1234567")
+    assert statement_identity("AKBANK T.A.Ş. HESAP HAREKETLERİ") == "bank:akbank"
+    assert statement_identity("Tarih Tutar") == ""
+    h = ["Tarih", "Tutar"]
+    assert header_signature(h, "iban:A") != header_signature(h, "iban:B") != header_signature(h)
 
 
 def test_an_all_positive_column_with_no_other_signal_is_never_income() -> None:
@@ -217,7 +346,7 @@ def test_balance_alone_can_read_a_statement_that_says_nothing_else() -> None:
 
 def test_both_columns_filled_holds_that_row_only() -> None:
     rows = _read(_csv(
-        "Tarih;Açıklama;Borç;Alacak",
+        "Tarih;Açıklama;Ödeme;Tahsilat",
         "01.03.2026;Kira;100,00;",
         "02.03.2026;Karışık;50,00;70,00",
         "03.03.2026;Satış;;300,00",
@@ -228,10 +357,10 @@ def test_both_columns_filled_holds_that_row_only() -> None:
 
 def test_an_unknown_direction_value_holds_that_row() -> None:
     rows = _read(_csv(
-        "Tarih;Açıklama;Tutar;B/A",
-        "01.03.2026;Kira;100,00;B",
+        "Tarih;Açıklama;Tutar;İşlem Tipi",
+        "01.03.2026;Kira;100,00;Çıkış",
         "02.03.2026;Garip;50,00;X",
-        "03.03.2026;Satış;300,00;A",
+        "03.03.2026;Satış;300,00;Giriş",
     ))
     assert [r["type"] for r in rows] == ["expense", None, "income"]
 

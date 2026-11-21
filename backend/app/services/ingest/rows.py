@@ -16,9 +16,11 @@ from app.parsers.direction import (
     AMOUNT_COLUMNS,
     FileDirection,
     RowDirection,
+    is_non_transaction,
     norm_header,
     resolve_file,
     signed_money,
+    statement_identity,
 )
 from app.services.ingest.categories import (
     INCOME_CATEGORIES,
@@ -244,6 +246,8 @@ def _csv_satiri(
         raise ValueError("a row without a known account needs its settled direction")
     tx["type"] = yon.type
     tx["amount_cents"] = yon.amount_cents
+    if yon.mismatch:
+        tx["balance_mismatch"] = True      # its balance step does not reconcile: held on its own
     if yon.note:
         tx["raw_text"] += f"\n[yön] {yon.note}"
     if yon.type is None:
@@ -265,11 +269,14 @@ def _dosya_isareti(settled: FileDirection, yon: RowDirection | None, raw_text: s
     return {
         "key": hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16],
         "signature": settled.hold["signature"], "reason": settled.hold["reason"],
+        "identity": settled.hold.get("identity", False),
         "read": yon.read, "balance": yon.balance,
     }
 
 
-def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict[str, Any]] | None:
+def _try_parse_csv(
+    raw_text: str, atlanan: list[str] | None = None, identity: str = "",
+) -> list[dict[str, Any]] | None:
     """Attempt deterministic CSV parsing if the text is structured CSV.
 
     A row naming a transfer or closing account (7x1, 690/692) is not read — it
@@ -301,11 +308,20 @@ def _try_parse_csv(raw_text: str, atlanan: list[str] | None = None) -> list[dict
             for row in reader if row and any(row.values())
         ]
         uncoded = [i for i, r in enumerate(rows) if not _kodlu_mu(r)]
-        settled = resolve_file(headers, [rows[i] for i in uncoded])
+        # A carried balance or a total line is not a movement: not booked, not held, but its balance anchors
+        # the check of the rows around it.
+        desc = ("description", "aciklama", "detay")
+        notmoves = {i for i in uncoded if is_non_transaction(_ilk(rows[i], *desc))}
+        settled = resolve_file(
+            headers, [rows[i] for i in uncoded], frozenset(k for k, i in enumerate(uncoded) if i in notmoves),
+            identity or statement_identity(raw_text.split(chr(10), 1)[0]),
+        )
         yonler = dict(zip(uncoded, settled.rows, strict=True))
         transactions: list[dict[str, Any]] = []
         asked = False
         for i, r in enumerate(rows):
+            if i in notmoves:
+                continue
             tx = _csv_satiri(r, atlanan, yonler.get(i))
             if tx is None:
                 continue
@@ -333,4 +349,6 @@ def _tablo_ekstresi(file_path: str, atlanan: list[str] | None = None) -> list[di
         return None
     if tablo is None or not tablo.satirlar:
         return None
-    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan)
+    from app.parsers.direction import statement_identity as _identity
+
+    return _try_parse_csv(standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan, _identity(tablo.ust_metin))
