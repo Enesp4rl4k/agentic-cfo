@@ -46,8 +46,9 @@ def keep_base_currency(state: CFOState, patch: dict[str, Any]) -> None:
     else:
         eb = effective_base(state.get("base_currency"), count_currencies(txs))
         base, base_state = eb.run_currency or DEFAULT_BASE, eb.state
-        kept, _ = split_by_currency(txs, base)
+        kept, other = split_by_currency(txs, base)
         foreign = foreign_summaries(txs, txs, base)
+        patch["foreign_transactions"] = [row for rows in other.values() for row in rows]
     patch["base_currency"] = base
     patch["base_state"] = base_state
     patch["transactions"] = kept

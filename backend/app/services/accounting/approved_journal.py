@@ -160,7 +160,7 @@ async def yukle(db: Any, job_id: str) -> tuple[dict[str, Any], ApprovedJournal]:
         .scalars()
         .all()
     )
-    from app.agents.accounting.currency_runs import entries_of
+    from app.services.accounting.currency_runs import entries_of
 
     applied = uygula(journal.get("yevmiye_kayitlari") or [], onaylar)
     # Mizan, e-Defter and the reconciliation are single-currency: the primary one, with the rest counted.

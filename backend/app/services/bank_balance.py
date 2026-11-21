@@ -11,6 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.analysis_job import AnalysisJob, JobStatus
+
 
 def _signed(tx: dict[str, Any]) -> int:
     amount = int(tx.get("amount_cents") or 0)
@@ -36,3 +41,21 @@ def closing_balance(transactions: list[dict[str, Any]]) -> dict[str, Any] | None
             last = ordered[-1]
             return {"date": str(last["transaction_date"])[:10], "balance_cents": int(last["balance_cents"])}
     return None
+
+
+async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
+    """The latest closing balance a completed statement proved, if any did."""
+    jobs = (
+        await db.execute(
+            select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.result_metadata).where(
+                AnalysisJob.org_id == org_id,
+                AnalysisJob.status == JobStatus.COMPLETED,
+            )
+        )
+    ).all()
+    found = [
+        {**m["closing_balance"], "job_id": job_id, "filename": filename}
+        for job_id, filename, m in jobs
+        if m and m.get("closing_balance")
+    ]
+    return max(found, key=lambda c: c["date"], default=None)

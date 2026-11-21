@@ -130,7 +130,8 @@ async def muhasebe_analiz(
     # Rows in another currency are NOT dropped from what the accountant sees: their entries are tagged
     # `para_birimi` and listed with their own totals; only the statutory outputs (mizan, e-Defter) are
     # restricted to the primary currency, with the left-out count said (`approved_journal.yukle`).
-    from app.agents.accounting.currency_runs import groups_by_currency, merge_runs
+    from app.agents.accounting.currency_merge import merge_runs
+    from app.services.accounting.currency_runs import groups_by_currency
     from app.services.ledger import base_currency_of
 
     journal_currency = await base_currency_of(db, str(job.org_id)) if job.org_id else "TRY"

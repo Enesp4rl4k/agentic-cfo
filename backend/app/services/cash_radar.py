@@ -29,15 +29,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.currency_totals import (
-    AMBIGUOUS,
     DEFAULT_BASE,
-    SINGLE_UNCONFIRMED,
+    currency_notes,
     fmt_money,
     normalise,
 )
-from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
+from app.services.bank_balance import proven_balance
 from app.services.ledger_documents import (
     DOCUMENT,
     POSSIBLE_DUPLICATE,
@@ -203,24 +202,6 @@ class CashRadar:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-
-
-async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
-    """The latest closing balance a completed statement proved, if any did."""
-    jobs = (
-        await db.execute(
-            select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.result_metadata).where(
-                AnalysisJob.org_id == org_id,
-                AnalysisJob.status == JobStatus.COMPLETED,
-            )
-        )
-    ).all()
-    found = [
-        {**m["closing_balance"], "job_id": job_id, "filename": filename}
-        for job_id, filename, m in jobs
-        if m and m.get("closing_balance")
-    ]
-    return max(found, key=lambda c: c["date"], default=None)
 
 
 def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash | None:
@@ -475,17 +456,7 @@ async def compute_cash_radar(
     if waiting:
         # Extracted rows a person has not yet accepted: not in any figure here.
         not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
-    if effective.state == SINGLE_UNCONFIRMED:
-        not_included.append(f"Şirket para birimi henüz onaylanmadı: radar yalnızca {cur} kalemlerini içeriyor")
-    elif effective.state == AMBIGUOUS:
-        not_included.append(
-            f"Şirket para biriminizi seçin: radar, en çok kalemi olan {cur} ile hesaplandı"
-        )
-    for code, v in sorted(foreign_items.items()):
-        sums = ", ".join(
-            f"{_fmt(v[k], code)} {word}" for k, word in (("payable_cents", "ödeme"), ("receivable_cents", "tahsilat")) if v[k]
-        )
-        not_included.append(f"{code} kalemleri ({v['count']}; {sums or 'tutarsız'}): {cur}'ye çevrilmedi, radarda yok")
+    not_included.extend(currency_notes(effective.state, cur, foreign_items))
     held = await _held_documents(db, org_id, anchor, ranges, cur)
     if held is not None:
         not_included.append(_held_line(held, cur))

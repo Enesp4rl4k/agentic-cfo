@@ -16,7 +16,6 @@ Plan v10 §4 (O4) & Plan v11 Faz 3:
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -28,8 +27,8 @@ from app.config import get_settings
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.decision_log import DecisionLog
 from app.services import decisions
+from app.services.briefing_numbers import _date_parts, verify_narrative_numbers
 from app.services.cash_radar import _fmt, compute_cash_radar
-from app.services.rag.grounding_validator import parse_numeric_token
 
 
 class BriefingNeedsAnalysis(Exception):
@@ -246,46 +245,6 @@ def _generate_deterministic_sentences(
             sentence_3 += f" Radara dahil değil: {', '.join(x.lower() for x in not_included)}."
 
     return sentence_1, sentence_2, sentence_3
-
-
-_NUMBER = re.compile(r"\d[\d.,]*\d|\d")
-# Money is written to the lira or to the kuruş; nothing looser counts as the same figure.
-_ROUNDING = 0.5
-
-
-def _date_parts(*days: str | None) -> set[int]:
-    """Year, month and day numbers of the dates the briefing itself states."""
-    parts: set[int] = set()
-    for day in days:
-        if day:
-            parts.update(int(p) for p in re.findall(r"\d+", day))
-    return parts
-
-
-def verify_narrative_numbers(
-    narrative: str,
-    allowed_cents: set[int],
-    *,
-    allowed_plain: set[int] | None = None,
-) -> bool:
-    """Anti-hallucination gate: every number in the narrative must be a known fact.
-
-    A number is a fact when it is one of the verified amounts (to the lira or the
-    kuruş, no looser) or a date part the briefing itself states. Days, counts and
-    percentages count as claims too: nothing here computed them.
-    """
-    allowed_liras = {abs(c) / 100.0 for c in allowed_cents if c is not None}
-    plain = allowed_plain or set()
-    for raw in _NUMBER.findall(narrative or ""):
-        value = parse_numeric_token(raw)
-        if value is None:
-            return False
-        if value.is_integer() and int(value) in plain:
-            continue
-        if any(abs(value - known) <= _ROUNDING for known in allowed_liras):
-            continue
-        return False
-    return True
 
 
 async def assemble_monday_briefing(

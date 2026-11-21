@@ -60,7 +60,7 @@ async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, 
                 data=full_result,
             )
         )
-    from app.agents.accounting.currency_runs import entries_of
+    from app.services.accounting.currency_runs import entries_of
     from app.services.accounting.journal_tables import yaz
 
     # The journal tables feed the statutory books: the primary currency only (the raw journal JSON above

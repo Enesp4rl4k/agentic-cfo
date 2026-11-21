@@ -244,3 +244,20 @@ def fmt_money(cents: int, currency: str | None = None) -> str:
     swapped = f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
     code = normalise(currency) or DEFAULT_BASE
     return f"{sign}₺{swapped}" if code == "TRY" else f"{sign}{swapped} {code}"
+
+
+def currency_notes(state: str, currency: str, foreign_items: Mapping[str, Mapping[str, int]]) -> list[str]:
+    """The radar's `not_included` lines about currency: an unconfirmed company currency, and each other
+    currency's open items with their own totals (never converted)."""
+    lines: list[str] = []
+    if state == SINGLE_UNCONFIRMED:
+        lines.append(f"Şirket para birimi henüz onaylanmadı: radar yalnızca {currency} kalemlerini içeriyor")
+    elif state == AMBIGUOUS:
+        lines.append(f"Şirket para biriminizi seçin: radar, en çok kalemi olan {currency} ile hesaplandı")
+    for code, v in sorted(foreign_items.items()):
+        sums = ", ".join(
+            f"{fmt_money(v[k], code)} {word}"
+            for k, word in (("payable_cents", "ödeme"), ("receivable_cents", "tahsilat")) if v[k]
+        )
+        lines.append(f"{code} kalemleri ({v['count']}; {sums or 'tutarsız'}): {currency}'ye çevrilmedi, radarda yok")
+    return lines

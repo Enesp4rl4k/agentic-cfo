@@ -12,12 +12,7 @@ from typing import Any
 
 import pytest
 
-from app.agents.accounting.currency_runs import (
-    balance_by_currency,
-    entries_of,
-    groups_by_currency,
-    merge_runs,
-)
+from app.agents.accounting.currency_merge import merge_runs
 from app.agents.accounting.orchestrator import get_muhasebe_agent
 from app.agents.currency_split import keep_base_currency
 from app.agents.report_agent import _currency_scope
@@ -32,6 +27,11 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item import OpenItem
 from app.models.organization import Organization
 from app.models.transaction import Transaction
+from app.services.accounting.currency_runs import (
+    balance_by_currency,
+    entries_of,
+    groups_by_currency,
+)
 from app.services.cash_radar import compute_cash_radar
 from app.services.company_view import ledger_view
 from app.services.ledger import append_job, effective_base_of
@@ -230,6 +230,8 @@ def test_a_file_fed_run_decides_with_the_same_rule():
     confirmed: dict[str, Any] = {"transactions": _rows(("TRY", 5), ("USD", 6))}
     keep_base_currency({"ledger_view": None, "base_currency": "TRY"}, confirmed)  # type: ignore[typeddict-item]
     assert (confirmed["base_state"], len(confirmed["transactions"])) == ("confirmed", 1)
+    # the cut-down rows are still carried, to be stored with the job: the list and the journal lose nothing
+    assert [t["currency"] for t in confirmed["foreign_transactions"]] == ["USD"]
 
 
 def test_the_dashboard_says_how_many_rows_were_left_out_and_why():

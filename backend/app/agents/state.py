@@ -125,6 +125,8 @@ class CFOState(TypedDict, total=False):
     # confirmed | single_unconfirmed | ambiguous | no_data: how `base_currency` was decided.
     base_state: str | None
     foreign_totals: list[dict[str, Any]] | None
+    # The rows `transactions` was cut down without (other currencies): still stored with the job, never summed.
+    foreign_transactions: list[dict[str, Any]]
     # Extracted rows waiting for a person (unknown/low confidence, unknown currency):
     # not in `transactions`, so no figure in this run includes them.
     held_transactions: list[dict[str, Any]]
