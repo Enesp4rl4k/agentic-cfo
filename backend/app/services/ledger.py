@@ -194,6 +194,11 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
         return counts
 
     existing = await _existing(db, org_id, [rid for rid, _ in usable])
+    # Months the accountant closed: their rows do not change, and money that belongs
+    # to them but arrives now is written into the first open month.
+    from app.services.donem_kilidi import ilk_acik_donem, kilitli_donemler
+
+    kilitli = await kilitli_donemler(db, org_id)
     others = await _others_by_money(
         db, org_id, job_id, [day_of(tx.transaction_date) for _, tx in usable],
     )
@@ -201,6 +206,9 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     for record_id, tx in usable:
         row = existing.get(record_id)
         if row is not None:
+            if month_of(row.transaction_date) in kilitli:
+                counts["already"] += 1  # a closed month is not rewritten
+                continue
             # Same money, newer reading of it (a correction, a better account).
             row.category = tx.category
             row.account_code = tx.account_code or row.account_code
@@ -208,12 +216,20 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             counts["already"] += 1
             continue
         duplicate_of = _repeats(others, tx)
+        tarih, asil_tarih, asil_donem = tx.transaction_date, None, None
+        ay = month_of(tx.transaction_date)
+        if ay in kilitli:
+            hedef = ilk_acik_donem(ay, kilitli)
+            asil_tarih, asil_donem = tx.transaction_date, ay
+            tarih = datetime(int(hedef[:4]), int(hedef[5:7]), 1, tzinfo=UTC)
         written = await _insert_ignoring_races(db, {
             "org_id": org_id,
             "source_type": SOURCE_FINGERPRINT,
             "source_record_id": record_id,
             "source_job_id": job_id,
-            "transaction_date": tx.transaction_date,
+            "transaction_date": tarih,
+            "asil_tarih": asil_tarih,
+            "asil_donem": asil_donem,
             "amount_cents": tx.amount_kurus,
             "currency": tx.currency,
             "direction": tx.type,

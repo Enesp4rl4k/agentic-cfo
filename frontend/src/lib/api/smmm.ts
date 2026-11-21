@@ -81,6 +81,23 @@ export async function finalizeDefensibilityPacket(
   return res.data.data;
 }
 
+// ── Closed months ───────────────────────────────────────────────────────────
+
+export interface KapaliDonem {
+  donem: string;
+  kilitleyen_user_id: string | null;
+  kilitlendi?: string | null;
+}
+
+export async function getClosedPeriods(): Promise<KapaliDonem[]> {
+  const res = await apiClient.get<{ data: { donemler: KapaliDonem[] } }>("/smmm/donem-kilitleri");
+  return res.data.data.donemler ?? [];
+}
+
+export async function closePeriod(donem: string): Promise<void> {
+  await apiClient.post("/smmm/donem-kilitleri", { donem });
+}
+
 // ── Every client's upcoming deadlines ──────────────────────────────────────
 
 export interface SmmmTakvimKalemi {

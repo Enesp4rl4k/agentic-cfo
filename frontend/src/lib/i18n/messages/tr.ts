@@ -472,6 +472,18 @@ export const tr: MessageTree = {
     redirecting: "Yönlendiriliyor…",
     managePortal: "Aboneliği yönet",
   },
+  periodLock: {
+    title: "Kapalı dönemler",
+    subtitle: "Kapatılan ayın defteri değişmez. O aya ait olup sonradan gelen bir kayıt, ilk açık aya düzeltme olarak yazılır ve hangi kapalı aya ait olduğu saklanır.",
+    none: "Henüz kapatılmış bir dönem yok.",
+    closedLabel: "Kapalı",
+    chooseLabel: "Dönemi kapat",
+    choose: "Ay seçin",
+    close: "Kapat",
+    confirm: "{donem} kapatılsın mı? Bundan sonra defteri değişmez; geç gelen kayıtlar ilk açık aya yazılır.",
+    loadError: "Kapalı dönemler yüklenemedi.",
+    closeError: "Dönem kapatılamadı.",
+  },
   smmmCalendar: {
     title: "Yaklaşan son günler",
     subtitle: "Tüm müşterilerin önümüzdeki 45 gündeki yasal son günleri, en yakından. Tutar yalnızca o müşteri bu vergiyi daha önce bankadan ödediyse görünür.",

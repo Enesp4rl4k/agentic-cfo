@@ -86,6 +86,11 @@ class CanonicalTransaction(Base):
     # invoice) or cash (a bank movement). One sale can appear as a document and as
     # cash; they are two views of the money, never duplicates of each other.
     basis: Mapped[str] = mapped_column(String(20), nullable=False, default="cash", server_default="cash")
+    # A row that belongs to a month the accountant closed but arrived afterwards is
+    # written into the first open month (`transaction_date`); its own date and the
+    # closed period it belongs to are kept here (services/donem_kilidi.py).
+    asil_tarih: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    asil_donem: Mapped[str | None] = mapped_column(String(7), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

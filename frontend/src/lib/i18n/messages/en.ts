@@ -465,6 +465,18 @@ export type MessageTree = {
     redirecting: string;
     managePortal: string;
   };
+  periodLock: {
+    title: string;
+    subtitle: string;
+    none: string;
+    closedLabel: string;
+    chooseLabel: string;
+    choose: string;
+    close: string;
+    confirm: string;
+    loadError: string;
+    closeError: string;
+  };
   smmmCalendar: {
     title: string;
     subtitle: string;
@@ -2985,6 +2997,18 @@ export const en: MessageTree = {
     selectPlan: "Select plan",
     redirecting: "Redirecting…",
     managePortal: "Manage subscription",
+  },
+  periodLock: {
+    title: "Closed months",
+    subtitle: "A closed month's ledger does not change. Anything that belongs to it but arrives later is booked in the first open month, marked with the closed month.",
+    none: "No month has been closed yet.",
+    closedLabel: "Closed",
+    chooseLabel: "Close month",
+    choose: "Choose a month",
+    close: "Close",
+    confirm: "Close {donem}? Its ledger will not change after this; late items go to the first open month.",
+    loadError: "Closed months could not be loaded.",
+    closeError: "The month could not be closed.",
   },
   smmmCalendar: {
     title: "Upcoming deadlines",

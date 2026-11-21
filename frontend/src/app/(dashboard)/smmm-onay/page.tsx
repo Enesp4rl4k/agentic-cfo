@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
 import { OgrenilmisKurallar } from "@/components/smmm/OgrenilmisKurallar";
+import { DonemKilitleri } from "@/components/smmm/DonemKilitleri";
 import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 
@@ -579,6 +580,8 @@ export default function SMMMonayPage() {
           ))}
         </div>
       )}
+
+      <DonemKilitleri />
 
       <OgrenilmisKurallar />
     </main>
