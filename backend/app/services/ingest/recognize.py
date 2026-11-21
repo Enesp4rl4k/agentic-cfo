@@ -278,21 +278,11 @@ def standart_csv(tablo: Tablo, tur: str) -> tuple[str, dict[str, str]]:
         elif h:
             cikis.append((i, h, None, 1))
 
-    signed_amount = tur == S.BANKA_EKSTRESI and "tutar" not in kullanilan and (
-        "borç" in kullanilan or "alacak" in kullanilan)
-
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
-    w.writerow([ad for _, ad, _, _ in cikis] + (["tutar"] if signed_amount else []))
+    w.writerow([ad for _, ad, _, _ in cikis])
     for row in tablo.satirlar:
         vals = [(_deger(a, row[i], k) if a else ("" if bos(row[i]) else str(row[i]).strip()))
                 for i, _, a, k in cikis]
-        if signed_amount:
-            # Debit is money leaving the account, credit money arriving; one
-            # signed amount is what the statement parser reads.
-            by = {ad: row[i] for i, ad, _, _ in cikis}
-            borc, alacak = sayi(by.get("borç")), sayi(by.get("alacak"))
-            tutar = -abs(borc) if borc else (abs(alacak) if alacak else None)
-            vals.append("" if tutar is None else (int(tutar) if tutar.is_integer() else round(tutar, 2)))
         w.writerow(vals)
     return out.getvalue(), eslesme

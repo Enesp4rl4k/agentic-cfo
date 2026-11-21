@@ -70,6 +70,7 @@ class IsBankParser(BankParser):
                 description=description,
                 amount_cents=amount,
                 tx_type=tx_type,
+                balance_cents=self.parse_turkish_amount(m.group(5)),
                 raw_row=m.group(0),
             ))
         return transactions

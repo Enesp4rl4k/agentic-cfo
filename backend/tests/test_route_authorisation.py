@@ -96,6 +96,26 @@ def test_every_state_changing_route_declares_who_may_use_it() -> None:
     )
 
 
+# Reads of one organisation's own queue: any member may read (a viewer too), nobody without an
+# organisation, and the rows are selected by that organisation only (tested over HTTP in
+# test_statement_direction_flow). Classified here so a new read route in the family cannot go unguarded.
+MEMBER_READ_ROUTES = [
+    ("GET", "/api/v1/held-rows"),
+    ("GET", "/api/v1/held-rows/file-questions"),
+    ("GET", "/api/v1/held-rows/direction-mappings"),
+    ("GET", "/api/v1/org/base-currency"),
+]
+
+
+def test_member_read_routes_are_guarded_by_require_member() -> None:
+    by_key = dict(ROUTES)
+    for key in MEMBER_READ_ROUTES:
+        assert key in by_key, f"{key} no longer exists: update MEMBER_READ_ROUTES"
+        assert access.require_member in _calls(by_key[key]), f"{key} reads an organisation's queue without require_member"
+    held = [k for k in by_key if k[0] == "GET" and k[1].startswith("/api/v1/held-rows")]
+    assert sorted(held) == sorted(k for k in MEMBER_READ_ROUTES if "held-rows" in k[1]), "an unclassified held-rows read route"
+
+
 def test_the_allow_lists_name_routes_that_exist_and_do_not_overlap() -> None:
     keys = {k for k, _ in _changing()}
     guarded = {k for k, r in _changing() if _guarded(r)}

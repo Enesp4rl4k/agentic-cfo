@@ -9,12 +9,18 @@ import { Input } from "@/components/ui/input";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { DirectionMappings } from "@/components/held-rows/DirectionMappings";
+import { FileDirectionCard } from "@/components/held-rows/FileDirectionCard";
 import {
+  answerFileDirection,
   confirmBaseCurrency,
   getBaseCurrency,
+  listDirectionMappings,
+  listFileQuestions,
   listHeldRows,
   rejectHeldRows,
   releaseHeldRows,
+  revokeDirectionMapping,
   type HeldAction,
   type HeldCorrection,
   type HeldRow,
@@ -50,6 +56,8 @@ export default function BekleyenKayitlarPage() {
 
   const rows = useQuery({ queryKey: [...HELD_KEY, jobId ?? "all"], queryFn: () => listHeldRows(jobId) });
   const base = useQuery({ queryKey: ["base-currency"], queryFn: getBaseCurrency });
+  const files = useQuery({ queryKey: [...HELD_KEY, "files"], queryFn: listFileQuestions });
+  const mappings = useQuery({ queryKey: [...HELD_KEY, "mappings"], queryFn: listDirectionMappings });
 
   const refreshed = () => {
     setFailed(false);
@@ -65,13 +73,25 @@ export default function BekleyenKayitlarPage() {
     onSuccess: refreshed,
     onError: () => setFailed(true),
   });
+  const fileAnswer = useMutation({
+    mutationFn: (v: Parameters<typeof answerFileDirection>[0]) => answerFileDirection(v),
+    onSuccess: refreshed,
+    onError: () => setFailed(true),
+  });
+  const forget = useMutation({
+    mutationFn: (id: string) => revokeDirectionMapping(id),
+    onSuccess: refreshed,
+    onError: () => setFailed(true),
+  });
   const confirm = useMutation({
     mutationFn: () => confirmBaseCurrency(currency.trim().toUpperCase()),
     onSuccess: refreshed,
     onError: () => setFailed(true),
   });
 
-  const list = rows.data ?? [];
+  // Rows of a file waiting on its one question are answered through that question, not one by one.
+  const list = (rows.data ?? []).filter((r) => !r.direction_file);
+  const fileList = files.data ?? [];
   const waitingForCurrency = list.some((r) => r.reasons.includes("currency_unknown"));
   const reasonText = (code: string) => (copy.reasons as Record<string, string>)[code] ?? code;
   const sameDocument = (row: HeldRow) =>
@@ -103,9 +123,22 @@ export default function BekleyenKayitlarPage() {
         </Card>
       )}
 
-      {!rows.isLoading && !rows.isError && list.length === 0 && (
+      {fileList.map((file) => (
+        <FileDirectionCard
+          key={`${file.job_id}-${file.file_key}`}
+          file={file}
+          pending={fileAnswer.isPending}
+          onAnswer={(answer, remember) =>
+            fileAnswer.mutate({ job_id: file.job_id, file_key: file.file_key, answer, remember })
+          }
+        />
+      ))}
+
+      {!rows.isLoading && !rows.isError && list.length === 0 && fileList.length === 0 && (
         <p className="text-sm text-muted-foreground">{copy.empty}</p>
       )}
+
+      <DirectionMappings mappings={mappings.data ?? []} pending={forget.isPending} onRevoke={(id) => forget.mutate(id)} />
 
       <ul className="space-y-3">
         {list.map((row) => {
@@ -123,6 +156,7 @@ export default function BekleyenKayitlarPage() {
                   </div>
                   <div className="text-right text-sm tabular-nums">
                     {row.amount_cents ? `${fmt(row.amount_cents / 100)} ${row.currency ?? copy.unknownCurrency}` : copy.unknownAmount}
+                    {row.currency_assumed && <span className="ml-1 text-xs text-muted-foreground">({copy.assumedCurrency})</span>}
                     <p className="text-xs text-muted-foreground">
                       {row.transaction_date?.slice(0, 10) ?? copy.unknownDate} ·{" "}
                       {row.type ? (row.type === "income" ? copy.income : copy.expense) : copy.unknownDirection}

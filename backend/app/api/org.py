@@ -294,8 +294,14 @@ async def update_org(
         org.logo_url = body.logo_url
     if body.country_code is not None:
         org.country_code = body.country_code.upper()
-    if body.base_currency is not None:
-        org.base_currency = body.base_currency.upper()
+    if body.base_currency is not None and body.base_currency.upper() != (org.base_currency or "").upper():
+        # The company currency decides how every currency-less document is read, so changing it is a
+        # decision: POST /org/base-currency (owner or admin, recorded with before and after). The
+        # same value as stored is ignored, so a form that always sends it still saves.
+        raise HTTPException(
+            status_code=422,
+            detail="base_currency yalnızca POST /org/base-currency ile değiştirilir (onay kaydı tutulur).",
+        )
     if body.locale is not None:
         org.locale = body.locale
     if body.regional_packs is not None:

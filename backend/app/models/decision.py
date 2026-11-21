@@ -41,6 +41,10 @@ class DecisionKind(StrEnum):
     # An owner/admin confirms the company's currency: the one fact that lets a
     # currency-less document be read in it.
     BASE_CURRENCY_CONFIRMATION = "base_currency_confirmation"
+    # One answer for a whole statement file whose amounts' direction could not be placed, and the
+    # standing mapping it may leave (or its revocation).
+    FILE_DIRECTION_ANSWER = "file_direction_answer"
+    DIRECTION_MAPPING = "direction_mapping"
     PLAN_CHANGE = "plan_change"
     BRIEFING_RELEASE = "briefing_release"
     MONTH_CLOSE = "month_close"

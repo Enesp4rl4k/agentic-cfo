@@ -206,7 +206,7 @@ class ParasutParser(BankParser):
                 description=description or raw_type or f"Paraşüt {date.strftime('%d.%m.%Y')}",
                 amount_cents=abs(amount_cents),
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 vendor=vendor,
                 reference=reference or None,
                 raw_row=",".join(row),
@@ -261,7 +261,7 @@ class ParasutParser(BankParser):
                 description=description or f"Paraşüt Fatura {date.strftime('%d.%m.%Y')}",
                 amount_cents=abs(amount_cents),
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 vendor=description[:50] if description else None,
                 raw_row=",".join(row),
             ))
@@ -315,7 +315,7 @@ class ParasutParser(BankParser):
                 description=description or f"Paraşüt Banka {date.strftime('%d.%m.%Y')}",
                 amount_cents=abs(amount_cents),
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 raw_row=",".join(row),
             ))
         return transactions

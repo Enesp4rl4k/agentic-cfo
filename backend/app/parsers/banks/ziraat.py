@@ -64,6 +64,7 @@ class ZiraatParser(BankParser):
             transactions.append(ParsedTransaction(
                 date=date, description=description,
                 amount_cents=amount, tx_type=tx_type, raw_row=m.group(0),
+                balance_cents=self.parse_turkish_amount(m.group(5)),
             ))
 
         if transactions:
@@ -74,7 +75,9 @@ class ZiraatParser(BankParser):
             r"(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+([+-]?[\d.,]+)\s+([\d.,]+)\s*$",
             re.MULTILINE,
         )
-        for m in one_col.finditer(text):
+        found = list(one_col.finditer(text))
+        signed = any(m.group(3).startswith("-") for m in found)   # all-positive says nothing
+        for m in found:
             date = self.parse_turkish_date(m.group(1))
             if not date:
                 continue
@@ -87,7 +90,8 @@ class ZiraatParser(BankParser):
             transactions.append(ParsedTransaction(
                 date=date, description=description,
                 amount_cents=amount,
-                tx_type="expense" if negative else "income",
+                tx_type=("expense" if negative else "income") if signed else "",
+                balance_cents=self.parse_turkish_amount(m.group(4)),
                 raw_row=m.group(0),
             ))
 

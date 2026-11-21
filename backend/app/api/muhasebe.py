@@ -137,6 +137,8 @@ async def muhasebe_analiz(
             # already holds a placeholder. Without this flag the engine sees a
             # perfectly ordinary date and books it into the wrong period.
             "date_is_estimated": bool(tx.date_is_estimated),
+            # The document did not state the currency: the organisation's confirmed one was assumed.
+            "currency_assumed": bool(tx.currency_assumed),
             # What the source document stated, so the journal can split it
             # instead of telling the reviewer the source said nothing.
             "kdv_kurus": tx.kdv_kurus,

@@ -69,24 +69,24 @@ class AkbankParser(BankParser):
             debit_raw = m.group(3)
             credit_raw = m.group(4)
 
-            if credit_raw:
-                amount = self.parse_turkish_amount(credit_raw)
-                tx_type = "income"
-            elif debit_raw:
-                amount = self.parse_turkish_amount(debit_raw)
-                tx_type = "expense"
-            else:
-                continue
-
+            # Which of the two optional columns an amount stood in is not recoverable from
+            # text with the empty cell collapsed ("250,00  5.750,00"). The direction is left
+            # open and read from the running balance (app.parsers.direction.settle_rows),
+            # never assumed to be a debit.
+            raw = debit_raw or credit_raw
+            amount = self.parse_turkish_amount(raw) if raw else None
             if not amount:
                 continue
+            tx_type = ""
 
             transactions.append(ParsedTransaction(
                 date=date,
                 description=description,
                 amount_cents=amount,
                 tx_type=tx_type,
+                balance_cents=self.parse_turkish_amount(m.group(5)),
                 raw_row=m.group(0),
+                confidence_note="borç/alacak sütunu metinden ayırt edilemedi",
             ))
 
         return transactions

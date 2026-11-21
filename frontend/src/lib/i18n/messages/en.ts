@@ -169,6 +169,10 @@ export type MessageTree = {
     basisKnown: string;
     basisEstimated: string;
     basisAssumed: string;
+    awaitingTitle: string;
+    awaitingRows: string;
+    awaitingDocuments: string;
+    awaitingOpen: string;
   };
   takvim: {
     title: string;
@@ -2656,6 +2660,19 @@ export type MessageTree = {
     currencyConfirm: string;
     currencyConfirmed: string;
     reasons: Record<string, string>;
+    fileTitle: string;
+    fileBodyNoSignal: string;
+    fileBodyBalance: string;
+    fileRows: string;
+    fileColumns: string;
+    fileSamples: string;
+    fileRemember: string;
+    fileRoles: Record<string, string>;
+    fileOptions: Record<string, string>;
+    mappingsTitle: string;
+    mappingsBody: string;
+    mappingRevoke: string;
+    assumedCurrency: string;
   };
 };
 
@@ -2828,6 +2845,10 @@ export const en: MessageTree = {
     basisKnown: "documented",
     basisEstimated: "estimated",
     basisAssumed: "assumed",
+    awaitingTitle: "Waiting for your decision",
+    awaitingRows: "Rows to review",
+    awaitingDocuments: "Possible duplicate documents",
+    awaitingOpen: "Decide",
   },
   takvim: {
     title: "Payment calendar",
@@ -5590,6 +5611,34 @@ export const en: MessageTree = {
       amount_unreadable: "amount unreadable",
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
+      direction_file_unknown: "direction unclear",
     },
+    fileTitle: "Which way do the amounts in this statement go?",
+    fileBodyNoSignal: "The file has no column or sign that says which way an amount moved; the system does not guess. Your one answer applies to every row of the file.",
+    fileBodyBalance: "The balance column shows the opposite of the direction read from the amount columns. Your one answer applies to every row of the file.",
+    fileRows: "{count} rows waiting",
+    fileColumns: "Detected columns",
+    fileSamples: "Sample rows",
+    fileRemember: "Remember my answer for this statement format",
+    fileRoles: {
+      date: "date",
+      description: "description",
+      amount: "amount",
+      debit: "debit",
+      credit: "credit",
+      direction: "direction",
+      balance: "balance",
+    },
+    fileOptions: {
+      all_income: "All amounts are money in (income)",
+      all_expense: "All amounts are money out (expense)",
+      as_read: "As the columns say",
+      balance: "As the balance shows",
+      mixed: "Mixed: I will decide the rows one by one",
+    },
+    mappingsTitle: "Remembered statement directions",
+    mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",
+    mappingRevoke: "Forget",
+    assumedCurrency: "assumed",
   },
 };

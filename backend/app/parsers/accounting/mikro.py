@@ -138,7 +138,7 @@ class MikroParser(BankParser):
                 description=description or f"Mikro {date.strftime('%d.%m.%Y')}",
                 amount_cents=amount,
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 vendor=description[:50] if description else None,
                 reference=reference or None,
                 raw_row=delimiter.join(row),

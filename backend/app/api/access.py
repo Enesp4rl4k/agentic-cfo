@@ -133,6 +133,20 @@ async def require_writer(
     return user
 
 
+async def require_member(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency for reads of an organisation's own queue: any member of the acting organisation.
+
+    A viewer may read; a caller with no organisation has nothing to read (400, as the ledger's
+    read routes answer). The rows are then selected by that organisation only, so another
+    organisation's are never visible.
+    """
+    if not user.org_id:
+        raise HTTPException(status_code=400, detail="Bu işlem için bir organizasyon gerekli.")
+    return user
+
+
 async def require_contributor(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:

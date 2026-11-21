@@ -146,6 +146,41 @@ describe("Nakit Radarı", () => {
     expect(screen.getByText("Başka para birimli kalem")).toBeTruthy();
   });
 
+  it("puts the two queues that wait for a person in one block, each with its own link", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      not_included: [
+        "Kira, maaş gibi düzenli ödemeler",
+        "3 kayıt incelemenizi bekliyor",
+        "Karar bekleyen 1 belge (₺1.000,00 ödeme): mükerrer olabilir, siz karar verene kadar radarda yok",
+      ],
+      awaiting_decision: {
+        rows: { count: 3, text: "3 kayıt incelemenizi bekliyor", path: "/bekleyen-kayitlar" },
+        documents: {
+          count: 1,
+          text: "Karar bekleyen 1 belge (₺1.000,00 ödeme): mükerrer olabilir, siz karar verene kadar radarda yok",
+          path: "/onay",
+        },
+      },
+    }));
+    show();
+    expect(await screen.findByText("Kararınızı bekleyenler")).toBeTruthy();
+    expect(screen.getByText("İncelenmesi gereken kayıtlar:")).toBeTruthy();
+    expect(screen.getByText("Mükerrer olabilecek belgeler:")).toBeTruthy();
+    const links = screen.getAllByRole("link", { name: "Karar ver" });
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/bekleyen-kayitlar", "/onay"]);
+    // each sentence is said once: in the block, not again in the plain list
+    expect(screen.getAllByText(/3 kayıt incelemenizi bekliyor/).length).toBe(1);
+    expect(screen.getAllByText(/Karar bekleyen 1 belge/).length).toBe(1);
+    expect(screen.getByText("Kira, maaş gibi düzenli ödemeler")).toBeTruthy();
+  });
+
+  it("shows no block when nothing waits", async () => {
+    getCashRadar.mockResolvedValue(radar({ awaiting_decision: null }));
+    show();
+    await screen.findByText("Radara dahil değil");
+    expect(screen.queryByText("Kararınızı bekleyenler")).toBeNull();
+  });
+
   it("points an empty company at its documents", async () => {
     getCashRadar.mockResolvedValue(radar({
       starting_cash_cents: null, starting_cash_as_of: null,
