@@ -75,6 +75,7 @@ _ROUTERS = [
     ("app.api.email_ingest",            "router", "email"),                      # Email Parser + Ingest
     ("app.api.sso",                     "router", "sso"),                        # SSO / OAuth2 (SEC-1)
     ("app.api.compliance_gdpr",         "router", "compliance-gdpr"),            # KVKK / GDPR (SEC-3)
+    ("app.api.org_erasure",             "router", "org-erasure"),                # KVKK Md.7: whole-organisation erasure (two-step)
     ("app.api.security",                "router", "security"),                   # SOC2 + IP whitelist (SEC-4/5)
     ("app.api.analytics",               "router", "analytics"),                  # AN-1..6: TCMB, Monte Carlo, WC, Cohort
     ("app.api.integrations_extended",   "router", "integrations-ext"),           # INT-2,4,5,6: OB, Ecom, Sheets, Webhook
