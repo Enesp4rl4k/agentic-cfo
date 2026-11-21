@@ -202,7 +202,9 @@ async def create_erasure_request(
     """
     KVKK Madde 7 / GDPR Article 17: Silinme hakkı talebi oluştur.
 
-    Talep alınır → admin inceleyip /execute eder veya reddeder.
+    Talep alınır; bu uç yalnızca başvuru kaydıdır, hiçbir veri silmez.
+    Organizasyonun tüm verisinin silinmesi için bkz. app/api/org_erasure.py
+    (POST /compliance/org-erasure/request → .../{id}/confirm).
     """
     import uuid
     request_id = str(uuid.uuid4())

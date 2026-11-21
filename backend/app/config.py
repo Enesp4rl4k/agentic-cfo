@@ -213,6 +213,10 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     storage_local_path: str = "./uploads"
 
+    # KVKK org erasure: `hard_delete` stays unreachable through the API until the
+    # retention question (plan G19) is decided by the owner/lawyer.
+    org_erasure_hard_delete_enabled: bool = False
+
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"
     llm_temperature: float = 0.0
