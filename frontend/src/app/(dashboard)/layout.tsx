@@ -35,6 +35,7 @@ import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { hiddenNavItems, visibleNavGroups } from "@/lib/nav-focus";
 import { NAV_GROUPS } from "@/lib/nav-items";
 import { useI18n } from "@/hooks/useI18n";
+import { useWaitingCounts } from "@/hooks/useWaitingCounts";
 
 // Flat list for helpers
 const allNavItems = NAV_GROUPS.flatMap((g) => g.items);
@@ -160,6 +161,8 @@ function SidebarContent({
   const { data: jobs } = useJobs();
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
+  // Decisions waiting for this person (held analyses, rows, matches, plan changes): one badge on the approvals entry.
+  const waiting = useWaitingCounts();
   const { hasTrPack, focusMode, sizeProfile } = useOrgSettings();
   const { t, locale } = useI18n();
 
@@ -195,6 +198,14 @@ function SidebarContent({
       >
         <Icon className="h-4 w-4 shrink-0 text-current opacity-90" aria-hidden="true" />
         <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
+        {href === "/onay" && waiting.total > 0 && (
+          <span
+            className="tc-mono rounded-full bg-[color:var(--tc-ember)] px-1.5 py-0.5 text-[10px] font-bold text-white"
+            aria-label={t.heldAnalysis.queues.badge.replace("{n}", String(waiting.total))}
+          >
+            {waiting.total}
+          </span>
+        )}
         {href === "/anomalies" && anomalyCritical > 0 && (
           <span
             className="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-destructive-foreground"

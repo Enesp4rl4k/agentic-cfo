@@ -2658,6 +2658,71 @@ export type MessageTree = {
     currencyConfirmed: string;
     reasons: Record<string, string>;
   };
+  heldAnalysis: {
+    title: string;
+    hint: string;
+    approve: string;
+    reject: string;
+    rejectReason: string;
+    viewResults: string;
+    confirmTitle: string;
+    confirmBody: string;
+    confirmRejectTitle: string;
+    confirmRejectBody: string;
+    confirmApprove: string;
+    confirmReject: string;
+    cancel: string;
+    approved: string;
+    rejected: string;
+    actionFailed: string;
+    balanceProven: string;
+    confirmBalanceNote: string;
+    confirmBalanceNoteRows: string;
+    alreadyDecided: string;
+    reasons: {
+      rowsAll: string;
+      rows: string;
+      confidence: string;
+      weakest: string;
+      weakestNoPct: string;
+      step: string;
+      unspecified: string;
+    };
+    queues: {
+      title: string;
+      none: string;
+      analyses: string;
+      rows: string;
+      duplicates: string;
+      settlements: string;
+      plans: string;
+      agents: string;
+      rowsTitle: string;
+      rowsHint: string;
+      openRows: string;
+      badge: string;
+    };
+    setup: {
+      waitingTitle: string;
+      waitingBody: string;
+      waitingUnknownTitle: string;
+      waitingUnknownBody: string;
+      waitingCta: string;
+      running: string;
+      analysesRunning: string;
+      analysesHeld: string;
+      analysesDone: string;
+    };
+    pnl: {
+      runningTitle: string;
+      runningBody: string;
+      heldTitle: string;
+      heldBody: string;
+      heldCta: string;
+      failedTitle: string;
+      noReason: string;
+    };
+  };
 };
 
 export const en: MessageTree = {
@@ -3031,8 +3096,8 @@ export const en: MessageTree = {
     reject: "Reject",
     ownerOnly: "That did not go through. Only the company owner can make this decision.",
     status: "Awaiting approval",
-    goToQueue: "Go to the approval queue",
-    heldNotice: "The result is ready but not yet in the company view: it awaits the owner's approval in Command Center.",
+    goToQueue: "Go to pending approvals",
+    heldNotice: "The result is ready but not yet in the company view: it awaits the owner's approval on the Pending approvals page.",
   },
   ruleFeedback: {
     badgeRule: "Your rule",
@@ -5044,7 +5109,7 @@ export const en: MessageTree = {
         loading: "Reading the balance…",
         loadError: "Could not read the radar.",
         unknownTitle: "No proven bank balance yet",
-        unknownBody: "The statement has no balance column, or its running balances do not chain. Upload a statement that does; until then the radar shows movements but no cash gap.",
+        unknownBody: "None of the completed analyses holds a bank statement whose running balances chain. Upload a statement with a balance column and the radar starts from its closing balance; until then it shows movements but no cash gap.",
         known: "{amount} as of {date}",
       },
       auto: {
@@ -5592,6 +5657,73 @@ export const en: MessageTree = {
       amount_unreadable: "amount unreadable",
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
+    },
+  },
+  heldAnalysis: {
+    title: "{n} analyses await your approval",
+    hint: "These analyses finished but were not written to the company view: they wait for a person's decision. Until approved they are not used in the route, the radar or the reports.",
+    approve: "Approve and finish",
+    reject: "Reject",
+    rejectReason: "Reason (optional)",
+    viewResults: "Let me look at the results first",
+    confirmTitle: "Approve this analysis?",
+    confirmBody:
+      "Once approved the analysis counts as complete: its results go into the company view and the other analyses start using this data. Who approved it is recorded.",
+    confirmRejectTitle: "Reject this analysis?",
+    confirmRejectBody:
+      "A rejected analysis stays on record but does not enter the company view, the ledger or the radar. You can upload the file again. Who decided is recorded.",
+    confirmApprove: "Yes, approve",
+    confirmReject: "Yes, reject",
+    cancel: "Cancel",
+    approved: "Analysis approved.",
+    rejected: "Analysis rejected.",
+    actionFailed: "The decision was not saved. Make sure you may edit the books, and try again.",
+    balanceProven: "This statement's running balances chain: if you approve it, the cash radar starts from its closing balance.",
+    confirmBalanceNote: "The radar will start from the statement's closing balance. That is the bank's figure for the whole statement, so it also includes any rows still waiting for a decision.",
+    confirmBalanceNoteRows: "The radar will start from the statement's closing balance. That is the bank's figure for the whole statement, so it also includes the {count} rows still waiting for a decision.",
+    alreadyDecided: "This analysis was already decided, probably in another tab or by someone else. The list has been refreshed.",
+    reasons: {
+      rowsAll: "All {count} rows in the file wait for a person's decision. {summary}",
+      rows: "{count} rows wait for a person's decision (not in the totals).",
+      confidence: "Confidence {pct}%; results under {threshold}% are used only with approval.",
+      weakest: "Weakest link: {step} ({pct}%). {detail}",
+      weakestNoPct: "Weakest link: {step}. {detail}",
+      step: "The {step} step did not complete: {detail}",
+      unspecified: "No reason was recorded; you can look at the results and decide.",
+    },
+    queues: {
+      title: "{n} decisions wait for you",
+      none: "Nothing is waiting for your decision right now.",
+      analyses: "Analyses",
+      rows: "Rows to review",
+      duplicates: "Possible duplicates",
+      settlements: "Bank matches",
+      plans: "Payment date proposals",
+      agents: "Role results",
+      rowsTitle: "{n} rows wait for your review",
+      rowsHint: "Rows that could not be read or are uncertain stay out of the totals; you decide each one.",
+      openRows: "Open the rows",
+      badge: "{n} decisions waiting",
+    },
+    setup: {
+      waitingTitle: "Your statement is waiting for your approval",
+      waitingBody: "The statement's running balances chain and nothing is missing from the file. Once you approve it, the radar starts from its closing balance.",
+      waitingUnknownTitle: "An analysis is waiting for your approval",
+      waitingUnknownBody: "Once approved, if it holds a proven bank balance the radar starts from it.",
+      waitingCta: "Open approvals",
+      running: "The analysis is running; the opening balance appears here when it ends.",
+      analysesRunning: "{count} analyses running…",
+      analysesHeld: "{count} analyses await your approval",
+      analysesDone: "{count} analyses complete.",
+    },
+    pnl: {
+      runningTitle: "The analysis is running",
+      runningBody: "This page refreshes by itself when the results are ready.",
+      heldTitle: "This analysis is waiting for your approval",
+      heldBody: "The results are below, but they are not in the company view until you approve.",
+      heldCta: "Open approvals",
+      failedTitle: "This analysis did not complete",
+      noReason: "No reason was recorded.",
     },
   },
 };
