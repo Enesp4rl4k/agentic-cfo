@@ -380,21 +380,30 @@ async def run_cfo_analysis(
             # union of two.
             await purge_job_outputs(db, job_id)
 
-            # Persist transactions. A row that reaches here with no currency is
-            # not given one: it waits with the rows the extraction held.
+            # Persist transactions. A row that reaches here with no currency or
+            # direction is not given one: it waits with the rows the extraction held.
+            from app.services.held_rows import register_held
+
             held_rows: list[dict[str, Any]] = list(result.get("held_transactions") or [])
             persisted_rows: list[dict[str, Any]] = []
             for tx_data in result.get("transactions") or []:
-                if not str(tx_data.get("currency") or "").strip():
-                    held_rows.append({**tx_data, "hold_reasons": ["currency_unknown"]})
+                lacking = [
+                    code for code, missing in (
+                        ("currency_unknown", not str(tx_data.get("currency") or "").strip()),
+                        ("direction_unknown", tx_data.get("type") not in ("income", "expense")),
+                    ) if missing
+                ]
+                if lacking:
+                    held_rows.append({**tx_data, "hold_reasons": lacking})
                     continue
                 persisted_rows.append(tx_data)
+            # One question, asked once: a row a person already released comes back
+            # into this job as they answered it; a rejected or already waiting one
+            # is not asked again.
+            registered = await register_held(db, job_id, org_id_str, held_rows)
+            persisted_rows.extend(registered["released_again"])
+            for tx_data in persisted_rows:
                 db.add(build_transaction(job_id, tx_data))
-
-            from app.models.held_transaction import HeldTransaction
-
-            for held_row in held_rows:
-                db.add(HeldTransaction(job_id=job_id, org_id=org_id_str, payload=held_row))
 
             # A person's single-row corrections survive a rerun (the rows above are new).
             from app.services.ledger_correction import apply_overrides
@@ -449,7 +458,7 @@ async def run_cfo_analysis(
             meta = dict(job.result_metadata or {})
             from app.services.ingest.summary import ingest_summary
 
-            meta["ingest"] = ingest_summary(persisted_rows, held_rows)
+            meta["ingest"] = ingest_summary(persisted_rows, registered)
             if terminal == JobStatus.COMPLETED and job.org_id:
                 # What follows a completed analysis (ledger, company view,
                 # chain) is owed from the moment the job reads completed, so the

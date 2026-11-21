@@ -52,6 +52,13 @@ class Organization(Base):
     country_code: Mapped[str] = mapped_column(String(2), default="US", nullable=False)
     base_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     locale: Mapped[str] = mapped_column(String(16), default="en-US", nullable=False)
+    # `base_currency` above is NOT NULL with a default, so a stored value is not a
+    # choice. These say whether an owner/admin actually confirmed it. Only a
+    # confirmed base currency may stand in for a currency a document did not state.
+    base_currency_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    base_currency_confirmed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # e.g. ["tr"] enables Turkey regional pack (SMMM, GIB, Paraşüt, THP)
     regional_packs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # A pilot company sees only the flow it is piloting (plan v10 §O0): the

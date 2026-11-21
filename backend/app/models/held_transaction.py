@@ -26,13 +26,19 @@ def _utcnow() -> datetime:
 
 class HeldTransaction(Base):
     __tablename__ = "held_transactions"
-    __table_args__ = (Index("ix_held_transactions_org_status", "org_id", "status"),)
+    __table_args__ = (
+        Index("ix_held_transactions_org_status", "org_id", "status"),
+        Index("ix_held_transactions_org_key", "org_id", "row_key"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     job_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("analysis_jobs.id"), nullable=False, index=True
     )
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Stable identity of the row's content (see `app.services.held_rows.row_key`): the
+    # same row seen again — a re-upload, a rerun — is the same question, asked once.
+    row_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     # The row as extracted (the pipeline's transaction dict), `hold_reasons` included.
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default=PENDING)

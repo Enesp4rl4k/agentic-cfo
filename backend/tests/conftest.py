@@ -153,7 +153,10 @@ async def client(tmp_path, monkeypatch):
 # They are about other things; they get TRY. A run WITH an org_id reads the real
 # lookup, so the currency rule itself is tested against it.
 @pytest.fixture(autouse=True)
-def _base_currency_for_orgless_runs(monkeypatch):
+def _base_currency_for_orgless_runs(monkeypatch, request):
+    # The currency-rule tests opt out (`pytestmark = pytest.mark.real_currency`).
+    if request.node.get_closest_marker("real_currency"):
+        return
     import app.services.org_identity as org_identity
 
     real = org_identity.own_base_currency

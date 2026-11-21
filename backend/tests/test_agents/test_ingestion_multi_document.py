@@ -30,7 +30,8 @@ def _ok(n: int, *, conf: float = 0.95, review: bool = False, text: str = "x") ->
     return SkillResult(
         ok=True, confidence=conf, needs_review=review, detail=f"{n} işlem",
         patch={"raw_text": text, "transactions": [
-            {"i": i, "currency": "TRY", "type": "expense", "confidence": 0.95} for i in range(n)
+            {"i": i, "currency": "TRY", "type": "expense", "confidence": 0.95, "transaction_date": "2026-03-15"}
+            for i in range(n)
         ]},
     )
 

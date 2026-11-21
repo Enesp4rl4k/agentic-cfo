@@ -5,20 +5,22 @@ never fills the gap with a default that then looks like a fact.
 
 **Currency.** A row's currency is, in this order: what the row states, what the
 document states (`_detect_currency`), else the organisation's base currency —
-marked `currency_assumed` so it is visible and correctable — else unknown, and an
-unknown currency holds the row.
+but only one an owner/admin CONFIRMED (a stored default is not a choice), and
+marked `currency_assumed` so it stays visible — else unknown, and an unknown
+currency holds the row. A currency the row states is known, whatever it is: a
+foreign-currency line is admitted with its own currency, not held for differing.
 
 **The unit of a hold.** A row whose confidence is unknown (None) or below the
-bar, or whose currency is unknown, waits. Rows that belong to one document (same
+bar, whose currency, direction, amount or date is unknown, waits. Rows that belong to one document (same
 `document_id`) are held or released together: the two sides of one invoice must
 not be split between the books and the review queue. A row with no document is
 its own unit. The rest proceed: one weak row no longer holds the whole upload.
 """
 from __future__ import annotations
 
-from collections import Counter
 from typing import Any
 
+from app.core.dates import parse_transaction_date
 from app.core.row_confidence import needs_review, parse_confidence
 from app.services.ingest.cells import _detect_currency
 
@@ -26,14 +28,15 @@ CONFIDENCE_UNKNOWN = "confidence_unknown"
 CONFIDENCE_LOW = "confidence_low"
 CURRENCY_UNKNOWN = "currency_unknown"
 DIRECTION_UNKNOWN = "direction_unknown"
-CURRENCY_DIFFERS = "currency_differs"
+AMOUNT_UNREADABLE = "amount_unreadable"
+DATE_UNREADABLE = "date_unreadable"
 WITH_DOCUMENT = "document_held_together"
 
 
 def resolve_currency(
     rows: list[dict[str, Any]], raw_text: str, base_currency: str | None
 ) -> None:
-    """Give each row without a currency the document's, else the base's (assumed). In place."""
+    """Give each row without a currency the document's, else the confirmed base's (assumed). In place."""
     stated = _detect_currency(raw_text)
     for row in rows:
         if str(row.get("currency") or "").strip():
@@ -58,6 +61,12 @@ def row_reasons(row: dict[str, Any]) -> list[str]:
         reasons.append(CURRENCY_UNKNOWN)
     if row.get("type") not in ("income", "expense"):
         reasons.append(DIRECTION_UNKNOWN)  # income or expense is never assumed
+    if "amount_cents" in row and row["amount_cents"] is None:
+        reasons.append(AMOUNT_UNREADABLE)
+    # A date nobody could read is not "today": the row waits (and so stays out of
+    # every total) until a person gives it a date.
+    if parse_transaction_date(row.get("transaction_date"))[1]:
+        reasons.append(DATE_UNREADABLE)
     return reasons
 
 
@@ -66,15 +75,6 @@ def split_uncertain(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """(accepted, held). Held rows carry `hold_reasons`; a document is never split."""
     reasons = [row_reasons(r) for r in rows]
-    # One run's totals are one currency. A row in another currency cannot be added
-    # to them without a rate nobody here has chosen, so it waits for a person.
-    counts = Counter(str(r["currency"]).strip().upper() for r in rows if str(r.get("currency") or "").strip())
-    if len(counts) > 1:
-        main = max(counts, key=lambda c: (counts[c], c == "TRY"))
-        for row, why in zip(rows, reasons, strict=True):
-            code = str(row.get("currency") or "").strip().upper()
-            if code and code != main:
-                why.append(CURRENCY_DIFFERS)
     held_documents = {
         r.get("document_id") for r, why in zip(rows, reasons, strict=True)
         if why and r.get("document_id")

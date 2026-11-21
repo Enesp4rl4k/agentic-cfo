@@ -31,9 +31,12 @@ _DATE_COLS = {
 }
 _AMOUNT_COLS = {
     "tutar", "amount", "miktar", "toplam", "total", "fiyat", "price",
-    "gelir/gider", "gelir", "gider", "income", "expense", "debit/credit",
-    "alacak/borç", "alacak", "borç",
+    "gelir/gider", "income", "expense", "debit/credit",
+    "alacak/borç",
 }
+# Separate money-out / money-in columns: the column says the direction, not the sign.
+_DEBIT_COLS = {"borç", "borc", "debit", "gider", "çıkış", "cikis", "para çıkışı", "para cikisi"}
+_CREDIT_COLS = {"alacak", "credit", "gelir", "giriş", "giris", "para girişi", "para girisi"}
 _DESC_COLS = {
     "açıklama", "aciklama", "description", "detay", "detail", "narration",
     "işlem açıklaması", "islem aciklamasi", "transaction", "trans. desc",
@@ -46,6 +49,12 @@ _VENDOR_COLS = {
     "satıcı", "satici", "vendor", "karşı hesap", "karsi hesap",
     "müşteri", "musteri", "gönderen", "gonderen", "alıcı", "alici",
 }
+
+
+def _is_negative(raw: str) -> bool:
+    """Whether an amount cell is written as negative: "-1.250,00", "(1.250,00)", "1.250,00-"."""
+    r = raw.strip()
+    return r.startswith("-") or r.endswith("-") or (r.startswith("(") and r.endswith(")"))
 
 
 def _normalize(s: str) -> str:
@@ -62,6 +71,10 @@ def _detect_column_roles(headers: list[str]) -> dict[str, int]:
         norm = _normalize(h)
         if norm in _DATE_COLS and "date" not in roles:
             roles["date"] = i
+        elif norm in _DEBIT_COLS and "debit" not in roles:
+            roles["debit"] = i
+        elif norm in _CREDIT_COLS and "credit" not in roles:
+            roles["credit"] = i
         elif norm in _AMOUNT_COLS and "amount" not in roles:
             roles["amount"] = i
         elif norm in _DESC_COLS and "description" not in roles:
@@ -104,21 +117,27 @@ def _parse_csv_transactions(text: str) -> list[ParsedTransaction]:
     headers = rows[header_idx]
     roles = _detect_column_roles(headers)
 
-    if "date" not in roles or "amount" not in roles:
+    split_columns = "debit" in roles and "credit" in roles
+    if "date" not in roles or ("amount" not in roles and not split_columns):
         logger.debug("GenericParser CSV: missing date or amount column in %s", headers)
         return []
 
     transactions: list[ParsedTransaction] = []
     parser = GenericParser()
+    body = [r for r in rows[header_idx + 1:] if len(r) > max(roles.values()) and any(c.strip() for c in r)]
+    # A single amount column carries direction only if the file has both signs; a
+    # column of all-positive amounts says nothing about which way the money went.
+    signs = {_is_negative(r[roles["amount"]]) for r in body} if "amount" in roles else set()
+    sign_is_direction = len(signs) == 2
 
-    for row in rows[header_idx + 1:]:
-        if len(row) <= max(roles.values()):
-            continue
-        if not any(c.strip() for c in row):
-            continue  # blank row
-
+    for row in body:
         raw_date = row[roles["date"]].strip()
-        raw_amount = row[roles["amount"]].strip()
+        raw_amount = row[roles["amount"]].strip() if "amount" in roles else ""
+        debit_cents = credit_cents = None
+        if split_columns:
+            debit_cents = parser.parse_turkish_amount(row[roles["debit"]].strip())
+            credit_cents = parser.parse_turkish_amount(row[roles["credit"]].strip())
+            raw_amount = row[roles["credit"]].strip() if credit_cents else row[roles["debit"]].strip()
         description = row[roles.get("description", -1)].strip() if "description" in roles else ""
         raw_type = row[roles.get("type", -1)].strip() if "type" in roles else ""
         vendor = row[roles.get("vendor", -1)].strip() if "vendor" in roles else None
@@ -131,16 +150,24 @@ def _parse_csv_transactions(text: str) -> list[ParsedTransaction]:
         if not amount:
             continue
 
-        # Determine income/expense
-        tx_type = "expense"
+        # Direction is read from the document, never assumed. In order: a type
+        # column, separate debit/credit columns, the sign of a signed column.
+        # When none of them decides it, the row leaves with no direction ("")
+        # and is held for a person (app.services.ingest.hold).
+        tx_type = ""
         if raw_type:
             rt = raw_type.lower()
             if any(w in rt for w in ("gelir", "alacak", "income", "credit", "tahsilat", "giriş")):
                 tx_type = "income"
             elif any(w in rt for w in ("gider", "borç", "expense", "debit", "ödeme", "çıkış")):
                 tx_type = "expense"
-        # If no type column: amount sign may indicate direction
-        # (negative = expense handled by caller via parse_turkish_amount which strips sign)
+        if not tx_type and split_columns:
+            if credit_cents and not debit_cents:
+                tx_type = "income"
+            elif debit_cents and not credit_cents:
+                tx_type = "expense"
+        if not tx_type and sign_is_direction:
+            tx_type = "expense" if _is_negative(raw_amount) else "income"
 
         transactions.append(ParsedTransaction(
             date=date,
@@ -149,6 +176,8 @@ def _parse_csv_transactions(text: str) -> list[ParsedTransaction]:
             tx_type=tx_type,
             vendor=vendor or None,
             raw_row=",".join(row),
+            # A read direction is rule-derived (not certain); an absent one is unknown.
+            confidence=0.95 if tx_type else None,
         ))
 
     return transactions

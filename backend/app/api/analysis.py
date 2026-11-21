@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import owned_job, require_contributor, require_writer
+from app.api.access import require_contributor, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -303,62 +303,6 @@ async def approve_review(
 
         await devami_baslat(job_id)
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
-
-
-class HeldResolution(BaseModel):
-    ids: list[str] | None = None  # None: every row still waiting on this job
-    currency: str | None = None   # for rows whose document stated none
-
-
-@router.get("/analysis/{job_id}/held")
-async def list_held_rows(
-    job_id: str,
-    job: AnalysisJob = Depends(owned_job),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Rows that wait for a person: not in any total until released."""
-    from app.services.held_rows import describe, pending_for_job
-
-    rows = [describe(r) for r in await pending_for_job(db, job.id)]
-    return {"data": {"count": len(rows), "rows": rows}, "error": None}
-
-
-async def _resolve_held(
-    job: AnalysisJob, body: HeldResolution, user: User, db: AsyncSession, *, release: bool
-) -> dict:
-    from app.services.held_rows import resolve
-
-    try:
-        out = await resolve(
-            db, job, ids=body.ids, release=release, user_id=user.id, currency=body.currency
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"data": out, "error": None}
-
-
-@router.post("/analysis/{job_id}/held/release", dependencies=[Depends(require_writer)])
-async def release_held_rows(
-    job_id: str,
-    body: HeldResolution,
-    job: AnalysisJob = Depends(owned_job),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """A person accepts held rows: they join the job and, once complete, the ledger."""
-    return await _resolve_held(job, body, current_user, db, release=True)
-
-
-@router.post("/analysis/{job_id}/held/reject", dependencies=[Depends(require_writer)])
-async def reject_held_rows(
-    job_id: str,
-    body: HeldResolution,
-    job: AnalysisJob = Depends(owned_job),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """A person discards held rows; nothing of them enters the books."""
-    return await _resolve_held(job, body, current_user, db, release=False)
 
 
 @router.get("/analysis/{job_id}/decision-packet")

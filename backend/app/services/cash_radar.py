@@ -416,7 +416,7 @@ async def compute_cash_radar(
     waiting = await pending_count(db, org_id)
     if waiting:
         # Extracted rows a person has not yet accepted: not in any figure here.
-        not_included.append(f"İncelemenizi bekleyen {waiting} kayıt")
+        not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
 
     weeks: list[RadarWeek] = []
     running = balance["balance_cents"] if balance else 0

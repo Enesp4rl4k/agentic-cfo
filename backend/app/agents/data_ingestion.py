@@ -498,7 +498,7 @@ async def _belgeyi_oku(
             tx_type = t.get("type") if t.get("type") in ("income", "expense") else None
 
             transactions.append({
-                "amount_cents": amount_cents or 0,
+                "amount_cents": amount_cents,   # None = unreadable: held, never booked as 0
                 "currency": tx_currency,
                 # Direction is not defaulted: a row the model did not call income
                 # or expense is held (app.services.ingest.hold), not booked as a cost.
@@ -513,7 +513,7 @@ async def _belgeyi_oku(
 
         parseable = sum(
             1 for tx in transactions
-            if tx["amount_cents"] > 0 and tx["transaction_date"]
+            if (tx["amount_cents"] or 0) > 0 and tx["transaction_date"]
         )
         parse_ratio = parseable / len(transactions) if transactions else 0
         # The file's own quality. A weak row is held on its own; a file whose

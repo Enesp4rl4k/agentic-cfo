@@ -97,12 +97,13 @@ async def own_vkn(org_id: str | None) -> str:
 
 
 async def own_base_currency(org_id: str | None) -> str | None:
-    """The organisation's base currency, on its own short session; None when it has none.
+    """The organisation's CONFIRMED base currency, or None.
 
     `Organization.base_currency` is NOT NULL with a server-side default of "USD",
-    so a stored value does not prove anyone chose it. It is used only to *assume*
-    a currency a document did not state, and every row that does so is marked
-    `currency_assumed`.
+    so a stored value is not a choice and is never used. Only a currency an owner
+    or admin confirmed (`base_currency_confirmed_at`) may stand in for one a
+    document did not state; the row is then marked `currency_assumed`. Unconfirmed
+    (or no answer at all): None, and the row waits for a person.
     """
     if not org_id:
         return None
@@ -115,6 +116,8 @@ async def own_base_currency(org_id: str | None) -> str | None:
         # No answer is "no base currency": the rows wait for a person, which is
         # the safe direction. It is said in the log, not swallowed.
         logging.getLogger(__name__).warning("base currency lookup failed for org=%s", org_id, exc_info=True)
+        return None
+    if org is None or getattr(org, "base_currency_confirmed_at", None) is None:
         return None
     code = (getattr(org, "base_currency", None) or "").strip().upper()
     return code if len(code) == 3 else None
