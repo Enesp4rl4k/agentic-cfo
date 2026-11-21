@@ -29,6 +29,7 @@ from app.models.donem_kilidi import DonemKilidi
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
 from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
+from app.models.held_transaction import HeldTransaction
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
 from app.models.journal import JournalEntry, JournalLine
@@ -86,6 +87,7 @@ __all__ = [
     "ERPSyncLog",
     "EmailIngestAddress",
     "EmailIngestMessage",
+    "HeldTransaction",
     "InAppNotification",
     "InstitutionalizationSnapshot",
     "JobStatus",

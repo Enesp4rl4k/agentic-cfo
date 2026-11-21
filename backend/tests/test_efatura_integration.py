@@ -158,10 +158,14 @@ async def test_ubl_invoice_from_a_stranger_is_held_for_review(monkeypatch):
                 dry_run=False, require_review=False, auto_proceed_min_confidence=0.0
             ),
         )
-        txs = result.get("transactions") or []
+        # The row is not discarded, but it is not in the books either: it waits
+        # for a person among the held rows, and the run is held with it.
+        assert not (result.get("transactions") or [])
+        txs = result.get("held_transactions") or []
         assert len(txs) >= 1
         assert txs[0]["confidence"] < 0.80, "yönü belirsiz fatura kapıdan geçmemeli"
         assert "unknown" in txs[0]["raw_text"]
+        assert result.get("awaiting_review") is True
     finally:
         if os.path.exists(xml_path):
             os.unlink(xml_path)

@@ -15,6 +15,7 @@ import json
 import logging
 import re
 
+from app.core.row_confidence import parse_confidence
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
 
 logger = logging.getLogger(__name__)
@@ -278,9 +279,13 @@ class GenericParser(BankParser):
                 date=date,
                 description=str(item.get("description", "")),
                 amount_cents=amount,
-                tx_type=item.get("type", "expense"),
+                # Neither direction nor confidence is assumed for an LLM-read row:
+                # an unstated one is held for review (app.services.ingest.hold).
+                tx_type=str(item.get("type") or ""),
+                currency=str(item.get("currency") or ""),
                 vendor=item.get("vendor"),
                 raw_row=str(item),
+                confidence=parse_confidence(item.get("confidence")),
             ))
 
         return transactions

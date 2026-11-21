@@ -37,7 +37,7 @@ def _boru_hatti(monkeypatch, *, awaiting_review: bool) -> list[dict[str, Any]]:
     async def sahte(**kw: Any) -> dict[str, Any]:
         alinan.append(kw)
         return {
-            "transactions": [{"amount_cents": 1_000_00, "type": "income", "category": "revenue",
+            "transactions": [{"amount_cents": 1_000_00, "currency": "TRY", "type": "income", "category": "revenue",
                               "description": "Tahsilat", "transaction_date": "2026-08-01"}],
             "dashboard_json": {"pnl": {"revenue": 1000}},
             "anomalies": [],

@@ -411,6 +411,12 @@ async def compute_cash_radar(
         not_included.append("Vergi ve SGK yükümlülükleri")
     if not has_cheques:
         not_included.append("Çek ve senetler")
+    from app.services.held_rows import pending_count
+
+    waiting = await pending_count(db, org_id)
+    if waiting:
+        # Extracted rows a person has not yet accepted: not in any figure here.
+        not_included.append(f"İncelemenizi bekleyen {waiting} kayıt")
 
     weeks: list[RadarWeek] = []
     running = balance["balance_cents"] if balance else 0

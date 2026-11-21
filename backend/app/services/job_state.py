@@ -210,10 +210,11 @@ async def purge_job_outputs(db: AsyncSession, job_id: str) -> None:
     purge and the new rows are atomic.
     """
     from app.models.anomaly import Anomaly
+    from app.models.held_transaction import HeldTransaction
     from app.models.report import Report
     from app.models.transaction import Transaction
 
-    for model in (Transaction, Report, Anomaly):
+    for model in (Transaction, Report, Anomaly, HeldTransaction):
         await db.execute(
             delete(model).where(model.job_id == job_id).execution_options(
                 synchronize_session=False

@@ -133,6 +133,23 @@ async def client(tmp_path, monkeypatch):
         yield c
 
 
+# ── 3b. Runs without an organisation ──────────────────────────────────────────
+# Most pipeline tests run with no organisation, so there is no base currency to
+# assume for a file that states none (and the rule is: unknown currency is held).
+# They are about other things; they get TRY. A run WITH an org_id reads the real
+# lookup, so the currency rule itself is tested against it.
+@pytest.fixture(autouse=True)
+def _base_currency_for_orgless_runs(monkeypatch):
+    import app.services.org_identity as org_identity
+
+    real = org_identity.own_base_currency
+
+    async def lookup(org_id):
+        return (await real(org_id) or "TRY") if org_id else "TRY"
+
+    monkeypatch.setattr(org_identity, "own_base_currency", lookup)
+
+
 # ── 4. The order a failing run used ──────────────────────────────────────────
 # verify runs pytest with --no-header, which hides pytest-randomly's seed; an
 # order-dependent failure is then one nobody can replay.

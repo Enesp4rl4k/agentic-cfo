@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import require_writer
+from app.api.access import owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -228,9 +228,12 @@ async def get_analysis_status(
             "status": job.status,
             "filename": job.filename,
             "awaiting_review": job.awaiting_review,
-            "min_confidence": float(job.min_confidence) if job.min_confidence else None,
+            "min_confidence": float(job.min_confidence) if job.min_confidence is not None else None,
             # What this upload added to the company ledger; None until it finished.
             "ledger": (job.result_metadata or {}).get("ledger"),
+            # "N kayıt işlendi, M kayıt incelemenizi bekliyor", the rows without a
+            # readable date, the rows whose currency was assumed.
+            "ingest": (job.result_metadata or {}).get("ingest"),
             "company_view": (job.result_metadata or {}).get("company_view"),
             "logs": job.logs or [],
             "error": job.error_message,
@@ -300,6 +303,62 @@ async def approve_review(
 
         await devami_baslat(job_id)
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
+
+
+class HeldResolution(BaseModel):
+    ids: list[str] | None = None  # None: every row still waiting on this job
+    currency: str | None = None   # for rows whose document stated none
+
+
+@router.get("/analysis/{job_id}/held")
+async def list_held_rows(
+    job_id: str,
+    job: AnalysisJob = Depends(owned_job),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Rows that wait for a person: not in any total until released."""
+    from app.services.held_rows import describe, pending_for_job
+
+    rows = [describe(r) for r in await pending_for_job(db, job.id)]
+    return {"data": {"count": len(rows), "rows": rows}, "error": None}
+
+
+async def _resolve_held(
+    job: AnalysisJob, body: HeldResolution, user: User, db: AsyncSession, *, release: bool
+) -> dict:
+    from app.services.held_rows import resolve
+
+    try:
+        out = await resolve(
+            db, job, ids=body.ids, release=release, user_id=user.id, currency=body.currency
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"data": out, "error": None}
+
+
+@router.post("/analysis/{job_id}/held/release", dependencies=[Depends(require_writer)])
+async def release_held_rows(
+    job_id: str,
+    body: HeldResolution,
+    job: AnalysisJob = Depends(owned_job),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """A person accepts held rows: they join the job and, once complete, the ledger."""
+    return await _resolve_held(job, body, current_user, db, release=True)
+
+
+@router.post("/analysis/{job_id}/held/reject", dependencies=[Depends(require_writer)])
+async def reject_held_rows(
+    job_id: str,
+    body: HeldResolution,
+    job: AnalysisJob = Depends(owned_job),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """A person discards held rows; nothing of them enters the books."""
+    return await _resolve_held(job, body, current_user, db, release=False)
 
 
 @router.get("/analysis/{job_id}/decision-packet")
@@ -411,12 +470,14 @@ async def list_transactions(
                     "job_id": tx.job_id,
                     "amount_cents": tx.amount_kurus,
                     "currency": tx.currency,
+                    # True: the document did not say, the organisation's base currency was assumed.
+                    "currency_assumed": bool(tx.currency_assumed),
                     "type": tx.type,
                     "category": tx.category,
                     "description": tx.description,
                     "vendor": tx.vendor,
                     "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-                    "confidence": float(tx.confidence) if tx.confidence else None,
+                    "confidence": float(tx.confidence) if tx.confidence is not None else None,
                     # "user_rule" / "user_edit" / None — the user's own
                     # correction decided the category (plan v5 §F0).
                     "category_source": tx.category_source,

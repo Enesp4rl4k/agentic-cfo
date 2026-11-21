@@ -24,6 +24,7 @@ from typing import Any
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
 from app.core import tdhp
+from app.core.row_confidence import parse_confidence
 from app.parsers.base import ParsedStatement
 from app.parsers.invoice import TurkishInvoiceParser
 from app.parsers.registry import ParserRegistry
@@ -42,6 +43,7 @@ from app.services.ingest.cells import (
 from app.services.ingest.ebelge import (
     _try_parse_ubl_xml,
 )
+from app.services.ingest.hold import resolve_currency, split_uncertain
 from app.services.ingest.readers import (
     _pdf_embedded_xml,
     _read_csv,
@@ -99,7 +101,8 @@ async def _extract_transactions_with_llm(
         "- type: 'income' or 'expense'\n"
         "- description: transaction description\n"
         "- vendor: supplier or customer name (null if unknown)\n"
-        "- confidence: confidence score 0-1 for this extraction\n\n"
+        "- currency: ISO-4217 code only if the document states it, otherwise null\n"
+        "- confidence: confidence score 0-1 for this extraction (null if you cannot tell)\n\n"
         "Respond with ONLY a valid JSON array. No explanation, no markdown.\n"
         'Example: [{"date": "15.03.2024", "amount": 1500.00, "type": "expense", '
         '"description": "Electricity bill", "vendor": "City Power Co.", "confidence": 0.95}]'
@@ -219,6 +222,42 @@ async def run_data_ingestion(
             detail=f"Defterden {len(ledger['profit'])} satır okundu.",
         )
 
+    return _uncertain_rows_wait(await _read_all_documents(state, config))
+
+
+def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
+    """Rows a person must look at leave the run; the rest carry on.
+
+    A row with no confidence (None, never a made-up number), a confidence under
+    the bar, or no currency waits in `held_transactions`, together with the rest
+    of its document (app.services.ingest.hold). The run is held as a whole only
+    for what is wrong with the file itself (`needs_review` from the parsers) or
+    when nothing is left to analyse.
+    """
+    rows = list((sonuc.patch or {}).get("transactions") or [])
+    if not sonuc.ok or not rows:
+        return sonuc
+    accepted, held = split_uncertain(rows)
+    if not held:
+        return sonuc
+    waiting = f"{len(held)} kayıt incelemenizi bekliyor"
+    if not accepted:
+        return SkillResult(
+            ok=False, needs_review=True, confidence=0.0,
+            patch={**(sonuc.patch or {}), "transactions": [], "held_transactions": held},
+            detail=f"0 kayıt işlendi, {waiting}. {sonuc.detail}",
+        )
+    known = [c for c in (parse_confidence(r.get("confidence")) for r in accepted) if c is not None]
+    return SkillResult(
+        ok=True,
+        patch={**(sonuc.patch or {}), "transactions": accepted, "held_transactions": held},
+        confidence=min([sonuc.confidence, *known]),
+        needs_review=sonuc.needs_review,
+        detail=f"{len(accepted)} kayıt işlendi, {waiting}. {sonuc.detail}",
+    )
+
+
+async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillResult:
     sonuc = await _belgeyi_al(
         state.get("file_path", ""), state.get("file_type", ""), state, config,
     )
@@ -268,6 +307,22 @@ _BELGE_ARASI = "\n\n"
 
 
 async def _belgeyi_al(
+    file_path: str, file_type: str, state: CFOState, config: AgentRunConfig
+) -> SkillResult:
+    """One document, with every row's currency settled (see app.services.ingest.hold)."""
+    sonuc = await _belgeyi_oku(file_path, file_type, state, config)
+    rows = (sonuc.patch or {}).get("transactions") or []
+    if sonuc.ok and any(not str(r.get("currency") or "").strip() for r in rows):
+        from app.services.org_identity import own_base_currency
+
+        resolve_currency(
+            rows, str((sonuc.patch or {}).get("raw_text") or ""),
+            await own_base_currency(state.get("org_id")),
+        )
+    return sonuc
+
+
+async def _belgeyi_oku(
     file_path: str, file_type: str, state: CFOState, config: AgentRunConfig
 ) -> SkillResult:
     """One document: read it, then parse by the strategies below.
@@ -334,20 +389,17 @@ async def _belgeyi_al(
                 # direction could not be settled by VKN is not a certainty, and
                 # this branch used to assert 1.0 regardless, which is precisely
                 # how a backwards posting would reach the ledger unreviewed.
-                ubl_confidence = min(float(t.get("confidence", 0.8)) for t in ubl_txs)
+                # (A row without one is unknown, not 0.8: `split_uncertain` holds it.)
                 logger.info(
-                    "job=%s — UBL-TR XML parser parsed %d invoice transactions (conf=%.2f)",
-                    state.get("job_id"), len(ubl_txs), ubl_confidence,
+                    "job=%s — UBL-TR XML parser parsed %d invoice transactions",
+                    state.get("job_id"), len(ubl_txs),
                 )
                 return SkillResult(
                     ok=True,
                     patch={"raw_text": raw_text, "transactions": ubl_txs},
-                    confidence=ubl_confidence,
-                    needs_review=ubl_confidence < 0.80,
-                    detail=(
-                        f"Parsed {len(ubl_txs)} transactions via GİB UBL-TR XML "
-                        f"parser (confidence={ubl_confidence:.2f})"
-                    ),
+                    confidence=0.95,
+                    needs_review=False,
+                    detail=f"Parsed {len(ubl_txs)} transactions via GİB UBL-TR XML parser",
                 )
 
         # ── Strategy 1.1: a spreadsheet read by its columns ──────────────────
@@ -385,12 +437,9 @@ async def _belgeyi_al(
                     if tx["amount_cents"] != 0 and tx["transaction_date"]
                 )
                 overall_confidence = 0.95 if parseable / len(transactions) >= 0.8 else 0.75
-                # A well-formed row booked on the wrong side is still wrong, so
-                # the rows' own doubt caps the file's confidence.
-                overall_confidence = min(
-                    overall_confidence,
-                    min(float(tx.get("confidence", 0.95)) for tx in transactions),
-                )
+                # A well-formed row booked on the wrong side is still wrong: the
+                # rows' own doubt holds those rows (`split_uncertain`), and a row
+                # without a confidence is unknown, not 0.95.
                 detail = (
                     f"[{detected_bank.bank_display_name}] Parsed {len(transactions)} transactions "
                     f"({parseable} fully parsed, confidence={overall_confidence:.2f})"
@@ -434,22 +483,27 @@ async def _belgeyi_al(
         )
 
         transactions = []
-        confidences: list[float] = []
 
         for t in raw_transactions:
             amount_cents = _parse_amount(str(t.get("amount", "")))
             parsed_date = _parse_date(str(t.get("date", "")))
-            conf = float(t.get("confidence", 0.8))
-            confidences.append(conf)
+            # None = the model did not score this row (or gave a non-score).
+            conf = parse_confidence(t.get("confidence"))
+            if conf is not None and not (amount_cents and parsed_date):
+                conf = min(conf, 0.55)  # an unreadable amount or date is a weak row
 
-            # Use per-transaction currency if LLM provided one, else fall back to detected
+            # The row's own currency, else the document's; None when neither
+            # says (the caller assumes the organisation's, marked, or holds it).
             tx_currency = t.get("currency") or detected_currency
+            tx_type = t.get("type") if t.get("type") in ("income", "expense") else None
 
             transactions.append({
                 "amount_cents": amount_cents or 0,
                 "currency": tx_currency,
-                "type": t.get("type", "expense"),
-                "category": _guess_category(t.get("description", ""), t.get("type", "expense")),
+                # Direction is not defaulted: a row the model did not call income
+                # or expense is held (app.services.ingest.hold), not booked as a cost.
+                "type": tx_type,
+                "category": _guess_category(t.get("description", ""), tx_type or "expense"),
                 "description": t.get("description", ""),
                 "vendor": t.get("vendor"),
                 "transaction_date": parsed_date.isoformat() if parsed_date else None,
@@ -457,17 +511,14 @@ async def _belgeyi_al(
                 "confidence": conf,
             })
 
-        overall_confidence = min(confidences) if confidences else 0.5
         parseable = sum(
             1 for tx in transactions
             if tx["amount_cents"] > 0 and tx["transaction_date"]
         )
         parse_ratio = parseable / len(transactions) if transactions else 0
-
-        if parse_ratio < 0.5:
-            overall_confidence = min(overall_confidence, 0.55)
-        elif parse_ratio < 0.8:
-            overall_confidence = min(overall_confidence, 0.75)
+        # The file's own quality. A weak row is held on its own; a file whose
+        # rows are mostly unreadable is held as a whole.
+        overall_confidence = 0.55 if parse_ratio < 0.5 else 0.95
 
         return SkillResult(
             ok=True,
