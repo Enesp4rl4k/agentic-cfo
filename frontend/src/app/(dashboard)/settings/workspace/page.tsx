@@ -580,6 +580,8 @@ export default function WorkspaceSettingsPage() {
   const dateTag = locale === "tr" ? "tr-TR" : "en-US";
   const { data: session } = useSession();
   const accessToken = (session as { accessToken?: string } | null)?.accessToken;
+  // Only an owner can hand out admin; the server answers 403 to an admin who tries.
+  const isOwner = session?.user?.role === "owner";
 
   const [org, setOrg]           = useState<OrgData | null>(null);
   const [members, setMembers]   = useState<Member[]>([]);
@@ -830,7 +832,7 @@ export default function WorkspaceSettingsPage() {
             >
               <option value="analyst">{ws.roles.analyst}</option>
               <option value="viewer">{ws.roles.viewer}</option>
-              <option value="admin">{ws.roles.admin}</option>
+              {isOwner && <option value="admin">{ws.roles.admin}</option>}
             </select>
             <button
               type="submit"

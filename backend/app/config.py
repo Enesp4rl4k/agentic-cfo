@@ -230,6 +230,11 @@ class Settings(BaseSettings):
     # OpenAI:   https://api.openai.com/v1  (or leave empty)
     llm_base_url: str = "https://api.deepseek.com"
 
+    # Platform operators: comma-separated user e-mails allowed to mint pilot
+    # invites and read every company's pilot feedback (platform-wide data, not
+    # a company owner's). Empty = nobody.
+    platform_operator_emails: str = ""
+
     # File upload
     max_upload_size_mb: int = 10
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.

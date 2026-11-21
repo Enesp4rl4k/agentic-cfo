@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.models.user import User
 
@@ -75,7 +76,7 @@ async def get_morning_brief(current_user: User = Depends(get_current_user)) -> d
     return {"data": {**brief, "available": True}, "error": None}
 
 
-@router.post("/brief/morning/generate")
+@router.post("/brief/morning/generate", dependencies=[Depends(require_writer)])
 async def trigger_morning_brief(current_user: User = Depends(get_current_user)) -> dict:
     """
     Trigger an on-demand morning brief generation.

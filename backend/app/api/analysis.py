@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import owned_job, require_writer
+from app.api.access import owned_job, require_contributor, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -33,7 +33,7 @@ class AnalyzeRequest(BaseModel):
 
 
 @router.post("/analyze/{job_id}",
-    dependencies=[Depends(require_writer)])
+    dependencies=[Depends(require_contributor)])
 async def start_analysis(
     job_id: str,
     request: Request,
@@ -88,7 +88,7 @@ async def start_analysis(
 
 @router.post(
     "/analysis/{job_id}/rerun",
-    dependencies=[Depends(require_writer)],
+    dependencies=[Depends(require_contributor)],
     responses={
         404: {"description": "Job not found."},
         409: {"description": "Job is under review, still running, or its SMMM packet is finalized."},
