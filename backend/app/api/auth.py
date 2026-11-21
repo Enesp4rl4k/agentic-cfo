@@ -213,12 +213,17 @@ def require_role(*roles: str):
     Note: `async def require_role` was a bug — it returned a coroutine instead
     of a dependency callable. Fixed to a plain `def` factory.
     """
-    async def _check(user: User = Depends(get_current_user)) -> User:
-        if user.role not in roles:
+    async def _check(
+        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    ) -> User:
+        from app.services.acting_role import acting_role
+
+        role = await acting_role(db, user)
+        if role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Bu işlem için '{'/'.join(roles)}' rolü gerekli. "
-                       f"Mevcut rol: '{user.role}'.",
+                       f"Mevcut rol: '{role}'.",
             )
         return user
     return _check

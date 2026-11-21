@@ -190,7 +190,7 @@ async def sync_ecommerce(
 
 # ── Google Sheets ─────────────────────────────────────────────────────────────
 
-@router.post("/integrations/sheets/export")
+@router.post("/integrations/sheets/export", dependencies=[Depends(require_writer)])
 async def export_to_sheets(
     req:          SheetsExportRequest,
     current_user: User = Depends(get_current_user),
@@ -263,7 +263,7 @@ async def import_from_sheets(
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
-@router.post("/integrations/webhook/test")
+@router.post("/integrations/webhook/test", dependencies=[Depends(require_writer)])
 async def test_webhook(
     req:          WebhookTestRequest,
     current_user: User = Depends(get_current_user),

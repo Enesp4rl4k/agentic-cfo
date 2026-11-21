@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
@@ -57,7 +58,7 @@ async def _store(org_id: str, result: dict[str, Any], db: AsyncSession) -> Insti
     return row
 
 
-@router.post("/institutionalization/compute", status_code=201)
+@router.post("/institutionalization/compute", dependencies=[Depends(require_writer)], status_code=201)
 async def compute_snapshot(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

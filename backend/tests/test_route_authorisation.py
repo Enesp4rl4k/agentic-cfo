@@ -196,3 +196,55 @@ async def test_the_role_is_the_membership_not_the_users_column(client) -> None:
     assert r.status_code == 403
     r = await client.post("/api/v1/ledger/rows/nope/resolve", headers=headers, json={"action": "keep"})
     assert r.status_code == 403
+
+
+async def _split_role(client, org_id: str, email: str, *, column: str, membership: str) -> dict[str, str]:
+    """A user whose `users.role` and membership role disagree."""
+    from app.api.auth import create_access_token, hash_password
+
+    async with client._maker() as db:
+        user = User(email=email, hashed_password=hash_password(PAROLA), full_name="T",
+                    role=column, org_id=org_id)
+        db.add(user)
+        await db.flush()
+        db.add(OrgMembership(user_id=user.id, org_id=org_id, role=membership))
+        await db.commit()
+        token = create_access_token(user.id, email, column)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _review_row(client, org_id: str) -> str:
+    from app.models.smmm_onay import SMMMOnayKaydi
+
+    async with client._maker() as db:
+        job = AnalysisJob(org_id=org_id, filename="a.csv", file_path="/tmp/a.csv", file_type="csv")
+        db.add(job)
+        await db.flush()
+        row = SMMMOnayKaydi(job_id=job.id, org_id=org_id, kayit_id="k1", durum="bekliyor",
+                            orijinal_kayit={})
+        db.add(row)
+        await db.commit()
+        return str(row.id)
+
+
+@pytest.mark.asyncio
+async def test_the_membership_role_wins_over_the_users_column_everywhere(client) -> None:
+    """One source for the acting role: the SMMM approval route and a decider route."""
+    org_id, _ = await _company(client, "gama", roles=())
+    demoted = await _split_role(client, org_id, "d@gama.com", column="smmm", membership="viewer")
+    promoted = await _split_role(client, org_id, "p@gama.com", column="viewer", membership="smmm")
+    boss = await _split_role(client, org_id, "b@gama.com", column="analyst", membership="owner")
+    fake_boss = await _split_role(client, org_id, "f@gama.com", column="owner", membership="analyst")
+
+    # SMMM approval route (inline authority matrix)
+    row_a, row_b = await _review_row(client, org_id), await _review_row(client, org_id)
+    assert (await client.post(f"/api/v1/smmm/onay/{row_a}/onayla", headers=demoted,
+                              json={})).status_code == 403
+    assert (await client.post(f"/api/v1/smmm/onay/{row_b}/onayla", headers=promoted,
+                              json={})).status_code == 200
+    # decider route (guard) and an inline decider route (authority policy)
+    assert (await client.post("/api/v1/actions/nope/approve", headers=fake_boss)).status_code == 403
+    assert (await client.post("/api/v1/actions/nope/approve", headers=boss)).status_code != 403
+    policy = {"rules": []}
+    assert (await client.put("/api/v1/authority/policy", headers=fake_boss, json=policy)).status_code == 403
+    assert (await client.put("/api/v1/authority/policy", headers=boss, json=policy)).status_code != 403

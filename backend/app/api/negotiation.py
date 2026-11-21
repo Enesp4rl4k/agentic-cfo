@@ -273,7 +273,7 @@ class BoardroomDebateRequest(BaseModel):
     agents: list[str] = ["CFO", "CMO"]
 
 @router.post(
-    "/negotiation/boardroom/debate",
+    "/negotiation/boardroom/debate", dependencies=[Depends(require_writer)],
     responses={
         500: {"description": "The debate could not be completed."},
         503: {"description": "No language model configured (error_code llm_unavailable)."},

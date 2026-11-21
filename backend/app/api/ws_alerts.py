@@ -238,7 +238,7 @@ async def acknowledge_alert(
 
 # ── Test channel endpoint ─────────────────────────────────────────────────────
 
-@router.post("/alerts/channels/test")
+@router.post("/alerts/channels/test", dependencies=[Depends(require_writer)])
 async def test_alert_channel(
     channel:     str = "in_app",
     destination: str | None = None,

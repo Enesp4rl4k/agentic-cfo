@@ -112,7 +112,7 @@ async def nl_simulate(
 
 # ── Proactive Alerts ────────────────────────────────────────────────────────────
 
-@router.post("/advanced/proactive-scan")
+@router.post("/advanced/proactive-scan", dependencies=[Depends(require_writer)])
 async def proactive_scan(
     current_user: User = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),

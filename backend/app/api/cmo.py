@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.run_ledger import recorded_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -39,7 +40,7 @@ class CMOAnalyzeRequest(BaseModel):
 
 # -- Endpoints ----------------------------------------------------------------
 
-@router.post("/cmo/analyze")
+@router.post("/cmo/analyze", dependencies=[Depends(require_writer)])
 async def run_cmo_analysis(
     body: CMOAnalyzeRequest,
     current_user: User = Depends(get_current_user),

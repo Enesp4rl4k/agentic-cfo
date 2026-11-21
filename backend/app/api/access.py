@@ -38,6 +38,7 @@ from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.organization import OrgMembership
 from app.models.user import User, UserRole
+from app.services.acting_role import acting_role
 
 NOT_FOUND = "Kayıt bulunamadı."
 
@@ -109,25 +110,6 @@ DECIDER_ROLES = frozenset({"owner", "admin"})
 OWN_BOOKS_ROLES = frozenset({"owner", "admin", "cfo"})
 
 
-async def acting_role(db: AsyncSession, user: User) -> str | None:
-    """The caller's role in the organisation they are acting in; None without one.
-
-    Membership first. A user with no membership row there (a demo guest, or a
-    row older than migration 050) falls back to `users.role`, which switching
-    organisation keeps equal to the membership role.
-    """
-    if not user.org_id:
-        return None
-    role = (
-        await db.execute(
-            select(OrgMembership.role).where(
-                OrgMembership.user_id == str(user.id), OrgMembership.org_id == str(user.org_id)
-            )
-        )
-    ).scalar_one_or_none()
-    return str(role if role is not None else getattr(user.role, "value", user.role))
-
-
 def _refuse(needed: str) -> HTTPException:
     return HTTPException(
         status_code=403,
@@ -139,7 +121,7 @@ async def require_writer(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:
     """Dependency: owner, admin, cfo or smmm in the acting organisation, or 403."""
-    role = await acting_role(db, user)
+    role = await acting_role(db, user) if user.org_id else None
     if role is not None and role not in WRITER_ROLES:
         raise _refuse("veriyi değiştirme yetkisi (viewer ve analyst salt okunurdur)")
     return user
@@ -149,7 +131,7 @@ async def require_decider(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:
     """Dependency: owner or admin in the acting organisation, or 403."""
-    role = await acting_role(db, user)
+    role = await acting_role(db, user) if user.org_id else None
     if role is not None and role not in DECIDER_ROLES:
         raise _refuse("owner veya admin rolü")
     return user
@@ -159,7 +141,7 @@ async def require_smmm(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:
     """Dependency: the company's `smmm`, or its owner/admin/cfo when it has none."""
-    role = await acting_role(db, user)
+    role = await acting_role(db, user) if user.org_id else None
     if role is None or role == UserRole.SMMM.value:
         return user
     if role in OWN_BOOKS_ROLES:
@@ -219,9 +201,7 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
 _COMPUTE_ROUTES = [
     ("POST", "/api/v1/advanced/board-deck-pdf"),
     ("POST", "/api/v1/advanced/nl-simulate"),
-    ("POST", "/api/v1/advanced/proactive-scan"),
     ("POST", "/api/v1/analysis/{job_id}/causal"),
-    ("POST", "/api/v1/analysis/{job_id}/domains/{domain}"),
     ("POST", "/api/v1/analysis/{job_id}/sensitivity/matrix"),
     ("POST", "/api/v1/analysis/{job_id}/sensitivity/variable"),
     ("POST", "/api/v1/analytics/advanced-anomaly"),
@@ -230,25 +210,18 @@ _COMPUTE_ROUTES = [
     ("POST", "/api/v1/analytics/forecast-v2"),
     ("POST", "/api/v1/analytics/monte-carlo"),
     ("POST", "/api/v1/analytics/working-capital"),
-    ("POST", "/api/v1/audit/analyze"),
     ("POST", "/api/v1/authority/evaluate"),
     ("POST", "/api/v1/benchmark/compare"),
     ("POST", "/api/v1/benchmark/from-org"),
     ("POST", "/api/v1/brief/morning/generate"),
     ("POST", "/api/v1/cascade/simulate"),
     ("POST", "/api/v1/ceo/analyze"),
-    ("POST", "/api/v1/ceo/analyze-async"),
     ("POST", "/api/v1/ceo/analyze-from-job/{job_id}"),
     ("POST", "/api/v1/ceo/export-pdf"),
-    ("POST", "/api/v1/ceo/synthesize"),
     ("POST", "/api/v1/chat/agent"),
     ("POST", "/api/v1/chat/ceo"),
     ("POST", "/api/v1/chat/job/{job_id}"),
-    ("POST", "/api/v1/chro/analyze"),
-    ("POST", "/api/v1/cmo/analyze"),
     ("POST", "/api/v1/comparison/multi-period"),
-    ("POST", "/api/v1/compliance/analyze"),
-    ("POST", "/api/v1/coo/analyze"),
     ("POST", "/api/v1/counterfactual/simulate/cost"),
     ("POST", "/api/v1/counterfactual/simulate/headcount"),
     ("POST", "/api/v1/counterfactual/simulate/price"),
@@ -257,14 +230,11 @@ _COMPUTE_ROUTES = [
     ("POST", "/api/v1/cross-domain/from-org"),
     ("POST", "/api/v1/cto/analyze"),
     ("POST", "/api/v1/data-quality/validate"),
-    ("POST", "/api/v1/institutionalization/compute"),
-    ("POST", "/api/v1/integrations/sheets/export"),
     ("POST", "/api/v1/macro/simulate"),
     ("POST", "/api/v1/multidomain-cf/headcount"),
     ("POST", "/api/v1/multidomain-cf/marketing"),
     ("POST", "/api/v1/multidomain-cf/tech"),
     ("POST", "/api/v1/negotiation/ask"),
-    ("POST", "/api/v1/negotiation/boardroom/debate"),
     ("POST", "/api/v1/negotiation/budget-revision"),
     ("POST", "/api/v1/negotiation/cash-crisis"),
     ("POST", "/api/v1/negotiation/consensus"),
@@ -277,7 +247,6 @@ _COMPUTE_ROUTES = [
     ("POST", "/api/v1/risk-cascade/analyze"),
     ("POST", "/api/v1/risk-cascade/from-job"),
     ("POST", "/api/v1/risk-cascade/from-org"),
-    ("POST", "/api/v1/risk/analyze"),
     ("POST", "/api/v1/risk/cascade"),
     ("POST", "/api/v1/swot/analyze"),
     ("POST", "/api/v1/swot/from-job"),
@@ -292,10 +261,6 @@ _PERSONAL_ROUTES = [
     ("POST", "/api/v1/auth/api-key"),
     ("DELETE", "/api/v1/chat/sessions/{session_id}"),
     ("POST", "/api/v1/compliance/erasure-request"),
-    ("PUT", "/api/v1/notifications/preferences"),
-    ("PATCH", "/api/v1/notifications/read-all"),
-    ("DELETE", "/api/v1/notifications/{notification_id}"),
-    ("PATCH", "/api/v1/notifications/{notification_id}/read"),
     ("POST", "/api/v1/org/create"),
     ("POST", "/api/v1/org/switch"),
     ("POST", "/api/v1/pilot/feedback"),
@@ -308,16 +273,13 @@ _PERSONAL_ROUTES = [
 ]
 
 _TEST_ROUTES = [
-    ("POST", "/api/v1/alerts/channels/test"),
-    ("POST", "/api/v1/integrations/webhook/test"),
-    ("POST", "/api/v1/notifications/test-slack"),
     ("POST", "/api/v1/security/ip-whitelist/test"),
 ]
 
 OPEN_ROUTES: dict[tuple[str, str], str] = {
-    **dict.fromkeys(_COMPUTE_ROUTES, "computes and returns a result, or generates a report; persists no record of the company"),
-    **dict.fromkeys(_PERSONAL_ROUTES, "acts on the caller's own account, session, profile or notifications, not on the company's record"),
-    **dict.fromkeys(_TEST_ROUTES, "sends a test message or checks a setting; changes nothing"),
+    **dict.fromkeys(_COMPUTE_ROUTES, "runs a calculation, simulation or LLM answer on data the caller can already read and returns it; stores nothing in the company record, the company context or a shared queue, sends nothing out"),
+    **dict.fromkeys(_PERSONAL_ROUTES, "acts on the caller's own account, API key, chat session, accountant profile or sign-up/feedback; creates only their own new organisation; no existing organisation's record or other member's data"),
+    **dict.fromkeys(_TEST_ROUTES, "checks an address against the configured whitelist; sends and stores nothing"),
 }
 
 INLINE_GUARDED: dict[tuple[str, str], str] = {

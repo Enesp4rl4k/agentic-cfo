@@ -97,4 +97,6 @@ async def org_has_smmm(db: AsyncSession, org_id: str | None) -> bool:
 async def check(db: AsyncSession, user: Any, kayit: Any) -> Verdict:
     """`verdict` for a review row (`SMMMOnayKaydi`) and the acting user."""
     authority = (kayit.orijinal_kayit or {}).get("authority")
-    return verdict(str(user.role), authority, await org_has_smmm(db, kayit.org_id))
+    from app.services.acting_role import acting_role
+
+    return verdict(await acting_role(db, user), authority, await org_has_smmm(db, kayit.org_id))
