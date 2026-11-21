@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, X, Download, ChevronLeft, ChevronRight } from "lucide-react";
