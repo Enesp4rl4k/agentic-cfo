@@ -53,6 +53,32 @@ def extent_of_rows(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     return {"start": dates[0], "end": dates[-1]} if dates else None
 
 
+EDGE_TOLERANCE_DAYS = 5
+"""Days with no transaction at a statement's start or end that still leave that month complete.
+
+An ASSUMPTION, always disclosed: an export that starts on the 3rd or ends on the 29th usually just
+has no transaction on the weekend or holiday days around the edge. Used only where the file states
+no period; a stated period or a chain of statements is proof and needs no tolerance."""
+
+
+def apply_period(
+    extent: dict[str, Any] | None, period: dict[str, Any] | None, filename: str | None = None
+) -> dict[str, Any] | None:
+    """The extent with the period the file STATES, when it states one that contains its rows.
+
+    A stated period is proof of coverage (`stated`: True); without one the edges are the first and
+    last transaction (`stated`: False) and the edge tolerance may apply.
+    """
+    if extent is None:
+        return None
+    out = {**extent, "stated": False}
+    if filename and not out.get("filename"):
+        out["filename"] = filename
+    if period and period["start"] <= str(extent["start"]) and str(extent["end"]) <= period["end"]:
+        out.update(start=period["start"], end=period["end"], stated=True)
+    return out
+
+
 def extents_for(state: dict[str, Any]) -> list[dict[str, Any]]:
     """The extents that say which months of THIS run's cash rows are complete.
 
@@ -63,11 +89,17 @@ def extents_for(state: dict[str, Any]) -> list[dict[str, Any]]:
         return [e for e in (state.get("statement_extents") or []) if e]
     rows = list(state.get("transactions") or [])
     own = state.get("statement_extent") or statement_extent(rows) or extent_of_rows(rows)
+    path = str(state.get("file_path") or "").replace("\\", "/").rsplit("/", 1)[-1] or None
+    own = apply_period(own, state.get("statement_period"), path)
     return [own] if own else []
 
 
-def _groups(extents: list[dict[str, Any]]) -> list[tuple[date, date]]:
-    """One (start, end) per account: chained statements joined, the rest apart."""
+def _groups(extents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One group per account: statements whose balances meet are joined, the rest apart.
+
+    A group is {start, end, start_proven, end_proven, name}: the days it covers, and whether each
+    edge is proven (stated period, or a join) or only the first/last transaction.
+    """
     chains: list[dict[str, Any]] = []
     for e in sorted(extents, key=lambda x: (str(x["start"]), str(x["end"]))):
         for c in chains:
@@ -76,31 +108,76 @@ def _groups(extents: list[dict[str, Any]]) -> list[tuple[date, date]]:
                 and e.get("opening_cents") == c["closing"]
                 and _day(e["start"]) >= _day(c["end"])
             ):
-                c["end"], c["closing"] = e["end"], e.get("closing_cents")
+                c.update(end=e["end"], closing=e.get("closing_cents"), end_proven=bool(e.get("stated")))
                 break
         else:
-            chains.append({"start": e["start"], "end": e["end"], "closing": e.get("closing_cents")})
-    return [(_day(c["start"]), _day(c["end"])) for c in chains]
+            chains.append({
+                "start": e["start"], "end": e["end"], "closing": e.get("closing_cents"),
+                "start_proven": bool(e.get("stated")), "end_proven": bool(e.get("stated")),
+                "name": e.get("filename") or "adsız ekstre",
+            })
+    return [
+        {**c, "start": _day(c["start"]), "end": _day(c["end"])} for c in chains
+    ]
+
+
+def _judge(group: dict[str, Any], month: str) -> tuple[bool, list[dict[str, Any]]]:
+    """(is the month complete for this account, the edges that rely on the tolerance)."""
+    first, last = month_bounds(month)
+    start, end = group["start"], group["end"]
+    if start > last or end < first:
+        return False, []
+    assumed: list[dict[str, Any]] = []
+    if start > first:
+        missing = (start - first).days
+        if group["start_proven"] or missing > EDGE_TOLERANCE_DAYS:
+            return False, []
+        assumed.append({"edge": "start", "days": missing})
+    if end < last:
+        missing = (last - end).days
+        if group["end_proven"] or missing > EDGE_TOLERANCE_DAYS:
+            return False, []
+        assumed.append({"edge": "end", "days": missing})
+    return True, assumed
 
 
 def complete_months(extents: list[dict[str, Any]], months: list[str]) -> dict[str, bool] | None:
-    """{month: covered from its first day to its last by every account}; None with no extent at all."""
+    """{month: covered by every account}; None with no extent at all.
+
+    Covered means from the first day to the last, or, at an edge the file does not prove, within
+    `EDGE_TOLERANCE_DAYS` of it (`assumed_edges` says where that was assumed).
+    """
     if not extents:
         return None
     groups = _groups(extents)
-    flags = {}
-    for m in months:
-        first, last = month_bounds(m)
-        flags[m] = all(start <= first and last <= end for start, end in groups)
-    return flags
+    return {m: all(_judge(g, m)[0] for g in groups) for m in months}
+
+
+def assumed_edges(extents: list[dict[str, Any]], month: str) -> list[dict[str, Any]]:
+    """The edges of a complete month that rest on the tolerance, not on proof."""
+    out: list[dict[str, Any]] = []
+    for g in _groups(extents):
+        out.extend(_judge(g, month)[1])
+    return out
+
+
+def short_accounts(extents: list[dict[str, Any]], month: str) -> list[dict[str, Any]]:
+    """The accounts (statements) that do not cover `month`, when there is more than one account."""
+    groups = _groups(extents)
+    if len(groups) < 2:
+        return []
+    return [
+        {"name": g["name"], "start": g["start"].isoformat(), "end": g["end"].isoformat()}
+        for g in groups if not _judge(g, month)[0]
+    ]
 
 
 def covered_days(month: str, extents: list[dict[str, Any]]) -> tuple[int, int] | None:
     """The first and last day of `month` the extents cover (the widest account), if any."""
     first, last = month_bounds(month)
     best: tuple[int, int] | None = None
-    for start, end in _groups(extents):
-        lo, hi = max(start, first), min(end, last)
+    for g in _groups(extents):
+        lo, hi = max(g["start"], first), min(g["end"], last)
         if lo <= hi and (best is None or (hi - lo) > (best[1] - best[0])):
             best = (lo.day, hi.day)
     return best
@@ -193,6 +270,10 @@ def annotate_series(
         entry["complete"] = None if flags is None else flags[month]
         if entry["complete"] is False:
             entry["covered"] = covered_days(month, extents)
+            if short_accounts(extents, month):
+                entry["short"] = short_accounts(extents, month)
+        elif entry["complete"] and assumed_edges(extents, month):
+            entry["assumed"] = assumed_edges(extents, month)
         if month in top:
             entry["top_out"] = top[month]
         out.append(entry)

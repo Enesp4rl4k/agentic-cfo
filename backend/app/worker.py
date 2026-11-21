@@ -498,7 +498,13 @@ async def run_cfo_analysis(
 
             # The days the statement covers (and the balances it opens and closes on): which
             # months of the company's cash are complete is read from these later.
-            extent = result.get("statement_extent") or statement_extent(list(result.get("transactions") or []))
+            from app.services.coverage import apply_period
+
+            extent = apply_period(
+                result.get("statement_extent") or statement_extent(list(result.get("transactions") or [])),
+                result.get("statement_period"),
+                job.filename,
+            )
             if extent is not None:
                 meta["statement_extent"] = extent
             try:

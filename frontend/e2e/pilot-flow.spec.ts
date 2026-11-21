@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
-import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, invoiceList, iso, tr } from "./support/fixtures";
+import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, cashShortStatement, invoiceList, iso, tr } from "./support/fixtures";
 
 /**
  * The pilot's core flow as one story, told in order, in a real browser against the real stack.
@@ -164,9 +164,16 @@ test.describe("Pilot flow", () => {
     expect(radar.data.starting_cash_cents).toBe(11_650_000);
     expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
 
-    // The forecast starts from that balance and says so; it does not announce one month of cash.
+    // The forecast starts from that balance and says so, with the months it averaged: a MEASURED runway.
+    // The statement's three whole months (+38.000, -42.000, -12.000) average a 5.333,33 burn against
+    // 116.500: about 21,8 months. It starts on the 2nd of its first month, which the sentence admits.
     await page.goto(`/forecast?job=${S.bankJob}`);
-    await expect(screen(page).getByText(new RegExp(`${asOfLong} \\d{4} ekstresindeki bakiyeye göre kasa ₺116\\.500`))).toBeVisible({ timeout: 60_000 });
+    const sentence = new RegExp(
+      `${asOfLong} \\d{4} ekstresindeki bakiyeye göre kasa ₺116\\.500,00; .+ ₺38\\.000,00, .+ -₺42\\.000,00, .+ -₺12\\.000,00 → ` +
+        "ortalama aylık net nakit çıkışı ₺5\\.333,33\\. Bu hızla nakit yaklaşık 21,8 ay yeter\\. " +
+        ".+ ayının ilk 1 günü için işlem yok; ay tam sayıldı \\(varsayım\\)",
+    );
+    await expect(screen(page).getByText(sentence)).toBeVisible({ timeout: 60_000 });
     await expect(screen(page).getByText(/yalnızca 1 ay/)).toHaveCount(0);
   });
 
@@ -242,6 +249,37 @@ test.describe("Pilot flow", () => {
     const { data } = await records.json();
     expect(data).toHaveLength(1);
     expect(data[0]).toMatchObject({ decided_via: "human", outcome: "approved", target_id: para.jobId });
+  });
+
+  test("3f. a company that really is short of cash is told so, with the inputs, and its books are not held", async ({ request }) => {
+    // 100.000 opening, -30.000 a month for three whole months, 9.000 left: a third of a month at that pace.
+    const email = `kisa.${stamp}@example.com`;
+    await register(request, email, "Kısa Nakit Sahibi");
+    const first = await login(request, email);
+    await request.post(`${API}/org/create`, { headers: bearer(first.token), data: { name: "Kısa Nakit A.Ş." } });
+    const owner = await login(request, email);
+    const file = cashShortStatement();
+    const up = await request.post(`${API}/upload`, {
+      headers: bearer(owner.token),
+      multipart: { file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer } },
+    });
+    const jobId = (await up.json()).data.job_id;
+    // Bad news is shown, never a reason to wait for an approval.
+    await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("completed");
+
+    const dashboard = await (await request.get(`${API}/dashboard/${jobId}`, { headers: bearer(owner.token) })).json();
+    const { runway, alerts } = dashboard.data.forecast;
+    expect(runway.status).toBe("computed");
+    expect(runway.level).toBe("critical");
+    expect(runway.opening_cash_cents).toBe(900_000);
+    expect(runway.avg_monthly_net_cents).toBe(-3_000_000);
+    expect(runway.months).toHaveLength(3);
+    const critical = alerts.filter((a: { level: string }) => a.level === "critical");
+    expect(critical).toHaveLength(1);
+    expect(critical[0].message).toContain("₺9.000,00");
+    expect(critical[0].message).toContain("ortalama aylık net nakit çıkışı ₺30.000,00");
+    expect(critical[0].message).toContain("yaklaşık 0,3 ay");
+    expect(critical[0].message).toContain("(varsayım)");
   });
 
   test("4. the setup page now shows the proven opening balance with its date", async ({ page }) => {

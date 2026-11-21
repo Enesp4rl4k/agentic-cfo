@@ -11,6 +11,8 @@ from typing import Any
 
 from app.services.coverage import (
     annotate_series,
+    apply_period,
+    assumed_edges,
     complete_months,
     extents_for,
     gaps,
@@ -76,11 +78,24 @@ class TestReviewersCases:
 
 
 class TestWhichMonthsAreComplete:
-    def test_first_and_last_month_need_their_first_and_last_day(self) -> None:
+    def test_the_edge_tolerance_is_five_days_not_six(self) -> None:
         months = ["2026-02", "2026-03", "2026-04"]
-        assert complete_months([{"start": "2026-02-01", "end": "2026-04-30"}], months) == dict.fromkeys(months, True)
-        assert complete_months([{"start": "2026-02-07", "end": "2026-04-30"}], months) == {"2026-02": False, "2026-03": True, "2026-04": True}
-        assert complete_months([{"start": "2026-02-01", "end": "2026-04-29"}], months) == {"2026-02": True, "2026-03": True, "2026-04": False}
+        full = dict.fromkeys(months, True)
+        assert complete_months([{"start": "2026-02-01", "end": "2026-04-30"}], months) == full
+        # Start edge: 5 days with no transaction (first one on the 6th) is tolerated, 6 (the 7th) is not.
+        assert complete_months([{"start": "2026-02-06", "end": "2026-04-30"}], months) == full
+        assert complete_months([{"start": "2026-02-07", "end": "2026-04-30"}], months)["2026-02"] is False
+        # End edge: the last transaction 5 days before the month's last day is tolerated, 6 days is not.
+        assert complete_months([{"start": "2026-02-01", "end": "2026-04-25"}], months) == full
+        assert complete_months([{"start": "2026-02-01", "end": "2026-04-24"}], months)["2026-04"] is False
+
+    def test_a_stated_period_needs_no_tolerance_and_a_short_one_gets_none(self) -> None:
+        months = ["2026-02", "2026-03"]
+        stated = {"start": "2026-02-01", "end": "2026-03-31", "stated": True}
+        assert complete_months([stated], months) == dict.fromkeys(months, True)
+        assert assumed_edges([stated], "2026-02") == []
+        # The tolerance is for files that state nothing: a stated end of the 29th is the period.
+        assert complete_months([{**stated, "end": "2026-03-29"}], months)["2026-03"] is False
 
     def test_no_extent_at_all_is_unknown_not_complete(self) -> None:
         assert complete_months([], ["2026-01"]) is None
@@ -119,7 +134,7 @@ class TestWhichMonthsAreComplete:
 
     def test_a_file_run_uses_its_own_extent_and_a_ledger_run_every_statement(self) -> None:
         rows = [_row("2026-02-03", 1), _row("2026-02-20", 1)]
-        assert extents_for({"transactions": rows}) == [{"start": "2026-02-03", "end": "2026-02-20"}]
+        assert extents_for({"transactions": rows}) == [{"start": "2026-02-03", "end": "2026-02-20", "stated": False}]
         stored = [{"start": "2026-01-01", "end": "2026-03-31"}]
         assert extents_for({"transactions": rows, "ledger_view": {}, "statement_extents": stored}) == stored
 
@@ -160,3 +175,51 @@ class TestWhatTheMessageSays:
         block = _runway(rows, [{"start": "2026-01-01", "end": "2026-03-31"}], {**OPENING, "balance_cents": -500_000})
         assert "nakit bitmiş" in block["message"] and "yeter" not in block["message"]
         assert block["level"] == "critical" and block["runway_months"] == 0.0
+
+
+class TestEvidenceOrder:
+    def test_a_realistic_three_month_statement_gets_a_runway_with_the_assumption_stated(self) -> None:
+        # January 2 to March 30: one day short at each end, which weekends explain.
+        rows = [
+            _row("2026-01-02", 3_000_000), _row("2026-01-20", 3_000_000), _row("2026-02-02", 3_000_000),
+            _row("2026-02-20", 3_000_000), _row("2026-03-02", 3_000_000), _row("2026-03-30", 3_000_000),
+        ]
+        block = _runway(rows, [{"start": "2026-01-02", "end": "2026-03-30"}])
+        assert block["status"] == "computed" and block["basis"] == "assumed"
+        assert "Ocak ayının ilk 1 günü ve Mart ayının son 1 günü için işlem yok; ay tam sayıldı (varsayım)" in block["message"]
+        assert block["months_used"] == 3 and block["level"] is not None  # may be critical, with the assumption said
+
+    def test_a_stated_period_makes_the_same_statement_known(self) -> None:
+        rows = [_row("2026-01-20", 3_000_000), _row("2026-02-20", 3_000_000), _row("2026-03-10", 3_000_000)]
+        extent = apply_period({"start": "2026-01-20", "end": "2026-03-10"}, {"start": "2026-01-01", "end": "2026-03-31"}, "e.csv")
+        block = _runway(rows, [extent or {}])
+        assert block["status"] == "computed" and block["basis"] == "known" and block["assumptions"] == []
+        assert "varsayım" not in block["message"]
+
+    def test_a_stated_period_the_rows_do_not_fit_in_is_not_used(self) -> None:
+        out = apply_period({"start": "2026-01-02", "end": "2026-04-10"}, {"start": "2026-01-01", "end": "2026-03-31"})
+        assert out is not None and out["stated"] is False and out["end"] == "2026-04-10"
+
+    def test_two_chained_statements_complete_the_months_around_the_join_without_assumption(self) -> None:
+        a = {"start": "2026-01-01", "end": "2026-02-20", "opening_cents": 0, "closing_cents": 500}
+        b = {"start": "2026-02-25", "end": "2026-03-31", "opening_cents": 500, "closing_cents": 900}
+        months = ["2026-01", "2026-02", "2026-03"]
+        assert complete_months([a, b], months) == dict.fromkeys(months, True)
+        assert all(assumed_edges([a, b], m) == [] for m in months)
+
+    def test_a_first_transaction_on_the_7th_leaves_the_month_out_and_names_it(self) -> None:
+        rows = [
+            _row("2026-01-07", 3_000_000), _row("2026-02-02", 3_000_000), _row("2026-03-02", 3_000_000),
+            _row("2026-04-02", 3_000_000), _row("2026-05-12", 3_000_000),
+        ]
+        block = _runway(rows, [{"start": "2026-01-07", "end": "2026-05-12"}])
+        assert [m["month"] for m in block["months"]] == ["2026-02", "2026-03", "2026-04"]
+        assert "Ocak yalnızca 7–31 arası var; hesaba katılmadı" in block["message"]
+
+    def test_the_short_account_is_named_by_its_file(self) -> None:
+        bank_a = {"start": "2026-01-01", "end": "2026-06-30", "opening_cents": 0, "closing_cents": 100, "filename": "a-bank.csv"}
+        bank_b = {"start": "2026-03-01", "end": "2026-06-30", "opening_cents": 5, "closing_cents": 7, "filename": "ikinci-banka.csv"}
+        rows = [_row(f"2026-0{m}-10", 3_000_000) for m in range(1, 7)]
+        block = _runway(rows, [bank_a, bank_b])
+        assert "ikinci-banka.csv ekstresi 1 Mart 2026 – 30 Haziran 2026 arasını kapsıyor; Ocak, Şubat bu hesap için eksik" in block["message"]
+        assert "a-bank.csv" not in block["message"]

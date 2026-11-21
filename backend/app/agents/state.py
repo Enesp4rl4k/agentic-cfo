@@ -144,6 +144,9 @@ class CFOState(TypedDict, total=False):
     # reads its ledger, the extents of every completed statement (loaded by the caller). They say
     # which calendar months are complete (`app.services.coverage`).
     statement_extent: dict[str, Any] | None
+    # {start, end}: the period the file's own header states ("Dönem: 01.01.2026 - 31.03.2026"),
+    # when it states one its rows fit in: proof of the days the statement covers.
+    statement_period: dict[str, Any] | None
     statement_extents: list[dict[str, Any]] | None
     # Independent verifier output (separate LangGraph step)
     verifier_verdict: dict[str, Any] | None

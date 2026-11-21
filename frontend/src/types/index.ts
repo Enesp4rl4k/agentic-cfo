@@ -81,6 +81,9 @@ export interface RunwayBlock {
   source_filename: string | null;
   months_needed: number;
   months_used: number;
+  /** "assumed" when a month counted as whole on the edge tolerance (named in `message`), else "known". */
+  basis?: "known" | "assumed" | null;
+  assumptions?: { month: string; edge: "start" | "end"; days: number }[];
   /** The complete months the burn averaged, with each month's net (kuruş). */
   months?: { month: string; net_cents: number }[];
   avg_monthly_net_cents: number | null;

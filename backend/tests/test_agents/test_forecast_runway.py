@@ -384,3 +384,59 @@ class TestAlertsApiReadsOnlyMeasuredRisk:
     def test_a_measured_one_is_a_warning_even_when_very_high(self) -> None:
         got = self._alerts({"runway_risk_pct": 95.0, "runway_risk_basis": "opening_cash", "growth_basis": "gecmis_aylar"})
         assert [a.level for a in got] == ["warning"]
+
+
+def _dom(months_back: int, day: int) -> date:
+    today = datetime.now(UTC).date()
+    year, month = today.year, today.month - months_back
+    while month <= 0:
+        month, year = month + 12, year - 1
+    return date(year, month, day)
+
+
+def _last_row() -> date:
+    today = datetime.now(UTC).date()
+    return max(today - timedelta(days=2), today.replace(day=1))
+
+
+def _ago(d: date) -> int:
+    return (datetime.now(UTC).date() - d).days
+
+
+class TestTheJourneysFixtures:
+    """The browser journey's statements (frontend/e2e/support/fixtures.ts), run through the real pipeline."""
+
+    async def test_the_ordinary_quarter_gets_a_measured_runway_without_a_hold(self, tmp_path: Path) -> None:
+        rows = [
+            (_ago(_dom(3, 2)), "Ofis kirası", -12_000), (_ago(_dom(3, 12)), "Satış tahsilatı - Mavi Tekstil", 50_000),
+            (_ago(_dom(2, 2)), "Ofis kirası", -12_000), (_ago(_dom(2, 20)), "Personel maaş ödemesi", -30_000),
+            (_ago(_dom(1, 2)), "Ofis kirası", -12_000), (_ago(_last_row()), "Danışmanlık geliri - Kara Holding", 12_500),
+        ]
+        path = _statement(tmp_path / "ceyrek.csv", rows)
+        result = await run_cfo_pipeline(job_id="e2e-ordinary", file_path=path, file_type="csv", run_config=CFG)
+        runway = result["forecast"]["runway"]
+        assert result["awaiting_review"] is False
+        assert runway["status"] == "computed" and runway["basis"] == "assumed" and runway["months_used"] == 3
+        assert runway["opening_cash_cents"] == 11_650_000 and runway["avg_monthly_net_cents"] == -533_333
+        assert runway["runway_months"] == 21.8 and runway["level"] is None
+        assert "Bu hızla nakit yaklaşık 21,8 ay yeter." in runway["message"]
+        assert "ayının ilk 1 günü için işlem yok; ay tam sayıldı (varsayım)" in runway["message"]
+
+    async def test_the_cash_short_company_gets_one_critical_alert_with_its_inputs_and_no_hold(self, tmp_path: Path) -> None:
+        rows: list[tuple[int, str, int]] = []
+        for back in (3, 2, 1):
+            rows += [
+                (_ago(_dom(back, 2)), "Satış tahsilatı - Mavi Tekstil", 20_000),
+                (_ago(_dom(back, 3)), "Ofis kirası", -10_000),
+                (_ago(_dom(back, 4)), "Personel maaş ödemesi", -40_000),
+            ]
+        rows.append((_ago(_last_row()), "Pazarlama gideri", -1_000))
+        path = _statement(tmp_path / "kisa.csv", rows, opening=100_000)
+        result = await run_cfo_pipeline(job_id="e2e-short", file_path=path, file_type="csv", run_config=CFG)
+        runway = result["forecast"]["runway"]
+        assert result["awaiting_review"] is False
+        assert runway["level"] == "critical" and runway["opening_cash_cents"] == 900_000
+        assert runway["avg_monthly_net_cents"] == -3_000_000 and runway["runway_months"] == 0.3
+        (alert,) = [a for a in result["forecast"]["alerts"] if a["level"] == "critical"]
+        for fact in ("₺9.000,00", "ortalama aylık net nakit çıkışı ₺30.000,00", "yaklaşık 0,3 ay", "(varsayım)"):
+            assert fact in alert["message"]

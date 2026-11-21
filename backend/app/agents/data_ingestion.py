@@ -222,7 +222,26 @@ async def run_data_ingestion(
             detail=f"Defterden {len(ledger['profit'])} satır okundu.",
         )
 
-    return _uncertain_rows_wait(await _read_all_documents(state, config))
+    return _with_stated_period(_uncertain_rows_wait(await _read_all_documents(state, config)), state)
+
+
+def _with_stated_period(sonuc: SkillResult, state: CFOState) -> SkillResult:
+    """The period the file's header states (one document only), as proof of the days it covers."""
+    if state.get("ek_belgeler") or not sonuc.patch:
+        return sonuc
+    from app.services.coverage import apply_period
+    from app.services.stated_period import stated_period
+
+    patch = sonuc.patch
+    rows = [*(patch.get("transactions") or []), *(patch.get("held_transactions") or [])]
+    period = stated_period(str(patch.get("raw_text") or ""), [r.get("transaction_date") for r in rows])
+    if period is None:
+        return sonuc
+    patch = {**patch, "statement_period": period}
+    if patch.get("statement_extent"):
+        patch["statement_extent"] = apply_period(patch["statement_extent"], period)
+    sonuc.patch = patch
+    return sonuc
 
 
 def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:

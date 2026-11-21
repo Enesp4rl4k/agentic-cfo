@@ -83,6 +83,10 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         "months_needed": RUNWAY_MIN_MONTHS,
         "months_used": 0,
         "months": [],
+        # How firmly the months are known: "known" (stated period, joined statements, or edges
+        # reaching the month's first and last day) or "assumed" (an edge within the tolerance).
+        "basis": None,
+        "assumptions": [],
         "avg_monthly_net_cents": None,
         "runway_months": None,
         "beyond_horizon": False,
@@ -102,14 +106,16 @@ def _span(first: str, last: str) -> str:
 
 
 def _notes(series: list[dict[str, Any]], window: list[dict[str, Any]], opening: dict[str, Any]) -> str:
-    """What the burn left out, said plainly: partial months after the window, the balance's date."""
-    after = [m for m in series if m.get("complete") is False and (not window or m["month"] > window[-1]["month"])]
+    """What the burn left out, said plainly: incomplete months, and the balance's date."""
+    incomplete = [m for m in series if m.get("complete") is False and not m.get("short")]
     parts = []
-    for m in after:
+    for m in incomplete:
         days = m.get("covered")
         span = f"yalnızca {days[0]}–{days[1]} arası" if days else "yalnızca kısmen"
-        parts.append(f"{_month_name(m['month'])} {span} var; hesaba katılmadı (hareketleri bakiyeye zaten yansımıştır)")
-    if window and not after:
+        later = not window or m["month"] > window[-1]["month"]
+        tail = " (hareketleri bakiyeye zaten yansımıştır)" if later else ""
+        parts.append(f"{_month_name(m['month'])} {span} var; hesaba katılmadı{tail}")
+    if window and not any(m["month"] > window[-1]["month"] for m in incomplete):
         end_of_window = f"{window[-1]['month']}-31"
         if opening["as_of"] > end_of_window:
             parts.append(
@@ -117,6 +123,32 @@ def _notes(series: list[dict[str, Any]], window: list[dict[str, Any]], opening: 
                 "aradaki hareketler bakiyeye yansımıştır ama aylık çıkış hesabına girmemiştir"
             )
     return "".join(f" {p}." for p in parts)
+
+
+def _assumed_note(window: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """The edges counted as complete on the tolerance, said as the assumption they are."""
+    edges = [{"month": m["month"], **a} for m in window for a in m.get("assumed") or []]
+    if not edges:
+        return "", []
+    parts = [
+        f"{_month_name(e['month'])} ayının {'ilk' if e['edge'] == 'start' else 'son'} {e['days']} günü"
+        for e in edges
+    ]
+    return f" {' ve '.join(parts)} için işlem yok; ay tam sayıldı (varsayım).", edges
+
+
+def _short_note(series: list[dict[str, Any]]) -> str:
+    """Which account (statement) is short, when a month is incomplete because of another bank's file."""
+    by_name: dict[str, dict[str, Any]] = {}
+    for m in series:
+        if m.get("complete") is False:
+            for a in m.get("short") or []:
+                by_name.setdefault(a["name"], {**a, "months": []})["months"].append(m["month"])
+    return "".join(
+        f" {name} ekstresi {_date_tr(v['start'])} – {_date_tr(v['end'])} arasını kapsıyor; "
+        f"{', '.join(_month_name(x) for x in v['months'])} bu hesap için eksik, hesaba katılmadı."
+        for name, v in by_name.items()
+    )
 
 
 def _one_off(window: list[dict[str, Any]], burn_total: int, currency: str | None) -> str:
@@ -176,7 +208,7 @@ def compute_runway(
         )
     window = usable_months(series)[-RUNWAY_MIN_MONTHS:]
     months = [{"month": m["month"], "net_cents": int(m["net"])} for m in window]
-    notes = _notes(series, window, opening)
+    notes = _notes(series, window, opening) + _short_note(series)
     if len(window) < RUNWAY_MIN_MONTHS:
         gap = "".join(f" {_span(a, b)} verisi yok." for a, b in gaps(series))
         return _block(
@@ -189,6 +221,9 @@ def compute_runway(
         )
     nets = [int(m["net"]) for m in window]
     avg_net = int(statistics.mean(nets))
+    assumed_text, assumptions = _assumed_note(window)
+    notes = assumed_text + notes
+    basis_tag = "assumed" if assumptions else "known"
     with_year = len({m["month"][:4] for m in window}) > 1
     listing = ", ".join(f"{_month_name(m['month'], with_year)} {money(int(m['net']))}" for m in window)
     if avg_net >= 0:
@@ -199,6 +234,8 @@ def compute_runway(
             opening,
             months_used=len(window),
             months=months,
+            basis=basis_tag,
+            assumptions=assumptions,
             avg_monthly_net_cents=avg_net,
         )
     balance = opening["balance_cents"]
@@ -222,6 +259,8 @@ def compute_runway(
         opening,
         months_used=len(window),
         months=months,
+        basis=basis_tag,
+        assumptions=assumptions,
         avg_monthly_net_cents=avg_net,
         # Past the long horizon it is no figure: "longer than 36 months" is in the message.
         runway_months=None if beyond else round(runway, 1),
