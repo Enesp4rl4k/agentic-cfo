@@ -9,12 +9,13 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.models.user import User
-from app.services.execution.action_runner import get_action_runner
+from app.services.execution.action_runner import NOT_CONNECTED, NOT_FOUND, get_action_runner
 from app.services.negotiation.boardroom_memory import get_boardroom_memory
 
 router = APIRouter(tags=["actions"])
@@ -58,8 +59,8 @@ async def approve_action(
     action_id: str,
     body: ActionApproveRequest | None = None,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
-    """CEO'nun aksiyonu onaylayarak ilgili sisteme (ERP, Ads vb.) göndermesini sağlar."""
+) -> Any:
+    """Onay isteği. Hiçbir aksiyon türünün bağlayıcısı yok: 501 `action_not_connected`, hiçbir şey yapılmaz."""
     # An approved action is sent to an external system (ERP, ads). Actions had
     # no organisation, so any user could execute any company's.
     action = get_boardroom_memory().get_action_by_id(action_id)
@@ -73,15 +74,29 @@ async def approve_action(
         custom_params=params,
     )
 
+    if result.outcome == NOT_CONNECTED:
+        # Honest outcome: nothing was called, nothing was recorded as done. 501 so
+        # the screen can say "not connected" instead of showing a success.
+        return JSONResponse(
+            status_code=501,
+            content={
+                "detail": result.message,
+                "error_code": "action_not_connected",
+                "executed": False,
+                "action_id": action_id,
+                "action_kind": result.action_kind,
+            },
+        )
     if not result.success:
-        raise HTTPException(status_code=400, detail=result.message)
+        status = 404 if result.outcome == NOT_FOUND else 409
+        raise HTTPException(status_code=status, detail=result.message)
 
     return {
         "status": "executed",
         "action_id": action_id,
         "result": {
             "message": result.message,
-            "target_system": result.target_system,
+            "action_kind": result.action_kind,
             "payload": result.payload,
             "timestamp": result.timestamp,
         },

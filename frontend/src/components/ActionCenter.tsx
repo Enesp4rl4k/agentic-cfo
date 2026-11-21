@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { getPendingActions, approveAction, rejectAction, PendingAction } from "@/lib/api/actions";
 import { Check, X, Zap, AlertCircle } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 
 export function ActionCenter() {
+  const { t } = useI18n();
+  const [notice, setNotice] = useState<string | null>(null);
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -30,10 +33,13 @@ export function ActionCenter() {
   const handleApprove = async (id: string) => {
     try {
       setProcessingId(id);
+      setNotice(null);
       await approveAction(id);
       setActions((prev) => prev.filter((a) => a.id !== id));
     } catch (err: any) {
-      alert(`Onay başarısız: ${err.message}`);
+      // 501: no connector exists for this action; nothing ran, so it stays in the list.
+      if (err?.status === 501) setNotice(t.onay.actionNotConnected);
+      else alert(`Onay başarısız: ${err.message}`);
     } finally {
       setProcessingId(null);
     }
@@ -77,6 +83,13 @@ export function ActionCenter() {
           {actions.length} Bekleyen
         </span>
       </div>
+
+      {notice && (
+        <div role="status" className="flex items-center text-amber-600 bg-amber-500/10 rounded-lg p-3 text-sm">
+          <AlertCircle className="w-4 h-4 mr-2" />
+          {notice}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {actions.map((action) => (
