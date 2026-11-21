@@ -26,6 +26,7 @@ from app.platform.authority_matrix import (
     load_active_rules,
     validate_rules,
 )
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ async def put_policy(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    if current_user.role not in ("owner", "admin"):
+    if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(
             status_code=403, detail="Yetki matrisini yalnızca sahip/yönetici değiştirebilir."
         )

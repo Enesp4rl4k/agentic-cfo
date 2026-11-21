@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import owned_job
+from app.api.access import owned_job, require_writer
 from app.config import get_settings
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
@@ -93,7 +93,8 @@ def _ext(filename: str) -> str:
 
 # ── POST /datasource/{job_id}/{domain}/{source_type} ──────────────────────────
 
-@router.post("/datasource/{job_id}/{domain}/{source_type}")
+@router.post("/datasource/{job_id}/{domain}/{source_type}",
+    dependencies=[Depends(require_writer)])
 async def upload_datasource(
     job_id: str = Path(..., description="Parent AnalysisJob ID"),
     domain: str = Path(..., description="Domain: cto | chro | cmo | coo"),
@@ -241,7 +242,8 @@ async def list_datasources(
 
 # ── DELETE /datasource/{job_id}/{source_id} ───────────────────────────────────
 
-@router.delete("/datasource/{job_id}/{source_id}")
+@router.delete("/datasource/{job_id}/{source_id}",
+    dependencies=[Depends(require_writer)])
 async def delete_datasource(
     job_id: str,
     source_id: str,

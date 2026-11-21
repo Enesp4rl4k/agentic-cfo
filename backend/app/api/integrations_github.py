@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -133,7 +134,8 @@ class GitHubSyncRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.post("/integrations/github/connect")
+@router.post("/integrations/github/connect",
+    dependencies=[Depends(require_decider)])
 async def connect_github(
     body: GitHubConnectRequest,
     user: User = Depends(get_current_user),
@@ -214,7 +216,8 @@ async def github_status(
     }
 
 
-@router.post("/integrations/github/sync")
+@router.post("/integrations/github/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_github(
     body: GitHubSyncRequest,
     user: User = Depends(get_current_user),
@@ -296,7 +299,8 @@ async def sync_github(
     }
 
 
-@router.delete("/integrations/github/disconnect")
+@router.delete("/integrations/github/disconnect",
+    dependencies=[Depends(require_decider)])
 async def disconnect_github(
     user: User = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),

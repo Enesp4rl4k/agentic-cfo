@@ -27,6 +27,7 @@ from app.models.open_item import OpenItem
 from app.models.payment_plan_change import STATUSES, PaymentPlanChange
 from app.models.user import User
 from app.services import payment_plan
+from app.services.acting_role import acting_role
 from app.services.payment_plan import PlanChangeError
 
 router = APIRouter()
@@ -154,7 +155,7 @@ async def list_changes(
     }
     return {
         "data": [_view(r, items.get(r.open_item_id)) for r in rows],
-        "meta": {"can_decide": payment_plan.can_decide(current_user)},
+        "meta": {"can_decide": payment_plan.can_decide(await acting_role(db, current_user))},
         "error": None,
     }
 
@@ -163,7 +164,9 @@ async def _apply_decision(
     db: AsyncSession, change: PaymentPlanChange, approve: bool, body: DecisionRequest, user: User
 ) -> dict[str, Any]:
     try:
-        payment_plan.decide(change, user=user, approve=approve, note=body.note)
+        payment_plan.decide(
+            change, user=user, role=await acting_role(db, user), approve=approve, note=body.note
+        )
     except PlanChangeError as exc:
         raise _fail(exc) from exc
     await db.commit()

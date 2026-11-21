@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.agent_run import AgentRun
@@ -140,7 +140,8 @@ async def get_run(
     return {"data": _run_dict(row), "error": None}
 
 
-@router.post("/runs/{run_id}/resume")
+@router.post("/runs/{run_id}/resume",
+    dependencies=[Depends(require_writer)])
 async def resume_agent_run(
     run_id: str,
     current_user: User = Depends(get_current_user),

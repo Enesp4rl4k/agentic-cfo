@@ -30,12 +30,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
-from app.models.user import User
+from app.models.organization import OrgMembership
+from app.models.user import User, UserRole
+from app.services.acting_role import acting_role
 
 NOT_FOUND = "Kayıt bulunamadı."
 
@@ -80,6 +83,80 @@ async def owned_job(
     return await load_owned_job(db, job_id, current_user)
 
 
+# ── Who may change what ─────────────────────────────────────────────────────
+# Three classes of state-changing route, by the least role that may use them.
+# The role is the caller's *membership* role in the organisation they are
+# acting in (`users.org_id`), the same reading `org_erasure` and the briefing
+# release use — not `users.role`, one global value.
+#
+#   writer   changes working data: upload, rerun, correct a category, resolve a
+#            duplicate or settlement match, approve a held run. Not viewer or
+#            analyst.
+#   decider  an owner's or admin's decision: connecting a bank or ERP, approving
+#            an action that leaves the system, org-wide resets.
+#   smmm     binds the official record: closing a month, finalising the
+#            defensibility packet. An `smmm`; and, when the organisation has no
+#            accountant at all, an owner, admin or cfo (owner decision
+#            2026-11-13, `services/approval_authority.py`), so a company that
+#            keeps its own books is not locked out of its month-end.
+#
+# A caller without an organisation has nothing to be read-only *in*: such a user
+# only reaches their own objects (`can_access`), and the routes that need an
+# organisation say so themselves (400). Cross-organisation access stays 404: the
+# guard reads the role in the caller's own organisation, then the handler
+# refuses the object that is not theirs.
+WRITER_ROLES = frozenset({"owner", "admin", "cfo", "smmm"})
+DECIDER_ROLES = frozenset({"owner", "admin"})
+OWN_BOOKS_ROLES = frozenset({"owner", "admin", "cfo"})
+
+
+def _refuse(needed: str) -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail=f"Bu işlem için {needed} gerekli; mevcut rolünüz bu işlemi yapamaz.",
+    )
+
+
+async def require_writer(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: owner, admin, cfo or smmm in the acting organisation, or 403."""
+    role = await acting_role(db, user) if user.org_id else None
+    if role is not None and role not in WRITER_ROLES:
+        raise _refuse("veriyi değiştirme yetkisi (viewer ve analyst salt okunurdur)")
+    return user
+
+
+async def require_decider(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: owner or admin in the acting organisation, or 403."""
+    role = await acting_role(db, user) if user.org_id else None
+    if role is not None and role not in DECIDER_ROLES:
+        raise _refuse("owner veya admin rolü")
+    return user
+
+
+async def require_smmm(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: the company's `smmm`, or its owner/admin/cfo when it has none."""
+    role = await acting_role(db, user) if user.org_id else None
+    if role is None or role == UserRole.SMMM.value:
+        return user
+    if role in OWN_BOOKS_ROLES:
+        has_smmm = (
+            await db.execute(
+                select(OrgMembership.id)
+                .where(OrgMembership.org_id == str(user.org_id), OrgMembership.role == UserRole.SMMM.value)
+                .limit(1)
+            )
+        ).first()
+        if has_smmm is None:
+            return user
+    raise _refuse("mali müşavir (smmm) rolü")
+
+
 # Routes reachable without a user, and why. Anything absent from this list must
 # authenticate; `tests/test_route_access.py` enforces it.
 PUBLIC_ROUTES: dict[tuple[str, str], str] = {
@@ -111,6 +188,123 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/docs"): "Swagger UI, no data",
     ("GET", "/docs/oauth2-redirect"): "Swagger UI OAuth redirect, no data",
     ("GET", "/redoc"): "ReDoc UI, no data",
+}
+
+
+# ── Authorisation classes of state-changing routes ───────────────────────────
+# Every POST / PUT / PATCH / DELETE route is exactly one of: public (above), guarded by
+# `require_writer` / `require_decider` / `require_smmm` / `require_role`, guarded inline
+# (INLINE_GUARDED, with how), or intentionally open to any member of the organisation
+# (OPEN_ROUTES, with why). `tests/test_route_authorisation.py` fails on a route that
+# is none of these, naming it; an entry here is a review decision, not a way to pass.
+
+_COMPUTE_ROUTES = [
+    ("POST", "/api/v1/advanced/board-deck-pdf"),
+    ("POST", "/api/v1/advanced/nl-simulate"),
+    ("POST", "/api/v1/analysis/{job_id}/causal"),
+    ("POST", "/api/v1/analysis/{job_id}/sensitivity/matrix"),
+    ("POST", "/api/v1/analysis/{job_id}/sensitivity/variable"),
+    ("POST", "/api/v1/analytics/advanced-anomaly"),
+    ("POST", "/api/v1/analytics/break-even"),
+    ("POST", "/api/v1/analytics/cohort"),
+    ("POST", "/api/v1/analytics/forecast-v2"),
+    ("POST", "/api/v1/analytics/monte-carlo"),
+    ("POST", "/api/v1/analytics/working-capital"),
+    ("POST", "/api/v1/authority/evaluate"),
+    ("POST", "/api/v1/benchmark/compare"),
+    ("POST", "/api/v1/benchmark/from-org"),
+    ("POST", "/api/v1/brief/morning/generate"),
+    ("POST", "/api/v1/cascade/simulate"),
+    ("POST", "/api/v1/ceo/analyze"),
+    ("POST", "/api/v1/ceo/analyze-from-job/{job_id}"),
+    ("POST", "/api/v1/ceo/export-pdf"),
+    ("POST", "/api/v1/chat/agent"),
+    ("POST", "/api/v1/chat/ceo"),
+    ("POST", "/api/v1/chat/job/{job_id}"),
+    ("POST", "/api/v1/comparison/multi-period"),
+    ("POST", "/api/v1/counterfactual/simulate/cost"),
+    ("POST", "/api/v1/counterfactual/simulate/headcount"),
+    ("POST", "/api/v1/counterfactual/simulate/price"),
+    ("POST", "/api/v1/cross-domain/analyze"),
+    ("POST", "/api/v1/cross-domain/from-job"),
+    ("POST", "/api/v1/cross-domain/from-org"),
+    ("POST", "/api/v1/cto/analyze"),
+    ("POST", "/api/v1/data-quality/validate"),
+    ("POST", "/api/v1/macro/simulate"),
+    ("POST", "/api/v1/multidomain-cf/headcount"),
+    ("POST", "/api/v1/multidomain-cf/marketing"),
+    ("POST", "/api/v1/multidomain-cf/tech"),
+    ("POST", "/api/v1/negotiation/ask"),
+    ("POST", "/api/v1/negotiation/budget-revision"),
+    ("POST", "/api/v1/negotiation/cash-crisis"),
+    ("POST", "/api/v1/negotiation/consensus"),
+    ("POST", "/api/v1/query"),
+    ("POST", "/api/v1/query/stream"),
+    ("POST", "/api/v1/related-parties/check"),
+    ("POST", "/api/v1/reports/pdf/cfo-summary"),
+    ("POST", "/api/v1/reports/pdf/compliance-cert"),
+    ("POST", "/api/v1/reports/pdf/executive-brief"),
+    ("POST", "/api/v1/risk-cascade/analyze"),
+    ("POST", "/api/v1/risk-cascade/from-job"),
+    ("POST", "/api/v1/risk-cascade/from-org"),
+    ("POST", "/api/v1/risk/cascade"),
+    ("POST", "/api/v1/swot/analyze"),
+    ("POST", "/api/v1/swot/from-job"),
+    ("POST", "/api/v1/swot/from-org"),
+    ("POST", "/api/v1/temporal/delta"),
+    ("POST", "/api/v1/temporal/trends"),
+    ("POST", "/api/v1/tetikler/dry-run"),
+]
+
+_PERSONAL_ROUTES = [
+    ("DELETE", "/api/v1/auth/api-key"),
+    ("POST", "/api/v1/auth/api-key"),
+    ("DELETE", "/api/v1/chat/sessions/{session_id}"),
+    ("POST", "/api/v1/compliance/erasure-request"),
+    ("POST", "/api/v1/org/create"),
+    ("POST", "/api/v1/org/switch"),
+    ("POST", "/api/v1/pilot/feedback"),
+    ("POST", "/api/v1/pilot/invite/use"),
+    ("POST", "/api/v1/smmm/clients"),
+    ("DELETE", "/api/v1/smmm/clients/{client_id}"),
+    ("PUT", "/api/v1/smmm/clients/{client_id}"),
+    ("POST", "/api/v1/smmm/register"),
+    ("POST", "/api/v1/stream/{job_id}/ticket"),
+]
+
+_TEST_ROUTES = [
+    ("POST", "/api/v1/security/ip-whitelist/test"),
+]
+
+OPEN_ROUTES: dict[tuple[str, str], str] = {
+    **dict.fromkeys(_COMPUTE_ROUTES, "runs a calculation, simulation or LLM answer on data the caller can already read and returns it; stores nothing in the company record, the company context or a shared queue, sends nothing out"),
+    **dict.fromkeys(_PERSONAL_ROUTES, "acts on the caller's own account, API key, chat session, accountant profile or sign-up/feedback; creates only their own new organisation; no existing organisation's record or other member's data"),
+    **dict.fromkeys(_TEST_ROUTES, "checks an address against the configured whitelist; sends and stores nothing"),
+}
+
+INLINE_GUARDED: dict[tuple[str, str], str] = {
+    ("PUT", "/api/v1/authority/policy"): "owner or admin, checked in the handler",
+    ("POST", "/api/v1/briefing/monday/release"): "an active smmm membership of the acting organisation, checked in the handler (owner decision K10)",
+    ("POST", "/api/v1/compliance/org-erasure/request"): "owner or admin by membership role",
+    ("POST", "/api/v1/compliance/org-erasure/{request_id}/confirm"): "owner by membership role",
+    ("POST", "/api/v1/ledger/plan-changes"): "payment_plan.propose: owner, admin, cfo or analyst may propose",
+    ("POST", "/api/v1/ledger/plan-changes/{change_id}/approve"): "payment_plan: owner or admin decide",
+    ("POST", "/api/v1/ledger/plan-changes/{change_id}/reject"): "payment_plan: owner or admin decide",
+    ("POST", "/api/v1/ledger/plan-changes/{change_id}/withdraw"): "payment_plan: the proposer, or a decider",
+    ("POST", "/api/v1/org/invite"): "_require_admin: owner or admin",
+    ("DELETE", "/api/v1/org/invites/{invite_id}"): "_require_admin: owner or admin",
+    ("PATCH", "/api/v1/org/me"): "_require_admin: owner or admin",
+    ("DELETE", "/api/v1/org/members/{user_id}"): "_require_admin: owner or admin; an admin cannot remove an admin or owner",
+    ("POST", "/api/v1/pilot/invite/generate"): "admin or owner, checked in the handler",
+    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "admin or owner, checked in the handler",
+    ("POST", "/api/v1/related-parties"): "owner or admin, checked in the handler",
+    ("DELETE", "/api/v1/related-parties/{party_id}"): "owner or admin, checked in the handler",
+    ("PATCH", "/api/v1/related-parties/{party_id}"): "owner or admin, checked in the handler",
+    ("PUT", "/api/v1/security/ip-whitelist"): "owner or admin, checked in the handler",
+    ("POST", "/api/v1/smmm/onay/toplu-onayla"): "approval authority matrix (services/approval_authority.verdict): smmm, or owner/admin/cfo when the company has no smmm; never viewer or analyst",
+    ("POST", "/api/v1/smmm/onay/{kayit_id}/duzeltle"): "approval authority matrix (services/approval_authority.verdict): smmm, or owner/admin/cfo when the company has no smmm; never viewer or analyst",
+    ("POST", "/api/v1/smmm/onay/{kayit_id}/onayla"): "approval authority matrix (services/approval_authority.verdict): smmm, or owner/admin/cfo when the company has no smmm; never viewer or analyst",
+    ("POST", "/api/v1/smmm/onay/{kayit_id}/reddet"): "approval authority matrix (services/approval_authority.verdict): smmm, or owner/admin/cfo when the company has no smmm; never viewer or analyst",
 }
 
 

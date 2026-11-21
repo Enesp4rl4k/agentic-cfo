@@ -31,6 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
 
@@ -190,7 +191,8 @@ async def get_tax_calendar(
     return {"data": calendar, "error": None}
 
 
-@router.post("/efatura/sync")
+@router.post("/efatura/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_efatura(
     body: EFaturaSyncRequest,
     db: AsyncSession = Depends(get_db),

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
+from app.api.access import load_owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.transaction import Transaction
@@ -35,7 +35,8 @@ class CategoryCorrectionRequest(BaseModel):
     apply_always: bool = False   # "Apply this rule for all future transactions from this vendor"
 
 
-@router.patch("/transactions/{transaction_id}/category")
+@router.patch("/transactions/{transaction_id}/category",
+    dependencies=[Depends(require_writer)])
 async def correct_category(
     transaction_id: str,
     body: CategoryCorrectionRequest,

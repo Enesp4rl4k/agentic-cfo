@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -107,7 +108,8 @@ async def get_ingest_address(
     return {"data": _adres_yaniti(adres), "error": None}
 
 
-@router.post("/email/ingest-address/yenile")
+@router.post("/email/ingest-address/yenile",
+    dependencies=[Depends(require_decider)])
 async def renew_ingest_address(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

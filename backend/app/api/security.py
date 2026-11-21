@@ -30,6 +30,7 @@ from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.user import User
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ async def list_audit_events(
     SOC2 CC7.2: Audit log listesi.
     Admin/Owner rolü gerektirir.
     """
-    if current_user.role not in ("owner", "admin"):
+    if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
 
@@ -115,7 +116,7 @@ async def export_audit_csv(
     """
     SOC2 kanıtı için audit log CSV export.
     """
-    if current_user.role not in ("owner", "admin"):
+    if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
     from app.models.audit_log import AuditLog
@@ -172,7 +173,7 @@ async def audit_summary_report(
     SOC2 güvenlik özet raporu.
     Son N günün aktivite özeti.
     """
-    if current_user.role not in ("owner", "admin"):
+    if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
     from app.models.audit_log import AuditLog
@@ -263,7 +264,7 @@ async def get_ip_whitelist(
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Return the org's current IP whitelist configuration."""
-    if current_user.role not in ("owner", "admin"):
+    if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
     org_id = getattr(current_user, "org_id", None)
@@ -299,7 +300,7 @@ async def update_ip_whitelist(
     Update IP whitelist for the org.
     WARNING: Wrong config can lock out all users. Always include your own IP.
     """
-    if current_user.role not in ("owner", "admin"):
+    if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
     org_id = getattr(current_user, "org_id", None)

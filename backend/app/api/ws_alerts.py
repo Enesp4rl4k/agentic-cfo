@@ -32,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import ws_auth
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.alert_rule import AlertHistory, AlertRule
@@ -189,7 +189,8 @@ async def alert_history(
 
 # ── Acknowledge endpoint ──────────────────────────────────────────────────────
 
-@router.patch("/alerts/{alert_id}/acknowledge")
+@router.patch("/alerts/{alert_id}/acknowledge",
+    dependencies=[Depends(require_writer)])
 async def acknowledge_alert(
     alert_id: str,
     body:     AcknowledgeRequest,
@@ -237,7 +238,7 @@ async def acknowledge_alert(
 
 # ── Test channel endpoint ─────────────────────────────────────────────────────
 
-@router.post("/alerts/channels/test")
+@router.post("/alerts/channels/test", dependencies=[Depends(require_writer)])
 async def test_alert_channel(
     channel:     str = "in_app",
     destination: str | None = None,
@@ -326,7 +327,8 @@ async def list_alert_rules(
         return {"data": {"org_id": org_id, "rules": [], "count": 0}, "error": None}
 
 
-@router.post("/alerts/rules")
+@router.post("/alerts/rules",
+    dependencies=[Depends(require_writer)])
 async def create_alert_rule(
     body: AlertRuleCreate,
     user: User = Depends(get_current_user),
@@ -365,7 +367,8 @@ async def create_alert_rule(
     }
 
 
-@router.delete("/alerts/rules/{rule_id}")
+@router.delete("/alerts/rules/{rule_id}",
+    dependencies=[Depends(require_writer)])
 async def delete_alert_rule(
     rule_id: str,
     user:    User = Depends(get_current_user),

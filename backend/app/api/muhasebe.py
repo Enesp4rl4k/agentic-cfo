@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.config import get_settings
@@ -94,7 +95,8 @@ class ReddetRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.post("/muhasebe/analiz", status_code=status.HTTP_201_CREATED)
+@router.post("/muhasebe/analiz",
+    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
 async def muhasebe_analiz(
     body: MuhasebeAnalizRequest,
     current_user: User = Depends(get_current_user),
@@ -218,7 +220,8 @@ async def muhasebe_analiz(
     return {"data": result_dict, "error": None}
 
 
-@router.post("/muhasebe/tr-vertical", status_code=status.HTTP_201_CREATED)
+@router.post("/muhasebe/tr-vertical",
+    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
 async def muhasebe_tr_vertical(
     body: TRVerticalRequest,
     current_user: User = Depends(require_tr_pack),

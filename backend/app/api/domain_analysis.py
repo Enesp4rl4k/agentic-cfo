@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestration import domain_analysis as da
 from app.agents.run_ledger import recorded_run
-from app.api.access import owned_job
+from app.api.access import owned_job, require_writer
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 
@@ -48,7 +48,7 @@ async def domain_status(
         raise HTTPException(status_code=404, detail=f"Bilinmeyen alan: {domain}") from exc
 
 
-@router.post("/analysis/{job_id}/domains/{domain}")
+@router.post("/analysis/{job_id}/domains/{domain}", dependencies=[Depends(require_writer)])
 async def run_domain(
     job_id: str,
     domain: str,

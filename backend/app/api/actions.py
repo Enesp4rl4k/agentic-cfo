@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_decider
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.services.execution.action_runner import NOT_CONNECTED, NOT_FOUND, get_action_runner
@@ -54,7 +54,8 @@ async def get_pending_actions(
     }
 
 
-@router.post("/actions/{action_id}/approve")
+@router.post("/actions/{action_id}/approve",
+    dependencies=[Depends(require_decider)])
 async def approve_action(
     action_id: str,
     body: ActionApproveRequest | None = None,
@@ -103,7 +104,8 @@ async def approve_action(
     }
 
 
-@router.post("/actions/{action_id}/reject")
+@router.post("/actions/{action_id}/reject",
+    dependencies=[Depends(require_decider)])
 async def reject_action(
     action_id: str,
     body: ActionRejectRequest,

@@ -28,6 +28,7 @@ from app.api.auth import _cache_invalidate, get_current_user
 from app.database import get_db
 from app.models.organization import Organization, OrgInvite, OrgMembership
 from app.models.user import User, UserRole
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ async def _require_org(user: User, db: AsyncSession) -> Organization:
 
 async def _require_admin(user: User, db: AsyncSession) -> Organization:
     org = await _load_org(user, db)
-    if user.role not in (UserRole.OWNER, UserRole.ADMIN):
+    if await acting_role(db, user) not in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bu işlem için admin yetkisi gerekli.",
@@ -79,7 +80,7 @@ async def _require_admin(user: User, db: AsyncSession) -> Organization:
 
 async def _require_owner(user: User, db: AsyncSession) -> Organization:
     org = await _load_org(user, db)
-    if user.role != UserRole.OWNER:
+    if await acting_role(db, user) != UserRole.OWNER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bu işlem için owner yetkisi gerekli.",
@@ -344,7 +345,7 @@ async def remove_member(
         raise HTTPException(404, detail="Kullanıcı bu org'da bulunamadı.")
 
     # Admins cannot remove other admins or owners
-    if current_user.role == UserRole.ADMIN and target.role in (UserRole.OWNER, UserRole.ADMIN):
+    if await acting_role(db, current_user) == UserRole.ADMIN and target.role in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(403, detail="Admin, başka bir admin veya owner'ı çıkaramaz.")
 
     target.org_id = None

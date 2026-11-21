@@ -28,6 +28,7 @@ from app.models.analysis_job import AnalysisJob
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.acting_role import acting_role
 from app.services.related_party import (
     group_counterparties,
     load_active_parties,
@@ -49,9 +50,9 @@ def _org_id(user: User) -> str:
     return str(user.org_id)
 
 
-def _require_manager(user: User) -> str:
+async def _require_manager(user: User, db: AsyncSession) -> str:
     org_id = _org_id(user)
-    if user.role not in ("owner", "admin"):
+    if await acting_role(db, user) not in ("owner", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="İlişkili taraf sicilini yalnızca sahip/yönetici düzenleyebilir.",
@@ -117,7 +118,7 @@ async def create_party(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    org_id = _require_manager(current_user)
+    org_id = await _require_manager(current_user, db)
     _validate_relationship(body.relationship_type)
 
     normalized = normalize_name(body.name)
@@ -165,7 +166,7 @@ async def update_party(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    org_id = _require_manager(current_user)
+    org_id = await _require_manager(current_user, db)
     party = await db.get(RelatedParty, party_id)
     if party is None or party.org_id != org_id:
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
@@ -203,7 +204,7 @@ async def deactivate_party(
     stay explainable: an auditor asking why an entry was escalated needs the row
     that caused it to still exist.
     """
-    org_id = _require_manager(current_user)
+    org_id = await _require_manager(current_user, db)
     party = await db.get(RelatedParty, party_id)
     if party is None or party.org_id != org_id:
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.chro.orchestrator import run_chro_pipeline
 from app.agents.run_ledger import recorded_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -32,7 +33,7 @@ class CHROAnalyzeRequest(BaseModel):
     analysis_period: str | None = None
 
 
-@router.post("/chro/analyze")
+@router.post("/chro/analyze", dependencies=[Depends(require_writer)])
 async def run_chro_analysis(
     body: CHROAnalyzeRequest,
     current_user: User = Depends(get_current_user),

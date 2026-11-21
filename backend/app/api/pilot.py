@@ -29,6 +29,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.user import User
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -59,8 +60,8 @@ class FeedbackRequest(BaseModel):
     page_context: str | None = Field(default=None, max_length=100)
 
 
-def _require_admin(user: User) -> User:
-    if user.role not in ("admin", "owner"):
+async def _require_admin(user: User, db: AsyncSession) -> User:
+    if await acting_role(db, user) not in ("admin", "owner"):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
     return user
 
@@ -116,7 +117,7 @@ async def generate_invites(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: generate one or more invite codes."""
-    _require_admin(current_user)
+    await _require_admin(current_user, db)
 
     expires = datetime.now(UTC) + timedelta(days=body.expire_days)
     codes = []
@@ -196,7 +197,7 @@ async def list_invites(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: list all invite codes with usage info."""
-    _require_admin(current_user)
+    await _require_admin(current_user, db)
     result = await db.execute(
         select(PilotInvite).order_by(PilotInvite.created_at.desc())
     )
@@ -227,7 +228,7 @@ async def revoke_invite(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: revoke an unused invite."""
-    _require_admin(current_user)
+    await _require_admin(current_user, db)
     invite = await db.get(PilotInvite, invite_id)
     if not invite:
         raise HTTPException(404, detail="Davet bulunamadı.")
@@ -283,7 +284,7 @@ async def list_feedback(
     offset: int = 0,
 ) -> dict[str, Any]:
     """Admin: list all feedback entries."""
-    _require_admin(current_user)
+    await _require_admin(current_user, db)
     result = await db.execute(
         select(UserFeedback)
         .order_by(UserFeedback.created_at.desc())
@@ -327,7 +328,7 @@ async def feedback_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Admin: aggregate NPS + ratings summary."""
-    _require_admin(current_user)
+    await _require_admin(current_user, db)
 
     result = await db.execute(select(UserFeedback))
     all_fb = result.scalars().all()

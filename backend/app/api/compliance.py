@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.run_ledger import recorded_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -51,7 +52,7 @@ class ComplianceAnalyzeRequest(BaseModel):
 
 # ── Sync endpoint ──────────────────────────────────────────────────────────────
 
-@router.post("/compliance/analyze")
+@router.post("/compliance/analyze", dependencies=[Depends(require_writer)])
 async def run_compliance_analysis(
     body: ComplianceAnalyzeRequest,
     current_user: User = Depends(get_current_user),

@@ -40,6 +40,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -105,7 +106,8 @@ async def list_banks() -> dict[str, Any]:
     }
 
 
-@router.post("/open-banking/connect/{bank_id}")
+@router.post("/open-banking/connect/{bank_id}",
+    dependencies=[Depends(require_decider)])
 async def start_oauth(
     bank_id: str,
     body: ConnectRequest,
@@ -238,7 +240,8 @@ class OpenBankingSyncBody(BaseModel):
     days_back: int = Field(default=90, ge=1, le=730, description="How many days of history to fetch")
 
 
-@router.post("/open-banking/connections/{connection_id}/sync")
+@router.post("/open-banking/connections/{connection_id}/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_transactions(
     connection_id: str,
     body: OpenBankingSyncBody,

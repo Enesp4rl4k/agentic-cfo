@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import ensure_tenant, load_owned_job
+from app.api.access import ensure_tenant, load_owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.decision_log import DecisionLog
@@ -80,7 +80,8 @@ def _http_error(exc: DecisionError) -> HTTPException:
     )
 
 
-@router.post("/decisions")
+@router.post("/decisions",
+    dependencies=[Depends(require_writer)])
 async def create_decision(
     body: DecisionCreate,
     current_user: User = Depends(get_current_user),
@@ -141,7 +142,8 @@ async def get_decision(
     return {"data": _serialize(decision), "error": None}
 
 
-@router.post("/decisions/{decision_id}/outcome")
+@router.post("/decisions/{decision_id}/outcome",
+    dependencies=[Depends(require_writer)])
 async def post_outcome(
     decision_id: str,
     body: DecisionOutcome | None = None,

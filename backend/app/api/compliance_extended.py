@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_decider
 from app.api.auth import get_current_user
 from app.core.branding import get_brand
 from app.core.timeutil import as_utc
@@ -253,7 +253,8 @@ async def sox_status(
 
 # ── POST /compliance/sox/certify ──────────────────────────────────────────────
 
-@router.post("/compliance/sox/certify")
+@router.post("/compliance/sox/certify",
+    dependencies=[Depends(require_decider)])
 async def sox_certify(
     body: SOXCertifyRequest,
     user: User = Depends(get_current_user),
@@ -386,7 +387,8 @@ async def gdpr_article30_register(
 
 # ── POST /compliance/gdpr/breach-notification ────────────────────────────────
 
-@router.post("/compliance/gdpr/breach-notification")
+@router.post("/compliance/gdpr/breach-notification",
+    dependencies=[Depends(require_decider)])
 async def gdpr_breach_notification(
     body:  BreachNotificationRequest,
     user:  User = Depends(get_current_user),
@@ -487,7 +489,8 @@ async def list_breaches(
 
 # ── POST /compliance/gdpr/breach/{id}/notify ─────────────────────────────────
 
-@router.post("/compliance/gdpr/breach/{breach_id}/notify")
+@router.post("/compliance/gdpr/breach/{breach_id}/notify",
+    dependencies=[Depends(require_decider)])
 async def mark_breach_notified(
     breach_id: str,
     user:      User = Depends(get_current_user),

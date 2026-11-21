@@ -24,6 +24,7 @@ from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.run_ledger import agent_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user, require_role
 from app.config import get_settings
 from app.database import get_db
@@ -314,7 +315,8 @@ async def _dispatch_pipeline(
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-@router.post("/agent-jobs/{agent_type}", status_code=202)
+@router.post("/agent-jobs/{agent_type}",
+    dependencies=[Depends(require_writer)], status_code=202)
 async def enqueue_agent_job(
     agent_type: str,
     body: AgentJobRequest,
@@ -523,6 +525,7 @@ async def list_agent_jobs(
 
 @router.delete(
     "/agent-jobs/{job_id}",
+    dependencies=[Depends(require_writer)],
     status_code=204,
     responses={
         404: {"description": "Job not found."},

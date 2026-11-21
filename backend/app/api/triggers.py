@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import ensure_tenant
+from app.api.access import ensure_tenant, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
@@ -182,7 +182,8 @@ async def list_triggers(
     return {"data": {"triggers": triggers}, "error": None}
 
 
-@router.post("/tetikler", status_code=status.HTTP_201_CREATED)
+@router.post("/tetikler",
+    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
 async def create_trigger(
     body: _RuleBody,
     user: User = Depends(get_current_user),
@@ -270,7 +271,8 @@ async def get_trigger(
     return {"data": {**row.to_dict(), "org_id": row.org_id}, "error": None}
 
 
-@router.patch("/tetikler/{trigger_id}")
+@router.patch("/tetikler/{trigger_id}",
+    dependencies=[Depends(require_writer)])
 async def update_trigger(
     trigger_id: str,
     body: _RuleBody,
@@ -301,7 +303,8 @@ async def update_trigger(
     return {"data": {**row.to_dict(), "org_id": row.org_id}, "error": None}
 
 
-@router.delete("/tetikler/{trigger_id}")
+@router.delete("/tetikler/{trigger_id}",
+    dependencies=[Depends(require_writer)])
 async def delete_trigger(
     trigger_id: str,
     user: User = Depends(get_current_user),

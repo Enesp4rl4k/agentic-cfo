@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider, require_writer
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -101,7 +102,8 @@ async def get_integration(
     return (await _owned_integration(db, integration_id, _get_org_id(current_user))).to_summary()
 
 
-@router.delete("/erp/integrations/{integration_id}")
+@router.delete("/erp/integrations/{integration_id}",
+    dependencies=[Depends(require_decider)])
 async def delete_integration(
     integration_id: str,
     current_user:   User = Depends(get_current_user),
@@ -134,7 +136,8 @@ async def parasut_durum(
     }, "error": None}
 
 
-@router.post("/erp/parasut/baglan")
+@router.post("/erp/parasut/baglan",
+    dependencies=[Depends(require_decider)])
 async def parasut_baglan(
     current_user: User = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
@@ -172,7 +175,8 @@ async def parasut_callback(
                             status_code=303)
 
 
-@router.post("/erp/parasut/firma")
+@router.post("/erp/parasut/firma",
+    dependencies=[Depends(require_decider)])
 async def parasut_firma(
     body:         FirmaSecimi,
     current_user: User = Depends(get_current_user),
@@ -193,7 +197,8 @@ async def parasut_firma(
     return {"data": row.to_summary(), "error": None}
 
 
-@router.post("/erp/parasut/sync")
+@router.post("/erp/parasut/sync",
+    dependencies=[Depends(require_writer)])
 async def parasut_sync(
     integration_id: str = Form(...),
     current_user:   User = Depends(get_current_user),
@@ -216,7 +221,8 @@ class OtomatikAyar(BaseModel):
     aralik: str = Field(..., pattern="^(gunluk|haftalik|kapali)$")
 
 
-@router.patch("/erp/parasut/otomatik")
+@router.patch("/erp/parasut/otomatik",
+    dependencies=[Depends(require_decider)])
 async def parasut_otomatik(
     body:         OtomatikAyar,
     current_user: User = Depends(get_current_user),
@@ -236,7 +242,8 @@ async def parasut_otomatik(
     return {"data": row.to_summary(), "error": None}
 
 
-@router.post("/erp/parasut/disconnect")
+@router.post("/erp/parasut/disconnect",
+    dependencies=[Depends(require_decider)])
 async def parasut_disconnect(
     integration_id: str,
     current_user:   User = Depends(get_current_user),
@@ -261,7 +268,8 @@ def _decode(content: bytes) -> str:
     return content.decode("latin-1")
 
 
-@router.post("/erp/logo-tiger/connect")
+@router.post("/erp/logo-tiger/connect",
+    dependencies=[Depends(require_decider)])
 async def logo_tiger_connect(
     req:          LogoTigerConnectRequest,
     current_user: User = Depends(get_current_user),
@@ -293,7 +301,8 @@ async def _csv_sync(kaynak: str, file: UploadFile, current_user: User, db: Async
     return sync_result
 
 
-@router.post("/erp/logo-tiger/sync")
+@router.post("/erp/logo-tiger/sync",
+    dependencies=[Depends(require_writer)])
 async def logo_tiger_sync(
     file:         UploadFile = File(..., description="Logo Tiger CSV export dosyasi"),
     current_user: User = Depends(get_current_user),
@@ -303,7 +312,8 @@ async def logo_tiger_sync(
     return await _csv_sync("logo_tiger", file, current_user, db)
 
 
-@router.post("/erp/mikro/sync")
+@router.post("/erp/mikro/sync",
+    dependencies=[Depends(require_writer)])
 async def mikro_sync(
     file:         UploadFile = File(..., description="Mikro ERP CSV export"),
     current_user: User = Depends(get_current_user),

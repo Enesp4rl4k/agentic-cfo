@@ -25,12 +25,14 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import NOT_FOUND, can_access, ensure_tenant, load_owned_job, owned_job
+from app.api.access import require_smmm as _require_smmm
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.user import User
+from app.services.acting_role import acting_role
 
 router = APIRouter(dependencies=[Depends(require_tr_pack)])
 logger = logging.getLogger(__name__)
@@ -140,7 +142,7 @@ async def donem_kilitleri(
     }
 
 
-@router.post("/smmm/donem-kilitleri")
+@router.post("/smmm/donem-kilitleri", dependencies=[Depends(_require_smmm)])
 async def donem_kapat(
     req:          DonemKilitRequest,
     current_user: User = Depends(get_current_user),
@@ -154,7 +156,7 @@ async def donem_kapat(
     from app.services.approval_authority import karar_verebilir_rol
     from app.services.donem_kilidi import DonemHatasi, kilitle
 
-    if not karar_verebilir_rol(str(current_user.role)):
+    if not karar_verebilir_rol(await acting_role(db, current_user)):
         raise HTTPException(status_code=403, detail="Bu rol dönem kapatamaz.")
     if not current_user.org_id:
         raise HTTPException(status_code=400, detail="Organizasyona üye değilsiniz.")
@@ -180,7 +182,7 @@ async def ogrenilmis_kurallar(
     return {"data": {"kurallar": await satirlari_listele(db, org_id)}, "error": None}
 
 
-@router.delete("/smmm/kurallar/{kural_id}")
+@router.delete("/smmm/kurallar/{kural_id}", dependencies=[Depends(_require_smmm)])
 async def ogrenilmis_kural_sil(
     kural_id:     str,
     current_user: User = Depends(get_current_user),
@@ -197,7 +199,7 @@ async def ogrenilmis_kural_sil(
     if kural is None:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
     ensure_tenant(current_user, org_id=kural.org_id)
-    if not karar_verebilir_rol(str(current_user.role)):
+    if not karar_verebilir_rol(await acting_role(db, current_user)):
         raise HTTPException(status_code=403, detail="Bu rol öğrenilmiş kuralı silemez.")
     await db.delete(kural)
     await db.commit()
@@ -247,9 +249,10 @@ async def get_onay_queue(
     from app.services.approval_authority import org_has_smmm, verdict
 
     has_smmm = await org_has_smmm(db, str(org_id) if org_id else None)
+    my_role = await acting_role(db, current_user)
 
     def _verdict_for(k: SMMMOnayKaydi) -> Any:
-        return verdict(str(current_user.role), (k.orijinal_kayit or {}).get("authority"), has_smmm)
+        return verdict(my_role, (k.orijinal_kayit or {}).get("authority"), has_smmm)
 
     return {
         "data": {

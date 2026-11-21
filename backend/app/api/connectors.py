@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider, require_writer
 from app.api.auth import get_current_user
 from app.connectors import get_connector, has_connector, list_connectors, run_connector_sync
 from app.connectors.base import ConnectorError
@@ -81,7 +82,8 @@ async def list_connector_status(
     return {"data": {"connectors": out}, "error": None}
 
 
-@router.post("/connectors/{name}/connect", status_code=status.HTTP_201_CREATED)
+@router.post("/connectors/{name}/connect",
+    dependencies=[Depends(require_decider)], status_code=status.HTTP_201_CREATED)
 async def connect_connector(
     name: str,
     body: ConnectRequest,
@@ -129,7 +131,8 @@ async def connect_connector(
     }
 
 
-@router.post("/connectors/{name}/sync")
+@router.post("/connectors/{name}/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_connector(
     name: str,
     body: SyncRequest,
@@ -205,7 +208,8 @@ async def connector_status(
     }
 
 
-@router.delete("/connectors/{name}")
+@router.delete("/connectors/{name}",
+    dependencies=[Depends(require_decider)])
 async def disconnect_connector(
     name: str,
     current_user: User = Depends(get_current_user),

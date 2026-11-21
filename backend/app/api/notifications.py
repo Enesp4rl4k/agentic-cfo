@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.core.branding import get_brand
 from app.database import get_db
@@ -132,7 +133,7 @@ async def list_notifications(
     }
 
 
-@router.patch("/notifications/{notification_id}/read")
+@router.patch("/notifications/{notification_id}/read", dependencies=[Depends(require_writer)])
 async def mark_read(
     notification_id: str,
     current_user: User = Depends(get_current_user),
@@ -152,7 +153,7 @@ async def mark_read(
     return {"data": {"id": notification_id, "is_read": True}, "error": None}
 
 
-@router.patch("/notifications/read-all")
+@router.patch("/notifications/read-all", dependencies=[Depends(require_writer)])
 async def mark_all_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -171,7 +172,7 @@ async def mark_all_read(
     return {"data": {"marked_read": True}, "error": None}
 
 
-@router.delete("/notifications/{notification_id}")
+@router.delete("/notifications/{notification_id}", dependencies=[Depends(require_writer)])
 async def delete_notification(
     notification_id: str,
     current_user: User = Depends(get_current_user),
@@ -228,7 +229,7 @@ async def get_preferences(
     return {"data": _pref_dict(pref), "error": None}
 
 
-@router.put("/notifications/preferences")
+@router.put("/notifications/preferences", dependencies=[Depends(require_writer)])
 async def update_preferences(
     body: UpdatePreferencesRequest,
     current_user: User = Depends(get_current_user),
@@ -285,7 +286,7 @@ async def update_preferences(
 
 # ── Test endpoint ─────────────────────────────────────────────────────────────
 
-@router.post("/notifications/test-slack")
+@router.post("/notifications/test-slack", dependencies=[Depends(require_writer)])
 async def test_slack(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

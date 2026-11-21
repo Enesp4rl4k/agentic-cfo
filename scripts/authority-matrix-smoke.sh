@@ -23,7 +23,7 @@ grep -q "load_active_rules" backend/app/api/muhasebe.py && ok "muhasebe API reso
 
 grep -q '"/authority/policy"' backend/app/api/authority.py && ok "GET/PUT /authority/policy" || bad "policy endpoints"
 grep -q '"/authority/evaluate"' backend/app/api/authority.py && ok "POST /authority/evaluate (dry-run)" || bad "evaluate endpoint"
-grep -q 'role not in ("owner", "admin")' backend/app/api/authority.py && ok "PUT gated to owner/admin" || bad "PUT not gated"
+grep -q 'acting_role(db, current_user) not in ("owner", "admin")' backend/app/api/authority.py && ok "PUT gated to owner/admin" || bad "PUT not gated"
 grep -q "app.api.authority" backend/app/api/registry.py && ok "router registered" || bad "router not registered"
 
 ( cd backend && python -c "
