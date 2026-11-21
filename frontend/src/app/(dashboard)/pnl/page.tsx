@@ -21,7 +21,8 @@ import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat"
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
-import { OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { BaseCurrencyNotice, LeftOutNote, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import type { PnLData, ProvenanceBlock } from "@/types";
 
 // ── Chart style ───────────────────────────────────────────────────────────────
@@ -123,7 +124,9 @@ function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
       ))}
       </div>
       <div className="mt-1.5">
+        <BaseCurrencyNotice state={pnl.base_state} base={pnl.currency} />
         <OtherCurrencyLines items={pnl.other_currencies} base={pnl.currency ?? org?.base_currency ?? "TRY"} ratios />
+        <LeftOutNote items={pnl.other_currencies} />
       </div>
     </>
   );
@@ -560,6 +563,9 @@ export default function PnLPage() {
           {t.pnl.subtitle}
         </p>
       </div>
+
+      {/* Rows from this upload that wait for a person are in none of the figures below. */}
+      <HeldRowsLink jobId={jobId} />
 
       <KPIStrip pnl={pnl} prov={dashboard!.provenance?.pnl} />
       <WaterfallChart pnl={pnl} />

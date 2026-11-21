@@ -43,6 +43,7 @@ def _classify_cashflow(
     transactions: list[dict[str, Any]],
     base_currency: str | None = None,
     foreign_totals: list[dict[str, Any]] | None = None,
+    base_state: str | None = None,
 ) -> dict[str, Any]:
     """Pure calculation — classifies each transaction and sums by activity.
 
@@ -115,7 +116,8 @@ def _classify_cashflow(
         "monthly_series": monthly_series,
         "currency": base,
         "other_currencies": foreign,
-        "currency_note": currency_note(base, foreign, "cash"),
+        "base_state": base_state,
+        "currency_note": currency_note(base, foreign, "cash", base_state),
         # CCC metrics
         "dso_days": ccc["dso_days"],
         "dpo_days": ccc["dpo_days"],
@@ -278,7 +280,8 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
     try:
         settings = get_settings()
-        cashflow = _classify_cashflow(transactions, state.get("base_currency"), state.get("foreign_totals"))
+        cashflow = _classify_cashflow(
+            transactions, state.get("base_currency"), state.get("foreign_totals"), state.get("base_state"))
         alerts = _detect_alerts(cashflow)
         # Rows read from an e-Defter journal are accrual income-statement lines:
         # a sale counts when invoiced, paid or not. Classified as cash they make

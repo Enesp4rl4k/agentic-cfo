@@ -238,14 +238,29 @@ export interface components {
         CashRadarOut: {
             /** Anchor Date */
             anchor_date: string;
+            /**
+             * Base State
+             * @default confirmed
+             */
+            base_state: string;
             /** Beyond Horizon Cents */
             beyond_horizon_cents: number;
+            /**
+             * Currency
+             * @default TRY
+             */
+            currency: string;
             held_documents?: components["schemas"]["HeldDocumentsOut"] | null;
             /** Not Included */
             not_included: string[];
             opening_cash?: components["schemas"]["OpeningCashOut"] | null;
             /** Other Currency Items */
             other_currency_items: number;
+            /**
+             * Other Currency Totals
+             * @default []
+             */
+            other_currency_totals: components["schemas"]["OtherCurrencyTotalOut"][];
             /** Overdue Payables Cents */
             overdue_payables_cents: number;
             /** Overdue Receivables */
@@ -489,8 +504,16 @@ export interface components {
         };
         /** LedgerSummaryOut */
         LedgerSummaryOut: {
+            /** Base Confirmed */
+            base_confirmed: boolean;
+            /** Base State */
+            base_state: string;
+            /** Confirm Path */
+            confirm_path: string;
             /** Currency */
-            currency: string;
+            currency: string | null;
+            /** Currency Totals */
+            currency_totals: components["schemas"]["CurrencySubtotalOut"][];
             /** Expense Cents */
             expense_cents: number;
             last_upload: components["schemas"]["LastUploadOut"] | null;
@@ -610,6 +633,20 @@ export interface components {
             stale: boolean;
             /** Stale After Days */
             stale_after_days: number;
+        };
+        /**
+         * OtherCurrencyTotalOut
+         * @description Open items in a currency other than the radar's: counted with their own totals, never converted.
+         */
+        OtherCurrencyTotalOut: {
+            /** Count */
+            count: number;
+            /** Currency */
+            currency: string;
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
         };
         /** Otomatik */
         Otomatik: {

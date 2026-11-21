@@ -56,8 +56,17 @@ async def _job(db, org, uid, rows):
     return job.id, ids
 
 
-async def _mixed_company(client, email, rows=MIXED):
+async def _confirm(client, org, code):
+    async with client._maker() as db:
+        row = await db.get(Organization, org)
+        row.base_currency, row.base_currency_confirmed_at = code, datetime.now(UTC)
+        await db.commit()
+
+
+async def _mixed_company(client, email, rows=MIXED, base="TRY"):
     h, org, uid = await _org(client, email)
+    if base:
+        await _confirm(client, org, base)
     async with client._maker() as db:
         job, ids = await _job(db, org, uid, rows)
         await append_job(db, job)
@@ -125,9 +134,7 @@ async def test_a_company_with_only_foreign_documents_has_no_base_total_and_says_
 @pytest.mark.asyncio
 async def test_the_base_currency_is_the_organisations_not_a_guess_from_the_rows(client):
     h, org, *_ = await _mixed_company(client, "kur3@x.com")
-    async with client._maker() as db:
-        (await db.get(Organization, org)).base_currency = "USD"
-        await db.commit()
+    await _confirm(client, org, "USD")
     data = (await client.get("/api/v1/ledger/summary", headers=h)).json()["data"]
     assert data["currency"] == "USD" and data["revenue_cents"] == 5_000_000
     assert _by_currency(data["other_currencies"], "revenue_cents") == {"EUR": 0, "TRY": 140_000}
@@ -356,7 +363,7 @@ def test_the_morning_brief_says_what_it_left_out_and_lets_the_figure_through_the
     facts = MorningFacts(
         data_date="2026-02-01", job_count=1, critical_count=0, high_count=0,
         revenue_cents=140_000, expense_cents=30_000, period_start="2026-01", period_end="2026-02",
-        period_months=2, other_currencies=(("USD", 5_000_000, 1_240_000),),
+        period_months=2, other_currencies=(("USD", 5_000_000, 1_240_000),), currency="TRY",
     )
     lines = facts_lines(facts)
     assert any("12.400,00 USD gider" in line and "çevrilmedi" in line for line in lines)

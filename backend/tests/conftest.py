@@ -44,20 +44,6 @@ if not os.environ.get("DATABASE_URL_OVERRIDE"):
 # in-memory backend here; the durability tests switch to sqlite explicitly.
 os.environ.setdefault("LANGGRAPH_CHECKPOINT", "memory")
 
-# ── 0b. The test companies are Turkish ───────────────────────────────────────
-# `Organization.base_currency` defaults to USD (the international default), but the money in
-# these tests is lira: with the default, every figure would be a "not converted" foreign
-# line. A test that wants another base passes `base_currency=` itself.
-from sqlalchemy import event
-
-from app.models.organization import Organization
-
-
-@event.listens_for(Organization, "init")
-def _test_orgs_keep_lira(target, args, kwargs):  # type: ignore[no-untyped-def]
-    kwargs.setdefault("base_currency", "TRY")
-
-
 # ── 1. Pin the real langchain / langgraph modules ────────────────────────────
 _REAL_MODULE_NAMES = (
     "langgraph",
@@ -159,6 +145,26 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "auto_enqueue_analysis_on_upload", False)
     async with bellek_istemcisi() as c:
         yield c
+
+
+# ── 3b. Runs without an organisation ──────────────────────────────────────────
+# Most pipeline tests run with no organisation, so there is no base currency to
+# assume for a file that states none (and the rule is: unknown currency is held).
+# They are about other things; they get TRY. A run WITH an org_id reads the real
+# lookup, so the currency rule itself is tested against it.
+@pytest.fixture(autouse=True)
+def _base_currency_for_orgless_runs(monkeypatch, request):
+    # The currency-rule tests opt out (`pytestmark = pytest.mark.real_currency`).
+    if request.node.get_closest_marker("real_currency"):
+        return
+    import app.services.org_identity as org_identity
+
+    real = org_identity.own_base_currency
+
+    async def lookup(org_id):
+        return (await real(org_id) or "TRY") if org_id else "TRY"
+
+    monkeypatch.setattr(org_identity, "own_base_currency", lookup)
 
 
 # ── 4. The order a failing run used ──────────────────────────────────────────

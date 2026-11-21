@@ -148,7 +148,7 @@ def held_caveat(radar: Any, week_outflow_cents: int) -> str:
     material = unknown or (at_risk > 0 and (week_outflow_cents <= 0 or at_risk >= ratio * week_outflow_cents))
     if not material:
         return ""
-    size = f" ({_fmt(held.payable_cents)} ödeme)" if held.payable_cents else ""
+    size = f" ({_fmt(held.payable_cents, radar.currency)} ödeme)" if held.payable_cents else ""
     foreign = " Tutarı çevrilmemiş döviz belgeleri de var." if unknown else ""
     return (
         f" Karar bekleyen {held.count} belge{size} radara dahil değil; "
@@ -173,6 +173,7 @@ def _generate_deterministic_sentences(
     week_estimated_share: float = 0.0,
     horizon_estimated_share: float = 0.0,
     held_caveat: str = "",
+    currency: str = "TRY",
 ) -> tuple[str, str, str]:
     """Build the canonical 3-sentence briefing from verified radar facts."""
     balance_known = starting_cash_cents is not None
@@ -180,9 +181,9 @@ def _generate_deterministic_sentences(
     # Sentence 1: Radar Net Change. Without a proven starting balance the radar only
     # knows the movement, so no balance is stated.
     if net_change_cents > 0:
-        move = f"{_fmt(net_change_cents)} tutarında net giriş beklenmektedir"
+        move = f"{_fmt(net_change_cents, currency)} tutarında net giriş beklenmektedir"
     elif net_change_cents < 0:
-        move = f"{_fmt(abs(net_change_cents))} tutarında net çıkış beklenmektedir"
+        move = f"{_fmt(abs(net_change_cents), currency)} tutarında net çıkış beklenmektedir"
     else:
         move = None
     note = _balance_note(balance_as_of, balance_age_days, balance_stale)
@@ -190,13 +191,13 @@ def _generate_deterministic_sentences(
     if balance_known and move:
         sentence_1 = (
             f"Bu hafta net nakit pozisyonunuzda {move} "
-            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents)}{note})."
+            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents, currency)}{note})."
         )
     elif balance_known:
         label = "son bilinen bakiye" if balance_stale else "bakiye"
         sentence_1 = (
             f"Bu hafta nakit pozisyonunuzda önemli bir net hareket beklenmemektedir "
-            f"({label}: {_fmt(end_balance_cents)}{note})."
+            f"({label}: {_fmt(end_balance_cents, currency)}{note})."
         )
     elif move:
         sentence_1 = (
@@ -217,7 +218,7 @@ def _generate_deterministic_sentences(
     if approaching_amount_cents > 0 and approaching_date:
         sentence_2 = (
             f"Bu haftanın en kritik yükümlülüğü, {approaching_date} vadeli "
-            f"{_fmt(approaching_amount_cents)} tutarındaki {approaching_title} ödemesidir."
+            f"{_fmt(approaching_amount_cents, currency)} tutarındaki {approaching_title} ödemesidir."
         )
     else:
         sentence_2 = (
@@ -330,7 +331,7 @@ async def assemble_monday_briefing(
         top_rec = max(week_1.receivables, key=lambda r: r["amount_cents"])
         action_type = "collection_followup"
         action_title = f"Tahsilat takibi: {top_rec.get('counterparty') or 'Müşteri'}"
-        action_detail = f"{_fmt(top_rec['amount_cents'])} tutarındaki alacağın zamanında tahsilatını teyit edin."
+        action_detail = f"{_fmt(top_rec['amount_cents'], radar.currency)} tutarındaki alacağın zamanında tahsilatını teyit edin."
         action_amount = top_rec["amount_cents"]
     else:
         action_type = "monitor"
@@ -357,6 +358,7 @@ async def assemble_monday_briefing(
         week_estimated_share=_inflow_estimated_share([week_1.inflow_basis] if week_1 else []),
         horizon_estimated_share=_inflow_estimated_share([w.inflow_basis for w in radar.weeks]),
         held_caveat=caveat,
+        currency=radar.currency,
     )
     deterministic_full_text = f"{s1} {s2} {s3}"
 
@@ -394,6 +396,9 @@ async def assemble_monday_briefing(
             fallback_used = True
             final_text = deterministic_full_text
 
+    from app.services.held_rows import held_note  # rows nobody accepted yet are in no figure above
+
+    final_text += await held_note(db, org_id)
     has_data = (
         starting_cash is not None
         or any(w.receivables or w.payables for w in radar.weeks)

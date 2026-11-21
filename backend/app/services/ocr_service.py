@@ -427,7 +427,7 @@ def extract_invoice_fields(text: str) -> dict[str, Any]:
         "subtotal":      None,
         "vat_amount":    None,
         "total_amount":  None,
-        "currency":      "TRY",
+        "currency":      None,   # only what the document states
         "line_items":    [],
     }
 
@@ -544,7 +544,8 @@ def extract_invoice_fields(text: str) -> dict[str, Any]:
         fields["currency"] = "USD"
     elif re.search(r"\bEUR\b|€", text):
         fields["currency"] = "EUR"
-    else:
+    elif re.search(r"₺|\bTL\b|\bTRY\b", text):
         fields["currency"] = "TRY"
+    # else: not stated; the caller assumes the organisation's, marked, or holds the row
 
     return fields

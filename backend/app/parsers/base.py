@@ -29,12 +29,16 @@ class ParsedTransaction:
     # computed a confidence and had nowhere to put it, so a row whose direction
     # was guessed off the page reached the ledger indistinguishable from one
     # settled by VKN. 1.0 keeps every existing parser's behaviour unchanged.
-    confidence: float = 1.0
+    # None = the extraction did not score this row (an LLM read): unknown, held for review.
+    confidence: float | None = 1.0
     # Why it is not 1.0, in the reviewer's language.
     confidence_note: str = ""
     # The Tekdüzen Hesap Planı main account, when the source names one
     # (accounting exports). It decides direction and P&L membership.
     account_code: str | None = None
+    # True when `date` is a placeholder because the document had no readable one:
+    # the row leaves the parser undated and flagged, never dated "today".
+    date_estimated: bool = False
 
 
 @dataclass

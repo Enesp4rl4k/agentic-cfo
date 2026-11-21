@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.currency_totals import normalise
+from app.core.currency_totals import normalise, same_currency
 from app.core.invoice_identity import (
     document_key,
     key_number,
@@ -96,7 +96,7 @@ async def existing_rows(db: AsyncSession, org_id: str, ids: list[str]) -> dict[s
 
 async def others_by_money(
     db: AsyncSession, org_id: str, job_id: str, days: list[date]
-) -> dict[tuple[int, str, str, str], list[tuple[date, str, str]]]:
+) -> dict[tuple[int, str, str], list[tuple[date, str, str, str]]]:
     """Rows from other uploads around these dates: what a new row might repeat."""
     window = timedelta(days=DUPLICATE_WINDOW_DAYS)
     rows = await db.execute(
@@ -117,11 +117,11 @@ async def others_by_money(
             CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
         )
     )
-    found: dict[tuple[int, str, str, str], list[tuple[date, str, str]]] = defaultdict(list)
+    found: dict[tuple[int, str, str], list[tuple[date, str, str, str]]] = defaultdict(list)
     for r in rows:
         if r.source_job_id != job_id:
-            found[(r.amount_cents, r.direction, r.basis, normalise(r.currency))].append(
-                (day_of(r.transaction_date), r.id, r.source_record_id)
+            found[(r.amount_cents, r.direction, r.basis)].append(
+                (day_of(r.transaction_date), r.id, r.source_record_id, normalise(r.currency))
             )
     return found
 
@@ -131,7 +131,7 @@ def _is_document_key(record_id: str) -> bool:
 
 
 def repeats(
-    others: dict[tuple[int, str, str, str], list[tuple[date, str, str]]], tx: Transaction, record_id: str
+    others: dict[tuple[int, str, str], list[tuple[date, str, str, str]]], tx: Transaction, record_id: str
 ) -> str | None:
     """The nearest row this one may repeat in the duplicate window, if any is close enough.
 
@@ -144,19 +144,18 @@ def repeats(
     day = day_of(tx.transaction_date)
     near = [
         (abs((other - day).days), row_id)
-        for other, row_id, other_record_id in others.get((tx.amount_kurus, tx.type, basis_of(tx), normalise(tx.currency)), [])
+        for other, row_id, other_record_id, other_currency in others.get((tx.amount_kurus, tx.type, basis_of(tx)), [])
         if abs((other - day).days) <= DUPLICATE_WINDOW_DAYS
         and not (_is_document_key(record_id) and _is_document_key(other_record_id))
+        and same_currency(tx.currency, other_currency)
     ]
     return min(near)[1] if near else None
 
 
 async def same_number_rows(
     db: AsyncSession, org_id: str, job_id: str, usable: list[tuple[str, Transaction]]
-) -> dict[tuple[str, int, str, str], list[CanonicalTransaction]]:
-    """Counted rows of other uploads with these free-form numbers: (number, amount, side, currency) -> rows.
-
-    The same number and figure in another currency is another document."""
+) -> dict[tuple[str, int, str], list[CanonicalTransaction]]:
+    """Counted rows of other uploads with these free-form numbers: (number, amount, side) -> rows."""
     numbers = sorted({n for rid, _ in usable if (n := key_number(rid))})
     found: dict[tuple[str, int, str, str], list[CanonicalTransaction]] = defaultdict(list)
     for i in range(0, len(numbers), 100):
@@ -172,7 +171,7 @@ async def same_number_rows(
         for r in rows.scalars():
             number = key_number(r.source_record_id)
             if number and r.source_job_id != job_id:
-                found[(number, r.amount_cents, r.direction, normalise(r.currency))].append(r)
+                found[(number, r.amount_cents, r.direction)].append(r)
     return found
 
 
@@ -191,8 +190,8 @@ async def same_number_match(
     if not number:
         return None
     day = day_of(tx.transaction_date)
-    for row in candidates.get((number, tx.amount_kurus, tx.type, normalise(tx.currency)), []):
-        if row.source_record_id == record_id:
+    for row in candidates.get((number, tx.amount_kurus, tx.type), []):
+        if row.source_record_id == record_id or not same_currency(tx.currency, row.currency):
             continue
         if abs((day_of(row.asil_tarih or row.transaction_date) - day).days) > SAME_NUMBER_DATE_WINDOW_DAYS:
             continue

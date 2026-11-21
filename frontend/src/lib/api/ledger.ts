@@ -11,11 +11,17 @@ export interface LedgerSummary {
   open_items: { receivable_cents: number; payable_cents: number; no_due_date: number; other_currency: number };
   rows: number;
   /** The organisation's base currency: `revenue_cents`, `expense_cents` and the monthly cash are in it. */
-  currency: string;
+  /** The headline currency; null when several are present and none is confirmed (no single headline). */
+  currency: string | null;
+  base_state: "confirmed" | "single_unconfirmed" | "ambiguous" | "no_data";
+  base_confirmed: boolean;
+  confirm_path: string;
   revenue_cents: number;
   expense_cents: number;
   /** Every other currency, summed on its own and not converted (no exchange-rate source). */
   other_currencies: OtherCurrency[];
+  /** Every currency, headline included. */
+  currency_totals: OtherCurrency[];
   possible_duplicates: number;
   /** The period these figures cover: the last 12 months of data unless one was asked for. */
   period: {

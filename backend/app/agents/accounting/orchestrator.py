@@ -66,6 +66,12 @@ class MuhasebeSonucu:
     tamamlanma_zamani: str = ""
     hata: str | None = None
 
+    # Journals are kept per currency (`currency_runs`): the primary currency, and for each currency its
+    # entry count and debit/credit totals. `mizan` is the primary currency's; every currency's is below.
+    birincil_para_birimi: str = ""
+    para_birimleri: dict[str, dict[str, Any]] = field(default_factory=dict)
+    mizan_para_birimi: dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "job_id":                self.job_id,
@@ -81,6 +87,9 @@ class MuhasebeSonucu:
             "onay_kuyrugu":          self.onay_kuyrugu,
             "tamamlanma_zamani":     self.tamamlanma_zamani,
             "hata":                  self.hata,
+            "birincil_para_birimi":  self.birincil_para_birimi,
+            "para_birimleri":        self.para_birimleri,
+            "mizan_para_birimi":     self.mizan_para_birimi,
         }
 
     def to_full_dict(self) -> dict[str, Any]:

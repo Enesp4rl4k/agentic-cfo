@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useTransactions, useCorrectCategory } from "@/hooks/useCFO";
 import { RuleRerunBanner, UserRuleBadge } from "@/components/transactions/RuleFeedback";
-import { OtherCurrencyLines, type OtherCurrency } from "@/components/ui/other-currency-lines";
+import { BaseCurrencyNotice, OtherCurrencyLines, type OtherCurrency } from "@/components/ui/other-currency-lines";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -276,8 +276,9 @@ function buildRows<T>(arr: T[]) {
     category: string;
     type: string;
     amount_cents: number;
-    currency?: string | null;
     date_is_estimated?: boolean;
+    currency?: string | null;
+    currency_assumed?: boolean;
     kdv_cents?: number | null;
     stopaj_cents?: number | null;
     raw_text?: string | null;
@@ -375,22 +376,26 @@ export default function TransactionsPage() {
   const safePage = Math.min(page, totalPages);
   const pageRows = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  // Summary stats (always from full set). Amounts in different currencies are never added:
-  // the headline is the organisation's base currency and every other currency is its own
-  // "not converted" line (no exchange-rate source).
-  const baseCurrency = (org?.base_currency || "TRY").toUpperCase();
-  const currencyOf = (t: { currency?: string | null }) => (t.currency || baseCurrency).toUpperCase();
-  const inBase = allTransactions.filter((t) => currencyOf(t) === baseCurrency);
-  const totalIn = inBase.filter((t) => t.type === "income").reduce((s, t) => s + t.amount_cents / 100, 0);
-  const totalOut = inBase.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount_cents / 100, 0);
-  const otherCurrencies: OtherCurrency[] = [
-    ...new Set(allTransactions.map(currencyOf).filter((c) => c !== baseCurrency)),
-  ].sort((a, b) => a.localeCompare(b)).map((currency) => {
+  // Summary stats (always from full set). Amounts in different currencies are never added. The headline
+  // currency comes from the backend's one rule (`effective_base`): the confirmed currency; else the only
+  // currency present; else (several, none confirmed) there is no headline and each currency stands alone.
+  // Every row stays in the list below, in its own currency.
+  const base = data!.base;
+  const headline = base ? base.currency : (org?.base_currency || "TRY").toUpperCase();
+  const currencyOf = (t: { currency?: string | null }) => (t.currency || headline || "").toUpperCase();
+  const sumOf = (rows: typeof allTransactions, type: string) =>
+    rows.filter((t) => t.type === type).reduce((s, t) => s + t.amount_cents, 0);
+  const inBase = allTransactions.filter((t) => currencyOf(t) === headline);
+  const totalIn = sumOf(inBase, "income") / 100;
+  const totalOut = sumOf(inBase, "expense") / 100;
+  const currenciesPresent = [...new Set(allTransactions.map(currencyOf))].sort((a, b) => a.localeCompare(b));
+  const perCurrency: OtherCurrency[] = currenciesPresent.map((currency) => {
     const rows = allTransactions.filter((t) => currencyOf(t) === currency);
-    const sum = (type: string) => rows.filter((t) => t.type === type).reduce((s, t) => s + t.amount_cents, 0);
-    return { currency, cash_in_cents: sum("income"), cash_out_cents: sum("expense"), rows: rows.length };
+    return { currency, cash_in_cents: sumOf(rows, "income"), cash_out_cents: sumOf(rows, "expense"), rows: rows.length };
   });
-  const money = (value: number) => formatCurrency(value, baseCurrency, org?.locale || "en-US");
+  const otherCurrencies = perCurrency.filter((c) => c.currency !== headline);
+  const money = (value: number, currency: string | null = headline) =>
+    formatCurrency(value, currency ?? "TRY", org?.locale || "en-US");
 
   const hasFilter = search || filterCat !== "all" || filterType !== "all";
 
@@ -411,6 +416,7 @@ export default function TransactionsPage() {
 
         {/* Summary strip */}
         <div className="flex items-center gap-4 sm:gap-6">
+          {headline && (<>
           <div className="hidden text-right sm:block">
             <p className="text-xs text-muted-foreground">Total In</p>
             <p className="text-sm font-semibold tabular-nums text-emerald-400">
@@ -434,6 +440,7 @@ export default function TransactionsPage() {
               {money(totalIn - totalOut)}
             </p>
           </div>
+          </>)}
 
           {/* CSV export */}
           <button
@@ -455,7 +462,12 @@ export default function TransactionsPage() {
           </button>
         </div>
       </div>
-      <OtherCurrencyLines items={otherCurrencies} base={baseCurrency} kind="cash" ratios />
+      <BaseCurrencyNotice state={base?.state} base={headline} confirmPath={base?.confirm_path} />
+      {headline ? (
+        <OtherCurrencyLines items={otherCurrencies} base={headline} kind="cash" ratios />
+      ) : (
+        <OtherCurrencyLines items={perCurrency} base="" kind="cash" />
+      )}
 
       {/* Filter toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -631,6 +643,15 @@ export default function TransactionsPage() {
                   >
                     {tx.type === "income" ? "+" : "−"}
                     {formatCurrency(tx.amount_cents / 100, currencyOf(tx), org?.locale || "en-US")}
+                    {/* The document did not state a currency; the organisation's was assumed. */}
+                    {tx.currency_assumed && (
+                      <span
+                        className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[10px] font-medium text-amber-400"
+                        title="The document did not state a currency; the organisation's base currency was assumed."
+                      >
+                        {tx.currency} assumed
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

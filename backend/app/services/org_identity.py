@@ -15,6 +15,7 @@ the accountant's number.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from sqlalchemy import select
@@ -93,3 +94,30 @@ async def own_vkn(org_id: str | None) -> str:
 
     async with session_factory()() as db:
         return await vkn_of(db, org_id)
+
+
+async def own_base_currency(org_id: str | None) -> str | None:
+    """The organisation's CONFIRMED base currency, or None.
+
+    `Organization.base_currency` is NOT NULL with a server-side default of "USD",
+    so a stored value is not a choice and is never used. Only a currency an owner
+    or admin confirmed (`base_currency_confirmed_at`) may stand in for one a
+    document did not state; the row is then marked `currency_assumed`. Unconfirmed
+    (or no answer at all): None, and the row waits for a person.
+    """
+    if not org_id:
+        return None
+    from app.database import session_factory
+
+    try:
+        async with session_factory()() as db:
+            org = await db.get(Organization, org_id)
+    except Exception:
+        # No answer is "no base currency": the rows wait for a person, which is
+        # the safe direction. It is said in the log, not swallowed.
+        logging.getLogger(__name__).warning("base currency lookup failed for org=%s", org_id, exc_info=True)
+        return None
+    if org is None or getattr(org, "base_currency_confirmed_at", None) is None:
+        return None
+    code = (getattr(org, "base_currency", None) or "").strip().upper()
+    return code if len(code) == 3 else None

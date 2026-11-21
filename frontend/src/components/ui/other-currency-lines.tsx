@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { formatCurrency } from "@/lib/utils";
@@ -64,5 +65,51 @@ export function OtherCurrencyLines({
       })}
       {ratios && <p>{copy.ratiosNote.replace("{base}", base)}</p>}
     </div>
+  );
+}
+
+/** Where the headline currency comes from, when it is not confirmed (backend `effective_base`). */
+export type BaseState = "confirmed" | "single_unconfirmed" | "ambiguous" | "no_data";
+
+export function BaseCurrencyNotice({
+  state,
+  base,
+  confirmPath = "/bekleyen-kayitlar",
+}: {
+  state: BaseState | string | null | undefined;
+  base?: string | null;
+  confirmPath?: string;
+}) {
+  const { t } = useI18n();
+  const copy = t.otherCurrency;
+  if (state !== "single_unconfirmed" && state !== "ambiguous") return null;
+  return (
+    <div className="space-y-0.5 text-xs text-amber-400" data-testid="base-currency-notice">
+      {state === "ambiguous" ? (
+        <>
+          <p className="font-medium">{copy.chooseTitle}</p>
+          <p>{copy.chooseBody}</p>
+        </>
+      ) : (
+        <p>{copy.unconfirmed.replace("{base}", base ?? "")}</p>
+      )}
+      <Link href={confirmPath} className="underline underline-offset-2">
+        {copy.confirmLink}
+      </Link>
+    </div>
+  );
+}
+
+/** "12 dövizli işlem dahil değil (USD, EUR)": rows a list or total read without. */
+export function LeftOutNote({ items }: { items: OtherCurrency[] | null | undefined }) {
+  const { t } = useI18n();
+  const n = (items ?? []).reduce((sum, i) => sum + (i.rows ?? 0), 0);
+  if (!n) return null;
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="left-out-note">
+      {t.otherCurrency.leftOut
+        .replace("{n}", String(n))
+        .replace("{currencies}", (items ?? []).map((i) => i.currency).join(", "))}
+    </p>
   );
 }

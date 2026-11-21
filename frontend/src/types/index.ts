@@ -51,6 +51,8 @@ export interface PnLData {
   narrative: string;
   /** The currency the figures above are in; amounts in any other are in `other_currencies`. */
   currency?: string;
+  base_state?: string;
+  currency_note?: string | null;
   /** Other currencies, summed on their own and never converted (no exchange-rate source). */
   other_currencies?: OtherCurrency[];
 }
@@ -64,6 +66,8 @@ export interface CashFlowData {
   narrative: string;
   alerts: Alert[];
   currency?: string;
+  base_state?: string;
+  currency_note?: string | null;
   other_currencies?: OtherCurrency[];
 }
 
@@ -138,6 +142,8 @@ export interface DashboardData {
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
+  /** Rows in other currencies that the lists and totals above were computed without. */
+  currency_scope?: { currency: string | null; base_state: string | null; left_out_rows: number; by_currency: OtherCurrency[]; note: string | null };
   // Anomaly data — present when anomaly agent ran
   anomalies?: AnomalyItem[];
   anomaly_narrative?: string;

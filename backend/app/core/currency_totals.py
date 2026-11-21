@@ -23,7 +23,8 @@ only when it is a pipeline mapping, because every producer of those rows writes 
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from app.core.tdhp import BILANCO_KATEGORILERI
@@ -40,6 +41,15 @@ def normalise(code: str | None) -> str:
 
 def _get(row: Any, name: str) -> Any:
     return row.get(name) if isinstance(row, dict) else getattr(row, name, None)
+
+
+def same_currency(a: str | None, b: str | None) -> bool:
+    """Could two rows be in the same currency? Equal codes are: it does not matter whether a code was
+    stated by the document or assumed from the confirmed base (`currency_assumed`). A side with no code at
+    all is unknown, and unknown is not "different": the comparison falls back to the one made before
+    currencies existed (the pair is held if it is ambiguous), instead of splitting one invoice in two."""
+    x, y = normalise(a), normalise(b)
+    return not x or not y or x == y
 
 
 def code_of(row: Any, base: str) -> str:
@@ -86,6 +96,13 @@ def _is_income(row: Any) -> bool:
     return direction_of(row) == "income"
 
 
+def _group(rows: Iterable[Any]) -> dict[str, list[Any]]:
+    out: dict[str, list[Any]] = {}
+    for row in rows:
+        out.setdefault(code_of(row, ""), []).append(row)
+    return out
+
+
 def foreign_summaries(
     profit: Iterable[Any], cash: Iterable[Any], base: str
 ) -> list[dict[str, Any]]:
@@ -95,8 +112,9 @@ def foreign_summaries(
     `cash` rows give money in and out. Each currency is summed on its own. Sorted by
     currency code so the output is stable.
     """
-    _, profit_other = split_by_currency(profit, base)
-    _, cash_other = split_by_currency(cash, base)
+    # base None: there is no headline currency, so every currency is reported on its own.
+    profit_other = split_by_currency(profit, base)[1] if base else _group(profit)
+    cash_other = split_by_currency(cash, base)[1] if base else _group(cash)
     out: list[dict[str, Any]] = []
     for code in sorted(set(profit_other) | set(cash_other)):
         earned = [r for r in profit_other.get(code, []) if _get(r, "category") not in BILANCO_KATEGORILERI]
@@ -114,14 +132,23 @@ def foreign_summaries(
     return out
 
 
-def currency_note(base: str, foreign: list[dict[str, Any]] | None, kind: str = "profit") -> str | None:
-    """One sentence saying what was left out of the figures, or None when nothing was.
+def currency_note(
+    base: str, foreign: list[dict[str, Any]] | None, kind: str = "profit", state: str | None = None
+) -> str | None:
+    """One sentence saying what was left out of the figures and how the currency was chosen, or None.
 
-    `kind` is "profit" (revenue and expense) or "cash" (money in and out).
+    `kind` is "profit" (revenue and expense) or "cash" (money in and out); `state` is the
+    `EffectiveBase.state` the figures were computed under.
     """
-    if not foreign:
-        return None
     base = normalise(base) or DEFAULT_BASE
+    lead = ""
+    if state == SINGLE_UNCONFIRMED:
+        lead = f"Şirket para birimi henüz onaylanmadı; veride yalnızca {base} var. "
+    elif state == AMBIGUOUS:
+        lead = (f"Şirket para birimi seçilmediği için hesap, en çok satırı olan {base} ile yapıldı. "
+                "Şirket para biriminizi seçin. ")
+    if not foreign:
+        return lead.strip() or None
     keys = (("cash_in_cents", "giriş"), ("cash_out_cents", "çıkış")) if kind == "cash" else (
         ("revenue_cents", "gelir"), ("expense_cents", "gider"))
     parts = []
@@ -129,6 +156,91 @@ def currency_note(base: str, foreign: list[dict[str, Any]] | None, kind: str = "
         bits = [f"{f[k] / 100:,.2f} {f['currency']} {word}" for k, word in keys if f.get(k)]
         parts.append(" ve ".join(bits) if bits else f"{f['currency']} hareketi")
     return (
-        f"Toplamlar ve oranlar yalnızca {base} tutarlarıyla hesaplandı; ayrıca "
+        lead + f"Toplamlar ve oranlar yalnızca {base} tutarlarıyla hesaplandı; ayrıca "
         + ", ".join(parts) + f" var, {base}'ye çevrilmedi."
     )
+
+
+# ── the effective base: which currency is the headline, and how sure we are ────────────────────
+#
+# `Organization.base_currency` is NOT NULL with a column default of "USD", so a stored value is not a
+# choice. Only a currency an owner or admin confirmed (`base_currency_confirmed_at`) is one. Every
+# surface (ledger summary, company view, the pipeline's split, the cash radar, the briefings, the
+# transactions list) decides its headline with this one function, so they cannot disagree.
+
+CONFIRMED = "confirmed"
+SINGLE_UNCONFIRMED = "single_unconfirmed"
+AMBIGUOUS = "ambiguous"
+NO_DATA = "no_data"
+CONFIRM_PATH = "/bekleyen-kayitlar"  # the screen where an owner or admin confirms the company currency
+
+
+@dataclass(frozen=True)
+class EffectiveBase:
+    """The headline currency and why.
+
+    - `confirmed`: `currency` is the confirmed one; every other currency is "ayrıca … çevrilmedi".
+    - `single_unconfirmed`: the data holds exactly one currency: it is the headline, marked as not yet
+      confirmed, and nothing is dropped.
+    - `ambiguous`: unconfirmed and several currencies: there is no single headline (`currency` is None);
+      totals are shown per currency and a person is asked to choose. `dominant` (most rows) is only the
+      currency a computation may run on, and then its outputs must be labelled.
+    - `no_data`: nothing to total.
+    """
+
+    state: str
+    currency: str | None
+    present: dict[str, int] = field(default_factory=dict)
+    dominant: str | None = None
+    confirm_path: str = CONFIRM_PATH
+
+    @property
+    def confirmed(self) -> bool:
+        return self.state == CONFIRMED
+
+    @property
+    def run_currency(self) -> str | None:
+        """The currency a computation runs on: the headline, else (ambiguous) the dominant one, else None."""
+        return self.currency or self.dominant
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state, "currency": self.currency, "confirmed": self.confirmed,
+            "dominant": self.dominant, "present": dict(sorted(self.present.items())),
+            "confirm_path": self.confirm_path,
+        }
+
+
+def effective_base(confirmed: str | None, counts: Mapping[str, int]) -> EffectiveBase:
+    """The one rule. `confirmed` is the organisation's confirmed base currency or None; `counts` is
+    rows per currency present in the data (zero counts are ignored)."""
+    present = {normalise(c): n for c, n in counts.items() if n and normalise(c)}
+    code = normalise(confirmed)
+    if code:
+        return EffectiveBase(CONFIRMED, code, present)
+    if not present:
+        return EffectiveBase(NO_DATA, None, present)
+    if len(present) == 1:
+        (only,) = present
+        return EffectiveBase(SINGLE_UNCONFIRMED, only, present)
+    top = max(present.values())
+    leaders = sorted(c for c, n in present.items() if n == top)
+    return EffectiveBase(AMBIGUOUS, None, present, dominant=leaders[0])
+
+
+def count_currencies(rows: Iterable[Any]) -> dict[str, int]:
+    """Rows per currency (a pipeline row naming none is not counted: it has no currency to vote for)."""
+    out: dict[str, int] = {}
+    for row in rows:
+        code = normalise(_get(row, "currency"))
+        if code:
+            out[code] = out.get(code, 0) + 1
+    return out
+
+
+def fmt_money(cents: int, currency: str | None = None) -> str:
+    """An amount as the Turkish text writes it: ₺1.234,56 for lira, 1.234,56 USD for the rest."""
+    sign = "-" if cents < 0 else ""
+    swapped = f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
+    code = normalise(currency) or DEFAULT_BASE
+    return f"{sign}₺{swapped}" if code == "TRY" else f"{sign}{swapped} {code}"

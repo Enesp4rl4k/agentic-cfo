@@ -99,6 +99,7 @@ def _compute_pnl(
     transactions: list[dict[str, Any]],
     base_currency: str | None = None,
     foreign_totals: list[dict[str, Any]] | None = None,
+    base_state: str | None = None,
 ) -> dict[str, Any]:
     """Pure calculation — no LLM, no I/O.
 
@@ -161,7 +162,8 @@ def _compute_pnl(
         # The figures above are in `currency` only; every other currency is its own line.
         "currency": base,
         "other_currencies": foreign,
-        "currency_note": currency_note(base, foreign),
+        "base_state": base_state,
+        "currency_note": currency_note(base, foreign, "profit", base_state),
         # S1-1: trend analysis
         "revenue_trend": revenue_trend,
         "expense_trend": expense_trend,
@@ -234,7 +236,8 @@ async def run_pnl(state: CFOState, config: AgentRunConfig) -> SkillResult:
 
     try:
         settings = get_settings()
-        pnl = _compute_pnl(transactions, state.get("base_currency"), state.get("foreign_totals"))
+        pnl = _compute_pnl(
+            transactions, state.get("base_currency"), state.get("foreign_totals"), state.get("base_state"))
         narrative = await _generate_cfo_narrative(pnl, settings, state=state)
         pnl["narrative"] = narrative
 

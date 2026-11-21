@@ -35,6 +35,10 @@ class ApprovedJournal:
     entries: list[dict[str, Any]] = field(default_factory=list)
     # kayit_id -> why it is not in `entries`: "reddedildi" | "bekliyor"
     excluded: dict[str, str] = field(default_factory=dict)
+    # Entries left out of the statutory outputs because they are in another currency than the
+    # journal's primary one (no exchange rate is kept): currency -> how many. The accountant's own
+    # view (the defensibility packet) lists them all.
+    left_out_currency: dict[str, int] = field(default_factory=dict)
 
 
 def _durum(onay: Any) -> str:
@@ -156,4 +160,11 @@ async def yukle(db: Any, job_id: str) -> tuple[dict[str, Any], ApprovedJournal]:
         .scalars()
         .all()
     )
-    return journal, uygula(journal.get("yevmiye_kayitlari") or [], onaylar)
+    from app.agents.accounting.currency_runs import entries_of
+
+    applied = uygula(journal.get("yevmiye_kayitlari") or [], onaylar)
+    # Mizan, e-Defter and the reconciliation are single-currency: the primary one, with the rest counted.
+    applied.entries, applied.left_out_currency = entries_of(
+        applied.entries, journal.get("birincil_para_birimi") or None
+    )
+    return journal, applied

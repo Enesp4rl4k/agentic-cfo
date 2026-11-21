@@ -15,7 +15,8 @@ import {
   type CashRadar,
   type RadarWeek,
 } from "@/lib/api/ledger";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
+import { BaseCurrencyNotice } from "@/components/ui/other-currency-lines";
 import { WhatIfRadarPanel } from "@/components/simulation/WhatIfRadarPanel";
 import { ConsolidatedRadarView } from "@/components/consolidation/ConsolidatedRadarView";
 import { getConsolidatedRadar } from "@/lib/api/consolidation";
@@ -23,6 +24,7 @@ import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
 import { RadarAnswer } from "@/components/radar/RadarAnswer";
 import { WeekDetail } from "@/components/radar/WeekDetail";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { BasisSplitLine, formatDay, hasUnverifiedTax, StaleBalanceNotice, TaxRulesNote } from "@/components/radar/basis";
 
 const RADAR_KEY = ["cash-radar"];
@@ -309,6 +311,7 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
           <li key={line}>{line}</li>
         ))}
       </ul>
+      <HeldRowsLink />
       <dl className="space-y-1 text-sm">
         {amounts
           .filter(([, cents]) => cents > 0)
@@ -381,13 +384,15 @@ function Headline({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt
 export default function NakitRadariPage() {
   const { t } = useI18n();
   const copy = t.cashRadar;
-  const fmt = useCurrencyFormat();
+  const orgFmt = useCurrencyFormat();
   const { org } = useOrgSettings();
   const locale = org?.locale || "en-US";
   const [viewMode, setViewMode] = useState<"individual" | "consolidated">("individual");
   const [pickedWeek, setPickedWeek] = useState<number | null>(null);
 
   const { data: radar, isLoading, isError } = useQuery({ queryKey: RADAR_KEY, queryFn: getCashRadar });
+  // The radar is in the same effective currency as the P&L (backend `effective_base`), not the column default.
+  const fmt: Fmt = (value) => (radar?.currency ? formatCurrency(value, radar.currency, locale) : orgFmt(value));
   const { data: consolidatedRadar } = useQuery({
     queryKey: ["consolidated-radar"],
     queryFn: () => getConsolidatedRadar([]),
@@ -416,6 +421,7 @@ export default function NakitRadariPage() {
           </div>
           {viewMode === "individual" && radar && !isEmpty(radar) && <Headline radar={radar} copy={copy} fmt={fmt} />}
         </div>
+        {radar && <BaseCurrencyNotice state={radar.base_state} base={radar.currency} />}
 
         <div className="flex w-fit items-center rounded-lg border border-border bg-muted/40 p-1">
           {(["individual", "consolidated"] as const).map((mode) => (

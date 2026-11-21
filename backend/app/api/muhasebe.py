@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -125,19 +126,14 @@ async def muhasebe_analiz(
             detail="Bu job'a ait işlem bulunamadı. Önce analiz çalıştırın.",
         )
 
-    # A journal is kept in one currency. Posting a USD amount as if it were lira would put a
-    # number in the books that is not one; no exchange rate is kept here, so rows in any other
-    # currency stay out of the journal and are counted in the response for the accountant.
-    from app.core.currency_totals import split_by_currency
+    # A journal is kept per currency: one run per currency, never one trial balance adding USD to TRY.
+    # Rows in another currency are NOT dropped from what the accountant sees: their entries are tagged
+    # `para_birimi` and listed with their own totals; only the statutory outputs (mizan, e-Defter) are
+    # restricted to the primary currency, with the left-out count said (`approved_journal.yukle`).
+    from app.agents.accounting.currency_runs import groups_by_currency, merge_runs
     from app.services.ledger import base_currency_of
 
     journal_currency = await base_currency_of(db, str(job.org_id)) if job.org_id else "TRY"
-    txs, foreign_txs = split_by_currency(txs, journal_currency)
-    if not txs:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Bu job'un tüm işlemleri {journal_currency} dışında; kur kaynağı olmadan yevmiyeye alınmadı.",
-        )
     tx_dicts = [
         {
             "id":               tx.id,
@@ -159,6 +155,7 @@ async def muhasebe_analiz(
         }
         for tx in txs
     ]
+    currency_of_tx = {tx.id: (tx.currency or "").upper() for tx in txs}
 
     # Muhasebe analizi — CoA adapter follows org regional packs
     packs: list[str] = []
@@ -194,15 +191,22 @@ async def muhasebe_analiz(
         use_llm_fallback=body.use_llm_fallback,
         regional_packs=packs,
     )
-    sonuc = await agent.run(
-        job_id=body.job_id,
-        transactions=tx_dicts,
-        company_name=body.company_name,
-        donem=body.donem,
-        authority_rules=authority_rules,
-        guven_gecmisi=await _guven_gecmisi(db, str(job.org_id) if job.org_id else None),
-        kurum_kurallari=await _kurum_kurallari(db, str(job.org_id) if job.org_id else None),
-    )
+    guven = await _guven_gecmisi(db, str(job.org_id) if job.org_id else None)
+    kurum = await _kurum_kurallari(db, str(job.org_id) if job.org_id else None)
+    for d in tx_dicts:
+        d["currency"] = currency_of_tx[d["id"]]
+    runs = {}
+    for cur, group in groups_by_currency(tx_dicts, journal_currency).items():
+        runs[cur] = await agent.run(
+            job_id=body.job_id,
+            transactions=group,
+            company_name=body.company_name,
+            donem=body.donem,
+            authority_rules=authority_rules,
+            guven_gecmisi=guven,
+            kurum_kurallari=kurum,
+        )
+    sonuc = merge_runs(runs, journal_currency)
 
     # SMMM onay kuyruğu — Turkey pack only
     onay_eklendi = await _enqueue_smmm_review(
@@ -223,7 +227,6 @@ async def muhasebe_analiz(
     result_dict = sonuc.to_dict()
     result_dict["onay_kuyruguna_eklendi"] = onay_eklendi
     result_dict["iliskili_taraf_isaretlendi"] = related_flagged
-    result_dict["para_birimi_disi"] = {c: len(v) for c, v in sorted(foreign_txs.items())}
     result_dict["coa_adapter"] = "tr_thp" if "tr" in packs else "generic_gaap"
 
     logger.info(
@@ -447,6 +450,7 @@ async def muhasebe_yevmiye_dokumu(
             # Said in the response as well as the docstring: a client that only
             # reads headers must not mistake this for a filing.
             "X-Not-A-GIB-Filing": "true",
+            **_left_out_header(dict(onayli.left_out_currency)),
         },
     )
 
@@ -455,6 +459,17 @@ async def muhasebe_yevmiye_dokumu(
 # ── e-Defter (XBRL GL) ───────────────────────────────────────────────────────
 # The real thing: validated against the edefter.xsd GİB publishes, in the
 # format its own samples use. Still unsigned — see the response headers.
+
+_LEFT_OUT: ContextVar[dict[str, int] | None] = ContextVar("muhasebe_left_out_currency", default=None)
+
+
+def _left_out_header(left: dict[str, int]) -> dict[str, str]:
+    """`X-Para-Birimi-Disi: USD=3`: entries left out of a statutory export because they are in another
+    currency than the journal's primary one. Absent when nothing was left out."""
+    if not left:
+        return {}
+    return {"X-Para-Birimi-Disi": ", ".join(f"{c}={n}" for c, n in sorted(left.items()))}
+
 
 async def _edefter_context(
     job_id: str, current_user: User, db: AsyncSession, donem: str | None = None
@@ -490,6 +505,7 @@ async def _edefter_context(
     )
     from app.services.edefter_xbrl import EDefterError, ledger_period
 
+    _LEFT_OUT.set(dict(onayli.left_out_currency))
     # The period is the month the entries are in. It used to be read from a
     # `donem` field nothing wrote, falling back to the job's creation month.
     try:
@@ -534,6 +550,7 @@ def _edefter_response(pkg: EDefterXBRL, job_id: str) -> Response:
             # The prose lives in the OpenAPI description, where it can be read.
             "X-EDefter-Filable": "false",
             "X-EDefter-Unfilable-Code": "unsigned-no-berat",
+            **_left_out_header(_LEFT_OUT.get() or {}),
         },
     )
 
@@ -826,6 +843,9 @@ async def mizan_ozet(
                 "reddedildi": sum(1 for v in onayli.excluded.values() if v == "reddedildi"),
                 "bekliyor": sum(1 for v in onayli.excluded.values() if v == "bekliyor"),
             },
+            # Entries in another currency than the journal's primary one: not in this trial balance (no
+            # rate is kept), counted here; the accountant's packet lists them with their own totals.
+            "para_birimi_disi": dict(onayli.left_out_currency),
             "mizan": tablo,
             "toplam": {
                 "borc": toplam_borc,

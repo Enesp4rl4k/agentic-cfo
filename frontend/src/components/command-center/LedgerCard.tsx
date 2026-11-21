@@ -6,7 +6,7 @@ import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
-import { OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { BaseCurrencyNotice, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { formatCurrency } from "@/lib/utils";
 import { failureMessage } from "@/lib/forbidden";
@@ -82,17 +82,40 @@ export function LedgerCard() {
             <dt className="text-xs text-muted-foreground">{copy.rows}</dt>
             <dd className="font-medium tabular-nums">{summary.rows}</dd>
           </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">{copy.revenue}</dt>
-            <dd className="font-medium tabular-nums">{fmt(summary.revenue_cents / 100)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">{copy.expense}</dt>
-            <dd className="font-medium tabular-nums">{fmt(summary.expense_cents / 100)}</dd>
-          </div>
+          {summary.currency && (
+            <>
+              <div>
+                <dt className="text-xs text-muted-foreground">{copy.revenue}</dt>
+                <dd className="font-medium tabular-nums">{fmtIn(summary.revenue_cents / 100, summary.currency)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">{copy.expense}</dt>
+                <dd className="font-medium tabular-nums">{fmtIn(summary.expense_cents / 100, summary.currency)}</dd>
+              </div>
+            </>
+          )}
         </dl>
       )}
-      {summary && <OtherCurrencyLines items={summary.other_currencies} base={summary.currency} ratios />}
+      {summary && !summary.currency && summary.currency_totals.length > 0 && (
+        /* No single headline: every currency on its own, side by side. */
+        <dl className="grid gap-2 text-sm sm:grid-cols-2" data-testid="per-currency-totals">
+          {summary.currency_totals.map((c) => (
+            <div key={c.currency} className="rounded-md border border-border p-2">
+              <dt className="text-xs font-medium text-muted-foreground">{c.currency}</dt>
+              <dd className="tabular-nums">
+                {copy.revenue}: {fmtIn((c.revenue_cents ?? 0) / 100, c.currency)} · {copy.expense}:{" "}
+                {fmtIn((c.expense_cents ?? 0) / 100, c.currency)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {summary && (
+        <BaseCurrencyNotice state={summary.base_state} base={summary.currency} confirmPath={summary.confirm_path} />
+      )}
+      {summary && summary.currency && (
+        <OtherCurrencyLines items={summary.other_currencies} base={summary.currency} ratios />
+      )}
       {summary && summary.open_items.receivable_cents + summary.open_items.payable_cents > 0 && (
         <p className="text-xs">
           {copy.openItems

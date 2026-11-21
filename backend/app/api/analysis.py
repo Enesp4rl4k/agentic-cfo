@@ -228,9 +228,12 @@ async def get_analysis_status(
             "status": job.status,
             "filename": job.filename,
             "awaiting_review": job.awaiting_review,
-            "min_confidence": float(job.min_confidence) if job.min_confidence else None,
+            "min_confidence": float(job.min_confidence) if job.min_confidence is not None else None,
             # What this upload added to the company ledger; None until it finished.
             "ledger": (job.result_metadata or {}).get("ledger"),
+            # "N kayıt işlendi, M kayıt incelemenizi bekliyor", the rows without a
+            # readable date, the rows whose currency was assumed.
+            "ingest": (job.result_metadata or {}).get("ingest"),
             "company_view": (job.result_metadata or {}).get("company_view"),
             "logs": job.logs or [],
             "error": job.error_message,
@@ -400,23 +403,39 @@ async def list_transactions(
     )
     txs = result.scalars().all()
 
+    # How this list's currencies are read: the same effective-base rule every surface uses, over the whole
+    # job (not the page). The list itself holds every row, each in its own currency, nothing left out.
+    from app.core.currency_totals import effective_base
+    from app.services.ledger import confirmed_base_of
+
+    job_counts = {
+        str(c): int(n) for c, n in (await db.execute(
+            select(Transaction.currency, func.count()).where(Transaction.job_id == job_id)
+            .group_by(Transaction.currency)
+        )).all()
+    }
+    base = effective_base(await confirmed_base_of(db, str(job.org_id)) if job.org_id else None, job_counts)
+
     return {
         "data": {
             "total": total,
             "limit": limit,
             "offset": offset,
+            "base": base.as_dict(),
             "transactions": [
                 {
                     "id": tx.id,
                     "job_id": tx.job_id,
                     "amount_cents": tx.amount_kurus,
                     "currency": tx.currency,
+                    # True: the document did not say, the organisation's base currency was assumed.
+                    "currency_assumed": bool(tx.currency_assumed),
                     "type": tx.type,
                     "category": tx.category,
                     "description": tx.description,
                     "vendor": tx.vendor,
                     "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-                    "confidence": float(tx.confidence) if tx.confidence else None,
+                    "confidence": float(tx.confidence) if tx.confidence is not None else None,
                     # "user_rule" / "user_edit" / None — the user's own
                     # correction decided the category (plan v5 §F0).
                     "category_source": tx.category_source,

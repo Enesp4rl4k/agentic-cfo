@@ -19,7 +19,7 @@ import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { cn } from "@/lib/utils";
-import { OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { BaseCurrencyNotice, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
 import type { Alert, MonthlyEntry } from "@/types";
 
 // ── Chart styles (matches dashboard.tsx) ─────────────────────────────────────
@@ -472,6 +472,7 @@ export default function CashflowPage() {
 
       {/* Summary metrics */}
       <MetricStrip metrics={metrics} />
+      <BaseCurrencyNotice state={cf.base_state} base={cf.currency} />
       <OtherCurrencyLines items={cf.other_currencies} base={cf.currency ?? "TRY"} kind="cash" ratios />
 
       {/* Monthly in/out area chart */}

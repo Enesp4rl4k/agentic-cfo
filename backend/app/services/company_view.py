@@ -44,11 +44,15 @@ class LedgerView:
     # sub-total per other currency, reported beside the base figures and never added to them.
     base_currency: str = "TRY"
     foreign: list[dict[str, Any]] | None = None
+    # How `base_currency` was decided (`core/currency_totals.effective_base`): confirmed, single_unconfirmed,
+    # or ambiguous (the dominant currency by row count, labelled as such: no single headline exists).
+    base_state: str = "confirmed"
 
     def for_pipeline(self) -> dict[str, Any]:
         return {
             "profit": self.profit, "cash": self.cash,
             "base_currency": self.base_currency, "foreign": self.foreign or [],
+            "base_state": self.base_state,
         }
 
 
@@ -109,6 +113,7 @@ async def ledger_view(db: AsyncSession, org_id: str, period: Period | None = Non
         signature=_signature(profit, cash, foreign),
         base_currency=base,
         foreign=foreign,
+        base_state=rows.effective.state,
     )
 
 

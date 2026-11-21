@@ -30,7 +30,8 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
         hesap = tdhp.hesap(tx.account_code)
         transactions.append({
             "amount_cents": tx.amount_cents,
-            "currency": tx.currency,
+            # "" = the document did not say; resolved or held by app.services.ingest.hold.
+            "currency": tx.currency or None,
             "type": tx.tx_type,
             "category": (
                 _kodlu_kategori(hesap, tx.description) if hesap is not None
@@ -39,7 +40,9 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             "account_code": tx.account_code,
             "description": tx.description,
             "vendor": tx.vendor,
-            "transaction_date": tx.date.isoformat() if tx.date else None,
+            "transaction_date": (
+                tx.date.isoformat() if tx.date and not tx.date_estimated else None
+            ),
             "raw_text": (
                 f"{tx.raw_row}\n[yön] {tx.confidence_note}"
                 if tx.confidence_note else tx.raw_row
@@ -47,7 +50,8 @@ def _statement_to_transactions(statement: ParsedStatement) -> list[dict[str, Any
             # Structured parsers are high-confidence about the *rows*; they are
             # not automatically right about which way the money went. A parser
             # that knows better says so, and only then does this cap apply.
-            "confidence": min(0.95, tx.confidence),
+            # None stays None: a row nobody scored is unknown, not 0.95.
+            "confidence": None if tx.confidence is None else min(0.95, tx.confidence),
             # Not money moved: the bank's own running total, which proves the
             # balance the statement closes on (app.services.bank_balance).
             "balance_cents": tx.balance_cents,
@@ -181,6 +185,16 @@ def _fatura_alanlari(tx: dict[str, Any], r_lower: dict[str, str]) -> None:
         tx["due_date"] = vade.date().isoformat()
 
 
+_PARA_BIRIMI_TAKMA_ADLARI = {"TL": "TRY", "TRL": "TRY", "₺": "TRY", "$": "USD", "€": "EUR", "£": "GBP"}
+
+
+def _para_birimi(raw: str) -> str | None:
+    """An ISO-4217 code from a currency cell; None for an empty or unreadable one."""
+    code = raw.strip().upper()
+    code = _PARA_BIRIMI_TAKMA_ADLARI.get(code, code)
+    return code if len(code) == 3 and code.isalpha() else None
+
+
 def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any] | None:
     """One CSV row as a pipeline transaction; None for an empty or skipped row."""
     if not row or not any(row.values()):
@@ -193,7 +207,11 @@ def _csv_satiri(row: dict[str, Any], atlanan: list[str] | None) -> dict[str, Any
     hesap = tdhp.hesap(account_code) if account_code else None
     parsed_dt = _parse_date(_ilk(r_lower, "date", "tarih", "islem tarihi"))
     tx: dict[str, Any] = {
-        "currency": "TRY",
+        # What the row's own column says; None when it says nothing, and the
+        # document's header or the organisation's base currency (marked as
+        # assumed) is applied by the caller (app.services.ingest.hold). It used
+        # to be "TRY" whatever the file held.
+        "currency": _para_birimi(_ilk(r_lower, "currency", "para birimi", "doviz", "doviz cinsi", "pb")),
         "description": raw_desc,
         "vendor": _ilk(r_lower, "vendor", "tedarikci") or raw_desc,
         "transaction_date": parsed_dt.isoformat() if parsed_dt else None,

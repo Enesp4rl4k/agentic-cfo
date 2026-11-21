@@ -62,12 +62,22 @@ class LedgerSummaryOut(BaseModel):
     last_upload: LastUploadOut | None
     open_items: OpenItemsOut
     rows: int
-    # The organisation's base currency: revenue, expense and the monthly cash figures are in it.
-    currency: str
+    # The headline currency (`core/currency_totals.effective_base`): the confirmed base currency, or the
+    # one currency the data holds while unconfirmed. None when several currencies are present and none
+    # is confirmed: then there is no single headline, the headline figures are 0, and `currency_totals`
+    # shows every currency side by side.
+    currency: str | None
+    # confirmed | single_unconfirmed | ambiguous | no_data
+    base_state: str
+    base_confirmed: bool
+    # Where an owner or admin confirms the company currency.
+    confirm_path: str
     revenue_cents: int
     expense_cents: int
-    # Every other currency, reported separately and not converted (no exchange-rate source).
+    # Every currency other than the headline, reported separately and not converted (no rate source).
     other_currencies: list[CurrencySubtotalOut]
+    # Every currency, headline included, one entry each.
+    currency_totals: list[CurrencySubtotalOut]
     possible_duplicates: int
     period: LedgerPeriodOut
     months: list[LedgerMonthOut]

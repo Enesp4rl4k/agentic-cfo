@@ -91,7 +91,8 @@ async def test_bozuk_veri_is_held_by_the_gate() -> None:
         run_config=AgentRunConfig(require_review=True),  # real threshold
     )
     assert result.get("halted") or result.get("awaiting_review"), result
-    assert float(result.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN
+    # 0.0 is a measured confidence, not "unset" (`or 1.0` would have read it as 1.0).
+    assert float(result.get("min_confidence", 1.0)) < CONFIDENCE_AUTO_PROCEED_MIN
 
 
 async def test_tr_corpus_confidence_calibration() -> None:
