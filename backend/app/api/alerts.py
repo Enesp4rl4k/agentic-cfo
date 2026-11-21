@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import owned_job
+from app.api.access import owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -342,7 +342,8 @@ def _suggest_action(alert: RawAlert) -> str:
     return "Detaylar için analiz sayfasını inceleyin."
 
 
-@router.post("/alerts/acknowledge/{job_id}/{alert_fingerprint}")
+@router.post("/alerts/acknowledge/{job_id}/{alert_fingerprint}",
+    dependencies=[Depends(require_writer)])
 async def acknowledge_alert(
     job_id: str,
     alert_fingerprint: str,

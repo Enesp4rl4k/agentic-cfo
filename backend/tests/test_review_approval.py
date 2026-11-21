@@ -41,6 +41,7 @@ async def _user(client, email: str) -> tuple[dict[str, str], str, str]:
         db.add(org)
         await db.flush()
         user.org_id = org.id
+        user.role = "owner"  # approving a held run needs a writer role
         await db.commit()
         org_id, user_id = org.id, user.id
     token = (await client.post("/api/v1/auth/login",

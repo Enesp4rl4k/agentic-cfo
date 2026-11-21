@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -74,7 +75,8 @@ async def get_context(
     return {"data": ctx.to_dict(), "error": None}
 
 
-@router.delete("/context/{org_id}", status_code=status.HTTP_200_OK)
+@router.delete("/context/{org_id}",
+    dependencies=[Depends(require_decider)], status_code=status.HTTP_200_OK)
 async def reset_context(
     org_id: str,
     current_user: User = Depends(get_current_user),

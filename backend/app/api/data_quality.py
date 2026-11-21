@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -103,7 +104,8 @@ async def validate_csv(
     }
 
 
-@router.post("/data-quality/validate-and-upload")
+@router.post("/data-quality/validate-and-upload",
+    dependencies=[Depends(require_writer)])
 async def validate_and_upload(
     file: UploadFile = File(description="CSV file to validate and optionally analyze"),
     min_score: int = MIN_AUTO_PROCEED_SCORE,
@@ -272,7 +274,8 @@ async def get_field_mapping_hints(
     }
 
 
-@router.post("/data-quality/accept-mapping")
+@router.post("/data-quality/accept-mapping",
+    dependencies=[Depends(require_writer)])
 async def accept_column_mapping(
     body: AcceptMappingRequest,
     user: User = Depends(get_current_user),

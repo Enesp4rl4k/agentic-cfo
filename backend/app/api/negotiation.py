@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -171,7 +171,8 @@ async def list_conflicts(
         return {"data": {"org_id": org_id, "count": 0, "conflicts": []}, "error": None}
 
 
-@router.post("/negotiation/resolve/{conflict_id}")
+@router.post("/negotiation/resolve/{conflict_id}",
+    dependencies=[Depends(require_writer)])
 async def resolve_conflict(
     conflict_id: str,
     body:        ResolveRequest,

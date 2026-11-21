@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import ensure_tenant
+from app.api.access import ensure_tenant, require_writer
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.api.radar_schema import CashRadarOut
@@ -170,6 +170,7 @@ def _refresh_view(org_id: str) -> None:
 
 @router.post(
     "/ledger/settlements/{match_id}/resolve",
+    dependencies=[Depends(require_writer)],
     responses={
         400: {"description": "The user has no organisation."},
         404: {"description": "No such proposal in this organisation."},
@@ -257,6 +258,7 @@ async def get_cash_radar(
 
 @router.post(
     "/ledger/rows/{row_id}/resolve",
+    dependencies=[Depends(require_writer)],
     responses={
         400: {"description": "The user has no organisation."},
         404: {"description": "No such row in this organisation."},

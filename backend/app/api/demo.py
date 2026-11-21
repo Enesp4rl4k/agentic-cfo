@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User, UserRole
@@ -168,7 +169,8 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
     }
 
 
-@router.post("/demo/seed")
+@router.post("/demo/seed",
+    dependencies=[Depends(require_decider)])
 async def seed_demo(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -274,7 +276,8 @@ async def seed_demo(
     }
 
 
-@router.delete("/demo/reset")
+@router.delete("/demo/reset",
+    dependencies=[Depends(require_decider)])
 async def reset_demo(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

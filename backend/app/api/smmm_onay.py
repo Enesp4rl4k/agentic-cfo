@@ -25,6 +25,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import NOT_FOUND, can_access, ensure_tenant, load_owned_job, owned_job
+from app.api.access import require_smmm as _require_smmm
 from app.api.auth import get_current_user
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
@@ -140,7 +141,7 @@ async def donem_kilitleri(
     }
 
 
-@router.post("/smmm/donem-kilitleri")
+@router.post("/smmm/donem-kilitleri", dependencies=[Depends(_require_smmm)])
 async def donem_kapat(
     req:          DonemKilitRequest,
     current_user: User = Depends(get_current_user),
@@ -180,7 +181,7 @@ async def ogrenilmis_kurallar(
     return {"data": {"kurallar": await satirlari_listele(db, org_id)}, "error": None}
 
 
-@router.delete("/smmm/kurallar/{kural_id}")
+@router.delete("/smmm/kurallar/{kural_id}", dependencies=[Depends(_require_smmm)])
 async def ogrenilmis_kural_sil(
     kural_id:     str,
     current_user: User = Depends(get_current_user),

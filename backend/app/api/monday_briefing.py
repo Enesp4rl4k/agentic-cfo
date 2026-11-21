@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
@@ -88,6 +89,7 @@ async def get_monday_briefing(
 
 @router.post(
     "/briefing/monday/respond",
+    dependencies=[Depends(require_writer)],
     response_model=Envelope[BriefingAnswer],
     summary="Pazartesi bülteni aksiyon yanıtı",
     responses={

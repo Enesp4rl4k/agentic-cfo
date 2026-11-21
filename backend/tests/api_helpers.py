@@ -41,7 +41,7 @@ async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
 
 
 async def kullanici(
-    client: AsyncClient, email: str, *, attach_org: bool = True, role: str = "analyst",
+    client: AsyncClient, email: str, *, attach_org: bool = True, role: str = "owner",
 ) -> tuple[dict[str, str], str | None, str]:
     """Register, optionally attach a fresh organisation, sign in.
 
