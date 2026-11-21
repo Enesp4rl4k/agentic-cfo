@@ -1,0 +1,39 @@
+# Caddy — TLS edge for the single-VPS staging stack (docker-compose.prod.yml).
+#
+# Two hostnames, not one with path routing: the frontend owns /api/auth/*
+# (NextAuth) and the backend owns /api/v1/*, so a "/api → backend" rule would
+# break login. Certificates come from Let's Encrypt automatically once DNS for
+# both names points at this server and ports 80/443 are reachable.
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$APP_DOMAIN} {
+	import common
+	reverse_proxy frontend:3000
+}
+
+{$API_DOMAIN} {
+	import common
+	# Uploads are capped at 10 MB by the app (CLAUDE.md law 9); leave headroom
+	# for multipart overhead, refuse anything larger at the edge.
+	request_body {
+		max_size 12MB
+	}
+	# SSE (/api/v1/.../stream) must not be buffered.
+	reverse_proxy backend:8000 {
+		flush_interval -1
+	}
+}

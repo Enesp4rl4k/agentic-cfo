@@ -23,6 +23,15 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy the full source (respects .dockerignore)
 COPY . .
 
+# NEXT_PUBLIC_* values read as literal `process.env.NEXT_PUBLIC_X` are inlined
+# into the browser bundle at BUILD time — setting them on the running container
+# changes nothing the browser sees. Without these the bundle shipped
+# http://localhost:8000 as the API address.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_DEMO_MODE=false
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_DEMO_MODE=$NEXT_PUBLIC_DEMO_MODE
+
 # Disable Next.js telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
