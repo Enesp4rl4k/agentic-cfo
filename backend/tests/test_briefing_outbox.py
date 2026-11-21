@@ -47,7 +47,7 @@ async def _company(client, email: str, role: str = "owner") -> tuple[dict, str, 
 async def _briefing_emails(client, org_id: str) -> list[OutboxMessage]:
     async with client._maker() as db:
         briefing = await assemble_monday_briefing(db, org_id, anchor_date=ANCHOR)
-        await enqueue_briefing_emails(db, org_id, briefing)
+        await enqueue_briefing_emails(db, org_id, briefing, anchor_date=ANCHOR)
         await db.commit()
         rows = await db.execute(select(OutboxMessage).where(OutboxMessage.org_id == org_id))
         return list(rows.scalars().all())

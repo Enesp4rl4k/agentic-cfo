@@ -42,6 +42,8 @@ class DecisionKind(StrEnum):
     SMMM_ONAY = "smmm_onay"
     ERASURE = "erasure"
     AUTOMATION_RULE_CHANGE = "automation_rule_change"
+    # What the owner says they did. A statement, not a proof: see `outcome`.
+    OWNER_STATEMENT = "owner_statement"
 
 
 class DecidedVia(StrEnum):

@@ -137,3 +137,63 @@ async def test_acknowledge_succeeds_only_when_stored(monkeypatch):
     monkeypatch.setattr("app.worker.get_arq_pool", pool)
     out = await acknowledge_alert("job-1", "abc123", current_user=None, db=None, job=None)  # type: ignore[arg-type]
     assert out["data"]["acknowledged"] is True and "ack:job-1:abc123" in stored
+
+
+# ── PR #104 leftovers: the notification service and the dispatcher ────────────
+
+
+async def test_notification_slack_is_queued_in_the_outbox_not_posted(db, monkeypatch):
+    import httpx
+
+    from app.services.alert_router import AlertAction, AlertDecision, RawAlert
+    from app.services.notification_service import NotificationService
+
+    posted: list[str] = []
+    monkeypatch.setattr(
+        alert_dispatcher.AlertDispatcher, "transport",
+        httpx.MockTransport(lambda r: posted.append(str(r.url)) or httpx.Response(200)),
+    )
+    decision = AlertDecision(
+        action=AlertAction.ESCALATE,
+        alert=RawAlert(level="critical", message="Nakit açığı", domain="cfo", source="cashflow", job_id="j"),
+        priority_score=0.9,
+    )
+    queued = await NotificationService()._queue_slack([decision], SLACK, "org-1", "Acme", db)
+    assert queued == 1 and posted == []
+    (row,) = await _rows(db)
+    assert (row.channel, row.status, row.source, row.recipient) == (
+        "slack", "pending", "notification", "hooks.slack.test",
+    )
+    assert "Nakit açığı" in json.loads(row.body)["message"]
+    await NotificationService()._queue_slack([decision], SLACK, "org-1", "Acme", db)
+    assert len(await _rows(db)) == 1  # the same alert the same day is one message
+
+
+async def test_a_dummy_url_is_not_a_delivery_unless_something_answered(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(
+        alert_dispatcher.AlertDispatcher, "transport",
+        httpx.MockTransport(lambda r: httpx.Response(500)),
+    )
+    sent = await alert_dispatcher.AlertDispatcher.dispatch_slack("https://dummy.slack", "t", "m")
+    assert sent.delivered is False and sent.status_code == 500
+    sent = await alert_dispatcher.AlertDispatcher.dispatch_webhook("https://dummy.hook", "e", {})
+    assert sent.delivered is False
+
+
+async def test_no_url_is_not_a_delivery():
+    for sent in (
+        await alert_dispatcher.AlertDispatcher.dispatch_slack("", "t", "m"),
+        await alert_dispatcher.AlertDispatcher.dispatch_webhook("", "e", {}),
+    ):
+        assert sent.delivered is False and sent.status_code == 0
+
+
+async def test_the_test_transport_is_refused_outside_pytest(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST")
+    with pytest.raises(RuntimeError, match="test seam"):
+        alert_dispatcher.AlertDispatcher._client()
+    # And a dispatch that hits the refusal reports no delivery rather than a fake one.
+    sent = await alert_dispatcher.AlertDispatcher.dispatch_slack("https://x.example/h", "t", "m")
+    assert sent.delivered is False

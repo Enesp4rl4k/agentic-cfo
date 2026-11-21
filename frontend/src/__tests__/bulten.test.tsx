@@ -151,6 +151,18 @@ describe("Pazartesi bülteni", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Yaptım" }));
     await waitFor(() => expect(respondToMondayBriefing).toHaveBeenCalledTimes(1));
     expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-01", "fp-seen");
+    // "Yaptım" is the owner's statement: saved as that, not as a proven payment.
+    expect(await screen.findByText(/Yaptığını bildirdin/)).toBeTruthy();
+    expect(screen.getByText(/banka ekstresi satırı gösterene kadar/)).toBeTruthy();
+  });
+
+  it("confirms a deferred answer plainly", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    respondToMondayBriefing.mockResolvedValue({
+      decision_id: "d1", status: "open", chosen_option_label: "Ertele", briefing_id: "brief_org1_202505",
+    });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Ertele" }));
     expect(await screen.findByText(/Yanıtınız kaydedildi/)).toBeTruthy();
   });
 

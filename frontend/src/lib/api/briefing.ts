@@ -62,10 +62,34 @@ export async function getBriefingDeliveries(briefingId: string): Promise<Briefin
   return res.data.data;
 }
 
-/** Only the company's accountant may; anyone else gets 403. Returns how many e-mails were released. */
-export async function releaseMondayBriefing(briefingId: string): Promise<{ released: number }> {
-  const res = await apiClient.post<Envelope<{ released: number }>>("/briefing/monday/release", {
+export interface BriefingChange {
+  field: string;
+  label: string;
+  old: string;
+  new: string;
+}
+
+export interface BriefingReleaseResult {
+  released: number;
+  /** The figures moved since the e-mail was written: nothing was sent, `changes` says what changed. */
+  needs_confirmation?: boolean;
+  changes?: BriefingChange[];
+  fingerprint?: string;
+  refreshed?: boolean;
+}
+
+/**
+ * Only the company's accountant may; anyone else gets 403. When the figures changed since the
+ * e-mail was written nothing is sent: send the returned `fingerprint` back as `confirmFingerprint`
+ * to send the refreshed text.
+ */
+export async function releaseMondayBriefing(
+  briefingId: string,
+  confirmFingerprint?: string,
+): Promise<BriefingReleaseResult> {
+  const res = await apiClient.post<Envelope<BriefingReleaseResult>>("/briefing/monday/release", {
     briefing_id: briefingId,
+    ...(confirmFingerprint ? { confirm_fingerprint: confirmFingerprint } : {}),
   });
   return res.data.data;
 }
