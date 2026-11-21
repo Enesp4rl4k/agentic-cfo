@@ -81,7 +81,8 @@ def _kayit_to_dict(k: SMMMOnayKaydi, v: Any = None) -> dict[str, Any]:
         "kayit_id":              k.kayit_id,
         "durum":                 k.durum,
         "tx_description":        k.tx_description,
-        "tx_amount_try":         float(k.tx_amount_try) if k.tx_amount_try else None,
+        # Kuruş. It was lira as a float, and `if k.tx_amount_try` turned 0 into null.
+        "tx_amount_kurus":       k.tx_amount_kurus,
         "tx_tarih":              k.tx_tarih.isoformat() if k.tx_tarih else None,
         "otomatik_hesap_kodu":   k.otomatik_hesap_kodu,
         "otomatik_confidence":   float(k.otomatik_confidence) if k.otomatik_confidence else None,
@@ -216,7 +217,7 @@ async def get_onay_queue_for_job(
             SMMMOnayKaydi.job_id == job_id,
             SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
         ))
-        .order_by(SMMMOnayKaydi.tx_amount_try.desc())  # Yüksek tutarlı önce
+        .order_by(SMMMOnayKaydi.tx_amount_kurus.desc().nulls_last())  # Yüksek tutarlı önce
     )
     kayitlar = result.scalars().all()
 

@@ -225,6 +225,7 @@ async def test_record_briefing_response(client):
             user_id=user_id,
             briefing=briefing,
             response="done",
+            seen_fingerprint=briefing.fingerprint,
             note="Tahsilat için müşteri arandı.",
         )
         assert d_done.status == "closed"
@@ -239,6 +240,7 @@ async def test_record_briefing_response(client):
             user_id=user_id,
             briefing=briefing,
             response="deferred",
+            seen_fingerprint=briefing.fingerprint,
             note="Çarşamba günü tekrar değerlendirilecek.",
         )
         assert d_def.status == "open"
@@ -251,6 +253,7 @@ async def test_record_briefing_response(client):
             user_id=user_id,
             briefing=briefing,
             response="dismissed",
+            seen_fingerprint=briefing.fingerprint,
             note="Gerek görülmedi.",
         )
         assert d_dis.status == "closed"
@@ -264,6 +267,7 @@ async def test_record_briefing_response(client):
                 user_id=user_id,
                 briefing=briefing,
                 response="gecersiz",
+                seen_fingerprint=briefing.fingerprint,
             )
 
 
@@ -300,7 +304,8 @@ async def test_monday_briefing_api_endpoints(client):
     resp_action = await client.post(
         "/api/v1/briefing/monday/respond",
         headers=headers,
-        json={"response": "done", "note": "Ödeme tamamlandı", "anchor_date": "2025-02-01"},
+        json={"response": "done", "note": "Ödeme tamamlandı", "anchor_date": "2025-02-01",
+              "fingerprint": data["fingerprint"]},
     )
     assert resp_action.status_code == 200
     act_data = resp_action.json()["data"]
@@ -319,7 +324,7 @@ async def test_monday_briefing_api_endpoints(client):
     resp_bad = await client.post(
         "/api/v1/briefing/monday/respond",
         headers=headers,
-        json={"response": "bilmiyorum", "anchor_date": "2025-02-01"},
+        json={"response": "bilmiyorum", "anchor_date": "2025-02-01", "fingerprint": data["fingerprint"]},
     )
     assert resp_bad.status_code == 422
 

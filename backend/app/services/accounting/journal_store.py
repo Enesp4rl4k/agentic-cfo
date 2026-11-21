@@ -34,7 +34,9 @@ async def org_packs(db: AsyncSession, org_id: str | None) -> list[str]:
 
 async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, Any]) -> None:
     """Upsert the full THP journal for a job as a JSON Report — the durable
-    source the defensibility packet and the e-Defter itemise from."""
+    source the defensibility packet and the e-Defter itemise from — and write the
+    same entries to `journal_entries` / `journal_lines` (A1.2 dual write; the JSON
+    stays what outputs read until the shadow comparison has held)."""
     existing = (
         await db.execute(
             select(Report)
@@ -58,6 +60,18 @@ async def persist_journal(db: AsyncSession, job_id: str, full_result: dict[str, 
                 data=full_result,
             )
         )
+    from app.services.accounting.journal_tables import yaz
+
+    await yaz(db, job_id, full_result.get("yevmiye_kayitlari") or [])
+
+
+def _kurus(onay_item: dict[str, Any]) -> int | None:
+    """The amount in kuruş; a queue item from before 058 carries lira."""
+    if onay_item.get("tx_amount_kurus") is not None:
+        return int(onay_item["tx_amount_kurus"])
+    if onay_item.get("tx_amount_try") is not None:
+        return round(float(onay_item["tx_amount_try"]) * 100)
+    return None
 
 
 async def enqueue_review(
@@ -71,10 +85,12 @@ async def enqueue_review(
 ) -> int:
     """Write the review records for entries policy reserved for a human.
 
-    A re-run of the pipeline produces a new journal with new entry ids, so the
-    rows still waiting from the previous run point at entries that no longer
-    exist. They are replaced, not left to pile up as duplicates in the queue.
-    Decided rows (approved / corrected / rejected) are history and stay.
+    Entry ids are stable across re-runs (`double_entry.kararli_kayit_id`). Rows
+    still waiting from the previous run are replaced, not left to pile up.
+    Decided rows (approved / corrected / rejected) are history and stay; an
+    entry whose decision still applies — same entry, same proposed account —
+    is not queued again. One whose proposed account changed is: the old
+    decision was about a different classification.
     """
     if "tr" not in packs:
         return 0
@@ -84,8 +100,17 @@ async def enqueue_review(
             SMMMOnayKaydi.durum == OnayDurumu.BEKLIYOR,
         )
     )
+    from app.services.accounting.approved_journal import gecerli_onay, onay_indeksi
+
+    kararlar = onay_indeksi(
+        (
+            await db.execute(select(SMMMOnayKaydi).where(SMMMOnayKaydi.job_id == job_id))
+        ).scalars().all()
+    )
     added = 0
     for onay_item in items:
+        if gecerli_onay(kararlar.get(str(onay_item["kayit_id"]), []), onay_item) is not None:
+            continue
         db.add(
             SMMMOnayKaydi(
                 job_id=job_id,
@@ -98,7 +123,8 @@ async def enqueue_review(
                 otomatik_confidence=onay_item.get("confidence"),
                 onay_neden=onay_item.get("onay_neden"),
                 tx_description=onay_item.get("tx_description"),
-                tx_amount_try=onay_item.get("tx_amount_try"),
+                tx_amount_kurus=_kurus(onay_item),
+                tx_amount_try=(_kurus(onay_item) / 100) if _kurus(onay_item) is not None else None,
             )
         )
         added += 1

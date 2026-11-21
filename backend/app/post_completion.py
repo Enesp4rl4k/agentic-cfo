@@ -77,15 +77,18 @@ async def continue_after_completion(
     """
     chain_result = cfo_chain_result(job_id, result)
 
-    # The company's record of its money (plan v9 §K1). Idempotent: if this fails
-    # the analysis stands, and `scripts/ledger_backfill.py` repairs the ledger.
-    try:
-        from app.services.ledger import append_job
+    # The company's record of its money (plan v9 §K1). Idempotent, so a retry is
+    # safe. A failure propagates: the continuation stays owed and the reaper runs
+    # it again, instead of the view being rebuilt from a ledger missing this
+    # upload while the run reads "done".
+    from app.services.ledger import append_job
 
+    try:
         await append_job(db, job_id)
     except Exception:
-        logger.exception("Ledger append failed for job=%s", str(job_id).replace("\r", "").replace("\n", ""))
+        logger.exception("Ledger append failed for job=%s", _clean_id(job_id))
         await db.rollback()
+        raise
 
     # Plan v9 §K1: the company's picture is read from its ledger, so one upload
     # adds what it holds and cannot replace the rest.

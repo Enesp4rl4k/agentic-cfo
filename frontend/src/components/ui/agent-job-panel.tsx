@@ -120,9 +120,9 @@ function StepList({ logs }: { logs: AgentJobResult["logs"] }) {
             {/* Step indicator */}
             <span className="shrink-0">
               {failed ? (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-destructive/20 text-[9px] text-destructive font-bold">✕</span>
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-destructive/20 text-[10px] text-destructive font-bold">✕</span>
               ) : ok ? (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success/20 text-[9px] text-success font-bold">✓</span>
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success/20 text-[10px] text-success font-bold">✓</span>
               ) : (
                 <span className="flex h-4 w-4 items-center justify-center">
                   <span className="h-3 w-3 rounded-full border-2 border-primary border-t-transparent animate-spin inline-block" />
@@ -141,7 +141,7 @@ function StepList({ logs }: { logs: AgentJobResult["logs"] }) {
             </span>
 
             {log.detail && (
-              <span className="ml-auto text-[10px] text-muted-foreground/70 truncate max-w-[120px]">
+              <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-[120px]">
                 {log.detail}
               </span>
             )}

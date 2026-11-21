@@ -8,11 +8,18 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const getCashRadar = vi.fn();
-vi.mock("@/lib/api/ledger", () => ({ getCashRadar: (...args: unknown[]) => getCashRadar(...args) }));
+const getMondayBriefing = vi.fn().mockResolvedValue(null);
+const respondToMondayBriefing = vi.fn().mockResolvedValue({ decision_id: "dec1", chosen_option_label: "Yaptım" });
+
+vi.mock("@/lib/api/ledger", () => ({
+  getCashRadar: (...args: unknown[]) => getCashRadar(...args),
+  getMondayBriefing: (...args: unknown[]) => getMondayBriefing(...args),
+  respondToMondayBriefing: (...args: unknown[]) => respondToMondayBriefing(...args),
+}));
 
 vi.mock("@/hooks/useOrgSettings", () => ({
   useOrgSettings: () => ({
@@ -149,5 +156,44 @@ describe("Nakit Radarı", () => {
     getCashRadar.mockRejectedValue(new Error("boom"));
     show();
     expect(await screen.findByText("Nakit radarı yüklenemedi.")).toBeTruthy();
+  });
+
+  it("renders the logbook (Seyir Defteri) when available", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    getMondayBriefing.mockResolvedValue({
+      briefing_id: "brief_123",
+      org_id: "org1",
+      full_text: "Bu hafta net nakit pozisyonunuzda 50.000 TL net giriş beklenmektedir.",
+      action_title: "Tahsilat Takibi",
+      action_detail: "Demir Çelik A.Ş. ödemesi",
+      action_amount_cents: 50000_00,
+      verified: true,
+      fallback_used: false,
+      week_start: "2025-02-03",
+      fingerprint: "fp-radar",
+    });
+    show();
+    expect(await screen.findByText("Seyir Defteri")).toBeTruthy();
+    expect(screen.getByText("Defterle Doğrulandı")).toBeTruthy();
+    expect(screen.getByText(/Bu hafta net nakit pozisyonunuzda/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Yaptım" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ertele" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Gerek Yok" })).toBeTruthy();
+  });
+
+  it("answers the briefing it shows, fingerprint and all", async () => {
+    // A second, hand-written client here sent no fingerprint after the backend
+    // began to require one, and every answer from this page was refused (422).
+    getCashRadar.mockResolvedValue(radar());
+    getMondayBriefing.mockResolvedValue({
+      briefing_id: "brief_123", org_id: "org1", full_text: "Metin.", action_title: "Tahsilat Takibi",
+      action_detail: "", action_amount_cents: 0, verified: true, fallback_used: false,
+      week_start: "2025-02-03", fingerprint: "fp-radar",
+    });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Yaptım" }));
+    await waitFor(() =>
+      expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-03", "fp-radar"),
+    );
   });
 });

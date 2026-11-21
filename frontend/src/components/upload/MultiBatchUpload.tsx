@@ -158,7 +158,7 @@ function FileRow({
             </span>
           )}
           {item.result?.job_id && (
-            <span className="text-[10px] font-mono text-muted-foreground/60">
+            <span className="text-[10px] font-mono text-muted-foreground">
               {item.result.job_id.slice(0, 8)}
             </span>
           )}

@@ -1,7 +1,7 @@
 """The company ledger: what it holds, and the rows waiting for a person."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import ensure_tenant
 from app.api.auth import get_current_user
+from app.api.contract import Envelope
+from app.api.radar_schema import CashRadarOut
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
@@ -23,8 +25,8 @@ from app.services.reconciliation import (
     CONFIRMED,
     PROPOSED,
     REJECTED,
-    apply_payment,
     payment_behaviour,
+    settle_from_matches,
 )
 
 router = APIRouter()
@@ -209,10 +211,7 @@ async def resolve_settlement(
         await db.rollback()
         raise HTTPException(409, "Bu öneri karar beklemiyor.")
     if body.action == "confirm":
-        for _, item_id, amount in members:
-            item = await db.get(OpenItem, item_id)
-            if item is not None:
-                apply_payment(item, amount)
+        await settle_from_matches(db, [item_id for _, item_id, _ in members])
     await db.commit()
     _refresh_view(org_id)
     return {"data": {"id": match_id, "action": body.action}, "error": None}
@@ -227,7 +226,11 @@ async def get_payment_behaviour(
     return {"data": await payment_behaviour(db, _org(user)), "error": None}
 
 
-@router.get("/ledger/cash-radar", responses={400: {"description": "The user has no organisation or invalid date."}})
+@router.get(
+    "/ledger/cash-radar",
+    response_model=Envelope[CashRadarOut],
+    responses={400: {"description": "The user has no organisation or invalid date."}},
+)
 async def get_cash_radar(
     anchor_date: str | None = None,
     user: User = Depends(get_current_user),
@@ -240,7 +243,15 @@ async def get_cash_radar(
             parsed_anchor = date.fromisoformat(anchor_date)
         except ValueError:
             raise HTTPException(400, "Geçersiz tarih biçimi (YYYY-AA-GG bekleniyor).") from None
-    result = await compute_cash_radar(db, _org(user), anchor_date=parsed_anchor)
+    org_id = _org(user)
+    result = await compute_cash_radar(db, org_id, anchor_date=parsed_anchor)
+    # O5: what the owner sees today is kept as today's forecast. A past anchor is
+    # hindsight and record_forecast refuses it.
+    from app.services.radar_forecast_log import knows_something, record_forecast
+
+    if knows_something(result):
+        await record_forecast(db, org_id, result, today=datetime.now(UTC).date())
+        await db.commit()
     return {"data": result.to_dict(), "error": None}
 
 

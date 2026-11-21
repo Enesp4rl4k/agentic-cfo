@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item import OpenItem
+from app.services.payment_plan import effective_dates
 from app.services.reconciliation import payment_behaviour
 
 HORIZON_WEEKS = 13
@@ -59,6 +60,7 @@ class RadarItem:
     delay_days: int  # measured lateness applied; 0 when none is known
     is_overdue: bool
     instrument: str = "invoice"  # invoice | cheque | promissory_note | recurring | tax
+    rescheduled: bool = False  # an approved plan change moved this payment off its document date
 
 
 @dataclass(frozen=True)
@@ -183,6 +185,7 @@ async def compute_cash_radar(
     ranges = _weeks_from(anchor)
     horizon_end = ranges[-1][1]
     balance = await proven_balance(db, org_id)
+    moved = await effective_dates(db, org_id)
     delays = {
         (d["counterparty"], d["direction"]): max(0, round(d["average_delay_days"]))
         for d in await payment_behaviour(db, org_id)
@@ -224,6 +227,9 @@ async def compute_cash_radar(
             continue
         delay = delays.get((item.counterparty or "", item.direction), 0) if receivable else 0
         expected = item.due_date + timedelta(days=delay)
+        rescheduled = (not receivable) and item.id in moved
+        if rescheduled:
+            expected = moved[item.id]
         entry = RadarItem(
             id=item.id,
             counterparty=item.counterparty,
@@ -234,6 +240,7 @@ async def compute_cash_radar(
             delay_days=delay,
             is_overdue=expected < anchor,
             instrument=item.instrument,
+            rescheduled=rescheduled,
         )
         if expected > horizon_end:
             beyond += remaining

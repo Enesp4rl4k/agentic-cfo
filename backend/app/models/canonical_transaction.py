@@ -3,7 +3,18 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -33,6 +44,12 @@ class CanonicalTransaction(Base):
         # indexes left it scanning (migration 039 creates it too, so old
         # databases and fresh create_all ones agree).
         Index("ix_canonical_transactions_org_date", "org_id", "transaction_date"),
+        # Migration 059. A misspelt status would leave a row in no total at all.
+        CheckConstraint(
+            "ledger_status IN ('active', 'possible_duplicate', 'excluded')",
+            name="ck_canonical_tx_ledger_status",
+        ),
+        CheckConstraint("basis IN ('book', 'document', 'cash')", name="ck_canonical_tx_basis"),
     )
 
     id: Mapped[str] = mapped_column(
@@ -50,7 +67,7 @@ class CanonicalTransaction(Base):
     date_is_estimated: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, server_default="0"
     )
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="TRY")
     direction: Mapped[str] = mapped_column(String(20), nullable=False, default="expense")
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)

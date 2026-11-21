@@ -54,10 +54,12 @@ async def _seed_journal(db, job_id="job-1", entries=None):
     await db.commit()
 
 
-async def _seed_onay(db, job_id, kayit_id, durum, *, org_id="org-1", corrected=None):
+async def _seed_onay(db, job_id, kayit_id, durum, *, org_id="org-1", corrected=None, proposed="770"):
+    # `proposed` is the account the entry proposed when it was queued; the
+    # queue writes it from the entry, so it matches the entry's thp_hesap_kodu.
     db.add(SMMMOnayKaydi(
         job_id=job_id, org_id=org_id, kayit_id=kayit_id, durum=durum,
-        otomatik_hesap_kodu="770",
+        otomatik_hesap_kodu=proposed,
         duzeltilmis_hesap_kodu=corrected,
         onaylayan_user_id="smmm-1" if durum != OnayDurumu.BEKLIYOR else None,
         onay_zamani=datetime.now(UTC) if durum != OnayDurumu.BEKLIYOR else None,
@@ -75,7 +77,7 @@ async def test_decision_source_classification(db):
     ]
     await _seed_journal(db, entries=entries)
     await _seed_onay(db, "job-1", "k2", OnayDurumu.ONAYLANDI)
-    await _seed_onay(db, "job-1", "k3", OnayDurumu.DUZELTILDI, corrected="255")
+    await _seed_onay(db, "job-1", "k3", OnayDurumu.DUZELTILDI, corrected="255", proposed="153")
     await _seed_onay(db, "job-1", "k4", OnayDurumu.REDDEDILDI)
 
     packet = await build_packet(db=db, job_id="job-1", org_id="org-1", period="2024-01")
@@ -94,7 +96,7 @@ async def test_decision_source_classification(db):
     assert s["pending_review"] == 0
     # corrected entry keeps the before/after
     k3 = next(i for i in packet.payload["entries"] if i["kayit_id"] == "k3")
-    assert k3["review"]["original_account"] == "770"
+    assert k3["review"]["original_account"] == "153"
     assert k3["review"]["corrected_account"] == "255"
 
 

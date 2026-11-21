@@ -68,3 +68,7 @@ backend/tests/fixtures/gib_corpus/
 # anything worth keeping gets a real name and a test.
 backend/scripts/_*.py
 .claude/settings.local.json
+.claude/worktrees/
+
+# graphify knowledge-graph output (regenerated locally; .graphifyignore says what it reads)
+graphify-out/

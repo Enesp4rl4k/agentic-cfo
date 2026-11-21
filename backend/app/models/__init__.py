@@ -9,6 +9,7 @@ from app.models.audit_log import AuditLog
 from app.models.authority_policy import AuthorityPolicy
 from app.models.canonical_eng_signal import CanonicalEngSignal
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.cash_radar_snapshot import CashRadarSnapshot
 from app.models.category_rule import CategoryRule
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
@@ -26,10 +27,13 @@ from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
+from app.models.journal import JournalEntry, JournalLine
 from app.models.llm_call_log import LLMCallLog
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
+from app.models.outbox_message import OutboxMessage
+from app.models.payment_plan_change import PaymentPlanChange
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.proactive_alert import ProactiveAlert
 from app.models.rag_chunk import RagChunk
@@ -60,6 +64,7 @@ __all__ = [
     "BreachNotification",
     "CanonicalEngSignal",
     "CanonicalTransaction",
+    "CashRadarSnapshot",
     "CategoryRule",
     "CompanyContextSnapshot",
     "CompanySemanticSnapshotRow",
@@ -77,11 +82,15 @@ __all__ = [
     "InAppNotification",
     "InstitutionalizationSnapshot",
     "JobStatus",
+    "JournalEntry",
+    "JournalLine",
     "LLMCallLog",
     "OnayDurumu",
     "OpenItem",
     "OpenItemMatch",
     "Organization",
+    "OutboxMessage",
+    "PaymentPlanChange",
     "PilotInvite",
     "ProactiveAlert",
     "RagChunk",

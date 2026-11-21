@@ -194,7 +194,7 @@ function Timestamp({ ts }: { ts: number }) {
   return (
     <time
       dateTime={new Date(ts).toISOString()}
-      className="text-[10px] text-muted-foreground/50 tabular-nums"
+      className="text-[10px] text-muted-foreground tabular-nums"
     >
       {new Date(ts).toLocaleTimeString(dateTag, { hour: "2-digit", minute: "2-digit" })}
     </time>
@@ -701,7 +701,7 @@ export default function ChatPage() {
               disabled={isBusy}
               className={cn(
                 "flex-1 resize-none bg-transparent py-0.5 text-sm leading-relaxed",
-                "placeholder:text-muted-foreground/60",
+                "placeholder:text-muted-foreground",
                 "focus-visible:outline-none",
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
@@ -722,7 +722,7 @@ export default function ChatPage() {
               <Send className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
-          <p className="mt-1.5 text-center text-[10px] text-muted-foreground/50">
+          <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
             {chatMsgs.footer}
           </p>
         </form>

@@ -29,7 +29,6 @@ from redis import exceptions as redis_exc
 
 from app.config import get_settings
 from app.core.dates import parse_transaction_date
-from app.post_completion import continue_after_completion
 
 logger = logging.getLogger(__name__)
 
@@ -462,6 +461,16 @@ async def run_cfo_analysis(
             )
             completed_at = datetime.now(UTC)
             meta = dict(job.result_metadata or {})
+            if terminal == JobStatus.COMPLETED and job.org_id:
+                # What follows a completed analysis (ledger, company view,
+                # chain) is owed from the moment the job reads completed, so the
+                # debt is written in the same transaction. It used to run
+                # inline after the commit with nothing recorded: a crash or the
+                # job timeout in between, or a failed ledger append, left the
+                # ledger and the radar without this upload and nobody knew.
+                from app.services.review_continuation import BEKLIYOR
+
+                meta["review"] = {"devam": BEKLIYOR, "devam_istendi": completed_at.isoformat()}
             from app.services.bank_balance import closing_balance
 
             closing = closing_balance(list(result.get("transactions") or []))
@@ -596,7 +605,19 @@ async def run_cfo_analysis(
             # Held while the job awaits review; run on approval instead
             # (app.api.analysis.approve_review).
             if terminal == JobStatus.COMPLETED and job.org_id:
-                await continue_after_completion(job_id, str(job.org_id), result, db)  # type: ignore[arg-type]
+                # Runs here and now, but through the owed-continuation record:
+                # it claims the row, marks it done at the end, and a failure or
+                # a death mid-way leaves it owed for the reaper to dispatch
+                # again. The analysis itself is already committed and stands.
+                from app.services.review_continuation import devam_et
+
+                try:
+                    await devam_et(str(job_id))
+                except Exception:
+                    logger.exception(
+                        "ARQ worker: job=%s completed, continuation failed — left owed; "
+                        "the reaper dispatches it again", job_id,
+                    )
 
             return {"ok": True, "job_id": job_id, "status": str(terminal)}
 

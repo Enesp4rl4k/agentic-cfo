@@ -26,19 +26,19 @@ import type { PnLData, ProvenanceBlock } from "@/types";
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.21 0.018 70)",
-    border: "1px solid oklch(0.32 0.019 68)",
+    background: "var(--card)",
+    border: "1px solid var(--border)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.94 0.012 85)",
+    color: "var(--foreground)",
     padding: "8px 12px",
   },
-  cursor: { fill: "oklch(0.27 0.017 70 / 0.4)" },
+  cursor: { fill: "color-mix(in srgb, var(--border) 40%, transparent)" },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
-  axisLine: { stroke: "oklch(0.32 0.019 68)" },
+  tick: { fontSize: 11, fill: "var(--muted-foreground)" },
+  axisLine: { stroke: "var(--border)" },
   tickLine: false as const,
 };
 
@@ -144,7 +144,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
     name: waterfall.revenue,
     base: 0,
     value: pnl.revenue,
-    color: "oklch(0.72 0.19 142)",
+    color: "var(--success)",
   });
   running = pnl.revenue;
 
@@ -154,7 +154,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
       name: waterfall.cogs,
       base: pnl.revenue - pnl.cogs,
       value: pnl.cogs,
-      color: "oklch(0.58 0.22 25 / 0.7)",
+      color: "color-mix(in srgb, var(--destructive) 70%, transparent)",
     });
     running = pnl.revenue - pnl.cogs;
   }
@@ -167,7 +167,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
       name: opex.labels[key] ?? titleCaseKey(key),
       base: running,
       value: v,
-      color: "oklch(0.62 0.10 240 / 0.7)",
+      color: "rgb(var(--c-blue-500) / 0.7)",
     });
   });
 
@@ -176,7 +176,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
     name: waterfall.netIncome,
     base: 0,
     value: pnl.net_income,
-    color: pnl.net_income >= 0 ? "oklch(0.72 0.19 142)" : "oklch(0.58 0.22 25)",
+    color: pnl.net_income >= 0 ? "var(--success)" : "var(--destructive)",
   });
 
   const fmtK = (v: number) =>
@@ -190,7 +190,7 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
       </p>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={steps} margin={{ top: 4, right: 4, left: -4, bottom: 40 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="name"
             {...axisStyle}
@@ -222,12 +222,12 @@ function WaterfallChart({ pnl }: { pnl: PnLData }) {
 // ── OpEx drill-down ───────────────────────────────────────────────────────────
 
 const OPEX_COLORS: Record<string, string> = {
-  salary:        "oklch(0.79 0.115 83)",
+  salary:        "var(--tc-ember)",
   rent:          "oklch(0.65 0.18 295)",
   utilities:     "oklch(0.65 0.17 200)",
   marketing:     "oklch(0.65 0.20 330)",
-  technology:    "oklch(0.60 0.18 260)",
-  other_expense: "oklch(0.60 0.015 75)",
+  technology:    "rgb(var(--c-blue-500))",
+  other_expense: "var(--muted-foreground)",
 };
 
 function OpExDrillDown({ pnl }: { pnl: PnLData }) {
@@ -249,7 +249,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
     name: opex.labels[key] ?? titleCaseKey(key),
     value: val ?? 0,
     pct: total > 0 ? ((val ?? 0) / total) * 100 : 0,
-    color: OPEX_COLORS[key] ?? "oklch(0.60 0.015 75)",
+    color: OPEX_COLORS[key] ?? "var(--muted-foreground)",
   }));
 
   return (
@@ -295,7 +295,7 @@ function OpExDrillDown({ pnl }: { pnl: PnLData }) {
                 dataKey="name"
                 {...axisStyle}
                 width={80}
-                tick={{ fontSize: 10, fill: "oklch(0.72 0.017 78)" }}
+                tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
               />
               <Tooltip
                 {...tooltipStyle}

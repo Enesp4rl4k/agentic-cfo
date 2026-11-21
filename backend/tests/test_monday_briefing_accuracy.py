@@ -117,10 +117,16 @@ def test_dates_of_the_briefing_itself_are_allowed():
 
 # ── the response is one decision per briefing ────────────────────────────────────────────────
 
+async def _seen(client, headers) -> str:
+    """The fingerprint of the briefing the owner is looking at."""
+    res = await client.get("/api/v1/briefing/monday?anchor_date=2025-02-01", headers=headers)
+    return res.json()["data"]["fingerprint"]
+
+
 async def test_answering_twice_is_one_decision_not_two(client):
     headers, org_id, _ = await kullanici(client, "acc-twice@example.com")
     await _upload(client, org_id, meta=_statement("2025-01-31", 80_000_00))
-    body = {"response": "deferred", "anchor_date": "2025-02-01"}
+    body = {"response": "deferred", "anchor_date": "2025-02-01", "fingerprint": await _seen(client, headers)}
     first = await client.post("/api/v1/briefing/monday/respond", headers=headers, json=body)
     again = await client.post("/api/v1/briefing/monday/respond", headers=headers, json=body)
     assert first.status_code == again.status_code == 200
@@ -134,7 +140,7 @@ async def test_answering_twice_is_one_decision_not_two(client):
 async def test_a_later_answer_replaces_the_earlier_one(client):
     headers, org_id, _ = await kullanici(client, "acc-change@example.com")
     await _upload(client, org_id, meta=_statement("2025-01-31", 80_000_00))
-    base = {"anchor_date": "2025-02-01"}
+    base = {"anchor_date": "2025-02-01", "fingerprint": await _seen(client, headers)}
     first = await client.post("/api/v1/briefing/monday/respond", headers=headers, json={**base, "response": "deferred"})
     assert first.json()["data"]["status"] == "open"
     done = await client.post("/api/v1/briefing/monday/respond", headers=headers, json={**base, "response": "done"})
@@ -148,8 +154,53 @@ async def test_a_later_answer_replaces_the_earlier_one(client):
 async def test_an_answer_needs_an_analysis_to_hang_on(client):
     headers, org_id, _ = await kullanici(client, "acc-nojob@example.com")
     res = await client.post("/api/v1/briefing/monday/respond", headers=headers,
-                            json={"response": "done", "anchor_date": "2025-02-01"})
+                            json={"response": "done", "anchor_date": "2025-02-01",
+                                  "fingerprint": await _seen(client, headers)})
     assert res.status_code == 409
     async with client._maker() as db:
         n = (await db.execute(select(func.count()).select_from(DecisionLog).where(DecisionLog.org_id == org_id))).scalar()
     assert n == 0
+
+
+async def test_an_answer_to_a_briefing_that_has_since_changed_is_refused(client):
+    """The owner answers the figures they saw, not the ones there at click time.
+
+    The answer used to rebuild the briefing when the button was pressed and record
+    the decision against whatever the radar said then: an upload or a settled
+    invoice in between, and the log held figures the owner never read.
+    """
+    headers, org_id, _ = await kullanici(client, "acc-moved@example.com")
+    await _upload(client, org_id, meta=_statement("2025-01-31", 80_000_00))
+    seen = await _seen(client, headers)
+
+    # New data arrives while the briefing is open on the owner's screen: a supplier
+    # invoice due this week.
+    async with client._maker() as db:
+        db.add(OpenItem(
+            org_id=org_id, direction="payable", document_id="INV-NEW-1",
+            counterparty="Demir Çelik A.Ş.", amount_cents=30_000_00,
+            issue_date=date(2025, 1, 20), due_date=date(2025, 2, 4), description="Hammadde",
+        ))
+        await db.commit()
+    assert await _seen(client, headers) != seen
+
+    res = await client.post("/api/v1/briefing/monday/respond", headers=headers,
+                            json={"response": "done", "anchor_date": "2025-02-01", "fingerprint": seen})
+    assert res.status_code == 409
+    assert "değişti" in str(res.json())
+    async with client._maker() as db:
+        n = (await db.execute(select(func.count()).select_from(DecisionLog).where(DecisionLog.org_id == org_id))).scalar()
+    assert n == 0
+
+
+async def test_the_decision_records_what_the_owner_was_shown(client):
+    headers, org_id, _ = await kullanici(client, "acc-shown@example.com")
+    await _upload(client, org_id, meta=_statement("2025-01-31", 80_000_00))
+    shown = (await client.get("/api/v1/briefing/monday?anchor_date=2025-02-01", headers=headers)).json()["data"]
+    res = await client.post("/api/v1/briefing/monday/respond", headers=headers,
+                            json={"response": "done", "anchor_date": "2025-02-01", "fingerprint": shown["fingerprint"]})
+    assert res.status_code == 200
+    async with client._maker() as db:
+        row = await db.get(DecisionLog, res.json()["data"]["decision_id"])
+    assert row.expected["fingerprint"] == shown["fingerprint"]
+    assert row.expected["shown_text"] == shown["full_text"]

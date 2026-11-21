@@ -234,7 +234,7 @@ function DomainImpactCard({ impact }: { impact: DomainImpact }) {
               <ul className="space-y-1">
                 {impact.recommended_actions.map((a, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-xs">
-                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-[9px] font-bold text-emerald-400">
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-[10px] font-bold text-emerald-400">
                       {i + 1}
                     </span>
                     {a}

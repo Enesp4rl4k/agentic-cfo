@@ -117,7 +117,9 @@ async def build_packet(
             select(SMMMOnayKaydi).where(SMMMOnayKaydi.job_id == job_id)
         )
     ).scalars().all()
-    onay_by_kayit = {o.kayit_id: o for o in onay_rows}
+    from app.services.accounting.approved_journal import gecerli_onay, onay_indeksi
+
+    onay_by_kayit = onay_indeksi(onay_rows)
 
     run = (
         await db.execute(
@@ -129,7 +131,10 @@ async def build_packet(
     ).scalar_one_or_none()
     run_ref = (run.result_ref or {}) if run else {}
 
-    items = [_item(e, onay_by_kayit.get(str(e.get("kayit_id") or ""))) for e in entries]
+    items = [
+        _item(e, gecerli_onay(onay_by_kayit.get(str(e.get("kayit_id") or ""), []), e))
+        for e in entries
+    ]
     counts: dict[str, int] = {}
     for it in items:
         counts[it["decision_source"]] = counts.get(it["decision_source"], 0) + 1

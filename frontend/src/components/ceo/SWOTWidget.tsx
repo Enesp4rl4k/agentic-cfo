@@ -134,7 +134,7 @@ function StrategicPriorities({ priorities }: { priorities: string[] }) {
       <div className="space-y-1.5">
         {priorities.map((p, i) => (
           <div key={i} className="flex items-start gap-2">
-            <span className="mt-0.5 shrink-0 rounded-sm bg-primary/20 px-1 text-[9px] font-bold text-primary">
+            <span className="mt-0.5 shrink-0 rounded-sm bg-primary/20 px-1 text-[10px] font-bold text-primary">
               {i + 1}
             </span>
             <p className="text-xs text-muted-foreground leading-relaxed">{p}</p>

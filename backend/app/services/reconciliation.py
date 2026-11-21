@@ -22,11 +22,12 @@ nothing stays what it was: its own money.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
@@ -173,17 +174,49 @@ def _soonest(items: list[OpenItem]) -> OpenItem:
     return min(items, key=lambda i: (i.due_date or date.max, i.issue_date))
 
 
-def apply_payment(item: OpenItem, amount: int) -> None:
+def _note_payment(item: OpenItem, amount: int) -> None:
+    """In-memory only, so a later row in the same pass sees what is left."""
     item.paid_cents += amount
-    if item.paid_cents >= item.amount_cents:
-        item.status = "settled"
+
+
+async def settle_from_matches(db: AsyncSession, item_ids: Iterable[str]) -> None:
+    """Set each item's `paid_cents` to the sum of its confirmed matches.
+
+    It was a counter: `paid_cents += amount` on whatever copy of the row the
+    caller had read. Two passes over the same bank row (two uploads finishing
+    together, or a reconcile racing a confirm) each added the payment, and the
+    invoice read paid twice — the radar then dropped money still owed. The
+    matches are the record; the paid amount is derived from them, so applying
+    the same match again changes nothing. The rows are locked while they are
+    rewritten (Postgres; SQLite serialises writers anyway).
+    """
+    ids = sorted({str(i) for i in item_ids})
+    if not ids:
+        return
+    await db.flush()
+    paid = dict((await db.execute(
+        select(OpenItemMatch.open_item_id, func.coalesce(func.sum(OpenItemMatch.amount_cents), 0))
+        .where(OpenItemMatch.open_item_id.in_(ids), OpenItemMatch.status == CONFIRMED)
+        .group_by(OpenItemMatch.open_item_id)
+    )).all())
+    items = (await db.execute(
+        select(OpenItem).where(OpenItem.id.in_(ids)).with_for_update()
+    )).scalars().all()
+    for item in items:
+        item.paid_cents = int(paid.get(item.id) or 0)
+        item.status = "settled" if item.paid_cents >= item.amount_cents else "open"
+    await db.flush()
 
 
 async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
     """Match unmatched bank movements to open items. Idempotent; does not commit."""
     counts = {"settled": 0, "proposed": 0}
+    # Locked: a second pass for the same company waits here and then reads the
+    # matches this one wrote, instead of matching the same bank rows again.
     items = list((await db.execute(
-        select(OpenItem).where(OpenItem.org_id == org_id, OpenItem.status == "open")
+        select(OpenItem)
+        .where(OpenItem.org_id == org_id, OpenItem.status == "open")
+        .with_for_update()
     )).scalars())
     if not items:
         return counts
@@ -210,6 +243,7 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
         .order_by(CanonicalTransaction.transaction_date)
     )).scalars().all()
 
+    settled_ids: set[str] = set()
     for row in rows:
         if row.id in taken:
             continue
@@ -232,11 +266,12 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
             matched_on=_day(row.transaction_date),
         ))
         if match.status == CONFIRMED:
-            apply_payment(match.item, match.amount)
+            _note_payment(match.item, match.amount)
+            settled_ids.add(match.item.id)
             counts["settled"] += 1
         else:
             counts["proposed"] += 1
-    await db.flush()
+    await settle_from_matches(db, settled_ids)
     return counts
 
 

@@ -20,7 +20,16 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -44,6 +53,15 @@ class SMMMOnayKaydi(Base):
     Her kayıt bir yevmiye kaydına karşılık gelir.
     SMMM onaylar, düzeltir veya reddeder.
     """
+
+    __table_args__ = (
+        # Migration 059. approved_journal.uygula files only what it recognises;
+        # an unknown state would silently count as pending forever.
+        CheckConstraint(
+            "durum IN ('bekliyor', 'onaylandi', 'duzeltildi', 'reddedildi')",
+            name="ck_smmm_onay_durum",
+        ),
+    )
     __tablename__ = "smmm_onay_kayitlari"
 
     id: Mapped[str] = mapped_column(
@@ -91,6 +109,9 @@ class SMMMOnayKaydi(Base):
 
     # İşlem bilgileri (hızlı görüntüleme için)
     tx_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Kuruş, like every amount (migration 058). `tx_amount_try` is the old lira
+    # column: still written for the shadow period, read by nothing, dropped later.
+    tx_amount_kurus: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     tx_amount_try: Mapped[float | None] = mapped_column(Numeric(15, 2), nullable=True)
     tx_tarih: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -366,7 +366,7 @@ export function AgentChatPanel({
                 }
               </button>
             </div>
-            <p className="mt-1.5 text-[10px] text-muted-foreground/60 text-center">
+            <p className="mt-1.5 text-[10px] text-muted-foreground text-center">
               Enter → gönder · Shift+Enter → yeni satır
             </p>
           </div>

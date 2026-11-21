@@ -100,7 +100,7 @@ export function BenchmarkWidget({ report, loading, className }: BenchmarkWidgetP
             {report.sector} · {report.company_size}
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground/60 shrink-0">
+        <span className="text-[10px] text-muted-foreground shrink-0">
           P25 / şirket / P75
         </span>
       </div>

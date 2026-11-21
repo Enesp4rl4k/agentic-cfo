@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { PageHead } from "@/components/brand-app/PageHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GuvenRozeti, type Guven } from "@/components/smmm/GuvenRozeti";
@@ -24,7 +25,8 @@ interface OnayKaydi {
   kayit_id:                string;
   durum:                   "bekliyor" | "onaylandi" | "duzeltildi" | "reddedildi";
   tx_description:          string | null;
-  tx_amount_try:           number | null;
+  /** Kuruş, like every amount. */
+  tx_amount_kurus:         number | null;
   tx_tarih:                string | null;
   otomatik_hesap_kodu:     string | null;
   otomatik_confidence:     number | null;
@@ -78,10 +80,10 @@ function DurumBadge({ durum, status }: { durum: string; status: Record<string, s
   );
 }
 
-/** `tx_amount_try` arrives in lira (backend divides kuruş by 100). */
-function fmtAmount(v: number | null, fmt: (value: number) => string): string {
-  if (v === null) return "—";
-  return fmt(v);
+/** `tx_amount_kurus` is kuruş; `fmt` takes lira. A zero is shown, not hidden. */
+function fmtAmount(kurus: number | null, fmt: (value: number) => string): string {
+  if (kurus === null) return "—";
+  return fmt(kurus / 100);
 }
 
 function fmtDate(d: string | null, dateTag: string): string {
@@ -141,7 +143,7 @@ function DuzelModal({
         <h3 className="font-semibold">{d.title}</h3>
         <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2">
           <p className="truncate">{kayit.tx_description ?? "—"}</p>
-          <p className="font-mono mt-0.5">{fmtAmount(kayit.tx_amount_try, fmt)}</p>
+          <p className="font-mono mt-0.5">{fmtAmount(kayit.tx_amount_kurus, fmt)}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1">
@@ -295,7 +297,7 @@ function OnayCard({
             </div>
 
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <span className="font-mono font-semibold text-foreground">{fmtAmount(kayit.tx_amount_try, fmt)}</span>
+              <span className="font-mono font-semibold text-foreground">{fmtAmount(kayit.tx_amount_kurus, fmt)}</span>
               <span>{fmtDate(kayit.tx_tarih, dateTag)}</span>
               {kayit.otomatik_hesap_kodu && (
                 <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
@@ -461,23 +463,22 @@ export default function SMMMonayPage() {
   return (
     <main className="mx-auto max-w-screen-xl space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <FileText className="h-6 w-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold">{st.title}</h1>
-            <p className="text-sm text-muted-foreground">{st.subtitle}</p>
+      <PageHead
+        title={st.title}
+        subtitle={st.subtitle}
+        aside={
+          <div className="flex items-center gap-3">
+            {bekleyenSayisi > 0 && (
+              <span className="rounded-full border border-orange-500/30 bg-orange-500/15 px-2.5 py-0.5 text-sm font-bold text-orange-400">
+                {st.pendingBadge.replace("{count}", String(bekleyenSayisi))}
+              </span>
+            )}
+            <Button variant="outline" size="sm" className="min-h-[44px] min-w-[44px]" onClick={fetchData} disabled={loading} aria-label={st.refresh}>
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </Button>
           </div>
-          {bekleyenSayisi > 0 && (
-            <span className="rounded-full bg-orange-500/15 border border-orange-500/20 px-2.5 py-0.5 text-sm font-bold text-orange-400">
-              {st.pendingBadge.replace("{count}", String(bekleyenSayisi))}
-            </span>
-          )}
-        </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} aria-label={st.refresh}>
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-        </Button>
-      </div>
+        }
+      />
 
       {/* Stats row */}
       {stats && (

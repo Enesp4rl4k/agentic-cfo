@@ -25,19 +25,19 @@ import type { Alert, MonthlyEntry } from "@/types";
 
 const tooltipStyle = {
   contentStyle: {
-    background: "oklch(0.21 0.018 70)",
-    border: "1px solid oklch(0.32 0.019 68)",
+    background: "var(--card)",
+    border: "1px solid var(--border)",
     borderRadius: "6px",
     fontSize: "12px",
-    color: "oklch(0.94 0.012 85)",
+    color: "var(--foreground)",
     padding: "8px 12px",
   },
-  cursor: { stroke: "oklch(0.38 0.02 70)", strokeWidth: 1 },
+  cursor: { stroke: "var(--tc-line-strong)", strokeWidth: 1 },
 };
 
 const axisStyle = {
-  tick: { fontSize: 11, fill: "oklch(0.72 0.017 78)" },
-  axisLine: { stroke: "oklch(0.32 0.019 68)" },
+  tick: { fontSize: 11, fill: "var(--muted-foreground)" },
+  axisLine: { stroke: "var(--border)" },
   tickLine: false as const,
 };
 
@@ -127,15 +127,15 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
       <AreaChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
         <defs>
           <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="oklch(0.79 0.115 83)" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="oklch(0.79 0.115 83)" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--tc-ember)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--tc-ember)" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="oklch(0.58 0.22 25)" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="oklch(0.58 0.22 25)" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--destructive)" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="var(--destructive)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
         <XAxis dataKey="month" {...axisStyle} />
         <YAxis
           {...axisStyle}
@@ -147,12 +147,12 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
           {...tooltipStyle}
           formatter={(v: number, name: string) => [fmt(v), name]}
         />
-        <ReferenceLine y={0} stroke="oklch(0.40 0.02 70)" strokeWidth={1} />
+        <ReferenceLine y={0} stroke="var(--tc-line-strong)" strokeWidth={1} />
         <Area
           type="monotone"
           dataKey="in"
           name={monthly.seriesIn}
-          stroke="oklch(0.79 0.115 83)"
+          stroke="var(--tc-ember)"
           strokeWidth={1.5}
           fill="url(#gIn)"
           dot={false}
@@ -161,7 +161,7 @@ function MonthlyCashFlowChart({ series }: { series: MonthlyEntry[] }) {
           type="monotone"
           dataKey="out"
           name={monthly.seriesOut}
-          stroke="oklch(0.58 0.22 25)"
+          stroke="var(--destructive)"
           strokeWidth={1.5}
           fill="url(#gOut)"
           dot={false}
@@ -192,7 +192,7 @@ function NetCashFlowBar({ series }: { series: MonthlyEntry[] }) {
       <p className="mb-4 text-xs text-muted-foreground">{net.subtitle}</p>
       <ResponsiveContainer width="100%" height={180}>
         <BarChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.27 0.017 70)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="month" {...axisStyle} />
           <YAxis
             {...axisStyle}
@@ -204,15 +204,15 @@ function NetCashFlowBar({ series }: { series: MonthlyEntry[] }) {
             {...tooltipStyle}
             formatter={(v: number) => [fmt(v), net.series]}
           />
-          <ReferenceLine y={0} stroke="oklch(0.47 0.025 74)" strokeWidth={1} />
+          <ReferenceLine y={0} stroke="var(--tc-line-strong)" strokeWidth={1} />
           <Bar dataKey="net" radius={[3, 3, 0, 0]} maxBarSize={28}>
             {data.map((entry, i) => (
               <Cell
                 key={i}
                 fill={
                   entry.net >= 0
-                    ? "oklch(0.58 0.18 145)"   // emerald — surplus
-                    : "oklch(0.58 0.22 25)"    // red — deficit
+                    ? "var(--success)"   // emerald — surplus
+                    : "var(--destructive)"    // red — deficit
                 }
               />
             ))}

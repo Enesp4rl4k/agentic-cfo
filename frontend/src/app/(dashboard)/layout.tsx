@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { Logo } from "@/components/ui/logo";
+import { brand } from "@/lib/branding";
 import { DemoBanner } from "@/components/ui/demo-banner";
 import { OnboardingBanner } from "@/components/ui/onboarding-banner";
 import { SystemStatusWidget } from "@/components/ui/system-status";
@@ -25,114 +26,26 @@ const CommandPalette = dynamic(
   { ssr: false }
 );
 import {
-  LayoutDashboard, Upload, FileText, TrendingUp, DollarSign,
-  Menu, X, Clock, CheckCircle, AlertCircle, Loader2,
-  ArrowRightLeft, Waves, ShieldAlert, MessageSquare, Receipt,
-  PieChart, BarChart2, Cpu, Crown, Megaphone, Layers, ShieldCheck,
-  Users, Shield, FileSearch, FileCheck, Activity, Download,
-  LogOut, Building2, ChevronDown, Zap, Link2, CreditCard, Rocket, Filter,
+  Menu, X, Clock, CheckCircle, AlertCircle, Loader2, LogOut, Building2,
+  ChevronDown, Zap, CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { visibleNavGroups } from "@/lib/nav-focus";
+import { NAV_GROUPS } from "@/lib/nav-items";
 import { useI18n } from "@/hooks/useI18n";
-
-// ── Nav groups ────────────────────────────────────────────────────────────────
-
-const NAV_GROUPS = [
-  {
-    label: "General",
-    items: [
-      { href: "/baslangic",     label: "Başlangıç",      icon: Rocket },
-      { href: "/command-center", label: "Command Center", icon: Activity },
-      { href: "/nakit-radari",  label: "Nakit Radarı",   icon: Waves },
-      { href: "/kurumsallasma",  label: "Kurumsallaşma",  icon: TrendingUp },
-      { href: "/iliskili-taraf", label: "İlişkili Taraf",  icon: Users },
-      { href: "/pnl",            label: "Dashboard",      icon: LayoutDashboard },
-      { href: "/baglan",         label: "Verilerimi Bağla", icon: Link2 },
-      { href: "/upload",         label: "Upload",         icon: Upload },
-    ],
-  },
-  {
-    label: "Finance",
-    items: [
-      { href: "/pnl",      label: "P&L",       icon: DollarSign },
-      { href: "/cashflow", label: "Cash Flow",  icon: Waves },
-      { href: "/forecast", label: "Forecast",   icon: TrendingUp },
-      { href: "/budget",   label: "Budget",     icon: PieChart },
-      { href: "/tax",      label: "Tax",        icon: Receipt },
-    ],
-  },
-  {
-    label: "Analytics",
-    items: [
-      { href: "/trends",                    label: "Trends",          icon: BarChart2 },
-      { href: "/anomalies",                 label: "Anomalies",       icon: ShieldAlert },
-      { href: "/transactions",              label: "Transactions",    icon: ArrowRightLeft },
-      { href: "/analytics/monte-carlo",     label: "Monte Carlo",     icon: TrendingUp },
-      { href: "/analytics/working-capital", label: "Working Capital", icon: DollarSign },
-      { href: "/analytics/break-even",      label: "Break-Even",      icon: BarChart2 },
-      { href: "/analytics/cohort",          label: "Cohort",          icon: Users },
-    ],
-  },
-  {
-    label: "C-Suite",
-    items: [
-      { href: "/cfo",        label: "CFO View",    icon: DollarSign },
-      { href: "/cto",        label: "CTO View",    icon: Cpu },
-      { href: "/ceo",        label: "CEO View",    icon: Crown },
-      { href: "/cmo",        label: "CMO View",    icon: Megaphone },
-      { href: "/coo",        label: "COO View",    icon: Layers },
-      { href: "/chro",       label: "CHRO View",   icon: Users },
-    ],
-  },
-  {
-    label: "Risk & Compliance",
-    items: [
-      { href: "/risk",         label: "Risk",              icon: Shield },
-      { href: "/risk/cascade", label: "Cascade Sim.",      icon: Zap },
-      { href: "/compliance",   label: "Compliance",        icon: ShieldCheck },
-      { href: "/audit",        label: "Internal Audit",    icon: FileSearch },
-      { href: "/sensitivity",  label: "What-If",           icon: Activity },
-      { href: "/tetikler",     label: "Tetikler",          icon: Filter },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      { href: "/chat",          label: "CFO Chat",        icon: MessageSquare },
-      { href: "/reports",       label: "Reports",         icon: FileText },
-      { href: "/intelligence",  label: "Intelligence",    icon: Activity },
-      { href: "/simulation",    label: "Simulation",      icon: Zap },
-      { href: "/integrations",  label: "Integrations",    icon: Link2 },
-      { href: "/templates",     label: "CSV Templates",   icon: Download },
-    ],
-  },
-  {
-    label: "Portal",
-    items: [
-      { href: "/tr-vertical", label: "TR Autopilot (L3)",        icon: Zap, trPack: true },
-      { href: "/smmm",        label: "Turkey accounting review", icon: Users, trPack: true },
-      { href: "/smmm-onay",   label: "SMMM approvals",           icon: FileCheck, trPack: true },
-      { href: "/billing",     label: "Billing",                  icon: CreditCard },
-      { href: "/settings/alerts", label: "Alerts",               icon: Zap },
-      { href: "/settings/workspace", label: "Workspace", icon: Building2 },
-      { href: "/pilot",       label: "Pilot Program",  icon: Users },
-    ],
-  },
-];
 
 // Flat list for helpers
 const allNavItems = NAV_GROUPS.flatMap((g) => g.items);
 
 const STATUS_CONFIG = {
-  completed:       { icon: CheckCircle, className: "text-emerald-400", label: "Completed" },
-  failed:          { icon: AlertCircle, className: "text-destructive",  label: "Failed" },
-  pending:         { icon: Loader2,     className: "text-primary animate-spin", label: "Pending" },
-  ingesting:       { icon: Loader2,     className: "text-primary animate-spin", label: "Ingesting" },
-  analyzing:       { icon: Loader2,     className: "text-primary animate-spin", label: "Analyzing" },
-  awaiting_review: { icon: Clock,       className: "text-warning", label: "Review" },
+  completed:       { icon: CheckCircle, className: "text-success" },
+  failed:          { icon: AlertCircle, className: "text-destructive" },
+  pending:         { icon: Loader2,     className: "text-primary animate-spin" },
+  ingesting:       { icon: Loader2,     className: "text-primary animate-spin" },
+  analyzing:       { icon: Loader2,     className: "text-primary animate-spin" },
+  awaiting_review: { icon: Clock,       className: "text-warning" },
 } as const;
 
 // ── User menu ─────────────────────────────────────────────────────────────────
@@ -159,7 +72,7 @@ function UserMenu() {
         aria-expanded={open}
         aria-label="Kullanıcı menüsü"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary ring-1 ring-primary/20">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-foreground ring-1 ring-primary/20">
           {initials}
         </span>
         <span className="hidden max-w-[90px] truncate text-xs text-foreground/80 sm:block">
@@ -175,7 +88,7 @@ function UserMenu() {
             {/* User info */}
             <div className="border-b border-border px-3 py-3">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-foreground">
                   {initials}
                 </span>
                 <div className="min-w-0">
@@ -227,7 +140,7 @@ function UserMenu() {
 
 function JobStatusIcon({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? {
-    icon: Clock, className: "text-muted-foreground", label: status,
+    icon: Clock, className: "text-muted-foreground",
   };
   const Icon = cfg.icon;
   return <Icon className={cn("h-3 w-3 shrink-0", cfg.className)} aria-hidden="true" />;
@@ -248,7 +161,7 @@ function SidebarContent({
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
   const { hasTrPack, focusMode } = useOrgSettings();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   function navHref(href: string) {
     if (jobId && href !== "/upload") return `${href}?job=${jobId}`;
@@ -262,8 +175,8 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Sidebar header */}
-      <div className="flex h-16 shrink-0 items-center border-b border-border px-4">
-        <Link href="/" className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${t.product.name} — ana sayfa`}>
+      <div className="flex h-16 shrink-0 items-center px-5">
+        <Link href="/" className="rounded-md text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${t.product.name} — ana sayfa`}>
           <Logo size="md" />
         </Link>
       </div>
@@ -279,13 +192,13 @@ function SidebarContent({
 
           return (
           <details key={group.label} className="group/nav mb-1" open={hasCurrentPage || index === 0}>
-            <summary className="mx-2 flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground [&::-webkit-details-marker]:hidden">
-              <span>{group.label.toUpperCase()}</span>
+            <summary className="tc-eyebrow mx-2 flex min-h-[36px] cursor-pointer list-none items-center justify-between rounded-md px-2 text-[10px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <span>{t.menu.groups[group.label].toLocaleUpperCase(locale)}</span>
               <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
             </summary>
             <div className="space-y-0.5 px-2 pb-1">
               {group.items.map((navItem) => {
-                const { href, label, icon: Icon } = navItem;
+                const { href, labelKey, icon: Icon } = navItem;
                 const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
                 return (
                   <Link
@@ -293,34 +206,21 @@ function SidebarContent({
                     href={navHref(href)}
                     onClick={onNavigate}
                     className={cn(
-                      "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm",
+                      "group relative flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-[14.5px]",
                       "transition-[color,background-color] duration-150 ease-out",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       isActive
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                        ? "bg-foreground font-semibold text-background"
+                        : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                     aria-current={isActive ? "page" : undefined}
                   >
-                    {/* Active indicator */}
-                    <span
-                      className={cn(
-                        "absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-r bg-primary transition-[height,opacity] duration-200",
-                        isActive ? "h-5 opacity-100" : "h-0 opacity-0"
-                      )}
-                      aria-hidden="true"
-                    />
-
                     <Icon
-                      className={cn(
-                        "h-4 w-4 shrink-0 transition-transform duration-150",
-                        "group-hover:scale-105",
-                        isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                      )}
+                      className="h-4 w-4 shrink-0 text-current opacity-90"
                       aria-hidden="true"
                     />
 
-                    <span className="flex-1 truncate">{label}</span>
+                    <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
 
                     {href === "/anomalies" && anomalyCritical > 0 && (
                       <span
@@ -341,7 +241,7 @@ function SidebarContent({
         {/* Recent analyses */}
         {jobs && jobs.length > 0 && (
           <div className="mb-2 mt-4 px-2">
-            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+            <p className="tc-eyebrow mb-1 px-3 text-[10px] text-muted-foreground">
               Son Analizler
             </p>
             <div className="space-y-0.5">
@@ -355,14 +255,14 @@ function SidebarContent({
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      isActive ? "bg-primary/10" : "hover:bg-muted/60"
+                      isActive ? "bg-muted" : "hover:bg-muted"
                     )}
                     title={job.filename}
                   >
                     <JobStatusIcon status={job.status} />
                     <span className={cn(
                       "flex-1 truncate text-xs",
-                      isActive ? "font-medium text-primary" : "text-muted-foreground"
+                      isActive ? "font-medium text-foreground" : "text-muted-foreground"
                     )}>
                       {job.filename}
                     </span>
@@ -378,11 +278,11 @@ function SidebarContent({
       <div className="shrink-0 border-t border-border p-3">
         <Link
           href="/billing"
-          className="flex items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 transition-colors hover:border-primary/30 hover:bg-primary/8"
+          className="flex min-h-[44px] items-center gap-2.5 rounded-lg border border-border px-3 py-2 transition-colors hover:bg-muted"
         >
           <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary">Planı yükselt</p>
+            <p className="text-xs font-semibold text-foreground">Planı yükselt</p>
             <p className="text-[10px] text-muted-foreground">Tüm yönetim görünümleri</p>
           </div>
         </Link>
@@ -394,6 +294,7 @@ function SidebarContent({
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 
 function Breadcrumb({ pathname }: { pathname: string }) {
+  const { t } = useI18n();
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
   const current = allNavItems.find((item) => item.href === activeBase || item.href === pathname);
   if (!current || pathname === "/") return null;
@@ -401,10 +302,10 @@ function Breadcrumb({ pathname }: { pathname: string }) {
   return (
     <nav aria-label="Breadcrumb" className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
       <Link href="/" className="transition-colors hover:text-foreground">
-        Dashboard
+        {t.menu.items.dashboard}
       </Link>
       <span aria-hidden="true">/</span>
-      <span className="font-medium text-foreground">{current.label}</span>
+      <span className="font-medium text-foreground">{t.menu.items[current.labelKey]}</span>
     </nav>
   );
 }
@@ -427,7 +328,7 @@ export default function DashboardLayout({
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden w-64 shrink-0 border-r border-border bg-card lg:flex lg:flex-col"
+        className="dark hidden w-64 shrink-0 border-r border-border bg-background text-foreground lg:flex lg:flex-col"
         aria-label="Sidebar navigation"
       >
         <SidebarContent pathname={pathname} jobId={jobId} />
@@ -445,7 +346,7 @@ export default function DashboardLayout({
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-card",
+          "dark fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-background text-foreground",
           "transition-transform duration-200 ease-out lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
@@ -514,7 +415,7 @@ export default function DashboardLayout({
 
         {/* Global overlays */}
         <CommandPalette />
-        <AgentChatPanel agentFilter="all" agentLabel="C-Suite AI" />
+        <AgentChatPanel agentFilter="all" agentLabel={`${brand.name} AI`} />
       </div>
     </div>
   );

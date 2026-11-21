@@ -1,18 +1,129 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { Waves } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Calendar, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
-import { getCashRadar, type CashRadar, type RadarWeek } from "@/lib/api/ledger";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
+import {
+  getCashRadar,
+  getMondayBriefing,
+  respondToMondayBriefing,
+  type CashRadar,
+  type RadarWeek,
+} from "@/lib/api/ledger";
 import { cn } from "@/lib/utils";
+import { WhatIfRadarPanel } from "@/components/simulation/WhatIfRadarPanel";
+import { ConsolidatedRadarView } from "@/components/consolidation/ConsolidatedRadarView";
+import { getConsolidatedRadar } from "@/lib/api/consolidation";
+import { OodaFooter } from "@/components/brand-app/OodaFooter";
+import { RadarCurve } from "@/components/radar/RadarCurve";
+import { RadarAnswer } from "@/components/radar/RadarAnswer";
+import { WeekDetail } from "@/components/radar/WeekDetail";
 
 const RADAR_KEY = ["cash-radar"];
+const BRIEFING_KEY = ["monday-briefing"];
 
 type Copy = ReturnType<typeof useI18n>["t"]["cashRadar"];
 type Fmt = (value: number) => string;
+
+function MondayBriefingSection({ copy }: { copy: Copy }) {
+  const [recordedDecision, setRecordedDecision] = useState<string | null>(null);
+  const { data: briefing, isLoading } = useQuery({
+    queryKey: BRIEFING_KEY,
+    queryFn: () => getMondayBriefing(),
+  });
+
+  const respondMutation = useMutation({
+    // The answer carries the briefing it is about: its week and fingerprint.
+    mutationFn: (resp: "done" | "deferred" | "dismissed") => {
+      if (!briefing) throw new Error("briefing not loaded");
+      return respondToMondayBriefing(resp, briefing.week_start, briefing.fingerprint);
+    },
+    onSuccess: (data) => {
+      setRecordedDecision(data.chosen_option_label);
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="border-primary/20 bg-primary/5 p-4">
+        <p className="text-sm text-muted-foreground">{copy.briefingLoading}</p>
+      </Card>
+    );
+  }
+
+  if (!briefing) return null;
+
+  return (
+    <Card className="space-y-4 border-primary/30 bg-primary/5 p-4 sm:p-5" role="region">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-5 w-5 text-primary" aria-hidden="true" />
+          <h2 className="text-base font-semibold">{copy.briefingTitle}</h2>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+          {copy.briefingVerified}
+        </span>
+      </div>
+
+      <p className="text-sm font-normal leading-relaxed text-foreground">
+        {briefing.full_text}
+      </p>
+
+      {briefing.action_title && (
+        <div className="space-y-2 rounded-lg border border-border/60 bg-background/80 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {copy.briefingActionLabel}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-foreground">{briefing.action_title}</p>
+          <p className="text-xs text-muted-foreground">{briefing.action_detail}</p>
+
+          <div className="pt-2">
+            {recordedDecision ? (
+              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                {copy.briefingRecorded} <span className="font-semibold">{recordedDecision}</span>
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={respondMutation.isPending}
+                  onClick={() => respondMutation.mutate("done")}
+                  className="inline-flex min-h-[44px] items-center rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {copy.briefingBtnDone}
+                </button>
+                <button
+                  type="button"
+                  disabled={respondMutation.isPending}
+                  onClick={() => respondMutation.mutate("deferred")}
+                  className="inline-flex min-h-[44px] items-center rounded-md border border-border bg-background px-4 py-1.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
+                >
+                  {copy.briefingBtnDefer}
+                </button>
+                <button
+                  type="button"
+                  disabled={respondMutation.isPending}
+                  onClick={() => respondMutation.mutate("dismissed")}
+                  className="inline-flex min-h-[44px] items-center rounded-md px-4 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  {copy.briefingBtnDismiss}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function StartingCash({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt }) {
   if (radar.starting_cash_cents === null) {
@@ -76,11 +187,37 @@ function Shortfall({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fm
   );
 }
 
-function WeekRow({ week, known, gapWeek, fmt }: { week: RadarWeek; known: boolean; gapWeek: number | null; fmt: Fmt }) {
+function WeekRow({
+  week,
+  known,
+  gapWeek,
+  selected,
+  onSelect,
+  pickLabel,
+  fmt,
+}: {
+  week: RadarWeek;
+  known: boolean;
+  gapWeek: number | null;
+  selected: boolean;
+  onSelect: (week: number) => void;
+  pickLabel: string;
+  fmt: Fmt;
+}) {
   const below = known && week.end_balance_cents < 0;
   return (
-    <tr className={cn("border-t border-border", gapWeek === week.week && "bg-destructive/5")}>
-      <td className="px-3 py-2 tabular-nums">{week.week}</td>
+    <tr className={cn("border-t border-border", gapWeek === week.week && "bg-destructive/5", selected && "bg-muted")}>
+      <td className="px-3 py-1 tabular-nums">
+        <button
+          type="button"
+          onClick={() => onSelect(week.week)}
+          aria-pressed={selected}
+          aria-label={pickLabel}
+          className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md px-2 font-medium hover:bg-muted"
+        >
+          {week.week}
+        </button>
+      </td>
       <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{week.start_date} – {week.end_date}</td>
       <td className="px-3 py-2 text-right tabular-nums">{week.inflow_cents ? fmt(week.inflow_cents / 100) : "–"}</td>
       <td className="px-3 py-2 text-right tabular-nums">{week.outflow_cents ? fmt(week.outflow_cents / 100) : "–"}</td>
@@ -91,7 +228,19 @@ function WeekRow({ week, known, gapWeek, fmt }: { week: RadarWeek; known: boolea
   );
 }
 
-function Weeks({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt }) {
+function Weeks({
+  radar,
+  copy,
+  fmt,
+  selected,
+  onSelect,
+}: {
+  radar: CashRadar;
+  copy: Copy;
+  fmt: Fmt;
+  selected: number | null;
+  onSelect: (week: number) => void;
+}) {
   const known = radar.starting_cash_cents !== null;
   return (
     <Card className="overflow-x-auto p-0">
@@ -108,7 +257,16 @@ function Weeks({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt })
         </thead>
         <tbody>
           {radar.weeks.map((week) => (
-            <WeekRow key={week.week} week={week} known={known} gapWeek={radar.shortfall?.week ?? null} fmt={fmt} />
+            <WeekRow
+              key={week.week}
+              week={week}
+              known={known}
+              gapWeek={radar.shortfall?.week ?? null}
+              selected={selected === week.week}
+              onSelect={onSelect}
+              pickLabel={copy.weekPick.replace("{week}", String(week.week))}
+              fmt={fmt}
+            />
           ))}
         </tbody>
       </table>
@@ -172,42 +330,139 @@ function isEmpty(radar: CashRadar): boolean {
   );
 }
 
+/** The week to open first: the gap's week, otherwise the week the route is lowest. */
+function defaultWeek(radar: CashRadar): number | null {
+  if (radar.shortfall) return radar.shortfall.week;
+  if (radar.weeks.length === 0) return null;
+  return radar.weeks.reduce((low, w) => (w.end_balance_cents < low.end_balance_cents ? w : low), radar.weeks[0]).week;
+}
+
+function Headline({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt }) {
+  if (radar.weeks.length === 0) return null;
+  const known = radar.starting_cash_cents !== null;
+  const lowest = Math.min(...radar.weeks.map((w) => w.end_balance_cents));
+  const last = radar.weeks[radar.weeks.length - 1].end_balance_cents;
+  const tone = (cents: number) => (known && cents < 0 ? "text-destructive" : "text-foreground");
+  return (
+    <div className="flex flex-wrap gap-6">
+      <div className="flex flex-col">
+        <span className="text-[12.5px] text-muted-foreground">{known ? copy.lowestCash : copy.lowestMovement}</span>
+        <span className={cn("tc-mono text-[22px]", tone(lowest))}>{fmt(lowest / 100)}</span>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[12.5px] text-muted-foreground">{copy.periodEnd}</span>
+        <span className={cn("tc-mono text-[22px]", tone(last))}>{fmt(last / 100)}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function NakitRadariPage() {
   const { t } = useI18n();
   const copy = t.cashRadar;
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
+  const locale = org?.locale || "en-US";
+  const [viewMode, setViewMode] = useState<"individual" | "consolidated">("individual");
+  const [pickedWeek, setPickedWeek] = useState<number | null>(null);
+
   const { data: radar, isLoading, isError } = useQuery({ queryKey: RADAR_KEY, queryFn: getCashRadar });
+  const { data: consolidatedRadar } = useQuery({
+    queryKey: ["consolidated-radar"],
+    queryFn: () => getConsolidatedRadar([]),
+    enabled: viewMode === "consolidated",
+  });
+
+  const selectedWeek =
+    radar && pickedWeek !== null && radar.weeks.some((w) => w.week === pickedWeek)
+      ? pickedWeek
+      : radar
+        ? defaultWeek(radar)
+        : null;
+  const detailWeek = radar?.weeks.find((w) => w.week === selectedWeek) ?? null;
+  const period =
+    radar && radar.weeks.length > 0
+      ? `${radar.weeks[0].start_date} – ${radar.weeks[radar.weeks.length - 1].end_date}`
+      : null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4 sm:p-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <Waves className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-          {copy.title}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+      <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-1.5">
+            {period && <span className="tc-eyebrow text-muted-foreground">{period}</span>}
+            <h1 className="tc-display m-0 text-4xl leading-[1.05] sm:text-[44px]">{copy.title}</h1>
+            <p className="m-0 text-sm text-muted-foreground">{copy.subtitle}</p>
+          </div>
+          {viewMode === "individual" && radar && !isEmpty(radar) && <Headline radar={radar} copy={copy} fmt={fmt} />}
+        </div>
+
+        <div className="flex w-fit items-center rounded-lg border border-border bg-muted/40 p-1">
+          {(["individual", "consolidated"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              aria-pressed={viewMode === mode}
+              className={cn(
+                "min-h-[36px] rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                viewMode === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {mode === "individual" ? copy.grpToggleIndividual : copy.grpToggleConsolidated}
+            </button>
+          ))}
+        </div>
+
+        {isLoading && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
+        {isError && <p className="text-sm text-destructive">{copy.failed}</p>}
+
+        {viewMode === "consolidated" && consolidatedRadar && (
+          <ConsolidatedRadarView radar={consolidatedRadar} copy={copy} fmt={fmt} />
+        )}
+
+        {viewMode === "individual" && radar && (
+          <>
+            {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} />}
+            <MondayBriefingSection copy={copy} />
+            <StartingCash radar={radar} copy={copy} fmt={fmt} />
+            {isEmpty(radar) ? (
+              <Card className="space-y-2 p-4">
+                <p className="text-sm text-muted-foreground">{copy.emptyBody}</p>
+                <Link href="/baglan" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
+                  {copy.connect}
+                </Link>
+              </Card>
+            ) : (
+              <>
+                <Card className="overflow-x-auto p-5">
+                  <RadarCurve
+                    weeks={radar.weeks}
+                    known={radar.starting_cash_cents !== null}
+                    selected={selectedWeek}
+                    onSelect={setPickedWeek}
+                    copy={copy}
+                    fmt={fmt}
+                    locale={locale}
+                  />
+                </Card>
+                <Shortfall radar={radar} copy={copy} fmt={fmt} />
+                <WhatIfRadarPanel copy={copy} fmt={fmt} />
+                <div className="flex flex-wrap items-start gap-4">
+                  <div className="min-w-0 flex-[999_1_520px]">
+                    <Weeks radar={radar} copy={copy} fmt={fmt} selected={selectedWeek} onSelect={setPickedWeek} />
+                  </div>
+                  {detailWeek && (
+                    <div className="min-w-0 flex-[1_1_320px]">
+                      <WeekDetail week={detailWeek} copy={copy} fmt={fmt} />
+                    </div>
+                  )}
+                </div>
+                <NotCounted radar={radar} copy={copy} fmt={fmt} />
+              </>
+            )}
+          </>
+        )}
+        <OodaFooter current={1} />
       </div>
-      {isLoading && <p className="text-sm text-muted-foreground">{copy.loading}</p>}
-      {isError && <p className="text-sm text-destructive">{copy.failed}</p>}
-      {radar && (
-        <>
-          <StartingCash radar={radar} copy={copy} fmt={fmt} />
-          {isEmpty(radar) ? (
-            <Card className="space-y-2 p-4">
-              <p className="text-sm text-muted-foreground">{copy.emptyBody}</p>
-              <Link href="/baglan" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
-                {copy.connect}
-              </Link>
-            </Card>
-          ) : (
-            <>
-              <Shortfall radar={radar} copy={copy} fmt={fmt} />
-              <Weeks radar={radar} copy={copy} fmt={fmt} />
-              <NotCounted radar={radar} copy={copy} fmt={fmt} />
-            </>
-          )}
-        </>
-      )}
-    </div>
   );
 }

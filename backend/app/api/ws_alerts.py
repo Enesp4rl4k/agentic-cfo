@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import ws_auth
 from app.api.access import current_user_org_matches
 from app.api.auth import get_current_user
 from app.database import get_db
@@ -85,19 +86,14 @@ async def ws_alerts(
 
     from app.services.ws_alert_manager import get_ws_alert_manager
 
-    # Auth: validate JWT token
-    if token:
-        try:
-            from app.services.auth import decode_token
-            payload = decode_token(token)
-            user_id = payload.get("sub", "unknown")
-        except Exception:
-            await ws.close(code=4001, reason="Invalid token")
-            return
-    else:
-        # No token — allow in dev/demo mode but log warning
-        logger.warning("WSAlerts: unauthenticated connection for org=%s", org_id)
-        user_id = "anonymous"
+    # A token is required and must belong to a member of this organisation.
+    # Without one, anyone could subscribe to any organisation's live alerts by
+    # putting its id in the path.
+    user = await ws_auth.websocket_caller(token)
+    if user is None or not current_user_org_matches(user, org_id):
+        await ws.close(code=ws_auth.REFUSED)
+        return
+    user_id = str(user.id)
 
     manager = get_ws_alert_manager()
     await manager.connect(org_id, ws)

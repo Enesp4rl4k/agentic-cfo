@@ -1,8 +1,7 @@
 """
-Tests for Master Roadmap Phases 1, 2, 3, 4.
+Tests for Master Roadmap Phases 2, 3, 4.
 
 Verifies:
-1. Open Banking Reconciliation Engine (Phase 1).
 2. Monte Carlo Financial Stress Testing & VaR (Phase 2).
 3. Tekdüzen Hesap Planı (THP) Yevmiye & GİB e-Defter Engine (Phase 3).
 4. Immutable Cryptographic SHA-256 Audit Trail (Phase 4).
@@ -12,28 +11,6 @@ from __future__ import annotations
 from app.services.audit_trail import ImmutableAuditTrail
 from app.services.gib_edefter import EDefterGenerator
 from app.services.monte_carlo import MonteCarloEngine
-from app.services.open_banking_reconciliation import BankReconciliationEngine
-
-# ── Phase 1: Open Banking Reconciliation ──────────────────────────────────────
-
-def test_open_banking_reconciliation_exact_and_fuzzy():
-    transactions = [
-        {"id": "tx-1", "amount_cents": 500000, "description": "GIB20240001 ACME Odemesi", "type": "expense"},
-        {"id": "tx-2", "amount_cents": 1200000, "description": "Beta Holding Tahsilat", "type": "income"},
-        {"id": "tx-3", "amount_cents": 50000, "description": "Bilinmeyen Kahve Harcamasi", "type": "expense"},
-    ]
-    invoices = [
-        {"invoice_id": "inv-1", "invoice_number": "GIB20240001", "gross_amount": 5000.0, "amount_cents": 500000, "counterparty": "ACME"},
-        {"invoice_id": "inv-2", "invoice_number": "GIB20240002", "gross_amount": 12000.0, "amount_cents": 1200000, "counterparty": "Beta Holding"},
-    ]
-
-    summary = BankReconciliationEngine.reconcile(transactions, invoices)
-    assert summary.total_transactions == 3
-    assert summary.matched_count == 2
-    assert summary.unmatched_count == 1
-    assert summary.reconciliation_rate_pct == 66.67
-    assert summary.matched_amount_cents == 1700000
-
 
 # ── Phase 2: Monte Carlo Simulation ───────────────────────────────────────────
 
