@@ -23,6 +23,7 @@ import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
 import { RadarAnswer } from "@/components/radar/RadarAnswer";
 import { WeekDetail } from "@/components/radar/WeekDetail";
+import { BasisSplitLine, formatDay, hasUnverifiedTax, StaleBalanceNotice, TaxRulesNote } from "@/components/radar/basis";
 
 const RADAR_KEY = ["cash-radar"];
 const BRIEFING_KEY = ["monday-briefing"];
@@ -125,7 +126,7 @@ function MondayBriefingSection({ copy }: { copy: Copy }) {
   );
 }
 
-function StartingCash({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt }) {
+function StartingCash({ radar, copy, fmt, locale }: { radar: CashRadar; copy: Copy; fmt: Fmt; locale: string }) {
   if (radar.starting_cash_cents === null) {
     return (
       <Card className="space-y-1 p-4">
@@ -134,19 +135,25 @@ function StartingCash({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt:
       </Card>
     );
   }
+  const opening = radar.opening_cash;
   return (
-    <Card className="p-4">
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <dt className="text-xs text-muted-foreground">{copy.startingCash}</dt>
-          <dd className="text-lg font-semibold tabular-nums">{fmt(radar.starting_cash_cents / 100)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">{copy.asOf}</dt>
-          <dd className="font-medium tabular-nums">{radar.starting_cash_as_of}</dd>
-        </div>
-      </dl>
-    </Card>
+    <div className="space-y-2">
+      <Card className="p-4">
+        <dl className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">{copy.startingCash}</dt>
+            <dd className="text-lg font-semibold tabular-nums">{fmt(radar.starting_cash_cents / 100)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">{copy.asOf}</dt>
+            <dd className="font-medium">
+              {opening ? copy.cashAsOf.replace("{date}", formatDay(opening.as_of, locale)) : radar.starting_cash_as_of}
+            </dd>
+          </div>
+        </dl>
+      </Card>
+      {opening?.stale && <StaleBalanceNotice asOf={opening.as_of} ageDays={opening.age_days} locale={locale} />}
+    </div>
   );
 }
 
@@ -194,6 +201,7 @@ function WeekRow({
   selected,
   onSelect,
   pickLabel,
+  copy,
   fmt,
 }: {
   week: RadarWeek;
@@ -202,6 +210,7 @@ function WeekRow({
   selected: boolean;
   onSelect: (week: number) => void;
   pickLabel: string;
+  copy: Copy;
   fmt: Fmt;
 }) {
   const below = known && week.end_balance_cents < 0;
@@ -219,8 +228,14 @@ function WeekRow({
         </button>
       </td>
       <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{week.start_date} – {week.end_date}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{week.inflow_cents ? fmt(week.inflow_cents / 100) : "–"}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{week.outflow_cents ? fmt(week.outflow_cents / 100) : "–"}</td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {week.inflow_cents ? fmt(week.inflow_cents / 100) : "–"}
+        <BasisSplitLine split={week.inflow_basis} copy={copy} fmt={fmt} />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {week.outflow_cents ? fmt(week.outflow_cents / 100) : "–"}
+        <BasisSplitLine split={week.outflow_basis} copy={copy} fmt={fmt} />
+      </td>
       <td className={cn("px-3 py-2 text-right font-medium tabular-nums", below && "text-destructive")}>
         {fmt(week.end_balance_cents / 100)}
       </td>
@@ -265,11 +280,17 @@ function Weeks({
               selected={selected === week.week}
               onSelect={onSelect}
               pickLabel={copy.weekPick.replace("{week}", String(week.week))}
+              copy={copy}
               fmt={fmt}
             />
           ))}
         </tbody>
       </table>
+      {radar.weeks.some((w) => hasUnverifiedTax(w.payables)) && (
+        <div className="px-4 pb-4">
+          <TaxRulesNote copy={copy} />
+        </div>
+      )}
     </Card>
   );
 }
@@ -422,9 +443,9 @@ export default function NakitRadariPage() {
 
         {viewMode === "individual" && radar && (
           <>
-            {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} />}
+            {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} locale={locale} />}
             <MondayBriefingSection copy={copy} />
-            <StartingCash radar={radar} copy={copy} fmt={fmt} />
+            <StartingCash radar={radar} copy={copy} fmt={fmt} locale={locale} />
             {isEmpty(radar) ? (
               <Card className="space-y-2 p-4">
                 <p className="text-sm text-muted-foreground">{copy.emptyBody}</p>
@@ -453,7 +474,7 @@ export default function NakitRadariPage() {
                   </div>
                   {detailWeek && (
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <WeekDetail week={detailWeek} copy={copy} fmt={fmt} />
+                      <WeekDetail week={detailWeek} copy={copy} fmt={fmt} locale={locale} />
                     </div>
                   )}
                 </div>

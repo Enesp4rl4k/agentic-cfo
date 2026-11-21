@@ -40,6 +40,7 @@ vi.mock("next/link", () => ({
 }));
 
 import NakitRadariPage from "@/app/(dashboard)/nakit-radari/page";
+import { noBasis, openingCashFixture } from "./dashboard-mocks";
 
 const week = (n: number, over: Record<string, unknown> = {}) => ({
   week: n,
@@ -51,6 +52,8 @@ const week = (n: number, over: Record<string, unknown> = {}) => ({
   end_balance_cents: 0,
   receivables: [],
   payables: [],
+  inflow_basis: noBasis,
+  outflow_basis: noBasis,
   ...over,
 });
 
@@ -58,6 +61,7 @@ const radar = (over: Record<string, unknown> = {}) => ({
   anchor_date: "2025-01-01",
   starting_cash_cents: 100_000_00,
   starting_cash_as_of: "2025-01-01",
+  opening_cash: openingCashFixture,
   weeks: [
     week(1, { end_balance_cents: 100_000_00 }),
     week(2, { inflow_cents: 50_000_00, net_cents: 50_000_00, end_balance_cents: 150_000_00 }),
@@ -93,7 +97,7 @@ describe("Nakit Radarı", () => {
     getCashRadar.mockResolvedValue(radar());
     show();
     expect(await screen.findByText("Başlangıç nakdi")).toBeTruthy();
-    expect(screen.getByText("2025-01-01")).toBeTruthy();
+    expect(screen.getByText("1 Ocak ekstresine göre kasa")).toBeTruthy();
     expect(screen.getByText("Bakiye")).toBeTruthy();
     expect(screen.queryByText("Banka bakiyesi bilinmiyor")).toBeNull();
   });

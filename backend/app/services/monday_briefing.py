@@ -63,6 +63,10 @@ class MondayBriefing:
     # Whether there is anything to say. A company with no balance and no items gets
     # no briefing rather than a made-up calm week.
     has_data: bool = True
+    # Which statement the balance comes from and whether it is too old to call "now".
+    balance_as_of: str | None = None
+    balance_age_days: int = 0
+    balance_stale: bool = False
     # A digest of everything above. The owner answers the briefing they saw; the
     # answer carries this back, and a briefing whose figures moved in between
     # (a new upload, a settled invoice) is not the one they answered.
@@ -85,6 +89,40 @@ class BriefingChanged(Exception):
     """The briefing's figures are not the ones the owner answered."""
 
 
+# More than this share of the inflow resting on estimates is "mostly estimated".
+ESTIMATED_MAJORITY = 0.5
+
+_MONTHS_TR = (
+    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+    "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+)  # fmt: skip
+
+
+def _tr_date(iso: str) -> str:
+    d = date.fromisoformat(iso[:10])
+    return f"{d.day} {_MONTHS_TR[d.month - 1]}"
+
+
+def _inflow_estimated_share(splits: list[Any]) -> float:
+    """The part of the money coming in that rests on an estimate or an assumption."""
+    total = sum(x.known_cents + x.estimated_cents + x.assumed_cents for x in splits)
+    if total <= 0:
+        return 0.0
+    return sum(x.estimated_cents + x.assumed_cents for x in splits) / total
+
+
+def _balance_note(as_of: str | None, age_days: int, stale: bool) -> str:
+    """Where the balance comes from; a stale one says it may no longer be true."""
+    if as_of is None:
+        return ""
+    if stale:
+        return (
+            f"{_tr_date(as_of)} tarihli ekstreye göre, {age_days} gün önceki bakiye; "
+            "güncel kasanız farklı olabilir"
+        )
+    return f"{_tr_date(as_of)} ekstresine göre"
+
+
 def _generate_deterministic_sentences(
     net_change_cents: int,
     end_balance_cents: int,
@@ -96,6 +134,11 @@ def _generate_deterministic_sentences(
     action_detail: str,
     action_amount_cents: int,
     not_included: list[str] | None = None,
+    balance_as_of: str | None = None,
+    balance_age_days: int = 0,
+    balance_stale: bool = False,
+    week_estimated_share: float = 0.0,
+    horizon_estimated_share: float = 0.0,
 ) -> tuple[str, str, str]:
     """Build the canonical 3-sentence briefing from verified radar facts."""
     balance_known = starting_cash_cents is not None
@@ -108,15 +151,18 @@ def _generate_deterministic_sentences(
         move = f"{_fmt(abs(net_change_cents))} tutarında net çıkış beklenmektedir"
     else:
         move = None
+    note = _balance_note(balance_as_of, balance_age_days, balance_stale)
+    note = f"; {note}" if note else ""
     if balance_known and move:
         sentence_1 = (
             f"Bu hafta net nakit pozisyonunuzda {move} "
-            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents)})."
+            f"(tahmini hafta sonu bakiyesi: {_fmt(end_balance_cents)}{note})."
         )
     elif balance_known:
+        label = "son bilinen bakiye" if balance_stale else "bakiye"
         sentence_1 = (
             f"Bu hafta nakit pozisyonunuzda önemli bir net hareket beklenmemektedir "
-            f"(mevcut bakiye: {_fmt(end_balance_cents)})."
+            f"({label}: {_fmt(end_balance_cents)}{note})."
         )
     elif move:
         sentence_1 = (
@@ -127,6 +173,9 @@ def _generate_deterministic_sentences(
         sentence_1 = (
             "Bu hafta radarda net bir nakit hareketi görünmüyor; başlangıç bakiyeniz bilinmiyor."
         )
+
+    if balance_known and week_estimated_share > ESTIMATED_MAJORITY:
+        sentence_1 += " Bu haftaki girişlerin çoğu tahmini tarihlere dayanıyor."
 
     # Sentence 2: Approaching Critical Liability
     if approaching_amount_cents > 0 and approaching_date:
@@ -149,6 +198,13 @@ def _generate_deterministic_sentences(
         )
     else:
         sentence_3 = "Radarda görünen kalemlerle bu hafta acil bir nakit açığı eylemi gerekmiyor."
+        if balance_stale:
+            sentence_3 += (
+                " Ancak bu, güncel olmayabilecek eski bir ekstre bakiyesine dayanıyor; "
+                "yeni ekstre yükleyin."
+            )
+        if horizon_estimated_share > ESTIMATED_MAJORITY:
+            sentence_3 += " Beklenen girişlerin çoğu tahmine dayandığı için bu kesin değildir."
         if not_included:
             sentence_3 += f" Radara dahil değil: {', '.join(x.lower() for x in not_included)}."
 
@@ -246,6 +302,7 @@ async def assemble_monday_briefing(
         action_detail = "Bu hafta nakit durumu dengeli seyrediyor."
         action_amount = 0
 
+    opening = radar.opening_cash
     s1, s2, s3 = _generate_deterministic_sentences(
         net_change_cents=net_change,
         end_balance_cents=end_balance,
@@ -257,6 +314,11 @@ async def assemble_monday_briefing(
         action_detail=action_detail,
         action_amount_cents=action_amount,
         not_included=radar.not_included,
+        balance_as_of=opening.as_of if opening else None,
+        balance_age_days=opening.age_days if opening else 0,
+        balance_stale=opening.stale if opening else False,
+        week_estimated_share=_inflow_estimated_share([week_1.inflow_basis] if week_1 else []),
+        horizon_estimated_share=_inflow_estimated_share([w.inflow_basis for w in radar.weeks]),
     )
     deterministic_full_text = f"{s1} {s2} {s3}"
 
@@ -280,6 +342,14 @@ async def assemble_monday_briefing(
         )
         if is_grounded:
             final_text = candidate_narrative.strip()
+            # A narrative cannot lose the caveats the template would have carried.
+            if opening and opening.stale:
+                final_text += (
+                    f" Not: bakiye {_tr_date(opening.as_of)} tarihli ekstreye dayanıyor "
+                    f"({opening.age_days} gün önce); güncel olmayabilir."
+                )
+            if _inflow_estimated_share([w.inflow_basis for w in radar.weeks]) > ESTIMATED_MAJORITY:
+                final_text += " Not: beklenen girişlerin çoğu tahmine dayanıyor."
         else:
             # Rejection: fall back to the deterministic template.
             fallback_used = True
@@ -319,6 +389,9 @@ async def assemble_monday_briefing(
         fallback_used=fallback_used,
         balance_known=starting_cash is not None,
         has_data=has_data,
+        balance_as_of=opening.as_of if opening else None,
+        balance_age_days=opening.age_days if opening else 0,
+        balance_stale=opening.stale if opening else False,
     )
     return replace(briefing, fingerprint=briefing_fingerprint(briefing))
 
