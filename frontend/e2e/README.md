@@ -2,7 +2,7 @@
 
 One user journey in Chromium against the real stack: register and create a company, set-up page,
 upload a bank statement and an invoice list, cash radar, Monday briefing, a category correction,
-an accountant added by invitation, a held briefing released, a viewer refused, a plan change
+an accountant invited on the workspace screen who joins through the e-mailed link (and a second one who already has a company of their own and switches between both), a held briefing released, a viewer refused, a plan change
 approved, the decision records, an approved action that is not connected.
 
 ```bash
@@ -29,11 +29,12 @@ Set `E2E_REUSE=1` to attach to servers that are already running.
 `support/probe.py` is read-only except for one thing: `monday-tick` runs the scheduler's own Monday
 job once (the product has no screen or endpoint that starts it). It also reads
 
-- the invitation token, because the API only e-mails it and nothing on screen shows it;
+- the invitation token, because the API only e-mails it and nothing on screen shows it (the page the e-mail links to, `/auth/accept-invite`, is then driven in the browser);
 - the outbox, because the briefing e-mail is never delivered here.
 
-No role, company or document is created by writing to the database: people register, are invited and
-accept through the API, and everything else is done in the browser.
+No role, company or document is created by writing to the database: the accountants are invited on the
+workspace screen and accept on the invitation page; the colleagues register and accept through the API; everything
+else is done in the browser.
 
 ## Failures
 

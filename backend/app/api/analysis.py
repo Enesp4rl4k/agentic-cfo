@@ -10,8 +10,10 @@ from app.api.access import require_contributor, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.decisions import record_decision
 
 router = APIRouter()
 
@@ -182,6 +184,11 @@ async def apply_as_company_view(
     org_id = str(job.org_id)
     chain_result = cfo_chain_result(job_id, result)
     await apply_company_view(job_id, org_id, chain_result, db, force=True)
+    await record_decision(
+        db, org_id=org_id, kind=DecisionKind.COMPANY_VIEW_ADOPTION, target_type="analysis_job", target_id=job_id,
+        outcome="applied", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+    )
+    await db.commit()
     spawn_auto_chain(job_id, org_id, chain_result)
     return {"data": {"job_id": job_id, "company_view": True}, "error": None}
 

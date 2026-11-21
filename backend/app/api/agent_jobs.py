@@ -29,8 +29,10 @@ from app.api.auth import get_current_user, require_role
 from app.config import get_settings
 from app.database import get_db
 from app.models.agent_job import AGENT_TYPES, AgentJob, AgentJobStatus
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User, UserRole
 from app.platform.run_gate import evaluate
+from app.services.decisions import record_decision
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -387,9 +389,11 @@ async def review_queue(
 
 
 async def _close_review(
-    db: AsyncSession, job: AgentJob, status: str, review: dict[str, Any], error: str | None = None
+    db: AsyncSession, job: AgentJob, status: str, review: dict[str, Any], error: str | None = None,
+    *, decided_by: str, outcome: str,
 ) -> bool:
-    """Atomic on the status: of two people deciding at once, one wins."""
+    """Atomic on the status: of two people deciding at once, one wins. The winner's decision is recorded
+    in the same transaction."""
     now = datetime.now(UTC)
     won = await db.execute(
         update(AgentJob)
@@ -402,6 +406,13 @@ async def _close_review(
         )
         .execution_options(synchronize_session=False)
     )
+    if won.rowcount == 1 and job.org_id:
+        await record_decision(
+            db, org_id=str(job.org_id), kind=DecisionKind.HELD_RUN_RELEASE, target_type="agent_job",
+            target_id=str(job.id), outcome=outcome, decided_via=DecidedVia.HUMAN, decided_by=decided_by,
+            before={"status": AgentJobStatus.AWAITING_REVIEW}, after={"status": status},
+            evidence_refs=[{"type": "agent_type", "id": str(job.agent_type)}],
+        )
     await db.commit()
     return bool(won.rowcount == 1)
 
@@ -411,7 +422,9 @@ async def approve_held_job(db: AsyncSession, job: AgentJob, approved_by: str) ->
     from app.agents.orchestration import auto_chain
     from app.services.context_persist import persist_agent_completion
 
-    if not await _close_review(db, job, AgentJobStatus.COMPLETED, {"approved_by": approved_by}):
+    if not await _close_review(
+        db, job, AgentJobStatus.COMPLETED, {"approved_by": approved_by}, decided_by=approved_by, outcome="approved"
+    ):
         return False
     await db.refresh(job)
     inputs = job.input_data or {}
@@ -471,7 +484,7 @@ async def reject_agent_job(
     job = await _held_job_of_org(db, job_id, user)
     if not await _close_review(
         db, job, AgentJobStatus.FAILED, {"rejected_by": str(user.id)},
-        error="Sahibi tarafından reddedildi.",
+        error="Sahibi tarafından reddedildi.", decided_by=str(user.id), outcome="rejected",
     ):
         raise HTTPException(409, "Bu sonuç onay beklemiyor.")
     return {"data": {"job_id": job_id, "approved": False}, "error": None}
