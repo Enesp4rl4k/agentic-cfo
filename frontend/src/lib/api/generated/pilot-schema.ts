@@ -363,6 +363,11 @@ export interface components {
              */
             new: number;
             /**
+             * No Counterparty
+             * @default 0
+             */
+            no_counterparty: number;
+            /**
              * No Date
              * @default 0
              */

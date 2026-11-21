@@ -538,6 +538,11 @@
             "title": "New",
             "type": "integer"
           },
+          "no_counterparty": {
+            "default": 0,
+            "title": "No Counterparty",
+            "type": "integer"
+          },
           "no_date": {
             "default": 0,
             "title": "No Date",

@@ -18,6 +18,12 @@ twice under a same-day rule). The machine cannot know. The row is kept as
 `possible_duplicate`, out of the totals, until a person decides. Nothing is merged
 or deleted, and a wrong suspicion costs one click.
 
+**A document's identity.** An invoice is its own row, whichever file or source brought it
+(`doc:<id>` for a UUID or GİB number). A free-form number ("A-001", "2024-01") is only unique
+among one issuer's invoices, so it also carries the counterparty and the side: `inv:<s|p>:<party>:<no>`
+(app/core/invoice_identity.py; plan v10 G23). A free-form number with no counterparty keeps the
+old `doc:<no>` key and is reported (`no_counterparty`), never guessed.
+
 **One sale, two views.** A row rests on a `book` posting, a `document` or `cash`.
 Doubt applies only within a basis: an invoice and its receipt are expected, and
 reconciliation (app/services/reconciliation.py) ties them together. Profit comes
@@ -44,7 +50,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.invoice_identity import canonical_invoice_id
+from app.core.invoice_identity import (
+    document_key,
+    key_party,
+    lacks_counterparty,
+    open_item_key,
+)
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.core.turkish import fold
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -151,12 +162,13 @@ async def _existing(db: AsyncSession, org_id: str, ids: list[str]) -> dict[str, 
 
 async def _others_by_money(
     db: AsyncSession, org_id: str, job_id: str, days: list[date]
-) -> dict[tuple[int, str, str], list[tuple[date, str]]]:
+) -> dict[tuple[int, str, str], list[tuple[date, str, str]]]:
     """Rows from other uploads around these dates: what a new row might repeat."""
     window = timedelta(days=DUPLICATE_WINDOW_DAYS)
     rows = await db.execute(
         select(
             CanonicalTransaction.id,
+            CanonicalTransaction.source_record_id,
             CanonicalTransaction.transaction_date,
             CanonicalTransaction.amount_cents,
             CanonicalTransaction.direction,
@@ -170,22 +182,38 @@ async def _others_by_money(
             CanonicalTransaction.transaction_date <= datetime.combine(max(days) + window, time.max, UTC),
         )
     )
-    found: dict[tuple[int, str, str], list[tuple[date, str]]] = defaultdict(list)
+    found: dict[tuple[int, str, str], list[tuple[date, str, str]]] = defaultdict(list)
     for r in rows:
         if r.source_job_id != job_id:
-            found[(r.amount_cents, r.direction, r.basis)].append((day_of(r.transaction_date), r.id))
+            found[(r.amount_cents, r.direction, r.basis)].append(
+                (day_of(r.transaction_date), r.id, r.source_record_id)
+            )
     return found
 
 
+def _other_supplier(record_id: str, other_record_id: str) -> bool:
+    """Both rows are invoices of the same side from counterparties known to differ.
+
+    Two suppliers' invoices of the same amount are not one payment seen twice. Only
+    tokens of the same kind (tax number or name) can be told apart: a name against a tax
+    number may be the same company, so that stays a suspicion.
+    """
+    mine, theirs = key_party(record_id), key_party(other_record_id)
+    return bool(
+        mine and theirs and mine[0] == theirs[0] and mine[1][0] == theirs[1][0] and mine[1] != theirs[1]
+    )
+
+
 def _repeats(
-    others: dict[tuple[int, str, str], list[tuple[date, str]]], tx: Transaction
+    others: dict[tuple[int, str, str], list[tuple[date, str, str]]], tx: Transaction, record_id: str
 ) -> str | None:
     """The nearest row this one may repeat, if any is close enough."""
     day = day_of(tx.transaction_date)
     near = [
         (abs((other - day).days), row_id)
-        for other, row_id in others.get((tx.amount_kurus, tx.type, _basis(tx)), [])
+        for other, row_id, other_record_id in others.get((tx.amount_kurus, tx.type, _basis(tx)), [])
         if abs((other - day).days) <= DUPLICATE_WINDOW_DAYS
+        and not _other_supplier(record_id, other_record_id)
     ]
     return min(near)[1] if near else None
 
@@ -225,9 +253,10 @@ def record_ids(org_id: str, txs: list[Transaction]) -> tuple[list[tuple[str, Tra
         if tx.document_id:
             # The document's own id beats its content: the same invoice is the
             # same money whatever the row around it says, and whichever source
-            # (file, ERP, e-invoice) brought it (G2).
-            doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
-            usable.append((f"doc:{doc_id}", tx))
+            # (file, ERP, e-invoice) brought it (G2). A free-form number also
+            # carries its counterparty and side, as it is only unique among
+            # one issuer's invoices (G23).
+            usable.append((document_key(org_id, tx.document_id, tx.counterparty, tx.type), tx))
             continue
         print_ = _fingerprint(org_id, tx)
         seen[print_] += 1
@@ -238,7 +267,10 @@ def record_ids(org_id: str, txs: list[Transaction]) -> tuple[list[tuple[str, Tra
 
 async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     """Append a completed analysis to its company's ledger. Idempotent; commits."""
-    counts = {"new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0}
+    counts = {
+        "new": 0, "already": 0, "possible_duplicate": 0, "no_date": 0, "settled": 0, "proposed": 0,
+        "no_counterparty": 0,
+    }
     job = await db.get(AnalysisJob, job_id)
     if job is None or not job.org_id or job.status != JobStatus.COMPLETED:
         return counts
@@ -252,6 +284,14 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     # Org row first, as corrections and month closes do: a close racing this append is
     # serial, so the closed months read below are the ones at commit.
     await lock_org(db, org_id)
+    # An invoice number with no counterparty cannot be told from another supplier's: counted
+    # under its old key, and said so, so that a person can supply the counterparty.
+    counts["no_counterparty"] = sum(1 for rid, _ in usable if lacks_counterparty(rid))
+    if counts["no_counterparty"]:
+        logger.warning(
+            "ledger: %d invoice(s) with a free-form number and no counterparty (job %s)",
+            counts["no_counterparty"], job_id,
+        )
     existing = await _existing(db, org_id, [rid for rid, _ in usable])
     # Months the accountant closed: their rows do not change, and money that belongs
     # to them but arrives now is written into the first open month.
@@ -274,7 +314,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             row.basis = _basis(tx)
             counts["already"] += 1
             continue
-        duplicate_of = _repeats(others, tx)
+        duplicate_of = _repeats(others, tx, record_id)
         tarih, asil_tarih, asil_donem = tx.transaction_date, None, None
         ay = month_of(tx.transaction_date)
         if ay in kilitli:
@@ -307,7 +347,7 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
             counts["possible_duplicate"] += 1
         else:
             counts["new"] += 1
-    await _open_items(db, org_id, job_id, [tx for _, tx in usable])
+    await _open_items(db, org_id, job_id, usable)
     # Either side may arrive first: an invoice can close a line already here.
     from app.services.reconciliation import reconcile_org
 
@@ -316,10 +356,16 @@ async def append_job(db: AsyncSession, job_id: str) -> dict[str, int]:
     return counts
 
 
-async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Transaction]) -> None:
-    """A document whose side we know opens an item; the same one twice does not."""
+async def _open_items(
+    db: AsyncSession, org_id: str, job_id: str, usable: list[tuple[str, Transaction]]
+) -> None:
+    """A document whose side we know opens an item; the same one twice does not.
+
+    The item is keyed as the ledger row is (`open_item_key`), so two suppliers' "A-001" are
+    two items under the unique (organisation, document) index.
+    """
     insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
-    for tx in txs:
+    for record_id, tx in usable:
         if not (tx.document_id and tx.counterparty):
             continue
         if tx.amount_kurus <= 0:
@@ -327,14 +373,13 @@ async def _open_items(db: AsyncSession, org_id: str, job_id: str, txs: list[Tran
             # payable; netting it against the invoice it returns is not modelled yet,
             # so it opens no item (its ledger row still counts, signed).
             continue
-        doc_id = canonical_invoice_id(tx.document_id) or tx.document_id
         await db.execute(
             insert(OpenItem).values(
                 id=str(uuid.uuid4()),
                 org_id=org_id,
                 direction="receivable" if tx.type == "income" else "payable",
                 instrument="invoice",
-                document_id=doc_id,
+                document_id=open_item_key(record_id),
                 source_job_id=job_id,
                 counterparty=tx.counterparty,
                 description=tx.description,

@@ -17,7 +17,7 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item import OpenItem
 from app.models.transaction import Transaction
 from app.services.ledger import append_job, ledger_summary
-from tests.api_helpers import bellek_istemcisi, kullanici
+from tests.api_helpers import bellek_istemcisi, by_number, kullanici
 
 
 @pytest_asyncio.fixture
@@ -69,7 +69,7 @@ async def _summary(client, org_id: str) -> dict:
 
 async def _item(client, uuid: str) -> OpenItem:
     async with client._maker() as db:
-        return (await db.execute(select(OpenItem).where(OpenItem.document_id == uuid))).scalars().one()
+        return (await db.execute(select(OpenItem).where(by_number(OpenItem.document_id, uuid)))).scalars().one()
 
 
 async def test_a_receipt_quoting_the_invoice_closes_it_and_is_not_revenue_again(client):
