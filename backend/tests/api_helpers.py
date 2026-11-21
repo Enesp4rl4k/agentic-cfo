@@ -109,3 +109,10 @@ async def arka_plan_bitsin(zaman_asimi: float = 5.0) -> None:
     bekleyen = [t for t in list(_RUNNING) if not t.done()]
     if bekleyen:
         await asyncio.wait(bekleyen, timeout=zaman_asimi)
+
+
+def by_number(column: Any, number: str) -> Any:
+    """`column` holds this invoice number, bare or inside an `inv:<side>:<party>:<number>` key (G23)."""
+    from sqlalchemy import or_
+
+    return or_(column == number, column.like(f"inv:_:%:{number}"))

@@ -119,10 +119,6 @@ async def test_the_same_invoice_in_lower_case_is_one_document(db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="G23: a free-form invoice number is not unique across counterparties; the ledger key has no issuer",
-)
 async def test_two_suppliers_using_the_same_short_number_are_two_documents(db):
     org_id = await _org(db)
     await _upload(db, org_id, document_id="A-1", vendor="Alfa Ltd", cents=100_000)

@@ -142,6 +142,16 @@
             "title": "Beyond Horizon Cents",
             "type": "integer"
           },
+          "held_documents": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeldDocumentsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "not_included": {
             "items": {
               "type": "string"
@@ -515,6 +525,100 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeldDocumentsOut": {
+        "description": "Possible duplicates waiting for a person: not in the radar, so they are listed here.",
+        "properties": {
+          "beyond_horizon_payable_cents": {
+            "title": "Beyond Horizon Payable Cents",
+            "type": "integer"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "other_currency_count": {
+            "title": "Other Currency Count",
+            "type": "integer"
+          },
+          "other_currency_payable_count": {
+            "title": "Other Currency Payable Count",
+            "type": "integer"
+          },
+          "payable_basis": {
+            "$ref": "#/components/schemas/BasisSplitOut"
+          },
+          "payable_cents": {
+            "title": "Payable Cents",
+            "type": "integer"
+          },
+          "receivable_cents": {
+            "title": "Receivable Cents",
+            "type": "integer"
+          },
+          "review_path": {
+            "title": "Review Path",
+            "type": "string"
+          },
+          "undated_payable_cents": {
+            "title": "Undated Payable Cents",
+            "type": "integer"
+          },
+          "undated_receivable_cents": {
+            "title": "Undated Receivable Cents",
+            "type": "integer"
+          },
+          "week1_payable_cents": {
+            "title": "Week1 Payable Cents",
+            "type": "integer"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/HeldWeekOut"
+            },
+            "title": "Weeks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "payable_cents",
+          "receivable_cents",
+          "weeks",
+          "payable_basis",
+          "week1_payable_cents",
+          "undated_payable_cents",
+          "undated_receivable_cents",
+          "beyond_horizon_payable_cents",
+          "other_currency_count",
+          "other_currency_payable_count",
+          "review_path"
+        ],
+        "title": "HeldDocumentsOut",
+        "type": "object"
+      },
+      "HeldWeekOut": {
+        "properties": {
+          "payable_cents": {
+            "title": "Payable Cents",
+            "type": "integer"
+          },
+          "receivable_cents": {
+            "title": "Receivable Cents",
+            "type": "integer"
+          },
+          "week": {
+            "title": "Week",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "week",
+          "payable_cents",
+          "receivable_cents"
+        ],
+        "title": "HeldWeekOut",
+        "type": "object"
+      },
       "LastUploadOut": {
         "properties": {
           "already": {
@@ -533,9 +637,19 @@
             ],
             "title": "Filename"
           },
+          "many_versions": {
+            "default": 0,
+            "title": "Many Versions",
+            "type": "integer"
+          },
           "new": {
             "default": 0,
             "title": "New",
+            "type": "integer"
+          },
+          "no_counterparty": {
+            "default": 0,
+            "title": "No Counterparty",
             "type": "integer"
           },
           "no_date": {

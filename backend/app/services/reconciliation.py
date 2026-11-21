@@ -70,8 +70,21 @@ def _name_in(counterparty: str | None, description: str | None) -> bool:
 
 
 def _number_in(item: OpenItem, description: str | None) -> bool:
+    """The item's invoice number stands as a whole token in the bank description.
+
+    "12" is not in "A1234" or "2024-12": a number is not a number inside a longer one, so
+    neither a letter or digit nor a `-` `/` `_` `.` joining one on either side counts as a
+    boundary. Leading zeros are significant ("001" is not "1"): a miss only costs a
+    proposal, a wrong match settles the wrong invoice.
+    """
     found = _INVOICE_NUMBER.search(item.description or "")
-    return bool(found) and fold(found.group(1)).strip() in fold(description)
+    number = fold(found.group(1)).strip() if found else ""
+    if not number:
+        return False
+    return re.search(
+        rf"(?<![a-z0-9])(?<![a-z0-9][-/_.]){re.escape(number)}(?![a-z0-9])(?![-/_.][a-z0-9])",
+        fold(description),
+    ) is not None
 
 
 def _day(when: datetime) -> date:
@@ -102,6 +115,11 @@ def _decide(row: CanonicalTransaction, items: list[OpenItem], refused: set[str])
     exact = [i for i in fits if _remaining(i) == row.amount_cents]
 
     quoted = [i for i in fits if _number_in(i, row.description)]
+    if len(quoted) > 1:
+        # Two counterparties may use the same number (G23): the name decides, and with no
+        # single name the movement is left to the amount rules below (a proposal at most).
+        named_quoted = [i for i in quoted if _name_in(i.counterparty, row.description)]
+        quoted = named_quoted if len(named_quoted) == 1 else []
     if quoted:
         item = quoted[0]
         if _remaining(item) == row.amount_cents:

@@ -25,6 +25,11 @@ class LastUploadOut(BaseModel):
     no_date: int = 0
     settled: int = 0
     proposed: int = 0
+    # Invoices with a free-form number and no counterparty: they cannot be told from
+    # another supplier's same number (plan v10 G23).
+    no_counterparty: int = 0
+    # Invoices that joined the nearest of too many versions of one number ("çok sayıda sürüm").
+    many_versions: int = 0
 
 
 class OpenItemsOut(BaseModel):
