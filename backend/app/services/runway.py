@@ -20,7 +20,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.core.currency_totals import fmt_money
-from app.services.bank_balance import balance_age, closing_balance, latest_balance
+from app.services.bank_balance import balance_age, chain_verified, closing_balance, latest_balance
 from app.services.coverage import gaps, usable_months
 
 RUNWAY_MIN_MONTHS = 3  # months of cash movement the burn average needs (the forecast's baseline window)
@@ -52,7 +52,11 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
     The newest of: the balance this run's own statement proves, and the one the company's
     completed statements prove (loaded by the caller, as the radar reads it).
     """
-    own = state.get("statement_closing_balance") or closing_balance(list(state.get("transactions") or []))
+    verified = chain_verified(state.get("ingest_counts"))
+    own = (
+        (state.get("statement_closing_balance") or closing_balance(list(state.get("transactions") or [])))
+        if verified else None
+    )
     if own:
         path = str(state.get("file_path") or "")
         own = {**own, "filename": path.replace("\\", "/").rsplit("/", 1)[-1] or None}

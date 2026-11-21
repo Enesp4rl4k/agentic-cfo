@@ -20,7 +20,7 @@ import calendar
 from datetime import date
 from typing import Any
 
-from app.services.bank_balance import statement_extent
+from app.services.bank_balance import chain_verified, statement_extent
 
 
 def _day(value: Any) -> date:
@@ -104,7 +104,9 @@ def extents_for(state: dict[str, Any]) -> list[dict[str, Any]]:
     if state.get("ledger_view") is not None:
         return [e for e in (state.get("statement_extents") or []) if e]
     rows = list(state.get("transactions") or [])
-    own = state.get("statement_extent") or statement_extent(rows) or extent_of_rows(rows)
+    chained = chain_verified(state.get("ingest_counts"))
+    # A chain the reader could not verify proves no balances (and so no join): only the dates stand.
+    own = (state.get("statement_extent") or statement_extent(rows) if chained else None) or extent_of_rows(rows)
     path = str(state.get("file_path") or "").replace("\\", "/").rsplit("/", 1)[-1] or None
     own = apply_period(own, state.get("statement_period"), path)
     return [own] if own else []

@@ -234,25 +234,11 @@ async def run_data_ingestion(
             detail=f"Defterden {len(ledger['profit'])} satır okundu.",
         )
 
-    return _with_stated_period(_uncertain_rows_wait(await _read_all_documents(state, config)), state)
+    sonuc = _uncertain_rows_wait(await _read_all_documents(state, config))
+    if not state.get("ek_belgeler") and sonuc.patch:  # one document: its header may state the period it covers
+        from app.services.stated_period import attach_period
 
-
-def _with_stated_period(sonuc: SkillResult, state: CFOState) -> SkillResult:
-    """The period the file's header states (one document only), as proof of the days it covers."""
-    if state.get("ek_belgeler") or not sonuc.patch:
-        return sonuc
-    from app.services.coverage import apply_period
-    from app.services.stated_period import stated_period
-
-    patch = sonuc.patch
-    rows = [*(patch.get("transactions") or []), *(patch.get("held_transactions") or [])]
-    period = stated_period(str(patch.get("raw_text") or ""), [r.get("transaction_date") for r in rows])
-    if period is None:
-        return sonuc
-    patch = {**patch, "statement_period": period}
-    if patch.get("statement_extent"):
-        patch["statement_extent"] = apply_period(patch["statement_extent"], period)
-    sonuc.patch = patch
+        sonuc.patch = attach_period(sonuc.patch)
     return sonuc
 
 
@@ -292,9 +278,8 @@ def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
     from app.services.bank_balance import closing_balance, statement_extent
 
     closing = closing_balance(rows)
-    extent = statement_extent(rows)
     whole = {"statement_closing_balance": closing} if closing is not None else {}
-    if extent is not None:
+    if (extent := statement_extent(rows)) is not None:
         whole["statement_extent"] = extent
     waiting = f"{len(held)} kayıt incelemenizi bekliyor"
     if not accepted:

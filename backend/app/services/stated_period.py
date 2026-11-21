@@ -6,9 +6,9 @@ rows actually reach them is checked against the data (`app.services.coverage.app
 parsing is not touched: this reads the text the readers already produced.
 
 Only the header counts, and only a labelled period:
-- the header is the lines BEFORE the table's column-header line (Tarih; Açıklama; Tutar ...). With
-  no recognisable column-header line there is no header, so nothing is read: a row description such
-  as "Dönem 01.01.2026 - 31.01.2026 aidat" is never a statement period;
+- the header is the lines BEFORE the table's column-header line (Tarih; Açıklama; Tutar ...) as
+  `app.parsers.lines` finds it. With no such line there is no header, so nothing is read: a row
+  description such as "Dönem 01.01.2026 - 31.01.2026 aidat" is never a statement period;
 - the period must sit on a line with a period label (`Dönem`, `Tarih Aralığı`, `Hesap/Ekstre
   Dönemi`, `Başlangıç Tarihi` + `Bitiş Tarihi`); a print date or a bare pair of dates is not one;
 - it is ignored when inconsistent: two different periods, an end before the start, longer than ten
@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from datetime import date
 from typing import Any
+
+from app.parsers.lines import _is_header, read_lines
 
 MAX_PERIOD_DAYS = 3660
 
@@ -32,23 +34,16 @@ _LABELLED = re.compile(
 _START = re.compile(r"(?:başlangıç|baslangic|başlama|baslama|start|from)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
 _END = re.compile(r"(?:bitiş|bitis|bitim|end|to)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
 
-# The cells of a table's column-header line, as the repo's exports write them (Tarih;Açıklama;Tutar;
-# Bakiye;Para Birimi, Tarih;Fiş No;Hesap Kodu;Açıklama;Borç;Alacak;Bakiye, date,amount,description...).
-_COLUMNS = frozenset({
-    "tarih", "işlem tarihi", "valör", "date", "açıklama", "aciklama", "description", "tutar", "amount",
-    "bakiye", "balance", "borç", "borc", "alacak", "debit", "credit", "fiş no", "hesap kodu",
-    "para birimi", "currency", "tip", "type", "kategori", "category", "reference", "referans",
-})
-
-
 def _header_lines(text: str) -> list[str] | None:
-    """The lines before the table's column-header line; None when the text has no such line."""
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        cells = [c.strip().strip('"').lower() for c in re.split(r"[;,\t|]|\s{2,}", line)]
-        if len(cells) >= 3 and sum(c in _COLUMNS for c in cells) >= 3:
-            return lines[:i]
-    return None
+    """The lines before the table's column-header line, as the line reader defines it; None with no such line.
+
+    `app.parsers.lines` is the one reader of a statement's lines: its `read_lines` units and its
+    column-header test (`_is_header`, the same one `account_for_lines` uses for "above the header a
+    row cannot be"). The file is not read a second way here.
+    """
+    lines = read_lines(text)
+    header_at = next((i for i, line in enumerate(lines) if _is_header(line)), None)
+    return None if header_at is None else lines[:header_at]
 
 
 def _parse(text: str) -> date | None:
@@ -90,3 +85,18 @@ def stated_period(text: str, transaction_dates: list[str] | None = None) -> dict
     if dates and (dates[0] < start.isoformat() or dates[-1] > end.isoformat()):
         return None
     return {"start": start.isoformat(), "end": end.isoformat()}
+
+
+def attach_period(patch: dict[str, Any]) -> dict[str, Any]:
+    """The ingestion patch with `statement_period` when its file's header states one, and the statement's
+    extent measured against it (`coverage.apply_period`: an edge is stated only where the rows agree)."""
+    from app.services.coverage import apply_period
+
+    rows = [*(patch.get("transactions") or []), *(patch.get("held_transactions") or [])]
+    period = stated_period(str(patch.get("raw_text") or ""), [r.get("transaction_date") for r in rows])
+    if period is None:
+        return patch
+    out = {**patch, "statement_period": period}
+    if out.get("statement_extent"):
+        out["statement_extent"] = apply_period(out["statement_extent"], period)
+    return out

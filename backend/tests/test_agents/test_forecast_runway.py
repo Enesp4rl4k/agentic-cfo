@@ -285,8 +285,8 @@ class TestPipelineHolds:
     async def test_the_companys_proven_balance_is_used_when_the_file_has_none(self, tmp_path: Path) -> None:
         path = tmp_path / "hareketler.csv"
         path.write_text(
-            "Tarih;Açıklama;Tutar;Para Birimi\n"
-            + "\n".join(f"05.0{m}.2026;Kira;-12.000,00;TRY" for m in (1, 2, 3))
+            "Tarih;Açıklama;Tutar;Tip;Para Birimi\n"
+            + "\n".join(f"05.0{m}.2026;Kira;12.000,00;expense;TRY" for m in (1, 2, 3))
             + "\n",
             encoding="utf-8",
         )

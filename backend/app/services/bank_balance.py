@@ -31,6 +31,19 @@ def _chains(rows: list[dict[str, Any]]) -> bool:
     )
 
 
+def chain_verified(counts: dict[str, Any] | None) -> bool:
+    """False when the reader itself could not verify the statement's balance chain.
+
+    `counts` is the run's ingest counts (state `ingest_counts`) or the stored ingest summary
+    (`result_metadata["ingest"]`): both carry `balance_check` ("verified" | "unverified" | None for a
+    file that is not a text statement) and `unaccounted` (rows the readers lost). A chain that checks
+    out on the rows we hold is not a proven balance when the reader says it could not verify it, or
+    when rows went missing: no balance, no extent, so no runway built on them.
+    """
+    c = counts or {}
+    return c.get("balance_check") != "unverified" and not int(c.get("unaccounted") or 0)
+
+
 def _chain_order(transactions: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
     """The rows oldest first, when the statement's balances chain (in file order or reversed)."""
     rows = [t for t in transactions if t.get("balance_cents") is not None and t.get("transaction_date")]
@@ -86,7 +99,7 @@ async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None
     found = [
         {**m["closing_balance"], "job_id": job_id, "filename": filename}
         for job_id, filename, m in jobs
-        if m and m.get("closing_balance")
+        if m and m.get("closing_balance") and chain_verified(m.get("ingest"))
     ]
     return max(found, key=lambda c: c["date"], default=None)
 
@@ -117,4 +130,4 @@ async def proven_statements(db: AsyncSession, org_id: str) -> list[dict[str, Any
             )
         )
     ).scalars().all()
-    return [m["statement_extent"] for m in metas if m and m.get("statement_extent")]
+    return [m["statement_extent"] for m in metas if m and m.get("statement_extent") and chain_verified(m.get("ingest"))]
