@@ -6,8 +6,9 @@ month's figures, which may already have been declared and filed in the e-Defter,
 stay exactly as they were.
 
 This module holds the lock and the arithmetic of "the first open month". The ledger
-(`services/ledger.append_job`) applies it. Accountant decisions and category
-corrections on a closed month are not covered yet (next slice).
+(`services/ledger.append_job`) applies it, and so does a category
+correction (`services/ledger_correction.py`). Accountant decisions on a closed
+month are not covered yet (next slice).
 """
 
 from __future__ import annotations

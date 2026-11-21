@@ -3,8 +3,9 @@ Corrections API — PATCH /transactions/{id}/category
 
 User corrects a transaction's category. We:
 1. Update the transaction record
-2. Persist a CategoryRule (learn from correction)
-3. Return the updated transaction
+2. Carry it into the company ledger (same DB transaction; services/ledger_correction.py)
+3. Persist a CategoryRule (learn from correction)
+4. Return the updated transaction
 """
 from typing import Any
 
@@ -18,6 +19,7 @@ from app.database import get_db
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.classifier import learn
+from app.services.ledger_correction import apply_category_correction
 
 router = APIRouter()
 
@@ -58,9 +60,12 @@ async def correct_category(
     old_category = tx.category
     tx.category = body.category
     tx.category_source = "user_edit"
+    org_id = str(job.org_id) if job.org_id else None
+    # The ledger row with the same source_record_id follows, in the same database
+    # transaction (plan v10 G3): P&L, company_rows and the cash radar read the ledger.
+    ledger = await apply_category_correction(db, tx, org_id, body.category, current_user)
     await db.commit()
 
-    org_id = str(job.org_id) if job.org_id else None
     # Persist learning rule
     rule = await learn(
         description=tx.description or "",
@@ -90,6 +95,7 @@ async def correct_category(
             "transaction_id": transaction_id,
             "old_category": old_category,
             "new_category": body.category,
+            "ledger": ledger["ledger"],
             "rule_saved": body.apply_always,
             "affected_job_ids": affected,
         },

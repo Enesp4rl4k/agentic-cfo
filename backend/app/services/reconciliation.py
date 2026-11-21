@@ -237,6 +237,7 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
         .where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.basis == CASH,
+            CanonicalTransaction.source_type != "correction",  # ledger.SOURCE_CORRECTION
             CanonicalTransaction.ledger_status == "active",
             CanonicalTransaction.amount_cents > 0,
         )
