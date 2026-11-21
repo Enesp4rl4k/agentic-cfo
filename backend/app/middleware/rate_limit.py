@@ -53,6 +53,10 @@ _ROUTE_LIMITS: list[tuple[str, int, int]] = [
     # (path_prefix, max_requests, window_seconds)
     ("/api/v1/auth/login",    5,   60),
     ("/api/v1/auth/register", 5,   60),
+    # The invitation page checks an existing account's password (accept) and
+    # answers to a secret token (preview): as guessable as login, so as limited.
+    ("/api/v1/org/invite/accept",  5,  60),
+    ("/api/v1/org/invite/preview", 20, 60),
     ("/api/v1/upload",        10,  60),
     ("/api/v1/chat",          30,  60),
     ("/api/v1/analysis",      20,  60),

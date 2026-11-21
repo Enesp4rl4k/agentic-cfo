@@ -404,6 +404,7 @@ async def provision_sso_user(
     """
     from sqlalchemy import select
 
+    from app.core.email_address import normalize_email
     from app.models.user import User, UserRole
 
     if not oauth_user.email:
@@ -411,7 +412,7 @@ async def provision_sso_user(
 
     # Find existing user
     result = await db.execute(
-        select(User).where(User.email == oauth_user.email.lower())
+        select(User).where(User.email == normalize_email(oauth_user.email))
     )
     user = result.scalar_one_or_none()
 
@@ -429,7 +430,7 @@ async def provision_sso_user(
 
     # Create new user (JIT provisioning)
     new_user = User(
-        email         = oauth_user.email.lower(),
+        email         = normalize_email(oauth_user.email),
         full_name     = oauth_user.full_name or oauth_user.email.split("@")[0],
         hashed_password = "",      # No password — SSO only
         role          = UserRole.ANALYST,

@@ -106,6 +106,10 @@ async def ws_alerts(
             await asyncio.sleep(20)
             try:
                 await manager.send_heartbeat(org_id)
+                # Authenticated once, at connect: ask again, so leaving or switching ends the feed.
+                if not await ws_auth.still_acting_in(user_id, org_id):
+                    await ws.close(code=ws_auth.REFUSED)
+                    return
             except Exception:
                 break
 
@@ -119,6 +123,9 @@ async def ws_alerts(
                 msg = json.loads(raw)
 
                 if msg.get("type") == "ack" and msg.get("alert_id"):
+                    if not await ws_auth.still_acting_in(user_id, org_id):
+                        await ws.close(code=ws_auth.REFUSED)
+                        break
                     await manager.broadcast_acknowledgement(
                         org_id   = org_id,
                         alert_id = msg["alert_id"],

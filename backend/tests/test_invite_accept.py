@@ -140,7 +140,7 @@ async def test_the_preview_says_what_the_invitation_is_and_what_state_it_is_in(c
     used = await invite_for(client, org, "kullanilmis@example.com", "viewer", token="c" * 64, accepted=True)
 
     def get(token):
-        return client.get(f"{P}/org/invite/preview", params={"token": token})
+        return client.post(f"{P}/org/invite/preview", json={"token": token})
 
     valid = (await get(good)).json()["data"]
     assert valid["state"] == "valid" and valid["role"] == "smmm" and valid["email"] == "musavir@example.com"

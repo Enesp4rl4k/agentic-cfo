@@ -23,8 +23,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, false
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from app.core.email_address import normalize_email
 from app.database import Base
 
 if TYPE_CHECKING:
@@ -131,6 +132,10 @@ class OrgInvite(Base):
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="analyst", nullable=False)
+
+    @validates("email")
+    def _normalise_email(self, _key: str, value: str) -> str:
+        return normalize_email(value)
 
     # Secure token sent by email
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
