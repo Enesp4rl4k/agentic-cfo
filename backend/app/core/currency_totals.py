@@ -17,9 +17,10 @@ aggregation over ledger or pipeline rows goes through `split_by_currency` (or
 money aggregation appears without it.
 
 A row is a mapping (pipeline rows: `currency`, `type`) or an object (ledger rows:
-`currency`, `direction`). A row that names no currency is counted as the base currency
-only when it is a pipeline mapping, because every producer of those rows writes one
-(parsers default to TRY): the ledger column is not nullable.
+`currency`, `direction`). A row that names no currency is in the unknown bucket ("") whichever
+it is, never the base currency: a missing currency is shown as missing. Rows that reach the
+aggregations through ingest always carry one (`services/ingest/hold` holds a row without a
+currency), so a caller whose rows are in a known currency by construction states it on them.
 """
 from __future__ import annotations
 
@@ -55,11 +56,8 @@ def same_currency(a: str | None, b: str | None) -> bool:
 
 
 def code_of(row: Any, base: str) -> str:
-    """The currency a row is in. A mapping with none counts as `base` (see module docstring)."""
-    code = normalise(_get(row, "currency"))
-    if code:
-        return code
-    return normalise(base) if isinstance(row, dict) else ""
+    """The currency a row is in; "" when it names none (never `base`: see the module docstring)."""
+    return normalise(_get(row, "currency"))
 
 
 def direction_of(row: Any) -> str:

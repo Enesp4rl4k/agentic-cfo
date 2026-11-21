@@ -88,8 +88,11 @@ def test_split_by_currency_keeps_the_base_and_groups_the_rest():
     assert totals_by_currency(rows, lambda r: r["amount_cents"]) == {"TRY": 1, "USD": 5, "EUR": 4}
 
 
-def test_a_pipeline_row_with_no_currency_counts_as_base_but_a_ledger_object_never_does():
-    assert code_of({"amount_cents": 1}, "TRY") == "TRY"
+def test_a_row_with_no_currency_is_unknown_never_the_base_whether_mapping_or_object():
+    assert code_of({"amount_cents": 1}, "TRY") == ""
+    assert code_of({"amount_cents": 1, "currency": "  "}, "TRY") == ""
+    mine, other = split_by_currency([{"amount_cents": 1}], "TRY")
+    assert mine == [] and list(other) == [""]
 
     class Row:
         currency = None
@@ -379,3 +382,10 @@ def test_an_amount_with_no_currency_is_the_plain_number_labelled_unknown_never_l
         assert "₺" not in text and "TRY" not in text
     assert fmt_money(123_456, "try") == "₺1.234,56"
     assert fmt_money(-5_00, "usd") == "-5,00 USD"
+
+
+def test_the_journal_groups_keep_a_row_with_no_currency_out_of_the_primary_run():
+    from app.services.accounting.currency_runs import groups_by_currency
+
+    groups = groups_by_currency([{"id": 1, "currency": "TRY"}, {"id": 2}, {"id": 3, "currency": "USD"}], "TRY")
+    assert {k: [r["id"] for r in v] for k, v in groups.items()} == {"TRY": [1], "": [2], "USD": [3]}
