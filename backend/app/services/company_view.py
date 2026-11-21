@@ -55,6 +55,8 @@ def _as_transaction(row: Any) -> dict[str, Any]:
         "vendor": row.counterparty,
         "transaction_date": day_of(row.transaction_date).isoformat(),
         "ledger_basis": row.basis,
+        # Set on a closed-month correction row: category totals read it, detectors do not.
+        "corrects_id": row.corrects_id,
     }
 
 
