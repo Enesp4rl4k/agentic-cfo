@@ -51,7 +51,7 @@ export function BalanceDetails({
           <ul className="m-0 space-y-0.5 pl-4 text-sm">
             {accounts.map((a) => (
               <li key={`${a.job_id}-${a.as_of}`}>
-                {a.name ?? "—"} · {formatDay(a.as_of, locale)} · <span className="tabular-nums">{fmt(a.balance_cents / 100)}</span>
+                {a.name ?? "—"}{a.identity_hint ? ` (${a.identity_hint})` : ""} · {formatDay(a.as_of, locale)} · <span className="tabular-nums">{fmt(a.balance_cents / 100)}</span>
                 {a.lagging && (
                   <span className="text-muted-foreground"> ({copy.accountBehind.replace("{days}", String(a.behind_days))})</span>
                 )}

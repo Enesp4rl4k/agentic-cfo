@@ -53,6 +53,17 @@
             "title": "Currency",
             "type": "string"
           },
+          "identity_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Hint"
+          },
           "name": {
             "anyOf": [
               {
@@ -204,6 +215,17 @@
             },
             "title": "Gaps",
             "type": "array"
+          },
+          "identity_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Hint"
           },
           "identity_uncertain": {
             "default": false,

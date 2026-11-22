@@ -31,7 +31,7 @@ export function AccountQuestions() {
   const questions = data?.questions ?? [];
   if (questions.length === 0) return null;
   const side = (s: AccountSide) =>
-    `${s.name ?? "—"} · ${formatDay(s.as_of, locale)} · ${formatCurrency(s.balance_cents / 100, s.currency, locale)}`;
+    `${s.name ?? "—"}${s.identity_hint ? ` (${s.identity_hint})` : ""} · ${formatDay(s.as_of, locale)} · ${formatCurrency(s.balance_cents / 100, s.currency, locale)}`;
   const title = copy.accountQuestionsTitle.replace("{n}", String(questions.length));
   return (
     <section id="hesaplar" aria-label={title} className="scroll-mt-20 space-y-2">

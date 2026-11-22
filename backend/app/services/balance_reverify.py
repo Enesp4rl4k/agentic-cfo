@@ -65,13 +65,13 @@ def statement_whole(
     The closing balance and extent, the proof (`bank_balance.assess`) and the chain a person's later
     answer is read from (`snapshot_chain`). Only what the rows prove is present.
     """
-    from app.parsers.direction import statement_identity
+    from app.services.statement_account import account_identity
 
     closing = closing_balance(rows)
     out: dict[str, Any] = {"statement_closing_balance": closing} if closing is not None else {}
     if (extent := statement_extent(rows)) is not None:
         out["statement_extent"] = extent
-    out["balance_proof"] = assess(rows, counts, identity=statement_identity(raw_text) or None)
+    out["balance_proof"] = assess(rows, counts, identity=account_identity(raw_text) or None)
     if (chain := snapshot_chain(rows, held)) is not None:
         out["statement_chain"] = chain
     return out

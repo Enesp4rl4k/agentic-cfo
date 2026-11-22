@@ -14,6 +14,8 @@ export interface AccountSide {
   as_of: string;
   balance_cents: number;
   currency: string;
+  /** The account identifier, masked to its last four characters (never the whole number). */
+  identity_hint?: string | null;
 }
 
 /** Two proven statements nothing links or separates: are they one bank account? */

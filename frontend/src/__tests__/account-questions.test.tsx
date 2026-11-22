@@ -18,7 +18,7 @@ import { AccountQuestions } from "@/components/approvals/AccountQuestions";
 
 const question = {
   question: "Bu ekstreler aynı banka hesabına mı ait?",
-  a: { name: "ocak.pdf", as_of: "2026-01-31", balance_cents: 90_000_00, currency: "TRY" },
+  a: { name: "ocak.pdf", identity_hint: "IBAN ****1326", as_of: "2026-01-31", balance_cents: 90_000_00, currency: "TRY" },
   b: { name: "mart.pdf", as_of: "2026-03-31", balance_cents: 60_000_00, currency: "TRY" },
   job_ids_a: ["j1"],
   job_ids_b: ["j2"],
@@ -54,6 +54,7 @@ describe("Hesap soruları", () => {
     const card = await screen.findByTestId("account-question");
     expect(card.textContent).toContain("ocak.pdf");
     expect(card.textContent).toContain("mart.pdf");
+    expect(card.textContent).toContain("IBAN ****1326"); // masked: never the whole number
     fireEvent.click(screen.getByRole("button", { name: "Aynı hesap" }));
     await waitFor(() => expect(answerAccountQuestion).toHaveBeenCalledWith(question, "same"));
     fireEvent.click(screen.getByRole("button", { name: "Farklı hesaplar" }));

@@ -195,6 +195,8 @@ export interface components {
             balance_cents: number;
             /** Currency */
             currency: string;
+            /** Identity Hint */
+            identity_hint?: string | null;
             /** Name */
             name?: string | null;
         };
@@ -263,6 +265,8 @@ export interface components {
              * @default []
              */
             gaps: string[];
+            /** Identity Hint */
+            identity_hint?: string | null;
             /**
              * Identity Uncertain
              * @default false

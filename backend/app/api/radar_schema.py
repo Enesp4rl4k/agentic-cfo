@@ -52,6 +52,7 @@ class BalanceAccountOut(BaseModel):
     behind_days: int = 0
     lagging: bool = False
     identity_uncertain: bool = False
+    identity_hint: str | None = None
     gaps: list[str] = []
 
 
@@ -74,6 +75,7 @@ class UnprovenStatementOut(BaseModel):
 
 class AccountSideOut(BaseModel):
     name: str | None = None
+    identity_hint: str | None = None  # the account identifier, masked to its last four characters
     as_of: str
     balance_cents: int
     currency: str

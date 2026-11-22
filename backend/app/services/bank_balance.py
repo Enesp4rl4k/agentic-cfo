@@ -142,12 +142,13 @@ def assess(
     if any(r.get("type") not in ("income", "expense") for r in ordered):
         return {**out, "reason": "bazı satırların yönü (giriş/çıkış) belli değil"}
     out.update(_evidence(ordered))
-    if c.get("balance_check") != "unverified" and not recheck:
-        return {**out, "state": "verified", "basis": "known"}
     if steps >= MIN_STEPS:
+        if c.get("balance_check") != "unverified" and not recheck:
+            return {**out, "state": "verified", "basis": "known"}
         if recheck:
             return {**out, "state": "verified", "basis": "known"}
         return {**out, "reason": "okuyucu bakiye zincirini doğrulayamadı"}
+    # Fewer than three reconciling steps is thin evidence for ANY file type (a CSV's "no verdict" is no proof).
     if not recheck and any(r.get("direction_from_balance") for r in ordered):
         # The balance steps are the only evidence for the directions AND are checked against them: circular.
         return {**out, "reason": "satırların yönü yalnızca bakiyeden çıkarıldı; bağımsız bir kanıt yok"}
@@ -181,7 +182,11 @@ def _evidence(ordered: list[dict[str, Any]]) -> dict[str, Any]:
     for r in ordered:  # oldest first: the last row of a day is that day's closing balance
         points[str(r["transaction_date"])[:10]] = int(r["balance_cents"])
     keep = sorted(points)[-MAX_POINTS:]
-    return {"content_sha": digest, "points": {d: points[d] for d in keep}}
+    per_day: dict[str, list[str]] = {}
+    for r in ordered:
+        per_day.setdefault(str(r["transaction_date"])[:10], []).append(f"{r.get('amount_cents')};{r.get('type')};{r['balance_cents']}")
+    days = {d: hashlib.sha256("|".join(sorted(per_day[d])).encode()).hexdigest()[:16] for d in keep}
+    return {"content_sha": digest, "points": {d: points[d] for d in keep}, "day_sha": days}
 
 
 def _currency_of(rows: list[dict[str, Any]]) -> str | None:

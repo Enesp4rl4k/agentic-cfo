@@ -496,12 +496,12 @@ async def run_cfo_analysis(
                 meta["closing_balance"] = closing
             # How far those balances are believed, and why not when they are not (what the radar and
             # the runway read); for a statement with held rows, the chain a person's answer re-reads.
-            from app.parsers.direction import statement_identity
             from app.services.bank_balance import assess, statement_extent
+            from app.services.statement_account import account_identity
 
             meta["balance_proof"] = result.get("balance_proof") or assess(
                 list(result.get("transactions") or []), result.get("ingest_counts"),
-                identity=statement_identity(str(result.get("raw_text") or "")) or None,
+                identity=account_identity(str(result.get("raw_text") or "")) or None,
             )
             if result.get("statement_chain"):
                 meta["statement_chain"] = {**result["statement_chain"], "period": result.get("statement_period")}

@@ -38,6 +38,7 @@ from app.config import get_settings
 from app.core.currency_totals import DEFAULT_BASE, normalise
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.services.bank_balance import basis_of, proof_reason
+from app.services.statement_account import kind, mask
 
 UNCERTAIN_NOTE = (
     "{n} ekstrenin aynı hesaba mı ait olduğu bilinmiyor; yalnızca en güncel bakiye ({date}) kullanıldı"
@@ -59,7 +60,7 @@ def _records(jobs: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]
                 "date": str(closing["date"])[:10], "balance_cents": int(closing["balance_cents"]),
                 "extent": m.get("statement_extent"), "currency": proof.get("currency"),
                 "identity": proof.get("identity"), "sha": proof.get("content_sha"),
-                "points": proof.get("points") or {}, "reason": proof.get("reason") if basis == "assumed" else None,
+                "points": proof.get("points") or {}, "day_sha": proof.get("day_sha") or {}, "reason": proof.get("reason") if basis == "assumed" else None,
             })
         elif proof.get("has_balances") or (closing and not basis):
             excluded.append({"job_id": job_id, "filename": filename, "reason": proof_reason(m)})
@@ -100,12 +101,23 @@ def same_evidence(a: dict[str, Any], b: dict[str, Any]) -> bool:
     if _meets(a.get("extent"), b.get("extent")):
         return True
     common = set(a.get("points") or {}) & set(b.get("points") or {})
-    return bool(common) and all(a["points"][d] == b["points"][d] for d in common)
+    if not common or any(a["points"][d] != b["points"][d] for d in common):
+        return False
+    # One coincident day proves nothing (two accounts can both stand at 0,00): two days, or one day on which
+    # both files list the same transactions.
+    if len(common) >= 2:
+        return True
+    (day,) = common
+    return bool(a.get("day_sha", {}).get(day)) and a["day_sha"].get(day) == b.get("day_sha", {}).get(day)
 
 
 def different_evidence(a: dict[str, Any], b: dict[str, Any]) -> bool:
     """Whether the files themselves say these are different accounts."""
-    if _stated(a) and _stated(b) and _stated(a) != _stated(b):
+    # Both sides must state the SAME KIND of identifier in their headers and the values must differ: an IBAN
+    # against an IBAN, an account number against an account number, a bank name against a bank name. One side
+    # stating something and the other nothing (or another kind) is no evidence of a difference.
+    sa, sb = _stated(a), _stated(b)
+    if sa and sb and kind(sa) == kind(sb) and sa != sb:
         return True
     if _bank(a) and _bank(b) and _bank(a) != _bank(b):
         return True
@@ -227,7 +239,7 @@ def _account(group: list[dict[str, Any]], newest: str, limit: int, names: dict[s
     return {
         "name": name, "job_id": last["job_id"], "as_of": last["date"],
         "balance_cents": last["balance_cents"], "currency": last["currency"], "basis": last["basis"],
-        "basis_note": last["reason"], "identity": ident, "statements": len(group),
+        "basis_note": last["reason"], "identity": ident, "identity_hint": mask(ident), "statements": len(group),
         "behind_days": behind, "lagging": behind > limit, "gaps": _gaps(group),
         "job_ids": [r["job_id"] for r in group], "extent": _union_extent(group, name),
     }
@@ -307,7 +319,7 @@ async def proven_balances(db: AsyncSession, org_id: str, currency: str | None = 
             o["balance_cents"] += a["balance_cents"]
             o["as_of"] = max(o["as_of"], a["as_of"])
             o["accounts"] += 1
-    shown = [{k: v for k, v in a.items() if k != "extent"} for a in accounts]
+    shown = [{k: v for k, v in a.items() if k not in ("extent", "identity")} for a in accounts]
     opening = None
     if mine:
         top = max(mine, key=lambda a: a["as_of"])
@@ -316,7 +328,7 @@ async def proven_balances(db: AsyncSession, org_id: str, currency: str | None = 
         opening = {
             "date": top["as_of"], "balance_cents": sum(a["balance_cents"] for a in mine),
             "job_id": top["job_id"], "filename": top["name"], "basis": "assumed" if weak else "known",
-            "accounts": [{k: v for k, v in a.items() if k != "extent"} for a in mine],
+            "accounts": [{k: v for k, v in a.items() if k not in ("extent", "identity")} for a in mine],
             "extents": [a["extent"] for a in mine if a["extent"]],
             "uncertain": uncertain, "identity_note": "; ".join(notes) or None,
             "gaps": {a["name"]: a["gaps"] for a in mine if a["gaps"]},
@@ -328,7 +340,10 @@ async def proven_balances(db: AsyncSession, org_id: str, currency: str | None = 
 
 
 def _question(a: dict[str, Any], b: dict[str, Any], ga: list[dict[str, Any]], gb: list[dict[str, Any]]) -> dict[str, Any]:
-    side = lambda e: {"name": e["name"], "as_of": e["as_of"], "balance_cents": e["balance_cents"], "currency": e["currency"]}  # noqa: E731
+    def side(e: dict[str, Any]) -> dict[str, Any]:
+        return {"name": e["name"], "as_of": e["as_of"], "balance_cents": e["balance_cents"],
+                "currency": e["currency"], "identity_hint": e.get("identity_hint")}
+
     return {
         "question": "Bu ekstreler aynı banka hesabına mı ait?",
         "a": side(a), "b": side(b),
