@@ -16,6 +16,7 @@ Auth header format:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -212,28 +213,72 @@ def require_role(*roles: str):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+# Compared against when the account does not exist or has no password, so an unknown address costs
+# the same bcrypt work as a wrong password (login timing does not reveal which addresses exist).
+_DUMMY_HASH = hash_password("not-a-real-password")
+
+
+def _accepted() -> dict[str, Any]:
+    """The one answer of /auth/register under verification (identical for new and existing addresses)."""
+    return {"data": {"accepted": True, "verification_required": True}, "error": None}
+
+
+async def _mail_existing_account(db: AsyncSession, user: User) -> None:
+    """Tell the holder of an existing address that someone tried to register it (once per cool-down).
+
+    Never a verification link: for an unverified account that would hand the account to whoever
+    registered first. The reset page proves the mailbox and sets the password itself."""
+    from app.config import get_settings
+    from app.services import outbox_immediate
+
+    settings = get_settings()
+    if not user.is_active or await outbox_immediate.mailed_recently(
+        db, kind="account_exists", email=user.email, minutes=settings.auth_mail_cooldown_minutes
+    ):
+        return
+    base = settings.frontend_url.rstrip("/")
+    await outbox_immediate.enqueue_account_exists(
+        db, user_id=user.id, org_id=str(user.org_id) if user.org_id else None, email=user.email,
+        login_url=f"{base}/auth/login", reset_url=f"{base}/auth/forgot-password",
+    )
+    await db.commit()
+    outbox.kick()
+
+
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Register a new user account."""
-    # Check duplicate email
-    result = await db.execute(select(User).where(User.email == normalize_email(str(body.email))))
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=400,
-            detail="Bu e-posta adresi zaten kayıtlı.",
-        )
+    """Register a new user account.
+
+    With e-mail verification required (the default) the answer is the same for a new and an
+    existing address: status, body and minimum duration. A new address gets the verification link;
+    an existing one gets a "you already have an account" mail (sign-in and reset links, no token)
+    and nothing changes. So the page cannot be used to ask which addresses exist. Without
+    verification (an explicit opt-out for deployments with no mail) there is no private channel to
+    tell the person, so the old explicit error stays."""
+    from app.api.password_reset import hold_to_floor
+
+    started = time.monotonic()
+    verification = email_verification.required()
+    address = normalize_email(str(body.email))
+    password_hash = hash_password(body.password)  # the same work whether or not the address exists
+    existing = (await db.execute(select(User).where(User.email == normalize_email(address)))).scalar_one_or_none()
+    if existing is not None:
+        if not verification:
+            raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.")
+        await _mail_existing_account(db, existing)
+        await hold_to_floor(started)
+        return _accepted()
 
     user = User(
-        email=normalize_email(str(body.email)),
-        hashed_password=hash_password(body.password),
+        email=address,
+        hashed_password=password_hash,
         full_name=body.full_name,
         role=UserRole.ANALYST,
     )
     db.add(user)
-    verification = email_verification.required()
     try:
         await db.flush()
         if verification:
@@ -243,12 +288,18 @@ async def register(
     except IntegrityError:
         # Two sign-ups for one address at once: the loser gets the ordinary answer.
         await db.rollback()
-        raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.") from None
+        if not verification:
+            raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.") from None
+        await hold_to_floor(started)
+        return _accepted()
     await db.refresh(user)
     if verification:
         outbox.kick()
 
-    logger.info("New user registered: %s (role=%s)", user.email, user.role)
+    logger.info("New user registered: %s (role=%s)", user.id, user.role)
+    if verification:
+        await hold_to_floor(started)
+        return _accepted()
 
     return {
         "data": {
@@ -270,7 +321,9 @@ async def login(
     result = await db.execute(select(User).where(User.email == normalize_email(str(body.email))))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.hashed_password):
+    stored = (user.hashed_password if user else None) or _DUMMY_HASH
+    password_ok = verify_password(body.password, stored)  # always runs: an unknown address costs the same
+    if not user or not user.hashed_password or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-posta veya şifre hatalı.",

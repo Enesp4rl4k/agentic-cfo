@@ -156,7 +156,8 @@ async def test_a_webhook_to_an_internal_address_fails_at_once_without_retries(db
 
 async def test_only_allowlisted_kinds_can_be_written_as_immediate(db):
     assert set(outbox_immediate.IMMEDIATE_KINDS) == {
-        "org_invite", "password_reset", "email_verification", "connection_test", "bot_reply",
+        "org_invite", "password_reset", "email_verification", "account_exists", "connection_test",
+        "bot_reply",
     }
     with pytest.raises(outbox_immediate.ImmediateKindRefused):
         await outbox_immediate._write(

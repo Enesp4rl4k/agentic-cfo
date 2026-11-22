@@ -119,13 +119,15 @@ async def test_sso_with_a_case_variant_links_the_existing_account(client):
         assert len((await db.execute(select(User))).scalars().all()) == 1
 
 
-async def test_password_reset_looks_the_account_up_in_any_spelling(client):
+async def test_password_reset_looks_the_account_up_in_any_spelling(client, monkeypatch):
     """The reset flow is one of the lookups: an address typed in another case or width finds the account.
 
     (It used to be recorded here that there was no reset flow. The structural test at the end of this
     file also covers its query: it compares `User.email` with a `normalize_email(...)` value.)"""
+    from app.config import get_settings
     from app.models.outbox_message import OutboxMessage
 
+    monkeypatch.setattr(get_settings(), "auth_mail_cooldown_minutes", 0)  # one mail per spelling, to see each lookup
     await client.post(f"{P}/auth/register", json={"email": "Ada@Example.com", "password": PAROLA})
     for spelling in (" ADA@example.COM", "ａｄａ@example.com"):
         answer = await client.post(f"{P}/auth/forgot-password", json={"email": spelling})
