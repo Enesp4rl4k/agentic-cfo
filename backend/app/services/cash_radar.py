@@ -110,6 +110,10 @@ class OpeningCash:
     basis: str = "known"
     basis_note: str | None = None
     accounts: list[dict[str, Any]] = field(default_factory=list)
+    # True when statements nothing links or separates were found: only the newest balance is used
+    # (`identity_note` says so) and the owner is asked whether they are one account.
+    identity_uncertain: bool = False
+    identity_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,8 @@ class CashRadar:
     # statements whose balance could not be proven (named with the reason).
     other_currency_balances: list[dict[str, Any]] = field(default_factory=list)
     unproven_statements: list[dict[str, Any]] = field(default_factory=list)
+    # "Bu ekstreler aynı banka hesabına mı ait?": pairs of proven statements nothing links or separates.
+    account_questions: list[dict[str, Any]] = field(default_factory=list)
     # The measured runway (`services.runway`, the forecast's own computation) or why there is none.
     runway: dict[str, Any] | None = None
 
@@ -191,6 +197,8 @@ def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash |
         basis=balance.get("basis") or "known",
         basis_note="; ".join(sorted({a["basis_note"] for a in balance.get("accounts") or [] if a.get("basis_note")})) or None,
         accounts=[dict(a) for a in balance.get("accounts") or []],
+        identity_uncertain=bool(balance.get("uncertain")),
+        identity_note=balance.get("identity_note"),
     )
 
 
@@ -502,6 +510,7 @@ async def compute_cash_radar(
         opening_cash=_opening_cash(balance, anchor),
         other_currency_balances=balances["other_currencies"],
         unproven_statements=balances["excluded"],
+        account_questions=balances["questions"],
         runway=await company_runway(db, org_id, anchor, balances=balances),
         held_documents=held,
         currency=cur,

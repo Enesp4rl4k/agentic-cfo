@@ -158,3 +158,35 @@ async def test_a_held_email_notices_when_the_runway_moved_before_release(client)
     assert result["released"] == 0 and result["needs_confirmation"] is True
     assert "Nakit pisti" in {c["label"] for c in result["changes"]}
     assert facts_fingerprint(facts) != result["fingerprint"]
+
+
+def test_facts_written_before_the_runway_existed_compare_and_diff_without_failing():
+    from app.services.briefing_delivery import diff_facts
+
+    old = {"opening_cash_cents": 1, "opening_as_of": "2026-03-31", "week_start": "2026-04-06", "week_end": "2026-04-12",
+           "inflow_cents": 0, "outflow_cents": 0, "net_change_cents": 0, "end_balance_cents": 1, "items_sha": "x",
+           "headline_sha": "y", "currency": "TRY"}  # an e-mail held by the previous release: no `runway_line`
+    new = {**old, "runway_line": "KRİTİK: Nakit pisti yaklaşık 1,7 ay."}
+    assert facts_fingerprint(old) != facts_fingerprint(new)
+    changes = diff_facts(old, new)
+    assert [(c["label"], c["old"], c["new"]) for c in changes] == [("Nakit pisti", "yok", "KRİTİK: Nakit pisti yaklaşık 1,7 ay.")]
+
+
+async def test_a_briefing_answered_before_the_runway_was_in_it_is_refused_with_a_clear_409(client):
+    headers, org_id, _ = await kullanici(client, "k11@example.com")
+    await upload(client, org_id, *BURN, filename="ekstre.pdf", meta=statement_meta("2026-01-01", "2026-03-31", 170_000_00, 120_000_00))
+    res = await client.post("/api/v1/briefing/monday/respond", headers=headers,
+                            json={"response": "done", "anchor_date": "2026-04-06", "fingerprint": "from-the-old-briefing"})
+    assert res.status_code == 409 and "değişti" in str(res.json())
+
+
+async def test_the_runway_is_visible_to_exactly_the_roles_that_see_the_radars_cash(client):
+    """The radar and the briefing are readable by every member; the runway is no new exposure."""
+    for role in ("viewer", "analyst", "smmm"):
+        headers, org_id, _ = await kullanici(client, f"{role}-k12@example.com", role=role)
+        await upload(client, org_id, *BURN, filename="ekstre.pdf", meta=statement_meta("2026-01-01", "2026-03-31", 170_000_00, 120_000_00))
+        radar = (await client.get("/api/v1/ledger/cash-radar", headers=headers)).json()["data"]
+        brief = (await client.get("/api/v1/briefing/monday", headers=headers)).json()["data"]
+        assert radar["starting_cash_cents"] is not None and radar["runway"] is not None, role
+        assert brief["starting_cash_cents"] is not None and brief["runway_line"], role
+

@@ -96,6 +96,8 @@ def _balance_notes(opening: dict[str, Any], money: Any) -> str:
     if opening.get("basis") == "assumed":
         why = "; ".join(sorted({a["basis_note"] for a in accounts if a.get("basis_note")} or {opening.get("basis_note") or "zayıf kanıt"}))
         parts.append(f"Bakiye zayıf kanıta dayanıyor ({why}), varsayım olarak alındı")
+    if opening.get("identity_note"):
+        parts.append(str(opening["identity_note"]))
     parts.extend(_excluded_note(opening.get("excluded") or []))
     return "".join(f" {p}." for p in parts)
 
@@ -116,6 +118,8 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         "stale": opening["stale"] if opening else None,
         "source_filename": opening["filename"] if opening else None,
         "balance_basis": (opening.get("basis") or "known") if opening else None,
+        "identity_uncertain": bool(opening.get("uncertain")) if opening else False,
+        "identity_note": opening.get("identity_note") if opening else None,
         "accounts": [dict(a) for a in opening.get("accounts") or []] if opening else [],
         "months_needed": RUNWAY_MIN_MONTHS,
         "months_used": 0,
@@ -147,6 +151,9 @@ def _notes(series: list[dict[str, Any]], window: list[dict[str, Any]], opening: 
     incomplete = [m for m in series if m.get("complete") is False and not m.get("short")]
     parts = []
     for m in incomplete:
+        if m.get("missing_statement"):
+            parts.append(f"{_month_name(m['month'])} için {m['missing_statement']} ekstresi eksik; hesaba katılmadı")
+            continue
         days = m.get("covered")
         span = f"yalnızca {days[0]}–{days[1]} arası" if days else "yalnızca kısmen"
         later = not window or m["month"] > window[-1]["month"]
@@ -303,6 +310,8 @@ def compute_runway(
         else "warning" if runway <= RUNWAY_WARNING_MONTHS
         else None
     )
+    if opening.get("uncertain") and level == "critical":
+        level = "warning"  # the cash is the newest of statements that may be one account: not measured
     if balance <= 0:
         verdict = "Kasa bakiyesi sıfırın altında: nakit bitmiş."
     elif beyond:
@@ -383,7 +392,9 @@ def runway_line(block: dict[str, Any]) -> str:
         f"{fmt_money(-avg, cur)}/ay)."
     )
     caveats = _assumed_text(block.get("assumptions") or [])
-    if block.get("balance_basis") == "assumed":
+    if block.get("identity_note"):
+        caveats += f" {block['identity_note']}."
+    if block.get("balance_basis") == "assumed" and not block.get("identity_note"):
         why = "; ".join(sorted({a["basis_note"] for a in block.get("accounts") or [] if a.get("basis_note")})) or "zayıf kanıt"
         caveats += f" Bakiye zayıf kanıta dayanıyor ({why}), varsayım."
     return out + (f" Varsayım:{caveats}" if block.get("basis") == "assumed" and caveats else "") + stale

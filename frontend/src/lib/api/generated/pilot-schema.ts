@@ -174,6 +174,31 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AccountQuestionOut
+         * @description Two proven statements nothing links or separates: are they one bank account? (answered in /onay)
+         */
+        AccountQuestionOut: {
+            a: components["schemas"]["AccountSideOut"];
+            b: components["schemas"]["AccountSideOut"];
+            /** Job Ids A */
+            job_ids_a: string[];
+            /** Job Ids B */
+            job_ids_b: string[];
+            /** Question */
+            question: string;
+        };
+        /** AccountSideOut */
+        AccountSideOut: {
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /** Currency */
+            currency: string;
+            /** Name */
+            name?: string | null;
+        };
+        /**
          * Analizler
          * @description Every analysis of the company by what became of it, not only the latest one.
          */
@@ -233,6 +258,16 @@ export interface components {
              * @default false
              */
             currency_assumed: boolean;
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: string[];
+            /**
+             * Identity Uncertain
+             * @default false
+             */
+            identity_uncertain: boolean;
             /** Job Id */
             job_id?: string | null;
             /**
@@ -331,6 +366,11 @@ export interface components {
         };
         /** CashRadarOut */
         CashRadarOut: {
+            /**
+             * Account Questions
+             * @default []
+             */
+            account_questions: components["schemas"]["AccountQuestionOut"][];
             /** Anchor Date */
             anchor_date: string;
             awaiting_decision?: components["schemas"]["AwaitingDecisionOut"] | null;
@@ -765,6 +805,13 @@ export interface components {
             basis: "known" | "assumed";
             /** Basis Note */
             basis_note?: string | null;
+            /** Identity Note */
+            identity_note?: string | null;
+            /**
+             * Identity Uncertain
+             * @default false
+             */
+            identity_uncertain: boolean;
             /** Source Filename */
             source_filename: string | null;
             /** Source Job Id */
@@ -989,6 +1036,13 @@ export interface components {
             beyond_horizon: boolean;
             /** Currency */
             currency?: string | null;
+            /** Identity Note */
+            identity_note?: string | null;
+            /**
+             * Identity Uncertain
+             * @default false
+             */
+            identity_uncertain: boolean;
             /** Level */
             level?: ("critical" | "warning") | null;
             /** Message */

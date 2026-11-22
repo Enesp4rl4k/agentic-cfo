@@ -40,7 +40,9 @@ def test_chain_verified_reads_both_the_run_counts_and_the_stored_summary() -> No
     assert not chain_verified({"balance_check": "verified", "unaccounted": 2})  # rows the readers lost
 
 
-def test_an_unverified_chain_gives_no_opening_cash_even_when_the_rows_chain() -> None:
+def test_an_unverified_chain_gives_no_opening_cash_except_the_explicit_under_three_steps_assumption() -> None:
+    """The old guarantee holds: a chain the reader could not verify proves nothing. The one exception is
+    fewer than three reconciling steps, kept as an `assumed` balance with its reason (asserted below)."""
     assert opening_cash_for({"transactions": ROWS}, TODAY)["balance_cents"] == 10_500  # type: ignore[index]
     unverified = {"transactions": LONG, "ingest_counts": {"balance_check": "unverified"}}
     assert opening_cash_for(unverified, TODAY) is None

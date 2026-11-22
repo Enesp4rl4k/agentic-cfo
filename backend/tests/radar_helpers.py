@@ -66,14 +66,20 @@ BURN = [
 
 def statement_meta(
     start: str, end: str, opening: int, closing: int, *, currency: str | None = "TRY", basis: str | None = "known",
-    identity: str | None = None, reason: str | None = None,
+    identity: str | None = None, reason: str | None = None, points: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    """What a completed statement job stores: the closing balance, the extent and the proof."""
+    """What a completed statement job stores: the closing balance, the extent and the proof.
+
+    `identity` is the account the header states ("iban:TR..", "bank:garanti"); `points` the balance the
+    statement ends each day on. The digest of the rows is the same for the same figures: a statement
+    uploaded twice is recognised as one.
+    """
     return {
         "closing_balance": {"date": end, "balance_cents": closing},
         "statement_extent": {"start": start, "end": end, "opening_cents": opening, "closing_cents": closing},
         "balance_proof": {
             "state": "verified" if basis == "known" else "weak" if basis else "unverified", "basis": basis,
             "steps": 5, "reason": reason, "identity": identity, "has_balances": True, "currency": currency,
+            "content_sha": f"{start}|{end}|{opening}|{closing}", "points": points or {},
         },
     }

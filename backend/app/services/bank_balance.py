@@ -141,18 +141,47 @@ def assess(
         return {**out, "reason": "bakiye zinciri satır tarihleriyle çelişiyor"}
     if any(r.get("type") not in ("income", "expense") for r in ordered):
         return {**out, "reason": "bazı satırların yönü (giriş/çıkış) belli değil"}
+    out.update(_evidence(ordered))
     if c.get("balance_check") != "unverified" and not recheck:
         return {**out, "state": "verified", "basis": "known"}
     if steps >= MIN_STEPS:
         if recheck:
             return {**out, "state": "verified", "basis": "known"}
         return {**out, "reason": "okuyucu bakiye zincirini doğrulayamadı"}
+    if not recheck and any(r.get("direction_from_balance") for r in ordered):
+        # The balance steps are the only evidence for the directions AND are checked against them: circular.
+        return {**out, "reason": "satırların yönü yalnızca bakiyeden çıkarıldı; bağımsız bir kanıt yok"}
     if len(_orders_that_chain(rows)) != 1:
         return {**out, "reason": "bakiye zinciri her iki sıralamada da tutuyor; hangisinin son olduğu belli değil"}
     return {
         **out, "state": "weak", "basis": "assumed",
         "reason": f"yalnızca {steps} bakiye adımıyla doğrulandı",
     }
+
+
+MAX_POINTS = 400
+
+
+def _evidence(ordered: list[dict[str, Any]]) -> dict[str, Any]:
+    """What lets two statements be recognised as one account: the rows' digest and the balance on each day.
+
+    `content_sha`: the same statement uploaded twice has the same digest. `points`: {day: the balance the
+    statement ends that day on} (the newest days when long); two statements of one account agree on every
+    day they both show.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(
+        "|".join(sorted(
+            f"{str(r['transaction_date'])[:10]};{r.get('amount_cents')};{r.get('type')};{r['balance_cents']}"
+            for r in ordered
+        )).encode()
+    ).hexdigest()[:32]
+    points: dict[str, int] = {}
+    for r in ordered:  # oldest first: the last row of a day is that day's closing balance
+        points[str(r["transaction_date"])[:10]] = int(r["balance_cents"])
+    keep = sorted(points)[-MAX_POINTS:]
+    return {"content_sha": digest, "points": {d: points[d] for d in keep}}
 
 
 def _currency_of(rows: list[dict[str, Any]]) -> str | None:

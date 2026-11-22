@@ -51,6 +51,8 @@ class BalanceAccountOut(BaseModel):
     statements: int = 1
     behind_days: int = 0
     lagging: bool = False
+    identity_uncertain: bool = False
+    gaps: list[str] = []
 
 
 class OtherCurrencyBalanceOut(BaseModel):
@@ -70,6 +72,23 @@ class UnprovenStatementOut(BaseModel):
     reason: str
 
 
+class AccountSideOut(BaseModel):
+    name: str | None = None
+    as_of: str
+    balance_cents: int
+    currency: str
+
+
+class AccountQuestionOut(BaseModel):
+    """Two proven statements nothing links or separates: are they one bank account? (answered in /onay)"""
+
+    question: str
+    a: AccountSideOut
+    b: AccountSideOut
+    job_ids_a: list[str]
+    job_ids_b: list[str]
+
+
 class RunwayMonthOut(BaseModel):
     month: str
     net_cents: int
@@ -87,6 +106,8 @@ class RunwayOut(BaseModel):
     stale: bool | None = None
     source_filename: str | None = None
     balance_basis: Literal["known", "assumed"] | None = None
+    identity_uncertain: bool = False
+    identity_note: str | None = None
     accounts: list[BalanceAccountOut] = []
     months_needed: int
     months_used: int
@@ -112,6 +133,8 @@ class OpeningCashOut(BaseModel):
     basis: Literal["known", "assumed"] = "known"
     basis_note: str | None = None
     accounts: list[BalanceAccountOut] = []
+    identity_uncertain: bool = False
+    identity_note: str | None = None
 
 
 class RadarWeekOut(BaseModel):
@@ -216,4 +239,5 @@ class CashRadarOut(BaseModel):
     other_currency_totals: list[OtherCurrencyTotalOut] = []
     other_currency_balances: list[OtherCurrencyBalanceOut] = []
     unproven_statements: list[UnprovenStatementOut] = []
+    account_questions: list[AccountQuestionOut] = []
     runway: RunwayOut | None = None

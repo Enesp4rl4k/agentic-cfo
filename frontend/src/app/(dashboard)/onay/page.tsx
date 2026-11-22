@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import Link from "next/link";
+import { AccountQuestions } from "@/components/approvals/AccountQuestions";
 import { HeldAnalysesSection } from "@/components/held-analyses/HeldAnalysesSection";
 import { WaitingSummary } from "@/components/approvals/WaitingSummary";
 import { ReviewQueueCard } from "@/components/command-center/ReviewQueueCard";
@@ -168,6 +169,8 @@ export default function OnayPage() {
       <div id="analizler" className="scroll-mt-20">
         <HeldAnalysesSection />
       </div>
+
+      <AccountQuestions />
 
       {counts.rows > 0 && (
         <section id="kayitlar" aria-label={t.heldAnalysis.queues.rowsTitle.replace("{n}", String(counts.rows))} className="scroll-mt-20 space-y-2">

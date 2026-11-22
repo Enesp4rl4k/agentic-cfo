@@ -569,6 +569,17 @@ async def run_cfo_analysis(
                 return {"ok": False, "job_id": job_id, "finish_lost": True}
             await db.commit()
 
+            # A re-run asks nothing twice: rows a person already released or rejected come back as they
+            # answered. The proof written above was read before those answers; read it again with them.
+            if org_id_str and meta.get("statement_chain") and (
+                registered["released_again"] or registered["already_rejected"]
+            ):
+                from app.services.balance_reverify import reverify
+
+                await db.refresh(job)
+                await reverify(db, org_id_str, {job_id: []})
+                await db.commit()
+
             # Notify SSE subscribers that the job is done — before the slow
             # follow-ups below: a watcher's completion must not wait on RAG.
             await publish_job_done(job_id, status=str(terminal))

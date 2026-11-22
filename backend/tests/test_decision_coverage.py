@@ -27,8 +27,6 @@ _COMPUTES = [
     ("POST", "/api/v1/advanced/temporal/auto-record"),
     ("POST", "/api/v1/agent-jobs/{agent_type}"),
     ("POST", "/api/v1/analysis/{job_id}/domains/{domain}"),
-    ("POST", "/api/v1/analysis/{job_id}/rerun"),
-    ("POST", "/api/v1/analyze/{job_id}"),
     ("POST", "/api/v1/anomalies/scan/{job_id}"),
     ("POST", "/api/v1/audit/analyze"),
     ("POST", "/api/v1/brief/morning/generate"),
@@ -97,7 +95,6 @@ _ERASURE = [
 
 _SYNCS = [
     ("POST", "/api/v1/connectors/{name}/sync"),
-    ("POST", "/api/v1/efatura/sync"),
     ("POST", "/api/v1/erp/logo-tiger/sync"),
     ("POST", "/api/v1/erp/mikro/sync"),
     ("POST", "/api/v1/erp/parasut/sync"),
@@ -113,9 +110,7 @@ _SYNCS = [
 ]
 
 _BRINGS_DATA_IN = [
-    ("POST", "/api/v1/data-quality/validate-and-upload"),
     ("POST", "/api/v1/datasource/{job_id}/{domain}/{source_type}"),
-    ("POST", "/api/v1/upload"),
     ("POST", "/api/v1/veri/ekle"),
 ]
 
@@ -126,7 +121,6 @@ _OTHER_REGISTER = [
 
 _PLATFORM_OPERATOR = [
     ("DELETE", "/api/v1/demo/reset"),
-    ("POST", "/api/v1/demo/seed"),
     ("POST", "/api/v1/pilot/invite/generate"),
     ("DELETE", "/api/v1/pilot/invite/{invite_id}"),
 ]

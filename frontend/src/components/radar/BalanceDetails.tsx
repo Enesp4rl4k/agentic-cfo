@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/hooks/useI18n";
 import { formatDay } from "@/components/radar/basis";
@@ -26,9 +27,19 @@ export function BalanceDetails({
   const others = radar.other_currency_balances ?? [];
   const unproven = radar.unproven_statements ?? [];
   const assumed = opening?.basis === "assumed";
-  if (accounts.length < 2 && !assumed && others.length === 0 && unproven.length === 0) return null;
+  const questions = radar.account_questions ?? [];
+  if (accounts.length < 2 && !assumed && others.length === 0 && unproven.length === 0 && questions.length === 0) return null;
   return (
     <Card className="space-y-3 p-4" data-testid="balance-details">
+      {questions.length > 0 && (
+        <div className="space-y-1" data-testid="identity-uncertain">
+          {opening?.identity_note && <p className="m-0 text-sm font-semibold">{opening.identity_note}</p>}
+          <p className="m-0 text-xs text-muted-foreground">{copy.identityUncertainNote}</p>
+          <Link href="/onay#hesaplar" className="inline-flex min-h-[44px] items-center text-sm font-medium text-primary underline-offset-4 hover:underline">
+            {copy.accountQuestionLink}
+          </Link>
+        </div>
+      )}
       {assumed && opening?.basis_note && (
         <p className="m-0 text-sm">
           {copy.openingAssumed} {opening.basis_note}

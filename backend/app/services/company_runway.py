@@ -47,6 +47,22 @@ def monthly_series(rows: list[dict[str, Any]], currency: str) -> list[dict[str, 
     return [{"month": k, "in": v["in"], "out": v["out"], "net": v["in"] - v["out"]} for k, v in sorted(months.items())]
 
 
+def mark_missing_statements(series: list[dict[str, Any]], gaps: dict[str, list[str]]) -> list[dict[str, Any]]:
+    """A month wholly between two statements of one account is missing, not a quiet month.
+
+    An account's statements are one extent for coverage, so the months between them would read as
+    covered; they are marked incomplete and name the account whose statement is missing.
+    """
+    missing = {m: name for name, months in gaps.items() for m in months}
+    out = []
+    for m in series:
+        if m["month"] in missing:
+            m = {**m, "complete": False, "covered": None, "missing_statement": missing[m["month"]]}
+            m.pop("assumed", None)
+        out.append(m)
+    return out
+
+
 def opening_of(balance: dict[str, Any] | None, anchor: date, excluded: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The proven balance as `compute_runway` takes it, with its age against `anchor`."""
     if balance is None:
@@ -58,6 +74,7 @@ def opening_of(balance: dict[str, Any] | None, anchor: date, excluded: list[dict
         "age_days": age, "stale": stale, "stale_after_days": limit, "filename": balance.get("filename"),
         "basis": balance.get("basis") or "known", "basis_note": None,
         "accounts": list(balance.get("accounts") or []), "excluded": excluded,
+        "uncertain": bool(balance.get("uncertain")), "identity_note": balance.get("identity_note"),
     }
 
 
@@ -75,9 +92,8 @@ async def company_runway(
     view = await ledger_view(db, org_id)
     rows = list(view.cash) if view is not None else []
     opening = opening_of(found["opening"], today, found["excluded"])
-    cashflow: dict[str, Any] = {
-        "monthly_series": annotate_series(monthly_series(rows, currency), rows, list(found["opening"]["extents"]) if found["opening"] else []),
-    }
+    series = annotate_series(monthly_series(rows, currency), rows, list(found["opening"]["extents"]) if found["opening"] else [])
+    cashflow: dict[str, Any] = {"monthly_series": mark_missing_statements(series, (found["opening"] or {}).get("gaps") or {})}
     if any(r.get("ledger_basis") == BOOK for r in rows):
         cashflow["esas"] = "tahakkuk"
     block = compute_runway(opening, cashflow, currency, unproven=found["excluded"])

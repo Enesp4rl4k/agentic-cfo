@@ -1,6 +1,78 @@
 {
   "components": {
     "schemas": {
+      "AccountQuestionOut": {
+        "description": "Two proven statements nothing links or separates: are they one bank account? (answered in /onay)",
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/AccountSideOut"
+          },
+          "b": {
+            "$ref": "#/components/schemas/AccountSideOut"
+          },
+          "job_ids_a": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids A",
+            "type": "array"
+          },
+          "job_ids_b": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids B",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "a",
+          "b",
+          "job_ids_a",
+          "job_ids_b"
+        ],
+        "title": "AccountQuestionOut",
+        "type": "object"
+      },
+      "AccountSideOut": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance_cents": {
+            "title": "Balance Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "as_of",
+          "balance_cents",
+          "currency"
+        ],
+        "title": "AccountSideOut",
+        "type": "object"
+      },
       "Analizler": {
         "description": "Every analysis of the company by what became of it, not only the latest one.",
         "properties": {
@@ -123,6 +195,19 @@
           "currency_assumed": {
             "default": false,
             "title": "Currency Assumed",
+            "type": "boolean"
+          },
+          "gaps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "identity_uncertain": {
+            "default": false,
+            "title": "Identity Uncertain",
             "type": "boolean"
           },
           "job_id": {
@@ -367,6 +452,14 @@
       },
       "CashRadarOut": {
         "properties": {
+          "account_questions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AccountQuestionOut"
+            },
+            "title": "Account Questions",
+            "type": "array"
+          },
           "anchor_date": {
             "title": "Anchor Date",
             "type": "string"
@@ -1507,6 +1600,22 @@
             ],
             "title": "Basis Note"
           },
+          "identity_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Note"
+          },
+          "identity_uncertain": {
+            "default": false,
+            "title": "Identity Uncertain",
+            "type": "boolean"
+          },
           "source_filename": {
             "anyOf": [
               {
@@ -2150,6 +2259,22 @@
               }
             ],
             "title": "Currency"
+          },
+          "identity_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Note"
+          },
+          "identity_uncertain": {
+            "default": false,
+            "title": "Identity Uncertain",
+            "type": "boolean"
           },
           "level": {
             "anyOf": [

@@ -290,3 +290,52 @@ def test_a_direction_remembered_from_an_earlier_answer_is_a_recheck_not_the_read
     plain = [{**r, "type": "expense"} for r in _rows(*FOUR)]
     assert assess(plain, {"balance_check": "unverified", "unaccounted": 0})["basis"] is None
 
+
+async def test_a_rerun_that_reads_the_statement_before_the_answers_is_read_again_with_them(client):
+    """A re-run asks nothing twice, but its ingest proof was written before the earlier answers: the worker
+    reads it again (`reverify` with no new answers), idempotently."""
+    from app.services.balance_reverify import reverify
+
+    _, org_id, user_id = await kullanici(client, "r11@example.com")
+    job_id, ids = await _held_statement(client, org_id, _rows(*FOUR))
+    async with client._maker() as db:
+        await held_rows.resolve(db, org_id, user_id=user_id, release=True, ids=list(ids.values()),
+                                corrections={rid: {"type": "expense"} for rid in ids.values()})
+    before = await _meta(client, job_id)
+    async with client._maker() as db:  # what a re-run's ingest writes: the proof of rows nobody had answered yet
+        job = await db.get(AnalysisJob, job_id)
+        job.result_metadata = {**before, "balance_proof": assess(_rows(*FOUR), {"balance_check": "unverified", "unaccounted": 0})}
+        await db.commit()
+    assert (await _radar(client, org_id)).opening_cash is None
+    async with client._maker() as db:
+        assert [p["state"] for p in await reverify(db, org_id, {job_id: []})] == ["verified"]
+        assert await reverify(db, org_id, {job_id: []}) == []
+        await db.commit()
+    assert (await _radar(client, org_id)).starting_cash_cents == 60_000_00
+
+
+def test_a_single_row_has_nothing_to_chain_to_and_never_verifies():
+    one = _rows(("2026-03-02", 10_000_00, "expense", 90_000_00))
+    assert assess(one, {"balance_check": "unverified"}, recheck=True)["basis"] is None
+    assert assess(one, None)["basis"] is None
+
+
+def test_directions_read_off_the_balance_itself_are_not_independent_evidence_of_it():
+    rows = [{**r, "type": "expense", "direction_from_balance": True} for r in _rows(
+        ("2026-03-02", 10_000_00, None, 90_000_00), ("2026-03-05", 5_000_00, None, 85_000_00))]
+    thin = assess(rows, {"balance_check": "unverified", "unaccounted": 0})
+    assert thin["basis"] is None and "yalnızca bakiyeden çıkarıldı" in thin["reason"]
+    # Once a person has answered the direction, the same rows are weak evidence, not circular.
+    assert assess(rows, {"balance_check": "unverified", "unaccounted": 0}, recheck=True)["basis"] == "assumed"
+
+
+async def test_rejecting_down_to_a_single_row_leaves_the_statement_unproven(client):
+    _, org_id, user_id = await kullanici(client, "r12@example.com")
+    job_id, ids = await _held_statement(client, org_id, _rows(*FOUR))
+    async with client._maker() as db:
+        await held_rows.resolve(db, org_id, user_id=user_id, release=True, ids=[ids[0]], corrections={ids[0]: {"type": "expense"}})
+        out = await held_rows.resolve(db, org_id, user_id=user_id, release=False, ids=[ids[1], ids[2], ids[3]])
+    assert [p["state"] for p in out["balance_proof"]] == ["unverified"]
+    assert (await _radar(client, org_id)).opening_cash is None
+    assert (await _meta(client, job_id))["balance_proof"]["rejected"] == 3
+

@@ -163,6 +163,8 @@ test.describe("Pilot flow", () => {
     const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json();
     expect(radar.data.starting_cash_cents).toBe(11_650_000);
     expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
+    // One statement is one account: nothing is in doubt, so no question is asked.
+    expect(radar.data.account_questions).toEqual([]);
 
     // The forecast starts from that balance and says so, with the months it averaged: a MEASURED runway.
     // The statement's three whole months (+38.000, -42.000, -12.000) average a 5.333,33 burn against
@@ -320,6 +322,7 @@ test.describe("Pilot flow", () => {
     );
     await expect(main.getByTestId("runway-text")).toContainText("Bu hızla nakit yaklaşık 21,8 ay yeter.");
     await expect(main.getByTestId("runway-assumed")).toBeVisible();
+    await expect(main.getByTestId("identity-uncertain")).toHaveCount(0);
   });
 
   test("6. the Monday briefing answers the week and names the date of the data", async ({ page }) => {
