@@ -478,6 +478,8 @@ async def run_cfo_pipeline(
     ek_belgeler: list[dict[str, str]] | None = None,
     category_rules: list[dict[str, Any]] | None = None,
     ledger_view: dict[str, Any] | None = None,
+    opening_cash: dict[str, Any] | None = None,
+    statement_extents: list[dict[str, Any]] | None = None,
     base_currency: str | None = None,
 ) -> CFOState:
     """
@@ -492,6 +494,7 @@ async def run_cfo_pipeline(
         org_id:       Organization ID for memory retrieval/storage
         period:       Reporting period label (e.g. "2024-Q4") for memory
         ledger_view:  The company's ledger rows, read instead of a file
+        opening_cash: The company's latest proven bank balance (`proven_balance`), if any
 
     Returns:
         Final CFOState — caller persists to DB.
@@ -522,6 +525,8 @@ async def run_cfo_pipeline(
         "category_rules": category_rules or [],
         "category_rule_hits": None,
         "ledger_view": ledger_view,
+        "opening_cash": opening_cash,
+        "statement_extents": statement_extents,
         "base_currency": base_currency or await _stored_base_currency(org_id),
         "foreign_totals": None,
         "base_state": None,

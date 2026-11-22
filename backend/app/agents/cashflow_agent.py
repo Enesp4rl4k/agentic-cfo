@@ -23,6 +23,7 @@ from app.core.currency_totals import (
     normalise,
     split_by_currency,
 )
+from app.services.coverage import annotate_series, extents_for, next_month
 from app.services.ledger import BOOK
 from app.services.telemetry import trace_agent
 
@@ -224,9 +225,15 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
             "message": "Faaliyet nakit akışı negatif — işletme, faaliyetlerini kendi nakit akışıyla finanse edemiyor. Acil önlem gerekiyor.",
         })
 
-    series = cashflow.get("monthly_series", [])
+    # Only complete months count, and only when consecutive: a month the data covers in part, or
+    # a skipped month, is not a month of negative cash flow.
+    series = [m for m in cashflow.get("monthly_series", []) if m.get("complete") is not False]
     neg_streak = 0
+    previous: str | None = None
     for entry in series:
+        if previous is not None and next_month(previous) != entry["month"]:
+            neg_streak = 0
+        previous = entry["month"]
         if entry["net"] < 0:
             neg_streak += 1
         else:
@@ -285,6 +292,11 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         settings = get_settings()
         cashflow = _classify_cashflow(
             transactions, state.get("base_currency"), state.get("foreign_totals"), state.get("base_state"))
+        # Which months the rows cover whole: a month a statement only starts or ends in is not
+        # a month of cash movement (and a month nothing covers is missing, not zero).
+        cashflow["monthly_series"] = annotate_series(
+            cashflow["monthly_series"], transactions, extents_for(state)  # type: ignore[arg-type]
+        )
         alerts = _detect_alerts(cashflow)
         # Rows read from an e-Defter journal are accrual income-statement lines:
         # a sale counts when invoiced, paid or not. Classified as cash they make
@@ -310,8 +322,9 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         cashflow["alerts"] = alerts
         cashflow["narrative"] = narrative
 
-        has_critical = any(a["level"] == "critical" for a in alerts)
-        confidence = 0.90 if not has_critical else 0.85
+        # Alerts are findings about the company, shown with their basis; none of them holds
+        # the run (a hold asks a person about THIS upload) and bad news is not doubt.
+        confidence = 0.90
 
         # S3-3: Attach cashflow evidence
         try:
@@ -324,7 +337,7 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
             ok=True,
             patch={"cashflow": cashflow},
             confidence=confidence,
-            needs_review=has_critical,
+            needs_review=False,
             detail=(
                 f"Cash flow: operating={_fmt(cashflow['operating'], cashflow.get('currency'))}, "
                 f"net={_fmt(cashflow['net_change'], cashflow.get('currency'))}, "

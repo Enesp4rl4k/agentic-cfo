@@ -19,26 +19,66 @@ export const tr = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d
 /** yyyy-mm-dd, the form the product's screens and e-mails use for data dates. */
 export const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
+/** A day of a calendar month, `monthsBack` months before this one (day 1 is the first, never past today). */
+export function dayOfMonth(monthsBack: number, day: number): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - monthsBack, day);
+}
+
+/**
+ * The last statement row: two days ago, but never before the first of this month, so the three
+ * calendar months before it are whole months and this one is the partial month the burn leaves out.
+ */
+function lastRowDate(): Date {
+  const twoDaysAgo = daysFromToday(-2);
+  const firstOfMonth = dayOfMonth(0, 1);
+  return twoDaysAgo < firstOfMonth ? firstOfMonth : twoDaysAgo;
+}
+
 /**
  * Bank statement whose running balance chains: 120.000 opening, then the rows below, closing at
- * 116.500,00. Rent leaves in three different months, which is what lets the radar project the next
- * one as an estimate ("tahmini") rather than a document.
+ * 116.500,00. It covers three whole calendar months (from the 2nd of the first, with this month's
+ * rows after them), as a quarter's export does. Rent leaves in all three, which is what lets the
+ * radar project the next one as an estimate ("tahmini") rather than a document. The months' nets
+ * are +38.000, -42.000 and -12.000: an average burn of 5.333,33 against 116.500 in the bank.
  */
 export function bankStatement() {
-  const last = daysFromToday(-2);
-  const row = (offset: number, text: string, amount: string, balance: string) =>
-    `${tr(daysFromToday(offset))};${text};"${amount}";"${balance}";TRY`;
+  const last = lastRowDate();
+  const row = (date: Date, text: string, amount: string, balance: string) =>
+    `${tr(date)};${text};"${amount}";"${balance}";TRY`;
   const csv = [
     "Tarih;Açıklama;Tutar;Bakiye;Para Birimi",
-    row(-75, "Ofis kirası", "-12.000,00", "108.000,00"),
-    row(-70, "Satış tahsilatı - Mavi Tekstil", "50.000,00", "158.000,00"),
-    row(-40, "Ofis kirası", "-12.000,00", "146.000,00"),
-    row(-20, "Personel maaş ödemesi", "-30.000,00", "116.000,00"),
-    row(-5, "Ofis kirası", "-12.000,00", "104.000,00"),
-    row(-2, "Danışmanlık geliri - Kara Holding", "12.500,00", "116.500,00"),
+    row(dayOfMonth(3, 2), "Ofis kirası", "-12.000,00", "108.000,00"),
+    row(dayOfMonth(3, 12), "Satış tahsilatı - Mavi Tekstil", "50.000,00", "158.000,00"),
+    row(dayOfMonth(2, 2), "Ofis kirası", "-12.000,00", "146.000,00"),
+    row(dayOfMonth(2, 20), "Personel maaş ödemesi", "-30.000,00", "116.000,00"),
+    row(dayOfMonth(1, 2), "Ofis kirası", "-12.000,00", "104.000,00"),
+    row(last, "Danışmanlık geliri - Kara Holding", "12.500,00", "116.500,00"),
     "",
   ].join("\n");
   return { name: "banka-ekstresi.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf-8"), asOf: last };
+}
+
+/**
+ * A company that really is short of cash: 100.000 opening, and in each of three whole months a
+ * 20.000 receipt against 10.000 rent and 40.000 salary (net -30.000 a month); it closes on 9.000,00,
+ * a third of a month of cash at that pace.
+ */
+export function cashShortStatement() {
+  const last = lastRowDate();
+  const row = (date: Date, text: string, amount: string, balance: string) =>
+    `${tr(date)};${text};"${amount}";"${balance}";TRY`;
+  const months = [3, 2, 1].flatMap((back, i) => {
+    const base = 120 - 30 * i; // balance after the month's receipt, rent and salary: 70, 40, 10 (thousand)
+    const fmt = (thousand: number) => `${thousand}.000,00`;
+    return [
+      row(dayOfMonth(back, 2), "Satış tahsilatı - Mavi Tekstil", "20.000,00", fmt(base)),
+      row(dayOfMonth(back, 3), "Ofis kirası", "-10.000,00", fmt(base - 10)),
+      row(dayOfMonth(back, 4), "Personel maaş ödemesi", "-40.000,00", fmt(base - 50)),
+    ];
+  });
+  const csv = ["Tarih;Açıklama;Tutar;Bakiye;Para Birimi", ...months, row(last, "Pazarlama gideri", "-1.000,00", "9.000,00"), ""].join("\n");
+  return { name: "kisa-nakit-ekstresi.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf-8"), asOf: last };
 }
 
 /** Two open invoices: one to collect (this week), one to pay (next week). */

@@ -1449,6 +1449,7 @@ export type MessageTree = {
       optimisticUpside: string;
       pessimisticDownside: string;
       vsBase: string;
+      runwayUnknown: string;
     };
     table: {
       heading: string;
@@ -1460,6 +1461,7 @@ export type MessageTree = {
       monthsShort: string;
       stable: string;
       ariaLabel: string;
+      unknown: string;
     };
     breakdown: {
       heading: string;
@@ -1472,6 +1474,9 @@ export type MessageTree = {
       heading: string;
       body: string;
       cta: string;
+    };
+    runway: {
+      heading: string;
     };
   };
   integrations: {
@@ -4389,6 +4394,7 @@ export const en: MessageTree = {
       optimisticUpside: "Optimistic upside",
       pessimisticDownside: "Pessimistic downside",
       vsBase: "vs base case",
+      runwayUnknown: "Runway not computed",
     },
     table: {
       heading: "Scenario comparison",
@@ -4400,6 +4406,7 @@ export const en: MessageTree = {
       monthsShort: "{count} mo",
       stable: "Stable",
       ariaLabel: "Forecast scenarios",
+      unknown: "Not computed",
     },
     breakdown: {
       heading: "{label} — monthly breakdown",
@@ -4412,6 +4419,9 @@ export const en: MessageTree = {
       heading: "No forecast data",
       body: "Upload a financial document and run an analysis to generate 12-month forecasts.",
       cta: "Upload document",
+    },
+    runway: {
+      heading: "Cash runway",
     },
   },
   integrations: {

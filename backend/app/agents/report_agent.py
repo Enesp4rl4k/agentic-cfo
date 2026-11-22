@@ -155,12 +155,17 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
                     "label": v.get("label"),
                     "description": v.get("description"),
                     "runway_months": v.get("runway_months"),
+                    "runway_basis": v.get("runway_basis"),
                     "twelve_month_net": _fmt(v.get("twelve_month_net", 0)),
                     "months": v.get("months", []),
                 }
                 for k, v in forecast.get("scenarios", {}).items()
             },
             "narrative": forecast.get("narrative", ""),
+            # The runway with its basis (proven balance, date, burn) or why there is none.
+            "runway": forecast.get("runway"),
+            "alerts": forecast.get("alerts", []),
+            "limited_history": forecast.get("limited_history"),
         },
         "anomalies": state.get("anomalies", []),
         "anomaly_narrative": state.get("anomaly_narrative", ""),

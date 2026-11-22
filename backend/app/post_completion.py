@@ -141,7 +141,10 @@ async def _analyse_ledger(view: Any, org_id: str, job_id: str | None, db: Any) -
     """The CFO pipeline over the ledger's rows, with its AgentRun around it."""
     from app.agents import orchestrator
     from app.agents.run_ledger import agent_run
+    from app.services.bank_balance import proven_balance, proven_statements
 
+    opening_cash = await proven_balance(db, org_id)
+    statement_extents = await proven_statements(db, org_id)
     async with agent_run(db, pipeline="cfo_ledger", org_id=org_id, job_id=job_id) as run:
         result = await orchestrator.run_cfo_pipeline(
             # Its own id: this is not the upload's analysis, and it must not
@@ -151,6 +154,8 @@ async def _analyse_ledger(view: Any, org_id: str, job_id: str | None, db: Any) -
             file_type="ledger",
             org_id=org_id,
             ledger_view=view.for_pipeline(),
+            opening_cash=opening_cash,
+            statement_extents=statement_extents,
         )
         if result.get("halted"):
             run.row.status = "halted"
