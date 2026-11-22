@@ -48,6 +48,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from app.core.log_redaction import RedactingFilter, redact
+
 # ── Structured JSON Log Formatter ─────────────────────────────────────────────
 
 
@@ -73,7 +75,7 @@ class JSONFormatter(logging.Formatter):
             "ts":     self.formatTime(record, "%Y-%m-%dT%H:%M:%S") + f".{record.msecs:03.0f}Z",
             "level":  record.levelname,
             "logger": record.name,
-            "msg":    record.getMessage(),
+            "msg":    redact(record.getMessage()),
         }
 
         # Add extra fields (job_id, agent, duration_ms, etc.)
@@ -81,12 +83,12 @@ class JSONFormatter(logging.Formatter):
             if key not in self.RESERVED_ATTRS and not key.startswith("_"):
                 try:
                     json.dumps(value)   # Only include JSON-serializable values
-                    log[key] = value
+                    log[key] = redact(value) if isinstance(value, str) else value
                 except (TypeError, ValueError):
-                    log[key] = str(value)
+                    log[key] = redact(str(value))
 
         if record.exc_info:
-            log["exc"] = self.formatException(record.exc_info)
+            log["exc"] = redact(self.formatException(record.exc_info))
 
         return json.dumps(log, ensure_ascii=False)
 
@@ -417,6 +419,9 @@ def initialize_telemetry(log_level: str = "INFO", json_logs: bool = True) -> Non
         setup_json_logging(log_level)
     else:
         logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO))
+        for handler in logging.getLogger().handlers:
+            if not any(isinstance(f, RedactingFilter) for f in handler.filters):
+                handler.addFilter(RedactingFilter())
 
     _setup_otel()
     setup_langsmith()

@@ -95,6 +95,7 @@ _ROUTERS = [
     ("app.api.ws_alerts",               "router", "ws-alerts"),                   # M1: WebSocket org-channel + alert history
     ("app.api.reports_pdf",             "router", "reports-pdf"),                  # M2: PDF report generation (WeasyPrint)
     ("app.api.system",                  "router", "system"),                       # Global management/ops health
+    ("app.api.ops",                     "router", "ops"),                          # /ready (readiness) and /version, no user
     ("app.api.actions",                 "router", "actions"),                      # Human-in-the-Loop Action Execution
     ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
     ("app.api.data_freshness",          "router", "data-freshness"),                # Org-level "as of" — shared with packet + OKR

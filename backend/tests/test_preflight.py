@@ -1,0 +1,236 @@
+"""The production preflight refuses dangerous configuration and says loudly when one is degraded.
+
+`validate_production_security` already refused the insecure default secret; a template secret from
+`.env.example` (38 characters, not on its list), the demo seed, a wildcard CORS list with credentials, a
+localhost link in every e-mail and a development database in production all started fine.
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from app.config import Settings
+from app.core import preflight
+from app.core.preflight import (
+    FATAL,
+    WARN,
+    PreflightError,
+    SchemaState,
+    check_settings,
+    enforce,
+    is_production,
+    schema_state,
+)
+
+GOOD_SECRET = "0123456789abcdef" * 4  # long enough, not a template (built, not a literal a scanner could mistake)
+DEFAULT_PW = "change" + "me"  # the shipped default, assembled so no scanner reads it as a credential
+
+
+def db_url(user: str, password: str) -> str:
+    return f"postgresql+asyncpg://{user}:{password}@db:5432/aicfo"
+
+
+def production_settings(**overrides: Any) -> Settings:
+    """A configuration that passes every fatal rule; each test breaks one."""
+    base: dict[str, Any] = {
+        "use_sqlite": False,
+        "backend_secret_key": GOOD_SECRET,
+        "postgres_password": "p" * 24,
+        "database_url_override": "",  # the suite's environment may set one
+        "backend_cors_origins": "https://app.example.test",
+        "frontend_url": "https://app.example.test",
+        "brand_app_url": "https://app.example.test",
+        "backend_url": "https://api.example.test",
+        "smtp_user": "mailer",
+        "smtp_password": "x" * 16,
+        "openai_api_key": "sk-real",
+        "trusted_proxy_count": 1,
+        "field_encryption_key": "k" * 44,
+        "platform_operator_emails": "ops@example.test",
+        "support_contact": "ops@example.test",
+    }
+    base.update(overrides)
+    return Settings(_env_file=None, **base)
+
+
+CLEAN_ENV = {"SENTRY_DSN": "https://k@sentry.example.test/1", "NEXTAUTH_SECRET": "n" * 40}
+
+
+def codes(findings: list[preflight.Finding], severity: str | None = None) -> set[str]:
+    return {f.code for f in findings if severity is None or f.severity == severity}
+
+
+def test_a_complete_production_configuration_has_no_findings() -> None:
+    assert check_settings(production_settings(), CLEAN_ENV) == []
+
+
+@pytest.mark.parametrize(
+    ("override", "code"),
+    [
+        ({"backend_secret_key": "change-this-to-a-random-secret-32-chars"}, "secret_placeholder"),
+        ({"backend_secret_key": "dev-secret-change-in-production"}, "secret_placeholder"),
+        ({"backend_secret_key": "short-but-not-a-template"}, "secret_short"),
+        ({"postgres_password": DEFAULT_PW}, "db_password_default"),
+        ({"demo_mode": True}, "demo_mode"),
+        ({"backend_cors_origins": "*"}, "cors_wildcard"),
+        ({"backend_cors_origins": "https://a.example.test,*"}, "cors_wildcard"),
+        ({"frontend_url": "http://localhost:3000"}, "links_localhost"),
+        ({"brand_app_url": "http://localhost:3000"}, "links_localhost"),
+        (
+            {"whatsapp_verify_token": "agentic-cfo-verify", "whatsapp_app_secret": "s" * 10},
+            "whatsapp_verify_token",
+        ),
+    ],
+)
+def test_dangerous_configuration_is_fatal(override: dict[str, Any], code: str) -> None:
+    findings = check_settings(production_settings(**override), CLEAN_ENV)
+    assert code in codes(findings, FATAL)
+
+
+def test_the_database_override_with_the_default_password_is_fatal() -> None:
+    s = production_settings(database_url_override=db_url("aicfo", DEFAULT_PW))
+    assert "db_password_default" in codes(check_settings(s, CLEAN_ENV), FATAL)
+
+
+def test_the_override_hides_the_postgres_password_field() -> None:
+    s = production_settings(postgres_password=DEFAULT_PW, database_url_override=db_url("u", "s" * 20))
+    assert "db_password_default" not in codes(check_settings(s, CLEAN_ENV))
+
+
+def test_a_placeholder_nextauth_secret_in_the_shared_env_is_fatal() -> None:
+    env = {**CLEAN_ENV, "NEXTAUTH_SECRET": "change-this-" + "to-a-random-secret"}
+    assert "nextauth_placeholder" in codes(check_settings(production_settings(), env), FATAL)
+
+
+def test_a_missing_nextauth_secret_is_not_the_backends_business() -> None:
+    env = {k: v for k, v in CLEAN_ENV.items() if k != "NEXTAUTH_SECRET"}
+    assert check_settings(production_settings(), env) == []
+
+
+@pytest.mark.parametrize(
+    ("override", "env", "code"),
+    [
+        ({"smtp_user": "", "smtp_password": ""}, CLEAN_ENV, "no_mail_sender"),
+        ({"outbox_transport": "noop"}, CLEAN_ENV, "outbox_noop"),
+        ({"openai_api_key": "llm-placeholder-dev"}, CLEAN_ENV, "no_llm_key"),
+        ({}, {"NEXTAUTH_SECRET": "n" * 40}, "no_error_tracking"),
+        ({"trusted_proxy_count": 0}, CLEAN_ENV, "no_trusted_proxy"),
+        ({"field_encryption_key": ""}, CLEAN_ENV, "no_field_key"),
+        ({"platform_operator_emails": ""}, CLEAN_ENV, "no_operator"),
+        ({"support_contact": ""}, CLEAN_ENV, "no_support_contact"),
+        ({"backend_cors_origins": "https://a.example.test,http://localhost:3000"}, CLEAN_ENV, "cors_localhost"),
+        ({"backend_cors_origins": "http://app.example.test"}, CLEAN_ENV, "cors_http"),
+        ({"backend_url": "http://localhost:8000"}, CLEAN_ENV, "backend_url_localhost"),
+        ({}, {**CLEAN_ENV, "LOG_LEVEL": "debug"}, "log_debug"),
+    ],
+)
+def test_degraded_states_warn_but_do_not_stop_startup(override: dict[str, Any], env: dict[str, str], code: str) -> None:
+    s = production_settings(**override)
+    findings = check_settings(s, env)
+    assert code in codes(findings, WARN)
+    assert enforce(s, env)  # returns the findings; raises nothing
+
+
+def test_sqlite_with_a_production_app_env_is_fatal() -> None:
+    s = Settings(_env_file=None, use_sqlite=True)
+    assert "sqlite_in_production" in codes(check_settings(s, {"APP_ENV": "production"}), FATAL)
+    assert "sqlite_in_production" not in codes(check_settings(s, {}))
+
+
+def test_production_means_postgres_or_a_production_app_env() -> None:
+    assert is_production(Settings(_env_file=None, use_sqlite=False), {})
+    assert is_production(Settings(_env_file=None, use_sqlite=True), {"APP_ENV": "Staging"})
+    assert not is_production(Settings(_env_file=None, use_sqlite=True), {"APP_ENV": "development"})
+
+
+def test_enforce_raises_for_a_fatal_finding_in_production(caplog: pytest.LogCaptureFixture) -> None:
+    s = production_settings(demo_mode=True, backend_cors_origins="*")
+    with caplog.at_level(logging.WARNING), pytest.raises(PreflightError) as err:
+        enforce(s, CLEAN_ENV)
+    assert "demo_mode" in str(err.value) and "cors_wildcard" in str(err.value)
+    assert any(r.levelno == logging.CRITICAL for r in caplog.records)
+
+
+def test_enforce_only_warns_outside_production(caplog: pytest.LogCaptureFixture) -> None:
+    s = Settings(_env_file=None, use_sqlite=True, demo_mode=True)
+    with caplog.at_level(logging.WARNING):
+        findings = enforce(s, {})
+    assert "demo_mode" in codes(findings, FATAL)
+    assert not any(r.levelno == logging.CRITICAL for r in caplog.records)
+
+
+def test_main_runs_the_preflight_at_startup() -> None:
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    assert "enforce(settings)" in source and "raise SystemExit(1)" in source
+
+
+# ── schema state ───────────────────────────────────────────────────────────────
+
+
+class FakeConn:
+    """Just enough of an AsyncConnection for `schema_state`."""
+
+    def __init__(self, dialect: str, revision: str | None, has_table: bool = True) -> None:
+        self.dialect = SimpleNamespace(name=dialect)
+        self._revision = revision
+        self._has_table = has_table
+
+    async def run_sync(self, fn: Any) -> bool:
+        return self._has_table
+
+    async def execute(self, _statement: Any) -> Any:
+        row = None if self._revision is None else (self._revision,)
+        return SimpleNamespace(first=lambda: row)
+
+
+@pytest.fixture
+def one_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeScript:
+        def get_heads(self) -> list[str]:
+            return ["200_head"]
+
+        def get_revision(self, rev: str) -> Any:
+            if rev not in {"200_head", "100_old"}:
+                raise LookupError(rev)
+            return object()
+
+    monkeypatch.setattr(preflight, "_script_directory", lambda: FakeScript())
+
+
+async def test_sqlite_skips_the_schema_check() -> None:
+    assert (await schema_state(FakeConn("sqlite", None))).status == "skipped"
+
+
+async def test_a_database_at_the_head_is_ok(one_head: None) -> None:
+    state = await schema_state(FakeConn("postgresql", "200_head"))
+    assert state == SchemaState("ok", "200_head", ("200_head",)) and state.at_head
+
+
+async def test_an_older_known_revision_is_behind(one_head: None) -> None:
+    state = await schema_state(FakeConn("postgresql", "100_old"))
+    assert state.status == "behind" and not state.at_head
+
+
+async def test_a_database_with_no_version_table_is_behind(one_head: None) -> None:
+    assert (await schema_state(FakeConn("postgresql", None, has_table=False))).status == "behind"
+
+
+async def test_a_revision_the_code_does_not_know_is_ahead(one_head: None) -> None:
+    assert (await schema_state(FakeConn("postgresql", "999_future"))).status == "ahead"
+
+
+async def test_a_branched_chain_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Branched:
+        def get_heads(self) -> list[str]:
+            return ["a", "b"]
+
+    monkeypatch.setattr(preflight, "_script_directory", lambda: Branched())
+    assert (await schema_state(FakeConn("postgresql", "a"))).status == "unknown"
+
+
+def test_the_real_migrations_have_one_head() -> None:
+    assert len(preflight.code_heads()) == 1

@@ -22,6 +22,7 @@ Kurulum:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,9 @@ def init_sentry(settings: Any) -> bool:
 
     Returns True if Sentry was successfully initialized.
     """
-    dsn = getattr(settings, "sentry_dsn", "") or ""
+    # `Settings` has no sentry fields (it ignores unknown variables), so the setting alone never
+    # reached this function and error tracking was silently off. The process environment is the source.
+    dsn = getattr(settings, "sentry_dsn", "") or os.environ.get("SENTRY_DSN", "")
     if not dsn or dsn.startswith("https://xxx"):
         logger.debug("Sentry DSN not configured — error monitoring disabled")
         return False
@@ -45,8 +48,12 @@ def init_sentry(settings: Any) -> bool:
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
-        environment = getattr(settings, "sentry_environment", "production")
-        sample_rate = getattr(settings, "sentry_traces_sample_rate", 0.05)
+        environment = getattr(settings, "sentry_environment", None) or os.environ.get(
+            "SENTRY_ENVIRONMENT", os.environ.get("APP_ENV", "production")
+        )
+        sample_rate = getattr(settings, "sentry_traces_sample_rate", None) or os.environ.get(
+            "SENTRY_TRACES_SAMPLE_RATE", "0.05"
+        )
 
         sentry_sdk.init(
             dsn=dsn,
@@ -71,7 +78,7 @@ def init_sentry(settings: Any) -> bool:
             max_request_body_size="small",  # max 4KB request body
 
             # Release tracking (CI'da GIT_COMMIT env var set edilir)
-            release=getattr(settings, "app_version", None),
+            release=getattr(settings, "app_version", None) or os.environ.get("GIT_SHA") or None,
         )
 
         logger.info("Sentry initialized: env=%s", environment)

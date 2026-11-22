@@ -37,6 +37,17 @@ except ValueError as _sec_err:
     logger.critical("STARTUP ABORTED — production security check failed: %s", _sec_err)
     raise SystemExit(1) from _sec_err
 
+# ── Wider production preflight (app/core/preflight.py) ────────────────────────
+# Fatal findings (placeholder secrets, demo mode, wildcard CORS, localhost links, ...) stop startup in
+# production; degraded states (no mail sender, no LLM key, no error tracking) are logged as warnings.
+from app.core.preflight import PreflightError, enforce
+
+try:
+    enforce(settings)
+except PreflightError as _pre_err:
+    logger.critical("STARTUP ABORTED — %s", _pre_err)
+    raise SystemExit(1) from _pre_err
+
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
