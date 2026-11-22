@@ -29,6 +29,7 @@ from app.models.defensibility_packet import DefensibilityPacket
 from app.models.direction_mapping import DirectionMapping
 from app.models.donem_kilidi import DonemKilidi
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
+from app.models.email_verification import EmailVerificationToken
 from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
 from app.models.held_transaction import HeldTransaction
@@ -92,6 +93,7 @@ __all__ = [
     "ERPSyncLog",
     "EmailIngestAddress",
     "EmailIngestMessage",
+    "EmailVerificationToken",
     "HeldTransaction",
     "InAppNotification",
     "InstitutionalizationSnapshot",

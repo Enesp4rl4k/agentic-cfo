@@ -17,7 +17,7 @@ only through this module, so the class cannot become a way to send business data
 A reply that would carry company figures is not a `bot_reply`: it must be a released message.
 
 Kinds that carry a one-time link are scrubbed from the row once delivered (`scrub`).
-E-mail verification will be a kind here when that flow exists; it is not allowlisted before.
+E-mail verification (`email_verification`) is one of them: the address is the recipient.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ class Kind:
 IMMEDIATE_KINDS: dict[str, Kind] = {
     "org_invite": Kind(frozenset({"email"}), scrub=True),
     "password_reset": Kind(frozenset({"email"}), scrub=True),
+    "email_verification": Kind(frozenset({"email"}), scrub=True),
     "connection_test": Kind(frozenset({"email", "slack", "webhook"}), scrub=False),
     "bot_reply": Kind(frozenset({"whatsapp", "slack_bot"}), scrub=False),
 }
@@ -120,6 +121,27 @@ async def enqueue_password_reset(
         db, kind="password_reset", key=f"password_reset:{token_id}", org_id=org_id or SYSTEM_ORG,
         channel="email", recipient=normalize_email(email),
         subject="Şifre sıfırlama / Password reset", body=body, source_ref=token_id,
+    )
+
+
+async def enqueue_email_verification(
+    db: AsyncSession, *, token_id: str, org_id: str | None, email: str, verify_url: str,
+    expires_hours: int,
+) -> OutboxMessage:
+    """The verification link, to the address being verified."""
+    body = (
+        "Hesabınızı etkinleştirmek için e-posta adresinizi doğrulayın. Bağlantı "
+        f"{expires_hours} saat geçerlidir ve yalnızca bir kez kullanılabilir.\n"
+        f"Verify your e-mail address to activate your account. The link is valid for {expires_hours} "
+        "hours and works once.\n\n"
+        f"{verify_url}\n\n"
+        "Bu hesabı siz açmadıysanız bu e-postayı yok sayın. "
+        "If you did not create this account, ignore this e-mail."
+    )
+    return await _write(
+        db, kind="email_verification", key=f"email_verification:{token_id}",
+        org_id=org_id or SYSTEM_ORG, channel="email", recipient=normalize_email(email),
+        subject="E-posta doğrulama / Verify your e-mail", body=body, source_ref=token_id,
     )
 
 

@@ -2916,6 +2916,30 @@ export type MessageTree = {
       failed: string;
     };
   };
+  emailVerification: {
+    title: string;
+    verifying: string;
+    successTitle: string;
+    successBody: string;
+    signIn: string;
+    invalidTitle: string;
+    invalidBody: string;
+    expiredTitle: string;
+    expiredBody: string;
+    usedTitle: string;
+    usedBody: string;
+    failedTitle: string;
+    failed: string;
+    resendLead: string;
+    email: string;
+    resend: string;
+    sending: string;
+    sentTitle: string;
+    sentBody: string;
+    tooMany: string;
+    registered: { title: string; body: string; resend: string };
+    unverified: { body: string; resend: string };
+  };
 };
 
 export const en: MessageTree = {
@@ -6150,6 +6174,37 @@ export const en: MessageTree = {
       requestNew: "Request a new link",
       tooMany: "Too many attempts. Wait a little and try again.",
       failed: "The password could not be changed. Try again.",
+    },
+  },
+  emailVerification: {
+    title: "Verify your e-mail",
+    verifying: "Verifying your address…",
+    successTitle: "Your address is verified",
+    successBody: "Your account is active. Sign in to continue.",
+    signIn: "Sign in",
+    invalidTitle: "This verification link is not valid",
+    invalidBody: "The link is incomplete or wrong. Request a new one.",
+    expiredTitle: "This verification link has expired",
+    expiredBody: "Verification links last 48 hours. Request a new one.",
+    usedTitle: "This verification link was already used",
+    usedBody: "If your address is verified you can sign in.",
+    failedTitle: "The address could not be verified",
+    failed: "Something went wrong. Try again in a moment.",
+    resendLead: "Enter the address you registered with and we send the verification link again.",
+    email: "E-mail",
+    resend: "Send the link again",
+    sending: "Sending…",
+    sentTitle: "Check your e-mail",
+    sentBody: "If this address has an account that is waiting to be verified, a new link is on its way.",
+    tooMany: "Too many attempts. Wait a little and try again.",
+    registered: {
+      title: "Check your e-mail to finish",
+      body: "We sent a verification link to your address. Open it, then sign in. Your account cannot sign in before that.",
+      resend: "Did not get it? Send the link again",
+    },
+    unverified: {
+      body: "Your e-mail address is not verified yet. Open the link we sent you, or ask for a new one.",
+      resend: "Send the verification link again",
     },
   },
 };

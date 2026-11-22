@@ -122,6 +122,7 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
         full_name="Demo Misafir",
         role=UserRole.OWNER,  # owns this isolated org, like /org/create
         org_id=org.id,
+        email_verified_at=datetime.now(UTC),  # a made-up address: verified by construction
     )
     user.last_login_at = datetime.now(UTC)
     db.add(user)

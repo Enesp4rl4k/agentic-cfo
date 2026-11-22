@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -30,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.services import email_verification, outbox
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -73,6 +75,12 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
+UNVERIFIED_MESSAGE = (
+    "E-posta adresiniz henüz doğrulanmadı. Size gönderilen doğrulama bağlantısını açın "
+    "ya da yeni bir bağlantı isteyin."
+)
+
 
 class RegisterRequest(BaseModel):
     # No `role` field. It used to be here with an ANALYST default, which meant
@@ -125,6 +133,10 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    unverified_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail=UNVERIFIED_MESSAGE,
+    )
+
     # ── Try JWT token ─────────────────────────────────────────────────────────
     if credentials and credentials.credentials:
         try:
@@ -140,6 +152,8 @@ async def get_current_user(
         user = await db.get(User, user_id)
         if not user or not user.is_active or not token_is_current(payload, user.token_version):
             raise credentials_exception
+        if not email_verification.is_verified(user):
+            raise unverified_exception
 
         # Detached, so every caller gets the same kind of object (reads work; endpoints
         # that change the user re-load it through their own session, see `create_org`).
@@ -158,6 +172,8 @@ async def get_current_user(
         user = result.scalar_one_or_none()
         if not user:
             raise credentials_exception
+        if not email_verification.is_verified(user):
+            raise unverified_exception
         return user
 
     raise credentials_exception
@@ -217,13 +233,20 @@ async def register(
         role=UserRole.ANALYST,
     )
     db.add(user)
+    verification = email_verification.required()
     try:
+        await db.flush()
+        if verification:
+            # The link goes out through the outbox; the account cannot sign in until it is opened.
+            await email_verification.issue(db, user)
         await db.commit()
     except IntegrityError:
         # Two sign-ups for one address at once: the loser gets the ordinary answer.
         await db.rollback()
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.") from None
     await db.refresh(user)
+    if verification:
+        outbox.kick()
 
     logger.info("New user registered: %s (role=%s)", user.email, user.role)
 
@@ -232,16 +255,17 @@ async def register(
             "user_id": user.id,
             "email":   user.email,
             "role":    user.role,
+            "verification_required": verification,
         },
         "error": None,
     }
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", response_model=None)
 async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, Any] | JSONResponse:
     """Email/password login → returns access + refresh tokens."""
     result = await db.execute(select(User).where(User.email == normalize_email(str(body.email))))
     user = result.scalar_one_or_none()
@@ -257,6 +281,13 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Hesabınız devre dışı bırakılmış.",
+        )
+
+    if not email_verification.is_verified(user):
+        # Only after the right password, so this says nothing to someone who does not hold the account.
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"data": {"state": "email_unverified"}, "error": UNVERIFIED_MESSAGE},
         )
 
     access_token  = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
@@ -307,7 +338,10 @@ async def refresh_token(
         raise credentials_exception
 
     user = await db.get(User, user_id)
-    if not user or not user.is_active or not token_is_current(payload, user.token_version):
+    if (
+        not user or not user.is_active or not token_is_current(payload, user.token_version)
+        or not email_verification.is_verified(user)
+    ):
         raise credentials_exception
 
     new_access = create_access_token(user.id, user.email, user.role, token_version=user.token_version)

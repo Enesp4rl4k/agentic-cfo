@@ -11,6 +11,7 @@ import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, BarChart3 } from "lucide
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { brand } from "@/lib/branding";
+import { useI18n } from "@/hooks/useI18n";
 
 // ── Brand panel feature list ──────────────────────────────────────────────────
 const FEATURES = [
@@ -59,6 +60,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const [unverified, setUnverified] = useState(false);
+  const { t } = useI18n();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -66,6 +69,7 @@ export default function LoginPage() {
 
     setLoading(true);
     setError(null);
+    setUnverified(false);
 
     try {
       const result = await signIn("credentials", {
@@ -74,7 +78,9 @@ export default function LoginPage() {
         redirect: false,
       });
 
-      if (result?.error) {
+      if (result?.error === "email_unverified") {
+        setUnverified(true);
+      } else if (result?.error) {
         setError("E-posta veya şifre hatalı. Lütfen tekrar deneyin.");
       } else {
         router.push(callbackUrl);
@@ -144,6 +150,18 @@ export default function LoginPage() {
                 className="rounded-lg border border-destructive/20 bg-destructive/8 px-3.5 py-2.5 text-sm text-destructive"
               >
                 {error}
+              </div>
+            )}
+
+            {unverified && (
+              <div
+                role="alert"
+                className="space-y-1.5 rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm"
+              >
+                <p className="m-0">{t.emailVerification.unverified.body}</p>
+                <Link href="/auth/verify-email" className="font-semibold text-primary underline-offset-4 hover:underline">
+                  {t.emailVerification.unverified.resend}
+                </Link>
               </div>
             )}
 

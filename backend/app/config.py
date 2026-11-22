@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -203,6 +204,12 @@ class Settings(BaseSettings):
     # Deliver an immediate-class message (invite, password reset) as soon as it is written,
     # instead of at the scheduler's next five-minute pass.
     outbox_kick_on_enqueue: bool = True
+
+    # A new account cannot sign in or act until its address is verified (owner decision). Turned off
+    # by tests that are not about it; a deployment with no mail sender configured must also turn it off
+    # or nobody can verify (startup says so, see validate_production_security).
+    email_verification_required: bool = True
+    email_verification_expire_hours: int = 48
 
     # Password reset (POST /auth/forgot-password, /auth/reset-password)
     password_reset_expire_minutes: int = 30
@@ -417,6 +424,22 @@ class Settings(BaseSettings):
                 "inside the API process when Redis is unreachable, with no retry and "
                 "lost on restart. Leave it unset; the worker owns analyses."
             )
+
+        if (
+            self.email_verification_required
+            and not self.use_sqlite
+            and self.outbox_transport != "noop"
+            and not (self.smtp_user and self.smtp_password)
+        ):
+            # Not a hard failure (a demo or staging may run without mail), but never silent: with
+            # verification required and no sender, a new account can never be verified.
+            message = (
+                "EMAIL_VERIFICATION_REQUIRED is on but no mail sender is configured (SMTP_USER / "
+                "SMTP_PASSWORD): new accounts will wait for a verification e-mail that cannot be sent. "
+                "Configure SMTP, or set EMAIL_VERIFICATION_REQUIRED=false for a deployment without mail."
+            )
+            logging.getLogger(__name__).error(message)
+            warnings.warn(f"Registration warning: {message}", stacklevel=3)
 
         if not self.use_sqlite and issues:
             # Production mode — hard fail

@@ -166,7 +166,7 @@ describe("the token stays out of a Referer", () => {
   it("the reset path is served with Referrer-Policy: no-referrer, after the general rule", async () => {
     const config = (await import(/* @vite-ignore */ resolve(process.cwd(), "next.config.mjs"))).default;
     const rules = await config.headers();
-    const matching = rules.filter((r: { source: string }) => r.source === "/(.*)" || r.source === "/auth/reset-password");
+    const matching = rules.filter((r: { source: string }) => r.source === "/(.*)" || r.source.startsWith("/auth/:page("));
     const policy = matching
       .flatMap((r: { headers: { key: string; value: string }[] }) => r.headers)
       .filter((h: { key: string }) => h.key === "Referrer-Policy")

@@ -52,11 +52,11 @@ async function inviteSelect() {
 const offered = (select: HTMLSelectElement) => [...select.options].map((o) => o.value);
 
 describe("the invite form", () => {
-  it("offers an owner every role, the accountant and the CFO among them", async () => {
+  it("offers an owner every role but owner (one owner per company), the accountant and the CFO among them", async () => {
     as("owner");
     render(<WorkspaceSettingsPage />);
     const { select } = await inviteSelect();
-    expect(offered(select).sort()).toEqual(["admin", "analyst", "cfo", "owner", "smmm", "viewer"]);
+    expect(offered(select).sort()).toEqual(["admin", "analyst", "cfo", "smmm", "viewer"]);
   });
 
   it("offers an admin what is below admin: no owner, no admin", async () => {

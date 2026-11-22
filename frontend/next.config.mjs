@@ -40,7 +40,7 @@ const nextConfig = {
       // The reset link carries a one-time token: never let the address leave in a Referer.
       // Listed after the rule above, so for this path it replaces that rule's Referrer-Policy.
       {
-        source: "/auth/reset-password",
+        source: "/auth/:page(reset-password|verify-email)",
         headers: [
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "Cache-Control", value: "no-store" },

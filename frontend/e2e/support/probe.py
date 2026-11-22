@@ -24,7 +24,7 @@ BACKEND = HERE.parents[2] / "backend"
 sys.path.insert(0, str(BACKEND))
 os.chdir(RUN)
 os.environ.update({"USE_SQLITE": "true", "LOG_FORMAT": "plain", "LANGGRAPH_CHECKPOINT": "memory",
-                   "OPENAI_API_KEY": "llm-placeholder-e2e", "SMTP_HOST": "", "SMTP_USER": ""})
+                   "OPENAI_API_KEY": "llm-placeholder-e2e", "SMTP_HOST": "", "SMTP_USER": "", "EMAIL_VERIFICATION_REQUIRED": "false"})
 
 
 def sync_session():

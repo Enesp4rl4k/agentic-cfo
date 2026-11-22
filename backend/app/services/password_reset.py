@@ -20,7 +20,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,6 +169,8 @@ async def complete_reset(
             hashed_password=hash_password(new_password),
             token_version=User.token_version + 1,
             password_changed_at=now,
+            # Reading the reset link proves the mailbox: an address nobody had verified now is.
+            email_verified_at=func.coalesce(User.email_verified_at, now),
         )
         .execution_options(synchronize_session=False)
     )

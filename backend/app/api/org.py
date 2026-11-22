@@ -21,7 +21,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,9 @@ from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization, OrgInvite, OrgMembership
+from app.models.password_reset import PasswordResetToken
 from app.models.user import User, UserRole
+from app.services import email_verification
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 from app.services.secret_tokens import hash_token, new_token
@@ -130,7 +132,9 @@ class InviteRequest(BaseModel):
 # accountant that way (the accountant who adds a *client* gets `smmm` in it
 # through /smmm/clients instead).
 _INVITER_MAY_GRANT: dict[str, frozenset[str]] = {
-    "owner": frozenset(r.value for r in UserRole),
+    # One owner per company: an owner cannot make another owner. Transferring ownership is a separate,
+    # explicit action (not built yet).
+    "owner": frozenset({"admin", "cfo", "smmm", "analyst", "viewer"}),
     "admin": frozenset({"cfo", "smmm", "analyst", "viewer"}),
 }
 
@@ -441,8 +445,11 @@ async def invite_member(
     if body.role.value not in _INVITER_MAY_GRANT.get(inviter_role, frozenset()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"'{body.role.value}' rolünü bu rolünüzle veremezsiniz "
-                   "(owner ve admin rolünü yalnızca owner verir).",
+            detail=(
+                "Şirketin tek bir sahibi (owner) olur; davetle ikinci bir owner eklenemez."
+                if body.role.value == "owner"
+                else f"'{body.role.value}' rolünü bu rolünüzle veremezsiniz (admin rolünü yalnızca owner verir)."
+            ),
         )
 
     # Check member limit
@@ -602,7 +609,40 @@ async def accept_invite(
             await db.rollback()
             raise HTTPException(400, detail="Bu davet daha önce kullanılmış.")
 
-    if user is not None:
+    now = datetime.now(UTC)
+    # An account at this address that nobody has verified (someone may have registered the invitee's
+    # address in advance, to lock them out). The invitation was e-mailed to this address, so holding its
+    # token is the proof of ownership: the account is taken over in place. Its password becomes the one
+    # given here, its sessions end, and nothing else the squatter set (name, API key, SSO link,
+    # memberships, organisation) is kept; it signs in nowhere before this, so it holds no data.
+    squatter = (
+        user is not None and user.email_verified_at is None and email_verification.required()
+    )
+
+    if user is not None and squatter:
+        if not user.is_active:
+            raise HTTPException(403, detail="Hesabınız devre dışı bırakılmış.")
+        if not body.password:
+            raise HTTPException(422, detail="Hesabı devralmak için en az 8 karakterlik bir şifre gerekli.")
+        await claim()
+        await db.execute(delete(OrgMembership).where(OrgMembership.user_id == str(user.id)))
+        user.hashed_password = hash_password(body.password)
+        user.full_name = body.full_name
+        user.api_key = None
+        user.sso_provider = None
+        user.sso_id = None
+        user.token_version = (user.token_version or 0) + 1
+        user.password_changed_at = now
+        user.org_id = invite.org_id
+        user.role = invite.role
+        user.email_verified_at = now
+        await db.execute(
+            update(PasswordResetToken)
+            .where(PasswordResetToken.user_id == str(user.id), PasswordResetToken.used_at.is_(None))
+            .values(used_at=now).execution_options(synchronize_session=False)
+        )
+        await email_verification.mark_verified(db, str(user.id))
+    elif user is not None:
         if not user.is_active:
             raise HTTPException(403, detail="Hesabınız devre dışı bırakılmış.")
         if not _proves_account(credentials, user, body.password):
@@ -623,6 +663,7 @@ async def accept_invite(
             full_name=body.full_name,
             role=invite.role,
             org_id=invite.org_id,
+            email_verified_at=now,  # the invitation was e-mailed to this address
         )
         db.add(user)
         try:

@@ -57,6 +57,8 @@ _ROUTE_LIMITS: list[tuple[str, int, int]] = [
     # per IP here; per normalised address inside the route (see api/password_reset.py).
     ("/api/v1/auth/forgot-password", 10, 3600),
     ("/api/v1/auth/reset-password",  10, 60),
+    ("/api/v1/auth/resend-verification", 10, 3600),
+    ("/api/v1/auth/verify-email",        10, 60),
     # The invitation page checks an existing account's password (accept) and
     # answers to a secret token (preview): as guessable as login, so as limited.
     ("/api/v1/org/invite/accept",  5,  60),

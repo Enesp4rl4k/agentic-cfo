@@ -155,7 +155,9 @@ async def test_a_webhook_to_an_internal_address_fails_at_once_without_retries(db
 # ── immediate class: an allowlist of template kinds ─────────────────────────
 
 async def test_only_allowlisted_kinds_can_be_written_as_immediate(db):
-    assert set(outbox_immediate.IMMEDIATE_KINDS) == {"org_invite", "password_reset", "connection_test", "bot_reply"}
+    assert set(outbox_immediate.IMMEDIATE_KINDS) == {
+        "org_invite", "password_reset", "email_verification", "connection_test", "bot_reply",
+    }
     with pytest.raises(outbox_immediate.ImmediateKindRefused):
         await outbox_immediate._write(
             db, kind="briefing", key="x", org_id="org-1", channel="email", recipient="a@x.com",
