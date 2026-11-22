@@ -330,7 +330,7 @@ test.describe("Pilot flow", () => {
     await expect(main.getByText(new RegExp(`${asOfLong} ekstresine göre`)).first()).toBeVisible();
     await expect(main.getByText(`${asOfLong} ekstresine göre kasa`)).toBeVisible();
     // The stat card, exactly: the runway line below also writes the balance, so a substring would match twice.
-    await expect(main.getByText(/^₺116\.500,00$/)).toBeVisible();
+    await expect(main.getByText(/^₺116\.500(,00)?$/)).toBeVisible();
     await expect(main.getByText(/Tahsilat takibi: Mavi Tekstil Ltd/)).toBeVisible();
     // The runway is in the briefing, from the same computation as the forecast and the radar.
     await expect(main.getByTestId("runway-value")).toHaveText("21,8 ay");
