@@ -210,13 +210,15 @@ async def create_analysis_job(
     org_id: str | None,
     db: AsyncSession,
     smmm_client_id: str | None = None,
+    commit: bool = True,
 ) -> AnalysisJob:
     """Insert an AnalysisJob record scoped to the uploading user's org.
 
     `smmm_client_id` names one of an accountant's client companies when the
     uploader is working on someone else's books. Callers must have checked that
     the accountant owns that client — this does not, because it has no session
-    context to check it with.
+    context to check it with. `commit=False` flushes only: the caller commits the job together with
+    what has to stand or fall with it (a decision record).
     """
     job = AnalysisJob(
         id=result.job_id,
@@ -229,5 +231,8 @@ async def create_analysis_job(
         smmm_client_id=smmm_client_id,
     )
     db.add(job)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return job

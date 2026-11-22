@@ -25,10 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.acting_role import acting_role
+from app.services.decisions import record_decision
 from app.services.ledger import base_currency_of
 from app.services.related_party import (
     group_counterparties,
@@ -59,6 +61,27 @@ async def _require_manager(user: User, db: AsyncSession) -> str:
             detail="İlişkili taraf sicilini yalnızca sahip/yönetici düzenleyebilir.",
         )
     return org_id
+
+
+def _party_view(party: RelatedParty) -> dict[str, Any]:
+    """What a decision about a party shows: who it is and how it is treated. The tax number is not copied."""
+    return {
+        "name": party.name, "relationship_type": party.relationship_type, "active": bool(party.active),
+        "has_tax_id": bool(party.tax_id),
+    }
+
+
+async def _record_party_decision(
+    db: AsyncSession, user: User, party: RelatedParty, *, outcome: str,
+    before: dict[str, Any] | None, after: dict[str, Any] | None,
+) -> None:
+    """A related-party flag changes how transactions are treated (escalated to the owner for disclosure):
+    a standing rule, so an `automation_rule_change`, written in the same transaction as the change."""
+    await record_decision(
+        db, org_id=str(party.org_id), kind=DecisionKind.AUTOMATION_RULE_CHANGE, target_type="related_party",
+        target_id=str(party.id), outcome=outcome, decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+        before=before, after=None if after is None else {**after, "acting_role": await acting_role(db, user)},
+    )
 
 
 class PartyIn(BaseModel):
@@ -154,6 +177,8 @@ async def create_party(
         created_by=str(current_user.id),
     )
     db.add(party)
+    await db.flush()
+    await _record_party_decision(db, current_user, party, outcome="enabled", before=None, after=_party_view(party))
     await db.commit()
     await db.refresh(party)
     logger.info("İlişkili taraf eklendi: org=%s name=%s", org_id, party.name)
@@ -172,6 +197,8 @@ async def update_party(
     if party is None or party.org_id != org_id:
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
 
+    before = _party_view(party)
+    tax_before = party.tax_id
     if body.name is not None:
         normalized = normalize_name(body.name)
         if not normalized:
@@ -188,6 +215,13 @@ async def update_party(
         party.active = body.active
     party.updated_at = datetime.now(UTC)
 
+    after = _party_view(party)
+    changed = [k for k in before if before[k] != after[k]] + (["tax_id"] if party.tax_id != tax_before else [])
+    if changed:
+        outcome = "revoked" if before["active"] and not after["active"] else (
+            "enabled" if after["active"] and not before["active"] else "changed")
+        await _record_party_decision(db, current_user, party, outcome=outcome, before=before,
+                                     after={**after, "changed": sorted(set(changed))})
     await db.commit()
     await db.refresh(party)
     return {"data": party.to_dict(), "error": None}
@@ -209,8 +243,11 @@ async def deactivate_party(
     party = await db.get(RelatedParty, party_id)
     if party is None or party.org_id != org_id:
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
+    before = _party_view(party)
     party.active = False
     party.updated_at = datetime.now(UTC)
+    if before["active"]:   # deactivating one already inactive decides nothing new
+        await _record_party_decision(db, current_user, party, outcome="revoked", before=before, after=_party_view(party))
     await db.commit()
     return {"data": {"id": party_id, "active": False}, "error": None}
 

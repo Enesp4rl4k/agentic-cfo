@@ -75,6 +75,18 @@ class DecisionKind(StrEnum):
     AGENT_CONFLICT_RESOLUTION = "agent_conflict_resolution"
     # A person makes a finished analysis the company's picture (the system did not apply it alone).
     COMPANY_VIEW_ADOPTION = "company_view_adoption"
+    # An owner/admin changes a security setting (the IP allow-list: who can reach the company at all).
+    SECURITY_SETTING_CHANGE = "security_setting_change"
+    # A decider wipes the company's derived agent context (every agent result, the working picture).
+    CONTEXT_RESET = "context_reset"
+    # A decider files or certifies something outward: a breach record or its notification to the authority,
+    # a SOX 302 certification.
+    COMPLIANCE_FILING = "compliance_filing"
+    # A person confirms how the columns of an uploaded file are read (which one is the amount, the date).
+    COLUMN_MAPPING_ACCEPTANCE = "column_mapping_acceptance"
+    # An owner/admin changes a fact about the company that decides how its documents are read:
+    # tax number, country, regional packs, legal title.
+    ORG_IDENTITY_CHANGE = "org_identity_change"
 
 
 class DecidedVia(StrEnum):
