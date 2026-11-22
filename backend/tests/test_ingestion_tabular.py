@@ -22,19 +22,22 @@ def _rows(text: str):
 
 
 def test_a_payment_without_a_type_column_is_an_expense():
-    text = 'tarih,açıklama,tutar\n2024-01-05,Ofis Kirası,"-28.500,00"\n2024-01-06,Satış,"10.000,00"\n'
+    text = ('tarih,açıklama,tutar,bakiye\n2024-01-05,Ofis Kirası,"-28.500,00","71.500,00"\n'
+            '2024-01-06,Satış,"10.000,00","81.500,00"\n')
     assert _rows(text) == [("expense", 2_850_000, "2024-01-05"), ("income", 1_000_000, "2024-01-06")]
 
 
 @pytest.mark.parametrize("written", ["-1.500,00", "1.500,00-", "(1.500,00)"])
 def test_every_way_of_writing_money_out(written):
     # among a statement's usual mixed signs (a file of only negatives has no direction: it is asked)
-    text = f'tarih;açıklama;tutar\n05.01.2024;Kira;{written}\n06.01.2024;Satış;2.000,00\n'
+    text = (f'tarih;açıklama;tutar;bakiye\n05.01.2024;Kira;{written};8.500,00\n'
+            '06.01.2024;Satış;2.000,00;10.500,00\n')
     assert _rows(text) == [("expense", 150_000, "2024-01-05"), ("income", 200_000, "2024-01-06")]
 
 
 def test_a_sheet_read_tab_separated_with_excel_dates_and_numbers():
-    text = "tarih\taçıklama\ttutar\n2024-01-05 00:00:00\tOfis Kirası\t-28500.0\n2024-01-06 00:00:00\tSatış\t1500\n"
+    text = ("tarih\taçıklama\ttutar\tbakiye\n2024-01-05 00:00:00\tOfis Kirası\t-28500.0\t71500.0\n"
+            "2024-01-06 00:00:00\tSatış\t1500\t73000.0\n")
     assert _rows(text) == [("expense", 2_850_000, "2024-01-05"), ("income", 150_000, "2024-01-06")]
 
 
@@ -49,9 +52,9 @@ def test_a_running_balance_alone_is_not_an_amount():
     assert _try_parse_csv("tarih;bakiye\n05.01.2024;100.000,00\n") is None
 
 
-@pytest.mark.parametrize("header", ["DATE,DESCRIPTION,AMOUNT", "TARİH,AÇIKLAMA,TUTAR"])
+@pytest.mark.parametrize("header", ["DATE,DESCRIPTION,AMOUNT,BALANCE", "TARİH,AÇIKLAMA,TUTAR,BAKİYE"])
 def test_capitalised_headers(header):
-    got = _try_parse_csv(f"{header}\n2024-01-05,Kira,-100\n2024-01-06,Satış,300\n")
+    got = _try_parse_csv(f"{header}\n2024-01-05,Kira,-100,900\n2024-01-06,Satış,300,1200\n")
     assert got and got[0]["type"] == "expense" and got[0]["description"] == "Kira"
 
 
@@ -69,9 +72,9 @@ async def test_an_xlsx_statement_is_read_by_rules_not_the_model(tmp_path, monkey
     monkeypatch.setattr("app.agents.data_ingestion._extract_transactions_with_llm", no_model)
     wb = Workbook()
     ws = wb.active
-    ws.append(["Tarih", "Açıklama", "Tutar"])
-    ws.append(["2024-01-05", "Ofis kirası", -28500])
-    ws.append(["2024-01-06", "Müşteri tahsilatı", 10000.5])
+    ws.append(["Tarih", "Açıklama", "Tutar", "Bakiye"])
+    ws.append(["2024-01-05", "Ofis kirası", -28500, 71500])
+    ws.append(["2024-01-06", "Müşteri tahsilatı", 10000.5, 81500.5])
     path = tmp_path / "ekstre.xlsx"
     wb.save(path)
 

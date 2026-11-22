@@ -35,7 +35,11 @@ def ingest_summary(
         if held_now:
             parts.append(f"{held_now} kayıt incelemenizi bekliyor (toplamlara dahil değil)")
     check = counts.get("balance_check")
-    if check == "verified" and held_now:
+    outside = int(counts.get("outside_chain", 0))
+    if outside:
+        # Never plain "doğrulandı": these rows are not links of the balance chain, and nothing has checked them.
+        parts.append(f"{outside} satır bakiye zincirinin dışında kaldı ve kararınızı bekliyor; bakiye zinciri bu satırları doğrulamıyor")
+    elif check == "verified" and held_now:
         # The chain held for the rows that were booked; rows waiting for a person are not part of that claim, and a
         # statement with a held row is never said to be reconciled as a whole.
         check = "verified_partial"
@@ -70,5 +74,6 @@ def ingest_summary(
         "unaccounted": lost,
         "reader_fallback": bool(counts.get("reader_failed")),
         "balance_check": check,
+        "outside_chain": outside,
         "summary": "; ".join(parts) + ".",
     }

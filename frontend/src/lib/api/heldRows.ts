@@ -11,6 +11,7 @@ export type HeldReason =
   | "direction_unknown"
   | "direction_file_unknown"
   | "balance_mismatch"
+  | "balance_outside_chain"
   | "summary_suspect"
   | "line_unreadable"
   | "amount_uncertain"
@@ -94,7 +95,7 @@ export async function confirmBaseCurrency(currency: string): Promise<void> {
 // A statement file whose direction nobody could place: ONE question for the file, answered once and
 // applied to every row (backend app/services/held_direction.py).
 
-export type FileAnswer = "only_income" | "only_expense" | "as_read" | "balance" | "inverted" | "sign_correct" | "mixed";
+export type FileAnswer = "only_income" | "only_expense" | "as_read" | "balance" | "inverted" | "sign_correct" | "sign_inverted" | "mixed";
 
 export type FileReason = "no_signal" | "balance_contradicts" | "convention_unverified" | "balance_inconclusive" | "sign_unconfirmed";
 
@@ -112,6 +113,9 @@ export interface FileQuestion {
     note?: string;
     /** For a debit/credit reading nobody could verify: what each word was read as. */
     mapping?: Array<{ label: string; means: "income" | "expense" }>;
+    /** For a sign question: what each reading would book, in kuruş, and whether the file has one sign only. */
+    totals?: { as_read: { income: number; expense: number }; inverted: { income: number; expense: number } };
+    uniform?: boolean;
   } | null;
 }
 

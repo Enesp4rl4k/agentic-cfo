@@ -7,6 +7,8 @@
   convention_unverified a Borç/Alacak (B/A, D/C, Debit/Credit) reading    as_read | inverted | mixed
                         that no balance column can verify
   balance_inconclusive  the balance reconciles only part of the rows      as_read | mixed
+  sign_unconfirmed      one signed amount column, no verifying balance    sign_correct | sign_inverted | mixed
+                        chain: "minus = out, plus = in?" (mixed, all-positive and all-negative files alike)
 
 Asking per row would be an approval pile; the file is asked once. The answer applies to every row in
 one transaction, each row's change a decision, the file's answer a decision of its own. `mixed` leaves
@@ -49,14 +51,16 @@ ANSWERS: dict[str, frozenset[str]] = {
     BALANCE_CONTRADICTS: frozenset({"as_read", "balance", MIXED}),
     CONVENTION_UNVERIFIED: frozenset({"as_read", "inverted", MIXED}),
     BALANCE_INCONCLUSIVE: frozenset({"as_read", MIXED}),
-    SIGN_UNCONFIRMED: frozenset({"sign_correct", MIXED}),
+    SIGN_UNCONFIRMED: frozenset({"sign_correct", "sign_inverted", MIXED}),
 }
 _FIXED = {"only_income": "income", "only_expense": "expense"}
 # (reason, answer) pairs worth remembering: a statement format's convention, not a statement about one file.
 REMEMBERABLE = frozenset({(CONVENTION_UNVERIFIED, "as_read"), (CONVENTION_UNVERIFIED, "inverted"),
-                          (BALANCE_CONTRADICTS, "balance"), (SIGN_UNCONFIRMED, "sign_correct")})
-# These need to know WHICH account the file is from, or the memory could never be checked.
-NEEDS_IDENTITY = frozenset({CONVENTION_UNVERIFIED, SIGN_UNCONFIRMED})
+                          (BALANCE_CONTRADICTS, "balance"), (SIGN_UNCONFIRMED, "sign_correct"),
+                          (SIGN_UNCONFIRMED, "sign_inverted")})
+# These need to know WHICH account the file is from, or the memory could never be checked. The sign of an
+# export is a fact about the export's format (organisation + header signature), not about the account.
+NEEDS_IDENTITY = frozenset({CONVENTION_UNVERIFIED})
 
 
 class AnswerError(ValueError):
@@ -69,7 +73,7 @@ def _type_for(payload: dict[str, Any], answer: str) -> str | None:
         return _FIXED[answer]
     if answer in ("as_read", "sign_correct"):
         return mark.get("read")
-    return mark.get("balance") if answer in ("balance", "inverted") else None
+    return mark.get("balance") if answer in ("balance", "inverted", "sign_inverted") else None
 
 
 def _individual(payload: dict[str, Any]) -> dict[str, Any]:
@@ -125,7 +129,12 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
             continue
         sig, reason = mark["signature"], mark["reason"]
         answer: str | None = None
-        if reason in NEEDS_IDENTITY and mark.get("identity"):
+        if reason == SIGN_UNCONFIRMED:
+            # Applied only to a file in which BOTH signs occur: a memory about what minus means can be contradicted
+            # (by a balance chain: it is held then) only by such a file. A one-signed file is asked.
+            m = known.get((sig, reason))
+            answer = m.answer if m and not mark.get("uniform") else None
+        elif reason in NEEDS_IDENTITY and mark.get("identity"):
             m = known.get((sig, reason))
             answer = m.answer if m else None
         elif reason == BALANCE_CONTRADICTS:
@@ -135,6 +144,8 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
             sign = known.get((sig, SIGN_UNCONFIRMED))
             if sign is not None and sign.answer == "sign_correct":
                 overridden.add(sign.id)             # "the signs are right" does not outrank a balance that says otherwise
+            if direct is None and sign is not None and sign.answer == "sign_inverted":
+                answer = "balance"                  # the balance shows the opposite of the signs: what was remembered
             if direct is not None:
                 answer = "balance"
             elif convention is not None and convention.answer == "inverted":

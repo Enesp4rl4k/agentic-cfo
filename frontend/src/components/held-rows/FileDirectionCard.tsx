@@ -36,8 +36,9 @@ export function FileDirectionCard({
   // "this file holds only one kind" is a statement about one file and is never remembered.
   const rememberable =
     file.reason === "convention_unverified" || file.reason === "balance_contradicts" || file.reason === "sign_unconfirmed";
-  // A convention or a sign answer is only worth remembering for a known account; without one it could never be checked.
-  const needsAccount = file.reason === "convention_unverified" || file.reason === "sign_unconfirmed";
+  // A convention is only worth remembering for a known account; without one it could never be checked. The sign of
+  // an export is a fact about the export's format, so a sign answer does not need the account.
+  const needsAccount = file.reason === "convention_unverified";
   const storable = rememberable && canRemember && (file.identity || !needsAccount);
   const mapping = file.question?.mapping ?? [];
   const outLabel = mapping.find((m) => m.means === "expense")?.label;
@@ -46,8 +47,10 @@ export function FileDirectionCard({
     balance_contradicts: copy.fileBodyBalance,
     convention_unverified: copy.fileBodyConvention,
     balance_inconclusive: copy.fileBodyInconclusive,
-    sign_unconfirmed: copy.fileBodySign,
+    sign_unconfirmed: file.question?.uniform ? copy.fileBodySignUniform : copy.fileBodySign,
   }[file.reason];
+  const totals = file.question?.totals;
+  const money = (kurus: number) => (kurus / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const meaning = (m: { label: string; means: string }) =>
     `${m.label} → ${m.means === "expense" ? copy.expense : copy.income}`;
 
@@ -60,7 +63,17 @@ export function FileDirectionCard({
       {file.reason === "convention_unverified" && outLabel && (
         <p className="text-sm font-medium">{copy.fileConventionQuestion.replace("{label}", outLabel)}</p>
       )}
+      {file.reason === "sign_unconfirmed" && <p className="text-sm font-medium">{copy.fileSignQuestion}</p>}
       <p className="text-sm text-muted-foreground">{body}</p>
+      {file.reason === "sign_unconfirmed" && totals && (
+        <p className="text-xs text-muted-foreground">
+          {copy.fileSignReading
+            .replace("{inIncome}", money(totals.as_read.income))
+            .replace("{inExpense}", money(totals.as_read.expense))
+            .replace("{outIncome}", money(totals.inverted.income))
+            .replace("{outExpense}", money(totals.inverted.expense))}
+        </p>
+      )}
       {mapping.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {copy.fileConventionMapping.replace("{mapping}", mapping.map(meaning).join(" · "))}

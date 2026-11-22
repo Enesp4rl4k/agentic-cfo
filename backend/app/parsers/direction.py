@@ -11,9 +11,14 @@ trust. Nothing here ever defaults to income: a row nobody could place is held.
       "Tip"): its value is the direction. A value that is not one of the
       vocabulary below is held; a column none of whose values is, is not a
       direction column (an "İşlem Tipi" of EFT/HAVALE/POS).
-  (c) the sign of ONE amount column, but only when the sign is informative for
-      this file: some amounts are negative (or written in accounting negative
-      notation). A column of all-positive numbers says nothing.
+  (c) the sign of ONE amount column, but only with corroboration: a balance chain
+      that verifies "minus = out, plus = in" (`sign_corroborated`), or this
+      organisation's remembered answer for this file format. A sign alone is not
+      evidence: an expense list with a few reversals has the signs of a statement
+      that is mostly deposits, and a file of all-positive or all-negative numbers
+      says nothing either. Without corroboration the whole file waits for ONE
+      question (`sign_unconfirmed`: "minus = out, plus = in?", with a preview and
+      both readings' totals); one rule for mixed, all-positive and all-negative files.
   (d) otherwise the row is held "yön belirsiz".
 
 A running balance column is evidence stronger than any of them, because it is
@@ -36,9 +41,19 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.core.turkish import fold
+from app.parsers.balance_chain import (
+    EXPENSE,
+    INCOME,
+    _chain,
+    _flip,
+    _from_balance,
+    outside_chain,
+    reconciliation_rate,
+    sign_preview,
+    verdict,
+)
 
-INCOME = "income"
-EXPENSE = "expense"
+OUTSIDE_NOTE = "bakiye zincirinin dışında kalan satır"
 
 # Why a whole file waits (the reason codes of `direction_file`).
 NO_SIGNAL = "no_signal"
@@ -47,7 +62,7 @@ BALANCE_CONTRADICTS = "balance_contradicts"
 BALANCE_INCONCLUSIVE = "balance_inconclusive"
 # A direction from a debit/credit word (the bank's book or the customer's?) that no balance can verify.
 CONVENTION_UNVERIFIED = "convention_unverified"
-# One signed column whose rarer sign occurs only once or twice: probably right, but a stray reversal looks the same.
+# One signed amount column with no balance chain (or remembered answer) to say that minus means out.
 SIGN_UNCONFIRMED = "sign_unconfirmed"
 
 # ── money ────────────────────────────────────────────────────────────────────
@@ -223,19 +238,6 @@ def is_non_transaction(description: str) -> bool:
     return is_summary_phrase(description)
 
 
-def sign_is_informative(negatives: list[bool]) -> bool:
-    """Whether the signs of one amount column say which way money went: both signs occur, and the rarer
-    one occurs at least three times or is 15% of the rows (an ordinary month: 40 payments out, 3 collections in).
-    One or two reversals in a column of positives are not a direction (that file is asked, `sign_unconfirmed`),
-    and neither is a column with no negative or only negatives (the sign may just be how that export writes
-    amounts)."""
-    if not negatives:
-        return False
-    neg = sum(negatives)
-    rarer = min(neg, len(negatives) - neg)
-    return rarer >= 1 and (rarer >= 3 or rarer / len(negatives) >= 0.15)
-
-
 # ── per-file resolution ──────────────────────────────────────────────────────
 
 @dataclass
@@ -246,6 +248,7 @@ class RowDirection:
     balance: str | None = None  # what the balance column says, when it was checked
     note: str = ""
     mismatch: bool = False    # held on its own: its balance step does not reconcile
+    outside: bool = False     # held on its own: no balance, in a statement whose other rows have one
 
 
 @dataclass
@@ -276,98 +279,18 @@ def _filled(cell: Any) -> tuple[int, bool] | None:
     return m if m is not None and m[0] != 0 else None
 
 
-def _flip(direction: str | None) -> str | None:
-    return None if direction is None else (EXPENSE if direction == INCOME else INCOME)
-
-
-@dataclass
-class Chain:
-    matches: int
-    inverted: int
-    total: int
-    newest_first: bool
-    bad: list[int]            # rows whose own balance step does not equal their amount in their direction
-
-
-def _chain(mags: list[int | None], dirs: list[str | None], bals: list[int | None]) -> Chain:
-    """Compare balance movements with the amounts, in the row order that explains the file best."""
-    best = Chain(0, 0, 0, False, [])
-    for newest_first in (False, True):
-        m = inv = total = 0
-        bad: list[int] = []
-        for i in range(1, len(mags)):
-            later, earlier = (i, i - 1) if not newest_first else (i - 1, i)
-            mag, now, before = mags[later], bals[later], bals[earlier]
-            if now is None or before is None or mag is None or dirs[later] is None:
-                continue
-            delta = now - before
-            expected = mag if dirs[later] == INCOME else -mag
-            total += 1
-            if delta == expected:
-                m += 1
-            else:
-                bad.append(later)
-                inv += delta == -expected
-        if m + inv > best.matches + best.inverted or (m + inv == best.matches + best.inverted and m > best.matches):
-            best = Chain(m, inv, total, newest_first, bad)
-    return best
-
-
-def verdict(
-    mags: list[int | None], dirs: list[str | None], bals: list[int | None], min_steps: int = 1,
-) -> str:
-    """confirmed | inverted | inconclusive | unverified: does the balance agree with the directions read?
-    Fewer than `min_steps` checkable steps is not evidence (text-parsed statements need three)."""
-    c = _chain(mags, dirs, bals)
-    if c.total < min_steps:
-        return "unverified"
-    if c.matches / c.total >= 0.9:
-        return "confirmed"
-    if c.inverted / c.total >= 0.9 and c.matches / c.total < 0.5:
-        return "inverted"
-    return "inconclusive"
-
-
-def reconciliation_rate(mags: list[int | None], dirs: list[str | None], bals: list[int | None]) -> int:
-    c = _chain(mags, dirs, bals)
-    return round(100 * c.matches / c.total) if c.total else 0
-
-
-def _from_balance(mags: list[int | None], bals: list[int | None]) -> list[str | None] | None:
-    """Directions read off the balance alone: every step must equal its amount, in exactly one order."""
-    scored: list[tuple[int, int, list[str | None]]] = []
-    for newest_first in (False, True):
-        out: list[str | None] = [None] * len(mags)
-        hits = total = 0
-        for i in range(1, len(mags)):
-            later, earlier = (i, i - 1) if not newest_first else (i - 1, i)
-            mag, now, before = mags[later], bals[later], bals[earlier]
-            if now is None or before is None or mag is None:
-                continue
-            delta = now - before
-            total += 1
-            if mag and abs(delta) == mag:
-                hits += 1
-                out[later] = INCOME if delta > 0 else EXPENSE
-        scored.append((hits, total, out))
-    (h0, t0, o0), (h1, t1, o1) = scored
-    best_hits, best_total, best = (h0, t0, o0) if h0 >= h1 else (h1, t1, o1)
-    other = min(h0, h1)
-    if best_total >= 2 and best_hits / best_total >= 0.9 and best_hits > other:
-        return best
-    return None
-
-
 def _question(
     headers: list[str], roles: dict[str, str], rows: list[dict[str, str]], reason: str, note: str,
     mapping: list[dict[str, str]] | None = None, display: dict[str, str] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     shown_as = display or {}
     labels = {v: k for k, v in roles.items()}
     columns = [{"name": shown_as.get(h, h), "role": labels.get(h)} for h in headers if h and h.strip()]
     shown = [r for r in ("date", "description", "amount", "debit", "credit", "direction", "balance") if r in roles]
-    samples = [{r: str(row.get(roles[r], "")).strip() for r in shown} for row in rows[:3]]
-    return {"reason": reason, "columns": columns, "samples": samples, "note": note, "mapping": mapping or []}
+    picked = rows[:3] if extra is None else [rows[i] for i in extra.pop("sample_rows", range(min(3, len(rows))))]
+    samples = [{r: str(row.get(roles[r], "")).strip() for r in shown} for row in picked]
+    return {"reason": reason, "columns": columns, "samples": samples, "note": note, "mapping": mapping or [], **(extra or {})}
 
 
 def _convention_mapping(
@@ -419,9 +342,10 @@ def resolve_file(
     signature = header_signature(headers, identity)
 
     def hold_file(reason: str, note: str, out_reads: list[str | None], hints: list[str | None],
-                  mapping: list[dict[str, str]] | None = None) -> FileDirection:
+                  mapping: list[dict[str, str]] | None = None, extra: dict[str, Any] | None = None) -> FileDirection:
         hold = {"reason": reason, "signature": signature, "identity": bool(identity),
-                "question": _question(headers, roles, rows, reason, note, mapping, labels)}
+                "uniform": bool((extra or {}).get("uniform")),
+                "question": _question(headers, roles, rows, reason, note, mapping, labels, extra)}
         return FileDirection(
             [RowDirection(None, mags[i], out_reads[i], hints[i], notes_per_row[i]) for i in range(n)],
             [f"yön: dosya tek soruyla bekliyor ({reason})"], hold,
@@ -451,14 +375,30 @@ def resolve_file(
 
     bals: list[int | None] = [signed_money(r.get(roles["balance"])) if "balance" in roles else None for r in rows]
 
-    # (c) the sign: informative if both signs are a real share, or the balance confirms the sign reading
+    # (c) the sign of one amount column decides only with evidence: a balance chain that verifies it. Without that
+    # (and without a remembered answer, applied later by held_direction) the file is asked once.
     sign_rows = [i for i in range(n) if via_amount[i] and mags[i]]
-    sign_informative = sign_is_informative([negative[i] for i in sign_rows])
-    if not sign_informative and sign_rows and sum(negative[i] for i in sign_rows) > 0 and "balance" in roles:
+    sign_reads = False
+    if sign_rows and not split and direction_column is None:
         tentative: list[str | None] = [None] * n
         for i in sign_rows:
             tentative[i] = EXPENSE if negative[i] else INCOME
-        sign_informative = verdict(mags, tentative, bals) == "confirmed"
+        state = verdict(mags, tentative, bals) if "balance" in roles else "unverified"
+        uniform = len({negative[i] for i in sign_rows}) == 1
+        if state == "confirmed":
+            sign_reads = True
+        elif uniform and _from_balance(mags, bals) is not None:
+            pass                                    # one sign says nothing; the balance reads the direction below
+        elif state in ("inverted", "inconclusive"):
+            sign_reads = True                       # the balance disagrees: the checks below hold the file with the reason
+        else:
+            note = ("Dosyada hem eksi hem artı tutar var, ama işaretin yönü gösterdiğini doğrulayan bir bakiye zinciri yok."
+                    if not uniform else
+                    "Dosyadaki tüm tutarlar aynı işaretli; yönü gösteren bir sütun ya da doğrulayan bir bakiye zinciri yok.")
+            return hold_file(
+                SIGN_UNCONFIRMED, note, tentative, [_flip(t) for t in tentative],
+                [{"label": "-", "means": EXPENSE}, {"label": "+", "means": INCOME}],
+                sign_preview(mags, negative, sign_rows))
 
     for i in range(n):
         if i in skip or reads[i] is not None or notes_per_row[i]:
@@ -472,19 +412,10 @@ def resolve_file(
             continue
         if said is not None:
             reads[i] = said
-        elif sign_informative and via_amount[i]:
+        elif sign_reads and via_amount[i]:
             reads[i] = EXPENSE if negative[i] else INCOME
 
-    has_signal = split or direction_column is not None or sign_informative
-    if (not has_signal and sign_rows and 0 < sum(negative[i] for i in sign_rows) < len(sign_rows)
-            and not any(reads)):
-        tentative = [None] * n
-        for i in sign_rows:
-            tentative[i] = EXPENSE if negative[i] else INCOME
-        return hold_file(
-            SIGN_UNCONFIRMED,
-            "Eksi işaretli tutar çok az; işaret yönü gösteriyor olabilir ama tek bir iade de olabilir.",
-            tentative, [None] * n, [{"label": "-", "means": EXPENSE}, {"label": "+", "means": INCOME}])
+    has_signal = split or direction_column is not None or sign_reads
     ambiguous = (split and any(norm_header(roles[k]) in _AMBIGUOUS_WORDS for k in ("debit", "credit") if k in roles)) or (
         direction_column is not None and any(value_is_ambiguous(v) for v in column_values if v)
     )
@@ -499,12 +430,16 @@ def resolve_file(
         notes.append("yön, bakiye hareketinden okundu")
         live = [i for i in range(n) if i not in skip]
         ends = {live[0], live[-1]} if live else set()     # the end of the chain has no neighbour to be checked against
-        mismatch = {i for i in live if mags[i] and reads[i] is None and i not in ends}
+        outside = outside_chain(mags, bals, skip)
+        mismatch: set[int] = {i for i in live if mags[i] and reads[i] is None and i not in ends and i not in outside}
         for i in live:
-            if mags[i] and reads[i] is None:
+            if i in outside:
+                notes_per_row[i] = OUTSIDE_NOTE
+            elif mags[i] and reads[i] is None:
                 notes_per_row[i] = "bakiye ile uyuşmuyor" if i in mismatch else "bakiye zincirinin ucu: yön okunamadı"
         return FileDirection(
-            [RowDirection(reads[i], mags[i], reads[i], None, notes_per_row[i], i in mismatch) for i in range(n)], notes)
+            [RowDirection(None if i in outside else reads[i], mags[i], reads[i], None, notes_per_row[i], i in mismatch,
+                          i in outside) for i in range(n)], notes)
 
     state = verdict(mags, reads, bals)
     if state == "inverted":
@@ -523,6 +458,7 @@ def resolve_file(
             reads, [_flip(r) for r in reads], mapping)
 
     mismatch = set()
+    outside = outside_chain(mags, bals, skip)       # no balance among rows that have one: not a link of the chain
     if state == "confirmed":
         mismatch = set(_chain(mags, reads, bals).bad)
         notes.append("yön bakiye hareketiyle doğrulandı")
@@ -530,8 +466,13 @@ def resolve_file(
             notes_per_row[i] = "bakiye ile uyuşmuyor"
     else:
         notes.append("yön doğrulanmadı (bakiye sütunu yok ya da yetersiz)")
+    for i in outside:
+        notes_per_row[i] = OUTSIDE_NOTE
+    if outside:
+        notes.append(f"{len(outside)} satır bakiye zincirinin dışında kaldı")
     return FileDirection([
-        RowDirection(None if i in mismatch else reads[i], mags[i], reads[i], None, notes_per_row[i], i in mismatch)
+        RowDirection(None if i in mismatch or i in outside else reads[i], mags[i], reads[i], None, notes_per_row[i],
+                     i in mismatch, i in outside)
         for i in range(n)
     ], notes)
 
@@ -543,6 +484,9 @@ def settle_rows(
 
     A text statement counts as verified only with at least three reconciling balance steps (>= 90%): two
     rows prove nothing. Unverified and read from a Borç/Alacak layout (`ambiguous`): held, asked once.
+    A direction a parser took from the sign alone (`direction_basis == "sign"`) is the same as in a table:
+    only a verifying chain (or a remembered answer, applied later) lets it book; otherwise the file is asked.
+    A row with no balance among rows that have one is outside the chain: held on its own (`outside_chain`).
 
     Mutates `rows` when the file is held whole (every `type` cleared, `direction_file` set by the
     caller) and returns the hold; returns None otherwise. A row a parser could not place has
@@ -554,9 +498,31 @@ def settle_rows(
     signature = hashlib.sha256(signature_material.encode()).hexdigest()[:24]
     samples = [{"description": str(r.get("description", "")), "amount": str(r.get("amount_cents"))} for r in rows[:3]]
 
-    def hold(reason: str, note: str) -> dict[str, Any]:
-        return {"signature": signature, "reason": reason, "identity": identity,
-                "question": {"columns": [], "samples": samples, "reason": reason, "note": note, "mapping": []}}
+    def hold(reason: str, note: str, extra: dict[str, Any] | None = None, mapping: list[dict[str, str]] | None = None,
+             shown: list[dict[str, str]] | None = None) -> dict[str, Any]:
+        return {"signature": signature, "reason": reason, "identity": identity, "uniform": bool((extra or {}).get("uniform")),
+                "question": {"columns": [], "samples": shown or samples, "reason": reason, "note": note,
+                             "mapping": mapping or [], **(extra or {})}}
+
+    typed = [r for r in rows if r.get("type") in (INCOME, EXPENSE)]
+    if typed and all(r.get("direction_basis") == "sign" for r in typed):
+        # The parser read every direction off the sign of one column. That is a reading, not evidence.
+        negative = [r.get("type") == EXPENSE for r in rows]
+        sign_rows = [i for i, r in enumerate(rows) if r.get("type") in (INCOME, EXPENSE) and mags[i]]
+        state = verdict(mags, reads, bals, min_steps=3)
+        uniform = len({negative[i] for i in sign_rows}) <= 1
+        if state == "unverified" and uniform and (derived := _from_balance(mags, bals)) is not None:
+            for r, d in zip(rows, derived, strict=True):
+                r["type"] = d
+            return None
+        if state == "unverified" and sign_rows:
+            preview = sign_preview(mags, negative, sign_rows)
+            shown = [{"description": str(rows[i].get("description", "")),
+                      "amount": ("-" if negative[i] else "") + f"{(mags[i] or 0) / 100:.2f}"} for i in preview.pop("sample_rows")]
+            for r, d in zip(rows, reads, strict=True):
+                r["direction_read"], r["direction_balance"], r["type"] = d, _flip(d), None
+            return hold(SIGN_UNCONFIRMED, "Eksi/artı işaretin yönü gösterdiğini doğrulayan bir bakiye zinciri yok.", preview,
+                        [{"label": "-", "means": EXPENSE}, {"label": "+", "means": INCOME}], shown)
 
     if rows and not any(reads):
         derived = _from_balance(mags, bals)
@@ -578,6 +544,8 @@ def settle_rows(
     if state == "confirmed":
         for i in _chain(mags, reads, bals).bad:
             rows[i]["type"], rows[i]["balance_mismatch"] = None, True
+        for i in outside_chain(mags, bals):
+            rows[i]["type"], rows[i]["outside_chain"] = None, True
     elif state == "unverified" and ambiguous:
         for r, d in zip(rows, reads, strict=True):
             r["direction_read"], r["direction_balance"], r["type"] = d, _flip(d), None

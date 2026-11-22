@@ -63,15 +63,15 @@ async def test_an_unplaceable_file_is_one_question_and_the_answer_applies_to_eve
 
     assert await _transactions(client, job_id) == []                       # nothing booked as income
     asked = await _questions(client, headers)
-    assert len(asked) == 1 and asked[0]["rows"] == 2 and asked[0]["reason"] == "no_signal"
-    assert asked[0]["options"] == ["mixed", "only_expense", "only_income"]
+    assert len(asked) == 1 and asked[0]["rows"] == 2 and asked[0]["reason"] == "sign_unconfirmed"
+    assert asked[0]["options"] == ["mixed", "sign_correct", "sign_inverted"]
     assert [c["role"] for c in asked[0]["question"]["columns"]][:3] == ["date", "description", "amount"]
     assert asked[0]["question"]["samples"][0]["amount"] == "1500"
     rows = (await client.get("/api/v1/held-rows", headers=headers)).json()["data"]["rows"]
     assert {r["reason_labels"][0] for r in rows} == {"yön belirsiz"} and all(r["type"] is None for r in rows)
 
     res = await client.post("/api/v1/held-rows/file-direction", headers=headers, json={
-        "job_id": job_id, "file_key": asked[0]["file_key"], "answer": "only_expense",
+        "job_id": job_id, "file_key": asked[0]["file_key"], "answer": "sign_inverted",
     })
     data = res.json()["data"]
     assert res.status_code == 200 and data["resolved"] == 2 and data["still_waiting"] == 0
@@ -83,8 +83,8 @@ async def test_an_unplaceable_file_is_one_question_and_the_answer_applies_to_eve
     assert len(per_row) == 2 and {d.outcome for d in per_row} == {"corrected_released"}
     assert (per_row[0].before["type"], per_row[0].after["type"]) == (None, "expense")
     file_answer = await _decisions(client, DecisionKind.FILE_DIRECTION_ANSWER)
-    assert len(file_answer) == 1 and file_answer[0].outcome == "only_expense"
-    assert file_answer[0].before["rows"] == 2 and file_answer[0].after["remembered"] is False
+    assert len(file_answer) == 1 and file_answer[0].outcome == "sign_inverted"
+    assert file_answer[0].before["rows"] == 2 and file_answer[0].after["remembered"] is True
     assert await _questions(client, headers) == []
 
 
@@ -144,17 +144,16 @@ async def test_a_debit_credit_file_is_asked_first_and_the_answer_is_remembered_f
         assert (await db.execute(select(DirectionMapping).where(DirectionMapping.revoked_at.is_not(None)))).scalars().first()
 
 
-async def test_a_no_signal_answer_is_never_remembered(env, monkeypatch):
+async def test_a_one_signed_file_is_asked_each_time_even_after_an_answer(env, monkeypatch):
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "f2n@x.com")
     job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=FIRST, name="a.csv")
     key = (await _questions(client, headers))[0]["file_key"]
     res = await client.post("/api/v1/held-rows/file-direction", headers=headers,
-                            json={"job_id": job_id, "file_key": key, "answer": "only_expense", "remember": True})
-    assert res.json()["data"]["remembered"] is None
-    assert (await client.get("/api/v1/held-rows/direction-mappings", headers=headers)).json()["data"]["mappings"] == []
+                            json={"job_id": job_id, "file_key": key, "answer": "sign_inverted", "remember": True})
+    assert res.json()["data"]["remembered"]
     await _upload(client, tmp_path, monkeypatch, [], org_id, content=SECOND, name="b.csv")
-    assert len(await _questions(client, headers)) == 1                      # asked again: most statements are mixed
+    assert len(await _questions(client, headers)) == 1       # no negative sign to test the memory against: asked again
 
 
 async def test_not_remembering_asks_again_and_mixed_leaves_the_rows_to_be_decided_one_by_one(env, monkeypatch):
@@ -209,7 +208,7 @@ async def test_rows_that_keep_waiting_for_another_reason_record_the_change(env, 
     job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
     key = (await _questions(client, headers))[0]["file_key"]
     res = await client.post("/api/v1/held-rows/file-direction", headers=headers,
-                            json={"job_id": job_id, "file_key": key, "answer": "only_expense", "remember": False})
+                            json={"job_id": job_id, "file_key": key, "answer": "sign_inverted", "remember": False})
     assert res.json()["data"]["resolved"] == 0 and res.json()["data"]["still_waiting"] == 2
     rows = (await client.get("/api/v1/held-rows", headers=headers)).json()["data"]["rows"]
     assert all(r["type"] == "expense" and r["reasons"] == ["currency_unknown"] for r in rows)
@@ -247,7 +246,7 @@ async def test_the_generic_patch_cannot_change_the_company_currency(env):
 async def test_rows_assumed_under_the_old_currency_are_listed_not_rewritten(env, monkeypatch):
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "p2@x.com")
-    content = NL.join(["Tarih;Açıklama;Tutar", "01.03.2026;Kira;-1.500,00", "02.03.2026;Satış;250,00"]) + NL
+    content = NL.join(["Tarih;Açıklama;Tutar;Bakiye", "01.03.2026;Kira;-1.500,00;8.500,00", "02.03.2026;Satış;250,00;8.750,00"]) + NL
     await client.post("/api/v1/org/base-currency", headers=headers, json={"currency": "TRY"})
     job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
     assert {(t.currency, t.currency_assumed) for t in await _transactions(client, job_id)} == {("TRY", True)}
@@ -262,7 +261,7 @@ async def test_confirmation_is_one_transaction(env, monkeypatch):
 
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "t1@x.com")
-    content = NL.join(["Tarih;Açıklama;Tutar", "01.03.2026;Kira;-1.500,00", "02.03.2026;Satış;250,00"]) + NL
+    content = NL.join(["Tarih;Açıklama;Tutar;Bakiye", "01.03.2026;Kira;-1.500,00;8.500,00", "02.03.2026;Satış;250,00;8.750,00"]) + NL
     await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
 
     async def boom(*a: Any, **k: Any):
@@ -435,7 +434,7 @@ async def test_a_remembered_sign_answer_does_not_apply_to_a_file_with_no_negativ
     headers, org_id, _ = await kullanici(client, "c2@x.com")
     job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_mostly_out(2), name="a.csv")
     asked = (await _questions(client, headers))[0]
-    assert asked["reason"] == "sign_unconfirmed" and asked["options"] == ["mixed", "sign_correct"]
+    assert asked["reason"] == "sign_unconfirmed" and asked["options"] == ["mixed", "sign_correct", "sign_inverted"]
     done = await client.post("/api/v1/held-rows/file-direction", headers=headers,
                              json={"job_id": job_id, "file_key": asked["file_key"], "answer": "sign_correct"})
     assert done.json()["data"]["remembered"] and done.json()["data"]["resolved"] == 22
@@ -444,7 +443,7 @@ async def test_a_remembered_sign_answer_does_not_apply_to_a_file_with_no_negativ
     positives = _signs(*[f"{d:02d}.05.2026;Gider {d};{d},00;;TRY" for d in range(1, 8)])
     job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=positives, name="b.csv")
     assert await _transactions(client, job2) == []
-    assert [q["reason"] for q in await _questions(client, headers) if q["job_id"] == job2] == ["no_signal"]
+    assert [q["reason"] for q in await _questions(client, headers) if q["job_id"] == job2] == ["sign_unconfirmed"]
 
     # and a file of the same format whose balance says the signs are backwards: asked, the override recorded
     balance, lines = 10_000, []
