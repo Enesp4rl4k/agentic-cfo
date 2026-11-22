@@ -232,12 +232,19 @@ class ProactiveAlertOrchestrator:
         unit  = kri.get("unit", "")
         ev    = kri.get("evidence", "")
 
+        # A KRI that rests on an assumed balance (or an open account-identity question) is capped below critical
+        # and says so, in the runway's own words.
+        unproven = kri.get("basis") not in (None, "known") or bool(kri.get("identity_uncertain"))
+        if unproven:
+            severity = "high" if severity == "critical" else severity
         title = f"🚨 {name}: {val} {unit} — Kırmızı Eşik Aşıldı"
         body  = (
             f"**{name}** metrigi kritik seviyeye ulasti.\n\n"
             f"Mevcut Deger: **{val} {unit}**\n"
             f"Kanit: {ev}\n\n"
         )
+        if unproven and kri.get("basis_note"):
+            body += f"Dayanak sınırı: {kri['basis_note']}\n\n"
 
         # Mitigasyon onerileri
         mitigations = kri.get("mitigations") or []
@@ -261,49 +268,67 @@ class ProactiveAlertOrchestrator:
     async def _run_cascade_and_alert(
         self, org_id: str, kri: dict[str, Any]
     ) -> AlertEvent | None:
-        """KRI icin cascade simülasyonu calistir, alert olustur."""
+        """KRI icin cascade simulasyonu calistir, alert olustur.
+
+        An alert is raised only from measured inputs. When the simulation lacks one the scan records
+        "skipped: missing <inputs>" (visible to owner/admin in the alert history) and sends nothing.
+        """
         try:
-            from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+            from app.services.cascade_inputs import measured_baseline_with_basis
+            from app.services.cascade_simulator import (
+                CascadeInputsMissing,
+                TriggerType,
+                get_cascade_simulator,
+            )
             trigger_str = kri.get("cascade_trigger", "")
             try:
                 trigger = TriggerType(trigger_str)
             except ValueError:
                 return None
 
-            # CompanyContext'ten veri al
             from app.services.company_context import get_company_context
-            ctx      = await get_company_context(org_id) or {}
-            results  = ctx.get("agent_results") or {}
-            cfo_r    = results.get("cfo") or {}
-            sim      = get_cascade_simulator(
+            ctx = await get_company_context(org_id, self.db)
+            cfo_r = (getattr(ctx, "last_cfo_result", None) or {}) if ctx else {}
+            cfo_r = cfo_r.get("dashboard") or cfo_r
+            baseline: dict[str, Any] = {}
+            basis = None
+            if self.db is not None:
+                baseline, basis = await measured_baseline_with_basis(self.db, org_id)
+            sim = get_cascade_simulator(
                 pnl      = cfo_r.get("pnl"),
                 cashflow = cfo_r.get("cashflow"),
                 forecast = cfo_r.get("forecast"),
-                chro_data = results.get("chro"),
-                cto_data  = results.get("cto"),
-                cmo_data  = results.get("cmo"),
-                coo_data  = results.get("coo"),
+                chro_data = getattr(ctx, "last_chro_result", None) if ctx else None,
+                cto_data  = getattr(ctx, "last_cto_result", None) if ctx else None,
+                cmo_data  = getattr(ctx, "last_cmo_result", None) if ctx else None,
+                coo_data  = getattr(ctx, "last_coo_result", None) if ctx else None,
+                **baseline,
             )
-            params   = kri.get("cascade_params") or {}
-            cascade  = sim.simulate(trigger, **params)
-            base_sc  = cascade.base_scenario
+            params = kri.get("cascade_params") or {}
+            try:
+                cascade = sim.simulate(trigger, **params)
+            except CascadeInputsMissing as exc:
+                await self._record_skipped(org_id, kri, exc.missing)
+                return None
+            base_sc = cascade.base_scenario
 
             if base_sc.overall_risk_score < 40:
                 return None  # Dusuk risk → alert olusturma
 
             title = f"⚡ Zincirleme Risk: {kri.get('name', '')} → {', '.join(cascade.affected_domains[:3])}"
-            body  = cascade.executive_summary + "\n\n**Acil Aksiyonlar:**\n"
-            for a in cascade.immediate_actions[:3]:
-                body += f"• {a}\n"
+            from app.services.alert_basis import cascade_alert_text
+
+            body, severity = cascade_alert_text(cascade, basis, base_sc.overall_risk_score)
 
             return AlertEvent(
                 alert_id   = str(uuid.uuid4()),
                 org_id     = org_id,
                 trigger    = "cascade_risk",
-                severity   = "critical" if base_sc.overall_risk_score > 70 else "high",
+                severity   = severity,
                 title      = title,
                 body       = body,
                 metadata   = {
+                    "basis":         basis.to_dict() if basis is not None else None,
                     "kri":           kri,
                     "cascade_score": base_sc.overall_risk_score,
                     "affected":      cascade.affected_domains,
@@ -312,8 +337,15 @@ class ProactiveAlertOrchestrator:
                 created_at = time.time(),
             )
         except Exception as exc:
-            logger.debug("Cascade alert olusturma hatasi: %s", exc)
+            logger.warning("Cascade alert olusturma hatasi: %s", exc)
             return None
+
+    async def _record_skipped(self, org_id: str, kri: dict[str, Any], missing: list[str]) -> None:
+        """Log "skipped: missing <inputs>" (owner/admin see it in the alert history). Nothing is sent."""
+        if self.db:
+            from app.services.scan_skips import record_skipped
+
+            await record_skipped(self.db, org_id, str(kri.get("name", "")), missing)
 
     async def _create_upcoming_alert(
         self, org_id: str, kri: dict[str, Any]
@@ -373,16 +405,26 @@ class ProactiveAlertOrchestrator:
         await self._set_cooldown(alert.org_id, alert.metadata.get("kri", {}).get("name", ""))
 
     async def _dispatch_in_app(self, alert: AlertEvent) -> None:
-        """In-app notification olustur. Hata yukari cikar; `_dispatch_alert` kaydeder."""
-        from app.services.notification_service import create_notification
+        """In-app notification: one `InAppNotification` row (the bell). Failure goes up; `_dispatch_alert` records it."""
+        if not self.db:
+            raise RuntimeError("in_app: veritabani yok, bildirim yazilamadi")
+        from app.models.in_app_notification import InAppNotification
+        from app.models.proactive_alert import ProactiveAlert
 
-        await create_notification(
-            org_id   = alert.org_id,
-            title    = alert.title,
-            body     = alert.body,
-            severity = alert.severity,
-            metadata = alert.metadata,
-        )
+        if await self.db.get(ProactiveAlert, alert.alert_id) is not None:
+            return  # redelivery of an alert already logged: the bell has it
+
+        level = {"critical": "critical", "high": "warning"}.get(alert.severity, "info")
+        self.db.add(InAppNotification(
+            org_id=alert.org_id,
+            level=level,
+            domain="cfo",
+            source="proactive_alert",
+            message=f"{alert.title}: {alert.body}"[:2000],
+            action="escalate" if level == "critical" else "route",
+            priority_score=1.0 if level == "critical" else 0.7 if level == "warning" else 0.5,
+        ))
+        await self.db.flush()
 
     async def _dispatch_slack(self, alert: AlertEvent) -> None:
         """Slack mesajini outbox'a yaz (webhook'u org tercihinden)."""

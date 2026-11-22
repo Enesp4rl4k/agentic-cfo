@@ -164,8 +164,8 @@ async def websocket_chat(
 
                 if _is_placeholder_key(settings.openai_api_key):
                     mock = (
-                        f"[Demo mod] '{question}' sorunuz alındı. "
-                        "Gerçek LLM yanıtı için OpenAI API anahtarı gereklidir."
+                        "Yapay zekâ yanıtı bu ortamda yapılandırılmamış (OpenAI API anahtarı yok); "
+                        "sorunuz yanıtlanmadı."
                     )
                     await _send(websocket, {"type": "token", "content": mock})
                     await _send(

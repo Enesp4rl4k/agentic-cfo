@@ -221,7 +221,7 @@ class BoardDeckPDFExporter(IReportExporter):
         # ── Cash Flow & Runway Section ────────────────────────────────────────
         story.append(Paragraph("Nakit Akışı ve Likidite Durumu", heading_style))
         cf_net = cashflow.get("net_change", 0) or cashflow.get("operating", 0)
-        runway_months = forecast.get("runway_months", "Stabil / Pozitif")
+        runway_months = forecast.get("runway_months", "bilinmiyor")
 
         cf_data = [
             ["Nakit Akış Kalemi", _amount_col(cur)],
@@ -229,7 +229,7 @@ class BoardDeckPDFExporter(IReportExporter):
             ["Yatırım Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("investing", 0), cur)],
             ["Finansman Faaliyetlerinden Nakit Akışı", _fmt(cashflow.get("financing", 0), cur)],
             ["Net Nakit Değişimi", _fmt(cf_net, cur)],
-            ["Tahmini Nakit Runway", f"{runway_months} Ay" if isinstance(runway_months, (int, float)) else str(runway_months)],
+            ["Tahmini Nakit Runway", f"{runway_months} Ay" if isinstance(runway_months, (int, float)) else "bilinmiyor"],
         ]
         cf_tbl = Table(cf_data, colWidths=[320, 200])
         cf_tbl.setStyle(TableStyle([

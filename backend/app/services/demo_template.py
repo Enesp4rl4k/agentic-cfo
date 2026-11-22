@@ -53,8 +53,15 @@ GUEST_DESCRIPTION = "Otomatik oluşturulmuş misafir demo çalışma alanı."
 
 
 def is_guest_org(org: Organization) -> bool:
-    """True only for orgs minted by POST /demo/guest (slug + description pair)."""
-    return bool(GUEST_SLUG_RE.match(org.slug or "")) and org.description == GUEST_DESCRIPTION
+    """True only for orgs minted by POST /demo/guest: the server-set flag, plus the slug/description it wrote.
+
+    The flag alone decides; the slug and description are kept as a consistency check. A user-chosen slug
+    or description never makes an organisation a guest workspace."""
+    return (
+        bool(org.is_demo_guest)
+        and bool(GUEST_SLUG_RE.match(org.slug or ""))
+        and org.description == GUEST_DESCRIPTION
+    )
 
 
 @dataclass

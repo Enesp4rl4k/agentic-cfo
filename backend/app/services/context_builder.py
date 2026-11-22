@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.currency_totals import fmt_amount
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ def _summarise_forecast(fc: dict[str, Any]) -> str:
     for name, s in scenarios.items():
         lines.append(
             f"  {name}: 12mo_net={_fmt_currency(s.get('twelve_month_net'), None)}, "
-            f"runway={s.get('runway_months', 'stable')} months"
+            f"runway={runway_for_display(fc, name).text()}"
         )
     return "Forecast scenarios:\n" + "\n".join(lines)
 

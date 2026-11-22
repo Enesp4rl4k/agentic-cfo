@@ -243,7 +243,11 @@ async def create_org(
         )
 
     # Generate unique slug
+    if body.slug and body.slug.lower().startswith("demo-"):
+        raise HTTPException(status_code=422, detail="'demo-' öneki ayrılmıştır; başka bir kısa ad seçin.")
     base_slug = body.slug or _slugify(body.name)
+    if base_slug.startswith("demo-"):
+        base_slug = f"org-{base_slug}"  # the demo prefix is reserved for guest workspaces
     slug = base_slug
     counter = 1
     while True:

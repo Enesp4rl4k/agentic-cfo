@@ -37,6 +37,7 @@ from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 from app.core.currency_totals import fmt_compact
+from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -360,11 +361,13 @@ def _build_slides(
                 "label": "Cloud Israfı",
                 "value": _fmt_currency(infra_waste),
                 "sub": waste_opp.get("opportunity", ""),
-                "confidence": waste_opp.get("confidence", 0.82),
+                "confidence": waste_opp.get("confidence"),
             },
             {
                 "label": "Teknik Borç",
-                "value": f"{tech.get('debt_score', 5.0):.1f}/10",
+                "value": (
+                    f"{tech['debt_score']:.1f}/10" if tech.get("debt_score") is not None else "bilinmiyor"
+                ),
             },
             {
                 "label": "MTTR",
@@ -499,7 +502,7 @@ def _build_one_page_summary(
         f"  • Gelir:           {fin_money(fin.get('revenue_cents'))}",
         f"  • Net Gelir:       {fin_money(fin.get('net_income_cents'))} ({_fmt_pct(fin.get('net_margin'))} marj)",
         f"  • Brüt Marj:       {_fmt_pct(fin.get('gross_margin'))}",
-        f"  • Nakit Pisti:     {fin.get('cash_runway_months') or 0:.1f} ay",
+        f"  • Nakit Pisti:     {view_from_fin(fin).text()}",
         f"  • 12 Aylık Tahmin: {fin_money(fin.get('forecast_base_12m_cents'))} (temel senaryo)",
         f"  • Aylık Kullanım:  {fin_money(fin.get('monthly_burn_cents'))}",
         "",

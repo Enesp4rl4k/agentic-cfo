@@ -153,7 +153,8 @@ async def _get_anomalies_for_sox(org_id: str, db: AsyncSession) -> dict[str, Any
         }
     except Exception as exc:
         logger.debug("SOX anomaly lookup failed: %s", exc)
-        return {"critical_unacked": 0, "medium_count": 0, "low_count": 0}
+        # A failed lookup is "unknown", never "zero anomalies": zero would read as a clean control environment.
+        return {"critical_unacked": None, "medium_count": None, "low_count": None}
 
 
 # ── GET /compliance/sox/status ────────────────────────────────────────────────
@@ -202,26 +203,31 @@ async def sox_status(
 
     # Section 404: Check for unacknowledged critical anomalies
     anomaly_data = await _get_anomalies_for_sox(org_id, db)
-    critical_cnt = anomaly_data["critical_unacked"]
+    critical_known = anomaly_data["critical_unacked"] is not None
+    critical_cnt = anomaly_data["critical_unacked"] or 0
 
     section_404 = {
-        "status":               "clean" if critical_cnt == 0 else "material_weakness",
-        "critical_anomalies":   critical_cnt,
+        "status": (
+            "unknown" if not critical_known
+            else "clean" if critical_cnt == 0 else "material_weakness"
+        ),
+        "critical_anomalies":   anomaly_data["critical_unacked"],   # None = unknown, not zero
         "medium_anomalies":     anomaly_data["medium_count"],
-        "internal_control_gap": critical_cnt > 0,
-        "action_required":      critical_cnt > 0,
+        "internal_control_gap": (critical_cnt > 0) if critical_known else None,
+        "action_required":      (critical_cnt > 0) if critical_known else None,
         "description": (
-            "İç kontroller etkin" if critical_cnt == 0
+            "Anomali verisi okunamadı; iç kontrol durumu bilinmiyor" if not critical_known
+            else "Son 30 günde kritik anomali yok" if critical_cnt == 0
             else f"{critical_cnt} kritik anomaly onay bekliyor — material weakness riski"
         ),
     }
 
     # Section 409: Real-time disclosure triggers
-    section_409 = {
-        "status":          "no_triggers",
+    section_409: dict[str, Any] = {
+        "status":          "no_triggers" if critical_known else "unknown",
         "triggers":        [],
         "disclosure_window_days": 4,
-        "action_required": False,
+        "action_required": False if critical_known else None,
     }
     if critical_cnt > 0:
         section_409["triggers"].append({
@@ -235,10 +241,10 @@ async def sox_status(
     # Overall SOX score
     issues = sum([
         section_302["action_required"],
-        section_404["action_required"],
-        section_409["action_required"],
+        bool(section_404["action_required"]),
+        bool(section_409["action_required"]),
     ])
-    sox_score = round(100 - issues * 33.3)
+    sox_score = round(100 - issues * 33.3) if critical_known else None
 
     return {
         "data": {
@@ -572,16 +578,16 @@ async def iso27001_controls(
     else:
         controls = ISO_27001_CONTROLS
 
-    # Build structured response with mock compliance status
-    # In production: check actual control implementation status from DB
+    # The catalogue is a fact; whether a control is implemented is not recorded anywhere in this system,
+    # so no control is reported as implemented (that would be a compliance claim with no evidence).
     items = []
     for domain_name, control_list in controls.items():
         for control in control_list:
             items.append({
                 "domain":  domain_name,
                 "control": control,
-                "status":  "implemented",  # TODO: pull from compliance_records
-                "notes":   None,
+                "status":  "not_assessed",
+                "notes":   "Uygulama durumu bu sistemde kayıtlı değil; kanıt eklenmeden 'uygulandı' denmez.",
             })
 
     return {
@@ -614,8 +620,9 @@ async def compliance_dashboard(
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     now = datetime.now(UTC)
 
-    # GDPR score: based on open breaches
-    gdpr_score = 100
+    # A framework whose figures could not be read is "unknown" (score None), never 100.
+    gdpr_score: int | None = None
+    open_breaches: int | None = None
     try:
         breach_cnt = await db.execute(
             select(func.count())
@@ -628,10 +635,9 @@ async def compliance_dashboard(
         open_breaches = breach_cnt.scalar() or 0
         gdpr_score = max(0, 100 - open_breaches * 25)
     except Exception:
-        open_breaches = 0
+        logger.exception("GDPR breach lookup failed for org=%s", org_id)
 
-    # SOX score: check certifications
-    sox_score = 100
+    sox_score: int | None = None
     try:
         cert_count = await db.execute(
             select(func.count())
@@ -642,19 +648,18 @@ async def compliance_dashboard(
             )
         )
         has_cert = (cert_count.scalar() or 0) > 0
-        if not has_cert:
-            sox_score = 70
-
         anomalies = await _get_anomalies_for_sox(org_id, db)
-        sox_score = max(0, sox_score - anomalies["critical_unacked"] * 20)
+        if anomalies["critical_unacked"] is not None:
+            sox_score = max(0, (100 if has_cert else 70) - anomalies["critical_unacked"] * 20)
     except Exception:
-        pass
+        logger.exception("SOX lookup failed for org=%s", org_id)
 
-    # ISO 27001 score: static baseline (TODO: track control implementation)
-    iso_score = 85
+    def _status(score: int | None) -> str:
+        return "unknown" if score is None else "compliant" if score >= 80 else "needs_attention"
 
-    # Overall
-    overall = round((gdpr_score + sox_score + iso_score) / 3)
+    # ISO 27001: control implementation is not tracked, so it has no score and is left out of the overall.
+    scored = [x for x in (gdpr_score, sox_score) if x is not None]
+    overall = round(sum(scored) / len(scored)) if scored else None
 
     return {
         "data": {
@@ -664,15 +669,15 @@ async def compliance_dashboard(
                 "gdpr": {
                     "score":         gdpr_score,
                     "open_breaches": open_breaches,
-                    "status":        "compliant" if gdpr_score >= 80 else "needs_attention",
+                    "status":        _status(gdpr_score),
                 },
                 "sox": {
                     "score":  sox_score,
-                    "status": "compliant" if sox_score >= 80 else "needs_attention",
+                    "status": _status(sox_score),
                 },
                 "iso27001": {
-                    "score":  iso_score,
-                    "status": "compliant" if iso_score >= 80 else "needs_attention",
+                    "score":  None,
+                    "status": "not_assessed",
                 },
             },
             "generated_at": now.isoformat(),

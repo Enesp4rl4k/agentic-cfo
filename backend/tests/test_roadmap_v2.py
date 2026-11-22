@@ -6,7 +6,7 @@ Master Roadmap 2.0 Feature Tests:
 """
 from __future__ import annotations
 
-from app.services.bot_gateways import OmnichannelCFOBotGateway
+from app.services.bot_gateways import NOT_AVAILABLE, OmnichannelCFOBotGateway
 from app.services.consolidation_engine import (
     ConsolidationEngine,
     EntityFinancialData,
@@ -81,38 +81,10 @@ def test_consolidation_engine_with_eliminations():
 
 # ── Epic 5: Omnichannel CFO Bot Gateway Tests ─────────────────────────────────
 
-def test_bot_gateway_commands():
-    ctx = {
-        "revenue_cents": 200000000,
-        "cash_cents": 120000000,
-        "runway_months": 18.0,
-        "vat_payable_cents": 3500000,
-    }
-    # 1. Nakit komutu
-    cash_resp = OmnichannelCFOBotGateway.handle_command(
-        channel="whatsapp",
-        sender_id="+905551234567",
-        message_text="nakit durumu nedir?",
-        financial_context=ctx,
-    )
-    assert "Kasa & Banka" in cash_resp.reply_text
-    assert "18.0" in cash_resp.reply_text
-
-    # 2. Vergi komutu
-    vat_resp = OmnichannelCFOBotGateway.handle_command(
-        channel="whatsapp",
-        sender_id="+905551234567",
-        message_text="bu ayki kdv ne kadar?",
-        financial_context=ctx,
-    )
-    assert "KDV" in vat_resp.reply_text
-
-    # 3. Onay komutu
-    approval_resp = OmnichannelCFOBotGateway.handle_command(
-        channel="slack",
-        sender_id="U12345",
-        message_text="fatura onayı",
-        financial_context=ctx,
-    )
-    assert approval_resp.action_type == "approval_requested"
-    assert len(approval_resp.interactive_blocks) >= 2
+def test_bot_gateway_answers_every_command_with_not_available_and_no_figures():
+    for text in ("nakit durumu nedir?", "bu ayki kdv ne kadar?", "fatura onayı", "merhaba"):
+        resp = OmnichannelCFOBotGateway.handle_command(channel="whatsapp", sender_id="+905551234567", message_text=text)
+        assert resp.reply_text == NOT_AVAILABLE
+        assert resp.interactive_blocks == []
+        assert not any(ch.isdigit() for ch in resp.reply_text)
+        assert "₺" not in resp.reply_text and "Stabil" not in resp.reply_text

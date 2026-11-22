@@ -24,6 +24,7 @@ import logging
 from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
+from app.services.runway_display import runway_for_display, view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,8 @@ def _extract_swot(
 
     # ── CFO / Finansal ────────────────────────────────────────────────────────
     net_margin    = fin.get("net_margin", 0) or 0
-    runway        = fin.get("cash_runway_months") or fin.get("runway_months")
+    runway        = fin.get("cash_runway_months")
+    runway_view   = view_from_fin(fin)
     revenue_trend = fin.get("revenue_trend", 0) or 0
     fin.get("revenue", 0) or 0
 
@@ -89,16 +91,19 @@ def _extract_swot(
     if runway is not None:
         if runway > 18:
             strengths.append(_item(
-                f"Guclu nakit pozisyonu: {runway:.0f} ay runway",
+                f"Guclu nakit pozisyonu: nakit omru {runway_view.text()}",
                 "cfo", 7,
-                f"Nakit omru {runway:.0f} ay -- yatirim ve buyume kapasitesi var",
+                f"Nakit omru {runway_view.text()} -- yatirim ve buyume kapasitesi var",
                 "Stratejik yatirimlari degerlendir",
             ))
         elif runway < 6:
             threats.append(_item(
-                f"Kritik nakit riski: {runway:.1f} ay runway",
-                "cfo", 10,
-                f"Mevcut burn rate ile {runway:.1f} ay nakit kaldi",
+                (
+                    f"Kritik nakit riski: {runway_view.text()}" if runway_view.proven
+                    else f"Dusuk nakit omru: {runway_view.text()}"
+                ),
+                "cfo", 10 if runway_view.proven else 6,
+                f"Mevcut burn rate ile nakit omru {runway_view.text()}",
                 "Acil fundraising veya maliyet kesintisi gerekli",
             ))
 
@@ -478,10 +483,9 @@ async def run_swot_from_context(
             "revenue":            pnl.get("revenue", 0),
             "net_margin":         pnl.get("net_margin", 0),
             "revenue_trend":      pnl.get("revenue_growth_pct", 0),
-            "cash_runway_months": (forecast or {}).get("scenarios", {}).get("base", {}).get("runway_months"),
+            "cash_runway_months": runway_for_display(forecast).months,
+            **runway_for_display(forecast).fin_fields(),
         })
-    if cashflow:
-        fin["cash_runway_months"] = fin.get("cash_runway_months") or cashflow.get("runway_months")
 
     tech: dict[str, Any] = {}
     if cto_data:

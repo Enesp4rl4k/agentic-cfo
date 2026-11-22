@@ -141,6 +141,14 @@ class CascadeScenario:
         }
 
 
+class CascadeInputsMissing(Exception):
+    """A trigger cannot run: the company's data lacks inputs it needs (`missing` names them)."""
+
+    def __init__(self, missing: list[str]) -> None:
+        super().__init__("hesaplanamıyor, eksik: " + ", ".join(missing))
+        self.missing = missing
+
+
 @dataclass
 class CascadeResult:
     """Tam cascade simülasyon sonucu."""
@@ -230,54 +238,85 @@ class CascadeSimulator:
         self.cmo_data  = cmo_data or {}
         self.coo_data  = coo_data or {}
 
-        # Allow direct kwargs for testing and direct scenario calling.
-        # Money kwargs are KURUŞ (test fixtures pass "_00"-suffixed cents);
-        # conversion is unconditional — no value-magnitude guessing.
+        # A missing input stays missing (None). No constant stands in for a company fact: a trigger that
+        # needs a missing input does not run (`CascadeInputsMissing`), and a part that needs one is left out.
+        # Money kwargs are KURUŞ; Report.data scalars are LIRA (report_agent._fmt boundary).
+        self.monthly_revenue: float | None
         if "revenue_monthly" in kwargs:
             self.monthly_revenue = float(kwargs["revenue_monthly"]) / 100
         elif "monthly_revenue" in kwargs:
             self.monthly_revenue = float(kwargs["monthly_revenue"]) / 100
+        elif self.pnl.get("revenue_cents") is not None:
+            self.monthly_revenue = float(self.pnl["revenue_cents"]) / 100 / 12
+        elif self.pnl.get("revenue") is not None:
+            self.monthly_revenue = float(self.pnl["revenue"]) / 12
         else:
-            # Report.data scalars are LIRA (report_agent._fmt boundary); an
-            # explicit revenue_cents from the semantic bridge is already cents.
-            rev_cents = self.pnl.get("revenue_cents")
-            if rev_cents is not None:
-                self.monthly_revenue = float(rev_cents) / 100 / 12
-            else:
-                self.monthly_revenue = (self.pnl.get("revenue", 0) or 0) / 12
+            self.monthly_revenue = None
 
+        self.monthly_opex: float | None
         if "monthly_opex" in kwargs:
             self.monthly_opex = float(kwargs["monthly_opex"]) / 100
+        elif self.pnl.get("total_opex") is not None:
+            self.monthly_opex = float(self.pnl["total_opex"]) / 12
         else:
-            self.monthly_opex = (self.pnl.get("total_opex", 0) or 0) / 12
+            self.monthly_opex = None
 
-        self.net_margin = kwargs.get("gross_margin") or kwargs.get("net_margin") or self.pnl.get("net_margin", 0) or 0
+        margin = kwargs.get("gross_margin", kwargs.get("net_margin", self.pnl.get("net_margin")))
+        self.net_margin: float | None = None if margin is None else float(margin)
 
+        self.monthly_burn: float | None
         if "monthly_burn" in kwargs:
             self.monthly_burn = float(kwargs["monthly_burn"]) / 100
+        elif self.monthly_opex is not None and self.monthly_revenue is not None:
+            self.monthly_burn = max(0.0, self.monthly_opex - self.monthly_revenue)
         else:
-            self.monthly_burn = max(0, self.monthly_opex - self.monthly_revenue)
+            self.monthly_burn = None
 
+        # Runway and cash come from the company's one source (`company_runway`: the proven balance and
+        # `runway.compute_runway`) through the caller's kwargs or the stored forecast; never derived here.
         base_sc = (self.forecast.get("scenarios") or {}).get("base") or {}
-        self.runway_months = kwargs.get("runway_months") or base_sc.get("runway_months") or 12.0
+        runway = kwargs.get("runway_months", base_sc.get("runway_months"))
+        self.runway_months: float | None = None if runway is None else float(runway)
+        cash = kwargs.get("cash_balance")
+        self.cash_balance: float | None = None if cash is None else float(cash) / 100
 
-        if "cash_balance" in kwargs:
-            self.cash_balance = float(kwargs["cash_balance"]) / 100
-        else:
-            net_change = self.cashflow.get("net_change", 0) or 0  # LIRA (Report.data)
-            self.cash_balance = abs(net_change) * self.runway_months if net_change < 0 else net_change
+        headcount = kwargs.get("headcount") or self.chro_data.get("total_headcount")
+        self.headcount: float | None = float(headcount) if headcount else None
+        salary = self.chro_data.get("avg_monthly_salary_try")
+        self.avg_salary_try: float | None = float(salary) if salary else None
+        cac_cents = self.cmo_data.get("avg_cac_cents")
+        self.monthly_cac: float | None = float(cac_cents) / 100 if cac_cents else None
 
-        self.headcount = kwargs.get("headcount") or self.chro_data.get("total_headcount", 0) or 50
-        self.turnover_rate = self.chro_data.get("annual_turnover_rate", 0.12) or 0.12
-        self.avg_salary_try = self.chro_data.get("avg_monthly_salary_try", 30000) or 30000
+    # ── What a trigger needs ───────────────────────────────────────────────────
 
-        self.tech_health = self.cto_data.get("overall_health_score", 7.0) or 7.0
-        self.infra_waste_pct = self.cto_data.get("infra_waste_pct", 0.15) or 0.15
+    def missing_for(self, trigger: TriggerType, **params: Any) -> list[str]:
+        """The inputs this trigger cannot run without and does not have (empty: it can run).
 
-        self.monthly_cac = (self.cmo_data.get("avg_cac_cents", 0) or 0) / 100
-        self.monthly_roas = self.cmo_data.get("overall_roas", 2.0) or 2.0
-        self.churn_rate = self.cmo_data.get("avg_monthly_churn", 0.03) or 0.03
-
+        Scenario parameters (`drop_pct`, `usd_try_increase_pct`, ...) are the user's assumptions: they come
+        from the request, are never defaulted, and are named "varsayım" in the output.
+        """
+        missing: list[str] = []
+        if trigger == TriggerType.CASH_CRISIS:
+            if params.get("runway_months", self.runway_months) is None:
+                missing.append("nakit ömrü (kanıtlı bakiye ve en az 3 tam ay)")
+            if self.monthly_burn is None:
+                missing.append("aylık gelir ve gider")
+        elif trigger == TriggerType.REVENUE_DROP:
+            if params.get("drop_pct") is None:
+                missing.append("gelir düşüş oranı (varsayım)")
+            if self.monthly_revenue is None:
+                missing.append("aylık gelir")
+        elif trigger == TriggerType.KEY_PERSON_LOSS:
+            if not params.get("role"):
+                missing.append("kilit kişi rolü (varsayım)")
+        elif trigger == TriggerType.MARKET_SHOCK:
+            if params.get("usd_try_increase_pct") is None:
+                missing.append("kur artışı (varsayım)")
+            if params.get("inflation_pct") is None:
+                missing.append("enflasyon (varsayım)")
+            if self.monthly_opex is None:
+                missing.append("aylık gider")
+        return missing
 
     def _impact_level(self, score: float) -> ImpactLevel:
         """0.0–1.0 skordan ImpactLevel enum üret."""
@@ -317,8 +356,8 @@ class CascadeSimulator:
         """
         severity = max(0.0, min(1.0, (6.0 - runway_months) / 6.0))  # 6ay → 0, 0ay → 1
 
-        monthly_rev = self.monthly_revenue or 1.0
         impacts: list[DomainImpact] = []
+        burn = self.monthly_burn or 0.0
 
         # CFO etkisi — doğrudan
         impacts.append(DomainImpact(
@@ -330,11 +369,11 @@ class CascadeSimulator:
             description=(
                 f"Nakit ömrü {runway_months:.1f} ay. "
                 f"Acil likidite yönetimi gerekiyor. "
-                f"Aylık burn rate ₺{self.monthly_burn:,.0f}."
+                f"Aylık burn rate ₺{burn:,.0f}."
             ),
             quantified_impact={
-                "cash_shortfall_try": round(self.monthly_burn * max(0, 6 - runway_months)),
-                "burn_rate_monthly_try": round(self.monthly_burn),
+                "cash_shortfall_try": round(burn * max(0, 6 - runway_months)),
+                "burn_rate_monthly_try": round(burn),
                 "runway_months": round(runway_months, 1),
             },
             mitigations=[
@@ -346,10 +385,14 @@ class CascadeSimulator:
             secondary_triggers=["chro", "cmo", "coo"],
         ))
 
-        # CHRO etkisi — işe alım dondurma, attrition artışı
+        # CHRO etkisi — işe alım dondurma, attrition artışı. Headcount and salary are the company's own
+        # figures; without them the count and the cost are left out, the rest of the impact stands.
         attrition_increase = severity * 0.08  # max %8 attrition artışı
-        affected_headcount = round(self.headcount * attrition_increase)
-        replacement_cost = affected_headcount * self.avg_salary_try * 3  # 3 aylık maaş
+        affected_headcount = round(self.headcount * attrition_increase) if self.headcount is not None else None
+        replacement_cost = (
+            affected_headcount * self.avg_salary_try * 3  # 3 aylık maaş
+            if affected_headcount is not None and self.avg_salary_try is not None else None
+        )
 
         impacts.append(DomainImpact(
             domain="chro",
@@ -358,14 +401,17 @@ class CascadeSimulator:
             triggered_by="cfo",
             delay_months=1.0,
             description=(
-                f"Nakit krizinde işe alım durdurulur, belirsizlik attrition'ı artırır. "
-                f"Tahmini {affected_headcount} çalışan ayrılabilir."
+                "Nakit krizinde işe alım durdurulur, belirsizlik attrition'ı artırır."
+                + (
+                    f" Tahmini {affected_headcount} çalışan ayrılabilir."
+                    if affected_headcount is not None else " Çalışan sayısı bilinmiyor."
+                )
             ),
             quantified_impact={
                 "hiring_freeze_months": round(runway_months),
                 "attrition_increase_pct": round(attrition_increase * 100, 1),
-                "at_risk_headcount": affected_headcount,
-                "replacement_cost_try": round(replacement_cost),
+                **({"at_risk_headcount": affected_headcount} if affected_headcount is not None else {}),
+                **({"replacement_cost_try": round(replacement_cost)} if replacement_cost is not None else {}),
             },
             mitigations=[
                 "Kritik rolleri belirle, retention bonusu hazırla",
@@ -405,7 +451,7 @@ class CascadeSimulator:
         # CMO etkisi — pazarlama bütçesi kesintisi, CAC artışı
         marketing_cut = severity * 0.6
         cac_increase = marketing_cut * 0.5
-        revenue_risk = monthly_rev * marketing_cut * 0.3 * 12
+        revenue_risk = self.monthly_revenue * marketing_cut * 0.3 * 12 if self.monthly_revenue is not None else None
 
         impacts.append(DomainImpact(
             domain="cmo",
@@ -420,7 +466,7 @@ class CascadeSimulator:
             quantified_impact={
                 "marketing_budget_cut_pct": round(marketing_cut * 100, 1),
                 "cac_increase_pct": round(cac_increase * 100, 1),
-                "annual_revenue_risk_try": round(revenue_risk),
+                **({"annual_revenue_risk_try": round(revenue_risk)} if revenue_risk is not None else {}),
             },
             mitigations=[
                 "En yüksek ROAS'lı kanalları koru, düşükleri kes",
@@ -487,7 +533,7 @@ class CascadeSimulator:
         drop_pct: düşüş oranı (0.0–1.0)
         """
         severity = min(1.0, drop_pct)
-        monthly_loss = self.monthly_revenue * drop_pct
+        monthly_loss = (self.monthly_revenue or 0.0) * drop_pct
         annual_loss = monthly_loss * 12
 
         impacts: list[DomainImpact] = []
@@ -506,9 +552,15 @@ class CascadeSimulator:
             quantified_impact={
                 "monthly_revenue_loss_try": round(monthly_loss),
                 "annual_revenue_loss_try": round(annual_loss),
-                "margin_compression_pts": round(drop_pct * self.net_margin * 100, 1),
-                "new_runway_months": round(
-                    self.cash_balance / max(1, self.monthly_burn + monthly_loss * 0.5), 1
+                **(
+                    {"margin_compression_pts": round(drop_pct * self.net_margin * 100, 1)}
+                    if self.net_margin is not None else {}
+                ),
+                **(
+                    {"new_runway_months": round(
+                        self.cash_balance / max(1, self.monthly_burn + monthly_loss * 0.5), 1
+                    )}
+                    if self.cash_balance is not None and self.monthly_burn is not None else {}
                 ),
             },
             mitigations=[
@@ -531,7 +583,10 @@ class CascadeSimulator:
             ),
             quantified_impact={
                 "roas_deterioration_pct": round(drop_pct * 40, 1),
-                "cac_increase_try": round(self.monthly_cac * drop_pct * 0.5),
+                **(
+                    {"cac_increase_try": round(self.monthly_cac * drop_pct * 0.5)}
+                    if self.monthly_cac is not None else {}
+                ),
             },
             mitigations=[
                 "Hangi kanalların dönüşümü düştüğünü analiz et",
@@ -589,7 +644,10 @@ class CascadeSimulator:
             quantified_impact={
                 "transition_months": 4,
                 "productivity_loss_pct": round(severity * 40, 1),
-                "replacement_cost_try": round(self.avg_salary_try * 6),
+                **(
+                    {"replacement_cost_try": round(self.avg_salary_try * 6)}
+                    if self.avg_salary_try is not None else {}
+                ),
             },
             mitigations=[
                 f"Acil {role.upper()} vekili ata",
@@ -630,7 +688,7 @@ class CascadeSimulator:
         currency_severity = min(1.0, usd_try_increase_pct / 100)
         inflation_severity = min(1.0, inflation_pct / 100)
         combined = currency_severity * 0.6 + inflation_severity * 0.4
-        opex_increase = self.monthly_opex * combined * 0.3
+        opex_increase = (self.monthly_opex or 0.0) * combined * 0.3
         impacts: list[DomainImpact] = []
 
         impacts.append(DomainImpact(
@@ -666,8 +724,11 @@ class CascadeSimulator:
             description="Enflasyon maaş baskısı yaratıyor. Reel ücretler düşüyor, attrition riski artıyor.",
             quantified_impact={
                 "salary_adjustment_needed_pct": round(inflation_pct * 0.7, 1),
-                "annual_salary_increase_try":   round(
-                    self.headcount * self.avg_salary_try * inflation_pct / 100 * 0.7 * 12
+                **(
+                    {"annual_salary_increase_try": round(
+                        self.headcount * self.avg_salary_try * inflation_pct / 100 * 0.7 * 12
+                    )}
+                    if self.headcount is not None and self.avg_salary_try is not None else {}
                 ),
                 "attrition_risk": "yüksek" if inflation_pct > 30 else "orta",
             },
@@ -693,21 +754,25 @@ class CascadeSimulator:
                 key_person_loss  → role (str: "cto"|"cfo"|"ceo"|"cmo"|"chro")
                 market_shock     → usd_try_increase_pct (float), inflation_pct (float)
         """
+        missing = self.missing_for(trigger, **kwargs)
+        if missing:
+            raise CascadeInputsMissing(missing)
         if trigger == TriggerType.CASH_CRISIS:
-            runway = float(kwargs.get("runway_months", self.runway_months))
+            given = kwargs.get("runway_months")
+            runway = float(given) if given is not None else float(self.runway_months or 0.0)
             base_impacts = self._simulate_cash_crisis(runway)
             trigger_desc = f"Nakit ömrü {runway:.1f} ay — kritik eşiğin altında"
         elif trigger == TriggerType.REVENUE_DROP:
-            drop = float(kwargs.get("drop_pct", 0.3))
+            drop = float(kwargs["drop_pct"])
             base_impacts = self._simulate_revenue_drop(drop)
             trigger_desc = f"Gelir %{drop*100:.0f} düşüşü"
         elif trigger == TriggerType.KEY_PERSON_LOSS:
-            role = str(kwargs.get("role", "cto"))
+            role = str(kwargs["role"])
             base_impacts = self._simulate_key_person_loss(role)
             trigger_desc = f"Kilit kişi kaybı: {role.upper()}"
         elif trigger == TriggerType.MARKET_SHOCK:
-            usd_inc = float(kwargs.get("usd_try_increase_pct", 30.0))
-            inf_pct = float(kwargs.get("inflation_pct", 50.0))
+            usd_inc = float(kwargs["usd_try_increase_pct"])
+            inf_pct = float(kwargs["inflation_pct"])
             base_impacts = self._simulate_market_shock(usd_inc, inf_pct)
             trigger_desc = f"Piyasa şoku: USD/TRY +%{usd_inc:.0f}, Enflasyon %{inf_pct:.0f}"
         else:
@@ -729,7 +794,7 @@ class CascadeSimulator:
         ]
         base_sc = scenarios[1]
         summary = self._build_executive_summary(trigger_desc, base_sc, affected, critical_path)
-        confidence = 0.85 if self.monthly_revenue > 0 else 0.55
+        confidence = 0.85 if (self.monthly_revenue or 0) > 0 else 0.55
 
         return CascadeResult(
             trigger_type=trigger.value,
@@ -805,8 +870,6 @@ class CascadeSimulator:
 
 # ── Public factory ─────────────────────────────────────────────────────────────
 
-_default_simulator_instance: CascadeSimulator | None = None
-
 def get_cascade_simulator(
     pnl:       dict[str, Any] | None = None,
     cashflow:  dict[str, Any] | None = None,
@@ -815,15 +878,13 @@ def get_cascade_simulator(
     cto_data:  dict[str, Any] | None = None,
     cmo_data:  dict[str, Any] | None = None,
     coo_data:  dict[str, Any] | None = None,
+    **measured: Any,
 ) -> CascadeSimulator:
-    global _default_simulator_instance
-    if not any([pnl, cashflow, forecast, chro_data, cto_data, cmo_data, coo_data]):
-        if _default_simulator_instance is None:
-            _default_simulator_instance = CascadeSimulator()
-        return _default_simulator_instance
+    """A simulator over the company's own data. `measured` carries `cascade_inputs.measured_baseline`'s
+    proven `cash_balance` / `runway_months` / `monthly_burn` (kuruş); with no data at all every input is
+    missing and no trigger runs."""
     return CascadeSimulator(
         pnl=pnl, cashflow=cashflow, forecast=forecast,
         chro_data=chro_data, cto_data=cto_data,
-        cmo_data=cmo_data, coo_data=coo_data,
+        cmo_data=cmo_data, coo_data=coo_data, **measured,
     )
-

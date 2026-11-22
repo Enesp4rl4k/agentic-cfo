@@ -173,14 +173,29 @@ async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
     cov  = state.get("coverage") or {}
     logs: list[AuditStepLog] = list(state.get("logs") or [])
 
+    if not (fin and ctrl and cov):
+        # Missing audit evidence is shown as missing: the old defaults (100 / 100 / 100%) scored an
+        # organisation with no audit data as perfectly healthy.
+        gaps = [n for n, v in (("bulgular", fin), ("kontroller", ctrl), ("kapsam", cov)) if not v]
+        logs.append(AuditStepLog(
+            node="audit_summary", status="skipped",
+            message="Denetim sağlık skoru hesaplanamadı, eksik: " + ", ".join(gaps),
+            metrics={},
+        ))
+        return {
+            **state,
+            "audit_summary": {"audit_health_score": None, "maturity_level": None, "unavailable": gaps},
+            "logs": logs,
+        }
+
     # -- Audit Health Score (0-100) -----------------------------------------
     # findings_score  : finding_health_score (0-100), weight 35 %
     # control_score   : overall_control_score (0-100), weight 40 %
     # coverage_score  : coverage_rate * 100,           weight 25 %
 
-    findings_score = float(fin.get("finding_health_score", 100.0))
-    control_score  = float(ctrl.get("overall_control_score", 100.0))
-    coverage_score = float(cov.get("coverage_rate", 1.0)) * 100.0
+    findings_score = float(fin.get("finding_health_score") or 0.0)
+    control_score  = float(ctrl.get("overall_control_score") or 0.0)
+    coverage_score = float(cov.get("coverage_rate") or 0.0) * 100.0
 
     audit_health = round(
         findings_score * 0.35

@@ -22,8 +22,11 @@ export interface PacketOption {
   label: string;
   description: string;
   baseline: boolean;
-  /** 12-month net effect in kuruş (0 for the baseline by definition). */
-  base_net_impact: number;
+  /** False when the company's data cannot answer this option; `unavailable_reason` says why. */
+  available?: boolean;
+  unavailable_reason?: string | null;
+  /** 12-month net effect in kuruş (0 for the baseline by definition; null when unavailable). */
+  base_net_impact: number | null;
   breakeven_months: number | null;
   cashflow_risk: string | null;
   /** Only the baseline carries a runway figure — the engine never guesses one. */
@@ -48,6 +51,9 @@ export interface PacketSituation {
   top_opex_category: string | null;
   top_opex_amount: number | null;
   runway_months: number | null;
+  /** "known" | "assumed" | null; the note carries the runway's own assumption sentence when not known. */
+  runway_basis?: string | null;
+  runway_note?: string | null;
   forecast_12m_net: number | null;
   anomaly_count: number;
   min_confidence: number | null;

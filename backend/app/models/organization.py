@@ -45,6 +45,12 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
 
+    # Set by the server only, in POST /demo/guest: this is a throwaway demo workspace. Never inferred
+    # from the slug or description, which a user can choose (the demo seed/reset/purge act on this flag).
+    is_demo_guest: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
     # Branding / settings
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

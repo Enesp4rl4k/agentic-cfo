@@ -35,7 +35,7 @@ class HeadcountSimRequest(BaseModel):
     job_id: str
     delta: int = Field(..., description="Pozitif = işe al, negatif = çıkar")
     avg_monthly_salary_try: float = Field(..., gt=0, description="Brüt aylık maaş (TRY)")
-    productivity_gain_pct: float = Field(0.10, ge=0, le=1.0)
+    productivity_gain_pct: float = Field(..., ge=0, le=1.0, description="Verimlilik varsayımı (sizin girdiniz)")
     onboarding_months: int = Field(2, ge=0, le=6)
     horizon_months: int = Field(12, ge=1, le=36)
 
@@ -51,11 +51,21 @@ class CostReductionSimRequest(BaseModel):
 class PriceIncreaseSimRequest(BaseModel):
     job_id: str
     increase_pct: float = Field(..., gt=0, le=1.0)
-    churn_rate_increase: float = Field(0.05, ge=0, le=0.5)
+    churn_rate_increase: float = Field(..., ge=0, le=0.5, description="Müşteri kaybı varsayımı (sizin girdiniz)")
     horizon_months: int = Field(12, ge=1, le=36)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _compute(simulate: Any, **kwargs: Any) -> Any:
+    """Run one simulation; inputs the company's data lacks are a 422 naming them, never a stand-in figure."""
+    from app.services.counterfactual_engine import CounterfactualInputsMissing
+
+    try:
+        return simulate(**kwargs)
+    except CounterfactualInputsMissing as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
 
 async def _load_pnl_cashflow_forecast(job_id: str, db: AsyncSession) -> tuple[dict, dict, dict]:
     """Latest JSON report → (pnl, cashflow, forecast).
@@ -98,7 +108,7 @@ async def simulate_headcount(
     from app.services.counterfactual_engine import CounterfactualEngine
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
-    result = engine.simulate_headcount_change(
+    result = _compute(engine.simulate_headcount_change,
         delta=body.delta,
         avg_monthly_salary_try=body.avg_monthly_salary_try,
         productivity_gain_pct=body.productivity_gain_pct,
@@ -141,7 +151,8 @@ async def simulate_cost_reduction(
     from app.services.counterfactual_engine import CounterfactualEngine
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
-    result = engine.simulate_cost_reduction(
+    result = _compute(engine.simulate_cost_reduction,
+
         target_category=body.target_category,
         reduction_pct=body.reduction_pct,
         one_time_cost_try=body.one_time_cost_try,
@@ -173,7 +184,8 @@ async def simulate_price_increase(
     from app.services.counterfactual_engine import CounterfactualEngine
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
-    result = engine.simulate_price_increase(
+    result = _compute(engine.simulate_price_increase,
+
         increase_pct=body.increase_pct,
         churn_rate_increase=body.churn_rate_increase,
         horizon_months=body.horizon_months,
@@ -203,17 +215,19 @@ async def get_preset_scenarios(
 
     # Shared preset builder — the decision packet offers the same three
     # options from the same numbers (one definition of "the options").
-    from app.services.counterfactual_engine import compute_preset_results
+    from app.services.counterfactual_engine import compute_presets
 
-    scenarios = [
-        {"label": label, **result.to_dict()}
-        for label, result in compute_preset_results(pnl, cashflow, forecast)
+    outcomes = compute_presets(pnl, cashflow, forecast)
+    scenarios = [{"label": o.label, **o.result.to_dict()} for o in outcomes if o.result is not None]
+    unavailable = [
+        {"label": o.label, "reason": o.unavailable_reason} for o in outcomes if o.result is None
     ]
 
     return {
         "data": {
             "job_id":    job_id,
             "scenarios": scenarios,
+            "unavailable": unavailable,
         },
         "error": None,
     }

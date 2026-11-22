@@ -318,52 +318,77 @@ def _sign_whatsapp(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-async def test_the_bot_replies_through_the_outbox_to_the_sender_only(client, monkeypatch):
+def _wa_payload(sender: str, text: str, msg_id: str = "wamid.1") -> bytes:
+    return json.dumps({"entry": [{"changes": [{"value": {"messages": [
+        {"id": msg_id, "from": sender, "type": "text", "text": {"body": text}}]}}]}]}).encode()
+
+
+def _slack_post(client, body: str, content_type: str = "application/json"):
+    ts = str(int(time.time()))
+    sig = "v0=" + hmac.new(b"slacksecret", f"v0:{ts}:{body}".encode(), hashlib.sha256).hexdigest()
+    return client.post(f"{P}/webhooks/slack", content=body, headers={
+        "X-Slack-Request-Timestamp": ts, "X-Slack-Signature": sig, "Content-Type": content_type})
+
+
+async def _outbox_rows(client):
+    async with client._maker() as db:
+        return (await db.execute(select(OutboxMessage).order_by(OutboxMessage.channel))).scalars().all()
+
+
+async def test_an_unlinked_sender_gets_no_reply_at_all(client, monkeypatch):
+    """No verified chat-to-user link exists: nobody is answered, nothing reaches the outbox."""
     monkeypatch.setattr(get_settings(), "whatsapp_app_secret", "s3cret")
+    monkeypatch.setattr(get_settings(), "whatsapp_verify_token", "vt")
     monkeypatch.setattr(get_settings(), "slack_signing_secret", "slacksecret")
-    wa = json.dumps({"entry": [{"changes": [{"value": {"messages": [
-        {"id": "wamid.1", "from": "905551112233", "type": "text", "text": {"body": "nakit"}}]}}]}]}).encode()
+    wa = _wa_payload("905551112233", "nakit")
+    r = await client.post(f"{P}/webhooks/whatsapp", content=wa,
+                          headers={"X-Hub-Signature-256": _sign_whatsapp("s3cret", wa), "Content-Type": "application/json"})
+    assert r.json() == {"status": "unlinked"}
+    forged = await client.post(f"{P}/webhooks/whatsapp", content=wa, headers={"X-Hub-Signature-256": "sha256=bad"})
+    assert forged.status_code == 403
+    msg = json.dumps({"type": "event_callback", "event_id": "Ev1",
+                      "event": {"type": "message", "user": "U1", "channel": "C1", "text": "vergi", "ts": "1"}})
+    assert (await _slack_post(client, msg)).status_code == 200
+    assert await _outbox_rows(client) == []
+
+
+async def test_a_linked_member_gets_one_figure_free_reply_through_the_outbox(client, monkeypatch):
+    from app.api import bot_webhooks
+    from app.services.bot_gateways import NOT_AVAILABLE, LinkedMember
+
+    async def linked(db, channel, sender_id):
+        return LinkedMember(user_id="u1", org_id="o1", role="owner")
+
+    monkeypatch.setattr(bot_webhooks, "resolve_linked_member", linked)
+    monkeypatch.setattr(get_settings(), "whatsapp_app_secret", "s3cret")
+    monkeypatch.setattr(get_settings(), "whatsapp_verify_token", "vt")
+    monkeypatch.setattr(get_settings(), "slack_signing_secret", "slacksecret")
+    wa = _wa_payload("905551112233", "nakit")
     for _ in range(2):  # Meta retries: one reply
         r = await client.post(f"{P}/webhooks/whatsapp", content=wa,
                               headers={"X-Hub-Signature-256": _sign_whatsapp("s3cret", wa), "Content-Type": "application/json"})
         assert r.json() == {"status": "handled"}
-    forged = await client.post(f"{P}/webhooks/whatsapp", content=wa, headers={"X-Hub-Signature-256": "sha256=bad"})
-    assert forged.status_code == 403
-
-    slack = json.dumps({"type": "event_callback", "event_id": "Ev1",
-                        "event": {"type": "message", "user": "U1", "channel": "C1", "text": "vergi", "ts": "1"}})
-    ts = str(int(time.time()))
-    sig = "v0=" + hmac.new(b"slacksecret", f"v0:{ts}:{slack}".encode(), hashlib.sha256).hexdigest()
-    ok = await client.post(f"{P}/webhooks/slack", content=slack, headers={
-        "X-Slack-Request-Timestamp": ts, "X-Slack-Signature": sig, "Content-Type": "application/json"})
-    assert ok.status_code == 200
-
-    async with client._maker() as db:
-        rows = (await db.execute(select(OutboxMessage).order_by(OutboxMessage.channel))).scalars().all()
-    assert [(r.channel, r.kind, r.recipient, r.org_id) for r in rows] == [
-        ("slack_bot", "bot_reply", "C1", "system"), ("whatsapp", "bot_reply", "905551112233", "system"),
+    msg = json.dumps({"type": "event_callback", "event_id": "Ev1",
+                      "event": {"type": "message", "user": "U1", "channel": "C1", "text": "vergi", "ts": "1"}})
+    assert (await _slack_post(client, msg)).status_code == 200
+    rows = await _outbox_rows(client)
+    assert [(r.channel, r.kind, r.recipient) for r in rows] == [
+        ("slack_bot", "bot_reply", "C1"), ("whatsapp", "bot_reply", "905551112233"),
     ]
-    assert json.loads(rows[0].body)["channel"] == "C1"
+    slack_body = json.loads(rows[0].body)
+    assert slack_body["text"] == NOT_AVAILABLE and slack_body["blocks"] == []
+    assert rows[1].body == NOT_AVAILABLE
 
 
-async def test_a_chat_button_does_not_claim_a_decision(client, monkeypatch):
-    monkeypatch.setattr(get_settings(), "slack_signing_secret", "slacksecret")
-    payload = json.dumps({"payload": json.dumps({
-        "type": "block_actions", "trigger_id": "T1", "user": {"id": "U1"}, "channel": {"id": "C1"},
-        "actions": [{"value": "approve_inv_123"}]})})
+async def test_a_chat_button_gets_no_reply_and_decides_nothing(client, monkeypatch):
     import urllib.parse
 
-    body = urllib.parse.urlencode({"payload": json.loads(payload)["payload"]})
-    ts = str(int(time.time()))
-    sig = "v0=" + hmac.new(b"slacksecret", f"v0:{ts}:{body}".encode(), hashlib.sha256).hexdigest()
-    r = await client.post(f"{P}/webhooks/slack", content=body, headers={
-        "X-Slack-Request-Timestamp": ts, "X-Slack-Signature": sig,
-        "Content-Type": "application/x-www-form-urlencoded"})
+    monkeypatch.setattr(get_settings(), "slack_signing_secret", "slacksecret")
+    inner = json.dumps({"type": "block_actions", "trigger_id": "T1", "user": {"id": "U1"},
+                        "channel": {"id": "C1"}, "actions": [{"value": "approve_inv_123"}]})
+    r = await _slack_post(client, urllib.parse.urlencode({"payload": inner}), "application/x-www-form-urlencoded")
     assert r.status_code == 200
-    async with client._maker() as db:
-        (row,) = (await db.execute(select(OutboxMessage))).scalars().all()
-    text = json.loads(row.body)["text"]
-    assert "onaylandı" not in text and "uygulama" in text
+    assert await _outbox_rows(client) == []
 
 
 # ── delivery right after the write ──────────────────────────────────────────

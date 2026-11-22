@@ -31,6 +31,7 @@ from typing import Any
 
 from app.agents.chat_money import figure_currency
 from app.core.currency_totals import fmt_amount
+from app.services.runway_display import PROMPT_RULE, runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,10 @@ def execute_nl_query(
         forecast = dashboard.get("forecast") or {}
         scenarios = forecast.get("scenarios") or {}
         base = scenarios.get("base") or {}
-        value = base.get("runway_months")
+        view = runway_for_display(forecast)
+        value = view.months
+        context["runway_basis"] = view.text()
+        context["note"] = PROMPT_RULE
         context["scenario"] = "Baz"
         context["twelve_month_net"] = base.get("twelve_month_net")
         mc = forecast.get("monte_carlo") or {}
@@ -193,7 +197,7 @@ def execute_nl_query(
         value = {k: {
             "label": v.get("label"),
             "twelve_month_net": v.get("twelve_month_net"),
-            "runway_months": v.get("runway_months"),
+            "runway": runway_for_display(forecast, k).text(),
         } for k, v in scenarios.items()}
         mc = forecast.get("monte_carlo") or {}
         if mc:

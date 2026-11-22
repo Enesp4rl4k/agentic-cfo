@@ -32,6 +32,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.core.currency_totals import fmt_amount
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -339,12 +340,11 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
     """Deterministic forecast narrative."""
     scenarios = forecast.get("scenarios", {})
     base = scenarios.get("base", {})
-    pessimistic = scenarios.get("pessimistic", {})
 
     cur = forecast.get("currency")  # the forecast states none today: bare, never assumed
     base_net = base.get("twelve_month_net", 0) / 100
-    base_runway = base.get("runway_months")
-    pess_runway = pessimistic.get("runway_months")
+    base_runway = runway_for_display(forecast).months
+    pess_runway = runway_for_display(forecast, "pessimistic").months
 
     if base_net > 0:
         summary = (
@@ -589,10 +589,10 @@ async def get_forecast_narrative(
         lines = []
         for name, s in scenarios.items():
             net = s.get("twelve_month_net", 0) / 100
-            runway = s.get("runway_months")
+            runway = runway_for_display(forecast, name)
             lines.append(
                 f"  {name}: 12 aylık net {fmt_amount(net, cur)}"
-                + (f", nakit pisti {runway} ay" if runway else "")
+                + (f", nakit pisti {runway.text()}" if runway.months is not None else "")
             )
 
         return await _structured(
