@@ -189,6 +189,19 @@ class TestBenchmarkIntelligenceService:
 class TestLLMTaskRouter:
     """LLMTaskRouter — model selection and cost tracking tests."""
 
+    @pytest.fixture(autouse=True)
+    def _tiered_priced_models(self, monkeypatch):
+        """Distinct, priced tier models (ids are deployment config, not code)."""
+        from app.config import get_settings
+
+        s = get_settings()
+        monkeypatch.setattr(s, "llm_model_cheap", "tier-cheap-model")
+        monkeypatch.setattr(s, "llm_model_strong", "tier-strong-model")
+        monkeypatch.setattr(
+            s, "llm_model_prices",
+            {"tier-cheap-model": (0.0002, 0.0006), "tier-strong-model": (0.0025, 0.01)},
+        )
+
     def _make_router(self):
         from app.services.llm_router import LLMTaskRouter
         return LLMTaskRouter()
@@ -197,14 +210,13 @@ class TestLLMTaskRouter:
         from app.services.llm_router import TaskType
         router = self._make_router()
         cfg = router.select_model(TaskType.CLASSIFY_INTENT)
-        # Should be gpt-4o-mini (cheap), not gpt-4o
-        assert "mini" in cfg.model_id or "3.5" in cfg.model_id
+        assert cfg.tier == "cheap" and cfg.model_id == "tier-cheap-model"
 
     def test_deep_analysis_uses_powerful_model(self):
         from app.services.llm_router import TaskType
         router = self._make_router()
         cfg = router.select_model(TaskType.DEEP_ANALYSIS)
-        assert "gpt-4o" in cfg.model_id
+        assert cfg.tier == "strong" and cfg.model_id == "tier-strong-model"
 
     def test_deterministic_task_raises(self):
         from app.services.llm_router import TaskType
@@ -215,7 +227,7 @@ class TestLLMTaskRouter:
     def test_long_prompt_upgrades_model(self):
         from app.services.llm_router import TaskType
         router = self._make_router()
-        # Very long prompt (>8000 chars) should use gpt-4o for context window
+        # Very long prompt (>8000 chars) should use the strong tier for context window
         cfg = router.select_model(TaskType.SHORT_NARRATIVE, prompt_length=9000)
         assert cfg.context_window >= 128000
 

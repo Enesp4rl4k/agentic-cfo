@@ -464,7 +464,8 @@ class ScheduledSyncRunner:
                 else:
                     cfg = schedule.source_config or {}
                     window = (str(cfg["from_date"])[:10], str(cfg["to_date"])[:10]) if cfg.get("from_date") and cfg.get("to_date") else None
-                    stated = pull_coverage(window, [r["date"] for r in normalized.feed.rows], partial)
+                    stated = pull_coverage(window, [r["date"] for r in normalized.feed.rows], partial,
+                                           getattr(normalized.feed, "opened_on", None))
                     job_id = await self._create_job(
                         csv_bytes=normalized.job_csv,
                         # Out of band: what this pull received is job metadata, never a line inside the file.

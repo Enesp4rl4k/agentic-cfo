@@ -55,6 +55,12 @@ describe("IngestCounts: balance verification of a text statement", () => {
     expect(screen.queryByText("Bakiye zinciriyle doğrulandı.")).toBeNull();
   });
 
+  it("never says plain verified when rows sat outside the balance chain, and says how many", () => {
+    renderWithQuery(<IngestCounts ingest={{ ...base, balance_check: "verified", outside_chain: 2 }} />);
+    expect(screen.getByText(/2 satırın bakiyesi yok ve bakiye zincirinin dışında kalıyor/)).toBeInTheDocument();
+    expect(screen.queryByText("Bakiye zinciriyle doğrulandı.")).toBeNull();
+  });
+
   it("says when the balance chain verified it", () => {
     renderWithQuery(<IngestCounts ingest={{ ...base, balance_check: "verified" }} />);
     expect(screen.getByText("Bakiye zinciriyle doğrulandı.")).toBeInTheDocument();

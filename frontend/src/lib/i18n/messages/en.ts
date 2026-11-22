@@ -2743,6 +2743,16 @@ export type MessageTree = {
     ingestBalanceVerified: string;
     ingestBalancePartial: string;
     ingestBalanceUnverified: string;
+    fileSignQuestion: string;
+    fileSignReading: string;
+    fileBodySignUniform: string;
+    ingestOutsideChain: string;
+    filePreviousAnswer: string;
+    fileConfirm: string;
+    fileStanding: string;
+    mappingStanding: string;
+    mappingFlagged: string;
+    fileSuggested: string;
   };
   acceptInvite: {
     title: string;
@@ -6207,6 +6217,7 @@ export const en: MessageTree = {
       amount_uncertain: "amount uncertain",
       amount_zero: "amount is zero",
       malformed_row: "columns may be misaligned",
+      balance_outside_chain: "row outside the balance chain",
     },
     fileTitle: "Which way do the amounts in this statement go?",
     fileBodyNoSignal: "This file has no column or sign that says which way an amount moved; the system cannot tell money in from money out and does not guess. You can correct the rows one by one, or upload a file with a direction or balance column. If the file really holds only one kind, say so below.",
@@ -6215,7 +6226,7 @@ export const en: MessageTree = {
     fileBodyInconclusive: "The balance column confirms only part of the rows; the file could not be read with confidence.",
     fileConventionQuestion: "In this statement, is \"{label}\" money going OUT of your account?",
     fileConventionMapping: "Read as: {mapping}",
-    fileBodySign: "There are very few negative amounts: the sign may show the direction, or it may be a single refund. Your one answer applies to every row of the file.",
+    fileBodySign: "The amounts carry a minus or plus sign, but nothing in the file proves what the sign means: an expense list with a few reversals looks exactly like a statement that is mostly deposits. The system does not guess. Your one answer applies to every row of the file and, if you choose, to later files of this format.",
     fileNoAccount: "This file does not say which bank account it is from; the answer applies to this file and cannot be remembered for the format.",
     fileRememberDenied: "Remembering this answer for the format needs an owner, admin or the accountant.",
     fileRows: "{count} rows waiting",
@@ -6239,6 +6250,7 @@ export const en: MessageTree = {
       sign_correct: "The signs are right: minus = money out, plus = money in",
       inverted: "No, the opposite",
       mixed: "I will correct the rows one by one",
+      sign_inverted: "No, the opposite: plus = money out (expense), minus = money in or a reversal",
     },
     mappingsTitle: "Remembered statement directions",
     mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",
@@ -6252,6 +6264,16 @@ export const en: MessageTree = {
     ingestBalanceVerified: "Verified against the running balance.",
     ingestBalancePartial: "{verified} rows verified against the running balance; {held} rows wait for your decision.",
     ingestBalanceUnverified: "Not verified against the balance: the rows could not be checked with the running balance.",
+    fileSignQuestion: "In this file, are minus amounts money out and plus amounts money in?",
+    fileSignReading: "If minus is out: {inIncome} in, {inExpense} out. If it is the opposite: {outIncome} in, {outExpense} out.",
+    fileBodySignUniform: "Every amount in this file has the same sign, and there is no column or balance that says which way they went. The system does not guess.",
+    ingestOutsideChain: "{count} rows have no balance and sit outside the balance chain; they wait for your decision and the chain does not vouch for them.",
+    filePreviousAnswer: "In an earlier file with the same headers ({source}) you answered: \"{answer}\". Is that true for this file too? Nothing says it is the same source, so it was not applied.",
+    fileConfirm: "Yes, same as before",
+    fileStanding: "Files with these headers and no account named are always like this (a standing rule you can forget later)",
+    mappingStanding: "standing rule for files with no account named",
+    mappingFlagged: "A balance chain overrode this answer",
+    fileSuggested: "A single balance step supports this reading. It is pre-selected as a suggestion, not a proof: please confirm.",
   },
   acceptInvite: {
     title: "Join the invitation",

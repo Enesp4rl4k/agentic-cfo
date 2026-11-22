@@ -130,10 +130,40 @@ describe("which account, and the sign question", () => {
     expect(screen.queryByLabelText("Bu ekstre biçimi için cevabımı hatırla")).toBeNull();
   });
 
-  it("asks whether the signs are right when only a few amounts are negative", async () => {
+  it("asks whether minus is out and plus is in, with both readings' totals, and remembers per format without an account", async () => {
     const user = userEvent.setup();
     listFileQuestions.mockResolvedValue({
-      files: [{ ...fileQuestionFixture, reason: "sign_unconfirmed", options: ["sign_correct", "mixed"] }],
+      files: [
+        {
+          ...fileQuestionFixture,
+          reason: "sign_unconfirmed",
+          identity: false,
+          options: ["sign_correct", "sign_inverted", "mixed"],
+          question: {
+            ...fileQuestionFixture.question,
+            totals: { as_read: { income: 270000, expense: 30000 }, inverted: { income: 30000, expense: 270000 } },
+            uniform: false,
+          },
+        },
+      ],
+      canRemember: true,
+    });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText("Bu dosyada eksi tutarlar çıkış, artı tutarlar giriş mi?")).toBeInTheDocument();
+    expect(screen.getByText(/Eksi çıkışsa: 2\.700,00 giriş, 300,00 çıkış\. Tersiyse: 300,00 giriş, 2\.700,00 çıkış\./)).toBeInTheDocument();
+    expect(screen.getByText("Elektrik")).toBeInTheDocument(); // the preview rows
+    // the sign is a fact about the export's format, so the box is offered even when the file names no account
+    expect(screen.getByLabelText("Bu ekstre biçimi için cevabımı hatırla")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hayır, tersi: artı = çıkan (gider), eksi = giren ya da iade" }));
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "sign_inverted", remember: true }),
+    );
+  });
+
+  it("confirms the signs with the same one question", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({
+      files: [{ ...fileQuestionFixture, reason: "sign_unconfirmed", options: ["sign_correct", "sign_inverted", "mixed"] }],
       canRemember: true,
     });
     renderWithQuery(<BekleyenKayitlarPage />);
@@ -141,6 +171,83 @@ describe("which account, and the sign question", () => {
     await waitFor(() =>
       expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "sign_correct", remember: true }),
     );
+  });
+
+  it("says plainly that a file with one sign only has nothing to check the signs against", async () => {
+    listFileQuestions.mockResolvedValue({
+      files: [{ ...fileQuestionFixture, reason: "sign_unconfirmed", options: ["sign_correct", "sign_inverted", "mixed"],
+        question: { ...fileQuestionFixture.question, uniform: true } }],
+      canRemember: true,
+    });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText(/tüm tutarlar aynı işaretli/)).toBeInTheDocument();
+  });
+});
+
+describe("the same header words, another source: the earlier answer is shown, not applied", () => {
+  const signFile = {
+    ...fileQuestionFixture,
+    reason: "sign_unconfirmed",
+    identity: false,
+    options: ["sign_correct", "sign_inverted", "mixed"],
+    previous: { answer: "sign_correct", columns: "tarih, açıklama, tutar", account: null, same_account: false, created_at: null },
+  };
+
+  it("names the earlier answer, pre-selects it as one click, and records nothing standing unless asked", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [signFile], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByTestId("previous-answer")).toHaveTextContent(
+      /Aynı başlıklı önceki dosyada \(tarih, açıklama, tutar\) "Tutarların işareti doğru: eksi = çıkan, artı = giren" demiştiniz; bu dosya için de geçerli mi\?/,
+    );
+    const buttons = screen.getAllByRole("button").filter((b) => b.hasAttribute("aria-pressed"));
+    expect(buttons[0]).toHaveTextContent("Evet, öncekiyle aynı: Tutarların işareti doğru");
+    expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+    await user.click(buttons[0]);
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "sign_correct", remember: true }),
+    );
+  });
+
+  it("offers a standing rule for files that name no account, as an explicit tick", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [signFile], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    await user.click(await screen.findByLabelText(/Bu başlıkla gelen, hesabı belli olmayan dosyalar hep böyle/));
+    await user.click(screen.getByRole("button", { name: /Hayır, tersi/ }));
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({
+        job_id: "j9", file_key: "f9", answer: "sign_inverted", remember: true, standing: true,
+      }),
+    );
+  });
+
+  it("lists a standing rule and an override by a balance chain where remembered answers are shown", async () => {
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: true });
+    listHeldRows.mockResolvedValue([]);
+    listDirectionMappings.mockResolvedValue([
+      { ...directionMappingFixture, standing: true, flagged_at: "2026-04-01T10:00:00Z", flagged_note: "the balance chain verifies minus = out" },
+    ]);
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText(/hesabı belli olmayan dosyalar için kalıcı kural/)).toBeInTheDocument();
+    expect(screen.getByText(/Bir bakiye zinciri bu cevabı geçersiz kıldı: the balance chain verifies minus = out/)).toBeInTheDocument();
+  });
+});
+
+describe("one balance step is a suggestion, not a proof", () => {
+  it("pre-selects the suggested reading and says why it is only a suggestion", async () => {
+    listFileQuestions.mockResolvedValue({
+      files: [{
+        ...fileQuestionFixture, reason: "sign_unconfirmed", options: ["sign_correct", "sign_inverted", "mixed"],
+        question: { ...fileQuestionFixture.question, suggested: { answer: "sign_correct", reason: "single_step" } },
+      }],
+      canRemember: true,
+    });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByTestId("suggested-answer")).toHaveTextContent("Tek bir bakiye adımı bu yönü destekliyor");
+    const pressed = screen.getAllByRole("button").filter((b) => b.getAttribute("aria-pressed") === "true");
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]).toHaveTextContent("Tutarların işareti doğru");
   });
 });
 

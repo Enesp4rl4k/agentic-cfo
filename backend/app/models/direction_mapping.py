@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import Boolean, DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -39,3 +39,14 @@ class DirectionMapping(Base):
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # The sign memory (`sign_unconfirmed`) is applied silently only to the SAME SOURCE: `signature` includes the account
+    # identity the file's header states, `header_signature` is the header words alone (to name an earlier source when a
+    # file with the same headers but no / another identity is asked again), `identity` is what the header stated ("" none).
+    header_signature: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    identity: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # An explicit, recorded choice "files with these headers and no account named are always so": the only way an
+    # identity-less file is applied silently. Never inferred.
+    standing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # A balance chain contradicted this memory and won: when, and what was recorded (never silent).
+    flagged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    flagged_note: Mapped[str | None] = mapped_column(String(300), nullable=True)

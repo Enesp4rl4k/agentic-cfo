@@ -39,6 +39,7 @@ AMOUNT_UNCERTAIN = "amount_uncertain"
 MALFORMED_ROW = "malformed_row"
 SUMMARY_SUSPECT = "summary_suspect"   # looks like a total / carried-balance line but carries an amount
 BALANCE_MISMATCH = "balance_mismatch"   # this row's balance step does not reconcile
+OUTSIDE_CHAIN = "balance_outside_chain"   # no balance, in a statement whose other rows have one: nothing checks it
 WITH_DOCUMENT = "document_held_together"
 
 
@@ -82,9 +83,11 @@ def row_reasons(row: dict[str, Any]) -> list[str]:
         reasons.append(SUMMARY_SUSPECT)
     elif row.get("balance_mismatch"):
         reasons.append(BALANCE_MISMATCH)
+    if row.get("outside_chain"):
+        reasons.append(OUTSIDE_CHAIN)
     if row.get("direction_file"):
         reasons.append(DIRECTION_FILE)
-    elif row.get("type") not in ("income", "expense") and not row.get("balance_mismatch"):
+    elif row.get("type") not in ("income", "expense") and not row.get("balance_mismatch") and not row.get("outside_chain"):
         reasons.append(DIRECTION_UNKNOWN)  # income or expense is never assumed
     if "amount_cents" in row and row["amount_cents"] is None:
         reasons.append(AMOUNT_UNREADABLE)

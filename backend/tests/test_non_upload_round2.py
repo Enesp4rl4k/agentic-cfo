@@ -225,12 +225,21 @@ async def test_a_pull_that_stopped_within_five_days_of_the_month_end_is_still_in
     assert complete_months(extents, ["2026-03"]) == {"2026-03": False}
 
 
-async def test_a_completed_pull_states_its_window_and_a_later_repull_completes_the_month(client, monkeypatch, tmp_path) -> None:
+async def test_a_completed_pull_states_its_window_but_not_from_before_the_account_existed(client, monkeypatch, tmp_path) -> None:
     _window(monkeypatch, "2026-03-01", "2026-03-31")
     data = await _sync(client, monkeypatch, tmp_path, _march([3, 9, 20]), "cov3")      # a quiet month: nothing after the 20th
     assert data["sync_status"] == F.SUCCESS and data["period_covered"] is True
     extents, _ = await _extents(client, data["job_id"])
-    assert extents[0]["start"] == "2026-03-01" and extents[0]["end"] == "2026-03-31" and "truncated_at" not in extents[0]
+    # the end is stated by the pull; the start is the first transaction: nothing says the account existed on 1-2 March
+    assert extents[0]["start"] == "2026-03-03" and extents[0]["end"] == "2026-03-31" and "truncated_at" not in extents[0]
+    assert complete_months(extents, ["2026-03"]) == {"2026-03": False}
+
+
+async def test_a_completed_pull_whose_first_transaction_is_the_first_covers_the_month(client, monkeypatch, tmp_path) -> None:
+    _window(monkeypatch, "2026-03-01", "2026-03-31")
+    data = await _sync(client, monkeypatch, tmp_path, _march([1, 9, 20]), "cov3b")
+    extents, _ = await _extents(client, data["job_id"])
+    assert extents[0]["start"] == "2026-03-01" and extents[0]["end"] == "2026-03-31"
     assert complete_months(extents, ["2026-03"]) == {"2026-03": True}                 # stated by the pull, not assumed
 
 

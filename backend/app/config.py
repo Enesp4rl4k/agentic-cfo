@@ -252,6 +252,14 @@ class Settings(BaseSettings):
 
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"
+    # Optional per-tier model ids (see app.platform.model_catalog). Unset = use
+    # llm_model, so the single LLM_MODEL variable keeps working.
+    llm_model_cheap: str | None = None
+    llm_model_strong: str | None = None
+    # Optional USD price per 1K tokens, keyed by model id:
+    #   LLM_MODEL_PRICES='{"deepseek-chat": [0.00027, 0.0011]}'  ([in, out])
+    # A model that is not listed has an unknown price; its cost is recorded as null.
+    llm_model_prices: dict[str, tuple[float, float]] = {}
     llm_temperature: float = 0.0
     llm_max_tokens: int = 16384
     # DeepSeek: https://api.deepseek.com

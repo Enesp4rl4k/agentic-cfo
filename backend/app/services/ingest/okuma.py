@@ -53,6 +53,9 @@ class ReadLedger:
     reader_failed: bool = False
     # Text statements: was the running balance chain checked? "verified" | "unverified" | None (not a text statement).
     balance_check: str | None = None
+    # Rows with an amount and no balance inside a statement whose other rows have one: held, outside the chain.
+    # Not a bucket of the invariant (the row is still emitted); it only changes what the summary may claim.
+    outside_chain: int = 0
 
     def reset(self) -> None:
         """A reader gave up: the next one starts from nothing (the failure itself is remembered)."""
@@ -67,6 +70,7 @@ class ReadLedger:
         self.summary_lines = [*self.summary_lines, *other.summary_lines][:MAX_LISTED]
         self.reader_failed = self.reader_failed or other.reader_failed
         self.balance_check = other.balance_check or self.balance_check
+        self.outside_chain += other.outside_chain
 
     def absorb(self, account: Any) -> None:
         """Add what `parsers.lines.account_for_lines` found: the physical lines read, and where each went."""
@@ -88,7 +92,7 @@ class ReadLedger:
     def as_dict(self) -> dict[str, Any]:
         return {k: getattr(self, k) for k in SUMMED} | {
             "summary_lines": list(self.summary_lines), "reader_failed": self.reader_failed,
-            "balance_check": self.balance_check,
+            "balance_check": self.balance_check, "outside_chain": self.outside_chain,
         }
 
 
@@ -101,6 +105,7 @@ def merge_counts(a: dict[str, Any] | None, b: dict[str, Any] | None) -> dict[str
     out["reader_failed"] = bool(a.get("reader_failed") or b.get("reader_failed"))
     checks = {c for c in (a.get("balance_check"), b.get("balance_check")) if c}
     out["balance_check"] = None if not checks else "unverified" if "unverified" in checks else "verified"
+    out["outside_chain"] = int(a.get("outside_chain", 0)) + int(b.get("outside_chain", 0))
     return out
 
 
