@@ -91,7 +91,7 @@ class Organization(Base):
 
     # SEC-5 IP allow-list (columns from migration 010; the model lacked them, so a PUT stored nothing).
     # Comma-separated CIDRs. NOTHING enforces it at login or on requests yet: it is a stored setting.
-    ip_whitelist: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip_whitelist: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Comma-separated allowed CIDRs")
     ip_whitelist_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
