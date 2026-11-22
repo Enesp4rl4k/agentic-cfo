@@ -160,7 +160,8 @@ async def test_a_password_reset_also_proves_the_address(client):
 
 # ── resend: the same answer for every address ───────────────────────────────
 
-async def test_resend_answers_identically_and_sends_only_for_an_unverified_password_account(client):
+async def test_resend_answers_identically_and_sends_only_for_an_unverified_password_account(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "auth_mail_cooldown_minutes", 0)  # the cool-down has its own test
     await register(client, "open@example.com")
     await register(client, "done@example.com")
     await register(client, "sso@example.com")
@@ -188,6 +189,7 @@ async def test_resend_answers_identically_and_sends_only_for_an_unverified_passw
 
 async def test_resend_takes_the_floor_and_is_limited_per_address_and_per_ip(client, monkeypatch):
     await register(client)
+    monkeypatch.setattr(get_settings(), "auth_mail_cooldown_minutes", 0)
     monkeypatch.setattr(get_settings(), "password_reset_response_floor_seconds", 0.3)
     for email in ("ada@example.com", "nobody@example.com"):
         started = time.monotonic()

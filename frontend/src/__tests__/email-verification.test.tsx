@@ -98,7 +98,7 @@ describe("signing in with an unverified address", () => {
 
 describe("registering", () => {
   it("does not sign in or create the workspace when the address must be verified first", async () => {
-    fetchMock.mockResolvedValueOnce(json(201, { data: { user_id: "u", verification_required: true }, error: null }));
+    fetchMock.mockResolvedValueOnce(json(201, { data: { accepted: true, verification_required: true }, error: null }));
     const user = userEvent.setup();
     render(<RegisterPage />);
     const field = (id: string) => document.getElementById(id) as HTMLInputElement;
@@ -109,7 +109,7 @@ describe("registering", () => {
     await user.type(await waitFor(() => field("orgName")), "Acme");
     await user.click(screen.getByRole("button", { name: "Workspace Oluştur" }));
 
-    expect(await screen.findByText("Bitirmek için e-postanızı kontrol edin")).toBeInTheDocument();
+    expect(await screen.findByText("E-postanızı kontrol edin")).toBeInTheDocument();
     await waitFor(() => expect(signIn).not.toHaveBeenCalled());
     expect(calls("/org/create")).toHaveLength(0);
     expect(screen.getByRole("link", { name: /yeniden gönderin/ })).toHaveAttribute("href", "/auth/verify-email");

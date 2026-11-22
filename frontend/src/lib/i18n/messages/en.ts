@@ -6852,8 +6852,8 @@ export const en: MessageTree = {
     sentBody: "If this address has an account that is waiting to be verified, a new link is on its way.",
     tooMany: "Too many attempts. Wait a little and try again.",
     registered: {
-      title: "Check your e-mail to finish",
-      body: "We sent a verification link to your address. Open it, then sign in. Your account cannot sign in before that.",
+      title: "Check your e-mail",
+      body: "We sent an e-mail to this address. If you just opened an account, open the link in it, then sign in; you cannot sign in before that. If an account already exists at this address, the e-mail holds the sign-in and password-reset links.",
       resend: "Did not get it? Send the link again",
     },
     unverified: {

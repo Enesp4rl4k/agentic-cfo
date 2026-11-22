@@ -19,7 +19,6 @@ test fails on it). Two delivery classes:
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import logging
 from datetime import UTC, datetime
@@ -30,6 +29,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import outbound
 from app.core.email_address import normalize_email
 from app.models.alert_preference import AlertPreference
 from app.models.organization import OrgMembership
@@ -117,24 +117,12 @@ def destination_host(url: str) -> str:
 
 
 def destination_problem(url: str) -> str | None:
-    """Why a Slack or webhook URL may not be posted to, or None.
+    """Why a Slack or webhook URL may not be posted to, judged without DNS, or None.
 
-    https only, and never this machine or a private network (a configured URL is user input;
-    posting to an internal address is a request forgery). Judged by the literal host: a name
-    that resolves to a private address is not caught here."""
-    parts = urlsplit(url)
-    host = (parts.hostname or "").lower()
-    if parts.scheme != "https" or not host:
-        return "destination_not_https"
-    if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
-        return "destination_is_internal"
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return None
-    if not address.is_global:
-        return "destination_is_internal"
-    return None
+    The rules live in `app.core.outbound` (https only, no numeric host spellings, no internal
+    names). A name that RESOLVES to a private address is refused at delivery, where the connection
+    is also pinned to the validated address; `enqueue_connection_test` checks it up front too."""
+    return outbound.static_problem(url)
 
 
 async def enqueue_slack(
@@ -214,6 +202,8 @@ async def _send_http(row: OutboxMessage) -> str:
             sent = await AlertDispatcher.dispatch_webhook(url, str(spec["event_type"]), spec["data"])
     except (ValueError, KeyError, TypeError) as exc:
         return f"failed:bad_payload: {exc}"
+    if sent.blocked_reason:
+        return f"failed:{sent.blocked_reason}"
     return "sent" if sent.delivered else f"failed:http_{sent.status_code}"
 
 

@@ -48,9 +48,10 @@ async def resend_verification(
     """Ask for the verification link again. The answer never depends on the account."""
     started = time.monotonic()
     address = normalize_email(str(body.email))
-    allowed = await address_allowed("emailverify", address)
+    ip = _client_ip(request)
+    allowed = await address_allowed("emailverify", address, ip)
     outcome = await email_verification.resend(
-        db, email=address, ip=_client_ip(request), rate_limited=not allowed
+        db, email=address, ip=ip, rate_limited=not allowed
     )
     if outcome == "sent":
         outbox.kick()

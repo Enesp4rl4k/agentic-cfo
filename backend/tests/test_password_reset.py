@@ -101,6 +101,7 @@ async def test_a_request_takes_at_least_the_floor_whether_or_not_the_account_exi
 
 
 async def test_per_address_limit_is_answered_like_any_other_request_and_sends_nothing_more(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "auth_mail_cooldown_minutes", 0)  # isolate the limit from the cool-down
     monkeypatch.setattr(get_settings(), "password_reset_per_email_per_hour", 2)
     await register(client, "ada@example.com")
     answers = [await forgot(client, "ada@example.com") for _ in range(4)]
@@ -204,7 +205,8 @@ async def test_two_simultaneous_completions_make_one_winner(client):
     assert (await login(client, "ada@example.com", winner)).status_code == 200
 
 
-async def test_completing_closes_every_other_open_token_of_the_user(client):
+async def test_completing_closes_every_other_open_token_of_the_user(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "auth_mail_cooldown_minutes", 0)
     await register(client)
     await forgot(client, "ada@example.com")
     first = await emailed_token(client, "password_reset", "ada@example.com")

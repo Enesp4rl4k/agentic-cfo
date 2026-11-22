@@ -76,6 +76,24 @@ async def mark_verified(db: AsyncSession, user_id: str) -> None:
     )
 
 
+async def _recently_sent(db: AsyncSession, user_id: str) -> bool:
+    now = datetime.now(UTC)
+    since = now - timedelta(minutes=get_settings().auth_mail_cooldown_minutes)
+    found = (
+        await db.execute(
+            select(EmailVerificationToken.id)
+            .where(
+                EmailVerificationToken.user_id == user_id,
+                EmailVerificationToken.used_at.is_(None),
+                EmailVerificationToken.created_at > since,
+                EmailVerificationToken.expires_at > now,
+            )
+            .limit(1)
+        )
+    ).first()
+    return found is not None
+
+
 async def resend(db: AsyncSession, *, email: str, ip: str | None, rate_limited: bool) -> str:
     """Queue a new link if the address belongs to an active, unverified password account.
 
@@ -92,6 +110,8 @@ async def resend(db: AsyncSession, *, email: str, ip: str | None, rate_limited: 
         outcome = "already_verified"
     elif not user.hashed_password:
         outcome = "sso_only"
+    elif await _recently_sent(db, user.id):
+        outcome = "cooldown"  # the link already sent lasts 48 h: do not send another
     if outcome == "sent" and user is not None:
         await issue(db, user)
     db.add(AuditLog(

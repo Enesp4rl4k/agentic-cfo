@@ -34,7 +34,7 @@ from app.services.secret_tokens import claim_token, hash_token, new_token
 
 logger = logging.getLogger(__name__)
 
-RequestOutcome = Literal["sent", "unknown_account", "inactive", "sso_only", "rate_limited"]
+RequestOutcome = Literal["sent", "unknown_account", "inactive", "sso_only", "rate_limited", "cooldown"]
 CompleteOutcome = Literal["ok", "invalid", "expired", "used"]
 
 
@@ -50,6 +50,7 @@ def _audit(
     user: User | None,
     ip: str | None,
     user_agent: str | None,
+    details: dict[str, object] | None = None,
 ) -> None:
     """One audit row: what happened, to whom, never a token or a password."""
     db.add(
@@ -57,11 +58,30 @@ def _audit(
             user_id=user.id if user is not None else None,
             action=action,
             resource="/api/v1/auth/password-reset",
-            request_body={"outcome": outcome},
+            request_body={"outcome": outcome, **(details or {})},
             ip_address=ip,
             user_agent=(user_agent or "")[:500] or None,
         )
     )
+
+
+async def _recently_sent(db: AsyncSession, user_id: str) -> bool:
+    """A reset link minted inside the cool-down that can still be used."""
+    now = datetime.now(UTC)
+    since = now - timedelta(minutes=get_settings().auth_mail_cooldown_minutes)
+    found = (
+        await db.execute(
+            select(PasswordResetToken.id)
+            .where(
+                PasswordResetToken.user_id == user_id,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.created_at > since,
+                PasswordResetToken.expires_at > now,
+            )
+            .limit(1)
+        )
+    ).first()
+    return found is not None
 
 
 async def request_reset(
@@ -87,6 +107,8 @@ async def request_reset(
         outcome = "inactive"
     elif not user.hashed_password:
         outcome = "sso_only"
+    elif await _recently_sent(db, user.id):
+        outcome = "cooldown"  # the mail already sent is still valid: do not send another
     else:
         outcome = "sent"
 
@@ -148,10 +170,15 @@ async def complete_reset(
         .values(used_at=now)
         .execution_options(synchronize_session=False)
     )
+    # A reset ends every credential tied to this person: sessions (token_version, below) and their
+    # personal API key. Org-level credentials (ERP/connector secrets, the org's webhook and Slack
+    # URLs, the accountant portal) are not the user's and are untouched; see docs/ops/auth-abuse.md.
+    api_keys_revoked = 1 if user.api_key else 0
     await db.execute(
         update(User)
         .where(User.id == user.id)
         .values(
+            api_key=None,
             hashed_password=hash_password(new_password),
             token_version=User.token_version + 1,
             password_changed_at=now,
@@ -167,6 +194,7 @@ async def complete_reset(
         user=user,
         ip=ip,
         user_agent=user_agent,
+        details={"api_keys_revoked": api_keys_revoked, "sessions_ended": "all", "other_reset_links_closed": True},
     )
     await db.commit()
     logger.info("Password reset completed for user %s", user.id)

@@ -13,6 +13,7 @@ import io
 import logging
 from typing import Any
 
+from app.core import outbound
 from app.services.connectors.csv_utils import transactions_to_csv
 
 logger = logging.getLogger(__name__)
@@ -86,12 +87,7 @@ async def pull_hr_export_csv(cfg: dict[str, Any]) -> tuple[bytes, str]:
             logger.debug("HR export pull skipped: no csv_url or csv_base64")
             return b"", ""
         try:
-            import httpx
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(str(url))
-                resp.raise_for_status()
-                payload = resp.content
+            payload = await outbound.fetch_import(str(url))
         except Exception as exc:
             logger.warning("HR csv_url fetch failed: %s", exc)
             return b"", ""

@@ -127,6 +127,20 @@ def _alert_dispatcher_answers_200(monkeypatch):
         AlertDispatcher, "transport", httpx.MockTransport(lambda request: httpx.Response(200))
     )
 
+# ── 2b-i. No test reaches DNS or a user-supplied URL ─────────────────────────
+# app/core/outbound resolves a destination before it connects. Names resolve to a fixed public
+# address here (an IP literal is itself); a test of the guard installs its own resolver.
+@pytest.fixture(autouse=True)
+def _outbound_resolves_without_dns():
+    from app.core import outbound
+
+    async def resolve(host: str, port: int) -> list[str]:
+        return ["93.184.216.34"]
+
+    outbound.set_test_seams(resolve, None)
+    yield
+    outbound.set_test_seams(None, None)
+
 # ── 2c. A request does not start a background delivery ───────────────────────
 # `outbox.kick()` spawns a delivery on its own session after an invitation or a reset is
 # written. A test drives the outbox itself (`deliver_pending`), on its own database.
