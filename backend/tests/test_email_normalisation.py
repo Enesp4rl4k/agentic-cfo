@@ -15,6 +15,7 @@ from sqlalchemy import select
 from app.core.email_address import normalize_email
 from app.models.organization import OrgInvite
 from app.models.user import User
+from app.services.secret_tokens import hash_token
 from tests.api_helpers import PAROLA, bellek_istemcisi, kullanici
 
 P = "/api/v1"
@@ -59,7 +60,7 @@ def test_the_migration_normalises_exactly_like_the_application():
 async def seed_invite(client, org_id: str, email: str, role: str = "viewer") -> str:
     token = "m" * 64
     async with client._maker() as db:
-        db.add(OrgInvite(org_id=org_id, email=email, role=role, token=token, accepted=False,
+        db.add(OrgInvite(org_id=org_id, email=email, role=role, token_hash=hash_token(token), accepted=False,
                          expires_at=datetime.now(UTC) + timedelta(days=7)))
         await db.commit()
     return token
@@ -118,10 +119,20 @@ async def test_sso_with_a_case_variant_links_the_existing_account(client):
         assert len((await db.execute(select(User))).scalars().all()) == 1
 
 
-def test_there_is_no_password_reset_flow_to_cover():
-    """Recorded so that adding one means adding it to the normalised lookups (and to this test)."""
-    hits = [p.name for p in (APP / "api").glob("*.py") if "password/reset" in p.read_text(encoding="utf-8", errors="ignore")]
-    assert hits == []
+async def test_password_reset_looks_the_account_up_in_any_spelling(client):
+    """The reset flow is one of the lookups: an address typed in another case or width finds the account.
+
+    (It used to be recorded here that there was no reset flow. The structural test at the end of this
+    file also covers its query: it compares `User.email` with a `normalize_email(...)` value.)"""
+    from app.models.outbox_message import OutboxMessage
+
+    await client.post(f"{P}/auth/register", json={"email": "Ada@Example.com", "password": PAROLA})
+    for spelling in (" ADA@example.COM", "ａｄａ@example.com"):
+        answer = await client.post(f"{P}/auth/forgot-password", json={"email": spelling})
+        assert answer.status_code == 200, spelling
+    async with client._maker() as db:
+        rows = (await db.execute(select(OutboxMessage).where(OutboxMessage.kind == "password_reset"))).scalars().all()
+    assert {r.recipient for r in rows} == {"ada@example.com"} and len(rows) == 2
 
 
 # ── the migration ───────────────────────────────────────────────────────────

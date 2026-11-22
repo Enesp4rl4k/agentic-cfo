@@ -71,7 +71,7 @@ Sütunlar: **Kapı** = ön yüzde bu bağlayıcıyı çağıran bir ekran var m�
 |---|---|---|---|---|
 | `integrations.ShopifyConnector`, `TrendyolConnector`, `GoogleSheetsConnector` | `api/integrations_extended` | Doğrulanmadı (kapı testi A2.8 karar verir) | 0 | **Kapalı tut**; pilot isterse platform çatısına taşı |
 | `integrations.HepsiburadaConnector` | Yok | Yok | 0 | **Sil** |
-| `integrations.WebhookDispatcher` | `api/org` | — | 0 | Bir **dış etkidir**: outbox'a taşınır (plan v11 A2.6) |
+| `integrations.WebhookDispatcher` | — | — | — | **Silindi**: her dış etki yalnızca outbox'tan çıkar (`services/outbox*.py`) |
 
 ### Giriş kapıları ve zamanlayıcı
 

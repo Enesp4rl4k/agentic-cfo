@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -25,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import require_writer
 from app.api.auth import get_current_user
-from app.core.branding import get_brand
 from app.database import get_db
 from app.models.alert_preference import AlertPreference
 from app.models.in_app_notification import InAppNotification
@@ -307,22 +307,15 @@ async def test_slack(
     if not webhook_url:
         raise HTTPException(400, detail="Slack webhook URL yapılandırılmamış.")
 
+    from app.services import outbox, outbox_immediate
+
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                webhook_url,
-                json={
-                    "text": (
-                        f"✅ {get_brand().name} — Slack entegrasyonu başarıyla test edildi!\n"
-                        f"Org: `{org_id}` | {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
-                    )
-                },
-            )
-            if resp.status_code == 200:
-                return {"data": {"sent": True}, "error": None}
-            raise HTTPException(502, detail=f"Slack returned {resp.status_code}: {resp.text[:200]}")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(502, detail=f"Slack test başarısız: {exc}")
+        row = await outbox_immediate.enqueue_connection_test(
+            db, test_id=uuid.uuid4().hex, org_id=org_id, channel="slack", destination=webhook_url
+        )
+    except outbox_immediate.ImmediateKindRefused as exc:
+        raise HTTPException(400, detail=f"Slack webhook adresi kullanılamaz: {exc}") from exc
+    await db.commit()
+    outbox.kick()
+    # Queued, not delivered: the outbox sender posts it and records sent or failed on the row.
+    return {"data": {"sent": False, "queued": True, "outbox_id": row.id, "status": row.status}, "error": None}

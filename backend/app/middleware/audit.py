@@ -39,6 +39,8 @@ _AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _SENSITIVE_FIELDS = {
     "password", "hashed_password", "token", "access_token", "refresh_token",
     "api_key", "secret", "secret_key", "authorization",
+    "new_password", "current_password", "old_password", "password_confirm",
+    "reset_token", "client_secret",
 }
 
 # Max body size to store in the audit log (avoid huge blobs in DB)

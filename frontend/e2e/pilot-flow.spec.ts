@@ -577,14 +577,14 @@ test.describe("Pilot flow", () => {
     }
   });
 
-  test("17. the workspace screen offers exactly the roles the owner may grant, each with a line on what it can do", async ({ page }) => {
+  test("17. the workspace screen offers exactly the roles the owner may grant (never owner), each with a line on what it can do", async ({ page }) => {
     await loginInBrowser(page, OWNER);
     await page.goto("/settings/workspace");
     const inviteForm = page.locator("form").filter({ has: page.locator('input[type="email"]') });
     const options = inviteForm.locator("select option");
     await expect(options.first()).toBeAttached({ timeout: 60_000 });
     const values = await options.evaluateAll((all) => all.map((o) => (o as HTMLOptionElement).value));
-    expect(values.sort()).toEqual(["admin", "analyst", "cfo", "owner", "smmm", "viewer"]);
+    expect(values.sort()).toEqual(["admin", "analyst", "cfo", "smmm", "viewer"]); // one owner per company: no "owner"
     await expect(inviteForm.locator("select option[value='smmm']")).toHaveCount(1);
     await expect(page.getByText(/Şirketin mali müşaviri: kayıtları onaylar/)).toBeVisible();
     await expect(page.getByText("Yalnızca görüntüler; hiçbir şeyi değiştirmez.")).toBeVisible();
