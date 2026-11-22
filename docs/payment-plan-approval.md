@@ -23,8 +23,12 @@ the admin role**.
     like anyone's (`self_decided: false`). The proposer may still withdraw it, or reject it.
   - another decider exists and the amount is **at or below** the threshold: the proposer may decide, with
     the same one-step confirmation, recorded the same way. A trivial amount does not need a colleague.
-  - an amount in a currency other than the threshold's cannot be compared (no exchange rate is kept) and
-    counts as above it.
+  - an amount in a currency other than the threshold's cannot be compared (no exchange rate is kept), and an
+    amount that is unknown (the open item is gone), count as above it.
+  - the test is cumulative: what the same person approved for themselves in the last 30 days (read from the
+    decision records) counts with the current amount, so three changes just under the threshold are not three
+    trivial ones.
+  - the threshold is the one in force when the change was proposed, and only the owner can change it.
   - rejecting one's own proposal needs no confirmation and is recorded with `self_decided: true`.
 - Until it is approved nothing changes: the radar, the base forecast and the reports keep the date the
   documents gave. A rejected or withdrawn proposal changes nothing and keeps its reason.

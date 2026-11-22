@@ -362,6 +362,8 @@ INLINE_GUARDED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/approve"): "payment_plan: owner or admin decide",
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/reject"): "payment_plan: owner or admin decide",
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/withdraw"): "payment_plan.withdraw: only the person who proposed it, while it waits (the author check, not a role check)",
+    ("POST", "/api/v1/org/me/materiality/acknowledge"): "owner only, checked in the handler: the person a control constrains (an admin) does not set the control",
+    ("PUT", "/api/v1/org/me/materiality"): "owner only, checked in the handler: the person a control constrains (an admin) does not set the control",
     ("POST", "/api/v1/org/invite"): "_require_admin: owner or admin",
     ("DELETE", "/api/v1/org/invites/{invite_id}"): "_require_admin: owner or admin",
     ("PATCH", "/api/v1/org/me"): "_require_admin: owner or admin",

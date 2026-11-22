@@ -37,9 +37,13 @@ threshold = 5% x average monthly outflow of the last complete months in the ledg
             rounded half up to two significant figures, never below 5.000 and never above 1.000.000
 ```
 
-* **Fallback:** with fewer than 3 such months, or no single currency, the basis is the monthly outflow the
+* **Complete months** are the runway's own (`services/coverage`: months every statement covers whole,
+  consecutive), from the same ledger rows and statement extents, and the outflow is the same definition the
+  cash-flow step builds for the runway (a test pins it). Transfers between the company's own accounts are not
+  identifiable in the ledger (the runway cannot tell them either), so both legs count in both numbers.
+* **Fallback:** with fewer than 3 complete months, or no single currency, the basis is the monthly outflow the
   company declared in the size answers (band middles 250.000 / 1.500.000 / 10.000.000), labelled "beyan
-  edilen". With neither, there is no proposal and the old fixed 100.000 keeps applying.
+  edilen", and the sentence says the ledger had too few complete months. With neither, there is no proposal and the old fixed 100.000 keeps applying.
 * **Examples:** 2 million a year is 166.667 a month, 5% is 8.333, so **8.300**. 200 million a year is 16.67
   million a month, so **830.000**. A 500 million company would compute 2.08 million and be held to the
   ceiling, **1.000.000**. A 100.000 company would compute 417 and be raised to the floor, **5.000**.
@@ -49,8 +53,14 @@ threshold = 5% x average monthly outflow of the last complete months in the ledg
   applied still does, for new and existing organisations alike. The acknowledged value is stored with its
   basis on the organisation (`materiality_applied`) and every acknowledgement is a decision record
   (`kind=materiality`).
-* **Override:** the owner or admin can set their own amount (`PUT .../materiality`), recorded with the reason,
-  before and after.
+* **Who changes it:** only the OWNER (an organisation has one owner). An admin decides under the threshold, so
+  an admin must not be able to move it: they can read it and its history, and the server answers 403 to
+  their acknowledge or override. The settings page shows the history (who, when, from, to, why).
+* **Override:** the owner sets their own amount (`PUT .../materiality`) inside the same floor and ceiling
+  (outside: 422 with the bounds) and with a required reason, recorded with before and after.
+* **A proposal keeps its threshold:** the threshold in force when a payment-plan change is proposed is stored
+  on it; a later change does not reach proposals already made. A pending proposal by someone who changed the
+  threshold shortly before or after is flagged on /onay.
 * **Where it applies:** the authority matrix's `high_value` rule in the default policy (its note carries the
   basis), and the self-approval rule. A policy the organisation saved itself is theirs and is not rewritten.
 * **Only materiality.** Gates that protect the books (unreadable rows, currency, direction, account identity,

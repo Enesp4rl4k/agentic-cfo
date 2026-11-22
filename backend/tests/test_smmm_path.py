@@ -134,7 +134,7 @@ async def test_the_accountant_does_not_decide_the_companys_commercial_matters(cl
     org = await company(client, "ticari")
     await person(client, "sahip@ticari.com", {org: "owner"}, acting=org)
     smmm, _ = await person(client, "musavir@ticari.com", {org: "smmm"}, acting=org)
-    assert (await client.put("/api/v1/org/me/materiality", headers=smmm, json={"amount_cents": 1000})).status_code == 403
+    assert (await client.put("/api/v1/org/me/materiality", headers=smmm, json={"amount_cents": 20_000_00, "reason": "deneme"})).status_code == 403
     assert (await client.put(REC, headers=smmm, json={"send_to_smmm": True})).status_code == 403
     r = await client.post("/api/v1/ledger/plan-changes", headers=smmm, json={"open_item_id": "x", "to_date": "2030-01-01"})
     assert r.status_code == 403

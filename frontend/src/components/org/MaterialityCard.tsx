@@ -28,8 +28,9 @@ export function MaterialityCard() {
   const [reason, setReason] = useState("");
   const [notice, setNotice] = useState<"saved" | "stale" | "error" | null>(null);
 
-  if (!data || !data.can_decide) return null;
-  const { current, proposal } = data;
+  if (!data) return null;
+  const { current, proposal, history, rule } = data;
+  const owner = data.can_change;
 
   async function run(action: () => Promise<Materiality>) {
     setNotice(null);
@@ -47,7 +48,8 @@ export function MaterialityCard() {
   }
 
   const amount = Math.round(Number(lira.replace(",", ".")) * 100);
-  const ownValid = Number.isFinite(amount) && amount > 0;
+  const ownValid =
+    Number.isFinite(amount) && amount >= rule.floor_cents && amount <= rule.ceiling_cents && reason.trim().length >= 3;
 
   return (
     <Card className="space-y-3 p-4">
@@ -60,7 +62,9 @@ export function MaterialityCard() {
         </p>
       </div>
 
-      {proposal && proposal.differs_from_current && !own && (
+      {!owner && <p className="m-0 text-xs text-muted-foreground">{m.ownerOnly}</p>}
+
+      {owner && proposal && proposal.differs_from_current && !own && (
         <div className="space-y-2 rounded-md border border-border p-3">
           <p className="m-0 text-sm font-medium">{m.proposalTitle.replace("{amount}", cents(proposal.amount_cents))}</p>
           <p className="m-0 text-xs text-muted-foreground">{m.basis.replace("{basis}", proposal.basis_text)}</p>
@@ -76,7 +80,7 @@ export function MaterialityCard() {
         </div>
       )}
 
-      {(own || !proposal || !proposal.differs_from_current) && (
+      {owner && (own || !proposal || !proposal.differs_from_current) && (
         <div className="space-y-2">
           {!own ? (
             <Button variant="outline" className="min-h-[44px]" onClick={() => setOwn(true)}>
@@ -84,6 +88,9 @@ export function MaterialityCard() {
             </Button>
           ) : (
             <div className="flex flex-wrap items-end gap-2">
+              <p className="m-0 w-full text-xs text-muted-foreground">
+                {m.bounds.replace("{min}", cents(rule.floor_cents)).replace("{max}", cents(rule.ceiling_cents))}
+              </p>
               <label className="flex flex-col gap-1 text-sm">
                 {m.ownLabel}
                 <input
@@ -115,6 +122,23 @@ export function MaterialityCard() {
       {notice === "saved" && <p role="status" className="m-0 text-sm text-success">{m.saved}</p>}
       {notice === "stale" && <p role="alert" className="m-0 text-sm text-destructive">{m.stale}</p>}
       {notice === "error" && <p role="alert" className="m-0 text-sm text-destructive">{m.error}</p>}
+      {history.length > 0 && (
+        <div className="space-y-1">
+          <h3 className="m-0 text-sm font-medium">{m.historyTitle}</h3>
+          <ul className="m-0 list-none space-y-1 p-0">
+            {history.map((h) => (
+              <li key={h.decided_at} className="text-xs text-muted-foreground">
+                {m.historyLine
+                  .replace("{date}", h.decided_at.slice(0, 10))
+                  .replace("{who}", h.decided_by ?? "-")
+                  .replace("{from}", h.from_cents != null ? cents(h.from_cents) : "-")
+                  .replace("{to}", h.to_cents != null ? cents(h.to_cents) : "-")}
+                {h.reason ? ` · ${m.historyReason.replace("{reason}", h.reason)}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="m-0 text-xs text-muted-foreground">{m.safety}</p>
     </Card>
   );

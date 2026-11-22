@@ -170,6 +170,16 @@ describe("Onay bekleyenler: payment plan change proposals", () => {
     expect(screen.queryByRole("button", { name: "Tek dokunuşla karar ver" })).toBeNull();
   });
 
+  it("says so when the proposer changed the approval threshold themselves", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({
+      changes: [{ ...proposal, threshold_changed_by_proposer: true }], canDecide: true, selfDecisionAck: "x",
+    });
+    show();
+    expect(await screen.findByText(/eşiğini yakın zamanda kendisi değiştirdi/)).toBeInTheDocument();
+  });
+
   it("shows anyone else that the decision belongs to an owner or admin, and lets the proposer withdraw", async () => {
     getProposedSettlements.mockResolvedValue([]);
     getPossibleDuplicates.mockResolvedValue([]);

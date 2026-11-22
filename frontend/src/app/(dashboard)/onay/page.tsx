@@ -330,6 +330,9 @@ export default function OnayPage() {
                       <p className="m-0 text-xs text-muted-foreground">{copy.planBy.replace("{note}", change.request_note)}</p>
                     )}
                   </div>
+                  {change.threshold_changed_by_proposer && (
+                    <p className="m-0 text-xs font-medium text-warning">{selfDecision.thresholdMoved}</p>
+                  )}
                   {canDecide && change.self_decision === "blocked" && (
                     <div className="space-y-2">
                       <p className="m-0 text-sm font-medium">{selfDecision.blockedTitle}</p>

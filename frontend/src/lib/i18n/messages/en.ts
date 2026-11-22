@@ -2244,6 +2244,11 @@ export type MessageTree = {
       own: string;
       ownLabel: string;
       reasonLabel: string;
+      ownerOnly: string;
+      bounds: string;
+      historyTitle: string;
+      historyLine: string;
+      historyReason: string;
       save: string;
       cancel: string;
       saved: string;
@@ -2277,6 +2282,7 @@ export type MessageTree = {
       note: string;
       blockedTitle: string;
       waitingOther: string;
+      thresholdMoved: string;
     };
   };
   baslangic: {
@@ -5324,7 +5330,12 @@ export const en: MessageTree = {
       acknowledge: "Confirm and apply the proposal",
       own: "Enter my own amount",
       ownLabel: "Amount",
-      reasonLabel: "Why (optional)",
+      reasonLabel: "Why (required)",
+      ownerOnly: "Only the company's owner can change the approval threshold. You can view it here.",
+      bounds: "Must be between {min} and {max}.",
+      historyTitle: "Threshold history",
+      historyLine: "{date} · {who}: {from} → {to}",
+      historyReason: "Why: {reason}",
       save: "Save",
       cancel: "Cancel",
       saved: "Threshold saved; it is written to the decision record.",
@@ -5358,6 +5369,7 @@ export const en: MessageTree = {
       confirmApprove: "Proposer and approver are the same person: I approve",
       note: "That the proposer and the approver are the same person is written to the decision record.",
       blockedTitle: "Another owner or admin of the company must approve this proposal",
+      thresholdMoved: "The proposer changed the approval threshold themselves recently.",
       waitingOther:
         "The amount is above the threshold: the proposal went to the company's other owner or admin for approval. The route keeps the old date until then.",
     },

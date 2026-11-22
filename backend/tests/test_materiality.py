@@ -8,7 +8,7 @@ what, and the integrity gates, which never read the threshold.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -86,10 +86,12 @@ def test_the_basis_sentence_names_the_share_and_the_result():
 
 
 def test_an_amount_in_another_currency_counts_as_material():
-    org = Organization(name="x", slug="x")
-    assert m.is_material(org, 1, "USD") is True
-    assert m.is_material(org, m.LEGACY_CENTS, "TRY") is False  # the threshold itself is not above it
-    assert m.is_material(org, m.LEGACY_CENTS + 1, "TRY") is True
+    limit = m.LEGACY_CENTS
+    assert m.is_material(limit, "TRY", 1, "USD") is True
+    assert m.is_material(limit, "TRY", limit, "TRY") is False  # the threshold itself is not above it
+    assert m.is_material(limit, "TRY", limit + 1, "TRY") is True
+    assert m.is_material(limit, "TRY", None, "TRY") is True  # an unknown amount is not waved through
+    assert m.is_material(limit, "TRY", 60_000 * LIRA, "TRY", already_cents=50_000 * LIRA) is True  # cumulative
 
 
 # ── the ledger measurement ───────────────────────────────────────────────────
@@ -100,6 +102,19 @@ def _months_back(n: int) -> datetime:
     while month < 1:
         year, month = year - 1, month + 12
     return datetime(year, month, 15, tzinfo=UTC)
+
+
+def cover(monkeypatch, months: int) -> None:
+    """Statements that cover the `months` complete months before this one, whole (a stated period)."""
+    first = _months_back(months).replace(day=1)
+    last = datetime.now(UTC).replace(day=1) - timedelta(days=1)
+    extent = {"start": first.date().isoformat(), "end": last.date().isoformat(),
+              "start_stated": True, "end_stated": True, "filename": "ekstre.csv"}
+
+    async def proven(db, org_id, currency=None):
+        return [extent]
+
+    monkeypatch.setattr("app.services.bank_accounts.proven_statements", proven)
 
 
 async def seed_outflow(client, org_id: str, per_month_lira: int, months: int) -> None:
@@ -113,27 +128,63 @@ async def seed_outflow(client, org_id: str, per_month_lira: int, months: int) ->
         await db.commit()
 
 
-async def test_the_measurement_is_the_average_of_the_last_complete_months(client):
+async def test_the_measurement_is_the_average_of_the_last_complete_months(client, monkeypatch):
     _, org_id, _ = await kullanici(client, "olc@example.com", role="owner")
     await seed_outflow(client, org_id, 160_000, 8)
+    cover(monkeypatch, 8)
     async with client._maker() as db:
-        got = await m.measure_monthly_outflow(db, org_id)
-    assert got is not None
+        got, found = await m.measure_monthly_outflow(db, org_id)
+    assert got is not None and found == m.MAX_MONTHS
     assert got["avg_cents"] == 160_000 * LIRA and len(got["months"]) == m.MAX_MONTHS and got["currency"] == "TRY"
 
 
-async def test_too_few_complete_months_is_no_measurement(client):
+async def test_too_few_complete_months_is_no_measurement(client, monkeypatch):
     _, org_id, _ = await kullanici(client, "az@example.com", role="owner")
     await seed_outflow(client, org_id, 160_000, 2)
+    cover(monkeypatch, 2)
     async with client._maker() as db:
-        assert await m.measure_monthly_outflow(db, org_id) is None
+        assert await m.measure_monthly_outflow(db, org_id) == (None, 2)
+
+
+async def test_months_no_statement_covers_are_not_complete_months(client):
+    """The runway's rule, not "before the current month": with no statement extent nothing is proven whole."""
+    _, org_id, _ = await kullanici(client, "kapsam@example.com", role="owner")
+    await seed_outflow(client, org_id, 160_000, 6)
+    async with client._maker() as db:
+        assert await m.measure_monthly_outflow(db, org_id) == (None, 0)
+
+
+async def test_the_fallback_says_why_the_declared_band_is_used(client):
+    owner, org_id, _ = await kullanici(client, "neden@example.com", role="owner")
+    await seed_outflow(client, org_id, 160_000, 6)
+    async with client._maker() as db:
+        (await db.get(Organization, org_id)).monthly_outflow_band = "500k_to_5m"
+        await db.commit()
+    proposal = (await client.get(URL, headers=owner)).json()["data"]["proposal"]
+    assert proposal["source"] == m.DECLARED
+    assert "yeterli tam ay yok (0/3)" in proposal["basis_text"] and "beyan" in proposal["basis_text"]
+
+
+def test_the_outflow_is_the_runways_outflow():
+    """One definition: the same monthly "out" the cash-flow step builds for the runway."""
+    from app.agents.cashflow_agent import _classify_cashflow
+
+    rows = [
+        {"transaction_date": "2026-03-04", "type": "expense", "amount_cents": 500, "category": "rent", "currency": "TRY"},
+        {"transaction_date": "2026-03-09", "type": "income", "amount_cents": 900, "category": "sales", "currency": "TRY"},
+        {"transaction_date": "2026-03-20", "type": "expense", "amount_cents": 700, "category": "loan_payment", "currency": "TRY"},
+        {"transaction_date": "2026-04-02", "type": "expense", "amount_cents": 100, "category": "other_expense", "currency": "TRY"},
+    ]
+    theirs = _classify_cashflow(rows, "TRY")["monthly_series"]
+    assert m.monthly_out_series(rows) == theirs
 
 
 # ── the flow: proposal, acknowledgement, applied ─────────────────────────────
 
-async def test_a_proposal_applies_only_after_the_owner_acknowledges_it(client):
+async def test_a_proposal_applies_only_after_the_owner_acknowledges_it(client, monkeypatch):
     owner, org_id, owner_id = await kullanici(client, "sahip@example.com", role="owner")
     await seed_outflow(client, org_id, 160_000, 6)
+    cover(monkeypatch, 6)
 
     first = (await client.get(URL, headers=owner)).json()["data"]
     assert first["current"]["acknowledged"] is False and first["current"]["source"] == m.LEGACY
@@ -201,19 +252,43 @@ async def test_who_may_read_and_who_may_change_it(client):
     analyst = await member(client, "analist@example.com", org_id, "analyst")
     admin = await member(client, "yonetici@example.com", org_id, "admin")
     smmm = await member(client, "musavir@example.com", org_id, "smmm")
-    for who in (viewer, analyst, smmm):
+    for who in (viewer, analyst, smmm, admin):
         got = await client.get(URL, headers=who)
-        assert got.status_code == 200 and got.json()["data"]["can_decide"] is False and got.json()["data"]["proposal"] is None
-        assert (await client.put(URL, headers=who, json={"amount_cents": 1000})).status_code == 403
+        assert got.status_code == 200 and got.json()["data"]["can_change"] is False and got.json()["data"]["proposal"] is None
+        assert (await client.put(URL, headers=who, json={"amount_cents": 20_000 * LIRA, "reason": "deneme"})).status_code == 403
         assert (await client.post(f"{URL}/acknowledge", headers=who, json={"amount_cents": 1000})).status_code == 403
-    assert (await client.get(URL, headers=admin)).json()["data"]["can_decide"] is True
-    assert (await client.put(URL, headers=admin, json={"amount_cents": 1000})).status_code == 200
+    assert (await client.get(URL, headers=admin)).json()["data"]["current"]["threshold_cents"] == m.LEGACY_CENTS  # may read
+    assert (await client.get(URL, headers=_owner)).json()["data"]["can_change"] is True
+    assert (await client.put(URL, headers=_owner, json={"amount_cents": 20_000 * LIRA, "reason": "deneme"})).status_code == 200
+
+
+async def test_the_override_keeps_to_the_bounds_and_needs_a_reason(client):
+    owner, org_id, _ = await kullanici(client, "sinir@example.com", role="owner")
+    for amount in (m.FLOOR_CENTS - 1, m.CEILING_CENTS + 1, 10**12):
+        r = await client.put(URL, headers=owner, json={"amount_cents": amount, "reason": "deneme"})
+        assert r.status_code == 422 and "arasında olmalı" in r.json()["error"], amount
+    assert (await client.put(URL, headers=owner, json={"amount_cents": 20_000 * LIRA})).status_code == 422
+    assert (await client.put(URL, headers=owner, json={"amount_cents": 20_000 * LIRA, "reason": "  "})).status_code == 422
+    assert (await client.put(URL, headers=owner, json={"amount_cents": m.CEILING_CENTS, "reason": "üst sınır"})).status_code == 200
+    async with client._maker() as db:
+        assert (await db.get(Organization, org_id)).materiality_applied["amount_cents"] == m.CEILING_CENTS
+
+
+async def test_the_history_lists_each_change_with_who_and_why(client):
+    owner, _, _ = await kullanici(client, "tarihce@example.com", role="owner")
+    admin_org = (await client.get("/api/v1/org/me", headers=owner)).json()["data"]["org_id"]
+    admin = await member(client, "yonetici-t@example.com", admin_org, "admin")
+    await client.put(URL, headers=owner, json={"amount_cents": 20_000 * LIRA, "reason": "ilk"})
+    await client.put(URL, headers=owner, json={"amount_cents": 30_000 * LIRA, "reason": "ikinci"})
+    hist = (await client.get(URL, headers=admin)).json()["data"]["history"]  # an admin can read it
+    assert [h["reason"] for h in hist] == ["ikinci", "ilk"]
+    assert hist[0]["from_cents"] == 20_000 * LIRA and hist[0]["to_cents"] == 30_000 * LIRA and hist[0]["decided_by"]
 
 
 async def test_another_companys_threshold_is_not_this_ones(client):
     a, _a_org, _ = await kullanici(client, "a@example.com", role="owner")
     b, b_org, _ = await kullanici(client, "b@example.com", role="owner")
-    await client.put(URL, headers=a, json={"amount_cents": 7_000 * LIRA})
+    await client.put(URL, headers=a, json={"amount_cents": 7_000 * LIRA, "reason": "deneme"})
     assert (await client.get(URL, headers=b)).json()["data"]["current"]["threshold_cents"] == m.LEGACY_CENTS
     async with client._maker() as db:
         assert (await db.get(Organization, b_org)).materiality_applied is None
@@ -224,7 +299,7 @@ async def test_another_companys_threshold_is_not_this_ones(client):
 
 async def test_only_the_high_value_rule_follows_the_threshold(client):
     owner, org_id, _ = await kullanici(client, "ozel@example.com", role="owner")
-    await client.put(URL, headers=owner, json={"amount_cents": 7_000 * LIRA})
+    await client.put(URL, headers=owner, json={"amount_cents": 7_000 * LIRA, "reason": "deneme"})
     rules = await _rules(client, org_id)
     changed = [r["id"] for r, d in zip(rules, DEFAULT_POLICY_RULES, strict=True) if r != d]
     assert changed == ["high_value"]  # related party, low confidence, unclassified and fixed asset are as they were

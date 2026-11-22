@@ -1943,6 +1943,11 @@
             "title": "Status",
             "type": "string"
           },
+          "threshold_changed_by_proposer": {
+            "default": false,
+            "title": "Threshold Changed By Proposer",
+            "type": "boolean"
+          },
           "to_date": {
             "title": "To Date",
             "type": "string"

@@ -25,11 +25,23 @@ export interface MaterialityProposal {
   differs_from_current: boolean;
 }
 
+export interface MaterialityChange {
+  outcome: string;
+  decided_at: string;
+  reason: string | null;
+  decided_by: string | null;
+  from_cents: number | null;
+  to_cents: number | null;
+  currency: string | null;
+}
+
 export interface Materiality {
   current: MaterialityCurrent;
   rule: { ratio: number; floor_cents: number; ceiling_cents: number; legacy_cents: number };
-  can_decide: boolean;
+  /** Only the owner changes the threshold; everyone else (an admin too) reads it. */
+  can_change: boolean;
   proposal: MaterialityProposal | null;
+  history: MaterialityChange[];
 }
 
 export interface BriefingRecipients {
@@ -63,8 +75,8 @@ export async function acknowledgeMateriality(amountCents: number): Promise<Mater
   return (await apiClient.post<Envelope<Materiality>>("/org/me/materiality/acknowledge", { amount_cents: amountCents })).data.data;
 }
 
-export async function setMateriality(amountCents: number, reason?: string): Promise<Materiality> {
-  return (await apiClient.put<Envelope<Materiality>>("/org/me/materiality", { amount_cents: amountCents, reason: reason || null })).data.data;
+export async function setMateriality(amountCents: number, reason: string): Promise<Materiality> {
+  return (await apiClient.put<Envelope<Materiality>>("/org/me/materiality", { amount_cents: amountCents, reason })).data.data;
 }
 
 export async function getBriefingRecipients(): Promise<BriefingRecipients> {

@@ -95,7 +95,7 @@ async def test_with_a_second_decider_a_large_amount_is_not_the_proposers_to_appr
     owner, org_id, _ = await kullanici(client, "sahip@example.com", role="owner")
     admin = await member(client, "yonetici@example.com", org_id, "admin")
     change = await propose(client, owner, await seed(client, org_id, amount=120_000_00))  # above the fixed 100.000
-    assert change["self_decision"] == BLOCKED and "eşiğin üstünde" in change["self_decision_message"]
+    assert change["self_decision"] == BLOCKED and "üstünde" in change["self_decision_message"]
 
     refused = await client.post(f"{PLANS}/{change['id']}/approve", headers=owner, json=ACK)
     assert refused.status_code == 403 and "diğer yöneticinin" in refused.json()["error"]
@@ -122,12 +122,77 @@ async def test_with_a_second_decider_a_small_amount_may_still_be_decided_alone(c
 async def test_the_threshold_the_owner_set_decides_what_is_large(client):
     owner, org_id, _ = await kullanici(client, "sahip3@example.com", role="owner")
     await member(client, "yonetici3@example.com", org_id, "admin")
-    small = await propose(client, owner, await seed(client, org_id, amount=40_000_00, tag="s"))
-    assert small["self_decision"] == ACKNOWLEDGE  # under the fixed 100.000
+    before = await propose(client, owner, await seed(client, org_id, amount=40_000_00, tag="s"))
+    assert before["self_decision"] == ACKNOWLEDGE  # under the fixed 100.000
     set_it = await client.put("/api/v1/org/me/materiality", headers=owner, json={"amount_cents": 10_000_00, "reason": "küçük şirket"})
     assert set_it.status_code == 200
-    now = (await client.get(PLANS, headers=owner)).json()["data"]
-    assert [c["self_decision"] for c in now] == [BLOCKED]  # 40.000 is large for this company now
+    after = await propose(client, owner, await seed(client, org_id, amount=40_000_00, tag="t"))
+    assert after["self_decision"] == BLOCKED  # 40.000 is large for this company now
+    # the proposal made before the change is judged against the threshold of its day
+    now = {c["id"]: c["self_decision"] for c in (await client.get(PLANS, headers=owner)).json()["data"]}
+    assert now[before["id"]] == ACKNOWLEDGE and now[after["id"]] == BLOCKED
+
+
+async def test_an_admin_cannot_move_the_threshold_to_approve_their_own_proposal(client):
+    """The reviewer's sequence: an admin proposes above the threshold, cannot approve, cannot raise the
+    threshold either, and a proposal already made stays with the other decider whatever the owner does later."""
+    owner, org_id, _ = await kullanici(client, "sahip7b@example.com", role="owner")
+    admin = await member(client, "yonetici7b@example.com", org_id, "admin")
+    change = await propose(client, admin, await seed(client, org_id, amount=900_000_00, tag="r"))
+    assert change["self_decision"] == BLOCKED
+    assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=admin, json=ACK)).status_code == 403
+
+    url = "/api/v1/org/me/materiality"
+    for amount in (10**12, 900_000_00):
+        r = await client.put(url, headers=admin, json={"amount_cents": amount, "reason": "yükselt"})
+        assert r.status_code == 403
+    assert (await client.post(f"{url}/acknowledge", headers=admin, json={"amount_cents": 1})).status_code == 403
+    assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=admin, json=ACK)).status_code == 403
+
+    # the owner may change it, inside the bounds; the proposal already made is still the owner's to decide
+    assert (await client.put(url, headers=owner, json={"amount_cents": 1_000_000_00, "reason": "büyüdük"})).status_code == 200
+    assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=admin, json=ACK)).status_code == 403
+    listing = (await client.get(PLANS, headers=owner)).json()["data"]
+    assert listing[0]["threshold_changed_by_proposer"] is False  # the owner moved it, the admin proposed
+    assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=owner, json={})).status_code == 200
+
+
+async def test_a_proposal_by_the_person_who_changed_the_threshold_is_flagged(client):
+    owner, org_id, _ = await kullanici(client, "sahip7c@example.com", role="owner")
+    await member(client, "yonetici7c@example.com", org_id, "admin")
+    await client.put("/api/v1/org/me/materiality", headers=owner, json={"amount_cents": 50_000_00, "reason": "ayar"})
+    mine = await propose(client, owner, await seed(client, org_id, amount=10_000_00, tag="f"))
+    assert mine["threshold_changed_by_proposer"] is True
+
+
+async def test_three_changes_just_under_the_threshold_are_not_three_trivial_ones(client):
+    owner, org_id, _ = await kullanici(client, "sahip8b@example.com", role="owner")
+    admin = await member(client, "yonetici8b@example.com", org_id, "admin")
+    states = []
+    for n in range(3):
+        change = await propose(client, admin, await seed(client, org_id, amount=99_000_00, tag=f"p{n}"))
+        states.append(change["self_decision"])
+        if change["self_decision"] == ACKNOWLEDGE:
+            assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=admin, json=ACK)).status_code == 200
+    assert states == [ACKNOWLEDGE, BLOCKED, BLOCKED]
+    assert "son 30 günde kendi onayladığınız değişikliklerin toplamı eşiği aşıyor" in change["self_decision_message"]
+    refused = await client.post(f"{PLANS}/{change['id']}/approve", headers=admin, json=ACK)
+    assert refused.status_code == 403
+    assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=owner, json={})).status_code == 200
+
+
+async def test_a_missing_open_item_is_an_unknown_amount_and_counts_as_large(client):
+    owner, org_id, _ = await kullanici(client, "sahip9b@example.com", role="owner")
+    await member(client, "yonetici9b@example.com", org_id, "admin")
+    item = await seed(client, org_id, amount=1_000_00, tag="m")
+    change = await propose(client, owner, item)
+    assert change["self_decision"] == ACKNOWLEDGE
+    async with client._maker() as db:
+        await db.delete(await db.get(OpenItem, item))
+        await db.commit()
+    now = (await client.get(PLANS, headers=owner)).json()["data"][0]
+    assert now["self_decision"] == BLOCKED and "Tutar bilinmiyor" in now["self_decision_message"]
+    assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=owner, json=ACK)).status_code == 403
 
 
 async def test_an_amount_in_another_currency_cannot_be_compared_and_counts_as_large(client):

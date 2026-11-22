@@ -34,7 +34,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.currency_totals import DEFAULT_BASE, fmt_money
+from app.core.currency_totals import CONFIRMED, DEFAULT_BASE, SINGLE_UNCONFIRMED, fmt_money
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
 from app.models.user import User
@@ -48,6 +48,7 @@ from app.services.size_profile import (
 RATIO = 0.05
 MIN_MONTHS = 3
 MAX_MONTHS = 6
+MIN_REASON_CHARS = 3
 FLOOR_CENTS = 5_000 * 100
 CEILING_CENTS = 1_000_000 * 100
 # The amount `platform/authority_matrix.DEFAULT_POLICY_RULES` has always carried for "high value".
@@ -84,11 +85,12 @@ def clamp(cents: int) -> tuple[int, str | None]:
 
 
 def compute(
-    *, measured: dict[str, Any] | None, declared_band: str | None
+    *, measured: dict[str, Any] | None, declared_band: str | None, complete_found: int | None = None
 ) -> dict[str, Any] | None:
     """Pure: the proposal for a measured monthly outflow, else a declared band, else None.
 
-    `measured` is `{"avg_cents", "months", "currency"}`.
+    `measured` is `{"avg_cents", "months", "currency"}`. `complete_found` is how many complete months the
+    ledger had when it fell short; it is kept in the basis so the sentence can say why the declared band is used.
     """
     if measured is not None:
         kind, monthly, currency = MEASURED, int(measured["avg_cents"]), str(measured["currency"])
@@ -102,6 +104,8 @@ def compute(
             return None
         kind, monthly, currency = DECLARED, DECLARED_MONTHLY_OUTFLOW_CENTS[band], DEFAULT_BASE
         extra = {"band": band.value}
+        if complete_found is not None:
+            extra["complete_months_found"] = complete_found
     amount, clamped = clamp(round_two_figures(int(monthly * RATIO)))
     return {
         "amount_cents": amount,
@@ -143,44 +147,64 @@ def basis_text(applied: dict[str, Any] | None) -> str:
             label = OUTFLOW_BAND_LABELS[OutflowBand(str(basis.get("band")))]
         except ValueError:
             label = "beyan edilen band"
-        text = f"beyan ettiğiniz aylık çıkış bandı ({label}) ortası {monthly}'in {pct}'i = {amount}"
+        why = basis.get("complete_months_found")
+        lead = f"defterde yeterli tam ay yok ({why}/{MIN_MONTHS}); " if why is not None else ""
+        text = f"{lead}beyan ettiğiniz aylık çıkış bandı ({label}) ortası {monthly}'in {pct}'i = {amount}"
     note = {"floor": " (alt sınır uygulandı)", "ceiling": " (üst sınır uygulandı)"}.get(str(basis.get("clamped")), "")
     return text[0].upper() + text[1:] + note + "."
 
 
-async def measure_monthly_outflow(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
-    """The average monthly cash outflow over the last complete months of the ledger, or None.
+def monthly_out_series(cash: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cash in and out per month, exactly as the cash-flow step builds the series the runway reads
+    (`agents/cashflow_agent._classify_cashflow`: every non-income base-currency row is outflow).
 
-    Complete = before the current month. A month with no outflow is no evidence of a size and is left out.
-    Needs a single headline currency (the ledger's own `effective_base`): amounts in several currencies are
-    never added. The months used are returned so the basis can show them.
+    One definition of outflow: a test pins this equal to that step's own `monthly_series`. Transfers between
+    the company's own accounts are not identifiable in the ledger (the runway cannot tell them either), so
+    both legs count here and there alike.
     """
-    from app.services.ledger import ledger_summary
-    from app.services.ledger_period import current_month
+    monthly: dict[str, dict[str, int]] = {}
+    for tx in cash:
+        raw = tx.get("transaction_date")
+        if not raw:
+            continue
+        bucket = monthly.setdefault(str(raw)[:7], {"in": 0, "out": 0})
+        bucket["in" if tx.get("type") == "income" else "out"] += int(tx.get("amount_cents", 0))
+    return [
+        {"month": k, "in": v["in"], "out": v["out"], "net": v["in"] - v["out"]} for k, v in sorted(monthly.items())
+    ]
 
-    summary = await ledger_summary(db, org_id)
-    currency = summary.get("currency")
-    if not currency:
-        return None
-    today = current_month()
-    months = [
-        (str(m["month"]), int(m["cash_out_cents"]))
-        for m in summary.get("months", [])
-        if str(m["month"]) < today and int(m["cash_out_cents"]) > 0
-    ][-MAX_MONTHS:]
+
+async def measure_monthly_outflow(db: AsyncSession, org_id: str) -> tuple[dict[str, Any] | None, int]:
+    """(the average monthly outflow of the latest complete months, how many complete months there were).
+
+    "Complete" is the runway's own rule (`services/coverage`: months every statement covers whole,
+    consecutive, `usable_months`), from the same ledger rows and statement extents. Months with no outflow
+    are no evidence of a size. Needs a single headline currency: amounts in several are never added. Fewer
+    than MIN_MONTHS complete months is no measurement (None) and the count says how short it was.
+    """
+    from app.services.bank_accounts import proven_statements
+    from app.services.company_view import ledger_view
+    from app.services.coverage import annotate_series, usable_months
+
+    view = await ledger_view(db, org_id)
+    if view is None or view.base_state not in (CONFIRMED, SINGLE_UNCONFIRMED):
+        return None, 0
+    series = annotate_series(
+        monthly_out_series(view.cash), view.cash, await proven_statements(db, org_id, view.base_currency)
+    )
+    months = [(str(m["month"]), int(m["out"])) for m in usable_months(series) if int(m["out"]) > 0][-MAX_MONTHS:]
     if len(months) < MIN_MONTHS:
-        return None
+        return None, len(months)
     return {
         "avg_cents": sum(c for _, c in months) // len(months),
         "months": [m for m, _ in months],
-        "currency": str(currency),
-    }
+        "currency": view.base_currency,
+    }, len(months)
 
 
 async def propose(db: AsyncSession, org: Organization) -> dict[str, Any] | None:
-    return compute(
-        measured=await measure_monthly_outflow(db, str(org.id)), declared_band=org.monthly_outflow_band
-    )
+    measured, found = await measure_monthly_outflow(db, str(org.id))
+    return compute(measured=measured, declared_band=org.monthly_outflow_band, complete_found=found)
 
 
 def threshold_cents(org: Organization | None) -> int:
@@ -194,12 +218,17 @@ def threshold_currency(org: Organization | None) -> str:
     return str(applied.get("currency") or DEFAULT_BASE) if applied else DEFAULT_BASE
 
 
-def is_material(org: Organization | None, amount_cents: int, currency: str | None) -> bool:
-    """Is an amount above the threshold? An amount in another currency than the threshold's cannot be
-    compared (no rate is kept), so it counts as material rather than being waved through."""
-    if currency and currency.strip().upper() != threshold_currency(org).upper():
+def is_material(
+    threshold: int, threshold_cur: str, amount_cents: int | None, currency: str | None, already_cents: int = 0
+) -> bool:
+    """Is an amount, with what the same person already approved for themselves, above the threshold?
+
+    An amount that is unknown, or in another currency than the threshold's, cannot be compared (no
+    rate is kept), so it counts as material rather than being waved through.
+    """
+    if amount_cents is None or not currency or currency.strip().upper() != threshold_cur.upper():
         return True
-    return amount_cents > threshold_cents(org)
+    return amount_cents + already_cents > threshold
 
 
 def current(org: Organization | None) -> dict[str, Any]:
@@ -257,13 +286,23 @@ async def acknowledge(db: AsyncSession, org: Organization, user: User, amount_ce
 async def override(
     db: AsyncSession, org: Organization, user: User, amount_cents: int, reason: str | None
 ) -> None:
-    """The owner sets their own amount. The caller commits. In the company's own currency."""
-    if amount_cents <= 0:
-        raise MaterialityError(422, "Eşik sıfırdan büyük olmalı.")
+    """The owner sets their own amount. The caller commits. In the company's own currency.
+
+    Within the same floor and ceiling the computed value keeps to, and with a reason: an amount outside
+    the bounds, or with no reason, is refused (422) rather than quietly accepted.
+    """
+    why = (reason or "").strip()
+    if len(why) < MIN_REASON_CHARS:
+        raise MaterialityError(422, "Eşiği değiştirmek için bir gerekçe yazın.")
+    if not FLOOR_CENTS <= amount_cents <= CEILING_CENTS:
+        raise MaterialityError(
+            422,
+            f"Eşik {_whole(FLOOR_CENTS, DEFAULT_BASE)} ile {_whole(CEILING_CENTS, DEFAULT_BASE)} arasında olmalı.",
+        )
     proposal = await propose(db, org)
     currency = str((proposal or {}).get("currency") or threshold_currency(org))
     await _apply(
         db, org, user,
         {"amount_cents": int(amount_cents), "currency": currency, "source": OWNER_OVERRIDE, "basis": None},
-        outcome="owner_override", reason=reason,
+        outcome="owner_override", reason=why,
     )

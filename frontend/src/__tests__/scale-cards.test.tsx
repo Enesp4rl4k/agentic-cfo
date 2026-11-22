@@ -39,7 +39,7 @@ const proposal = {
 };
 const materiality = (over: Record<string, unknown> = {}) => ({
   current, rule: { ratio: 0.05, floor_cents: 5_000_00, ceiling_cents: 1_000_000_00, legacy_cents: 100_000_00 },
-  can_decide: true, proposal, ...over,
+  can_change: true, proposal, history: [], ...over,
 });
 
 beforeEach(() => {
@@ -87,8 +87,15 @@ describe("MaterialityCard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Kendi tutarımı gireyim" }));
     const save = screen.getByRole("button", { name: "Kaydet" });
     expect(save).toBeDisabled();
+    expect(screen.getByText(/5\.000.* ile .*1\.000\.000.* arasında olmalı/)).toBeInTheDocument();
+    // outside the bounds, or without a reason, it cannot be saved
+    fireEvent.change(screen.getByLabelText("Neden (zorunlu)"), { target: { value: "ortakla konuştuk" } });
+    fireEvent.change(screen.getByLabelText("Tutar"), { target: { value: "99999999" } });
+    expect(save).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Tutar"), { target: { value: "30000" } });
-    fireEvent.change(screen.getByLabelText("Neden (isteğe bağlı)"), { target: { value: "ortakla konuştuk" } });
+    fireEvent.change(screen.getByLabelText("Neden (zorunlu)"), { target: { value: "" } });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Neden (zorunlu)"), { target: { value: "ortakla konuştuk" } });
     fireEvent.click(save);
     await waitFor(() => expect(api.setMateriality).toHaveBeenCalledWith(30_000_00, "ortakla konuştuk"));
   });
@@ -99,11 +106,21 @@ describe("MaterialityCard", () => {
     expect(await screen.findByText(/para birimi, yön, hesap kimliği ve mutabakat soruları tutara bakmaz/)).toBeInTheDocument();
   });
 
-  it("renders nothing for someone who may not decide", async () => {
-    api.getMateriality.mockResolvedValue(materiality({ can_decide: false, proposal: null }));
-    const { container } = renderWithQuery(<MaterialityCard />);
-    await waitFor(() => expect(api.getMateriality).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
+  it("shows an admin the threshold and its history read-only: no proposal, no edit", async () => {
+    api.getMateriality.mockResolvedValue(
+      materiality({
+        can_change: false, proposal: null,
+        history: [{ outcome: "owner_override", decided_at: "2026-11-20T10:00:00Z", reason: "büyüdük", decided_by: "Sahip", from_cents: 100_000_00, to_cents: 8_300_00, currency: "TRY" }],
+      }),
+    );
+    renderWithQuery(<MaterialityCard />);
+    expect(await screen.findByText(/Şu an geçerli: .*100\.000/)).toBeInTheDocument();
+    expect(screen.getByText(/yalnızca şirketin sahibi değiştirebilir/)).toBeInTheDocument();
+    expect(screen.getByText(/2026-11-20 · Sahip: .*100\.000.* → .*8\.300/)).toBeInTheDocument();
+    expect(screen.getByText(/Neden: büyüdük/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kendi tutarımı gireyim" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Öneriyi onayla ve uygula" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Kaydet" })).toBeNull();
   });
 });
 

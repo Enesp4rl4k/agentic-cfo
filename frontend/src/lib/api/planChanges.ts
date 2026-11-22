@@ -27,6 +27,8 @@ export interface PlanChange {
    */
   self_decision?: "acknowledge" | "blocked" | null;
   self_decision_message?: string | null;
+  /** The proposer changed the company's approval threshold shortly before or after proposing. */
+  threshold_changed_by_proposer?: boolean;
 }
 
 interface Envelope<T> {

@@ -912,6 +912,11 @@ export interface components {
             self_decision_message?: string | null;
             /** Status */
             status: string;
+            /**
+             * Threshold Changed By Proposer
+             * @default false
+             */
+            threshold_changed_by_proposer: boolean;
             /** To Date */
             to_date: string;
         };
