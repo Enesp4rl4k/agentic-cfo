@@ -57,7 +57,7 @@ def production_settings(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **base)
 
 
-CLEAN_ENV = {"SENTRY_DSN": "https://k@sentry.example.test/1", "NEXTAUTH_SECRET": "n" * 40}
+CLEAN_ENV = {"SENTRY_DSN": "https://k@sentry.example.test/1", "NEXTAUTH_SECRET": "n" * 40, "APP_ENV": "production"}
 
 
 def codes(findings: list[preflight.Finding], severity: str | None = None) -> set[str]:
@@ -89,6 +89,19 @@ def test_a_complete_production_configuration_has_no_findings() -> None:
 def test_dangerous_configuration_is_fatal(override: dict[str, Any], code: str) -> None:
     findings = check_settings(production_settings(**override), CLEAN_ENV)
     assert code in codes(findings, FATAL)
+
+
+@pytest.mark.parametrize(
+    "override", [{"demo_mode": True}, {"frontend_url": "http://localhost:3000"}, {"brand_app_url": "http://localhost:3000"}]
+)
+def test_demo_and_localhost_are_only_warnings_with_postgres_and_no_app_env(override: dict[str, Any]) -> None:
+    """The demo compose stack and a developer's docker-compose run Postgres exactly like this."""
+    env = {k: v for k, v in CLEAN_ENV.items() if k != "APP_ENV"}
+    s = production_settings(**override)
+    findings = check_settings(s, env)
+    assert not codes(findings, FATAL)
+    assert codes(findings, WARN) & {"demo_mode", "links_localhost"}
+    assert enforce(s, env)  # no exception
 
 
 def test_the_database_override_with_the_default_password_is_fatal() -> None:
@@ -156,10 +169,10 @@ def test_enforce_raises_for_a_fatal_finding_in_production(caplog: pytest.LogCapt
 
 
 def test_enforce_only_warns_outside_production(caplog: pytest.LogCaptureFixture) -> None:
-    s = Settings(_env_file=None, use_sqlite=True, demo_mode=True)
+    s = Settings(_env_file=None, use_sqlite=True, backend_cors_origins="*")
     with caplog.at_level(logging.WARNING):
         findings = enforce(s, {})
-    assert "demo_mode" in codes(findings, FATAL)
+    assert "cors_wildcard" in codes(findings, FATAL)
     assert not any(r.levelno == logging.CRITICAL for r in caplog.records)
 
 

@@ -35,7 +35,7 @@ is never blocked. WARN findings are logged in every mode.
 |---|---|---|---|---|
 | `BRAND_NAME` | `Tiphys` | optional | - |  |
 | `BRAND_DOMAIN` | (empty) | optional | - |  |
-| `BRAND_APP_URL` | `http://localhost:3000` | REQUIRED | FATAL if localhost | public app URL (links, KVKK texts) |
+| `BRAND_APP_URL` | `http://localhost:3000` | REQUIRED | FATAL if localhost (APP_ENV production/staging), else WARN | public app URL (links, KVKK texts) |
 | `BRAND_CONTACT_EMAIL` | (empty) | recommended | - | shown to users; empty = shown as unconfigured |
 | `BRAND_PRIVACY_EMAIL` | (empty) | recommended | - | KVKK texts; empty = unconfigured |
 | `BRAND_DPO_EMAIL` | (empty) | recommended | - | KVKK texts; empty = unconfigured |
@@ -58,7 +58,7 @@ is never blocked. WARN findings are logged in every mode.
 | `BACKEND_SECRET_KEY` | `dev-secret-change-in-production` | REQUIRED | FATAL if placeholder, default or < 32 chars | random, >= 32 chars; also signs JWTs |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001,http://localhost:3002` | REQUIRED | FATAL `*`; WARN localhost or http:// | exactly the public app origin(s), https |
 | `BACKEND_URL` | `http://localhost:8000` | REQUIRED | WARN if localhost | public API URL (OAuth callbacks) |
-| `FRONTEND_URL` | `http://localhost:3000` | REQUIRED | FATAL if localhost | public app URL; every e-mailed link is built from it |
+| `FRONTEND_URL` | `http://localhost:3000` | REQUIRED | FATAL if localhost (APP_ENV production/staging), else WARN | public app URL; every e-mailed link is built from it |
 | `AZURE_TENANT_ID` | (empty) | optional | - |  |
 | `AZURE_CLIENT_ID` | (empty) | optional | - |  |
 | `AZURE_CLIENT_SECRET` | (empty) | optional | - |  |
@@ -158,7 +158,7 @@ is never blocked. WARN findings are logged in every mode.
 | `CHECKPOINT_SQLITE_PATH` | `./langgraph_checkpoints.sqlite` | optional | - |  |
 | `USE_SQLITE` | True | REQUIRED | FATAL with APP_ENV=production or staging | must be `false` |
 | `SQLITE_BUSY_TIMEOUT_SEC` | 15.0 | optional | - |  |
-| `DEMO_MODE` | False | optional | FATAL |  |
+| `DEMO_MODE` | `False` | optional | FATAL with APP_ENV production/staging, else WARN | never on where real companies sign in |
 | `DEMO_COMPANY_NAME` | `TechNova Yazılım A.Ş.` | optional | - |  |
 | `DEMO_GUEST_TTL_HOURS` | 24 | optional | - |  |
 | `STRIPE_SECRET_KEY` | (empty) | optional | - |  |

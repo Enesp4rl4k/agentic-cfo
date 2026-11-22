@@ -4,8 +4,9 @@
 is the wider list an operator needs before a company's data is on the box:
 
 * FATAL (production only): the process would run, and run unsafely. Default or placeholder secrets,
-  the demo seed, wildcard CORS with credentials, SQLite, e-mail links that point at localhost, the
-  public WhatsApp verify token.
+  wildcard CORS with credentials, SQLite under `APP_ENV`, the public WhatsApp verify token; and, when
+  `APP_ENV` says production or staging, the demo seed and e-mail links that point at localhost (with
+  Postgres alone those two are warnings: the demo stack and a developer's compose run exactly so).
 * WARN (always logged): safe but degraded. No mail sender, no LLM key, no error tracking, no proxy
   setting, no field-encryption key, nobody who can operate the platform.
 
@@ -107,8 +108,12 @@ def _secret_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding
 
 def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
     out: list[Finding] = []
+    # Fatal only where the operator said "this is production" (APP_ENV). Postgres alone is not enough: the
+    # demo compose stack and a developer's docker-compose run Postgres with the demo seed and localhost links.
+    declared = app_env(env) in _PRODUCTION_ENVS
+    explicit = _fatal if declared else _warn
     if settings.demo_mode:
-        out.append(_fatal("demo_mode", "DEMO_MODE=true: the demo seed and guest sessions must not run where real companies sign in."))
+        out.append(explicit("demo_mode", "DEMO_MODE=true: the demo seed and guest sessions must not run where real companies sign in."))
     origins = [o for o in settings.cors_origins if o]
     if "*" in origins:
         out.append(_fatal("cors_wildcard", "BACKEND_CORS_ORIGINS contains `*` while credentials are allowed."))
@@ -120,7 +125,7 @@ def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
         out.append(_warn("cors_http", "BACKEND_CORS_ORIGINS has a plain http:// origin; the app must be served over TLS."))
     for name, value in (("FRONTEND_URL", settings.frontend_url), ("BRAND_APP_URL", settings.brand_app_url)):
         if _is_localhost(value):
-            out.append(_fatal("links_localhost", f"{name} points at localhost: every e-mailed link (verification, reset, invite) would be dead."))
+            out.append(explicit("links_localhost", f"{name} points at localhost: every e-mailed link (verification, reset, invite) would be dead."))
     if _is_localhost(settings.backend_url):
         out.append(_warn("backend_url_localhost", "BACKEND_URL points at localhost: OAuth callbacks (Paraşüt) are built from it."))
     token = settings.whatsapp_verify_token
