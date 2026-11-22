@@ -176,7 +176,7 @@ async def simulate_cascade(
 
     3 senaryo döner: iyimser / baz / kötümser.
     """
-    from app.services.cascade_inputs import measured_baseline
+    from app.services.cascade_inputs import measured_baseline_with_basis
     from app.services.cascade_simulator import (
         CascadeInputsMissing,
         TriggerType,
@@ -211,9 +211,11 @@ async def simulate_cascade(
         }
 
     baseline: dict[str, Any] = {}
+    basis_info: dict[str, Any] | None = None
     owner_org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
     if owner_org and current_user_org_matches(current_user, owner_org):
-        baseline = await measured_baseline(db, owner_org)
+        baseline, basis = await measured_baseline_with_basis(db, owner_org)
+        basis_info = basis.to_dict()
     sim = get_cascade_simulator(**ctx, **baseline)
 
     # Tetikleyici parametrelerini hazırla
@@ -250,7 +252,8 @@ async def simulate_cascade(
         logger.exception("Cascade simülasyon hatası: %s", exc)
         raise HTTPException(status_code=500, detail=f"Simülasyon hatası: {exc}")
 
-    return result.to_dict()
+    # The balance's basis (known / assumed, date, months, assumption) travels with the answer.
+    return {**result.to_dict(), "baseline_basis": basis_info}
 
 
 @router.get("/cascade/triggers")

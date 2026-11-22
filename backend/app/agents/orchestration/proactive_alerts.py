@@ -232,12 +232,19 @@ class ProactiveAlertOrchestrator:
         unit  = kri.get("unit", "")
         ev    = kri.get("evidence", "")
 
+        # A KRI that rests on an assumed balance (or an open account-identity question) is capped below critical
+        # and says so, in the runway's own words.
+        unproven = kri.get("basis") not in (None, "known") or bool(kri.get("identity_uncertain"))
+        if unproven:
+            severity = "high" if severity == "critical" else severity
         title = f"🚨 {name}: {val} {unit} — Kırmızı Eşik Aşıldı"
         body  = (
             f"**{name}** metrigi kritik seviyeye ulasti.\n\n"
             f"Mevcut Deger: **{val} {unit}**\n"
             f"Kanit: {ev}\n\n"
         )
+        if unproven and kri.get("basis_note"):
+            body += f"Dayanak sınırı: {kri['basis_note']}\n\n"
 
         # Mitigasyon onerileri
         mitigations = kri.get("mitigations") or []
@@ -267,7 +274,7 @@ class ProactiveAlertOrchestrator:
         "skipped: missing <inputs>" (visible to owner/admin in the alert history) and sends nothing.
         """
         try:
-            from app.services.cascade_inputs import measured_baseline
+            from app.services.cascade_inputs import measured_baseline_with_basis
             from app.services.cascade_simulator import (
                 CascadeInputsMissing,
                 TriggerType,
@@ -283,7 +290,10 @@ class ProactiveAlertOrchestrator:
             ctx = await get_company_context(org_id, self.db)
             cfo_r = (getattr(ctx, "last_cfo_result", None) or {}) if ctx else {}
             cfo_r = cfo_r.get("dashboard") or cfo_r
-            baseline = await measured_baseline(self.db, org_id) if self.db is not None else {}
+            baseline: dict[str, Any] = {}
+            basis = None
+            if self.db is not None:
+                baseline, basis = await measured_baseline_with_basis(self.db, org_id)
             sim = get_cascade_simulator(
                 pnl      = cfo_r.get("pnl"),
                 cashflow = cfo_r.get("cashflow"),
@@ -306,22 +316,19 @@ class ProactiveAlertOrchestrator:
                 return None  # Dusuk risk → alert olusturma
 
             title = f"⚡ Zincirleme Risk: {kri.get('name', '')} → {', '.join(cascade.affected_domains[:3])}"
-            body  = cascade.executive_summary + "\n\n**Acil Aksiyonlar:**\n"
-            for a in cascade.immediate_actions[:3]:
-                body += f"• {a}\n"
-            body += (
-                "\nDayanak: şirketin kanıtlı kasa bakiyesi ve ledger verisi; çalışan sayısı veya maaş "
-                "verisi yoksa o kısımlar hesaba katılmadı."
-            )
+            from app.services.alert_basis import cascade_alert_text
+
+            body, severity = cascade_alert_text(cascade, basis, base_sc.overall_risk_score)
 
             return AlertEvent(
                 alert_id   = str(uuid.uuid4()),
                 org_id     = org_id,
                 trigger    = "cascade_risk",
-                severity   = "critical" if base_sc.overall_risk_score > 70 else "high",
+                severity   = severity,
                 title      = title,
                 body       = body,
                 metadata   = {
+                    "basis":         basis.to_dict() if basis is not None else None,
                     "kri":           kri,
                     "cascade_score": base_sc.overall_risk_score,
                     "affected":      cascade.affected_domains,

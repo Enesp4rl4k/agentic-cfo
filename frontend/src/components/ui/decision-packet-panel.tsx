@@ -144,7 +144,13 @@ function SituationRow({ packet }: { packet: DecisionPacket }) {
   const s = packet.situation;
   const cells: { label: string; value: string }[] = [
     { label: "12 ay gelir", value: fmtTL(s.revenue_12m) },
-    { label: "Nakit ömrü (baz)", value: s.runway_months != null ? `${s.runway_months} ay` : "—" },
+    {
+      label: "Nakit ömrü (baz)",
+      value:
+        s.runway_months != null
+          ? `${s.runway_months} ay${s.runway_note ? " (varsayıma dayanıyor)" : ""}`
+          : "—",
+    },
     {
       label: "En büyük gider",
       value: s.top_opex_category ? `${s.top_opex_category} · ${fmtTL(s.top_opex_amount)}` : "—",

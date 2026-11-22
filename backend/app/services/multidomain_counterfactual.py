@@ -227,7 +227,10 @@ class MultidomainCounterfactual:
                 "net_impact_try":    round(cfo_net),
                 "payback_months":    round(abs(annual_cost) / max(1, rev_gain / horizon_months), 1),
             },
-            risks=["Verimlilik ramp-up beklenenden uzun surebilir"],
+            risks=[
+                "Verimlilik ramp-up beklenenden uzun surebilir",
+                f"varsayım: bu rol için gelir etkisi %{rev_boost * 100:.0f} (model katsayısı, şirket verisi değil)",
+            ],
             opportunities=["Dogru kisi alimi revenue'yu ongoruden fazla artirir"],
             timeline_months=float(onboarding_months),
         )

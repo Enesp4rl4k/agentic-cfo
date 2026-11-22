@@ -51,6 +51,9 @@ export interface PacketSituation {
   top_opex_category: string | null;
   top_opex_amount: number | null;
   runway_months: number | null;
+  /** "known" | "assumed" | null; the note carries the runway's own assumption sentence when not known. */
+  runway_basis?: string | null;
+  runway_note?: string | null;
   forecast_12m_net: number | null;
   anomaly_count: number;
   min_confidence: number | null;

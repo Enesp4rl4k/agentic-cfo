@@ -167,6 +167,14 @@ async def build_situation(
         "top_opex_category": top_cat,
         "top_opex_amount": int(opex.get(top_cat)) if top_cat else None,
         "runway_months": base.get("runway_months"),
+        # The runway's basis is not dropped on the way to the screen: an assumed balance says so.
+        "runway_basis": (forecast.get("runway") or {}).get("basis"),
+        "runway_note": (
+            (forecast.get("runway") or {}).get("message")
+            if (forecast.get("runway") or {}).get("basis") not in (None, "known")
+            or (forecast.get("runway") or {}).get("identity_uncertain")
+            else None
+        ),
         "forecast_12m_net": base.get("twelve_month_net"),
         "anomaly_count": int(anomaly_count),
         "min_confidence": (
