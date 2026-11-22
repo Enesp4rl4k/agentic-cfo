@@ -1,13 +1,8 @@
 "use client";
 
+import { useI18n } from "@/hooks/useI18n";
+import { mapLabel } from "@/lib/i18n/codes";
 import { cn } from "@/lib/utils";
-
-const LABELS: Record<string, string> = {
-  semantic: "Semantic snapshot",
-  context: "Agent context",
-  job: "Analysis job",
-  none: "No baseline",
-};
 
 export function BaselineSourceBadge({
   source,
@@ -16,8 +11,9 @@ export function BaselineSourceBadge({
   source: string | null | undefined;
   className?: string;
 }) {
+  const { t } = useI18n();
   const key = (source || "none").toLowerCase();
-  const label = LABELS[key] ?? source ?? "Unknown";
+  const label = mapLabel(t, t.evidenceUi.baselineSources, key);
   const isSemantic = key === "semantic";
 
   return (
@@ -29,9 +25,9 @@ export function BaselineSourceBadge({
           : "border-border bg-muted/30 text-muted-foreground",
         className
       )}
-      title={`Simulation baseline: ${label}`}
+      title={t.evidenceUi.baselineTitle.replace("{label}", label)}
     >
-      baseline · {label}
+      {t.evidenceUi.baselinePrefix.replace("{label}", label)}
     </span>
   );
 }

@@ -10,6 +10,7 @@
  * Renk kodlaması: percentile'a göre emerald/yellow/orange/red
  */
 
+import { useI18n } from "@/hooks/useI18n";
 import {
   BarChart,
   Bar,
@@ -186,6 +187,7 @@ function buildChartData(items: BenchmarkMetric[]): ChartDataPoint[] {
 // ── Summary Score Cards ────────────────────────────────────────────────────────
 
 function SummaryScoreCard({ item }: { item: BenchmarkMetric }) {
+  const { t } = useI18n();
   const { label, icon: Icon, color } = getScoreLabel(item.percentile, item.higher_is_better);
 
   return (
@@ -206,7 +208,7 @@ function SummaryScoreCard({ item }: { item: BenchmarkMetric }) {
           {formatValue(item.company_value, item.unit)}
         </p>
         <p className="text-[10px] text-muted-foreground">
-          Med: {formatValue(item.benchmark_p50, item.unit)}
+          {t.sweepMisc.median}: {formatValue(item.benchmark_p50, item.unit)}
         </p>
       </div>
     </div>

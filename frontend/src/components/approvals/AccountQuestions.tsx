@@ -19,7 +19,7 @@ export function AccountQuestions() {
   const { t } = useI18n();
   const copy = t.onay;
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: WAITING_KEYS.accounts, queryFn: listAccountQuestions, retry: false });
   const answer = useMutation({

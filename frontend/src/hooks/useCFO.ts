@@ -19,6 +19,7 @@ import {
   getCommandCenterData,
 } from "@/lib/api/cfo";
 import { useToast } from "@/components/ui/toast";
+import { useI18n } from "@/hooks/useI18n";
 
 /** The run is still working: its dashboard does not exist yet, and asking for it only caches "no data". */
 export const isRunning = (status: string | undefined) =>
@@ -149,6 +150,7 @@ export function useTransactions(
 export function useCorrectCategory(jobId: string | null) {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
+  const { t } = useI18n();
   return useMutation({
     mutationFn: ({
       transactionId,
@@ -163,12 +165,13 @@ export function useCorrectCategory(jobId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["transactions", jobId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", jobId] });
       success(
-        "Category updated",
-        vars.applyAlways ? `Saved as rule for future transactions` : undefined
+        t.categoryEditor.updated,
+        vars.applyAlways ? t.categoryEditor.savedAsRule : undefined,
+        "category-updated-toast"
       );
     },
     onError: (err: Error) => {
-      toastError("Failed to update category", err.message);
+      toastError(t.categoryEditor.updateFailed, err.message, "category-update-failed-toast");
     },
   });
 }
@@ -187,17 +190,18 @@ export function useAnomalies(jobId: string | null, severity?: string) {
 export function useScanAnomalies(jobId: string | null) {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
+  const { t } = useI18n();
   return useMutation({
     mutationFn: () => scanAnomalies(jobId!),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["anomalies", jobId] });
       success(
-        `Scan complete: ${data.anomalies_found} anomalies found`,
-        data.critical > 0 ? `${data.critical} critical issues need attention` : undefined
+        t.scanToast.complete.replace("{n}", String(data.anomalies_found)),
+        data.critical > 0 ? t.scanToast.critical.replace("{n}", String(data.critical)) : undefined
       );
     },
     onError: (err: Error) => {
-      toastError("Scan failed", err.message);
+      toastError(t.scanToast.failed, err.message);
     },
   });
 }

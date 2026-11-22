@@ -10,7 +10,7 @@ export function cn(...inputs: ClassValue[]) {
  * Money screens pass the currency the data is in (see useCurrencyFormat). `null` (no currency is known)
  * formats the bare number: a symbol is a claim, and there is no default currency to fall back on.
  */
-export function formatCurrency(value: number, currency: string | null, locale = "en-US"): string {
+export function formatCurrency(value: number, currency: string | null, locale = "tr-TR"): string {
   const bare = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   if (currency === null) return bare.format(value);
   try {

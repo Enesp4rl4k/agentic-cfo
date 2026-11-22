@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { detectInitialLocale, getMessages, resolveAppLocale } from "@/lib/i18n";
 
 describe("resolveAppLocale", () => {
-  it("maps tr-* org locales to Turkish and everything else to English", () => {
+  it("maps an explicit en-* locale to English and everything else (including no locale) to Turkish", () => {
     expect(resolveAppLocale("tr-TR")).toBe("tr");
     expect(resolveAppLocale("TR")).toBe("tr");
     expect(resolveAppLocale("en-US")).toBe("en");
-    expect(resolveAppLocale(null)).toBe("en");
-    expect(resolveAppLocale(undefined)).toBe("en");
+    expect(resolveAppLocale("de-DE")).toBe("tr");
+    // no locale known: Turkish is the product default
+    expect(resolveAppLocale(null)).toBe("tr");
+    expect(resolveAppLocale(undefined)).toBe("tr");
   });
 });
 
@@ -18,10 +20,10 @@ describe("detectInitialLocale", () => {
     expect(detectInitialLocale("tr-TR")).toBe("tr");
   });
 
-  it("falls back to the browser language when there is no cache", () => {
+  it("falls back to Turkish (the default) when there is no cache, whatever the browser language", () => {
     expect(detectInitialLocale(null, ["tr-TR", "en-US"])).toBe("tr");
-    expect(detectInitialLocale(null, ["de-DE", "en-US"])).toBe("en");
-    expect(detectInitialLocale(undefined, [])).toBe("en");
+    expect(detectInitialLocale(null, ["de-DE", "en-US"])).toBe("tr");
+    expect(detectInitialLocale(undefined, [])).toBe("tr");
   });
 });
 
@@ -64,12 +66,79 @@ describe("getMessages", () => {
     );
   }
 
+  function collectLeafValues(node: unknown, prefix = ""): Array<[string, string]> {
+    if (typeof node === "string") return [[prefix, node]];
+    if (node === null || typeof node !== "object") return [];
+    return Object.entries(node as Record<string, unknown>).flatMap(([k, v]) =>
+      collectLeafValues(v, prefix ? `${prefix}.${k}` : k),
+    );
+  }
+
   it("keeps the tr and en message trees structurally identical", () => {
     const trLeaves = collectLeafPaths(getMessages("tr")).sort();
     const enLeaves = collectLeafPaths(getMessages("en")).sort();
 
     expect(trLeaves).toEqual(enLeaves);
     expect(trLeaves.length).toBeGreaterThan(100);
+  });
+
+  /**
+   * A Turkish value that is character-for-character its English twin is almost always an untranslated
+   * string. These are the ones that legitimately are not: each entry says why.
+   */
+  const SAME_IN_BOTH_VALUES: ReadonlyMap<string, string> = new Map([
+    // proper nouns and product / feature names
+    ["Tiphys", "product name"], ["Paraşüt", "third-party product"], ["Logo Tiger", "third-party product"], ["Mikro ERP", "third-party product"], ["Netsis", "third-party product"],
+    ["Slack", "third-party product"], ["Command Center", "feature name, see docs/glossary.md"], ["Command Center →", "feature name"], ["Monte Carlo", "method name"],
+    // acronyms and abbreviations used verbatim in Turkish finance
+    ["CFO", "title as used in Turkish"], ["CEO", "title as used in Turkish"], ["EBITDA", "acronym as used in Turkish"], ["C-Suite", "term as used in Turkish"],
+    ["SLA (P95)", "acronym"], ["Sprint CSV", "file format name"], ["VKN/TCKN", "Turkish tax identifiers"], ["Webhook URL", "technical term"], ["NPS {score}", "acronym"], ["/ 100 NPS", "acronym"],
+    ["TCMB EVDS", "data source name"], ["USD / TRY", "currency pair"], ["EUR / TRY", "currency pair"], ["Excel · CSV · PDF", "file formats"], ["PDF", "file format"],
+    // words spelled the same in Turkish
+    ["Risk", "same word in Turkish"], ["risk", "same word in Turkish"], ["Net", "same word in Turkish"], ["Trend", "same word in Turkish"], ["trend", "same word in Turkish"],
+    ["Portal", "same word in Turkish"], ["Benchmark", "term used untranslated by Turkish analysts"], ["{level} risk", "same word in Turkish"], ["{plan} plan", "same word in Turkish"],
+    // locale endonyms are written in their own language by design
+    ["English (US)", "endonym"], ["English (UK)", "endonym"], ["Türkçe", "endonym"], ["Deutsch", "endonym"], ["Türkiye", "same in both"],
+    // the decision loop is written as an English motto on purpose (DESIGN.md); needs a product decision
+    ["OBSERVE · ORIENT · DECIDE · ACT", "motto, product decision"], ["OBSERVE", "motto"], ["ORIENT", "motto"], ["DECIDE", "motto"], ["ACT", "motto"], ["Carpe diem.", "motto"],
+    ["What-If", "term used untranslated in Turkish decks; product decision"],
+    // example values in input placeholders
+    ["Slack Webhook URL", "technical term"], ["Slack webhook URL", "technical term"], ["→ CFO", "title as used in Turkish"], ["({size} KB)", "unit"],
+    ["ops@company.com", "example e-mail"], ["cfo@sirket.com, ceo@sirket.com", "example e-mails"], ["#finance-alerts", "example channel"],
+  ]);
+  const SAME_IN_BOTH_PATHS = [
+    /\.href$/, // routes
+    /\.letter$/, // roman numerals
+    /Placeholder$/i, // example payloads and URLs
+    /\.placeholder$/, // example payloads and URLs
+    /^codes?Agent\./, // role/agent acronyms
+    /^codes\.role\.cfo$/, // title as used in Turkish
+  ];
+
+  it("has no Turkish value identical to its English value, except allowlisted terms", () => {
+    const tr = new Map(collectLeafValues(getMessages("tr")));
+    const same = collectLeafValues(getMessages("en"))
+      .filter(([k, v]) => tr.get(k) === v)
+      .filter(([k, v]) => /\p{L}/u.test(v.replace(/\{[^}]*\}/g, "")))
+      .filter(([k, v]) => !SAME_IN_BOTH_VALUES.has(v) && !SAME_IN_BOTH_PATHS.some((re) => re.test(k)))
+      .map(([k, v]) => `${k} = ${v}`);
+    expect(same, "Translate these in tr.ts, or allowlist the term above with a reason.").toEqual([]);
+  });
+
+  it("keeps every key in both locales, with no empty Turkish value where English has text", () => {
+    const en = new Map(collectLeafValues(getMessages("en")));
+    const tr = new Map(collectLeafValues(getMessages("tr")));
+    expect([...en.keys()].filter((k) => !tr.has(k))).toEqual([]);
+    expect([...tr.keys()].filter((k) => !en.has(k))).toEqual([]);
+    const blank = [...en].filter(([k, v]) => v.trim() !== "" && (tr.get(k) ?? "").trim() === "").map(([k]) => k);
+    expect(blank).toEqual([]);
+  });
+
+  it("uses the same {placeholders} in both locales", () => {
+    const en = new Map(collectLeafValues(getMessages("en")));
+    const tokens = (v: string) => (v.match(/\{[^}]+\}/g) ?? []).sort().join(",");
+    const bad = collectLeafValues(getMessages("tr")).filter(([k, v]) => en.has(k) && tokens(v) !== tokens(en.get(k) as string)).map(([k]) => k);
+    expect(bad).toEqual([]);
   });
 
   it("localizes the Group A feature pages (pnl, cashflow, baglan, upload, chat)", () => {

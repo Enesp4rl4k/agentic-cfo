@@ -3,29 +3,32 @@
 import { TrendingUp, Target } from "lucide-react";
 import { formatPercent } from "@/lib/dashboard-utils";
 import { type OKRObjective, fmt } from "./types";
+import { useI18n } from "@/hooks/useI18n";
+import type { MessageTree } from "@/lib/i18n";
 
 interface OKRScorecardProps {
   objectives: OKRObjective[];
   companyScore: number;
 }
 
-function getMomentumIcon(momentum: string) {
+function getMomentumIcon(momentum: string, t: MessageTree) {
   switch (momentum) {
     case "up":
-      return <TrendingUp className="h-4 w-4 text-green-400" aria-label="Trending up" />;
+      return <TrendingUp className="h-4 w-4 text-green-400" aria-label={t.sweepMisc.trendingUp} />;
     case "down":
       return (
         <TrendingUp
           className="h-4 w-4 rotate-180 text-red-400"
-          aria-label="Trending down"
+          aria-label={t.sweepMisc.trendingDown}
         />
       );
     default:
-      return <span className="h-4 w-4 text-yellow-400" aria-label="Stable">—</span>;
+      return <span className="h-4 w-4 text-yellow-400" aria-label={t.sweepMisc.stable}>—</span>;
   }
 }
 
 export function OKRWeightedScorecard({ objectives, companyScore }: OKRScorecardProps) {
+  const { t } = useI18n();
   return (
     <div className="rounded-lg border border-border bg-card p-6">
       <div className="mb-6 flex items-end justify-between">
@@ -51,7 +54,7 @@ export function OKRWeightedScorecard({ objectives, companyScore }: OKRScorecardP
                 <div className="flex-1">
                   <div className="mb-1 flex items-center gap-2">
                     <h4 className="text-sm font-medium">{obj.name}</h4>
-                    {getMomentumIcon(obj.momentum)}
+                    {getMomentumIcon(obj.momentum, t)}
                   </div>
                   <div className="flex gap-2 text-xs text-muted-foreground">
                     <span>Ağırlık: {formatPercent(obj.weight)}</span>

@@ -38,7 +38,7 @@ export function OtherCurrencyLines({
   const { t } = useI18n();
   const { org } = useOrgSettings();
   const copy = t.otherCurrency;
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   if (!items?.length) return null;
 
   const money = (cents: number, code: string) => formatCurrency(cents / 100, code, locale);

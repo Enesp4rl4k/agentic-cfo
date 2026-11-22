@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 import {
   formatMetricValue,
@@ -27,6 +28,7 @@ export function SemanticMetricsPanel({
   className,
   maxItems = 12,
 }: SemanticMetricsPanelProps) {
+  const { t } = useI18n();
   const numeric = metrics.filter((m) => m.value != null);
   if (numeric.length === 0) return null;
 
@@ -36,16 +38,16 @@ export function SemanticMetricsPanel({
     <div className={cn("space-y-3", className)}>
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Semantic Metrics</h3>
+          <h3 className="text-sm font-semibold">{t.evidenceUi.metricsTitle}</h3>
           {periodKey && (
-            <p className="text-xs text-muted-foreground">Period · {periodKey}</p>
+            <p className="text-xs text-muted-foreground">{t.evidenceUi.period.replace("{period}", periodKey)}</p>
           )}
         </div>
         <Link
           href="/command-center"
           className="text-xs text-primary hover:underline"
         >
-          Decision brief →
+          {t.evidenceUi.decisionBrief}
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
