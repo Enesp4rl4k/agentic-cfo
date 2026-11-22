@@ -258,6 +258,8 @@ async def require_smmm(
 PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/health"): "liveness probe",
     ("GET", "/api/v1/system/health"): "liveness probe",
+    ("GET", "/api/v1/ready"): "readiness probe: fixed codes and platform-wide counts, no exception text, no tenant data",
+    ("GET", "/api/v1/version"): "build commit and migration head, no tenant data",
     ("POST", "/api/v1/auth/register"): "creates the user",
     ("POST", "/api/v1/auth/login"): "issues the token",
     ("POST", "/api/v1/demo/guest"): "mints an isolated demo session without signup (gated by demo_mode)",

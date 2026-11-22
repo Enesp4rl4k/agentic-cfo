@@ -319,6 +319,9 @@ async def deliver_pending(db: AsyncSession, *, limit: int = BATCH) -> dict[str, 
 
     Rows are locked while they are sent (skip locked on Postgres), so a delivery kicked by a
     request and the scheduler's pass never send the same row twice."""
+    from app.core.heartbeat import beat
+
+    await beat("outbox_pass")  # /api/v1/ready reads this: "something is delivering the outbox"
     rows = (
         await db.execute(
             select(OutboxMessage)
