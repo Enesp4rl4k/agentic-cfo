@@ -27,7 +27,7 @@ def money_is_wellformed(raw: Any) -> bool:
     if raw is None or isinstance(raw, (bool, int, float)):
         return True
     text = _CURRENCY_TOKEN.sub("", str(raw).replace(" ", " ").replace("−", "-").replace("–", "-")).strip()
-    text = re.sub(r"^[+-]\s*|\s*-$", "", text.strip("()").strip())
+    text = re.sub(r"(?:^[+-]\s*)|(?:\s*-$)", "", text.strip("()").strip())
     return _WELLFORMED.fullmatch(text) is not None
 
 
