@@ -35,6 +35,7 @@ from app.models.erp_integration import ERPIntegration, ERPSyncLog
 from app.models.held_transaction import HeldTransaction
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
+from app.models.job_run import OpsState, ScheduledJobRun
 from app.models.journal import JournalEntry, JournalLine
 from app.models.llm_call_log import LLMCallLog
 from app.models.open_item import OpenItem
@@ -104,6 +105,7 @@ __all__ = [
     "OnayDurumu",
     "OpenItem",
     "OpenItemMatch",
+    "OpsState",
     "OrgErasureRecord",
     "OrgErasureRequest",
     "Organization",
@@ -121,6 +123,7 @@ __all__ = [
     "SMMMMuhasebeci",
     "SMMMMusteriKayit",
     "SMMMOnayKaydi",
+    "ScheduledJobRun",
     "SyncRun",
     "SyncSchedule",
     "Transaction",

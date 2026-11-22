@@ -6,9 +6,12 @@ Code: `api/auth.py`, `services/email_verification.py`, `services/password_reset.
 
 1. **Is mail configured at all?** `curl -s https://<API_DOMAIN>/api/v1/ready`: `checks.outbox` with
    `failed_24h > 0`, or `dc logs backend | grep -i 'no mail sender'` (startup warning `no_mail_sender`).
-   Without `SMTP_USER` and `SMTP_PASSWORD` every invitation, verification, reset and briefing ends as a
-   failed outbox row, and the user was still told "check your e-mail" (that answer is identical for every
-   address on purpose). This is the usual cause.
+   Without `SMTP_USER` and `SMTP_PASSWORD` every verification, reset and briefing ends as a failed outbox row.
+   Production now refuses to start in that state when a flow needs mail (`mail_required_no_sender`), and the
+   answers say so: `mail_delivery` is `live`, `dev_recorded` (development: recorded, not sent, with a
+   notice) or `not_configured`; an invitation (organisation or pilot) is refused with "davet iletilemedi"
+   and **not created** when nothing can be sent. The words are the same for every address, so they leak
+   nothing about accounts. This is still the usual cause on a half-configured host.
 2. **What happened to this user's mail?** The outbox keeps the reason; look up by the user's address
    (this is operator access to personal data: do it, do not copy it anywhere):
    ```bash

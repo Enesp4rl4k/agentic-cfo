@@ -57,6 +57,9 @@ def production_settings(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **base)
 
 
+# A deployment that needs no mail at all: the mail-required rule (a FATAL) does not apply to it.
+NO_MAIL_NEEDED = {"registration_mode": "open", "email_verification_required": False}
+
 CLEAN_ENV = {"SENTRY_DSN": "https://k@sentry.example.test/1", "NEXTAUTH_SECRET": "n" * 40, "APP_ENV": "production"}
 
 
@@ -94,9 +97,9 @@ def test_dangerous_configuration_is_fatal(override: dict[str, Any], code: str) -
 @pytest.mark.parametrize(
     "override", [{"demo_mode": True}, {"frontend_url": "http://localhost:3000"}, {"brand_app_url": "http://localhost:3000"}]
 )
-def test_demo_and_localhost_are_only_warnings_with_postgres_and_no_app_env(override: dict[str, Any]) -> None:
+def test_demo_and_localhost_are_only_warnings_with_postgres_and_a_demo_app_env(override: dict[str, Any]) -> None:
     """The demo compose stack and a developer's docker-compose run Postgres exactly like this."""
-    env = {k: v for k, v in CLEAN_ENV.items() if k != "APP_ENV"}
+    env = {**CLEAN_ENV, "APP_ENV": "demo"}  # Postgres needs an APP_ENV; `demo` is not a declared production
     s = production_settings(**override)
     findings = check_settings(s, env)
     assert not codes(findings, FATAL)
@@ -127,10 +130,10 @@ def test_a_missing_nextauth_secret_is_not_the_backends_business() -> None:
 @pytest.mark.parametrize(
     ("override", "env", "code"),
     [
-        ({"smtp_user": "", "smtp_password": ""}, CLEAN_ENV, "no_mail_sender"),
-        ({"outbox_transport": "noop"}, CLEAN_ENV, "outbox_noop"),
+        ({"smtp_user": "", "smtp_password": "", **NO_MAIL_NEEDED}, CLEAN_ENV, "no_mail_sender"),
+        ({"outbox_transport": "noop", **NO_MAIL_NEEDED}, CLEAN_ENV, "outbox_noop"),
         ({"openai_api_key": "llm-placeholder-dev"}, CLEAN_ENV, "no_llm_key"),
-        ({}, {"NEXTAUTH_SECRET": "n" * 40}, "no_error_tracking"),
+        ({}, {"NEXTAUTH_SECRET": "n" * 40, "APP_ENV": "production"}, "no_error_tracking"),
         ({"trusted_proxy_count": 0}, CLEAN_ENV, "no_trusted_proxy"),
         ({"field_encryption_key": ""}, CLEAN_ENV, "no_field_key"),
         ({"platform_operator_emails": ""}, CLEAN_ENV, "no_operator"),
@@ -178,7 +181,10 @@ def test_enforce_only_warns_outside_production(caplog: pytest.LogCaptureFixture)
 
 def test_main_runs_the_preflight_at_startup() -> None:
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
-    assert "enforce(settings)" in source and "raise SystemExit(1)" in source
+    assert 'enforce_or_exit(settings, process="api")' in source
+    assert 'enforce_or_exit(get_settings(), process="worker")' in (
+        Path(__file__).resolve().parents[1] / "app" / "worker.py"
+    ).read_text(encoding="utf-8")
 
 
 # ── schema state ───────────────────────────────────────────────────────────────

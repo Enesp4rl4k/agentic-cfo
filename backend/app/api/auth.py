@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.services import email_verification, outbox
+from app.services import email_verification, mail_capability, outbox, pilot_invites, registration
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -94,6 +94,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, description="Min 8 characters")
     full_name: str | None = None
+    # The secret of a pilot invitation (services/pilot_invites.py). With it, and only with it, an account and
+    # its company are created when REGISTRATION_MODE is not `open`.
+    invite_token: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -247,8 +250,63 @@ _DUMMY_HASH = hash_password("not-a-real-password")
 
 
 def _accepted() -> dict[str, Any]:
-    """The one answer of /auth/register under verification (identical for new and existing addresses)."""
-    return {"data": {"accepted": True, "verification_required": True}, "error": None}
+    """The one answer of /auth/register under verification (identical for new and existing addresses).
+
+    `mail_delivery` / `mail_notice` are facts about the deployment (is a mail sender configured), the same
+    for every address, so "check your e-mail" is never said when nothing can be sent."""
+    return {
+        "data": {"accepted": True, "verification_required": True, **mail_capability.fields()},
+        "error": None,
+    }
+
+
+def _closed_answer() -> JSONResponse:
+    """Sign-up without an invitation while REGISTRATION_MODE is not `open`: nothing is created.
+
+    Independent of the address (it says nothing about which accounts exist), so it needs no disguise."""
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={
+            "data": {"state": "invite_only", **registration.public_view()},
+            "error": registration.refusal_message(),
+        },
+    )
+
+
+@router.get("/auth/registration")
+async def registration_policy() -> dict[str, Any]:
+    """Who may sign up, for the register page to say so before the form (no account data)."""
+    return {"data": registration.public_view(), "error": None}
+
+
+async def _register_with_pilot_invite(body: RegisterRequest, db: AsyncSession) -> dict[str, Any] | JSONResponse:
+    """The invited owner of a new company signs up: account + company in one step, signed in at once."""
+    from app.api.password_reset import hold_to_floor
+
+    started = time.monotonic()
+    password_hash = hash_password(body.password)
+    try:
+        user, org = await pilot_invites.redeem(
+            db, str(body.invite_token), email=str(body.email), hashed_password=password_hash,
+            full_name=body.full_name,
+        )
+        await db.commit()
+    except pilot_invites.PilotInviteError as err:
+        await db.rollback()
+        await hold_to_floor(started)
+        return JSONResponse(status_code=err.status_code, content={"data": None, "error": err.detail, "detail": err.detail})
+    await db.refresh(user)
+    logger.info("Pilot invite redeemed: user %s owns organisation %s", user.id, org.id)
+    return {
+        "data": {
+            "user_id": user.id, "email": user.email, "role": user.role, "org_id": str(org.id),
+            "org_name": org.name, "verification_required": False, "pilot_invite": True,
+            "access_token": create_access_token(user.id, user.email, user.role, token_version=user.token_version),
+            "refresh_token": create_refresh_token(user.id, token_version=user.token_version),
+            "token_type": "bearer", "expires_in": 1800,
+        },
+        "error": None,
+    }
 
 
 async def _mail_existing_account(db: AsyncSession, user: User) -> None:
@@ -273,12 +331,16 @@ async def _mail_existing_account(db: AsyncSession, user: User) -> None:
     outbox.kick()
 
 
-@router.post("/auth/register", status_code=status.HTTP_201_CREATED)
+@router.post("/auth/register", status_code=status.HTTP_201_CREATED, response_model=None)
 async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, Any] | JSONResponse:
     """Register a new user account.
+
+    REGISTRATION_MODE decides who may. `open`: anyone, as below. `invite_only` / `closed`: only a request
+    carrying a valid pilot-invite token creates anything (an account that owns a new company); every other
+    request is refused with 403 and creates nothing, for any address alike.
 
     With e-mail verification required (the default) the answer is the same for a new and an
     existing address: status, body and minimum duration. A new address gets the verification link;
@@ -288,6 +350,10 @@ async def register(
     tell the person, so the old explicit error stays."""
     from app.api.password_reset import hold_to_floor
 
+    if not registration.is_open():
+        if not body.invite_token:
+            return _closed_answer()
+        return await _register_with_pilot_invite(body, db)
     started = time.monotonic()
     verification = email_verification.required()
     address = normalize_email(str(body.email))

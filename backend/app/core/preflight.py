@@ -7,6 +7,11 @@ is the wider list an operator needs before a company's data is on the box:
   wildcard CORS with credentials, SQLite under `APP_ENV`, the public WhatsApp verify token; and, when
   `APP_ENV` says production or staging, the demo seed and e-mail links that point at localhost (with
   Postgres alone those two are warnings: the demo stack and a developer's compose run exactly so).
+* APP_ENV must be set to a known value whenever the database is Postgres (`app_env_missing`): a production
+  host that forgot it would otherwise run in "warnings only" mode for demo mode and localhost links.
+* Mail-dependent features with no mail sender (`mail_required_no_sender`): invite-only registration and
+  required e-mail verification both need a delivered e-mail; with none, nobody could ever get in. Fatal
+  when APP_ENV says production or staging, a warning otherwise (the demo stack runs that way).
 * WARN (always logged): safe but degraded. No mail sender, no LLM key, no error tracking, no proxy
   setting, no field-encryption key, nobody who can operate the platform.
 
@@ -40,6 +45,8 @@ WARN = "warn"
 _PLACEHOLDER_MARKERS = ("change-this", "changeme", "change_me", "your-secret", "replace-me", "dev-secret")
 _PUBLIC_WHATSAPP_VERIFY_TOKEN = "agentic-cfo-verify"
 _PRODUCTION_ENVS = frozenset({"production", "prod", "staging"})
+# The values APP_ENV may take. Postgres without one of them is fatal: say which you mean.
+ALLOWED_APP_ENVS = ("production", "prod", "staging", "demo", "development", "dev", "ci", "test")
 MIN_SECRET_LENGTH = 32
 
 
@@ -136,6 +143,43 @@ def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
     return out
 
 
+def _mail_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    declared = app_env(env) in _PRODUCTION_ENVS
+    no_sender = settings.outbox_transport == "noop" or not (settings.smtp_user and settings.smtp_password)
+    needs = [
+        name
+        for name, on in (
+            ("REGISTRATION_MODE=invite_only (invitations and pilot invites are e-mailed)", settings.registration_mode == "invite_only"),
+            ("EMAIL_VERIFICATION_REQUIRED=true (verification links are e-mailed)", settings.email_verification_required),
+        )
+        if on
+    ]
+    if not (no_sender and needs):
+        return []
+    explicit = _fatal if declared else _warn
+    return [
+        explicit(
+            "mail_required_no_sender",
+            "No mail can be sent (SMTP_USER / SMTP_PASSWORD unset, or OUTBOX_TRANSPORT=noop) but "
+            + " and ".join(needs)
+            + ": nobody could ever get in. Configure SMTP (docs/ops/mail.md), or for a deployment without mail "
+            "set REGISTRATION_MODE=open and EMAIL_VERIFICATION_REQUIRED=false knowingly.",
+        )
+    ]
+
+
+def _env_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    if settings.use_sqlite:
+        return []
+    declared = app_env(env)
+    allowed = ", ".join(ALLOWED_APP_ENVS)
+    if not declared:
+        return [_fatal("app_env_missing", f"APP_ENV is not set while the database is Postgres: set it to one of {allowed}.")]
+    if declared not in ALLOWED_APP_ENVS:
+        return [_fatal("app_env_unknown", f"APP_ENV={declared!r} is not a known value; use one of {allowed}.")]
+    return []
+
+
 def _degraded_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
     out: list[Finding] = []
     if settings.outbox_transport == "noop":
@@ -163,7 +207,9 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None)
     env = os.environ if environ is None else environ
     findings = [
         *_secret_findings(settings, env),
+        *_env_findings(settings, env),
         *_exposure_findings(settings, env),
+        *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:
@@ -186,6 +232,24 @@ def enforce(settings: Settings, environ: Mapping[str, str] | None = None) -> lis
         raise PreflightError(
             "Production preflight failed:\n" + "\n".join(f"  - [{f.code}] {f.message}" for f in fatal)
         )
+    return findings
+
+
+_enforced = False
+
+
+def enforce_or_exit(settings: Settings, *, process: str) -> list[Finding]:
+    """`enforce`, and stop the process (exit 1) on a fatal finding. Used by every process type: the API
+    at import of `main.py`, the ARQ worker at import of `worker.py`. Runs once per process."""
+    global _enforced
+    if _enforced:
+        return []
+    try:
+        findings = enforce(settings)
+    except PreflightError as err:
+        logger.critical("%s process: STARTUP ABORTED — %s", process, err)
+        raise SystemExit(1) from err
+    _enforced = True
     return findings
 
 

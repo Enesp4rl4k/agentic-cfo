@@ -2809,6 +2809,34 @@ export type MessageTree = {
     mappingFlagged: string;
     fileSuggested: string;
   };
+  inviteOnly: {
+    title: string;
+    body: string;
+    contact: string;
+    noContact: string;
+    signIn: string;
+  };
+  pilotInvite: {
+    title: string;
+    loading: string;
+    loadFailed: string;
+    invitedTo: string;
+    forAddress: string;
+    fullName: string;
+    password: string;
+    passwordHint: string;
+    submit: string;
+    submitting: string;
+    failed: string;
+    unknownTitle: string;
+    unknownBody: string;
+    expiredTitle: string;
+    expiredBody: string;
+    usedTitle: string;
+    usedBody: string;
+    closedBody: string;
+    signIn: string;
+  };
   acceptInvite: {
     title: string;
     loading: string;
@@ -6430,6 +6458,34 @@ export const en: MessageTree = {
     mappingStanding: "standing rule for files with no account named",
     mappingFlagged: "A balance chain overrode this answer",
     fileSuggested: "A single balance step supports this reading. It is pre-selected as a suggestion, not a proof: please confirm.",
+  },
+  inviteOnly: {
+    title: "Tiphys is currently available by invitation only",
+    body: "New accounts are opened only through an invitation link. If you have an invitation, open the link in your e-mail.",
+    contact: "To ask for an invitation: {contact}",
+    noContact: "To ask for an invitation, talk to the person who gave you this address.",
+    signIn: "Already have an account? Sign in",
+  },
+  pilotInvite: {
+    title: "Open your company",
+    loading: "Checking the invitation…",
+    loadFailed: "The invitation could not be read. Check your link and try again.",
+    invitedTo: "You are invited for {company}. You will be its owner and can invite your team afterwards.",
+    forAddress: "This invitation is for {email}.",
+    fullName: "Full name",
+    password: "Password",
+    passwordHint: "At least 8 characters",
+    submit: "Create account and open the company",
+    submitting: "Creating…",
+    failed: "Sign-up could not be completed.",
+    unknownTitle: "This invitation was not found",
+    unknownBody: "The link is incomplete, wrong or the invitation was cancelled. Ask the sender for a new one.",
+    expiredTitle: "The invitation has expired",
+    expiredBody: "Ask the sender for a new one.",
+    usedTitle: "This invitation was already used",
+    usedBody: "You can sign in with your account.",
+    closedBody: "Tiphys is not accepting new companies right now.",
+    signIn: "Sign in",
   },
   acceptInvite: {
     title: "Join the invitation",

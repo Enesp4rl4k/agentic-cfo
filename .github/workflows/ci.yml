@@ -157,6 +157,7 @@ jobs:
 
     env:
       USE_SQLITE:            "false"
+      APP_ENV:               ci
       DATABASE_URL_OVERRIDE: postgresql+asyncpg://aicfo@localhost:5432/aicfo_test
       BACKEND_SECRET_KEY:    ci-migrations-only-not-a-secret
       OPENAI_API_KEY:        llm-placeholder-ci
@@ -279,6 +280,8 @@ jobs:
           REDIS_URL:          redis://localhost:6379/0
           OPENAI_API_KEY:     llm-placeholder-ci
           USE_SQLITE:         "false"
+          APP_ENV:            ci
+          REGISTRATION_MODE:  open
           LANGGRAPH_CHECKPOINT: memory
         # The server's output went to the step's own pipe, so the step never
         # finished: it ran until the job's 6-hour limit and was cancelled.

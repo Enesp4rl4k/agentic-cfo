@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import {
-  Users, Star, TrendingUp, MessageSquare, Copy, Check,
+  Users, Star, TrendingUp, MessageSquare,
   Trash2, RefreshCw, Loader2, AlertCircle, Plus,
   Target, ShieldCheck, CheckCircle2, Clock, XCircle,
 } from "lucide-react";
@@ -23,6 +23,7 @@ type Invite = {
   id: string;
   code: string;
   email: string | null;
+  company_name?: string | null;
   note: string | null;
   used: boolean;
   used_by: string | null;
@@ -61,11 +62,9 @@ type Summary = {
 };
 
 type PilotStatus = {
-  pilot_active: boolean;
-  max_users: number;
+  registration_mode?: string;
   current_users: number;
-  slots_remaining: number;
-  accepting_new_users: boolean;
+  available_invites?: number;
 };
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
@@ -292,7 +291,6 @@ export default function PilotAdminPage() {
   const [decisionMetrics, setDecisionMetrics] = useState<DecisionSuccessMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
 
   // Generate invite form
   const [genNote, setGenNote] = useState("");
@@ -343,7 +341,8 @@ export default function PilotAdminPage() {
       const res = await fetch(`${API_BASE}/api/v1/pilot/invite/generate`, {
         method: "POST",
         headers: h(),
-        body: JSON.stringify({ note: genNote || null, email: genEmail || null, count: 1 }),
+        // The invitation link goes to the address by e-mail; the company named here is created when it is used.
+        body: JSON.stringify({ company_name: genNote, email: genEmail }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail ?? p.genericError);
@@ -360,13 +359,6 @@ export default function PilotAdminPage() {
   async function revokeInvite(id: string) {
     await fetch(`${API_BASE}/api/v1/pilot/invite/${id}`, { method: "DELETE", headers: h() });
     setInvites((prev) => prev.filter((i) => i.id !== id));
-  }
-
-  async function copyInviteLink(code: string) {
-    const url = `${window.location.origin}/auth/register?invite=${code}`;
-    await navigator.clipboard.writeText(url).catch(() => {});
-    setCopied(code);
-    setTimeout(() => setCopied(null), 2000);
   }
 
   const unusedInvites = invites.filter((i) => !i.used);
@@ -400,9 +392,8 @@ export default function PilotAdminPage() {
 
       {/* Status strip */}
       {status && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label={p.stats.totalUsers} value={status.current_users} sub={p.stats.maxUsers.replace("{max}", String(status.max_users))} />
-          <StatCard label={p.stats.freeSlots} value={status.slots_remaining} color={status.slots_remaining > 0 ? "text-emerald-400" : "text-destructive"} />
+        <div className="grid grid-cols-3 gap-3">
+          <StatCard label={p.stats.totalUsers} value={status.current_users} />
           <StatCard label={p.stats.pendingInvites} value={unusedInvites.length} />
           <StatCard label={p.stats.usedInvites} value={usedInvites.length} />
         </div>
@@ -493,7 +484,7 @@ export default function PilotAdminPage() {
           />
           <button
             onClick={generateInvite}
-            disabled={generating}
+            disabled={generating || !genEmail || !genNote}
             className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
@@ -513,25 +504,14 @@ export default function PilotAdminPage() {
           <div className="divide-y divide-border/50">
             {invites.map((inv) => (
               <div key={inv.id} className={cn("flex items-center gap-3 px-4 py-3", inv.used && "opacity-50")}>
-                <code className="flex-1 min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs">
-                  {inv.code}
-                </code>
-                {inv.note && <span className="text-xs text-muted-foreground">{inv.note}</span>}
+                <span className="flex-1 min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs">
+                  {inv.company_name ?? inv.code}
+                </span>
+                {inv.email && <span className="text-xs text-muted-foreground">{inv.email}</span>}
                 {inv.used ? (
                   <span className="text-xs text-emerald-400">{p.invites.used}</span>
                 ) : (
                   <>
-                    <button
-                      onClick={() => copyInviteLink(inv.code)}
-                      className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label={p.invites.copyLink}
-                    >
-                      {copied === inv.code ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
                     <button
                       onClick={() => revokeInvite(inv.id)}
                       className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
