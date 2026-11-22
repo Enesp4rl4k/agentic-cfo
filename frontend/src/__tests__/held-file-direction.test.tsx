@@ -234,6 +234,23 @@ describe("the same header words, another source: the earlier answer is shown, no
   });
 });
 
+describe("one balance step is a suggestion, not a proof", () => {
+  it("pre-selects the suggested reading and says why it is only a suggestion", async () => {
+    listFileQuestions.mockResolvedValue({
+      files: [{
+        ...fileQuestionFixture, reason: "sign_unconfirmed", options: ["sign_correct", "sign_inverted", "mixed"],
+        question: { ...fileQuestionFixture.question, suggested: { answer: "sign_correct", reason: "single_step" } },
+      }],
+      canRemember: true,
+    });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByTestId("suggested-answer")).toHaveTextContent("Tek bir bakiye adımı bu yönü destekliyor");
+    const pressed = screen.getAllByRole("button").filter((b) => b.getAttribute("aria-pressed") === "true");
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]).toHaveTextContent("Tutarların işareti doğru");
+  });
+});
+
 describe("hatırlanan ekstre yönleri", () => {
   it("lists a remembered answer and forgets it on request", async () => {
     const user = userEvent.setup();

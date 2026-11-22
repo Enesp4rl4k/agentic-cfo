@@ -3058,6 +3058,7 @@ export const tr: MessageTree = {
     fileStanding: "Bu başlıkla gelen, hesabı belli olmayan dosyalar hep böyle (sonradan unutabileceğiniz kalıcı bir kural)",
     mappingStanding: "hesabı belli olmayan dosyalar için kalıcı kural",
     mappingFlagged: "Bir bakiye zinciri bu cevabı geçersiz kıldı",
+    fileSuggested: "Tek bir bakiye adımı bu yönü destekliyor. Öneri olarak seçildi, kanıt sayılmaz: lütfen onaylayın.",
   },
   acceptInvite: {
     title: "Davete katıl",

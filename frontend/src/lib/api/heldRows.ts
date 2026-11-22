@@ -116,6 +116,8 @@ export interface FileQuestion {
     mapping?: Array<{ label: string; means: "income" | "expense" }>;
     /** For a sign question: what each reading would book, in kuruş, and whether the file has one sign only. */
     previous?: PreviousAnswer | null;
+    /** One balance step supports this reading: a suggestion, pre-selected, never a proof. */
+    suggested?: { answer: FileAnswer; reason: string } | null;
     totals?: { as_read: { income: number; expense: number }; inverted: { income: number; expense: number } };
     uniform?: boolean;
   } | null;

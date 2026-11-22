@@ -2752,6 +2752,7 @@ export type MessageTree = {
     fileStanding: string;
     mappingStanding: string;
     mappingFlagged: string;
+    fileSuggested: string;
   };
   acceptInvite: {
     title: string;
@@ -5951,6 +5952,7 @@ export const en: MessageTree = {
     fileStanding: "Files with these headers and no account named are always like this (a standing rule you can forget later)",
     mappingStanding: "standing rule for files with no account named",
     mappingFlagged: "A balance chain overrode this answer",
+    fileSuggested: "A single balance step supports this reading. It is pre-selected as a suggestion, not a proof: please confirm.",
   },
   acceptInvite: {
     title: "Join the invitation",

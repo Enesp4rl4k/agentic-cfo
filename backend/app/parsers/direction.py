@@ -47,6 +47,8 @@ from app.parsers.balance_chain import (
     _chain,
     _flip,
     _from_balance,
+    convention_proof,
+    date_orders,
     outside_chain,
     reconciliation_rate,
     sign_preview,
@@ -378,6 +380,8 @@ def resolve_file(
             column_values[i] = str(row.get(direction_column, "")).strip()
 
     bals: list[int | None] = [signed_money(r.get(roles["balance"])) if "balance" in roles else None for r in rows]
+    # The dates fix the row order when they can: it is not a free parameter the arithmetic may fit either convention with.
+    orders = date_orders([r.get(roles["date"]) for r in rows]) if "date" in roles else (False, True)
 
     # (c) the sign of one amount column decides only with evidence: a balance chain that verifies it. Without that
     # (and without a remembered answer, applied later by held_direction) the file is asked once.
@@ -388,12 +392,14 @@ def resolve_file(
         tentative: list[str | None] = [None] * n
         for i in sign_rows:
             tentative[i] = EXPENSE if negative[i] else INCOME
-        state = verdict(mags, tentative, bals) if "balance" in roles else "unverified"
+        state = verdict(mags, tentative, bals, orders=orders) if "balance" in roles else "unverified"
+        # A chain that fits "minus = out" fits "minus = in" too when its segments sum to zero: that is not evidence.
+        proof = convention_proof(mags, tentative, bals, orders) if state == "confirmed" else "no"
         uniform = len({negative[i] for i in sign_rows}) == 1
-        if state == "confirmed":
+        if state == "confirmed" and proof == "proven":
             sign_reads = True
             chain_source = {"signature": signature, "header_signature": header_signature(headers), "account": identity}
-        elif uniform and _from_balance(mags, bals) is not None:
+        elif uniform and _from_balance(mags, bals, orders) is not None:
             pass                                    # one sign says nothing; the balance reads the direction below
         elif state in ("inverted", "inconclusive"):
             sign_reads = True                       # the balance disagrees: the checks below hold the file with the reason
@@ -401,10 +407,13 @@ def resolve_file(
             note = ("Dosyada hem eksi hem artı tutar var, ama işaretin yönü gösterdiğini doğrulayan bir bakiye zinciri yok."
                     if not uniform else
                     "Dosyadaki tüm tutarlar aynı işaretli; yönü gösteren bir sütun ya da doğrulayan bir bakiye zinciri yok.")
+            if state == "confirmed":
+                note = "Bakiye adımları işaretin yönünü ayırt etmeye yetmiyor (tek adım ya da toplamları sıfır olan adımlar)."
+            suggestion = {"suggested": {"answer": "sign_correct", "reason": "single_step"}} if proof == "weak" else {}
             return hold_file(
                 SIGN_UNCONFIRMED, note, tentative, [_flip(t) for t in tentative],
                 [{"label": "-", "means": EXPENSE}, {"label": "+", "means": INCOME}],
-                sign_preview(mags, negative, sign_rows))
+                {**sign_preview(mags, negative, sign_rows), **suggestion})
 
     for i in range(n):
         if i in skip or reads[i] is not None or notes_per_row[i]:
@@ -428,7 +437,7 @@ def resolve_file(
     notes: list[str] = []
 
     if not any(reads) and not has_signal:
-        derived = _from_balance(mags, bals)
+        derived = _from_balance(mags, bals, orders)
         if derived is None:
             return hold_file(NO_SIGNAL, "Tutarların yönünü gösteren bir sütun ya da işaret bulunamadı.",
                              [None] * n, [None] * n)
@@ -447,12 +456,14 @@ def resolve_file(
             [RowDirection(None if i in outside else reads[i], mags[i], reads[i], None, notes_per_row[i], i in mismatch,
                           i in outside) for i in range(n)], notes)
 
-    state = verdict(mags, reads, bals)
+    state = verdict(mags, reads, bals, orders=orders)
+    if state == "confirmed" and ambiguous and convention_proof(mags, reads, bals, orders) != "proven":
+        state = "unverified"          # a debit/credit word's convention is proven only by a chain that tells them apart
     if state == "inverted":
         hints = [_flip(r) for r in reads]
         return hold_file(BALANCE_CONTRADICTS, "Bakiye hareketi, sütunlardan okunan yönün tersini gösteriyor.", reads, hints)
     if state == "inconclusive":
-        rate = reconciliation_rate(mags, reads, bals)
+        rate = reconciliation_rate(mags, reads, bals, orders)
         return hold_file(
             BALANCE_INCONCLUSIVE,
             f"Bakiye hareketi satırların yalnızca %{rate}'ini doğruluyor; dosya güvenle okunamadı.", reads, [None] * n)
@@ -464,9 +475,9 @@ def resolve_file(
             reads, [_flip(r) for r in reads], mapping)
 
     mismatch = set()
-    outside = set(_chain(mags, reads, bals).outside) - skip   # no balance, in no reconciled segment: not a link of the chain
+    outside = set(_chain(mags, reads, bals, orders).outside) - skip   # no balance, in no reconciled segment: not a link of the chain
     if state == "confirmed":
-        mismatch = set(_chain(mags, reads, bals).bad)
+        mismatch = set(_chain(mags, reads, bals, orders).bad)
         notes.append("yön bakiye hareketiyle doğrulandı")
         for i in mismatch:
             notes_per_row[i] = "bakiye ile uyuşmuyor"
@@ -502,6 +513,7 @@ def settle_rows(
     mags = [r.get("amount_cents") for r in rows]
     reads: list[str | None] = [r["type"] if r.get("type") in (INCOME, EXPENSE) else None for r in rows]
     bals = [r.get("balance_cents") for r in rows]
+    orders = date_orders([r.get("transaction_date") for r in rows])
     signature = hashlib.sha256(signature_material.encode()).hexdigest()[:24]
     samples = [{"description": str(r.get("description", "")), "amount": str(r.get("amount_cents"))} for r in rows[:3]]
 
@@ -517,14 +529,20 @@ def settle_rows(
         # The parser read every direction off the sign of one column. That is a reading, not evidence.
         negative = [r.get("type") == EXPENSE for r in rows]
         sign_rows = [i for i, r in enumerate(rows) if r.get("type") in (INCOME, EXPENSE) and mags[i]]
-        state = verdict(mags, reads, bals, min_steps=3)
+        state = verdict(mags, reads, bals, min_steps=3, orders=orders)
+        # A chain that fits both conventions (zero-sum steps, or the two row orders disagreeing) proves neither.
+        proof = convention_proof(mags, reads, bals, orders, 3) if state == "confirmed" else "no"
+        if state == "confirmed" and proof != "proven":
+            state = "unverified"
         uniform = len({negative[i] for i in sign_rows}) <= 1
-        if state == "unverified" and uniform and (derived := _from_balance(mags, bals)) is not None:
+        if state == "unverified" and uniform and (derived := _from_balance(mags, bals, orders)) is not None:
             for r, d in zip(rows, derived, strict=True):
                 r["type"] = d
             return None
         if state == "unverified" and sign_rows:
             preview = sign_preview(mags, negative, sign_rows)
+            if proof == "weak":
+                preview["suggested"] = {"answer": "sign_correct", "reason": "single_step"}
             shown = [{"description": str(rows[i].get("description", "")),
                       "amount": ("-" if negative[i] else "") + f"{(mags[i] or 0) / 100:.2f}"} for i in preview.pop("sample_rows")]
             for r, d in zip(rows, reads, strict=True):
@@ -533,7 +551,7 @@ def settle_rows(
                         [{"label": "-", "means": EXPENSE}, {"label": "+", "means": INCOME}], shown)
 
     if rows and not any(reads):
-        derived = _from_balance(mags, bals)
+        derived = _from_balance(mags, bals, orders)
         if derived is None:
             return hold(NO_SIGNAL, "Tutarların yönünü gösteren bir sütun ya da işaret bulunamadı.")
         for r, d in zip(rows, derived, strict=True):
@@ -541,20 +559,22 @@ def settle_rows(
             if d is not None:
                 r["direction_from_balance"] = True   # read off the balance itself: not independent evidence of it
         return None
-    state = verdict(mags, reads, bals, min_steps=3)
+    state = verdict(mags, reads, bals, min_steps=3, orders=orders)
+    if state == "confirmed" and ambiguous and convention_proof(mags, reads, bals, orders, 3) != "proven":
+        state = "unverified"
     if state == "inverted":
         for r, d in zip(rows, reads, strict=True):
             r["direction_read"], r["direction_balance"], r["type"] = d, _flip(d), None
         return hold(BALANCE_CONTRADICTS, "Bakiye hareketi, okunan yönün tersini gösteriyor.")
     if state == "inconclusive":
-        rate = reconciliation_rate(mags, reads, bals)
+        rate = reconciliation_rate(mags, reads, bals, orders)
         for r, d in zip(rows, reads, strict=True):
             r["direction_read"], r["type"] = d, None
         return hold(BALANCE_INCONCLUSIVE, f"Bakiye hareketi satırların yalnızca %{rate}'ini doğruluyor.")
     if state == "confirmed":
-        for i in _chain(mags, reads, bals).bad:
+        for i in _chain(mags, reads, bals, orders).bad:
             rows[i]["type"], rows[i]["balance_mismatch"] = None, True
-        for i in _chain(mags, reads, bals).outside:
+        for i in _chain(mags, reads, bals, orders).outside:
             rows[i]["type"], rows[i]["outside_chain"] = None, True
     elif state == "unverified" and ambiguous:
         for r, d in zip(rows, reads, strict=True):

@@ -44,6 +44,8 @@ export function FileDirectionCard({
   const mapping = file.question?.mapping ?? [];
   // The earlier answer for the same header words, not evidenced as the same source: asked again with it pre-selected.
   const previous = file.reason === "sign_unconfirmed" ? (file.previous ?? file.question?.previous ?? null) : null;
+  const suggested = file.reason === "sign_unconfirmed" ? (file.question?.suggested ?? null) : null;
+  const preselect = previous?.answer ?? suggested?.answer ?? null;
   const previousOption = previous ? (copy.fileOptions as Record<string, string>)[previous.answer] : null;
   // An identity-less file may become a standing rule, only by this explicit choice.
   const canStand = file.reason === "sign_unconfirmed" && !file.identity && storable;
@@ -77,6 +79,7 @@ export function FileDirectionCard({
             .replace("{source}", previous.account ?? previous.columns)}
         </p>
       )}
+      {suggested && !previous && <p className="text-sm" data-testid="suggested-answer">{copy.fileSuggested}</p>}
       <p className="text-sm text-muted-foreground">{body}</p>
       {file.reason === "sign_unconfirmed" && totals && (
         <p className="text-xs text-muted-foreground">
@@ -144,13 +147,13 @@ export function FileDirectionCard({
       )}
       <div className="flex flex-wrap gap-2">
         {[...file.options]
-          .sort((a, b) => Number(b === previous?.answer) - Number(a === previous?.answer))
+          .sort((a, b) => Number(b === preselect) - Number(a === preselect))
           .map((answer) => (
             <Button
               key={answer}
               variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
               disabled={pending}
-              aria-pressed={answer === previous?.answer}
+              aria-pressed={answer === preselect}
               onClick={() => onAnswer(answer, storable && remember && answer !== "mixed", canStand && standing && answer !== "mixed")}
             >
               {answer === previous?.answer ? `${copy.fileConfirm}: ` : ""}

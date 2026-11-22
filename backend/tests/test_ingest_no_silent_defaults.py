@@ -132,8 +132,8 @@ def _csv(text: str):
 
 def test_csv_direction_comes_from_the_sign_when_a_balance_chain_verifies_it():
     rows = _csv(NL.join(["Tarih,Açıklama,Tutar,Bakiye", '01.03.2026,Satış,"1.000,00","11.000,00"',
-                         '02.03.2026,Kira,"-500,00","10.500,00"']))
-    assert [r["type"] for r in rows] == ["income", "expense"]
+                         '02.03.2026,Kira,"-500,00","10.500,00"', '03.03.2026,Gaz,"-200,00","10.300,00"']))
+    assert [r["type"] for r in rows] == ["income", "expense", "expense"]
     assert all(r["confidence"] == 0.95 for r in rows)      # derived by a rule: not certain
 
 

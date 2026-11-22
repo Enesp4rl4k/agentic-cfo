@@ -11,6 +11,7 @@ from typing import Any
 
 INCOME = "income"
 EXPENSE = "expense"
+BOTH_ORDERS = (False, True)     # oldest-first, newest-first: a free parameter unless the dates decide it
 
 
 def _flip(direction: str | None) -> str | None:
@@ -33,7 +34,7 @@ def _signed(mag: int, direction: str) -> int:
 
 def _scan(
     order: list[int], mags: list[int | None], dirs: list[str | None], bals: list[int | None],
-) -> tuple[int, int, int, list[int], set[int]]:
+) -> tuple[int, int, int, list[int], set[int], int]:
     """Segment verification in one row order: between two consecutive balance rows, the signed amounts of the rows
     after the first up to and including the second must add up to the balance's change. With a balance on every
     row a segment is one row (the usual step); with a balance every third row it is three. A segment that does not
@@ -41,7 +42,7 @@ def _scan(
     rows are outside the chain and the balance row itself is inside."""
     pos = {i: k for k, i in enumerate(order)}
     anchors = [i for i in order if bals[i] is not None]
-    m = inv = total = 0
+    m = inv = total = disc = 0       # disc: reconciling segments whose signed sum is NOT zero (they tell the conventions apart)
     bad: list[int] = []
     inside: set[int] = set()
     for p, q in pairwise(anchors):
@@ -53,23 +54,27 @@ def _scan(
         total += 1
         if delta == expected:
             m += 1
+            disc += expected != 0
             inside.update(seg)
         elif len(seg) > 1 and delta == _signed(mags[q] or 0, dirs[q] or INCOME):
             m += 1
+            disc += delta != 0
             inside.add(q)
         else:
             bad.extend(i for i in seg if mags[i])
             inv += delta == -expected
-    return m, inv, total, bad, inside
+    return m, inv, total, bad, inside, disc
 
 
-def _chain(mags: list[int | None], dirs: list[str | None], bals: list[int | None]) -> Chain:
+def _chain(
+    mags: list[int | None], dirs: list[str | None], bals: list[int | None], orders: tuple[bool, ...] = BOTH_ORDERS,
+) -> Chain:
     """Compare balance movements with the amounts, in the row order that explains the file best."""
     best = Chain(0, 0, 0, False, [])
     n = len(mags)
-    for newest_first in (False, True):
+    for newest_first in orders:
         order = list(range(n))[::-1] if newest_first else list(range(n))
-        m, inv, total, bad, inside = _scan(order, mags, dirs, bals)
+        m, inv, total, bad, inside, _ = _scan(order, mags, dirs, bals)
         has_chain = sum(1 for b in bals if b is not None) >= 2
         outside = [i for i in range(n) if has_chain and mags[i] and bals[i] is None and i not in inside and i not in bad]
         if m + inv > best.matches + best.inverted or (m + inv == best.matches + best.inverted and m > best.matches):
@@ -79,10 +84,11 @@ def _chain(mags: list[int | None], dirs: list[str | None], bals: list[int | None
 
 def verdict(
     mags: list[int | None], dirs: list[str | None], bals: list[int | None], min_steps: int = 1,
+    orders: tuple[bool, ...] = BOTH_ORDERS,
 ) -> str:
     """confirmed | inverted | inconclusive | unverified: does the balance agree with the directions read?
     Fewer than `min_steps` checkable steps is not evidence (text-parsed statements need three)."""
-    c = _chain(mags, dirs, bals)
+    c = _chain(mags, dirs, bals, orders)
     if c.total < min_steps:
         return "unverified"
     if c.matches / c.total >= 0.9:
@@ -92,21 +98,25 @@ def verdict(
     return "inconclusive"
 
 
-def reconciliation_rate(mags: list[int | None], dirs: list[str | None], bals: list[int | None]) -> int:
-    c = _chain(mags, dirs, bals)
+def reconciliation_rate(
+    mags: list[int | None], dirs: list[str | None], bals: list[int | None], orders: tuple[bool, ...] = BOTH_ORDERS,
+) -> int:
+    c = _chain(mags, dirs, bals, orders)
     return round(100 * c.matches / c.total) if c.total else 0
 
 
-def _from_balance(mags: list[int | None], bals: list[int | None]) -> list[str | None] | None:
+def _from_balance(
+    mags: list[int | None], bals: list[int | None], orders: tuple[bool, ...] = BOTH_ORDERS,
+) -> list[str | None] | None:
     """Directions read off the balance alone: every step must equal its amount, in exactly one order."""
     scored: list[tuple[int, int, list[str | None]]] = []
-    for newest_first in (False, True):
+    for newest_first in BOTH_ORDERS:
         out: list[str | None] = [None] * len(mags)
         hits = total = 0
         for i in range(1, len(mags)):
             later, earlier = (i, i - 1) if not newest_first else (i - 1, i)
             mag, now, before = mags[later], bals[later], bals[earlier]
-            if now is None or before is None or mag is None:
+            if newest_first not in orders or now is None or before is None or mag is None:
                 continue
             delta = now - before
             total += 1
@@ -147,3 +157,53 @@ def outside_chain(mags: list[int | None], bals: list[int | None], skip: frozense
     if with_balance < 2:
         return set()
     return {i for i, (m, b) in enumerate(zip(mags, bals, strict=True)) if m and b is None and i not in skip}
+
+
+def date_orders(dates: list[str | None]) -> tuple[bool, ...]:
+    """The row orders the dates allow: only oldest-first when the dates never go back and do advance, only newest-first
+    when they never go forward and do fall; otherwise (ties only, a mix, unreadable) both. The order is evidence the
+    file already holds; it must not be a free parameter the arithmetic can use to fit either convention."""
+    from app.core.dates import parse_transaction_date
+
+    days = []
+    for raw in dates:
+        if raw is None or not str(raw).strip():
+            continue
+        when, estimated = parse_transaction_date(str(raw))
+        if not estimated:
+            days.append(when)
+    if len(days) < 2 or days[0] == days[-1]:
+        return BOTH_ORDERS
+    if all(a <= b for a, b in pairwise(days)):
+        return (False,)
+    if all(a >= b for a, b in pairwise(days)):
+        return (True,)
+    return BOTH_ORDERS
+
+
+def convention_proof(
+    mags: list[int | None], dirs: list[str | None], bals: list[int | None], orders: tuple[bool, ...] = BOTH_ORDERS,
+    min_steps: int = 1,
+) -> str:
+    """Whether the balance chain PROVES the directions read: proven | weak | ambiguous | no.
+
+    A check that passes under both hypotheses is not evidence for either. Both conventions (as read, and flipped) are
+    tried in every allowed row order; a convention fits when its segments reconcile (>= 90%). It is proven only if
+    exactly the convention as read fits, with at least two DISCRIMINATING segments (reconciling, signed sum not zero).
+    One is `weak` (the suggestion, not a proof); none is `no`; if the flipped reading fits as well (zero-sum segments,
+    or the two orders disagree) it is `ambiguous`."""
+    fits: list[tuple[bool, int]] = []
+    for flip in (False, True):
+        d = dirs if not flip else [_flip(x) for x in dirs]
+        for newest_first in orders:
+            order = list(range(len(mags)))[::-1] if newest_first else list(range(len(mags)))
+            m, _inv, total, _bad, _inside, disc = _scan(order, mags, d, bals)
+            if total and total >= min_steps and m / total >= 0.9:
+                fits.append((flip, disc))
+    conventions = {flip for flip, _ in fits}
+    if conventions == {False, True}:
+        return "ambiguous"
+    if conventions != {False}:
+        return "no"
+    disc = max(d for _, d in fits)
+    return "proven" if disc >= 2 else "weak" if disc == 1 else "no"
