@@ -17,8 +17,6 @@ remove_column anomalies.confidence_upper
 remove_column anomalies.detector_type
 remove_column anomalies.ml_score
 remove_column organizations.encryption_key_id
-remove_column organizations.ip_whitelist
-remove_column organizations.ip_whitelist_enabled
 remove_constraint org_invites.uq_org_invites_token
 remove_constraint organizations.uq_organizations_slug
 remove_constraint pilot_invites.uq_pilot_invites_code
