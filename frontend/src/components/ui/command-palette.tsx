@@ -11,10 +11,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { STORAGE_PREFIX } from "@/lib/branding";
+import { isHrefAvailable } from "@/lib/legacy-dashboards";
 
 // ── Command definitions ───────────────────────────────────────────────────────
 
-interface Command {
+export interface Command {
   id:       string;
   label:    string;
   icon:     React.ReactNode;
@@ -22,36 +23,43 @@ interface Command {
   group:    string;
   action:   (router: ReturnType<typeof useRouter>) => void;
   keywords?: string[];
+  /** The in-app page the command opens, when it is one: lets the palette drop pages that are switched off. */
+  href?:    string;
 }
 
-const COMMANDS: Command[] = [
+const ALL_COMMANDS: Command[] = [
   // Navigation
-  { id: "dashboard",      label: "Dashboard",          icon: <LayoutDashboard className="h-4 w-4" />, group: "Sayfalar",   action: (r) => r.push("/"),              keywords: ["ana sayfa", "home"] },
-  { id: "upload",         label: "Veri Yükle",          icon: <Upload className="h-4 w-4" />,          group: "Sayfalar",   action: (r) => r.push("/upload"),        keywords: ["upload", "dosya", "csv"] },
-  { id: "chat",           label: "CFO Chat",            icon: <MessageSquare className="h-4 w-4" />,   group: "Sayfalar",   action: (r) => r.push("/chat"),          keywords: ["soru", "sorU", "ai"] },
-  { id: "intelligence",   label: "Intelligence Hub",    icon: <Brain className="h-4 w-4" />,           group: "Sayfalar",   action: (r) => r.push("/intelligence"),  keywords: ["cross domain", "kernel"] },
-  { id: "simulation",     label: "Simülasyon",          icon: <Zap className="h-4 w-4" />,             group: "Sayfalar",   action: (r) => r.push("/simulation"),    keywords: ["cascade", "senaryo"] },
-  { id: "pnl",            label: "P&L Analizi",         icon: <DollarSign className="h-4 w-4" />,      group: "Sayfalar",   action: (r) => r.push("/pnl"),           keywords: ["gelir gider", "kar zarar"] },
-  { id: "cashflow",       label: "Nakit Akışı",         icon: <Waves className="h-4 w-4" />,           group: "Sayfalar",   action: (r) => r.push("/cashflow"),      keywords: ["cash", "nakit"] },
-  { id: "forecast",       label: "Tahmin",              icon: <TrendingUp className="h-4 w-4" />,      group: "Sayfalar",   action: (r) => r.push("/forecast"),      keywords: ["öngörü", "gelecek"] },
-  { id: "anomalies",      label: "Anomaliler",          icon: <ShieldAlert className="h-4 w-4" />,     group: "Sayfalar",   action: (r) => r.push("/anomalies"),     keywords: ["hata", "alarm", "uyarı"] },
-  { id: "trends",         label: "Trendler",            icon: <BarChart2 className="h-4 w-4" />,       group: "Sayfalar",   action: (r) => r.push("/trends"),        keywords: ["grafik", "chart"] },
-  { id: "reports",        label: "Raporlar",            icon: <FileText className="h-4 w-4" />,        group: "Sayfalar",   action: (r) => r.push("/reports"),       keywords: ["pdf", "excel", "indirme"] },
+  { id: "dashboard",      label: "Dashboard",          icon: <LayoutDashboard className="h-4 w-4" />, group: "Sayfalar",   href: "/", action: (r) => r.push("/"),              keywords: ["ana sayfa", "home"] },
+  { id: "upload",         label: "Veri Yükle",          icon: <Upload className="h-4 w-4" />,          group: "Sayfalar",   href: "/upload", action: (r) => r.push("/upload"),        keywords: ["upload", "dosya", "csv"] },
+  { id: "chat",           label: "CFO Chat",            icon: <MessageSquare className="h-4 w-4" />,   group: "Sayfalar",   href: "/chat", action: (r) => r.push("/chat"),          keywords: ["soru", "sorU", "ai"] },
+  { id: "intelligence",   label: "Intelligence Hub",    icon: <Brain className="h-4 w-4" />,           group: "Sayfalar",   href: "/intelligence", action: (r) => r.push("/intelligence"),  keywords: ["cross domain", "kernel"] },
+  { id: "simulation",     label: "Simülasyon",          icon: <Zap className="h-4 w-4" />,             group: "Sayfalar",   href: "/simulation", action: (r) => r.push("/simulation"),    keywords: ["cascade", "senaryo"] },
+  { id: "pnl",            label: "P&L Analizi",         icon: <DollarSign className="h-4 w-4" />,      group: "Sayfalar",   href: "/pnl", action: (r) => r.push("/pnl"),           keywords: ["gelir gider", "kar zarar"] },
+  { id: "cashflow",       label: "Nakit Akışı",         icon: <Waves className="h-4 w-4" />,           group: "Sayfalar",   href: "/cashflow", action: (r) => r.push("/cashflow"),      keywords: ["cash", "nakit"] },
+  { id: "forecast",       label: "Tahmin",              icon: <TrendingUp className="h-4 w-4" />,      group: "Sayfalar",   href: "/forecast", action: (r) => r.push("/forecast"),      keywords: ["öngörü", "gelecek"] },
+  { id: "anomalies",      label: "Anomaliler",          icon: <ShieldAlert className="h-4 w-4" />,     group: "Sayfalar",   href: "/anomalies", action: (r) => r.push("/anomalies"),     keywords: ["hata", "alarm", "uyarı"] },
+  { id: "trends",         label: "Trendler",            icon: <BarChart2 className="h-4 w-4" />,       group: "Sayfalar",   href: "/trends", action: (r) => r.push("/trends"),        keywords: ["grafik", "chart"] },
+  { id: "reports",        label: "Raporlar",            icon: <FileText className="h-4 w-4" />,        group: "Sayfalar",   href: "/reports", action: (r) => r.push("/reports"),       keywords: ["pdf", "excel", "indirme"] },
 
   // C-Suite
-  { id: "ceo",            label: "CEO Panosu",          icon: <Crown className="h-4 w-4" />,           group: "C-Suite",    action: (r) => r.push("/ceo") },
-  { id: "cto",            label: "CTO Panosu",          icon: <Cpu className="h-4 w-4" />,             group: "C-Suite",    action: (r) => r.push("/cto") },
-  { id: "cmo",            label: "CMO Panosu",          icon: <Megaphone className="h-4 w-4" />,       group: "C-Suite",    action: (r) => r.push("/cmo") },
-  { id: "coo",            label: "COO Panosu",          icon: <Layers className="h-4 w-4" />,          group: "C-Suite",    action: (r) => r.push("/coo") },
-  { id: "chro",           label: "CHRO Panosu",         icon: <Users className="h-4 w-4" />,           group: "C-Suite",    action: (r) => r.push("/chro") },
-  { id: "risk",           label: "Risk Yönetimi",       icon: <Shield className="h-4 w-4" />,          group: "C-Suite",    action: (r) => r.push("/risk") },
-  { id: "smmm",           label: "SMMM Portalı",        icon: <Users className="h-4 w-4" />,           group: "C-Suite",    action: (r) => r.push("/smmm"),          keywords: ["muhasebeci"] },
-  { id: "smmm-onay",      label: "SMMM Onay Kuyruğu",  icon: <Hash className="h-4 w-4" />,            group: "C-Suite",    action: (r) => r.push("/smmm-onay") },
+  { id: "ceo",            label: "CEO Panosu",          icon: <Crown className="h-4 w-4" />,           group: "C-Suite",    href: "/ceo", action: (r) => r.push("/ceo") },
+  { id: "cto",            label: "CTO Panosu",          icon: <Cpu className="h-4 w-4" />,             group: "C-Suite",    href: "/cto", action: (r) => r.push("/cto") },
+  { id: "cmo",            label: "CMO Panosu",          icon: <Megaphone className="h-4 w-4" />,       group: "C-Suite",    href: "/cmo", action: (r) => r.push("/cmo") },
+  { id: "coo",            label: "COO Panosu",          icon: <Layers className="h-4 w-4" />,          group: "C-Suite",    href: "/coo", action: (r) => r.push("/coo") },
+  { id: "chro",           label: "CHRO Panosu",         icon: <Users className="h-4 w-4" />,           group: "C-Suite",    href: "/chro", action: (r) => r.push("/chro") },
+  { id: "risk",           label: "Risk Yönetimi",       icon: <Shield className="h-4 w-4" />,          group: "C-Suite",    href: "/risk", action: (r) => r.push("/risk") },
+  { id: "smmm",           label: "SMMM Portalı",        icon: <Users className="h-4 w-4" />,           group: "C-Suite",    href: "/smmm", action: (r) => r.push("/smmm"),          keywords: ["muhasebeci"] },
+  { id: "smmm-onay",      label: "SMMM Onay Kuyruğu",  icon: <Hash className="h-4 w-4" />,            group: "C-Suite",    href: "/smmm-onay", action: (r) => r.push("/smmm-onay") },
 
   // Settings
-  { id: "integrations",   label: "Entegrasyonlar",      icon: <Settings className="h-4 w-4" />,        group: "Ayarlar",    action: (r) => r.push("/integrations"),  keywords: ["parasut", "logo", "banka"] },
-  { id: "settings",       label: "Workspace Ayarları",  icon: <Settings className="h-4 w-4" />,        group: "Ayarlar",    action: (r) => r.push("/settings/workspace"), keywords: ["org", "takım"] },
+  { id: "integrations",   label: "Entegrasyonlar",      icon: <Settings className="h-4 w-4" />,        group: "Ayarlar",    href: "/integrations", action: (r) => r.push("/integrations"),  keywords: ["parasut", "logo", "banka"] },
+  { id: "settings",       label: "Workspace Ayarları",  icon: <Settings className="h-4 w-4" />,        group: "Ayarlar",    href: "/settings/workspace", action: (r) => r.push("/settings/workspace"), keywords: ["org", "takım"] },
 ];
+
+/** The commands that open something that exists: pages of switched-off legacy dashboards are not offered. */
+export function availableCommands(): Command[] {
+  return ALL_COMMANDS.filter((c) => !c.href || isHrefAvailable(c.href));
+}
 
 // ── Scoring / fuzzy search ────────────────────────────────────────────────────
 
@@ -108,6 +116,7 @@ export function CommandPalette() {
   const abortRef       = useRef<AbortController | null>(null);
 
   const { activeCFOJobId } = useCompanyContextStore();
+  const COMMANDS = useMemo(() => availableCommands(), []);
 
   // Open with Cmd+K or Ctrl+K
   useEffect(() => {
@@ -202,7 +211,7 @@ export function CommandPalette() {
           ...recentIds.map((id) => COMMANDS.find((c) => c.id === id)).filter(Boolean) as Command[],
           ...COMMANDS.filter((c) => !recentIds.includes(c.id)).slice(0, 8),
         ];
-  }, [query, recentIds]);
+  }, [query, recentIds, COMMANDS]);
 
   const shouldAiMode = query.trim().length > 4 && filtered.length === 0;
 

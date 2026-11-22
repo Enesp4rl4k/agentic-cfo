@@ -4,7 +4,6 @@
   "app/(dashboard)/analytics/monte-carlo/page.tsx": 15,
   "app/(dashboard)/analytics/working-capital/page.tsx": 6,
   "app/(dashboard)/audit/page.tsx": 1,
-  "app/(dashboard)/ceo/page.tsx": 1,
   "app/(dashboard)/chro/page.tsx": 1,
   "app/(dashboard)/cmo/page.tsx": 3,
   "app/(dashboard)/compliance/page.tsx": 19,

@@ -21,6 +21,7 @@ import { formatPercent, cn } from "@/lib/utils";
 import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { downloadReport } from "@/lib/api/cfo";
 import type { DashboardData } from "@/types";
+import { isHrefAvailable } from "@/lib/legacy-dashboards";
 
 // ── Tooltip / axis shared styles ─────────────────────────────────────────────
 
@@ -656,7 +657,7 @@ export default function CFOPage() {
             { href: `/comparison?job=${jobId}`,  icon: BarChart2,    label: cfo.body.related.comparison },
             { href: `/ceo?job=${jobId}`,         icon: TrendingUp,   label: cfo.body.related.ceo },
             { href: `/risk?job=${jobId}`,        icon: ShieldAlert,  label: cfo.body.related.risk },
-          ].map(({ href, icon: Icon, label }) => (
+          ].filter(({ href }) => isHrefAvailable(href)).map(({ href, icon: Icon, label }) => (
             <Link
               key={href}
               href={href}
