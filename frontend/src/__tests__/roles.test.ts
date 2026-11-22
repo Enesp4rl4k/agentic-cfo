@@ -93,13 +93,14 @@ describe("proposer mirrors the backend's PROPOSER_ROLES", () => {
 
 describe("what an inviter may grant mirrors the backend", () => {
   const userRoles = (): string[] => {
-    const src = readFileSync(path.resolve(BACKEND, "models/user.py"), "utf-8");
+    const src = readFileSync(path.resolve(BACKEND, "models/user.py"), "utf-8").replace(/\r\n/g, "\n");
     const body = /class UserRole\(StrEnum\):([\s\S]*?)\n\n/.exec(src)?.[1] ?? "";
     return [...body.matchAll(/^\s+[A-Z]+\s*=\s*"([a-z]+)"/gm)].map((x) => x[1]).sort();
   };
 
-  it("an owner may grant every role, an admin only the ones below admin", () => {
-    expect([...INVITER_MAY_GRANT.owner].sort()).toEqual(userRoles());
+  it("an owner may grant every role but owner (one owner per company), an admin only the ones below admin", () => {
+    expect([...INVITER_MAY_GRANT.owner].sort()).toEqual(userRoles().filter((r) => r !== "owner"));
+    expect([...INVITER_MAY_GRANT.owner].sort()).toEqual(frozenWords("api/org.py", '"owner": frozenset'));
     expect([...INVITER_MAY_GRANT.admin].sort()).toEqual(frozenWords("api/org.py", '"admin": frozenset'));
   });
 
@@ -107,7 +108,8 @@ describe("what an inviter may grant mirrors the backend", () => {
     expect(invitableRoles("admin")).toEqual(expect.arrayContaining(["cfo", "smmm", "analyst", "viewer"]));
     expect(invitableRoles("admin")).not.toContain("admin");
     expect(invitableRoles("admin")).not.toContain("owner");
-    expect(invitableRoles("owner")).toEqual(expect.arrayContaining(["owner", "admin", "cfo", "smmm", "analyst", "viewer"]));
+    expect(invitableRoles("owner")).toEqual(expect.arrayContaining(["admin", "cfo", "smmm", "analyst", "viewer"]));
+    expect(invitableRoles("owner")).not.toContain("owner");
   });
 
   it("offers nothing to anyone who may not invite", () => {

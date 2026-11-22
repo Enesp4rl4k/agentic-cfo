@@ -11,10 +11,11 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
 import { Logo } from "@/components/ui/logo";
+import { useI18n } from "@/hooks/useI18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type Step = "account" | "workspace";
+type Step = "account" | "workspace" | "verify";
 
 const BRAND_FEATURES = [
   { icon: TrendingUp, text: "12 AI ajan paralel çalışır"  },
@@ -24,6 +25,7 @@ const BRAND_FEATURES = [
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { t } = useI18n();
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -63,6 +65,14 @@ export default function RegisterPage() {
       if (!regRes.ok) {
         const data = await regRes.json();
         throw new Error(data?.detail ?? "Kayıt başarısız.");
+      }
+
+      const registered = await regRes.json().catch(() => null);
+      if (registered?.data?.verification_required) {
+        // The account cannot sign in before its address is verified: the workspace is created on the
+        // first sign-in after that (the onboarding page does it).
+        setStep("verify");
+        return;
       }
 
       const loginRes = await signIn("credentials", { email, password, redirect: false });
@@ -261,6 +271,16 @@ export default function RegisterPage() {
           )}
 
           {/* Step 2: workspace */}
+          {step === "verify" && (
+            <div role="status" className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+              <p className="m-0 text-sm font-semibold">{t.emailVerification.registered.title}</p>
+              <p className="m-0 text-sm text-muted-foreground">{t.emailVerification.registered.body}</p>
+              <Link href="/auth/verify-email" className="text-sm font-semibold text-primary underline-offset-4 hover:underline">
+                {t.emailVerification.registered.resend}
+              </Link>
+            </div>
+          )}
+
           {step === "workspace" && (
             <form onSubmit={handleWorkspaceStep} className="space-y-4" noValidate>
               <div className="space-y-1.5">

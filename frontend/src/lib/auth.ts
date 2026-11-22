@@ -73,6 +73,11 @@ export const authOptions: NextAuthOptions = {
             }),
           });
 
+          if (res.status === 403) {
+            const refused = await res.json().catch(() => null);
+            // The address is not verified yet: the login page says so and offers the link again.
+            if (refused?.data?.state === "email_unverified") throw new Error("email_unverified");
+          }
           if (!res.ok) return null;
 
           const json = await res.json();
@@ -88,7 +93,8 @@ export const authOptions: NextAuthOptions = {
             accessToken:   data.access_token,
             refreshToken:  data.refresh_token,
           };
-        } catch {
+        } catch (err) {
+          if (err instanceof Error && err.message === "email_unverified") throw err;
           return null;
         }
       },

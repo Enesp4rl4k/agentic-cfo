@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.models.decision import Decision
 from app.models.organization import OrgInvite, OrgMembership
 from app.models.user import User
+from app.services.secret_tokens import hash_token
 from tests.api_helpers import PAROLA, bellek_istemcisi, kullanici
 
 P = "/api/v1"
@@ -29,7 +30,7 @@ async def invite_for(client, org_id: str, email: str, role: str = "smmm", *, tok
                      expires: timedelta = timedelta(days=7), accepted: bool = False) -> str:
     token = token or f"{role}{email}".replace("@", "")[:20].ljust(64, "x")
     async with client._maker() as db:
-        db.add(OrgInvite(org_id=org_id, email=email, role=role, token=token, accepted=accepted,
+        db.add(OrgInvite(org_id=org_id, email=email, role=role, token_hash=hash_token(token), accepted=accepted,
                          expires_at=datetime.now(UTC) + expires))
         await db.commit()
     return token
