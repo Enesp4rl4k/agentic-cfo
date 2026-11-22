@@ -37,11 +37,15 @@ describe("formatCurrency with a code that is not a currency", () => {
     const out = formatCurrency(1234, code, "tr-TR");
     expect(out).toMatch(/1\.234/);
     expect(out).not.toMatch(/[$₺€£]|USD|TRY/);
-    expect(out).toContain("currency unknown");
+    expect(out).toContain("para birimi bilinmiyor");
   });
 
   it("takes the label from the caller so each locale can say it", () => {
-    expect(formatCurrency(5, "?", "tr-TR", "para birimi bilinmiyor")).toContain("para birimi bilinmiyor");
+    expect(formatCurrency(5, "?", "en-US", "currency unknown")).toBe("5 (currency unknown)");
+  });
+
+  it("null (no currency known yet) stays the bare number", () => {
+    expect(formatCurrency(1234, null, "tr-TR")).toBe("1.234");
   });
 
   it("still formats a real code with its symbol", () => {

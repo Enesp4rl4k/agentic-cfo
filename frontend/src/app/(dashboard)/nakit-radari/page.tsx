@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Calendar, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import {
@@ -23,8 +24,9 @@ import { getConsolidatedRadar } from "@/lib/api/consolidation";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
 import { RadarAnswer } from "@/components/radar/RadarAnswer";
+import { BalanceDetails } from "@/components/radar/BalanceDetails";
+import { RunwayCard } from "@/components/radar/RunwayCard";
 import { WeekDetail } from "@/components/radar/WeekDetail";
-import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { BasisSplitLine, formatDay, hasUnverifiedTax, StaleBalanceNotice, TaxRulesNote } from "@/components/radar/basis";
 
 const RADAR_KEY = ["cash-radar"];
@@ -156,6 +158,22 @@ function StartingCash({ radar, copy, fmt, locale }: { radar: CashRadar; copy: Co
       </Card>
       {opening?.stale && <StaleBalanceNotice asOf={opening.as_of} ageDays={opening.age_days} locale={locale} />}
     </div>
+  );
+}
+
+function Runway({ radar, copy, locale }: { radar: CashRadar; copy: Copy; locale: string }) {
+  const runway = radar.runway;
+  if (!runway) return null;
+  return (
+    <RunwayCard
+      status={runway.status}
+      level={runway.level ?? null}
+      basis={runway.basis ?? null}
+      months={runway.runway_months ?? null}
+      text={runway.message}
+      copy={copy}
+      locale={locale}
+    />
   );
 }
 
@@ -303,20 +321,44 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
     [copy.undatedPayables, radar.undated_payables_cents],
     [copy.beyondHorizon, radar.beyond_horizon_cents],
   ];
+  // The two queues that wait for a person are one block below, not two stray lines in this list.
+  const awaiting = radar.awaiting_decision;
+  const inBlock = new Set([awaiting?.rows?.text, awaiting?.documents?.text]);
   return (
     <Card className="space-y-2 p-4">
       <p className="text-sm font-semibold">{copy.notCountedTitle}</p>
       <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
-        {radar.not_included.map((line) => (
+        {radar.not_included.filter((line) => !inBlock.has(line)).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
-      {radar.held_documents && (
-        <Link href={radar.held_documents.review_path} className="text-sm font-medium underline underline-offset-2">
-          {copy.heldReview}
-        </Link>
+      {awaiting ? (
+        <div className="space-y-1 rounded-md border border-border p-3">
+          <p className="text-sm font-semibold">{copy.awaitingTitle}</p>
+          {[
+            { label: copy.awaitingRows, line: awaiting.rows },
+            { label: copy.awaitingDocuments, line: awaiting.documents },
+          ].map(({ label, line }) =>
+            line ? (
+              <p key={label} className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{label}:</span> {line.text}{" "}
+                <Link href={line.path} className="font-medium underline underline-offset-2">
+                  {line === awaiting.documents ? copy.heldReview : copy.awaitingOpen}
+                </Link>
+              </p>
+            ) : null,
+          )}
+        </div>
+      ) : (
+        <>
+          {radar.held_documents && (
+            <Link href={radar.held_documents.review_path} className="text-sm font-medium underline underline-offset-2">
+              {copy.heldReview}
+            </Link>
+          )}
+          <HeldRowsLink />
+        </>
       )}
-      <HeldRowsLink />
       <dl className="space-y-1 text-sm">
         {amounts
           .filter(([, cents]) => cents > 0)
@@ -391,7 +433,7 @@ export default function NakitRadariPage() {
   const copy = t.cashRadar;
   const orgFmt = useCurrencyFormat();
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const [viewMode, setViewMode] = useState<"individual" | "consolidated">("individual");
   const [pickedWeek, setPickedWeek] = useState<number | null>(null);
 
@@ -454,9 +496,13 @@ export default function NakitRadariPage() {
 
         {viewMode === "individual" && radar && (
           <>
+            {/* Cash running out is said before anything else. */}
+            {radar.runway?.level === "critical" && <Runway radar={radar} copy={copy} locale={locale} />}
             {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} locale={locale} />}
             <MondayBriefingSection copy={copy} />
+            {radar.runway?.level !== "critical" && <Runway radar={radar} copy={copy} locale={locale} />}
             <StartingCash radar={radar} copy={copy} fmt={fmt} locale={locale} />
+            <BalanceDetails radar={radar} copy={copy} fmt={fmt} locale={locale} />
             {isEmpty(radar) ? (
               <Card className="space-y-2 p-4">
                 <p className="text-sm text-muted-foreground">{copy.emptyBody}</p>

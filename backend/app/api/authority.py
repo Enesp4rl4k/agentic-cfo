@@ -18,15 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.authority_policy import AuthorityPolicy
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
 from app.platform.authority_matrix import (
-    DEFAULT_POLICY_RULES,
     AuthorityRequest,
     evaluate,
     load_active_rules,
     validate_rules,
 )
 from app.services.acting_role import acting_role
+from app.services.decisions import record_decision
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ async def get_policy(
     ).scalar_one_or_none()
     if row is None:
         return {
-            "data": {"is_default": True, "version": 0, "rules": DEFAULT_POLICY_RULES},
+            "data": {"is_default": True, "version": 0, "rules": await load_active_rules(org_id, db)},
             "error": None,
         }
     return {
@@ -131,6 +132,17 @@ async def put_policy(
         created_by_user_id=str(current_user.id),
     )
     db.add(policy)
+    await db.flush()
+    # Who may approve what is itself a decision: the rule count stands for the rules (the full
+    # rules live on the versioned policy row this record points at).
+    await record_decision(
+        db, org_id=org_id, kind=DecisionKind.AUTHORITY_POLICY_CHANGE, target_type="authority_policy",
+        target_id=policy.id, outcome="activated", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+        reason=body.note,
+        evidence_refs=[{"type": "authority_policy", "id": current.id}] if current else None,
+        before={"version": current.version if current else 0, "rule_count": len(current.rules) if current else None},
+        after={"version": next_version, "rule_count": len(body.rules)},
+    )
     await db.commit()
     logger.info("Authority policy v%d activated for org=%s", next_version, org_id)
     return {"data": {"id": policy.id, "version": next_version, "active": True}, "error": None}

@@ -15,6 +15,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18n } from "@/hooks/useI18n";
+import { mapLabel } from "@/lib/i18n/codes";
 import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -92,6 +94,7 @@ function NodePopover({
   node: GraphNode;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-2 w-56 rounded-lg border border-border bg-card p-3 shadow-lg text-xs"
@@ -100,24 +103,24 @@ function NodePopover({
       <button
         onClick={onClose}
         className="absolute top-1.5 right-2 text-muted-foreground hover:text-foreground"
-        aria-label="Close"
+        aria-label={t.pipelineGraph.close}
       >
         ×
       </button>
       <p className="font-semibold text-sm mb-1">{node.label}</p>
       <div className="space-y-0.5 text-muted-foreground">
-        <p>Group: <span className="text-foreground">{node.group}</span></p>
-        <p>Status: <span className={cn(
+        <p>{t.pipelineGraph.group}: <span className="text-foreground">{node.group}</span></p>
+        <p>{t.pipelineGraph.status}: <span className={cn(
           "font-medium",
           node.status === "success" && "text-emerald-600",
           node.status === "error"   && "text-red-600",
           node.status === "running" && "text-amber-600",
-        )}>{node.status ?? "pending"}</span></p>
+        )}>{mapLabel(t, t.pipelineGraph.statuses, node.status ?? "pending")}</span></p>
         {node.confidence != null && (
-          <p>Confidence: <span className="text-foreground">{(node.confidence * 100).toFixed(0)}%</span></p>
+          <p>{t.pipelineGraph.confidence}: <span className="text-foreground">{(node.confidence * 100).toFixed(0)}%</span></p>
         )}
         {node.duration_ms != null && (
-          <p>Duration: <span className="text-foreground">{node.duration_ms}ms</span></p>
+          <p>{t.pipelineGraph.duration}: <span className="text-foreground">{node.duration_ms}ms</span></p>
         )}
         {node.detail && (
           <p className="mt-1 border-t border-border pt-1 text-foreground line-clamp-3">{node.detail}</p>
@@ -138,11 +141,12 @@ function PipelineNode({
   isSelected: boolean;
   onClick: (node: GraphNode) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="relative flex justify-center">
       <button
         onClick={() => onClick(node)}
-        aria-label={`${node.label} — ${node.status ?? "pending"}`}
+        aria-label={`${node.label} — ${mapLabel(t, t.pipelineGraph.statuses, node.status ?? "pending")}`}
         className={cn(
           "relative flex items-center gap-1.5 rounded-md border-2 px-2.5 py-1.5",
           "text-xs font-medium transition-all duration-200",
@@ -201,6 +205,7 @@ export function AgentPipelineGraph({
   className,
   showLegend = true,
 }: AgentPipelineGraphProps) {
+  const { t } = useI18n();
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -300,7 +305,7 @@ export function AgentPipelineGraph({
               job_status === "failed"    && "text-red-600",
             )}>
               {progress_pct}%
-              {job_status && ` — ${job_status}`}
+              {job_status && ` — ${mapLabel(t, t.pipelineGraph.statuses, job_status)}`}
             </span>
           </div>
           <div className="h-1.5 w-full rounded-full bg-muted">
@@ -323,7 +328,7 @@ export function AgentPipelineGraph({
       <div
         className="overflow-x-auto rounded-lg border border-border bg-card p-4"
         role="img"
-        aria-label="Agent pipeline graph"
+        aria-label={t.pipelineGraph.graphAria}
       >
         <div
           className="flex gap-6 items-start min-w-max"

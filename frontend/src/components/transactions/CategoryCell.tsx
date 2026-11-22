@@ -4,23 +4,25 @@ import { useState } from "react";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { useI18n } from "@/hooks/useI18n";
+import { codeLabel } from "@/lib/i18n/codes";
 import { cn } from "@/lib/utils";
 import type { Transaction } from "@/types";
 
 const CATEGORIES = [
-  { value: "revenue",       label: "Revenue" },
-  { value: "cogs",          label: "Cost of Goods" },
-  { value: "salary",        label: "Salary" },
-  { value: "rent",          label: "Rent" },
-  { value: "utilities",     label: "Utilities" },
-  { value: "marketing",     label: "Marketing" },
-  { value: "technology",    label: "Technology" },
-  { value: "tax",           label: "Tax" },
-  { value: "loan",          label: "Loan" },
-  { value: "other_expense", label: "Other Expense" },
-  { value: "other_income",  label: "Other Income" },
-  { value: "tax_payment",   label: "Tax / SGK payment" },
-  { value: "transfer",      label: "Transfer" },
+  { value: "revenue" },
+  { value: "cogs" },
+  { value: "salary" },
+  { value: "rent" },
+  { value: "utilities" },
+  { value: "marketing" },
+  { value: "technology" },
+  { value: "tax" },
+  { value: "loan" },
+  { value: "other_expense" },
+  { value: "other_income" },
+  { value: "tax_payment" },
+  { value: "transfer" },
 ] as const;
 
 type CategoryValue = (typeof CATEGORIES)[number]["value"];
@@ -59,6 +61,7 @@ export function CategoryCell({
   const [applyAlways, setApplyAlways] = useState(false);
   const [optimisticCategory, setOptimisticCategory] = useState(currentCategory);
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   const mutation = useMutation({
     mutationFn: ({ category }: { category: string }) =>
@@ -73,9 +76,7 @@ export function CategoryCell({
     },
   });
 
-  const currentLabel =
-    CATEGORIES.find((c) => c.value === optimisticCategory)?.label ??
-    optimisticCategory;
+  const currentLabel = codeLabel(t, "category", optimisticCategory);
 
   function handleSelect(value: CategoryValue) {
     setOptimisticCategory(value);
@@ -89,7 +90,9 @@ export function CategoryCell({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Category: ${currentLabel}. Click to change.`}
+        aria-label={t.categoryEditor.triggerLabel.replace("{category}", currentLabel)}
+        data-testid="category-trigger"
+        data-category={optimisticCategory}
         className={cn(
           "inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground",
           "transition-state hover:bg-muted/70 hover:text-foreground cursor-pointer",
@@ -118,7 +121,8 @@ export function CategoryCell({
           {/* Dropdown — uses position:fixed to escape overflow:hidden parents */}
           <div
             role="listbox"
-            aria-label="Select category"
+            data-testid="category-listbox"
+            aria-label={t.categoryEditor.listLabel}
             className={cn(
               "absolute left-0 top-full z-20 mt-1 w-44 rounded-md border border-border bg-card shadow-lg",
               "overflow-hidden"
@@ -129,6 +133,7 @@ export function CategoryCell({
                 <button
                   key={cat.value}
                   role="option"
+                  data-testid={`category-option-${cat.value}`}
                   aria-selected={cat.value === optimisticCategory}
                   onClick={() => handleSelect(cat.value)}
                   className={cn(
@@ -146,7 +151,7 @@ export function CategoryCell({
                     )}
                     aria-hidden="true"
                   />
-                  {cat.label}
+                  {codeLabel(t, "category", cat.value)}
                 </button>
               ))}
             </div>
@@ -160,7 +165,7 @@ export function CategoryCell({
                   onChange={(e) => setApplyAlways(e.target.checked)}
                   className="h-3 w-3 accent-primary"
                 />
-                Always apply for this vendor
+                {t.transactionsPage.applyToVendor}
               </label>
             </div>
           </div>

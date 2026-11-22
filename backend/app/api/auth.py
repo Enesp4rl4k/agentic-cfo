@@ -16,18 +16,23 @@ Auth header format:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.services import email_verification, outbox
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -35,6 +40,7 @@ from app.services.auth import (
     generate_api_key,
     hash_api_key,
     hash_password,
+    token_is_current,
     verify_password,
 )
 
@@ -58,49 +64,24 @@ _bearer = HTTPBearer(auto_error=False)
 # Note: lru_cache on an async function caches the coroutine object, not the
 # result. We use a plain dict + timestamp instead.
 
-import time as _time
 
 # PERF-2: one PK lookup per request adds up, so the resolved user is cached for
 # a minute. The catch is what gets cached.
 #
-# This used to hold the ORM instance straight out of the request's session.
-# After that request finished, the session closed and the cached object outlived
-# it: reads of already-loaded columns still worked, but a lazy relationship
-# raised DetachedInstanceError and a mutation raised "not persistent within this
-# Session". `POST /org/create` did exactly that, so creating a workspace failed
-# for every request after the first — and no test caught it, because each test
-# starts with a cold cache and takes the `db.get` branch, which returns a live
-# instance where everything works.
-#
-# The fix is to make both paths behave identically instead of only one of them
-# being broken: the instance is expunged before it is cached, so *every* caller
-# gets a detached user. Reads are fine, lazy loads and writes fail immediately
-# and on the first request. Endpoints that need to change the user re-load it
-# through their own session — see `create_org`.
-_USER_CACHE: dict[str, tuple[User, float]] = {}
-_USER_CACHE_TTL = 60  # seconds
-
-
-def _cache_get(user_id: str) -> User | None:
-    entry = _USER_CACHE.get(user_id)
-    if entry is None:
-        return None
-    user, ts = entry
-    if _time.monotonic() - ts > _USER_CACHE_TTL:
-        del _USER_CACHE[user_id]
-        return None
-    return user
-
-
-def _cache_set(user_id: str, user: User) -> None:
-    _USER_CACHE[user_id] = (user, _time.monotonic())
-
-
-def _cache_invalidate(user_id: str) -> None:
-    _USER_CACHE.pop(user_id, None)
+# There is no per-process user cache. One used to hold the user for 60 s, and
+# with two workers a removal, role change, deactivation or organisation switch
+# reached the other worker up to a minute late, while `acting_role` fell back
+# to the cached `users.role`. The facts that decide access (is_active, org_id,
+# role, membership) are read on every request: one primary-key select.
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
+UNVERIFIED_MESSAGE = (
+    "E-posta adresiniz henüz doğrulanmadı. Size gönderilen doğrulama bağlantısını açın "
+    "ya da yeni bir bağlantı isteyin."
+)
+
 
 class RegisterRequest(BaseModel):
     # No `role` field. It used to be here with an ANALYST default, which meant
@@ -153,6 +134,10 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    unverified_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail=UNVERIFIED_MESSAGE,
+    )
+
     # ── Try JWT token ─────────────────────────────────────────────────────────
     if credentials and credentials.credentials:
         try:
@@ -165,20 +150,15 @@ async def get_current_user(
         except JWTError:
             raise credentials_exception
 
-        # PERF-2: Check cache before hitting the DB
-        cached = _cache_get(user_id)
-        if cached is not None:
-            return cached
-
         user = await db.get(User, user_id)
-        if not user or not user.is_active:
+        if not user or not user.is_active or not token_is_current(payload, user.token_version):
             raise credentials_exception
+        if not email_verification.is_verified(user):
+            raise unverified_exception
 
-        # Detach before caching *and* before returning, so the cached path and
-        # the fresh path hand back the same kind of object. Every column is
-        # already loaded by the get() above, so reads keep working.
+        # Detached, so every caller gets the same kind of object (reads work; endpoints
+        # that change the user re-load it through their own session, see `create_org`).
         db.expunge(user)
-        _cache_set(user_id, user)
         return user
 
     # ── Try API key ───────────────────────────────────────────────────────────
@@ -193,6 +173,8 @@ async def get_current_user(
         user = result.scalar_one_or_none()
         if not user:
             raise credentials_exception
+        if not email_verification.is_verified(user):
+            raise unverified_exception
         return user
 
     raise credentials_exception
@@ -231,52 +213,117 @@ def require_role(*roles: str):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+# Compared against when the account does not exist or has no password, so an unknown address costs
+# the same bcrypt work as a wrong password (login timing does not reveal which addresses exist).
+_DUMMY_HASH = hash_password("not-a-real-password")
+
+
+def _accepted() -> dict[str, Any]:
+    """The one answer of /auth/register under verification (identical for new and existing addresses)."""
+    return {"data": {"accepted": True, "verification_required": True}, "error": None}
+
+
+async def _mail_existing_account(db: AsyncSession, user: User) -> None:
+    """Tell the holder of an existing address that someone tried to register it (once per cool-down).
+
+    Never a verification link: for an unverified account that would hand the account to whoever
+    registered first. The reset page proves the mailbox and sets the password itself."""
+    from app.config import get_settings
+    from app.services import outbox_immediate
+
+    settings = get_settings()
+    if not user.is_active or await outbox_immediate.mailed_recently(
+        db, kind="account_exists", email=user.email, minutes=settings.auth_mail_cooldown_minutes
+    ):
+        return
+    base = settings.frontend_url.rstrip("/")
+    await outbox_immediate.enqueue_account_exists(
+        db, user_id=user.id, org_id=str(user.org_id) if user.org_id else None, email=user.email,
+        login_url=f"{base}/auth/login", reset_url=f"{base}/auth/forgot-password",
+    )
+    await db.commit()
+    outbox.kick()
+
+
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Register a new user account."""
-    # Check duplicate email
-    result = await db.execute(select(User).where(User.email == body.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=400,
-            detail="Bu e-posta adresi zaten kayıtlı.",
-        )
+    """Register a new user account.
+
+    With e-mail verification required (the default) the answer is the same for a new and an
+    existing address: status, body and minimum duration. A new address gets the verification link;
+    an existing one gets a "you already have an account" mail (sign-in and reset links, no token)
+    and nothing changes. So the page cannot be used to ask which addresses exist. Without
+    verification (an explicit opt-out for deployments with no mail) there is no private channel to
+    tell the person, so the old explicit error stays."""
+    from app.api.password_reset import hold_to_floor
+
+    started = time.monotonic()
+    verification = email_verification.required()
+    address = normalize_email(str(body.email))
+    password_hash = hash_password(body.password)  # the same work whether or not the address exists
+    existing = (await db.execute(select(User).where(User.email == normalize_email(address)))).scalar_one_or_none()
+    if existing is not None:
+        if not verification:
+            raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.")
+        await _mail_existing_account(db, existing)
+        await hold_to_floor(started)
+        return _accepted()
 
     user = User(
-        email=str(body.email),
-        hashed_password=hash_password(body.password),
+        email=address,
+        hashed_password=password_hash,
         full_name=body.full_name,
         role=UserRole.ANALYST,
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.flush()
+        if verification:
+            # The link goes out through the outbox; the account cannot sign in until it is opened.
+            await email_verification.issue(db, user)
+        await db.commit()
+    except IntegrityError:
+        # Two sign-ups for one address at once: the loser gets the ordinary answer.
+        await db.rollback()
+        if not verification:
+            raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.") from None
+        await hold_to_floor(started)
+        return _accepted()
     await db.refresh(user)
+    if verification:
+        outbox.kick()
 
-    logger.info("New user registered: %s (role=%s)", user.email, user.role)
+    logger.info("New user registered: %s (role=%s)", user.id, user.role)
+    if verification:
+        await hold_to_floor(started)
+        return _accepted()
 
     return {
         "data": {
             "user_id": user.id,
             "email":   user.email,
             "role":    user.role,
+            "verification_required": verification,
         },
         "error": None,
     }
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", response_model=None)
 async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, Any] | JSONResponse:
     """Email/password login → returns access + refresh tokens."""
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(select(User).where(User.email == normalize_email(str(body.email))))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.hashed_password):
+    stored = (user.hashed_password if user else None) or _DUMMY_HASH
+    password_ok = verify_password(body.password, stored)  # always runs: an unknown address costs the same
+    if not user or not user.hashed_password or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-posta veya şifre hatalı.",
@@ -289,8 +336,15 @@ async def login(
             detail="Hesabınız devre dışı bırakılmış.",
         )
 
-    access_token  = create_access_token(user.id, user.email, user.role)
-    refresh_token = create_refresh_token(user.id)
+    if not email_verification.is_verified(user):
+        # Only after the right password, so this says nothing to someone who does not hold the account.
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"data": {"state": "email_unverified"}, "error": UNVERIFIED_MESSAGE},
+        )
+
+    access_token  = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     # Update last login
     user.last_login_at = datetime.now(UTC)
@@ -337,10 +391,13 @@ async def refresh_token(
         raise credentials_exception
 
     user = await db.get(User, user_id)
-    if not user or not user.is_active:
+    if (
+        not user or not user.is_active or not token_is_current(payload, user.token_version)
+        or not email_verification.is_verified(user)
+    ):
         raise credentials_exception
 
-    new_access = create_access_token(user.id, user.email, user.role)
+    new_access = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
 
     return {
         "data": {
@@ -396,7 +453,6 @@ async def create_api_key(
     await db.commit()
 
     # Invalidate cache so next request reloads the updated user from DB
-    _cache_invalidate(str(current_user.id))
     logger.info("API key rotated for user: %s", current_user.email)
 
     return {
@@ -420,5 +476,4 @@ async def revoke_api_key(
         raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı.")
     user_row.api_key = None
     await db.commit()
-    _cache_invalidate(str(current_user.id))
     return {"data": {"revoked": True}, "error": None}

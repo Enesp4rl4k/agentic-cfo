@@ -31,8 +31,6 @@ from typing import Any, TypeVar
 from app.core.tdhp import BILANCO_KATEGORILERI
 
 DEFAULT_BASE = "TRY"
-# What a figure says when its currency is unknown. The wire code for that case is "?" (see foreign_summaries).
-CURRENCY_UNKNOWN_TR = "para birimi bilinmiyor"
 
 R = TypeVar("R")
 
@@ -241,13 +239,40 @@ def count_currencies(rows: Iterable[Any]) -> dict[str, int]:
 def fmt_money(cents: int, currency: str | None = None) -> str:
     """An amount as the Turkish text writes it: ₺1.234,56 for lira, 1.234,56 USD for the rest.
 
-    No currency given means the currency is unknown, not lira: the plain number and the words say so."""
+    No currency known: the bare number, `1.234,56`. A symbol or code is a claim about the money, and there
+    is no default currency to make it with.
+    """
     sign = "-" if cents < 0 else ""
     swapped = f"{abs(cents) / 100:,.2f}".translate(str.maketrans(",.", ".,"))
     code = normalise(currency)
     if not code:
-        return f"{sign}{swapped} ({CURRENCY_UNKNOWN_TR})"
-    return f"{sign}₺{swapped}" if code == "TRY" else f"{sign}{swapped} {code}"
+        return f"{sign}{swapped}"
+    return f"{sign}{_LIRA}{swapped}" if code == "TRY" else f"{sign}{swapped} {code}"
+
+
+_LIRA = "₺"  # the lira sign: the only symbol written, and only for an amount proven to be in TRY
+
+
+def _labelled(body: str, negative: bool, code: str) -> str:
+    sign = "-" if negative else ""
+    if not code:
+        return f"{sign}{body}"
+    return f"{sign}{_LIRA}{body}" if code == "TRY" else f"{sign}{body} {code}"
+
+
+def fmt_amount(value: float, currency: str | None, decimals: int = 0) -> str:
+    """An amount in major units for English-format text (prompts, narratives, exports): `₺1,234`,
+    `1,234 USD`, or `1,234` when no currency is known. The label is the currency the figure is in
+    (`pnl["currency"]`, a row's own currency), never a default."""
+    body = f"{abs(value):,.{decimals}f}"
+    return _labelled(body, value < 0 and float(body.replace(",", "")) != 0, normalise(currency))
+
+
+def fmt_compact(value: float, currency: str | None) -> str:
+    """The same, shortened for report tiles: `₺1.2M`, `340K USD`, `5,000`."""
+    v = abs(value)
+    body = f"{v / 1_000_000:.1f}M" if v >= 1_000_000 else f"{v / 1_000:.0f}K" if v >= 1_000 else f"{v:,.0f}"
+    return _labelled(body, value < 0, normalise(currency))
 
 
 def currency_notes(state: str, currency: str, foreign_items: Mapping[str, Mapping[str, int]]) -> list[str]:

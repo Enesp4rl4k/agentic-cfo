@@ -127,6 +127,42 @@ def _alert_dispatcher_answers_200(monkeypatch):
         AlertDispatcher, "transport", httpx.MockTransport(lambda request: httpx.Response(200))
     )
 
+# ── 2b-i. No test reaches DNS or a user-supplied URL ─────────────────────────
+# app/core/outbound resolves a destination before it connects. Names resolve to a fixed public
+# address here (an IP literal is itself); a test of the guard installs its own resolver.
+@pytest.fixture(autouse=True)
+def _outbound_resolves_without_dns():
+    from app.core import outbound
+
+    async def resolve(host: str, port: int) -> list[str]:
+        return ["93.184.216.34"]
+
+    outbound.set_test_seams(resolve, None)
+    yield
+    outbound.set_test_seams(None, None)
+
+# ── 2c. A request does not start a background delivery ───────────────────────
+# `outbox.kick()` spawns a delivery on its own session after an invitation or a reset is
+# written. A test drives the outbox itself (`deliver_pending`), on its own database.
+@pytest.fixture(autouse=True)
+def _outbox_does_not_kick(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "outbox_kick_on_enqueue", False)
+
+
+# ── 2d. Verification is off unless a test is about it ─────────────────────────
+# A new account must verify its address before it can sign in. Most tests register and sign in at
+# once, so they run with it off; tests of verification turn it on (`email_verification_required`).
+@pytest.fixture(autouse=True)
+def _email_verification_off_by_default(monkeypatch, request):
+    from app.config import get_settings
+
+    if request.node.get_closest_marker("email_verification"):
+        return
+    monkeypatch.setattr(get_settings(), "email_verification_required", False)
+
+
 # ── 3. Shared HTTP client fixture ────────────────────────────────────────────
 # An in-memory FastAPI app with its own throwaway database, yielded per test.
 # Lives here (not in test_ingest) so every API test file can request `client`

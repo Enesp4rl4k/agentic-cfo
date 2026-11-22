@@ -23,7 +23,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from app.services.classifier import classify_posting
+from app.services.ingest.door import connector_rows, read_text_statement, sync_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -128,48 +128,22 @@ class LogoTigerConnector:
                 # Relaxed mod -- Logo Tiger olabilir ama marker yok
                 logger.warning("Logo Tiger parser marker bulunamadi, zorla calistirilıyor: %s", filename)
 
-            statement = parser.parse(csv_content, file_path=filename)
-            transactions = statement.transactions
-
-            # Normalize: ParsedTransaction -> dict (CFO pipeline formati)
-            normalized: list[dict[str, Any]] = []
-            skipped = 0
-            for tx in transactions:
-                try:
-                    if tx.amount_cents == 0:
-                        skipped += 1
-                        continue
-                    normalized.append({
-                        "date":        tx.date.isoformat() if tx.date else None,
-                        "amount_cents": abs(tx.amount_cents),
-                        "type":        tx.tx_type or "expense",
-                        "description": tx.description or "",
-                        # ParsedTransaction has no `category` — it never has.
-                        # Reading one raised AttributeError inside the per-row
-                        # try below, so every transaction was counted as
-                        # "skipped" and the sync reported success having
-                        # imported nothing. "other" was not a category either;
-                        # the vocabulary's fallback is other_expense.
-                        "category":    classify_posting(
-                            tx.description or "", tx.tx_type or "expense", tx.account_code
-                        ),
-                        "account_code": tx.account_code,
-                        "source":      "logo_tiger",
-                        "reference":   tx.reference or "",
-                    })
-                except Exception as ex:
-                    parse_errors.append(str(ex))
-                    skipped += 1
+            # ONE door: every line accounted for, unreadable rows held (never dropped), no direction defaulted.
+            door = read_text_statement(parser, csv_content, filename, bank_name="Logo Tiger")
+            statement = door.statement
+            outcome = sync_outcome(door)
+            normalized = connector_rows(door, "logo_tiger")
+            skipped = int(outcome["skipped"])
 
             tx_count = len(normalized)
 
             # Integration guncelle
             integration.last_sync_at     = datetime.now(UTC)
-            integration.last_sync_status = "success"
+            integration.last_sync_status = outcome["status"]
             integration.last_sync_count  = tx_count
-            integration.last_error       = None
+            integration.last_error       = None if outcome["ok"] else f"{outcome['unaccounted']} satır hesaba katılamadı"
 
-            log.status                = "success"
+            log.status                = outcome["status"]
             log.transactions_synced   = tx_count
             log.transactions_skipped  = skipped
             log.finished_at           = datetime.now(UTC)
@@ -183,7 +157,10 @@ class LogoTigerConnector:
             )
 
             return {
-                "ok":             True,
+                "ok":             outcome["ok"],
+                "needs_review":   bool(outcome["unaccounted"] or outcome["held_candidates"]),
+                "counts":         outcome["counts"],
+                "held_candidates": outcome["held_candidates"],
                 "integration_id": integration.id,
                 "transactions":   normalized,
                 "sync_count":     tx_count,
@@ -288,30 +265,22 @@ class MikroConnector:
 
         try:
             parser    = MikroParser()
-            statement = parser.parse(csv_content, file_path=filename)
-            txns      = [
-                {
-                    "date":         tx.date.isoformat() if tx.date else None,
-                    "amount_cents": abs(tx.amount_cents),
-                    "type":         tx.tx_type or "expense",
-                    "description":  tx.description or "",
-                    "category":     classify_posting(
-                        tx.description or "", tx.tx_type or "expense", tx.account_code
-                    ),
-                    "account_code": tx.account_code,
-                    "source":       "mikro",
-                }
-                for tx in statement.transactions if tx.amount_cents != 0
-            ]
+            door = read_text_statement(parser, csv_content, filename, bank_name="Mikro")
+            outcome = sync_outcome(door)
+            txns = connector_rows(door, "mikro")
             integration.last_sync_at     = datetime.now(UTC)
-            integration.last_sync_status = "success"
+            integration.last_sync_status = outcome["status"]
             integration.last_sync_count  = len(txns)
-            log.status              = "success"
+            log.status              = outcome["status"]
             log.transactions_synced = len(txns)
             log.finished_at         = datetime.now(UTC)
             log.duration_seconds    = int(time.time() - start)
             await self.db.commit()
-            return {"ok": True, "transactions": txns, "sync_count": len(txns)}
+            return {
+                "ok": outcome["ok"], "needs_review": bool(outcome["unaccounted"] or outcome["held_candidates"]),
+                "counts": outcome["counts"], "held_candidates": outcome["held_candidates"],
+                "skipped": outcome["skipped"], "transactions": txns, "sync_count": len(txns),
+            }
         except Exception as exc:
             integration.last_sync_status = "error"
             integration.last_error = str(exc)[:500]

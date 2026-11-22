@@ -9,8 +9,10 @@ Akbank PDF ekstrelerinde tipik format:
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import signed_money
 
 
 class AkbankParser(BankParser):
@@ -54,39 +56,41 @@ class AkbankParser(BankParser):
         transactions: list[ParsedTransaction] = []
         # Match: date, description, optional debit, optional credit
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"   # date
-            r"(.+?)\s+"                     # description (non-greedy)
-            r"([\d.,]+)?\s*"                # debit (optional)
-            r"([\d.,]+)?\s*"                # credit (optional)
-            r"([\d.,]+)\s*$",               # balance
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+"   # date
+            r"(.+?)[ \t]+"                     # description (non-greedy)
+            r"(?:((?=[\d.,]*[.,])[\d.,]+)[ \t]+)?"            # debit (optional): a token ends at whitespace, never mid-number
+            r"(?:((?=[\d.,]*[.,])[\d.,]+)[ \t]+)?"            # credit (optional)
+            r"([+\-−]?[\d.,]+)[ \t]*$",      # balance
             re.MULTILINE,
         )
         for m in row_pattern.finditer(text):
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             debit_raw = m.group(3)
             credit_raw = m.group(4)
 
-            if credit_raw:
-                amount = self.parse_turkish_amount(credit_raw)
-                tx_type = "income"
-            elif debit_raw:
-                amount = self.parse_turkish_amount(debit_raw)
-                tx_type = "expense"
-            else:
+            # Which of the two optional columns an amount stood in is not recoverable from
+            # text with the empty cell collapsed ("250,00  5.750,00"). The direction is left
+            # open and read from the running balance (app.parsers.direction.settle_rows),
+            # never assumed to be a debit.
+            raw = debit_raw or credit_raw
+            if not raw:
+                # One number only: it is the balance, there is no amount to book. The line is left to
+                # app.parsers.lines, which holds it with its raw text (never dropped, never booked at 0).
                 continue
-
-            if not amount:
-                continue
+            amount = self.parse_turkish_amount(raw) or 0
+            tx_type = ""
 
             transactions.append(ParsedTransaction(
                 date=date,
                 description=description,
                 amount_cents=amount,
                 tx_type=tx_type,
-                raw_row=m.group(0),
+                balance_cents=signed_money(m.group(5)),
+                raw_row=m.group(0), date_estimated=estimated,
+                confidence_note="borç/alacak sütunu metinden ayırt edilemedi",
             ))
 
         return transactions

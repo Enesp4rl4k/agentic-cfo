@@ -25,6 +25,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,12 +92,15 @@ class EvidenceBuilder:
         ebitda  = pnl.get("ebitda", 0)
         net     = pnl.get("net_income", 0)
 
+        def money(cents: float) -> str:  # the currency the P&L states; bare when it states none
+            return fmt_amount(cents / 100, pnl.get("currency"))
+
         audit_trail = [
-            f"Gelir: {len(income_txs)} işlem toplandı → ₺{revenue/100:,.0f}",
-            f"SMM: {len(cogs_txs)} işlem → ₺{cogs/100:,.0f}",
-            f"Brüt Kâr: ₺{revenue/100:,.0f} - ₺{cogs/100:,.0f} = ₺{gp/100:,.0f}",
-            f"EBITDA: Brüt Kâr - OpEx toplamı = ₺{ebitda/100:,.0f}",
-            f"Net Gelir: EBITDA - Vergi - Kredi = ₺{net/100:,.0f}",
+            f"Gelir: {len(income_txs)} işlem toplandı → {money(revenue)}",
+            f"SMM: {len(cogs_txs)} işlem → {money(cogs)}",
+            f"Brüt Kâr: {money(revenue)} - {money(cogs)} = {money(gp)}",
+            f"EBITDA: Brüt Kâr - OpEx toplamı = {money(ebitda)}",
+            f"Net Gelir: EBITDA - Vergi - Kredi = {money(net)}",
         ]
 
         mom = pnl.get("revenue_mom_pct")
@@ -149,7 +154,7 @@ class EvidenceBuilder:
             audit_trail=[
                 f"Faaliyet işlemleri: {len(operating_txs)} adet",
                 f"Finansman işlemleri: {len(financing_txs)} adet",
-                f"Net CF: ₺{cashflow.get('net_change', 0)/100:,.0f}",
+                f"Net CF: {fmt_amount(cashflow.get('net_change', 0)/100, cashflow.get('currency'))}",
             ] + ([ccc_trail] if ccc_trail else []),
             assumptions=["Yatırım işlemleri (demirbaş) ayrıca tanımlanmamıştır"] + (
                 ["DSO/DPO gün sayıları ekstredeki işlem büyüklüklerinden tahmindir; "
@@ -177,7 +182,7 @@ class EvidenceBuilder:
         for t in related[:5]:
             evidence_details.append(
                 f"İşlem {t.get('id', '?')[:8]}: "
-                f"₺{t.get('amount_cents', 0)/100:,.0f} "
+                f"{fmt_amount(t.get('amount_cents', 0)/100, t.get('currency'))} "
                 f"({t.get('category', '?')}, {str(t.get('transaction_date', ''))[:10]})"
             )
 
@@ -252,7 +257,7 @@ class EvidenceBuilder:
         for item in over_budget[:3]:
             audit_trail.append(
                 f"⚠️ {item['category']}: %{item['variance_pct']:+.1f} aşım "
-                f"(₺{item['actual']/100:,.0f} / ₺{item['budgeted']/100:,.0f})"
+                f"({fmt_amount(item['actual']/100, budget.get('currency'))} / {fmt_amount(item['budgeted']/100, budget.get('currency'))})"
             )
 
         expense_txs = [t for t in transactions if t.get("type") == "expense"]

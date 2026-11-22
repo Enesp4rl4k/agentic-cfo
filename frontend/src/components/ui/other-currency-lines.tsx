@@ -42,7 +42,7 @@ export function OtherCurrencyLines({
   const { t } = useI18n();
   const { org } = useOrgSettings();
   const copy = t.otherCurrency;
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   if (!items?.length) return null;
 
   const money = (cents: number, code: string) => formatCurrency(cents / 100, code, locale, copy.unknown);
@@ -62,7 +62,7 @@ export function OtherCurrencyLines({
         const amounts = parts.filter(Boolean).join(", ") || shownCode(item.currency, copy.unknown);
         return (
           <p key={item.currency}>
-            {copy.notConverted.replace("{amounts}", amounts).replace("{base}", base)}
+            {base ? copy.notConverted.replace("{amounts}", amounts).replace("{base}", base) : `${item.currency}: ${amounts}`}
             {item.assumed_rows ? ` ${copy.assumed.replace("{n}", String(item.assumed_rows))}` : ""}
           </p>
         );
@@ -114,6 +114,32 @@ export function LeftOutNote({ items }: { items: OtherCurrency[] | null | undefin
       {t.otherCurrency.leftOut
         .replace("{n}", String(n))
         .replace("{currencies}", (items ?? []).map((i) => i.currency).join(", "))}
+    </p>
+  );
+}
+
+/** "The figures below are in USD only": a computation that ran on one currency of several says so. */
+export function DominantCaption({ currency }: { currency?: string | null }) {
+  const { t } = useI18n();
+  if (!currency) return null;
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="dominant-caption">
+      {t.otherCurrency.dominantCaption.replace("{currency}", currency)}
+    </p>
+  );
+}
+
+/** "3 dövizli kayıt bu dökümde yok (USD: 3)": entries a statutory export left out (header `X-Para-Birimi-Disi`). */
+export function JournalLeftOutBanner({ left }: { left: Record<string, number> | null | undefined }) {
+  const { t } = useI18n();
+  const entries = Object.entries(left ?? {});
+  const n = entries.reduce((sum, [, count]) => sum + count, 0);
+  if (!n) return null;
+  return (
+    <p role="status" className="text-xs text-amber-400" data-testid="journal-left-out">
+      {t.otherCurrency.journalLeftOut
+        .replace("{n}", String(n))
+        .replace("{currencies}", entries.map(([c, count]) => `${c}: ${count}`).join(", "))}
     </p>
   );
 }

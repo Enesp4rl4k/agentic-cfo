@@ -26,10 +26,33 @@ import hashlib
 import logging
 import secrets
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.services.ingest.feed import (
+    Feed,
+    FeedFailed,
+    FeedResult,
+)
+
+MAX_PAGES = 50
+
 logger = logging.getLogger(__name__)
+
+
+def why(exc: Exception) -> str:
+    """A reason for a person: the status or the kind of failure, never the response body (it may hold anything)."""
+    return str(exc) if isinstance(exc, FeedFailed) else f"{type(exc).__name__}"
+
+
+def response_list(raw: Any, *keys: str) -> list[Any]:
+    """The list under the first of `keys` the response HAS (an empty list is a real answer); else the shape is wrong."""
+    if isinstance(raw, dict):
+        for key in keys:
+            if key in raw and isinstance(raw[key], list):
+                return raw[key]
+    raise FeedFailed("yanıtta işlem listesi yok (beklenmeyen biçim)")
 
 
 class OpenBankingError(Exception):
@@ -172,24 +195,55 @@ class OpenBankingClient:
         account_id: str,
         start_date: str,   # YYYY-MM-DD
         end_date: str,     # YYYY-MM-DD
-    ) -> list[dict[str, Any]]:
+        opened_on: str | None = None,   # the account's opening date, only when the PROVIDER reported one
+    ) -> FeedResult:
         """
-        Fetch transactions for an account.
+        Fetch the transactions of an account, every page, and say how it went.
 
-        Returns normalized list of transaction dicts compatible with
-        the CFO pipeline's data ingestion format.
+        Returns a `FeedResult`: one row per fetched item (an unknown amount, direction, date or currency is
+        None and the row waits for a person), the counts, and:
+          - `failed`  when the first page could not be read (outage, refusal, malformed JSON, unexpected
+            shape): nothing is returned, and an outage is never "no transactions";
+          - `partial` when a later page failed or the page limit was reached: the rows fetched are returned and
+            the result does not cover the period.
         """
-        url = self.config.transactions_url.format(account_id=account_id)
-        try:
-            resp = await self._http.get(
-                url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                params={"startDate": start_date, "endDate": end_date},
-            )
-            resp.raise_for_status()
-            return self._parse_transactions(resp.json())
-        except httpx.HTTPStatusError as exc:
-            raise OpenBankingError(f"Transaction fetch failed: {exc.response.text}") from exc
+        feed = Feed(f"{self.config.bank_id}_open_banking")
+        feed.window = (start_date, end_date)
+        feed.opened_on = opened_on
+        first_url = self.config.transactions_url.format(account_id=account_id)
+        url: str | None = first_url
+        params: dict[str, str] | None = {"startDate": start_date, "endDate": end_date}
+        host = str(urlparse(first_url).netloc)
+        page = 0
+        while url and page < MAX_PAGES:
+            page += 1
+            try:
+                resp = await self._http.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
+                if resp.status_code != 200:
+                    raise FeedFailed(f"banka {resp.status_code} yanıtı verdi")
+                payload = resp.json()
+                self._parse_transactions(payload, feed)
+            except (httpx.HTTPError, ValueError, FeedFailed) as exc:
+                reason = f"{page}. sayfa alınamadı: {why(exc)}"
+                if page == 1:
+                    return feed.fail(reason)
+                feed.partial = reason
+                break
+            url = self._next_page(payload, url, host)
+            params = None
+        else:
+            if url:
+                feed.partial = f"sayfa sınırına ulaşıldı ({MAX_PAGES}); işlemlerin devamı çekilmedi"
+        return feed.result()
+
+    @staticmethod
+    def _next_page(payload: Any, current: str, host: str) -> str | None:
+        """The next page's URL (Berlin Group `_links.next.href`), only ever on the bank's own host."""
+        link = ((payload.get("_links") or {}).get("next") or {}).get("href") if isinstance(payload, dict) else None
+        if not link:
+            return None
+        nxt = urljoin(current, str(link))
+        return nxt if urlparse(nxt).netloc == host else None
 
     def _parse_accounts(self, raw: Any) -> list[dict[str, Any]]:
         """Override in subclasses to handle bank-specific account format."""
@@ -197,14 +251,13 @@ class OpenBankingClient:
             return raw
         return raw.get("accounts", raw.get("data", []))
 
-    def _parse_transactions(self, raw: Any) -> list[dict[str, Any]]:
+    def _parse_transactions(self, raw: Any, feed: Feed) -> None:
         """
-        Override in subclasses to normalize bank-specific transaction format
-        to the standard CFO pipeline format:
-          {amount_cents, type, date, description, currency, reference}
+        Override in subclasses: add one row to `feed` per transaction of the bank-specific response, through
+        `Feed.each` / `Feed.add` (nothing is skipped or defaulted). Raise `FeedFailed` when the response does
+        not have the shape the bank documents.
         """
-        txs = raw if isinstance(raw, list) else raw.get("transactions", raw.get("data", []))
-        return txs
+        raise NotImplementedError("each bank documents its own response shape")
 
     async def close(self) -> None:
         await self._http.aclose()

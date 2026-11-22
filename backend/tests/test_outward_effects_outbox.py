@@ -193,7 +193,7 @@ async def test_no_url_is_not_a_delivery():
 async def test_the_test_transport_is_refused_outside_pytest(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST")
     with pytest.raises(RuntimeError, match="test seam"):
-        alert_dispatcher.AlertDispatcher._client()
+        await alert_dispatcher.AlertDispatcher._post("https://x.example/h", {})
     # And a dispatch that hits the refusal reports no delivery rather than a fake one.
     sent = await alert_dispatcher.AlertDispatcher.dispatch_slack("https://x.example/h", "t", "m")
     assert sent.delivered is False

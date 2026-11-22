@@ -1,5 +1,5 @@
-"""The radar's weekly figures are in one currency: a TRY rent, a TRY tax payment or a TRY balance is never
-added to a USD week. What is left out is reported on its own line, per currency."""
+"""The radar's weekly figures are in one currency: a TRY rent or a TRY tax payment is never added to a USD
+week (the opening balance is per currency in `bank_accounts`, tested there). What is left out is reported on its own line, per currency."""
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -64,28 +64,6 @@ async def test_try_recurring_and_tax_outflows_stay_out_of_a_usd_week(client):
     assert try_line["recurring_payable_cents"] == 25_000_00 * 3  # Feb, Mar, Apr rent, in lira, on its own line
     assert try_line["tax_payable_cents"] > 0
     assert any("TRY" in line for line in radar.not_included)
-
-
-async def test_a_try_balance_does_not_seed_a_usd_radar(client):
-    _, org_id, _ = await kullanici(client, "karisim2@example.com")
-    await _confirm(client, org_id, "USD")
-    await upload(client, org_id, meta=_statement("2025-01-31", 200_000_00, "TRY"))
-
-    radar = await _radar(client, org_id)
-
-    assert radar.starting_cash_cents is None and radar.opening_cash is None
-    assert radar.shortfall is None
-    assert any("başlangıç" in line for line in radar.not_included)
-
-
-async def test_a_balance_with_no_currency_seeds_nothing(client):
-    _, org_id, _ = await kullanici(client, "karisim3@example.com")
-    await _confirm(client, org_id, "TRY")
-    await upload(client, org_id, meta=_statement("2025-01-31", 200_000_00, None))
-
-    radar = await _radar(client, org_id)
-
-    assert radar.starting_cash_cents is None and radar.opening_cash is None
 
 
 async def test_a_balance_in_the_radars_currency_still_seeds_it(client):

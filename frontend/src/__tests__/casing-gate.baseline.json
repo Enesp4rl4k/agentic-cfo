@@ -38,7 +38,6 @@
     "components/ui/onboarding-banner.tsx": 2,
     "components/ui/proactive-actions.tsx": 8,
     "components/ui/product-tour.tsx": 10,
-    "components/ui/system-status.tsx": 2,
     "components/ui/theme-toggle.tsx": 4,
     "components/ui/ws-chat-panel.tsx": 13,
     "components/upload/MultiBatchUpload.tsx": 14

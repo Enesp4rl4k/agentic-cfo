@@ -107,7 +107,7 @@ def _detect_cross_risks(
             "financial_impact_cents": infra_waste,
             "tech_impact": "None — pure cost reduction",
             "recommended_action": (
-                f"Eliminate ₺{monthly_savings:,.0f}/month cloud waste immediately. "
+                f"Eliminate {monthly_savings:,.0f}/month cloud waste immediately. "
                 f"This extends cash runway by ~{infra_waste / max(fin.get('monthly_burn_cents', 1), 1):.1f} months."
             ),
             "urgency": "now" if severity == "critical" else "30d",
@@ -210,7 +210,7 @@ def _detect_cross_risks(
             "financial_impact_cents": monthly_churn_rev,
             "tech_impact": "Churn may indicate product-market fit or reliability issues",
             "recommended_action": (
-                f"Monthly churn {churn_rate:.0%} costs ~₺{monthly_churn_rev / 100:,.0f}/month. "
+                f"Monthly churn {churn_rate:.0%} costs ~{monthly_churn_rev / 100:,.0f}/month. "
                 "Launch retention program and investigate exit reasons."
             ),
             "urgency": "30d",
@@ -245,7 +245,7 @@ def _detect_cross_risks(
             "financial_impact_cents": est_churn_rev,
             "tech_impact": f"SLA breach rate {sla_breach_rate:.0%} — customers experiencing poor service",
             "recommended_action": (
-                f"SLA breach rate {sla_breach_rate:.0%} risks ~₺{est_churn_rev / 100:,.0f}/month in churn. "
+                f"SLA breach rate {sla_breach_rate:.0%} risks ~{est_churn_rev / 100:,.0f}/month in churn. "
                 "Investigate root-cause ticket categories and implement escalation playbooks."
             ),
             "urgency": "now" if severity == "critical" else "30d",
@@ -549,6 +549,11 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
         "forecast_base_12m_cents": base_scenario.get("twelve_month_net", 0),
         "top_alerts":            alerts[:5],
         "narrative":             pnl.get("narrative", ""),
+        # What currency the figures above are in, how that was decided, and what was left out of them
+        # (`core/currency_totals`): the chat labels amounts from these, never with a default symbol.
+        "currency":              pnl.get("currency"),
+        "base_state":            pnl.get("base_state"),
+        "other_currencies":      pnl.get("other_currencies", []),
     }
 
 

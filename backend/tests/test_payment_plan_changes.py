@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.models.open_item import OpenItem
 from app.models.user import User
+from app.services.self_approval import SELF_DECISION_ACK
 from tests.api_helpers import PAROLA, bellek_istemcisi, kullanici
 
 
@@ -109,7 +110,10 @@ async def test_an_owner_or_admin_holds_the_authority_for_their_own_proposal(clie
     owner, org_id, _ = await kullanici(client, "sahip2@example.com", role="owner")
     item = await seed_item(client, org_id, days=10)
     change = (await propose(client, owner, item, today() + timedelta(days=40))).json()["data"]
-    done = await client.post(f"/api/v1/ledger/plan-changes/{change['id']}/approve", headers=owner, json={})
+    done = await client.post(
+        f"/api/v1/ledger/plan-changes/{change['id']}/approve", headers=owner,
+        json={"self_decision_ack": SELF_DECISION_ACK},
+    )
     assert done.status_code == 200
     assert done.json()["data"]["decided_by"] == done.json()["data"]["requested_by"]
 

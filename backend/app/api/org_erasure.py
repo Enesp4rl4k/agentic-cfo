@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import ensure_tenant
-from app.api.auth import _cache_invalidate, get_current_user
+from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models.erasure_record import OrgErasureRequest
@@ -145,7 +145,6 @@ async def confirm_org_erasure(
         raise HTTPException(status_code=422, detail="Onay ifadesi eşleşmiyor.")
 
     confirmer = hash_id("user", str(current_user.id))
-    members = await _member_ids(db, org_id)
     result = await erase_org(
         db, org_id, mode=mode, requested_by_hash=req.requested_by_hash,
         confirmed_by_hash=confirmer,
@@ -158,8 +157,6 @@ async def confirm_org_erasure(
     req.target_org_id = None
     req.requested_by_user_id = None
     await db.commit()
-    for uid in members:
-        _cache_invalidate(uid)
     logger.info("org erasure executed: request=%s mode=%s", req.id, req.mode)
     return {
         "data": {
@@ -175,9 +172,4 @@ async def confirm_org_erasure(
         "error": None,
     }
 
-
-async def _member_ids(db: AsyncSession, org_id: str) -> list[str]:
-    rows = await db.execute(select(OrgMembership.user_id).where(OrgMembership.org_id == org_id))
-    users = await db.execute(select(User.id).where(User.org_id == org_id))
-    return sorted({*rows.scalars().all(), *users.scalars().all()})
 

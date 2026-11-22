@@ -33,6 +33,12 @@ from app.models.analysis_job import AnalysisJob
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.user import User
 from app.services.acting_role import acting_role
+from app.services.smmm_onay_decisions import (
+    record_month_close,
+    record_onay,
+    record_rule_revoked,
+    require_authority,
+)
 
 router = APIRouter(dependencies=[Depends(require_tr_pack)])
 logger = logging.getLogger(__name__)
@@ -65,13 +71,19 @@ class TopluOnayRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _require_authority(db: AsyncSession, user: User, kayit: SMMMOnayKaydi) -> None:
-    """403 unless the user's role may decide this entry (services/approval_authority)."""
-    from app.services.approval_authority import check
+async def _entry(db: AsyncSession, kayit_id: str) -> SMMMOnayKaydi:
+    """By id; the caller must still prove whose it is (`load_owned_job`): any user could otherwise decide any entry."""
+    kayit = await db.get(SMMMOnayKaydi, kayit_id)
+    if not kayit:
+        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
+    return kayit
 
-    v = await check(db, user, kayit)
-    if not v.allowed:
-        raise HTTPException(status_code=403, detail=v.reason)
+
+async def _decidable(db: AsyncSession, kayit: SMMMOnayKaydi, user: User) -> None:
+    """409 if the entry was already answered, 403 if the user's role may not decide it."""
+    if kayit.durum != OnayDurumu.BEKLIYOR:
+        raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
+    await require_authority(db, user, kayit)
 
 
 def _kayit_to_dict(k: SMMMOnayKaydi, v: Any = None) -> dict[str, Any]:
@@ -165,6 +177,7 @@ async def donem_kapat(
     except DonemHatasi as exc:
         kod = 409 if "zaten" in str(exc) else 422
         raise HTTPException(status_code=kod, detail=str(exc)) from exc
+    await record_month_close(db, current_user, kilit)
     await db.commit()
     return {"data": {"donem": kilit.donem, "kilitleyen_user_id": kilit.kilitleyen_user_id},
             "error": None}
@@ -201,6 +214,7 @@ async def ogrenilmis_kural_sil(
     ensure_tenant(current_user, org_id=kural.org_id)
     if not karar_verebilir_rol(await acting_role(db, current_user)):
         raise HTTPException(status_code=403, detail="Bu rol öğrenilmiş kuralı silemez.")
+    await record_rule_revoked(db, current_user, kural)
     await db.delete(kural)
     await db.commit()
     # The id came from the URL: no CR/LF into the log line (log injection).
@@ -301,15 +315,9 @@ async def onayla(
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Kaydı onayla — hesap kodu değişmez, sadece onay damgası."""
-    kayit = await db.get(SMMMOnayKaydi, kayit_id)
-    if not kayit:
-        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
-    # Loaded by id and changed with no question of whose it was: any user
-    # could approve, correct or reject another organisation's entries.
+    kayit = await _entry(db, kayit_id)
     await load_owned_job(db, kayit.job_id, current_user)
-    if kayit.durum != OnayDurumu.BEKLIYOR:
-        raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
-    await _require_authority(db, current_user, kayit)
+    await _decidable(db, kayit, current_user)
 
     kayit.durum            = OnayDurumu.ONAYLANDI
     kayit.onaylayan_user_id = _user_id(current_user)
@@ -317,6 +325,7 @@ async def onayla(
     kayit.onay_notu        = req.onay_notu
     kayit.updated_at       = datetime.now(UTC)
 
+    await record_onay(db, current_user, kayit, "approved", reason=req.onay_notu)
     await db.commit()
     logger.info("SMMM onay: kayit=%s user=%s", kayit_id, _user_id(current_user))
 
@@ -331,15 +340,9 @@ async def duzeltle(
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Hesap kodunu düzelterek onayla. Orijinal otomatik sınıflandırma korunur."""
-    kayit = await db.get(SMMMOnayKaydi, kayit_id)
-    if not kayit:
-        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
-    # Loaded by id and changed with no question of whose it was: any user
-    # could approve, correct or reject another organisation's entries.
+    kayit = await _entry(db, kayit_id)
     await load_owned_job(db, kayit.job_id, current_user)
-    if kayit.durum != OnayDurumu.BEKLIYOR:
-        raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
-    await _require_authority(db, current_user, kayit)
+    await _decidable(db, kayit, current_user)
 
     kayit.durum                  = OnayDurumu.DUZELTILDI
     kayit.onaylayan_user_id      = _user_id(current_user)
@@ -360,6 +363,7 @@ async def duzeltle(
             (kayit.orijinal_kayit or {}).get("vendor"), req.hesap_kodu, req.hesap_adi,
         )
 
+    await record_onay(db, current_user, kayit, "corrected", reason=req.aciklama)
     await db.commit()
     logger.info(
         "SMMM düzeltme: kayit=%s user=%s yeni_hesap=%s",
@@ -377,15 +381,9 @@ async def reddet(
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Kaydı reddet. Gerekçe zorunlu."""
-    kayit = await db.get(SMMMOnayKaydi, kayit_id)
-    if not kayit:
-        raise HTTPException(status_code=404, detail="Onay kaydı bulunamadı")
-    # Loaded by id and changed with no question of whose it was: any user
-    # could approve, correct or reject another organisation's entries.
+    kayit = await _entry(db, kayit_id)
     await load_owned_job(db, kayit.job_id, current_user)
-    if kayit.durum != OnayDurumu.BEKLIYOR:
-        raise HTTPException(status_code=409, detail=f"Kayıt zaten işlendi: {kayit.durum}")
-    await _require_authority(db, current_user, kayit)
+    await _decidable(db, kayit, current_user)
 
     kayit.durum            = OnayDurumu.REDDEDILDI
     kayit.onaylayan_user_id = _user_id(current_user)
@@ -393,6 +391,7 @@ async def reddet(
     kayit.onay_notu        = req.neden
     kayit.updated_at       = datetime.now(UTC)
 
+    await record_onay(db, current_user, kayit, "rejected", reason=req.neden)
     await db.commit()
     logger.info("SMMM red: kayit=%s user=%s neden=%s", kayit_id, _user_id(current_user), req.neden)
 
@@ -457,6 +456,7 @@ async def toplu_onayla(
         # would let bulk approval talk the system into trusting itself.
         kayit.orijinal_kayit = {**(kayit.orijinal_kayit or {}), "karar_turu": "toplu"}
         approved_ids.append(kayit.id)
+        await record_onay(db, current_user, kayit, "approved", reason=req.onay_notu, bulk=True)
 
     await db.commit()
     logger.info("SMMM toplu onay: %d kayit, user=%s", len(approved_ids), _user_id(current_user))

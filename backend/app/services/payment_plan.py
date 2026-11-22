@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.open_item import OpenItem
+from app.models.organization import Organization
 from app.models.payment_plan_change import (
     APPROVED,
     PENDING,
@@ -24,6 +25,7 @@ from app.models.payment_plan_change import (
     PaymentPlanChange,
 )
 from app.models.user import User
+from app.services import materiality
 from app.services.acting_role import acting_role
 
 DECIDER_ROLES = frozenset({"owner", "admin"})
@@ -100,7 +102,10 @@ async def propose(
     if pending is not None:
         raise PlanChangeError(409, "Bu ödeme için karar bekleyen bir öneri zaten var.")
 
+    org = await db.get(Organization, org_id)
     change = PaymentPlanChange(
+        threshold_cents=materiality.threshold_cents(org),
+        threshold_currency=materiality.threshold_currency(org),
         org_id=org_id,
         open_item_id=item.id,
         from_date=effective,

@@ -7,12 +7,13 @@ tax payment deadlines, and high-severity fraud/anomalies.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+
+from app.core import outbound
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class DispatchedAlert:
     delivered: bool
     status_code: int = 200
     timestamp: str = ""
+    blocked_reason: str = ""  # set when the destination was refused and nothing was sent
 
 
 class AlertDispatcher:
@@ -42,10 +44,22 @@ class AlertDispatcher:
     transport: httpx.AsyncBaseTransport | None = None
 
     @classmethod
-    def _client(cls) -> httpx.AsyncClient:
-        if cls.transport is not None and "PYTEST_CURRENT_TEST" not in os.environ:
-            raise RuntimeError("AlertDispatcher.transport is a test seam; refused outside pytest")
-        return httpx.AsyncClient(timeout=10.0, transport=cls.transport)
+    def test_transport_injected(cls) -> bool:
+        """Whether a test has injected a transport (so a send goes to it, never to the network)."""
+        return cls.transport is not None
+
+    @classmethod
+    async def _post(cls, url: str, payload: dict[str, Any]) -> outbound.OutboundResponse:
+        """The only way this class sends: through the guarded client (app/core/outbound.py)."""
+        return await outbound.request("POST", url, json=payload, transport=cls.transport)
+
+    @staticmethod
+    def _blocked(channel: str, url: str, severity: str, title: str, reason: str, ts: str) -> DispatchedAlert:
+        return DispatchedAlert(
+            alert_id=f"alert-{channel}-{int(datetime.now().timestamp())}", channel=channel, target=url,
+            severity=severity, title=title, message=f"Destination refused: {reason}",
+            delivered=False, status_code=0, timestamp=ts, blocked_reason=reason,
+        )
 
     @staticmethod
     def _not_configured(channel: str, severity: str, title: str, message: str) -> DispatchedAlert:
@@ -119,19 +133,20 @@ class AlertDispatcher:
             return cls._not_configured("slack", severity, title, message)
 
         try:
-            async with cls._client() as client:
-                resp = await client.post(webhook_url, json=payload)
-                return DispatchedAlert(
-                    alert_id=f"alert-slack-{int(datetime.now().timestamp())}",
-                    channel="slack",
-                    target=webhook_url,
-                    severity=severity,
-                    title=title,
-                    message=message,
-                    delivered=(resp.status_code == 200),
-                    status_code=resp.status_code,
-                    timestamp=ts,
-                )
+            resp = await cls._post(webhook_url, payload)
+            return DispatchedAlert(
+                alert_id=f"alert-slack-{int(datetime.now().timestamp())}",
+                channel="slack",
+                target=webhook_url,
+                severity=severity,
+                title=title,
+                message=message,
+                delivered=(resp.status_code == 200),
+                status_code=resp.status_code,
+                timestamp=ts,
+            )
+        except outbound.OutboundBlocked as blocked:
+            return cls._blocked("slack", webhook_url, severity, title, blocked.reason, ts)
         except Exception as exc:
             logger.warning("Slack alert failed: %s", exc)
             return DispatchedAlert(
@@ -168,19 +183,23 @@ class AlertDispatcher:
             )
 
         try:
-            async with cls._client() as client:
-                resp = await client.post(webhook_url, json=payload)
-                return DispatchedAlert(
-                    alert_id=f"alert-wh-{int(datetime.now().timestamp())}",
-                    channel="webhook",
-                    target=webhook_url,
-                    severity=data.get("severity", "info"),
-                    title=f"Webhook: {event_type}",
-                    message=f"Event {event_type} dispatched",
-                    delivered=resp.is_success,
-                    status_code=resp.status_code,
-                    timestamp=ts,
-                )
+            resp = await cls._post(webhook_url, payload)
+            return DispatchedAlert(
+                alert_id=f"alert-wh-{int(datetime.now().timestamp())}",
+                channel="webhook",
+                target=webhook_url,
+                severity=data.get("severity", "info"),
+                title=f"Webhook: {event_type}",
+                message=f"Event {event_type} dispatched",
+                delivered=resp.ok,
+                status_code=resp.status_code,
+                timestamp=ts,
+            )
+        except outbound.OutboundBlocked as blocked:
+            return cls._blocked(
+                "webhook", webhook_url, data.get("severity", "info"), f"Webhook: {event_type}",
+                blocked.reason, ts,
+            )
         except Exception as exc:
             logger.warning("Generic webhook dispatch failed: %s", exc)
             return DispatchedAlert(

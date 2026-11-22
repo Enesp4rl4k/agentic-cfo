@@ -10,17 +10,21 @@
  *   writer       changes the books: owner, admin, cfo, smmm
  *   decider      decides: owner, admin
  *   billing      pays and manages the plan: owner, admin, cfo (billing.py)
+ *   proposer     proposes a new date for a payment: owner, admin, cfo, analyst (payment_plan.py)
  *
  * `viewer` is in none of them; an unknown role is in none of them.
  */
 
-export type RoleClass = "contributor" | "writer" | "decider" | "billing";
+export type RoleClass = "contributor" | "writer" | "decider" | "billing" | "proposer";
 
 export const ROLE_CLASSES: Record<RoleClass, readonly string[]> = {
   contributor: ["owner", "admin", "cfo", "smmm", "analyst"],
   writer: ["owner", "admin", "cfo", "smmm"],
   decider: ["owner", "admin"],
   billing: ["owner", "admin", "cfo"],
+  // Proposes a payment-date change (payment_plan.PROPOSER_ROLES). Not the accountant: moving a payment
+  // is the company's commercial decision (docs/payment-plan-approval.md); the accountant advises.
+  proposer: ["owner", "admin", "cfo", "analyst"],
 };
 
 export function hasRoleClass(role: string | null | undefined, cls: RoleClass): boolean {
@@ -51,16 +55,18 @@ export const ROUTE_RULES: ReadonlyArray<{ prefix: string; cls: RoleClass }> = [
  *   upload / analyze     contributor  (upload, analysis start / rerun, data-source add)
  *   edit                 writer       (resolve ledger rows, corrections, packets, decisions, sync)
  *   decide               decider      (connect or remove a connector, org context, approvals)
+ *   propose              proposer     (propose a payment-date change; not smmm, who advises)
  *   closePeriod          see `canClosePeriod`; "accountant" is any other act that is `require_smmm`
  *                        (seal a defensibility packet, take back a learned rule): same who, other words
  */
-export type GatedAction = "upload" | "analyze" | "edit" | "decide" | "closePeriod" | "accountant";
+export type GatedAction = "upload" | "analyze" | "edit" | "decide" | "propose" | "closePeriod" | "accountant";
 
 export const ACTION_CLASS: Record<Exclude<GatedAction, "closePeriod" | "accountant">, RoleClass> = {
   upload: "contributor",
   analyze: "contributor",
   edit: "writer",
   decide: "decider",
+  propose: "proposer",
 };
 
 export type PeriodCloseVerdict = {
@@ -83,4 +89,20 @@ export function canClosePeriod(role: string | null | undefined, hasSmmm: boolean
       : { allowed: true, case: "ownBooks" };
   }
   return { allowed: false, case: "noRole" };
+}
+
+/**
+ * Who may give which role when inviting, mirrored from `_INVITER_MAY_GRANT` in `backend/app/api/org.py`
+ * (and checked against it by `src/__tests__/roles.test.ts`): only an owner makes an admin, and nobody
+ * invites an owner (one owner per company; transferring ownership is a separate action);
+ * an admin may invite cfo, smmm, analyst and viewer. Anyone else may not invite at all. The order is
+ * the order the invite form lists them in.
+ */
+export const INVITER_MAY_GRANT: Record<string, readonly string[]> = {
+  owner: ["admin", "cfo", "smmm", "analyst", "viewer"],
+  admin: ["cfo", "smmm", "analyst", "viewer"],
+};
+
+export function invitableRoles(inviterRole: string | null | undefined): readonly string[] {
+  return (inviterRole && INVITER_MAY_GRANT[inviterRole]) || [];
 }

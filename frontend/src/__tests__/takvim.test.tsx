@@ -8,8 +8,9 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useSession } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { openingCashFixture, planChangeSpies } from "./dashboard-mocks";
 import { clampWeek, payables, runScenario } from "@/components/calendar/scenario";
@@ -240,6 +241,33 @@ describe("Ödeme takvimi: from scenario to a proposal", () => {
     expect(await screen.findByText("Ödeme planı değişti.")).toBeInTheDocument();
   });
 
+  it("confirms with the server's sentence when the proposer is the only decider", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    listPlanChanges.mockResolvedValue({ changes: [], canDecide: true, selfDecisionAck: "Öneren ve onaylayan aynı kişi: ben." });
+    proposePlanChange.mockResolvedValue({ id: "c1", self_decision: "acknowledge" });
+    decidePlanChange.mockResolvedValue({ id: "c1" });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    // the one confirmation says, before the click, that proposer and approver are the same person
+    expect(await screen.findByText(/aynı kişi olduğunuz karar kaydına yazılır/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Planı değiştir" }));
+    await waitFor(() =>
+      expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve", undefined, "Öneren ve onaylayan aynı kişi: ben."));
+  });
+
+  it("leaves the proposal waiting when another decider must approve it, and says so", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    listPlanChanges.mockResolvedValue({ changes: [], canDecide: true, selfDecisionAck: "x" });
+    proposePlanChange.mockResolvedValue({ id: "c1", self_decision: "blocked" });
+    const user = userEvent.setup();
+    show();
+    await moveAndSend(user, "Planı değiştir");
+    expect(decidePlanChange).not.toHaveBeenCalled();
+    expect(await screen.findByText(/diğer sahip ya da yöneticisinin onayına gönderildi/)).toBeInTheDocument();
+    expect(screen.queryByText("Ödeme planı değişti.")).toBeNull();
+  });
+
   it("shows the server's own sentence when it refuses", async () => {
     getCashRadar.mockResolvedValue(radar());
     proposePlanChange.mockRejectedValue({ detail: "Bu ödeme için karar bekleyen bir öneri zaten var." });
@@ -247,5 +275,42 @@ describe("Ödeme takvimi: from scenario to a proposal", () => {
     show();
     await moveAndSend(user, "Onaya gönder");
     expect(await screen.findByText("Bu ödeme için karar bekleyen bir öneri zaten var.")).toBeInTheDocument();
+  });
+});
+
+describe("Ödeme takvimi: the accountant advises, the company proposes", () => {
+  // Moving a payment is the company's commercial decision (docs/payment-plan-approval.md): the API refuses
+  // smmm (PROPOSER_ROLES), so the screen does not offer her a button that can only answer 403.
+  const asRole = (role: string) =>
+    vi.mocked(useSession).mockReturnValue({
+      data: { user: { id: "1", email: "m@x.com", role, orgId: "o1" }, accessToken: "tok" },
+      status: "authenticated",
+    } as unknown as ReturnType<typeof useSession>);
+
+  it("lets the accountant try dates, but the send button is inert and says why", async () => {
+    asRole("smmm");
+    getCashRadar.mockResolvedValue(radar());
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    const send = await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" });
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    expect(send).toHaveAttribute("title", expect.stringMatching(/mali müşavir tavsiye eder/));
+    await user.click(send);
+    expect(proposePlanChange).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/ticari kararıdır/).length).toBeGreaterThan(0);
+  });
+
+  it.each(["owner", "admin", "cfo", "analyst"])("offers a %s the send button", async (role) => {
+    asRole(role);
+    getCashRadar.mockResolvedValue(radar());
+    proposePlanChange.mockResolvedValue({ id: "c1" });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    const send = await screen.findByRole("button", { name: "Ana Tedarikçi: Onaya gönder" });
+    expect(send).not.toHaveAttribute("aria-disabled");
+    await user.click(send);
+    expect(proposePlanChange).toHaveBeenCalledTimes(1);
   });
 });

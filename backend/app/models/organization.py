@@ -23,8 +23,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, false
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from app.core.email_address import normalize_email
 from app.database import Base
 
 if TYPE_CHECKING:
@@ -74,7 +75,8 @@ class Organization(Base):
     )
 
     # Company size, as the company says it (services/size_profile.py). Null = not
-    # yet determined. Nothing in authorisation, thresholds or money reads these.
+    # yet determined. The profile never decides an authorisation; it sets defaults and is the fallback
+    # basis of the materiality threshold below, which the owner acknowledges before it applies.
     size_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)
     monthly_outflow_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
     headcount_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -83,10 +85,27 @@ class Organization(Base):
     size_profile_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     size_profile_set_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
+    # The amount above which a decision needs a senior person (services/materiality.py): what an owner or
+    # admin acknowledged or set, with its basis and who/when. Null = nobody did yet, and the fixed amount
+    # the authority policy always carried still applies. Never filled in silently.
+    materiality_applied: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # The owner's standing choice that the Monday briefing also goes to the company's accountant (smmm).
+    # It only names a recipient; sending is the outbox's release flow (services/briefing_delivery.py).
+    briefing_to_smmm: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
     # Tax identity. Decides an invoice's direction (we sold / we bought) and
     # names the e-Defter's owner; see app/services/org_identity.py.
     vkn: Mapped[str | None] = mapped_column(String(11), nullable=True)
     legal_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # SEC-5 IP allow-list (columns from migration 010; the model lacked them, so a PUT stored nothing).
+    # Comma-separated CIDRs. NOTHING enforces it at login or on requests yet: it is a stored setting.
+    ip_whitelist: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Comma-separated allowed CIDRs")
+    ip_whitelist_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
@@ -132,8 +151,13 @@ class OrgInvite(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="analyst", nullable=False)
 
-    # Secure token sent by email
-    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    @validates("email")
+    def _normalise_email(self, _key: str, value: str) -> str:
+        return normalize_email(value)
+
+    # SHA-256 digest of the token e-mailed to the invitee (`app.services.secret_tokens`); the token
+    # itself is never stored. The column keeps its original name, `token` (migration 071).
+    token_hash: Mapped[str] = mapped_column("token", String(64), unique=True, nullable=False, index=True)
 
     accepted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

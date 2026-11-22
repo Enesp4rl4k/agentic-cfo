@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
 import { BasisTag, formatDay, StaleBalanceNotice } from "@/components/radar/basis";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { clampWeek, payables, runScenario, shiftDate, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
+import { useCan } from "@/hooks/useCan";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
@@ -25,7 +27,7 @@ import { cn } from "@/lib/utils";
 export default function TakvimPage() {
   const { t } = useI18n();
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const copy = t.takvim;
   const weekCopy = t.cashRadar;
   const fmt = useCurrencyFormat();
@@ -39,18 +41,28 @@ export default function TakvimPage() {
 
   const { data: pending } = useQuery({ queryKey: ["plan-changes", "pending"], queryFn: () => listPlanChanges("pending") });
   const canDecide = Boolean(pending?.canDecide);
+  const selfDecision = t.scale.selfDecision;
+  const selfAck = pending?.selfDecisionAck ?? "";
+  // Moving a payment is the company's commercial decision: the accountant may try dates here (a scenario)
+  // and advise, but proposing is for owner, admin, CFO and analyst (docs/payment-plan-approval.md).
+  const propose = useCan("propose");
 
   // A payment moved in the scenario becomes a proposal. Someone who may decide holds the authority
-  // themselves, so their proposal is approved at once; everyone else's waits in the approvals.
+  // themselves, so their proposal is approved at once, with one honest step: the button says that the
+  // proposer and the approver are the same person, and that is recorded (docs/payment-plan-approval.md).
+  // When the company has another owner or admin and the amount is above its threshold, the server says
+  // the proposal must wait for them: it is left pending and the person is told so. Everyone else's waits.
   const send = useMutation({
     mutationFn: async ({ id, toDate }: { id: string; toDate: string }) => {
       const change = await proposePlanChange(id, toDate);
-      if (canDecide) await decidePlanChange(change.id, "approve");
-      return change;
+      if (!canDecide || change.self_decision === "blocked") return { change, applied: false };
+      if (change.self_decision === "acknowledge") await decidePlanChange(change.id, "approve", undefined, selfAck);
+      else await decidePlanChange(change.id, "approve");
+      return { change, applied: true };
     },
-    onSuccess: (_change, { id }) => {
+    onSuccess: ({ applied }, { id }) => {
       setSendError(null);
-      setSentMessage(canDecide ? copy.applied : copy.sent);
+      setSentMessage(applied ? copy.applied : canDecide ? selfDecision.waitingOther : copy.sent);
       setMoves((current) => {
         const next = { ...current };
         delete next[id];
@@ -230,20 +242,23 @@ export default function TakvimPage() {
                           <span className="font-medium">{name}</span>{" "}
                           <span className="tc-mono text-muted-foreground">{fmt(i.amountCents / 100)} · {copy.toDate.replace("{date}", toDate)}</span>
                         </span>
-                        <Button
+                        <CanButton
+                          action="propose"
                           className="min-h-[44px]"
                           disabled={send.isPending}
                           onClick={() => send.mutate({ id: i.id, toDate })}
                           aria-label={`${name}: ${canDecide ? copy.apply : copy.send}`}
                         >
                           {canDecide ? copy.apply : copy.send}
-                        </Button>
+                        </CanButton>
                       </li>
                     );
                   })}
               </ul>
             </section>
           )}
+          {!propose.allowed && movedCount > 0 && <p className="m-0 text-sm text-muted-foreground">{propose.reason}</p>}
+          {canDecide && movedCount > 0 && <p className="m-0 text-sm text-muted-foreground">{selfDecision.note}</p>}
           {sentMessage && <p role="status" className="m-0 text-sm text-success">{sentMessage}</p>}
           {sendError && <p role="alert" className="m-0 text-sm text-destructive">{sendError}</p>}
 

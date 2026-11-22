@@ -169,7 +169,29 @@ export type MessageTree = {
     basisKnown: string;
     basisEstimated: string;
     basisAssumed: string;
+    awaitingTitle: string;
+    awaitingRows: string;
+    awaitingDocuments: string;
+    awaitingOpen: string;
     heldReview: string;
+    runwayTitle: string;
+    runwayMonths: string;
+    runwayBeyond: string;
+    runwayUnknown: string;
+    runwayCritical: string;
+    runwayWarning: string;
+    runwayAssumed: string;
+    runwayAssumedHint: string;
+    runwayDetails: string;
+    accountsTitle: string;
+    accountBehind: string;
+    otherCurrencyBalancesTitle: string;
+    otherCurrencyBalancesNote: string;
+    unprovenTitle: string;
+    unprovenNote: string;
+    openingAssumed: string;
+    accountQuestionLink: string;
+    identityUncertainNote: string;
   };
   takvim: {
     title: string;
@@ -234,6 +256,13 @@ export type MessageTree = {
     planReason: string;
     planWaiting: string;
     actionNotConnected: string;
+    accountQuestionsTitle: string;
+    accountQuestionsBody: string;
+    accountQuestionAsk: string;
+    accountQuestionSame: string;
+    accountQuestionDifferent: string;
+    accountQuestionOwnerOnly: string;
+    accountQuestionFailed: string;
   };
   ooda: {
     label: string;
@@ -302,6 +331,7 @@ export type MessageTree = {
       alerts: string;
       workspace: string;
       pilot: string;
+      kararlar: string;
     };
   };
   bulten: {
@@ -534,6 +564,7 @@ export type MessageTree = {
       accountantExists: string;
       noRole: string;
     };
+    needProposeAccountant: string;
   };
   smmmCalendar: {
     title: string;
@@ -1444,6 +1475,7 @@ export type MessageTree = {
       optimisticUpside: string;
       pessimisticDownside: string;
       vsBase: string;
+      runwayUnknown: string;
     };
     table: {
       heading: string;
@@ -1455,6 +1487,7 @@ export type MessageTree = {
       monthsShort: string;
       stable: string;
       ariaLabel: string;
+      unknown: string;
     };
     breakdown: {
       heading: string;
@@ -1467,6 +1500,9 @@ export type MessageTree = {
       heading: string;
       body: string;
       cta: string;
+    };
+    runway: {
+      heading: string;
     };
   };
   integrations: {
@@ -2196,6 +2232,60 @@ export type MessageTree = {
     saved: string;
     error: string;
   };
+  scale: {
+    materiality: {
+      title: string;
+      intro: string;
+      current: string;
+      fixedNote: string;
+      basis: string;
+      proposalTitle: string;
+      proposalHint: string;
+      acknowledge: string;
+      own: string;
+      ownLabel: string;
+      reasonLabel: string;
+      ownerOnly: string;
+      bounds: string;
+      historyTitle: string;
+      historyLine: string;
+      historyReason: string;
+      save: string;
+      cancel: string;
+      saved: string;
+      stale: string;
+      error: string;
+      safety: string;
+    };
+    recipients: {
+      title: string;
+      toSmmm: string;
+      hint: string;
+      suggested: string;
+      noSmmm: string;
+      saved: string;
+      error: string;
+    };
+    workload: {
+      title: string;
+      subtitle: string;
+      empty: string;
+      onay: string;
+      close: string;
+      briefing: string;
+      switch: string;
+      nothing: string;
+      total: string;
+      failed: string;
+    };
+    selfDecision: {
+      confirmApprove: string;
+      note: string;
+      blockedTitle: string;
+      waitingOther: string;
+      thresholdMoved: string;
+    };
+  };
   baslangic: {
     title: string;
     subtitle: string;
@@ -2409,6 +2499,7 @@ export type MessageTree = {
       cfo: string;
       analyst: string;
       viewer: string;
+      smmm: string;
     };
     errors: {
       noWorkspace: string;
@@ -2496,6 +2587,9 @@ export type MessageTree = {
       placeholder: string;
       button: string;
       hint: string;
+      roleLabel: string;
+      sent: string;
+      notSent: string;
     };
     pendingInvites: {
       title: string;
@@ -2503,6 +2597,7 @@ export type MessageTree = {
       copyAria: string;
       cancelAria: string;
     };
+    roleDescriptions: Record<"owner" | "admin" | "cfo" | "smmm" | "analyst" | "viewer", string>;
   };
   tetikler: {
     title: string;
@@ -2642,6 +2737,8 @@ export type MessageTree = {
     leftOut: string;
     perCurrency: string;
     unknown: string;
+    dominantCaption: string;
+    journalLeftOut: string;
   };
   heldRows: {
     title: string;
@@ -2674,7 +2771,546 @@ export type MessageTree = {
     currencyConfirm: string;
     currencyConfirmed: string;
     reasons: Record<string, string>;
+    fileTitle: string;
+    fileBodyNoSignal: string;
+    fileBodyBalance: string;
+    fileBodyConvention: string;
+    fileBodyInconclusive: string;
+    fileConventionQuestion: string;
+    fileConventionMapping: string;
+    fileRememberDenied: string;
+    fileBodySign: string;
+    fileNoAccount: string;
+    fileRows: string;
+    fileColumns: string;
+    fileSamples: string;
+    fileRemember: string;
+    fileRoles: Record<string, string>;
+    fileOptions: Record<string, string>;
+    mappingsTitle: string;
+    mappingsBody: string;
+    mappingRevoke: string;
+    assumedCurrency: string;
+    ingestRead: string;
+    ingestTransfers: string;
+    ingestSkippedTitle: string;
+    ingestLost: string;
+    ingestFallback: string;
+    ingestBalanceVerified: string;
+    ingestBalancePartial: string;
+    ingestBalanceUnverified: string;
+    fileSignQuestion: string;
+    fileSignReading: string;
+    fileBodySignUniform: string;
+    ingestOutsideChain: string;
+    filePreviousAnswer: string;
+    fileConfirm: string;
+    fileStanding: string;
+    mappingStanding: string;
+    mappingFlagged: string;
+    fileSuggested: string;
   };
+  acceptInvite: {
+    title: string;
+    loading: string;
+    loadFailed: string;
+    invitedTo: string;
+    forAddress: string;
+    states: {
+      unknownTitle: string;
+      unknownBody: string;
+      expiredTitle: string;
+      expiredBody: string;
+      usedTitle: string;
+      usedBody: string;
+      signIn: string;
+    };
+    wrongAccount: { title: string; body: string; signOut: string };
+    existing: { lead: string };
+    created: { lead: string; fullName: string };
+    signedIn: { lead: string };
+    password: string;
+    passwordHint: string;
+    join: string;
+    joinCreate: string;
+    joining: string;
+    wrongPassword: string;
+    failed: string;
+    switching: string;
+  },
+  heldAnalysis: {
+    title: string;
+    hint: string;
+    approve: string;
+    reject: string;
+    rejectReason: string;
+    viewResults: string;
+    confirmTitle: string;
+    confirmBody: string;
+    confirmRejectTitle: string;
+    confirmRejectBody: string;
+    confirmApprove: string;
+    confirmReject: string;
+    cancel: string;
+    approved: string;
+    rejected: string;
+    actionFailed: string;
+    balanceProven: string;
+    confirmBalanceNote: string;
+    confirmBalanceNoteRows: string;
+    alreadyDecided: string;
+    reasons: {
+      rowsAll: string;
+      rows: string;
+      confidence: string;
+      weakest: string;
+      weakestNoPct: string;
+      step: string;
+      unspecified: string;
+    };
+    queues: {
+      title: string;
+      none: string;
+      analyses: string;
+      rows: string;
+      duplicates: string;
+      settlements: string;
+      plans: string;
+      agents: string;
+      rowsTitle: string;
+      rowsHint: string;
+      openRows: string;
+      badge: string;
+    };
+    setup: {
+      waitingTitle: string;
+      waitingBody: string;
+      waitingUnknownTitle: string;
+      waitingUnknownBody: string;
+      waitingCta: string;
+      running: string;
+      analysesRunning: string;
+      analysesHeld: string;
+      analysesDone: string;
+    };
+    pnl: {
+      runningTitle: string;
+      runningBody: string;
+      heldTitle: string;
+      heldBody: string;
+      heldCta: string;
+      failedTitle: string;
+      noReason: string;
+    };
+  };
+  transactionsPage: {
+    title: string;
+    count: string;
+    countFiltered: string;
+    editHint: string;
+    totalIn: string;
+    totalOut: string;
+    net: string;
+    exportCsv: string;
+    exportAria: string;
+    searchPlaceholder: string;
+    searchAria: string;
+    filterTypeAria: string;
+    allTypes: string;
+    income: string;
+    expense: string;
+    filterCategoryAria: string;
+    allCategories: string;
+    clear: string;
+    clearAria: string;
+    listAria: string;
+    colDate: string;
+    colDescription: string;
+    colVendor: string;
+    colCategory: string;
+    colAmount: string;
+    sortBy: string;
+    estimated: string;
+    estimatedTitle: string;
+    kdvTitle: string;
+    stopajTitle: string;
+    assumed: string;
+    assumedTitle: string;
+    noMatch: string;
+    showing: string;
+    prev: string;
+    next: string;
+    page: string;
+    emptyTitle: string;
+    emptyBody: string;
+    emptyCta: string;
+    applyToVendor: string;
+  };
+  decisionLog: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    failed: string;
+    forbidden: string;
+    loading: string;
+    filterKind: string;
+    filterWho: string;
+    filterFrom: string;
+    filterTo: string;
+    allKinds: string;
+    everyone: string;
+    clear: string;
+    colWhen: string;
+    colWho: string;
+    colKind: string;
+    colOutcome: string;
+    viaHuman: string;
+    viaRule: string;
+    viaSystem: string;
+    ruleNote: string;
+    unknownPerson: string;
+    historyTitle: string;
+    historyEmpty: string;
+    historyFailed: string;
+    historyOpen: string;
+    historyShowing: string;
+    showAll: string;
+    detail: string;
+    before: string;
+    after: string;
+    evidence: string;
+    reason: string;
+    replaces: string;
+    replacedBy: string;
+    prev: string;
+    next: string;
+    page: string;
+    kinds: Record<string, string>;
+    outcomes: Record<string, string>;
+  };
+  codes: {
+    unknown: string;
+    category: {
+      revenue: string;
+      cogs: string;
+      salary: string;
+      rent: string;
+      utilities: string;
+      marketing: string;
+      technology: string;
+      tax: string;
+      loan: string;
+      other_expense: string;
+      other_income: string;
+      tax_payment: string;
+      transfer: string;
+    };
+    role: {
+      owner: string;
+      admin: string;
+      cfo: string;
+      analyst: string;
+      viewer: string;
+      smmm: string;
+    };
+    jobStatus: {
+      pending: string;
+      ingesting: string;
+      analyzing: string;
+      awaiting_review: string;
+      completed: string;
+      failed: string;
+      running: string;
+      queued: string;
+    };
+    health: {
+      excellent: string;
+      good: string;
+      warning: string;
+      critical: string;
+    };
+    severity: {
+      critical: string;
+      high: string;
+      medium: string;
+      low: string;
+      info: string;
+    };
+    integrationStatus: {
+      pending: string;
+      active: string;
+      error: string;
+      disconnected: string;
+      expired: string;
+      firma_secimi: string;
+    };
+    syncStatus: {
+      success: string;
+      error: string;
+      partial: string;
+      running: string;
+    };
+    conflictStatus: {
+      open: string;
+      resolved: string;
+      dismissed: string;
+      escalated: string;
+    };
+    resolution: {
+      pending: string;
+      open: string;
+      approved: string;
+      rejected: string;
+      resolved: string;
+      dismissed: string;
+      acknowledged: string;
+    };
+  };
+  categoryEditor: {
+    listLabel: string;
+    triggerLabel: string;
+    updated: string;
+    updateFailed: string;
+    savedAsRule: string;
+  };
+  scanToast: {
+    complete: string;
+    critical: string;
+    failed: string;
+    dismiss: string;
+  };
+  ccPage: {
+    companyHealth: string;
+    nineAgentAvg: string;
+    semanticBrief: string;
+    owner: string;
+    managementLayer: string;
+    checking: string;
+    escalationActive: string;
+    slaBreachDetected: string;
+    recentFailuresReview: string;
+    openConflicts: string;
+    generateDeck: string;
+    completedJobs: string;
+    failedJobs: string;
+    awaitingReview: string;
+    queueDepth: string;
+    notAvailable: string;
+    slaP95: string;
+    completion: string;
+    firstResult: string;
+    slaBreaches: string;
+    noSlaBreaches: string;
+    breachLine: string;
+    recentFailures: string;
+    noRecentFailures: string;
+    unknownError: string;
+    suggestedActions: string;
+    autoChain: string;
+    cfoAutoChain: string;
+    agentsCompletedAria: string;
+    loadingAria: string;
+    analysisFailed: string;
+    loadFailedBody: string;
+    retry: string;
+    heading: string;
+    agentsCount: string;
+    liveSync: string;
+    refreshAria: string;
+    refreshing: string;
+    refresh: string;
+    healthApiDown: string;
+    agentsNeedAttention: string;
+    highRisks: string;
+    agentHealthStatus: string;
+    hideDetails: string;
+    showAgentHealth: string;
+    agentsTracked: string;
+    crossDomainRisks: string;
+    quickWins: string;
+    lastUpdated: string;
+    footerHint: string;
+    ceoSynthesisNode: string;
+  };
+  codesAgent: {
+    CFO: string;
+    CEO: string;
+    CTO: string;
+    CMO: string;
+    COO: string;
+    CHRO: string;
+    Compliance: string;
+    Risk: string;
+    "Internal Audit": string;
+    Audit: string;
+  };
+  shell: {
+    userMenu: string;
+    workspaceSettings: string;
+    billing: string;
+    signOut: string;
+    criticalAnomalies: string;
+    homeAria: string;
+    mainNav: string;
+    recentAnalyses: string;
+    upgradePlan: string;
+    upgradeHint: string;
+    breadcrumb: string;
+    sidebarNav: string;
+    mobileNav: string;
+    closeMenu: string;
+    openMenu: string;
+  };
+  billingSuccess: {
+    title: string;
+    bodyPlan: string;
+    body: string;
+    back: string;
+    open: string;
+    popular: string;
+  };
+  conflicts: {
+    title: string;
+    openCount: string;
+    run: string;
+    loading: string;
+    unavailable: string;
+    none: string;
+    versus: string;
+    consensus: string;
+    resolve: string;
+    reconcile: string;
+    topics: {
+      cash_risk: string;
+      revenue_outlook: string;
+    };
+  };
+  boardDeck: {
+    title: string;
+    slide: string;
+    previous: string;
+    next: string;
+    navigation: string;
+    goTo: string;
+  };
+  pipelineGraph: {
+    close: string;
+    group: string;
+    status: string;
+    confidence: string;
+    duration: string;
+    graphAria: string;
+    statuses: {
+      pending: string;
+      running: string;
+      success: string;
+      error: string;
+      completed: string;
+      failed: string;
+    };
+  };
+  evidenceUi: {
+    noEvidence: string;
+    tx: string;
+    semantic: string;
+    disclaimer: string;
+    metricsTitle: string;
+    period: string;
+    decisionBrief: string;
+    baselinePrefix: string;
+    baselineTitle: string;
+    baselineSources: {
+      semantic: string;
+      context: string;
+      job: string;
+      none: string;
+    };
+  };
+  systemStatus: {
+    online: string;
+    offline: string;
+    checking: string;
+    active: string;
+    title: string;
+    apiDocs: string;
+    apiDocsAria: string;
+    backend: string;
+    activeAnalyses: string;
+    completedToday: string;
+    refreshNote: string;
+  };
+  sweepMisc: {
+    trendingUp: string;
+    trendingDown: string;
+    stable: string;
+    busFactor: string;
+    median: string;
+    aiChat: string;
+    aiPipeline: string;
+    companyPlaceholder: string;
+  };
+  passwordReset: {
+    forgot: {
+      title: string;
+      lead: string;
+      email: string;
+      submit: string;
+      submitting: string;
+      sentTitle: string;
+      sentBody: string;
+      tooMany: string;
+      failed: string;
+      back: string;
+    };
+    reset: {
+      title: string;
+      lead: string;
+      newPassword: string;
+      passwordHint: string;
+      confirm: string;
+      mismatch: string;
+      submit: string;
+      submitting: string;
+      successTitle: string;
+      successBody: string;
+      signIn: string;
+      invalidTitle: string;
+      invalidBody: string;
+      expiredTitle: string;
+      expiredBody: string;
+      usedTitle: string;
+      usedBody: string;
+      requestNew: string;
+      tooMany: string;
+      failed: string;
+    };
+  };
+  emailVerification: {
+    title: string;
+    verifying: string;
+    successTitle: string;
+    successBody: string;
+    signIn: string;
+    invalidTitle: string;
+    invalidBody: string;
+    expiredTitle: string;
+    expiredBody: string;
+    usedTitle: string;
+    usedBody: string;
+    failedTitle: string;
+    failed: string;
+    resendLead: string;
+    email: string;
+    resend: string;
+    sending: string;
+    sentTitle: string;
+    sentBody: string;
+    tooMany: string;
+    registered: { title: string; body: string; resend: string };
+    unverified: { body: string; resend: string };
+  };
+  /** The "not found" screen, also what a switched-off legacy dashboard answers with. */
+  notFound: { title: string; body: string; home: string };
 };
 
 export const en: MessageTree = {
@@ -2846,7 +3482,29 @@ export const en: MessageTree = {
     basisKnown: "documented",
     basisEstimated: "estimated",
     basisAssumed: "assumed",
+    awaitingTitle: "Waiting for your decision",
+    awaitingRows: "Rows to review",
+    awaitingDocuments: "Possible duplicate documents",
+    awaitingOpen: "Decide",
     heldReview: "Review the documents and decide",
+    runwayTitle: "Cash runway",
+    runwayMonths: "{n} months",
+    runwayBeyond: "longer than {n} months",
+    runwayUnknown: "Unknown",
+    runwayCritical: "Critical",
+    runwayWarning: "Warning",
+    runwayAssumed: "Assumption",
+    runwayAssumedHint: "Part of this figure rests on an assumption, stated below. It is not a measurement.",
+    runwayDetails: "How it was worked out",
+    accountsTitle: "Accounts in the starting cash",
+    accountBehind: "{days} days older than the newest statement",
+    otherCurrencyBalancesTitle: "Bank balances in other currencies",
+    otherCurrencyBalancesNote: "Shown on their own, not converted and not added to the cash above.",
+    unprovenTitle: "Statements left out of the balance",
+    unprovenNote: "Their running balances could not be proven, so they are not counted. Answer the waiting rows or upload a statement that reconciles.",
+    openingAssumed: "The balance rests on weak evidence and is taken as an assumption:",
+    accountQuestionLink: "Answer: are these the same account?",
+    identityUncertainNote: "Statements that may be one account are not added together; only the newest balance is counted.",
   },
   takvim: {
     title: "Payment calendar",
@@ -2911,6 +3569,13 @@ export const en: MessageTree = {
     planReason: "Reason (optional)",
     planWaiting: "Awaiting a decision: an owner or an admin can approve.",
     actionNotConnected: "This action is not connected yet — nothing was done.",
+    accountQuestionsTitle: "{n} bank statement question: are they one account?",
+    accountQuestionsBody: "Nothing says whether these statements belong to the same bank account, so they are never added together. Until you answer, only the newest balance is used and the runway is shown as an assumption.",
+    accountQuestionAsk: "Do these statements belong to the same bank account?",
+    accountQuestionSame: "Same account",
+    accountQuestionDifferent: "Different accounts",
+    accountQuestionOwnerOnly: "The owner or an admin answers this question.",
+    accountQuestionFailed: "The answer could not be saved.",
   },
   ooda: {
     label: "Weekly loop",
@@ -2984,6 +3649,7 @@ export const en: MessageTree = {
       alerts: "Alerts",
       workspace: "Settings",
       pilot: "Pilot Program",
+      kararlar: "Decision log",
     },
   },
   bulten: {
@@ -3048,8 +3714,8 @@ export const en: MessageTree = {
     reject: "Reject",
     ownerOnly: "That did not go through. Only the company owner can make this decision.",
     status: "Awaiting approval",
-    goToQueue: "Go to the approval queue",
-    heldNotice: "The result is ready but not yet in the company view: it awaits the owner's approval in Command Center.",
+    goToQueue: "Go to pending approvals",
+    heldNotice: "The result is ready but not yet in the company view: it awaits the owner's approval on the Pending approvals page.",
   },
   ruleFeedback: {
     badgeRule: "Your rule",
@@ -3222,6 +3888,7 @@ export const en: MessageTree = {
       accountantExists: "Your accountant closes the month",
       noRole: "Closing the month is the accountant's (or, with no accountant, the owner's, admin's or CFO's)",
     },
+    needProposeAccountant: "Changing a payment date is the company's commercial decision: the accountant advises, the company proposes and the owner decides.",
   },
   smmmCalendar: {
     title: "Upcoming deadlines",
@@ -4209,6 +4876,7 @@ export const en: MessageTree = {
       optimisticUpside: "Optimistic upside",
       pessimisticDownside: "Pessimistic downside",
       vsBase: "vs base case",
+      runwayUnknown: "Runway not computed",
     },
     table: {
       heading: "Scenario comparison",
@@ -4220,6 +4888,7 @@ export const en: MessageTree = {
       monthsShort: "{count} mo",
       stable: "Stable",
       ariaLabel: "Forecast scenarios",
+      unknown: "Not computed",
     },
     breakdown: {
       heading: "{label} — monthly breakdown",
@@ -4232,6 +4901,9 @@ export const en: MessageTree = {
       heading: "No forecast data",
       body: "Upload a financial document and run an analysis to generate 12-month forecasts.",
       cta: "Upload document",
+    },
+    runway: {
+      heading: "Cash runway",
     },
   },
   integrations: {
@@ -5024,6 +5696,62 @@ export const en: MessageTree = {
     saved: "Your answers were saved.",
     error: "Could not save. Please try again.",
   },
+  scale: {
+    materiality: {
+      title: "Approval threshold",
+      intro: "Decisions above this amount go to the company's owner or admin; the ones below do not need them.",
+      current: "In force now: {amount}",
+      fixedNote: "A fixed amount. It has not yet been calculated for your company's size and confirmed.",
+      basis: "Basis: {basis}",
+      proposalTitle: "Our proposal: {amount}",
+      proposalHint: "The current amount stays in force until you confirm; nothing changes by itself.",
+      acknowledge: "Confirm and apply the proposal",
+      own: "Enter my own amount",
+      ownLabel: "Amount",
+      reasonLabel: "Why (required)",
+      ownerOnly: "Only the company's owner can change the approval threshold. You can view it here.",
+      bounds: "Must be between {min} and {max}.",
+      historyTitle: "Threshold history",
+      historyLine: "{date} · {who}: {from} → {to}",
+      historyReason: "Why: {reason}",
+      save: "Save",
+      cancel: "Cancel",
+      saved: "Threshold saved; it is written to the decision record.",
+      stale: "The proposal changed while you were looking. Review the new one and confirm again.",
+      error: "Could not be saved. Please try again.",
+      safety:
+        "This is only an amount threshold. Rows that cannot be read, currency, direction, account identity and reconciliation questions never look at the amount; they are always asked.",
+    },
+    recipients: {
+      title: "Monday briefing recipients",
+      toSmmm: "Also send the briefing to my accountant",
+      hint: "The e-mail still goes out when the accountant releases it; this only adds the recipient.",
+      suggested: "A suggestion for your company's size: let the briefing go to the accountant too.",
+      noSmmm: "The company has no accountant. To send the briefing to one, first invite an accountant (smmm) under Members.",
+      saved: "Your preference was saved.",
+      error: "Could not be saved. Please try again.",
+    },
+    workload: {
+      title: "What waits in your companies",
+      subtitle: "Only the companies where you are the accountant. Switch into a company to see its data.",
+      empty: "Nothing is waiting for you in any company right now.",
+      onay: "{n} entries wait for your approval",
+      close: "{month} is waiting to be closed",
+      briefing: "{n} briefing e-mails wait for your release",
+      switch: "Switch to company",
+      nothing: "Nothing waiting",
+      total: "{n} items waiting in total",
+      failed: "The company list could not be read.",
+    },
+    selfDecision: {
+      confirmApprove: "Proposer and approver are the same person: I approve",
+      note: "That the proposer and the approver are the same person is written to the decision record.",
+      blockedTitle: "Another owner or admin of the company must approve this proposal",
+      thresholdMoved: "The proposer changed the approval threshold themselves recently.",
+      waitingOther:
+        "The amount is above the threshold: the proposal went to the company's other owner or admin for approval. The route keeps the old date until then.",
+    },
+  },
   baslangic: {
     title: "Getting started",
     subtitle:
@@ -5061,7 +5789,7 @@ export const en: MessageTree = {
         loading: "Reading the balance…",
         loadError: "Could not read the radar.",
         unknownTitle: "No proven bank balance yet",
-        unknownBody: "The statement has no balance column, or its running balances do not chain. Upload a statement that does; until then the radar shows movements but no cash gap.",
+        unknownBody: "None of the completed analyses holds a bank statement whose running balances chain. Upload a statement with a balance column and the radar starts from its closing balance; until then it shows movements but no cash gap.",
         known: "{amount} as of {date}",
       },
       auto: {
@@ -5253,6 +5981,7 @@ export const en: MessageTree = {
       cfo: "CFO",
       analyst: "Analyst",
       viewer: "Viewer",
+      smmm: "Accountant",
     },
     errors: {
       noWorkspace: "You are not a member of a workspace yet.",
@@ -5339,13 +6068,24 @@ export const en: MessageTree = {
       title: "Invite member",
       placeholder: "user@company.com",
       button: "Send invite",
-      hint: "The invite link is automatically copied to your clipboard.",
+      hint: "The invitation is sent by e-mail and is valid for 7 days. The person opens the link to create their account or sign in.",
+      roleLabel: "Role",
+      sent: "The invitation to {email} is queued and goes out in a moment.",
+      notSent: "The invitation was saved but the e-mail could not be sent; check the e-mail settings and send it again.",
     },
     pendingInvites: {
       title: "Pending invites ({count})",
       expiresAt: "{role} · until {date}",
       copyAria: "Copy link",
       cancelAria: "Cancel invite",
+    },
+    roleDescriptions: {
+      owner: "Manages everything: members, the authority matrix, payment-plan approvals and deleting the company.",
+      admin: "Manages members and settings; approves payment-plan changes and actions. Cannot appoint an owner or an admin.",
+      cfo: "Edits data and the ledger, runs analyses, proposes payment dates; does not approve or manage members.",
+      smmm: "The company's accountant: approves or corrects entries, closes the month, releases the briefing. Advises on payment dates, does not propose them.",
+      analyst: "Uploads data, runs analyses, proposes payment dates; does not change the ledger.",
+      viewer: "Only looks; changes nothing.",
     },
   },
   tetikler: {
@@ -5586,6 +6326,8 @@ export const en: MessageTree = {
     leftOut: "{n} foreign-currency transactions are not included ({currencies}).",
     perCurrency: "Totals by currency",
     unknown: "currency unknown",
+    dominantCaption: "The figures below are in {currency} only; other currencies are not included.",
+    journalLeftOut: "{n} foreign-currency entries are not in this export ({currencies}).",
   },
   heldRows: {
     title: "Rows waiting for your review",
@@ -5621,10 +6363,651 @@ export const en: MessageTree = {
       confidence_unknown: "confidence unknown",
       confidence_low: "low confidence",
       currency_unknown: "currency unknown",
+      currency_unreadable: "currency stated but unreadable",
       direction_unknown: "direction unclear",
       amount_unreadable: "amount unreadable",
       date_unreadable: "date unreadable",
       document_held_together: "another row of the same document is waiting",
+      direction_file_unknown: "direction unclear",
+      summary_suspect: "may be a summary line",
+      balance_mismatch: "does not reconcile with the balance",
+      line_unreadable: "line could not be read",
+      amount_uncertain: "amount uncertain",
+      amount_zero: "amount is zero",
+      malformed_row: "columns may be misaligned",
+      balance_outside_chain: "row outside the balance chain",
     },
+    fileTitle: "Which way do the amounts in this statement go?",
+    fileBodyNoSignal: "This file has no column or sign that says which way an amount moved; the system cannot tell money in from money out and does not guess. You can correct the rows one by one, or upload a file with a direction or balance column. If the file really holds only one kind, say so below.",
+    fileBodyBalance: "The balance column shows the opposite of the direction read from the amount columns. Your one answer applies to every row of the file.",
+    fileBodyConvention: "Which party's books the debit/credit words follow differs from bank to bank, and this file has no balance column to check it against. Your one answer applies to every row of the file.",
+    fileBodyInconclusive: "The balance column confirms only part of the rows; the file could not be read with confidence.",
+    fileConventionQuestion: "In this statement, is \"{label}\" money going OUT of your account?",
+    fileConventionMapping: "Read as: {mapping}",
+    fileBodySign: "The amounts carry a minus or plus sign, but nothing in the file proves what the sign means: an expense list with a few reversals looks exactly like a statement that is mostly deposits. The system does not guess. Your one answer applies to every row of the file and, if you choose, to later files of this format.",
+    fileNoAccount: "This file does not say which bank account it is from; the answer applies to this file and cannot be remembered for the format.",
+    fileRememberDenied: "Remembering this answer for the format needs an owner, admin or the accountant.",
+    fileRows: "{count} rows waiting",
+    fileColumns: "Detected columns",
+    fileSamples: "Sample rows",
+    fileRemember: "Remember my answer for this statement format",
+    fileRoles: {
+      date: "date",
+      description: "description",
+      amount: "amount",
+      debit: "debit",
+      credit: "credit",
+      direction: "direction",
+      balance: "balance",
+    },
+    fileOptions: {
+      only_income: "This file holds only money in (income)",
+      only_expense: "This file holds only money out (expense)",
+      as_read: "Yes, as the columns say",
+      balance: "As the balance shows",
+      sign_correct: "The signs are right: minus = money out, plus = money in",
+      inverted: "No, the opposite",
+      mixed: "I will correct the rows one by one",
+      sign_inverted: "No, the opposite: plus = money out (expense), minus = money in or a reversal",
+    },
+    mappingsTitle: "Remembered statement directions",
+    mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",
+    mappingRevoke: "Forget",
+    assumedCurrency: "assumed",
+    ingestRead: "{read} rows read: {saved} saved, {held} waiting for your decision, {skipped} summary lines skipped",
+    ingestTransfers: "{count} transfer/closing postings skipped",
+    ingestSkippedTitle: "Skipped summary lines",
+    ingestLost: "{count} rows could not be accounted for; please review the file.",
+    ingestFallback: "This file could not be read in the expected format; another reader was used.",
+    ingestBalanceVerified: "Verified against the running balance.",
+    ingestBalancePartial: "{verified} rows verified against the running balance; {held} rows wait for your decision.",
+    ingestBalanceUnverified: "Not verified against the balance: the rows could not be checked with the running balance.",
+    fileSignQuestion: "In this file, are minus amounts money out and plus amounts money in?",
+    fileSignReading: "If minus is out: {inIncome} in, {inExpense} out. If it is the opposite: {outIncome} in, {outExpense} out.",
+    fileBodySignUniform: "Every amount in this file has the same sign, and there is no column or balance that says which way they went. The system does not guess.",
+    ingestOutsideChain: "{count} rows have no balance and sit outside the balance chain; they wait for your decision and the chain does not vouch for them.",
+    filePreviousAnswer: "In an earlier file with the same headers ({source}) you answered: \"{answer}\". Is that true for this file too? Nothing says it is the same source, so it was not applied.",
+    fileConfirm: "Yes, same as before",
+    fileStanding: "Files with these headers and no account named are always like this (a standing rule you can forget later)",
+    mappingStanding: "standing rule for files with no account named",
+    mappingFlagged: "A balance chain overrode this answer",
+    fileSuggested: "A single balance step supports this reading. It is pre-selected as a suggestion, not a proof: please confirm.",
+  },
+  acceptInvite: {
+    title: "Join the invitation",
+    loading: "Checking the invitation…",
+    loadFailed: "The invitation could not be read. Check your link and try again.",
+    invitedTo: "You are invited to {org} as {role}.",
+    forAddress: "This invitation is for {email}.",
+    states: {
+      unknownTitle: "This invitation was not found",
+      unknownBody: "The link is incomplete or wrong, or the invitation was cancelled. Ask the person who invited you for a new one.",
+      expiredTitle: "This invitation has expired",
+      expiredBody: "Invitations last 7 days. Ask the person who invited you for a new one.",
+      usedTitle: "This invitation was already used",
+      usedBody: "Someone already joined with this link. Sign in with your account and switch to the company.",
+      signIn: "Sign in",
+    },
+    wrongAccount: {
+      title: "This invitation is for another account",
+      body: "You are signed in as {current}; the invitation is for {email}. Sign out and continue with that address's account.",
+      signOut: "Sign out and continue",
+    },
+    existing: {
+      lead: "You already have an account at this address. Enter its password to join; your existing companies stay as they are.",
+    },
+    created: {
+      lead: "There is no account at this address yet. Enter your name and a password and we will create it and add you to the company.",
+      fullName: "Full name",
+    },
+    signedIn: {
+      lead: "You are signed in as {email}. Confirm to join; your existing companies stay as they are.",
+    },
+    password: "Password",
+    passwordHint: "At least 8 characters",
+    join: "Join the company",
+    joinCreate: "Create account and join",
+    joining: "Joining…",
+    wrongPassword: "Wrong password. You must use the account of the invited address.",
+    failed: "Joining could not be completed.",
+    switching: "Switching to your company…",
+  },
+  heldAnalysis: {
+    title: "{n} analyses await your approval",
+    hint: "These analyses finished but were not written to the company view: they wait for a person's decision. Until approved they are not used in the route, the radar or the reports.",
+    approve: "Approve and finish",
+    reject: "Reject",
+    rejectReason: "Reason (optional)",
+    viewResults: "Let me look at the results first",
+    confirmTitle: "Approve this analysis?",
+    confirmBody:
+      "Once approved the analysis counts as complete: its results go into the company view and the other analyses start using this data. Who approved it is recorded.",
+    confirmRejectTitle: "Reject this analysis?",
+    confirmRejectBody:
+      "A rejected analysis stays on record but does not enter the company view, the ledger or the radar. You can upload the file again. Who decided is recorded.",
+    confirmApprove: "Yes, approve",
+    confirmReject: "Yes, reject",
+    cancel: "Cancel",
+    approved: "Analysis approved.",
+    rejected: "Analysis rejected.",
+    actionFailed: "The decision was not saved. Make sure you may edit the books, and try again.",
+    balanceProven: "This statement's running balances chain: if you approve it, the cash radar starts from its closing balance.",
+    confirmBalanceNote: "The radar will start from the statement's closing balance. That is the bank's figure for the whole statement, so it also includes any rows still waiting for a decision.",
+    confirmBalanceNoteRows: "The radar will start from the statement's closing balance. That is the bank's figure for the whole statement, so it also includes the {count} rows still waiting for a decision.",
+    alreadyDecided: "This analysis was already decided, probably in another tab or by someone else. The list has been refreshed.",
+    reasons: {
+      rowsAll: "All {count} rows in the file wait for a person's decision. {summary}",
+      rows: "{count} rows wait for a person's decision (not in the totals).",
+      confidence: "Confidence {pct}%; results under {threshold}% are used only with approval.",
+      weakest: "Weakest link: {step} ({pct}%). {detail}",
+      weakestNoPct: "Weakest link: {step}. {detail}",
+      step: "The {step} step did not complete: {detail}",
+      unspecified: "No reason was recorded; you can look at the results and decide.",
+    },
+    queues: {
+      title: "{n} decisions wait for you",
+      none: "Nothing is waiting for your decision right now.",
+      analyses: "Analyses",
+      rows: "Rows to review",
+      duplicates: "Possible duplicates",
+      settlements: "Bank matches",
+      plans: "Payment date proposals",
+      agents: "Role results",
+      rowsTitle: "{n} rows wait for your review",
+      rowsHint: "Rows that could not be read or are uncertain stay out of the totals; you decide each one.",
+      openRows: "Open the rows",
+      badge: "{n} decisions waiting",
+    },
+    setup: {
+      waitingTitle: "Your statement is waiting for your approval",
+      waitingBody: "The statement's running balances chain and nothing is missing from the file. Once you approve it, the radar starts from its closing balance.",
+      waitingUnknownTitle: "An analysis is waiting for your approval",
+      waitingUnknownBody: "Once approved, if it holds a proven bank balance the radar starts from it.",
+      waitingCta: "Open approvals",
+      running: "The analysis is running; the opening balance appears here when it ends.",
+      analysesRunning: "{count} analyses running…",
+      analysesHeld: "{count} analyses await your approval",
+      analysesDone: "{count} analyses complete.",
+    },
+    pnl: {
+      runningTitle: "The analysis is running",
+      runningBody: "This page refreshes by itself when the results are ready.",
+      heldTitle: "This analysis is waiting for your approval",
+      heldBody: "The results are below, but they are not in the company view until you approve.",
+      heldCta: "Open approvals",
+      failedTitle: "This analysis did not complete",
+      noReason: "No reason was recorded.",
+    },
+  },  transactionsPage: {
+    title: "Transactions",
+    count: "{count} transactions",
+    countFiltered: "{shown} of {total} transactions",
+    editHint: "click a category badge to correct it",
+    totalIn: "Total In",
+    totalOut: "Total Out",
+    net: "Net",
+    exportCsv: "Export CSV",
+    exportAria: "Export transactions as CSV",
+    searchPlaceholder: "Search description or vendor…",
+    searchAria: "Search transactions",
+    filterTypeAria: "Filter by type",
+    allTypes: "All types",
+    income: "Income",
+    expense: "Expense",
+    filterCategoryAria: "Filter by category",
+    allCategories: "All categories",
+    clear: "Clear",
+    clearAria: "Clear filters",
+    listAria: "Transaction list",
+    colDate: "Date",
+    colDescription: "Description",
+    colVendor: "Vendor",
+    colCategory: "Category",
+    colAmount: "Amount",
+    sortBy: "Sort by {label}",
+    estimated: "estimated",
+    estimatedTitle: "The source had no readable date. This is a placeholder; the entry is held for review.",
+    kdvTitle: "KDV as the source document states it",
+    stopajTitle: "Income-tax withholding as the source document states it",
+    assumed: "{currency} assumed",
+    assumedTitle: "The document did not state a currency; the organisation's base currency was assumed.",
+    noMatch: "No transactions match the current filters.",
+    showing: "Showing {from}–{to} of {total}",
+    prev: "Previous page",
+    next: "Next page",
+    page: "Page {n}",
+    emptyTitle: "No transactions yet",
+    emptyBody: "Upload a financial document and run an analysis to see and edit transactions.",
+    emptyCta: "Upload document",
+    applyToVendor: "Apply to all from vendor",
+  },
+  decisionLog: {
+    title: "Decision log",
+    subtitle: "Every decision taken in the company: who, in which role, on what basis, when. The system proposes; the record shows a person's answer or a built-in rule's decision.",
+    empty: "No decision records match the current filters.",
+    failed: "The decision log could not be read.",
+    forbidden: "The company-wide decision log is open to owner, admin, cfo and accountant roles.",
+    loading: "Loading",
+    filterKind: "Decision type",
+    filterWho: "Who",
+    filterFrom: "From",
+    filterTo: "To",
+    allKinds: "All types",
+    everyone: "Everyone",
+    clear: "Clear filters",
+    colWhen: "When",
+    colWho: "Decided by",
+    colKind: "Type",
+    colOutcome: "Outcome",
+    viaHuman: "Person",
+    viaRule: "Built-in rule",
+    viaSystem: "System",
+    ruleNote: "Rule {id}; a person may take it back.",
+    unknownPerson: "Unknown member",
+    historyTitle: "Decision history",
+    historyEmpty: "No decision records for this item.",
+    historyFailed: "The decision history could not be read.",
+    historyOpen: "History of this item",
+    historyShowing: "Showing the history of one item",
+    showAll: "Show all",
+    detail: "Basis",
+    before: "Before",
+    after: "After",
+    evidence: "Linked records",
+    reason: "Reason",
+    replaces: "Took back or replaced this decision",
+    replacedBy: "Replaced later",
+    prev: "Previous page",
+    next: "Next page",
+    page: "Page {n}",
+    kinds: {
+      category_correction: "Category correction",
+      duplicate_resolution: "Possible duplicate",
+      settlement_match: "Bank match",
+      held_run_release: "Held run decision",
+      held_row_resolution: "Held row answer",
+      balance_reverification: "Balance re-verification",
+      account_identity: "Account identity",
+      base_currency_confirmation: "Company currency",
+      file_direction_answer: "File direction answer",
+      direction_mapping: "Direction mapping",
+      plan_change: "Payment plan change",
+      briefing_release: "Briefing release",
+      month_close: "Month close",
+      smmm_onay: "Accountant approval",
+      erasure: "Erasure",
+      automation_rule_change: "Automatic rule (related party, trigger, learned rule)",
+      counterparty_alias: "Counterparty alias",
+      owner_statement: "Owner statement",
+      size_profile: "Company size",
+      authority_policy_change: "Authority policy",
+      member_change: "Membership change",
+      action_decision: "Action decision",
+      packet_finalization: "Packet seal",
+      agent_conflict_resolution: "Agent conflict resolution",
+      company_view_adoption: "Company view adopted",
+      security_setting_change: "Security setting (IP allow-list)",
+      context_reset: "Company context reset",
+      compliance_filing: "Compliance filing (breach, SOX)",
+      column_mapping_acceptance: "Column mapping accepted",
+      org_identity_change: "Company identity (tax no., country, packs)",
+      materiality: "Materiality threshold",
+      briefing_recipients: "Briefing to the accountant",
+    },
+    outcomes: {
+      confirmed: "Confirmed",
+      rejected: "Rejected",
+      undone: "Undone",
+      approved: "Approved",
+      withdrawn: "Withdrawn",
+      proposed: "Proposed",
+      enabled: "Enabled",
+      disabled: "Disabled",
+      revoked: "Revoked",
+      created_disabled: "Created disabled",
+      changed: "Changed",
+      reset: "Reset",
+      accepted: "Accepted",
+      certified: "Certified",
+      breach_recorded: "Breach recorded",
+      marked_notified: "Marked as notified",
+      kept_separate: "Kept separate",
+      same_document: "Same document",
+      corrected: "Corrected",
+      sent: "Sent",
+    },
+  },
+  codes: {
+    unknown: "Unknown status: {code}",
+    category: {
+      revenue: "Revenue",
+      cogs: "Cost of goods sold",
+      salary: "Salary",
+      rent: "Rent",
+      utilities: "Utilities",
+      marketing: "Marketing",
+      technology: "Technology",
+      tax: "Tax",
+      loan: "Loan",
+      other_expense: "Other expense",
+      other_income: "Other income",
+      tax_payment: "Tax / social security payment",
+      transfer: "Transfer",
+    },
+    role: {
+      owner: "Owner",
+      admin: "Admin",
+      cfo: "CFO",
+      analyst: "Analyst",
+      viewer: "Viewer",
+      smmm: "SMMM (certified public accountant)",
+    },
+    jobStatus: {
+      pending: "Queued",
+      ingesting: "Reading document",
+      analyzing: "Analysing",
+      awaiting_review: "Awaiting approval",
+      completed: "Completed",
+      failed: "Failed",
+      running: "Running",
+      queued: "Queued",
+    },
+    health: {
+      excellent: "Excellent",
+      good: "Good",
+      warning: "Warning",
+      critical: "Critical",
+    },
+    severity: {
+      critical: "Critical",
+      high: "High",
+      medium: "Medium",
+      low: "Low",
+      info: "Info",
+    },
+    integrationStatus: {
+      pending: "Setup pending",
+      active: "Connected",
+      error: "Error",
+      disconnected: "Disconnected",
+      expired: "Expired",
+      firma_secimi: "Waiting for company selection",
+    },
+    syncStatus: {
+      success: "Succeeded",
+      error: "Error",
+      partial: "Partially completed",
+      running: "Running",
+    },
+    conflictStatus: {
+      open: "Open",
+      resolved: "Resolved",
+      dismissed: "Dismissed",
+      escalated: "Escalated",
+    },
+    resolution: {
+      pending: "Pending",
+      open: "Open",
+      approved: "Approved",
+      rejected: "Rejected",
+      resolved: "Resolved",
+      dismissed: "Dismissed",
+      acknowledged: "Acknowledged",
+    },
+  },
+  categoryEditor: {
+    listLabel: "Select category",
+    triggerLabel: "Category: {category}. Click to change.",
+    updated: "Category updated",
+    updateFailed: "Failed to update category",
+    savedAsRule: "Saved as rule for future transactions",
+  },
+  scanToast: {
+    complete: "Scan complete: {n} anomalies found",
+    critical: "{n} critical issues need attention",
+    failed: "Scan failed",
+    dismiss: "Dismiss notification",
+  },
+  ccPage: {
+    companyHealth: "Company health",
+    nineAgentAvg: "9-agent average",
+    semanticBrief: "Semantic decision brief",
+    owner: "Owner: {owner}",
+    managementLayer: "Management Layer v1.5",
+    checking: "checking",
+    escalationActive: "Escalation active",
+    slaBreachDetected: "{n} SLA breach detected",
+    recentFailuresReview: "Recent failures require operator review",
+    openConflicts: "{n} open agent conflicts",
+    generateDeck: "Generate board deck",
+    completedJobs: "Completed jobs",
+    failedJobs: "Failed jobs",
+    awaitingReview: "Awaiting review",
+    queueDepth: "Queue depth",
+    notAvailable: "n/a",
+    slaP95: "SLA (P95)",
+    completion: "completion",
+    firstResult: "first result",
+    slaBreaches: "SLA breaches",
+    noSlaBreaches: "No active SLA breaches.",
+    breachLine: "{status} for {age} min (threshold {threshold} min)",
+    recentFailures: "Recent failures",
+    noRecentFailures: "No failed jobs in recent window.",
+    unknownError: "Unknown error",
+    suggestedActions: "Suggested actions",
+    autoChain: "Auto-chain pipeline",
+    cfoAutoChain: "CFO auto-chain",
+    agentsCompletedAria: "{done} of {total} agents completed",
+    loadingAria: "Loading Command Center",
+    analysisFailed: "Analysis failed",
+    loadFailedBody: "Could not load Command Center data. Make sure the backend is running.",
+    retry: "Retry",
+    heading: "Executive Command Center",
+    agentsCount: "{n} agents",
+    liveSync: "live sync",
+    refreshAria: "Refresh Command Center",
+    refreshing: "Refreshing…",
+    refresh: "Refresh",
+    healthApiDown: "Agent health API unavailable — showing semantic brief from CompanyContext.",
+    agentsNeedAttention: "{n} agent(s) require immediate attention",
+    highRisks: "{n} high-severity cross-domain risk(s)",
+    agentHealthStatus: "Agent health status",
+    hideDetails: "Hide details",
+    showAgentHealth: "Show agent health",
+    agentsTracked: "{n} agents tracked · expand for per-agent health scores",
+    crossDomainRisks: "Cross-domain risks",
+    quickWins: "Quick wins — actionable now",
+    lastUpdated: "Last updated: {when} · Data synthesised from all executive agents",
+    footerHint: "This dashboard synthesises data from all executive agents. Refresh to run a new analysis.",
+    ceoSynthesisNode: "CEO synthesis",
+  },
+  codesAgent: {
+    CFO: "CFO",
+    CEO: "CEO",
+    CTO: "CTO",
+    CMO: "CMO",
+    COO: "COO",
+    CHRO: "HR (CHRO)",
+    Compliance: "Compliance",
+    Risk: "Risk",
+    "Internal Audit": "Internal audit",
+    Audit: "Audit",
+  },
+  shell: {
+    userMenu: "User menu",
+    workspaceSettings: "Workspace settings",
+    billing: "Billing",
+    signOut: "Sign out",
+    criticalAnomalies: "{n} critical anomalies",
+    homeAria: "{name} — home",
+    mainNav: "Main navigation",
+    recentAnalyses: "Recent analyses",
+    upgradePlan: "Upgrade plan",
+    upgradeHint: "All management views",
+    breadcrumb: "Breadcrumb",
+    sidebarNav: "Sidebar navigation",
+    mobileNav: "Mobile navigation",
+    closeMenu: "Close menu",
+    openMenu: "Open menu",
+  },
+  billingSuccess: {
+    title: "Subscription activated",
+    bodyPlan: "Your {plan} plan checkout completed. It may take a moment for Stripe to sync.",
+    body: "Your checkout completed. Welcome aboard.",
+    back: "Back to billing",
+    open: "Open Command Center",
+    popular: "Popular",
+  },
+  conflicts: {
+    title: "Agent conflicts",
+    openCount: "{n} open",
+    run: "Run {topic}",
+    loading: "Loading conflicts…",
+    unavailable: "Conflicts unavailable (table or org scope may be missing).",
+    none: "No agent conflicts detected. Consensus is stable.",
+    versus: "vs",
+    consensus: "consensus {score}",
+    resolve: "Resolve",
+    reconcile: "Reconcile {a} vs {b} on {topic}",
+    topics: {
+      cash_risk: "Cash risk",
+      revenue_outlook: "Revenue outlook",
+    },
+  },
+  boardDeck: {
+    title: "Board deck viewer",
+    slide: "Slide",
+    previous: "Previous slide",
+    next: "Next slide",
+    navigation: "Slide navigation",
+    goTo: "Go to slide {n}",
+  },
+  pipelineGraph: {
+    close: "Close",
+    group: "Group",
+    status: "Status",
+    confidence: "Confidence",
+    duration: "Duration",
+    graphAria: "Agent pipeline graph",
+    statuses: {
+      pending: "Pending",
+      running: "Running",
+      success: "Completed",
+      error: "Error",
+      completed: "Completed",
+      failed: "Failed",
+    },
+  },
+  evidenceUi: {
+    noEvidence: "no evidence · unverified",
+    tx: "tx ×{n}",
+    semantic: "semantic ×{n}",
+    disclaimer: "disclaimer applied",
+    metricsTitle: "Semantic metrics",
+    period: "Period · {period}",
+    decisionBrief: "Decision brief →",
+    baselinePrefix: "baseline · {label}",
+    baselineTitle: "Simulation baseline: {label}",
+    baselineSources: {
+      semantic: "Semantic snapshot",
+      context: "Agent context",
+      job: "Analysis job",
+      none: "No baseline",
+    },
+  },
+  systemStatus: {
+    online: "Online",
+    offline: "Offline",
+    checking: "Checking…",
+    active: "{n} active",
+    title: "System status",
+    apiDocs: "API docs",
+    apiDocsAria: "Open API documentation",
+    backend: "Backend API",
+    activeAnalyses: "Active analyses",
+    completedToday: "Completed today",
+    refreshNote: "Refreshes every 30 seconds",
+  },
+  sweepMisc: {
+    trendingUp: "Trending up",
+    trendingDown: "Trending down",
+    stable: "Stable",
+    busFactor: "bus factor",
+    median: "Median",
+    aiChat: "AI chat",
+    aiPipeline: "AI agent pipeline",
+    companyPlaceholder: "Acme Corp",
+  },
+  passwordReset: {
+    forgot: {
+      title: "Reset your password",
+      lead: "Enter the e-mail address of your account. If it can be reset here, we send a link that works for 30 minutes.",
+      email: "E-mail",
+      submit: "Send reset link",
+      submitting: "Sending…",
+      sentTitle: "Check your e-mail",
+      sentBody: "If an account at this address can be reset, a link is on its way. It works once and expires in 30 minutes. Accounts that sign in with Google or Microsoft keep using that sign-in.",
+      tooMany: "Too many attempts. Wait a little and try again.",
+      failed: "The request could not be sent. Try again.",
+      back: "Back to sign in",
+    },
+    reset: {
+      title: "Choose a new password",
+      lead: "Signing in again will be needed everywhere after this.",
+      newPassword: "New password",
+      passwordHint: "At least 8 characters",
+      confirm: "Repeat the new password",
+      mismatch: "The two passwords differ.",
+      submit: "Set new password",
+      submitting: "Saving…",
+      successTitle: "Your password is changed",
+      successBody: "All your earlier sessions have ended. Sign in with the new password.",
+      signIn: "Sign in",
+      invalidTitle: "This reset link is not valid",
+      invalidBody: "The link is incomplete or wrong. Request a new one.",
+      expiredTitle: "This reset link has expired",
+      expiredBody: "Reset links last 30 minutes. Request a new one.",
+      usedTitle: "This reset link was already used",
+      usedBody: "A link works once. If it was not you, request a new link and change your password again.",
+      requestNew: "Request a new link",
+      tooMany: "Too many attempts. Wait a little and try again.",
+      failed: "The password could not be changed. Try again.",
+    },
+  },
+  emailVerification: {
+    title: "Verify your e-mail",
+    verifying: "Verifying your address…",
+    successTitle: "Your address is verified",
+    successBody: "Your account is active. Sign in to continue.",
+    signIn: "Sign in",
+    invalidTitle: "This verification link is not valid",
+    invalidBody: "The link is incomplete or wrong. Request a new one.",
+    expiredTitle: "This verification link has expired",
+    expiredBody: "Verification links last 48 hours. Request a new one.",
+    usedTitle: "This verification link was already used",
+    usedBody: "If your address is verified you can sign in.",
+    failedTitle: "The address could not be verified",
+    failed: "Something went wrong. Try again in a moment.",
+    resendLead: "Enter the address you registered with and we send the verification link again.",
+    email: "E-mail",
+    resend: "Send the link again",
+    sending: "Sending…",
+    sentTitle: "Check your e-mail",
+    sentBody: "If this address has an account that is waiting to be verified, a new link is on its way.",
+    tooMany: "Too many attempts. Wait a little and try again.",
+    registered: {
+      title: "Check your e-mail",
+      body: "We sent an e-mail to this address. If you just opened an account, open the link in it, then sign in; you cannot sign in before that. If an account already exists at this address, the e-mail holds the sign-in and password-reset links.",
+      resend: "Did not get it? Send the link again",
+    },
+    unverified: {
+      body: "Your e-mail address is not verified yet. Open the link we sent you, or ask for a new one.",
+      resend: "Send the verification link again",
+    },
+  },
+  notFound: {
+    title: "This page is not available",
+    body: "The address is wrong, or this screen is not part of your workspace.",
+    home: "Back to the app",
   },
 };

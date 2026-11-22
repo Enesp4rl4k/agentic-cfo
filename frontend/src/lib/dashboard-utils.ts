@@ -14,13 +14,13 @@ export function valueToColor(
 }
 
 /**
- * Format a number as currency using org locale (default en-US / USD).
+ * Format a number as currency in the stated currency. There is no default: the caller says which.
  * Accepts "TRY", "USD", or legacy "₺" symbol string.
  */
 export function formatCurrency(
   value: number,
-  currency: string = "USD",
-  locale: string = "en-US",
+  currency: string,
+  locale: string = "tr-TR",
 ): string {
   const resolved = currency === "₺" ? "TRY" : currency;
   try {
@@ -61,7 +61,7 @@ export function formatCompact(value: number, decimals = 1): string {
 /**
  * Format a number with locale-aware separators
  */
-export function formatNumber(value: number, decimals = 0, locale: string = "en-US"): string {
+export function formatNumber(value: number, decimals = 0, locale: string = "tr-TR"): string {
   return value.toLocaleString(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -136,9 +136,9 @@ export function healthScoreColor(score: number): string {
 }
 
 /**
- * Format a date string with locale (default en-US).
+ * Format a date string with locale (default tr-TR).
  */
-export function formatDateTR(dateString: string | null | undefined, locale: string = "en-US"): string {
+export function formatDateTR(dateString: string | null | undefined, locale: string = "tr-TR"): string {
   if (!dateString) return "—";
   try {
     const date = new Date(dateString);

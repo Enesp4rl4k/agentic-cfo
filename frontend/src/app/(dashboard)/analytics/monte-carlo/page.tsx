@@ -32,10 +32,12 @@ interface FormState {
   simulations:          string;
 }
 
+// The company's own figures start empty: no number is prefilled as if it were the company's.
+// The model parameters below are modelling assumptions the person can change, not data.
 const DEFAULT_FORM: FormState = {
-  current_cash_try:    "6000000",
-  monthly_revenue_try: "1000000",
-  monthly_burn_try:    "800000",
+  current_cash_try:    "",
+  monthly_revenue_try: "",
+  monthly_burn_try:    "",
   revenue_std_pct:     "0.15",
   burn_std_pct:        "0.10",
   growth_rate_monthly: "0.02",

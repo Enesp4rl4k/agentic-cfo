@@ -32,6 +32,8 @@ Laws, not tips. Every rule has a number, a "never", or a command that checks it.
   the one that verifies it — the verifier node runs in a separate LangGraph step.
 - Confidence gate is load-bearing. `awaitingReview=True` when confidence < 0.80
   or when any skill sets `needs_review=True`. The UI holds the run until a human approves.
+- A hold is a question a person can answer about THIS upload (rows that cannot be read, a currency, a failed reconciliation).
+  An analytical alert, however severe, is shown with its basis and never holds a run; a runway needs a proven balance.
 - One skill, one responsibility. A skill that does two things must be split into two.
 - Audit trail is mandatory. Every agent run writes a `JobLog` row. No silent failures.
 

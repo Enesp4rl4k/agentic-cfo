@@ -29,6 +29,9 @@ import logging
 import re
 from typing import Any
 
+from app.agents.chat_money import figure_currency
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 
@@ -239,10 +242,11 @@ async def generate_nl_insight(
     pnl = dashboard.get("pnl") or {}
     cf  = dashboard.get("cashflow") or {}
     dashboard.get("forecast") or {}
+    cur = figure_currency(pnl, cf, dashboard.get("currency_scope"))  # the stored analysis's currency; bare when none
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
-            return f"{v:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+            return fmt_amount(v, cur.code) if abs(v) > 100 else f"{v:.2f}"
         return str(v)
 
     compact_context = (
@@ -295,7 +299,7 @@ async def generate_nl_insight(
         # Fallback: return raw value as text
         val = query_result.get("value")
         if isinstance(val, (int, float)) and val > 1000:
-            answer = f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
+            answer = f"{query_result.get('metric_display', 'Değer')}: {fmt_amount(val, cur.code)}"
         elif val is not None:
             answer = f"Sonuç: {val}"
         else:
@@ -333,10 +337,11 @@ async def generate_nl_insight_stream(
 
     pnl = dashboard.get("pnl") or {}
     cf  = dashboard.get("cashflow") or {}
+    cur = figure_currency(pnl, cf, dashboard.get("currency_scope"))
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
-            return f"{v:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+            return fmt_amount(v, cur.code) if abs(v) > 100 else f"{v:.2f}"
         return str(v)
 
     compact_context = (
@@ -397,7 +402,7 @@ async def generate_nl_insight_stream(
         logger.warning("Streaming NL insight failed: %s", exc)
         val = query_result.get("value")
         fallback = (
-            f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
+            f"{query_result.get('metric_display', 'Değer')}: {fmt_amount(val, cur.code)}"
             if isinstance(val, (int, float)) and val > 1000
             else f"Sonuç: {val}" if val is not None
             else "Bu soruyu yanıtlamak için yeterli veri bulunamadı."

@@ -1,3 +1,5 @@
+import { isHrefAvailable } from "@/lib/legacy-dashboards";
+
 /**
  * Which menu entries a company in focus mode sees (plan v10 §O0).
  *
@@ -49,6 +51,7 @@ type NavGroup<T extends NavItem> = { label: string; items: T[] };
 
 function shown(item: NavItem, { hasTrPack, focusMode, sizeProfile }: NavOptions): boolean {
   if (item.trPack && !hasTrPack) return false;
+  if (!isHrefAvailable(item.href)) return false;
   if (!focusMode) return true;
   return (sizeProfile ? PROFILE_NAV[sizeProfile].focusHrefs : FOCUS_HREFS).has(item.href);
 }
@@ -67,7 +70,8 @@ export function visibleNavGroups<T extends NavItem, G extends NavGroup<T>>(
 export function hiddenNavItems<G extends NavGroup<NavItem>>(groups: readonly G[], options: NavOptions): G["items"][number][] {
   const seen = new Set<string>();
   return groups.flatMap((group) => group.items).filter((item) => {
-    if ((item.trPack && !options.hasTrPack) || shown(item, options) || seen.has(item.href)) return false;
+    // A legacy dashboard that is switched off is not "hidden": it does not exist, so it is not offered under "Daha fazla" either.
+    if ((item.trPack && !options.hasTrPack) || !isHrefAvailable(item.href) || shown(item, options) || seen.has(item.href)) return false;
     seen.add(item.href);
     return true;
   });

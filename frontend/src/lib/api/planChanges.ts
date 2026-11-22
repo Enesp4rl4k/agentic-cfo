@@ -20,17 +20,32 @@ export interface PlanChange {
   decided_by: string | null;
   decided_at: string | null;
   decision_note: string | null;
+  /**
+   * What the caller may do with their OWN waiting proposal: "acknowledge" (decide it after confirming that
+   * proposer and approver are the same person), "blocked" (another owner or admin must decide: the amount is
+   * above the company's threshold), else null. The server decides; the screen only shows it.
+   */
+  self_decision?: "acknowledge" | "blocked" | null;
+  self_decision_message?: string | null;
+  /** The proposer changed the company's approval threshold shortly before or after proposing. */
+  threshold_changed_by_proposer?: boolean;
 }
 
 interface Envelope<T> {
   data: T;
-  meta?: { can_decide?: boolean };
+  meta?: { can_decide?: boolean; self_decision_ack?: string };
   error: string | null;
 }
 
-export async function listPlanChanges(status: PlanChangeStatus | "all" = "pending"): Promise<{ changes: PlanChange[]; canDecide: boolean }> {
+export async function listPlanChanges(
+  status: PlanChangeStatus | "all" = "pending",
+): Promise<{ changes: PlanChange[]; canDecide: boolean; selfDecisionAck: string }> {
   const res = await apiClient.get<Envelope<PlanChange[]>>("/ledger/plan-changes", { params: { status } });
-  return { changes: res.data.data, canDecide: Boolean(res.data.meta?.can_decide) };
+  return {
+    changes: res.data.data,
+    canDecide: Boolean(res.data.meta?.can_decide),
+    selfDecisionAck: res.data.meta?.self_decision_ack ?? "",
+  };
 }
 
 export async function proposePlanChange(openItemId: string, toDate: string, note?: string): Promise<PlanChange> {
@@ -42,8 +57,17 @@ export async function proposePlanChange(openItemId: string, toDate: string, note
   return res.data.data;
 }
 
-export async function decidePlanChange(id: string, action: "approve" | "reject", note?: string): Promise<PlanChange> {
-  const res = await apiClient.post<Envelope<PlanChange>>(`/ledger/plan-changes/${id}/${action}`, { note: note ?? null });
+/** `selfDecisionAck` is the sentence the server gave (`listPlanChanges`), sent only to approve one's own proposal. */
+export async function decidePlanChange(
+  id: string,
+  action: "approve" | "reject",
+  note?: string,
+  selfDecisionAck?: string,
+): Promise<PlanChange> {
+  const res = await apiClient.post<Envelope<PlanChange>>(`/ledger/plan-changes/${id}/${action}`, {
+    note: note ?? null,
+    ...(selfDecisionAck ? { self_decision_ack: selfDecisionAck } : {}),
+  });
   return res.data.data;
 }
 

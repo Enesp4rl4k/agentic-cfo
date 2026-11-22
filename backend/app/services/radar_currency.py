@@ -1,33 +1,18 @@
 """What the cash radar leaves out because it is in another currency, said per currency.
 
-The radar's weeks are in one currency. Rent and tax payments seen in another currency, and a bank
-balance in another (or unknown) currency, are never added to those weeks and never converted: each is
-reported on its own line, the way other-currency open items are.
+The radar's weeks are in one currency. Rent and tax payments seen in another currency are never
+added to those weeks and never converted: each currency is reported on its own line, the way
+other-currency open items are.
 """
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.currency_totals import fmt_money, normalise
+from app.core.currency_totals import normalise
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
-
-
-def usable_balance(balance: dict[str, Any] | None, cur: str) -> tuple[dict[str, Any] | None, str | None]:
-    """(the balance if it is in `cur`, else None; a not-included line saying why a balance was not used)."""
-    if balance is None:
-        return None, None
-    code = normalise(balance.get("currency"))
-    if code == cur:
-        return balance, None
-    what = fmt_money(balance["balance_cents"], code)  # an unknown currency reads "(para birimi bilinmiyor)"
-    return None, (
-        f"{what} tutarındaki banka bakiyesi ({balance['date']}) {cur} radarına eklenmedi: "
-        f"{cur} cinsinden kanıtlanmış başlangıç nakdi yok"
-    )
 
 
 async def other_currency_projections(

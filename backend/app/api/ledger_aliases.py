@@ -22,6 +22,7 @@ from app.models.counterparty_alias import CounterpartyAlias
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.open_item_match import OpenItemMatch
 from app.models.user import User
+from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 from app.services.duplicate_resolution import (
     AliasRefused,
@@ -32,6 +33,7 @@ from app.services.duplicate_resolution import (
     rows_ingested_under,
 )
 from app.services.reconciliation import CONFIRMED, REJECTED, settle_from_matches
+from app.services.settlement_decisions import latest_decision_id
 
 router = APIRouter()
 
@@ -163,6 +165,7 @@ async def undo_settlement(
         raise HTTPException(404, "Kayıt bulunamadı.")
     ensure_tenant(user, org_id=match.org_id)
     org_id, item_id = str(match.org_id), str(match.open_item_id)
+    role = await acting_role(db, user)
     won = await db.execute(
         update(OpenItemMatch)
         .where(OpenItemMatch.id == match_id, OpenItemMatch.status == CONFIRMED)
@@ -173,11 +176,13 @@ async def undo_settlement(
         await db.rollback()
         raise HTTPException(409, "Bu eşleşme onaylı değil.")
     await settle_from_matches(db, [item_id])
+    # The reversal is its own decision, linked to the confirmation it takes back (a person's or a rule's).
     await record_decision(
         db, org_id=org_id, kind=DecisionKind.SETTLEMENT_MATCH, target_type="open_item_match", target_id=match_id,
         outcome="undone", decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
         evidence_refs=[{"type": "open_item", "id": item_id}],
-        before={"status": "confirmed"}, after={"status": "rejected"},
+        before={"status": "confirmed"}, after={"status": "rejected", "acting_role": role},
+        supersedes_id=await latest_decision_id(db, org_id, "open_item_match", match_id),
     )
     await db.commit()
     return {"data": {"id": match_id, "status": "rejected", "open_item_id": item_id}, "error": None}

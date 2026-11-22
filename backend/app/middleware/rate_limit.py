@@ -53,6 +53,16 @@ _ROUTE_LIMITS: list[tuple[str, int, int]] = [
     # (path_prefix, max_requests, window_seconds)
     ("/api/v1/auth/login",    5,   60),
     ("/api/v1/auth/register", 5,   60),
+    # A reset link is mailed on each request, and the token page is guessable like a password:
+    # per IP here; per normalised address inside the route (see api/password_reset.py).
+    ("/api/v1/auth/forgot-password", 10, 3600),
+    ("/api/v1/auth/reset-password",  10, 60),
+    ("/api/v1/auth/resend-verification", 10, 3600),
+    ("/api/v1/auth/verify-email",        10, 60),
+    # The invitation page checks an existing account's password (accept) and
+    # answers to a secret token (preview): as guessable as login, so as limited.
+    ("/api/v1/org/invite/accept",  5,  60),
+    ("/api/v1/org/invite/preview", 20, 60),
     ("/api/v1/upload",        10,  60),
     ("/api/v1/chat",          30,  60),
     ("/api/v1/analysis",      20,  60),
@@ -109,11 +119,9 @@ def _get_client_key(request: Request) -> str:
         pass
 
     # Fall back to IP
-    forwarded = request.headers.get("X-Forwarded-For")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
-    )
-    return f"ip:{ip}"
+    from app.core.client_ip import client_ip
+
+    return f"ip:{client_ip(request)}"
 
 
 def _check_rate_limit(key: str, max_requests: int, window: int) -> tuple[bool, int, int]:
@@ -205,6 +213,16 @@ async def _check_rate_limit_redis(
     except (TypeError, ValueError, IndexError):
         return None
     return allowed, remaining, retry_after
+
+
+async def consume(key: str, max_requests: int, window: int) -> bool:
+    """Count one hit against a named window (shared broker first, in-process otherwise).
+
+    For limits the path cannot express (per e-mail address). True when the hit is allowed."""
+    verdict = await _check_rate_limit_redis(key, max_requests, window)
+    if verdict is None:
+        return _check_rate_limit(key, max_requests, window)[0]
+    return verdict[0]
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

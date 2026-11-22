@@ -8,10 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
-import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
+import Link from "next/link";
+import { AccountQuestions } from "@/components/approvals/AccountQuestions";
+import { HeldAnalysesSection } from "@/components/held-analyses/HeldAnalysesSection";
+import { WaitingSummary } from "@/components/approvals/WaitingSummary";
+import { ReviewQueueCard } from "@/components/command-center/ReviewQueueCard";
+import { useWaitingCounts } from "@/hooks/useWaitingCounts";
 import { OneTapQueue, type OneTapDecision } from "@/components/approvals/OneTapQueue";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import {
   getPossibleDuplicates,
   getProposedSettlements,
@@ -41,6 +47,7 @@ export default function OnayPage() {
   const copy = t.onay;
   const ledger = t.ledger;
   const fmt = useCurrencyFormat();
+  const { profileDefaults } = useOrgSettings();
   const queryClient = useQueryClient();
   const [actionFailed, setActionFailed] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
@@ -72,7 +79,8 @@ export default function OnayPage() {
   });
 
   const planDecision = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "approve" | "reject" }) => decidePlanChange(id, action, reasons[id]),
+    mutationFn: ({ id, action, ack }: { id: string; action: "approve" | "reject"; ack?: string }) =>
+      ack ? decidePlanChange(id, action, reasons[id], ack) : decidePlanChange(id, action, reasons[id]),
     onSuccess: refreshed,
     onError: () => setActionFailed(true),
   });
@@ -88,8 +96,18 @@ export default function OnayPage() {
   const duplicateRows: LedgerRow[] = duplicates.data ?? [];
   const planRows = plans.data?.changes ?? [];
   const canDecide = Boolean(plans.data?.canDecide);
-  const nothing = !loading && !failed && settlementRows.length === 0 && duplicateRows.length === 0 && planRows.length === 0;
-  const waiting = settlementRows.length + duplicateRows.length + planRows.length;
+  // Deciding one's own proposal is one honest step (the button says proposer and approver are the same
+  // person); with another owner or admin and an amount above the threshold it is not theirs to decide.
+  const selfDecision = t.scale.selfDecision;
+  const selfAck = plans.data?.selfDecisionAck ?? "";
+  const ackOf = (change: { self_decision?: string | null }) => (change.self_decision === "acknowledge" ? selfAck : undefined);
+  // Every kind of decision, not only the three lists below: held analyses, held rows and role results too.
+  const counts = useWaitingCounts();
+  // The lists appear together, once every kind has answered: a late kind would push a button the person
+  // is about to press out from under their finger.
+  const settled = !loading && !counts.loading;
+  const nothing = !failed && settled && counts.total === 0;
+  const waiting = counts.total;
 
   // The same decisions as the lists, one card each. A plan change is offered only to someone who may
   // decide it; anyone else's stays in the list where they can see it waits.
@@ -117,19 +135,35 @@ export default function OnayPage() {
       ],
     })),
     ...(canDecide
-      ? planRows.map((change) => ({
+      ? planRows.filter((change) => change.self_decision !== "blocked").map((change) => ({
           key: `p-${change.id}`,
           kind: copy.kindPlan,
           title: change.counterparty ?? change.description ?? copy.noCounterparty,
           amount: change.amount_cents !== null ? fmt(change.amount_cents / 100) : "",
           meta: copy.planMove.replace("{from}", change.from_date).replace("{to}", change.to_date),
           options: [
-            { label: copy.planApprove, run: () => decidePlanChange(change.id, "approve").then(refreshed) },
+            {
+              label: ackOf(change) ? selfDecision.confirmApprove : copy.planApprove,
+              run: () =>
+                (ackOf(change)
+                  ? decidePlanChange(change.id, "approve", undefined, ackOf(change))
+                  : decidePlanChange(change.id, "approve")
+                ).then(refreshed),
+            },
             { label: copy.planReject, run: () => decidePlanChange(change.id, "reject").then(refreshed) },
           ],
         }))
       : []),
   ];
+
+  // A company profile may lead with the one-tap button (a default: the same button, the same lists, only first).
+  const oneTapLeads = Boolean(profileDefaults?.one_tap_first);
+  const oneTapButton =
+    decisions.length > 0 ? (
+      <Button className="min-h-[48px] w-full sm:w-auto" onClick={() => setOneTap(true)}>
+        {copy.oneTapStart}
+      </Button>
+    ) : null;
 
   if (oneTap && !loading && !failed) {
     return (
@@ -153,19 +187,39 @@ export default function OnayPage() {
           ) : undefined
         }
       />
-      <HeldRowsLink />
+      {settled && (<>
+      {oneTapLeads && oneTapButton}
+      <WaitingSummary counts={counts} />
+
+      <div id="analizler" className="scroll-mt-20">
+        <HeldAnalysesSection />
+      </div>
+
+      <AccountQuestions />
+
+      {counts.rows > 0 && (
+        <section id="kayitlar" aria-label={t.heldAnalysis.queues.rowsTitle.replace("{n}", String(counts.rows))} className="scroll-mt-20 space-y-2">
+          <h2 className="tc-display m-0 text-[26px] leading-[1.1]">
+            {t.heldAnalysis.queues.rowsTitle.replace("{n}", String(counts.rows))}
+          </h2>
+          <p className="m-0 text-sm text-muted-foreground">{t.heldAnalysis.queues.rowsHint}</p>
+          <Button asChild variant="outline" className="min-h-[44px]">
+            <Link href="/bekleyen-kayitlar">{t.heldAnalysis.queues.openRows}</Link>
+          </Button>
+        </section>
+      )}
+
+      <div id="rol-sonuclari" className="scroll-mt-20">
+        <ReviewQueueCard />
+      </div>
 
       {failed && <p role="alert" className="text-sm text-destructive">{copy.failed}</p>}
       {actionFailed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}
       {nothing && <p className="text-sm text-muted-foreground">{copy.empty}</p>}
-      {decisions.length > 0 && (
-        <Button className="min-h-[48px] w-full sm:w-auto" onClick={() => setOneTap(true)}>
-          {copy.oneTapStart}
-        </Button>
-      )}
+      {!oneTapLeads && oneTapButton}
 
       {settlementRows.length > 0 && (
-        <section aria-label={ledger.settlementsTitle.replace("{n}", String(settlementRows.length))} className="space-y-3">
+        <section id="eslesmeler" aria-label={ledger.settlementsTitle.replace("{n}", String(settlementRows.length))} className="scroll-mt-20 space-y-3">
           <h2 className="tc-display m-0 text-[26px] leading-[1.1]">
             {ledger.settlementsTitle.replace("{n}", String(settlementRows.length))}
           </h2>
@@ -213,7 +267,7 @@ export default function OnayPage() {
       )}
 
       {duplicateRows.length > 0 && (
-        <section aria-label={ledger.duplicatesTitle.replace("{n}", String(duplicateRows.length))} className="space-y-3">
+        <section id="mukerrer" aria-label={ledger.duplicatesTitle.replace("{n}", String(duplicateRows.length))} className="scroll-mt-20 space-y-3">
           <h2 className="tc-display m-0 text-[26px] leading-[1.1]">
             {ledger.duplicatesTitle.replace("{n}", String(duplicateRows.length))}
           </h2>
@@ -259,7 +313,7 @@ export default function OnayPage() {
       )}
 
       {planRows.length > 0 && (
-        <section aria-label={copy.planTitle} className="space-y-3">
+        <section id="odeme-plani" aria-label={copy.planTitle} className="scroll-mt-20 space-y-3">
           <h2 className="tc-display m-0 text-[26px] leading-[1.1]">{copy.planTitle}</h2>
           <p className="m-0 text-sm text-muted-foreground">{copy.planHint}</p>
           <ul className="space-y-3">
@@ -276,7 +330,28 @@ export default function OnayPage() {
                       <p className="m-0 text-xs text-muted-foreground">{copy.planBy.replace("{note}", change.request_note)}</p>
                     )}
                   </div>
-                  {canDecide ? (
+                  {change.threshold_changed_by_proposer && (
+                    <p className="m-0 text-xs font-medium text-warning">{selfDecision.thresholdMoved}</p>
+                  )}
+                  {canDecide && change.self_decision === "blocked" && (
+                    <div className="space-y-2">
+                      <p className="m-0 text-sm font-medium">{selfDecision.blockedTitle}</p>
+                      {change.self_decision_message && (
+                        <p className="m-0 text-xs text-muted-foreground">{change.self_decision_message}</p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          className="min-h-[44px]"
+                          disabled={planWithdraw.isPending}
+                          onClick={() => planWithdraw.mutate(change.id)}
+                        >
+                          {copy.planWithdraw}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {canDecide && change.self_decision === "blocked" ? null : canDecide ? (
                     <div className="flex flex-wrap items-center gap-2">
                       <input
                         aria-label={copy.planReason}
@@ -288,9 +363,9 @@ export default function OnayPage() {
                       <Button
                         className="min-h-[44px]"
                         disabled={planDecision.isPending}
-                        onClick={() => planDecision.mutate({ id: change.id, action: "approve" })}
+                        onClick={() => planDecision.mutate({ id: change.id, action: "approve", ack: ackOf(change) })}
                       >
-                        {copy.planApprove}
+                        {ackOf(change) ? selfDecision.confirmApprove : copy.planApprove}
                       </Button>
                       <Button
                         variant="outline"
@@ -322,6 +397,8 @@ export default function OnayPage() {
           </ul>
         </section>
       )}
+
+      </>)}
 
       <OodaFooter current={2} />
     </div>

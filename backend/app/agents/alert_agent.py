@@ -113,11 +113,14 @@ def _check_cashflow(cashflow: dict[str, Any], forecast: dict[str, Any]) -> list[
     # Runway from base scenario
     base = forecast.get("scenarios", {}).get("base", {})
     runway = base.get("runway_months")
+    # Only the measured runway (a proven balance over complete months) may be critical; the base
+    # scenario is a projection with assumed growth, a warning at most.
+    measured = forecast.get("runway") or {}
     if runway is not None:
         if runway <= THRESHOLDS["cashflow_runway_critical"]:
             alerts.append({
                 "type": "liquidity",
-                "severity": "critical",
+                "severity": "critical" if measured.get("level") == "critical" else "warning",
                 "message": (
                     f"Cash runway is only {runway} month(s) under base scenario. "
                     f"Immediate financing or cost action required."

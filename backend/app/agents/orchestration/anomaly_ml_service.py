@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -418,7 +420,7 @@ class AnomalyMLService:
                 confidence_upper = min(1.0, score + (ci_hi - ci_lo) / 2),
                 description      = (
                     f"ML anomaly detected: {vendor} — {cat} — "
-                    f"₺{amount:,.0f} (detectors: {detector_label})"
+                    f"{fmt_amount(amount, tx.get('currency'))} (detectors: {detector_label})"
                 ),
                 evidence = {
                     "amount":    amount,

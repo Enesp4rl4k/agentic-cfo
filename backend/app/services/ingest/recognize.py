@@ -97,7 +97,7 @@ def _eslestir(sema: S.Sema, basliklar: list[str]) -> Aday:
 def tabloyu_tani(tablo: Tablo) -> Tanima:
     adaylar = [_eslestir(s, tablo.basliklar) for s in S.SEMALAR]
     uyan = sorted((a for a in adaylar if not a.eksik), key=lambda a: -a.aciklanan)
-    n = len(tablo.satirlar)
+    n = len(tablo.satirlar) - len(tablo.toplam_satirlari)
     if not uyan:
         yakin = sorted(adaylar, key=lambda a: (len(a.eksik), -a.aciklanan))[:2]
         en = yakin[0]
@@ -274,25 +274,21 @@ def standart_csv(tablo: Tablo, tur: str) -> tuple[str, dict[str, str]]:
         if ad and ad not in kullanilan:
             kullanilan.add(ad)
             eslesme[ad] = h
-            cikis.append((i, ad, alan_by_ad[ad], 12 if (tur, anahtar(h)) in _AYLIK else 1))
+            # A statement's debit/credit columns keep the file's own words: "Giden" and "Çıkış" name the
+            # movement, "Borç" and "Alacak" name a book, and the direction resolver must tell them apart.
+            shown = h if tur == S.BANKA_EKSTRESI and ad in ("borç", "alacak") else ad
+            cikis.append((i, shown, alan_by_ad[ad], 12 if (tur, anahtar(h)) in _AYLIK else 1))
         elif h:
             cikis.append((i, h, None, 1))
 
-    signed_amount = tur == S.BANKA_EKSTRESI and "tutar" not in kullanilan and (
-        "borç" in kullanilan or "alacak" in kullanilan)
-
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
-    w.writerow([ad for _, ad, _, _ in cikis] + (["tutar"] if signed_amount else []))
-    for row in tablo.satirlar:
+    w.writerow([ad for _, ad, _, _ in cikis])
+    for k, row in enumerate(tablo.satirlar):
+        if tur != S.BANKA_EKSTRESI and k in tablo.toplam_satirlari:
+            continue    # a total line of a staff list or a bill: not a record (statements keep it: rows.py judges it)
         vals = [(_deger(a, row[i], k) if a else ("" if bos(row[i]) else str(row[i]).strip()))
                 for i, _, a, k in cikis]
-        if signed_amount:
-            # Debit is money leaving the account, credit money arriving; one
-            # signed amount is what the statement parser reads.
-            by = {ad: row[i] for i, ad, _, _ in cikis}
-            borc, alacak = sayi(by.get("borç")), sayi(by.get("alacak"))
-            tutar = -abs(borc) if borc else (abs(alacak) if alacak else None)
-            vals.append("" if tutar is None else (int(tutar) if tutar.is_integer() else round(tutar, 2)))
-        w.writerow(vals)
+        # Cells beyond the header travel on: the statement reader sees a row wider than its header and holds it.
+        w.writerow(vals + [str(c).strip() for c in row[len(tablo.basliklar):] if not bos(c)])
     return out.getvalue(), eslesme

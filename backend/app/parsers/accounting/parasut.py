@@ -64,6 +64,14 @@ def _map_type(raw: str) -> str | None:
     return None
 
 
+def _sign_decides(transactions: list[ParsedTransaction], signs: dict[int, bool]) -> None:
+    """Direction from the sign of an amount column: a reading marked `direction_basis="sign"`, not evidence. It books
+    only with a verifying balance chain or a remembered answer; otherwise the file is asked (direction.settle_rows)."""
+    for index, negative in signs.items():
+        transactions[index].tx_type = "expense" if negative else "income"
+        transactions[index].direction_basis = "sign"
+
+
 class ParasutParser(BankParser):
     bank_id = "parasut"
     bank_display_name = "Paraşüt"
@@ -173,6 +181,7 @@ class ParasutParser(BankParser):
             return []
 
         transactions: list[ParsedTransaction] = []
+        signs: dict[int, bool] = {}
         for row in rows[header_idx + 1:]:
             if not row or len(row) <= max(c for c in [date_col, amt_col] if c is not None):
                 continue
@@ -197,7 +206,9 @@ class ParasutParser(BankParser):
             # Determine type
             tx_type = _map_type(raw_type)
             if tx_type is None:
-                tx_type = "expense" if is_negative else "income"
+                # The sign decides only where it is informative for the file (decided after the loop).
+                tx_type = ""
+                signs[len(transactions)] = is_negative
 
             vendor = self._extract_vendor(description, account)
 
@@ -206,11 +217,12 @@ class ParasutParser(BankParser):
                 description=description or raw_type or f"Paraşüt {date.strftime('%d.%m.%Y')}",
                 amount_cents=abs(amount_cents),
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 vendor=vendor,
                 reference=reference or None,
                 raw_row=",".join(row),
             ))
+        _sign_decides(transactions, signs)
         return transactions
 
     def _parse_invoice_list(self, text: str) -> list[ParsedTransaction]:
@@ -254,14 +266,14 @@ class ParasutParser(BankParser):
             if not amount_cents or amount_cents == 0:
                 continue
 
-            tx_type = _map_type(raw_type) or "income"
+            tx_type = _map_type(raw_type) or ""    # unknown is held ("yön belirsiz"), never income by default
 
             transactions.append(ParsedTransaction(
                 date=date,
                 description=description or f"Paraşüt Fatura {date.strftime('%d.%m.%Y')}",
                 amount_cents=abs(amount_cents),
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 vendor=description[:50] if description else None,
                 raw_row=",".join(row),
             ))
@@ -293,6 +305,7 @@ class ParasutParser(BankParser):
             return []
 
         transactions: list[ParsedTransaction] = []
+        signs: dict[int, bool] = {}
         for row in rows[header_idx + 1:]:
             if not row:
                 continue
@@ -308,16 +321,18 @@ class ParasutParser(BankParser):
             if not amount_cents:
                 continue
 
-            tx_type = "expense" if is_negative else "income"
+            tx_type = ""
+            signs[len(transactions)] = is_negative
 
             transactions.append(ParsedTransaction(
                 date=date,
                 description=description or f"Paraşüt Banka {date.strftime('%d.%m.%Y')}",
                 amount_cents=abs(amount_cents),
                 tx_type=tx_type,
-                currency="TRY",
+                currency="",   # the export does not state one: document header, else the confirmed base (hold.py)
                 raw_row=",".join(row),
             ))
+        _sign_decides(transactions, signs)
         return transactions
 
     @staticmethod

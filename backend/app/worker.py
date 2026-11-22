@@ -352,6 +352,13 @@ async def run_cfo_analysis(
             await db.refresh(job)
             await db.commit()
 
+            # The balance the cash radar starts from, loaded here (the nodes hold no session):
+            # the forecast's runway counts down from it, never from zero.
+            from app.services.bank_accounts import proven_balance
+
+            opening_cash = await proven_balance(db, org_id_str) if org_id_str else None
+            await db.commit()
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
@@ -363,6 +370,7 @@ async def run_cfo_analysis(
                 # the rules above) ran as if the job belonged to nobody.
                 org_id=org_id_str,
                 category_rules=category_rules,
+                opening_cash=opening_cash,
             )
 
             # Publish each completed step to SSE clients
@@ -460,7 +468,13 @@ async def run_cfo_analysis(
             meta = dict(job.result_metadata or {})
             from app.services.ingest.summary import ingest_summary
 
-            meta["ingest"] = ingest_summary(persisted_rows, registered)
+            meta["ingest"] = ingest_summary(persisted_rows, registered, result.get("ingest_counts"))
+            if terminal == JobStatus.AWAITING_REVIEW:
+                from app.services.held_analysis import held_by
+
+                why = held_by(result)
+                if why is not None:
+                    meta["held_by"] = why
             if terminal == JobStatus.COMPLETED and job.org_id:
                 # What follows a completed analysis (ledger, company view,
                 # chain) is owed from the moment the job reads completed, so the
@@ -473,9 +487,36 @@ async def run_cfo_analysis(
                 meta["review"] = {"devam": BEKLIYOR, "devam_istendi": completed_at.isoformat()}
             from app.services.bank_balance import closing_balance
 
-            closing = closing_balance(list(result.get("transactions") or []))
+            # A statement with rows held for a person proves its balance over the whole file
+            # (data_ingestion); the rows booked so far are only part of it.
+            closing = result.get("statement_closing_balance") or closing_balance(
+                list(result.get("transactions") or [])
+            )
             if closing is not None:
                 meta["closing_balance"] = closing
+            # How far those balances are believed, and why not when they are not (what the radar and
+            # the runway read); for a statement with held rows, the chain a person's answer re-reads.
+            from app.services.bank_balance import assess, statement_extent
+            from app.services.statement_account import account_identity
+
+            meta["balance_proof"] = result.get("balance_proof") or assess(
+                list(result.get("transactions") or []), result.get("ingest_counts"),
+                identity=account_identity(str(result.get("raw_text") or "")) or None,
+            )
+            if result.get("statement_chain"):
+                meta["statement_chain"] = {**result["statement_chain"], "period": result.get("statement_period")}
+
+            # The days the statement covers (and the balances it opens and closes on): which
+            # months of the company's cash are complete is read from these later.
+            from app.services.coverage import apply_period
+
+            extent = apply_period(
+                result.get("statement_extent") or statement_extent(list(result.get("transactions") or [])),
+                result.get("statement_period"),
+                job.filename,
+            )
+            if extent is not None:
+                meta["statement_extent"] = extent
             try:
                 if meta.get("analysis_started_at"):
                     t0 = datetime.fromisoformat(meta["analysis_started_at"])
@@ -527,6 +568,17 @@ async def run_cfo_analysis(
                 )
                 return {"ok": False, "job_id": job_id, "finish_lost": True}
             await db.commit()
+
+            # A re-run asks nothing twice: rows a person already released or rejected come back as they
+            # answered. The proof written above was read before those answers; read it again with them.
+            if org_id_str and meta.get("statement_chain") and (
+                registered["released_again"] or registered["already_rejected"]
+            ):
+                from app.services.balance_reverify import reverify
+
+                await db.refresh(job)
+                await reverify(db, org_id_str, {job_id: []})
+                await db.commit()
 
             # Notify SSE subscribers that the job is done — before the slow
             # follow-ups below: a watcher's completion must not wait on RAG.

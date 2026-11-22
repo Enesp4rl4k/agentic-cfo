@@ -42,6 +42,7 @@ GUARD_FUNCS = {
     access.require_writer,
     access.require_decider,
     access.require_smmm,
+    access.require_decider_or_smmm,
     access.require_platform_operator,
 }
 
@@ -94,6 +95,27 @@ def test_every_state_changing_route_declares_who_may_use_it() -> None:
         "require_decider / require_smmm) ekleyin, ya da app/api/access.py'de "
         "OPEN_ROUTES / INLINE_GUARDED'a gerekçesiyle yazın:\n  " + "\n  ".join(offenders)
     )
+
+
+# Reads of one organisation's own queue: any member may read (a viewer too), nobody without an
+# organisation, and the rows are selected by that organisation only (tested over HTTP in
+# test_statement_direction_flow). Classified here so a new read route in the family cannot go unguarded.
+MEMBER_READ_ROUTES = [
+    ("GET", "/api/v1/held-rows"),
+    ("GET", "/api/v1/held-rows/file-questions"),
+    ("GET", "/api/v1/held-rows/account-questions"),
+    ("GET", "/api/v1/held-rows/direction-mappings"),
+    ("GET", "/api/v1/org/base-currency"),
+]
+
+
+def test_member_read_routes_are_guarded_by_require_member() -> None:
+    by_key = dict(ROUTES)
+    for key in MEMBER_READ_ROUTES:
+        assert key in by_key, f"{key} no longer exists: update MEMBER_READ_ROUTES"
+        assert access.require_member in _calls(by_key[key]), f"{key} reads an organisation's queue without require_member"
+    held = [k for k in by_key if k[0] == "GET" and k[1].startswith("/api/v1/held-rows")]
+    assert sorted(held) == sorted(k for k in MEMBER_READ_ROUTES if "held-rows" in k[1]), "an unclassified held-rows read route"
 
 
 def test_the_allow_lists_name_routes_that_exist_and_do_not_overlap() -> None:
@@ -248,6 +270,11 @@ CONTRIBUTORS = {"analyst", "cfo", "admin", "owner", "smmm"}  # everyone but a vi
         # ...but not what changes or decides a record
         ("DELETE", "/api/v1/datasource/nope/nope", None, {"cfo", "admin", "owner", "smmm"}),
         ("POST", "/api/v1/erp/logo-tiger/connect", {}, {"admin", "owner"}),
+        # decider: the company's own thresholds and recipients (the accountant advises; the company decides)
+        # (only the OWNER changes the threshold: an admin decides under it and must not be able to move it)
+        ("PUT", "/api/v1/org/me/materiality", {"amount_cents": 20_000_00, "reason": "deneme"}, {"owner"}),
+        ("POST", "/api/v1/org/me/materiality/acknowledge", {"amount_cents": 1000}, {"owner"}),
+        ("PUT", "/api/v1/org/me/briefing-recipients", {"send_to_smmm": False}, {"admin", "owner"}),
     ],
 )
 async def test_read_only_roles_are_refused_and_writers_pass(client, method, path, body, allowed) -> None:

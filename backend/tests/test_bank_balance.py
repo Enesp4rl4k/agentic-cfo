@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.bank_balance import closing_balance
+from app.services.bank_balance import closing_balance, statement_extent
 
 
 def _row(day: str, amount: int, kind: str, balance: int | None) -> dict[str, Any]:
@@ -43,9 +43,12 @@ def test_a_single_row_has_nothing_to_chain_to():
     assert closing_balance([]) is None
 
 
-def test_a_closing_balance_carries_the_one_currency_its_rows_share_and_none_otherwise():
-    usd = [{**r, "currency": "usd"} for r in OLDEST_FIRST]
-    assert closing_balance(usd) == {"date": "2025-04-09", "balance_cents": 57_500_50, "currency": "USD"}
-    mixed = [usd[0], usd[1], {**usd[2], "currency": "TRY"}]
-    assert "currency" not in (closing_balance(mixed) or {})
-    assert "currency" not in (closing_balance(OLDEST_FIRST) or {})
+def test_a_chained_statement_has_an_extent_with_its_opening_and_closing_balances():
+    expected = {"start": "2025-04-02", "end": "2025-04-09", "opening_cents": 50_000_00, "closing_cents": 57_500_50}
+    assert statement_extent(OLDEST_FIRST) == expected
+    assert statement_extent(OLDEST_FIRST[::-1]) == expected  # either file order
+
+
+def test_a_statement_whose_balances_do_not_chain_has_no_extent():
+    broken = [OLDEST_FIRST[0], _row("2025-04-05", 4_000_00, "expense", 1)]
+    assert statement_extent(broken) is None

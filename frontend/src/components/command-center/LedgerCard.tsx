@@ -31,7 +31,7 @@ export function LedgerCard() {
   // A row in another currency is shown in its own, never in the base currency's symbol.
   const fmtIn = (value: number, currency?: string) =>
     currency !== undefined && currency !== (org?.base_currency || currency)
-      ? formatCurrency(value, currency, org?.locale || "en-US", t.otherCurrency.unknown)
+      ? formatCurrency(value, currency, org?.locale || "tr-TR", t.otherCurrency.unknown)
       : fmt(value);
   const queryClient = useQueryClient();
   const { data: summary } = useQuery({ queryKey: SUMMARY_KEY, queryFn: getLedgerSummary });

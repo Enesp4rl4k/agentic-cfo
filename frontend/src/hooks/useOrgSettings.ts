@@ -4,16 +4,33 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useCallback } from "react";
 import { apiClient } from "@/lib/api/client";
+import { effectiveCurrencyOf } from "@/lib/effective-currency";
 
 export type OrgSettings = {
   org_id: string;
   name: string;
   locale?: string;
   base_currency?: string;
+  /** The stored `base_currency` is a column default until an owner confirms it. */
+  base_currency_confirmed?: boolean;
+  /** The currency money is labelled in (backend `effective_base`); null when several are present and none confirmed. */
+  effective_currency?: string | null;
+  base_state?: string;
   country_code?: string;
   regional_packs?: string[];
   focus_mode?: boolean;
   size_profile?: "micro" | "small" | "medium" | null;
+  /** An active accountant (smmm) belongs to the company: screens that send to the accountant adapt to it. */
+  has_smmm?: boolean;
+  /** The owner's recorded choice that the Monday briefing also goes to the accountant. */
+  briefing_to_smmm?: boolean;
+  /** What the confirmed size profile sets as a starting point (null until one is confirmed). Never a lock. */
+  profile_defaults?: ProfileDefaults | null;
+};
+
+export type ProfileDefaults = {
+  one_tap_first: boolean;
+  briefing_to_smmm_suggested: boolean;
 };
 
 export const ORG_SETTINGS_KEY = ["org-settings"] as const;
@@ -72,7 +89,9 @@ export function useOrgSettings() {
     hasTrPack: Boolean(org?.regional_packs?.includes("tr")),
     focusMode: Boolean(org?.focus_mode),
     sizeProfile: org?.size_profile ?? null,
-    baseCurrency: org?.base_currency || "USD",
-    locale: org?.locale || "en-US",
+    hasSmmm: org?.has_smmm ?? null,
+    profileDefaults: org?.profile_defaults ?? null,
+    baseCurrency: effectiveCurrencyOf(org),
+    locale: org?.locale || "tr-TR",
   };
 }

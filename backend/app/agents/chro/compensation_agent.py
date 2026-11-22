@@ -219,7 +219,7 @@ def _build_compensation_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     if burn > 100_000:
         alerts.append({
             "level": "warning",
-            "message": f"High annual equity burn: ₺{burn:,} of equity vesting per year — review cap table impact"
+            "message": f"High annual equity burn: {burn:,} of equity vesting per year — review cap table impact"
         })
 
     return alerts

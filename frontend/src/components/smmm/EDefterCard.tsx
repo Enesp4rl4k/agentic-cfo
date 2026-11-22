@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { JournalLeftOutBanner } from "@/components/ui/other-currency-lines";
 import {
   downloadBeratPreview,
   downloadEDefter,
@@ -187,6 +188,7 @@ export function EDefterCard({ jobId }: { jobId: string }) {
             <span className="font-mono">{last.fileName}</span> — {last.entryCount}{" "}
             kayıt, {last.lineCount} satır
           </div>
+          <JournalLeftOutBanner left={last.leftOutCurrency} />
           <div className="break-all font-mono text-[10px]">
             SHA-256: {last.sha256}
           </div>

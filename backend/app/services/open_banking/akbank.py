@@ -28,6 +28,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.ingest.feed import (
+    Feed,
+    FeedFailed,
+    direction_from_sign,
+    first,
+    item_is_blank,
+    read_money,
+    signed_amount,
+)
 from app.services.open_banking.base import BankOAuthConfig, OpenBankingClient
 
 
@@ -63,45 +72,47 @@ class AkbankClient(OpenBankingClient):
             {
                 "account_id":     acc.get("resourceId") or acc.get("accountId", ""),
                 "iban":           acc.get("iban", ""),
-                "currency":       acc.get("currency", "TRY"),
+                # A currency or balance the bank did not state is None, not lira and not zero.
+                "currency":       first(acc, "currency"),
                 "account_type":   acc.get("cashAccountType", "CACC"),
                 "name":           acc.get("name", "Akbank Hesabı"),
-                "balance":        float(acc.get("balanceAmount", {}).get("amount", 0)),
+                "balance":        signed_amount(first(acc.get("balanceAmount"), "amount")),
             }
             for acc in accounts_raw
         ]
 
-    def _parse_transactions(self, raw: Any) -> list[dict[str, Any]]:
+    def _parse_transactions(self, raw: Any, feed: Feed) -> None:
         """
-        Normalize Akbank NextGenPSD2 transaction format to CFO pipeline format.
+        Add one row to `feed` per booked Akbank (NextGenPSD2) transaction.
+
+        The direction is the amount's sign (positive credit, negative debit). A missing or unreadable amount
+        has no sign and no value: the row is held, it is not a zero-lira expense. Pending entries are not
+        booked money and are counted as ignored, by name.
         """
-        booked = raw.get("transactions", {}).get("booked", [])
-        result: list[dict[str, Any]] = []
-
-        for tx in booked:
-            amount_obj  = tx.get("transactionAmount", {})
-            raw_amount  = float(amount_obj.get("amount", 0) or 0)
-            currency    = amount_obj.get("currency", "TRY")
-            # Positive = credit (income), negative = debit (expense)
-            tx_type     = "income" if raw_amount > 0 else "expense"
-            amount_cents = abs(int(raw_amount * 100))
-
+        section = raw.get("transactions") if isinstance(raw, dict) else None
+        if not isinstance(section, dict) or not isinstance(section.get("booked"), list):
+            raise FeedFailed("yanıtta transactions.booked listesi yok (beklenmeyen biçim)")
+        for _ in section.get("pending") or []:
+            feed.ignore("pending")
+        for tx in feed.each(section["booked"]):
+            if item_is_blank(tx):
+                feed.blank()
+                continue
+            amount_obj = tx.get("transactionAmount") if isinstance(tx, dict) else None
+            raw_amount = first(amount_obj, "amount")
+            money = read_money(raw_amount)
             description = (
-                tx.get("remittanceInformationUnstructured")
-                or tx.get("remittanceInformationStructured", {}).get("reference", "")
+                first(tx, "remittanceInformationUnstructured")
+                or first(tx.get("remittanceInformationStructured"), "reference")
                 or "Akbank işlemi"
             )
-            vendor = tx.get("debtorName") or tx.get("creditorName") or None
+            vendor = first(tx, "debtorName", "creditorName")
+            feed.add(
+                amount=raw_amount, direction=direction_from_sign(money),
+                date=first(tx, "bookingDate", "valueDate"), currency=first(amount_obj, "currency"),
+                description=str(description)[:200], reference=first(tx, "transactionId"),
+                evidence={"amount": raw_amount, "currency": first(amount_obj, "currency"),
+                          "bookingDate": first(tx, "bookingDate", "valueDate"), "transactionId": first(tx, "transactionId")},
+                vendor=str(vendor)[:100] if vendor else None, raw_source="akbank_open_banking",
+            )
 
-            result.append({
-                "amount_cents":      amount_cents,
-                "type":              tx_type,
-                "transaction_date":  tx.get("bookingDate") or tx.get("valueDate"),
-                "description":       description[:200],
-                "currency":          currency,
-                "reference":         tx.get("transactionId"),
-                "vendor":            vendor[:100] if vendor else None,
-                "raw_source":        "akbank_open_banking",
-            })
-
-        return result

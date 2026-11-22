@@ -1,8 +1,9 @@
 """The Monday briefing by e-mail, through the outbox (plan v10 S1.3, plan v11 A0.5).
 
 Who receives it: the company's owner, admins and CFO (from memberships, and from
-`users.org_id` for organisations older than memberships). One message per recipient
-per briefing; the outbox key makes a second dispatch a no-op.
+`users.org_id` for organisations older than memberships), and the company's accountant
+(`smmm`) when the owner chose so (`organizations.briefing_to_smmm`, a recorded standing
+preference). One message per recipient per briefing; the outbox key makes a second dispatch a no-op.
 
 Owner decision K10, recommended default applied: when the company has an accountant
 (an `smmm` membership), the message is held until the accountant releases it. The
@@ -27,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.decision import DecidedVia, Decision, DecisionKind
-from app.models.organization import OrgMembership
+from app.models.organization import Organization, OrgMembership
 from app.models.outbox_message import OutboxMessage
 from app.models.user import User, UserRole
 from app.services import decisions, outbox
@@ -39,10 +40,20 @@ RECIPIENT_ROLES = (UserRole.OWNER.value, UserRole.ADMIN.value, UserRole.CFO.valu
 HELD_FOR_ACCOUNTANT = "awaiting_accountant_release"
 
 
+async def _briefing_to_smmm(db: AsyncSession, org_id: str) -> bool:
+    flag = (
+        await db.execute(select(Organization.briefing_to_smmm).where(Organization.id == org_id))
+    ).scalar_one_or_none()
+    return bool(flag)
+
+
 async def recipients(db: AsyncSession, org_id: str) -> list[str]:
     """E-mail addresses of the people the briefing is for, each once, in a stable order."""
+    roles = RECIPIENT_ROLES
+    if await _briefing_to_smmm(db, org_id):
+        roles = (*RECIPIENT_ROLES, UserRole.SMMM.value)
     member_ids = select(OrgMembership.user_id).where(
-        OrgMembership.org_id == org_id, OrgMembership.role.in_(RECIPIENT_ROLES)
+        OrgMembership.org_id == org_id, OrgMembership.role.in_(roles)
     )
     users = (
         await db.execute(
@@ -50,7 +61,7 @@ async def recipients(db: AsyncSession, org_id: str) -> list[str]:
                 User.is_active.is_(True),
                 or_(
                     User.id.in_(member_ids),
-                    (User.org_id == org_id) & User.role.in_(RECIPIENT_ROLES),
+                    (User.org_id == org_id) & User.role.in_(roles),
                 ),
             )
         )
@@ -70,12 +81,16 @@ async def has_accountant(db: AsyncSession, org_id: str) -> bool:
 def _message(briefing: MondayBriefing, data_date: date) -> tuple[str, str]:
     subject = f"Pazartesi bülteni — {briefing.week_start}"
     link = f"{get_settings().frontend_url.rstrip('/')}/bulten"
+    runway = [briefing.runway_line] if briefing.runway_line else []
+    critical = briefing.runway_level == "critical"
     body = "\n\n".join(
         [
             f"Hafta: {briefing.week_start} – {briefing.week_end}",
+            *(runway if critical else []),  # cash running out is the first thing the e-mail says
             briefing.sentence_radar,
             briefing.sentence_obligation,
             briefing.sentence_action,
+            *([] if critical else runway),
             f"{_tr_date(data_date.isoformat())} tarihli verilere göre hazırlanmıştır.",
             f"Ayrıntılar ve yanıt: {link}",
         ]
@@ -104,6 +119,7 @@ async def collect_facts(
     return {
         "anchor_date": anchor_date.isoformat(),
         "data_date": data_date.isoformat(),
+        # The currency the radar (and so every amount below) is in: the diff shown to a person labels with it.
         "currency": radar.currency,
         "opening_cash_cents": briefing.starting_cash_cents,
         "opening_as_of": briefing.balance_as_of,
@@ -116,6 +132,7 @@ async def collect_facts(
         "receivable_count": len(receivable_ids),
         "payable_count": len(payable_ids),
         "items_sha": _sha([receivable_ids, payable_ids]),
+        "runway_line": briefing.runway_line,
         "headline": briefing.full_text[:600],
         "headline_sha": _sha(briefing.full_text),
     }
@@ -124,14 +141,14 @@ async def collect_facts(
 # The fields that make two sets of facts "the same"; the dates of reading are not among them.
 _COMPARED = (
     "opening_cash_cents", "opening_as_of", "week_start", "week_end", "inflow_cents",
-    "outflow_cents", "net_change_cents", "end_balance_cents", "items_sha", "headline_sha",
+    "outflow_cents", "net_change_cents", "end_balance_cents", "items_sha", "runway_line", "headline_sha",
 )
 _LABELS = {
     "opening_cash_cents": "Açılış bakiyesi", "opening_as_of": "Bakiye tarihi",
     "week_start": "Hafta başı", "week_end": "Hafta sonu",
     "inflow_cents": "Haftalık giriş", "outflow_cents": "Haftalık çıkış",
     "net_change_cents": "Net değişim", "end_balance_cents": "Hafta sonu bakiyesi",
-    "items_sha": "Haftanın kalemleri", "headline_sha": "Özet cümleler",
+    "items_sha": "Haftanın kalemleri", "runway_line": "Nakit pisti", "headline_sha": "Özet cümleler",
 }
 
 
@@ -142,7 +159,6 @@ def facts_fingerprint(facts: dict[str, Any]) -> str:
 def _show(field: str, facts: dict[str, Any]) -> str:
     if field.endswith("_cents"):
         value = facts.get(field)
-        # Facts stored before the currency was kept have none: shown as unknown, not as lira.
         return "bilinmiyor" if value is None else _fmt(int(value), facts.get("currency"))
     if field == "items_sha":
         return f"{facts.get('receivable_count', 0)} alacak, {facts.get('payable_count', 0)} ödeme kalemi"

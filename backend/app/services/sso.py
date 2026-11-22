@@ -404,6 +404,7 @@ async def provision_sso_user(
     """
     from sqlalchemy import select
 
+    from app.core.email_address import normalize_email
     from app.models.user import User, UserRole
 
     if not oauth_user.email:
@@ -411,13 +412,20 @@ async def provision_sso_user(
 
     # Find existing user
     result = await db.execute(
-        select(User).where(User.email == oauth_user.email.lower())
+        select(User).where(User.email == normalize_email(oauth_user.email))
     )
     user = result.scalar_one_or_none()
 
     now = datetime.now(UTC)
 
     if user:
+        if user.email_verified_at is None:
+            # The provider has verified this address; an account somebody registered here earlier without
+            # proving it is not theirs to keep: its password and API key are dropped, its sessions end.
+            user.hashed_password = ""
+            user.api_key = None
+            user.token_version = (user.token_version or 0) + 1
+            user.email_verified_at = now
         # Update SSO metadata
         user.sso_provider = oauth_user.provider
         user.sso_id       = oauth_user.provider_id
@@ -429,7 +437,7 @@ async def provision_sso_user(
 
     # Create new user (JIT provisioning)
     new_user = User(
-        email         = oauth_user.email.lower(),
+        email         = normalize_email(oauth_user.email),
         full_name     = oauth_user.full_name or oauth_user.email.split("@")[0],
         hashed_password = "",      # No password — SSO only
         role          = UserRole.ANALYST,
@@ -437,6 +445,7 @@ async def provision_sso_user(
         sso_provider  = oauth_user.provider,
         sso_id        = oauth_user.provider_id,
         last_login    = now,
+        email_verified_at = now,  # the provider verified it
     )
     db.add(new_user)
     await db.commit()

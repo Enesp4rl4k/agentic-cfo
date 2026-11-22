@@ -26,8 +26,10 @@ from app.models.data_source import (
 from app.models.decision import Decision
 from app.models.decision_log import DecisionLog
 from app.models.defensibility_packet import DefensibilityPacket
+from app.models.direction_mapping import DirectionMapping
 from app.models.donem_kilidi import DonemKilidi
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
+from app.models.email_verification import EmailVerificationToken
 from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
 from app.models.held_transaction import HeldTransaction
@@ -39,6 +41,7 @@ from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
 from app.models.outbox_message import OutboxMessage
+from app.models.password_reset import PasswordResetToken
 from app.models.payment_plan_change import PaymentPlanChange
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.proactive_alert import ProactiveAlert
@@ -84,11 +87,13 @@ __all__ = [
     "Decision",
     "DecisionLog",
     "DefensibilityPacket",
+    "DirectionMapping",
     "DonemKilidi",
     "ERPIntegration",
     "ERPSyncLog",
     "EmailIngestAddress",
     "EmailIngestMessage",
+    "EmailVerificationToken",
     "HeldTransaction",
     "InAppNotification",
     "InstitutionalizationSnapshot",
@@ -103,6 +108,7 @@ __all__ = [
     "OrgErasureRequest",
     "Organization",
     "OutboxMessage",
+    "PasswordResetToken",
     "PaymentPlanChange",
     "PilotInvite",
     "ProactiveAlert",

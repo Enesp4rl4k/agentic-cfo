@@ -7,15 +7,17 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Format a number as currency in the given currency and locale.
- * Org screens pass the organisation's base currency (see useCurrencyFormat);
- * the USD default keeps legacy call sites stable until they migrate.
+ * Money screens pass the currency the data is in (see useCurrencyFormat). `null` (no currency is known)
+ * formats the bare number: a symbol is a claim, and there is no default currency to fall back on.
  */
 export function formatCurrency(
   value: number,
-  currency = "USD",
-  locale = "en-US",
-  unknownLabel = "currency unknown",
+  currency: string | null,
+  locale = "tr-TR",
+  unknownLabel = "para birimi bilinmiyor",
 ): string {
+  const bare = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  if (currency === null) return bare.format(value);
   const code = currency.trim();
   if (/^[A-Za-z]{3}$/.test(code)) {
     try {
@@ -29,10 +31,9 @@ export function formatCurrency(
       // fall through: a code Intl rejects is as unknown as no code
     }
   }
-  // Not a currency (the backend sends "?" for rows that name none): the number, labelled, never a symbol.
-  // Guessing dollars or lira here would put a wrong unit on a real amount.
-  const plain = new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-  return `${plain} (${unknownLabel})`;
+  // A string that is not a currency code (the backend sends "?" for rows that name none): the number and
+  // an explicit label, never a symbol. Guessing dollars or lira would put a wrong unit on a real amount.
+  return `${bare.format(value)} (${unknownLabel})`;
 }
 
 export function formatPercent(value: number): string {

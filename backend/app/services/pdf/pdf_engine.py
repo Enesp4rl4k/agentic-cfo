@@ -26,6 +26,7 @@ from datetime import UTC
 from typing import Any
 
 from app.core.branding import get_brand
+from app.core.currency_totals import fmt_compact
 
 logger = logging.getLogger(__name__)
 
@@ -315,13 +316,12 @@ def build_cfo_summary_context(
     alerts   = dashboard_json.get("alerts") or []
     anomalies = dashboard_json.get("anomalies") or []
 
+    cur = pnl.get("currency")  # the currency the P&L states; bare when it states none
+
     def fmt_money(val: Any) -> str:
         if val is None: return "—"
         try:
-            v = float(val)
-            if abs(v) >= 1_000_000: return f"₺{v/1_000_000:.1f}M"
-            if abs(v) >= 1_000:     return f"₺{v/1_000:.0f}K"
-            return f"₺{v:.0f}"
+            return fmt_compact(float(val), cur)
         except Exception:
             return str(val)
 

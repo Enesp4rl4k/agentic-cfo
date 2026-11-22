@@ -10,8 +10,10 @@ from app.api.access import require_contributor, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.decisions import record_decision
 
 router = APIRouter()
 
@@ -182,6 +184,11 @@ async def apply_as_company_view(
     org_id = str(job.org_id)
     chain_result = cfo_chain_result(job_id, result)
     await apply_company_view(job_id, org_id, chain_result, db, force=True)
+    await record_decision(
+        db, org_id=org_id, kind=DecisionKind.COMPANY_VIEW_ADOPTION, target_type="analysis_job", target_id=job_id,
+        outcome="applied", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+    )
+    await db.commit()
     spawn_auto_chain(job_id, org_id, chain_result)
     return {"data": {"job_id": job_id, "company_view": True}, "error": None}
 
@@ -209,6 +216,18 @@ async def _idempotency_seized(user_id: str, key: str) -> bool:
         mark_unavailable(exc)
         return False
     return not bool(acquired)
+
+
+@router.get("/analyses/held")
+async def list_held_analyses(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Analyses of this company waiting for a person's decision, each with why it was held."""
+    from app.services import held_analysis
+
+    jobs = await held_analysis.list_held(db, current_user.org_id, current_user.id)
+    return {"data": [held_analysis.describe(j) for j in jobs], "error": None}
 
 
 @router.get("/analysis/{job_id}")
@@ -291,9 +310,12 @@ async def approve_review(
         .execution_options(synchronize_session=False)
     )
     result = await db.execute(stmt)
-    await db.commit()
     if result.rowcount != 1:
+        await db.rollback()
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    # The decision commits with the status it records, or neither does.
+    await _record_review_decision(db, job, current_user, "approved", None)
+    await db.commit()
 
     if job.org_id:
         # Off the request (it reruns the semantic snapshot and the chain, ~20s
@@ -303,6 +325,79 @@ async def approve_review(
 
         await devami_baslat(job_id)
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
+
+
+class RejectBody(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/analysis/{job_id}/reject",
+    dependencies=[Depends(require_writer)])
+async def reject_review(
+    job_id: str,
+    body: RejectBody | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """A person refuses a held analysis: it stays on record as failed, out of the company view.
+
+    Nothing of it reached the ledger, the company view or the radar while it was held, so
+    refusing it removes nothing; the file can be uploaded again.
+    """
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
+    if not job.awaiting_review:
+        raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    now = datetime.now(UTC)
+    reason = (body.reason.strip() if body and body.reason else "") or None
+    meta = dict(job.result_metadata or {})
+    meta["review"] = {"rejected_by": current_user.id, "rejected_at": now.isoformat(), "reason": reason}
+    result = await db.execute(
+        update(AnalysisJob)
+        .where(AnalysisJob.id == job_id, AnalysisJob.awaiting_review.is_(True))
+        .values(
+            awaiting_review=False,
+            status=JobStatus.FAILED,
+            error_message=reason or "Sahibi tarafından reddedildi.",
+            updated_at=now,
+            result_metadata=meta,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    await _record_review_decision(db, job, current_user, "rejected", reason)
+    await db.commit()
+    return {"data": {"job_id": job_id, "approved": False, "status": JobStatus.FAILED.value}, "error": None}
+
+
+async def _record_review_decision(
+    db: AsyncSession, job: AnalysisJob, user: User, outcome: str, reason: str | None
+) -> None:
+    """The held run's release is a decision of a person: who, when, on which analysis."""
+    if not job.org_id:
+        return
+    from app.models.decision import DecidedVia, DecisionKind
+    from app.services.decisions import record_decision
+    from app.services.held_analysis import why_held
+
+    await record_decision(
+        db,
+        org_id=job.org_id,
+        kind=DecisionKind.HELD_RUN_RELEASE,
+        target_type="analysis_job",
+        target_id=job.id,
+        outcome=outcome,
+        decided_via=DecidedVia.HUMAN,
+        decided_by=user.id,
+        reason=reason,
+        evidence_refs=[{"type": "analysis_job", "id": job.id}],
+        before={"status": JobStatus.AWAITING_REVIEW.value, "reasons": [r["code"] for r in why_held(job)]},
+        after={"status": JobStatus.COMPLETED.value if outcome == "approved" else JobStatus.FAILED.value},
+    )
 
 
 @router.get("/analysis/{job_id}/decision-packet")

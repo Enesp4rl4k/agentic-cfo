@@ -57,6 +57,10 @@ export function useCan(action: GatedAction): Can {
   }
 
   const allowed = hasRoleClass(role, ACTION_CLASS[action]);
-  const reason = { upload: g.needContribute, analyze: g.needContribute, edit: g.needWrite, decide: g.needDecide }[action];
+  // The accountant gets her own sentence: she may advise on a payment date, the company decides it.
+  const needPropose = role === "smmm" ? g.needProposeAccountant : g.needContribute;
+  const reason = {
+    upload: g.needContribute, analyze: g.needContribute, edit: g.needWrite, decide: g.needDecide, propose: needPropose,
+  }[action];
   return { allowed, reason: allowed ? null : reason, note: null };
 }

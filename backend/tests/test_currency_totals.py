@@ -373,12 +373,12 @@ def test_the_morning_brief_says_what_it_left_out_and_lets_the_figure_through_the
     assert 1_240_000 in facts.allowed_cents() and facts.profit_cents == 110_000   # the dollars are not in the profit
 
 
-def test_an_amount_with_no_currency_is_the_plain_number_labelled_unknown_never_lira():
+def test_an_amount_with_no_currency_is_the_plain_number_never_lira():
     from app.core.currency_totals import fmt_money
 
     for missing in (None, "", "  "):
         text = fmt_money(123_456, missing)
-        assert text == "1.234,56 (para birimi bilinmiyor)"
+        assert text == "1.234,56"
         assert "₺" not in text and "TRY" not in text
     assert fmt_money(123_456, "try") == "₺1.234,56"
     assert fmt_money(-5_00, "usd") == "-5,00 USD"

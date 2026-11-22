@@ -1,13 +1,20 @@
 """Rows the system would not book alone: list them, answer them, confirm the company currency.
 
-GET  /held-rows[?job_id=]            the caller's organisation's rows that wait for a person
-POST /held-rows/release              release as is, or corrected (type, currency, date, amount)
-POST /held-rows/reject               discard
-GET  /org/base-currency              the company currency and whether anyone confirmed it
-POST /org/base-currency              owner or admin confirms it; rows held only for it are released
+GET    /held-rows[?job_id=]                 the caller's organisation's rows that wait for a person (any member)
+GET    /held-rows/file-questions            files whose direction nobody could place: one question each (any member)
+POST   /held-rows/release                   release as is, or corrected (type, currency, date, amount)
+POST   /held-rows/reject                    discard
+GET    /held-rows/account-questions         statement pairs nothing links: "same bank account?" (any member)
+POST   /held-rows/account-questions/answer  owner or admin: same account / different accounts (a decision)
+POST   /held-rows/file-direction            answer a file's question once; applied to every row of the file
+GET    /held-rows/direction-mappings        the answers remembered for this organisation's statement formats
+DELETE /held-rows/direction-mappings/{id}   forget one: that format is asked again
+GET    /org/base-currency                   the company currency and whether anyone confirmed it
+POST   /org/base-currency                   owner or admin confirms it; rows held only for it are released
 
 Every answer is a recorded decision (services/decisions.py). Scoped to the caller's
-organisation: another organisation's rows are never listed and never resolved.
+organisation: another organisation's rows are never listed, and ids that are not the
+caller's organisation's answer 404.
 """
 from __future__ import annotations
 
@@ -18,16 +25,29 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import require_decider, require_writer
+from app.api.access import (
+    DECIDER_ROLES,
+    may_set_standing_rules,
+    require_decider,
+    require_decider_or_smmm,
+    require_member,
+    require_writer,
+)
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
 from app.models.user import User
-from app.services import held_rows
+from app.services import account_identity, held_direction, held_rows
+from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
+from app.services.ingest.currencies import is_currency_code
 
 router = APIRouter()
+
+
+def _not_found() -> HTTPException:
+    return HTTPException(status_code=404, detail="Not found.")
 
 
 class HeldAction(BaseModel):
@@ -45,13 +65,23 @@ class CurrencyConfirmation(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
 
 
+class FileDirectionAnswer(BaseModel):
+    job_id: str
+    file_key: str = Field(max_length=32)
+    answer: str = Field(max_length=16)
+    remember: bool = True
+    # "Files with these headers and no account named are always answered so": an explicit standing rule, never inferred.
+    standing: bool = False
+    note: str | None = Field(default=None, max_length=1000)
+
+
 def _org(user: User) -> str:
     if not user.org_id:
-        raise HTTPException(status_code=409, detail="Bu işlem bir şirket gerektirir.")
+        raise HTTPException(status_code=400, detail="Bu işlem için bir organizasyon gerekli.")
     return str(user.org_id)
 
 
-@router.get("/held-rows")
+@router.get("/held-rows", dependencies=[Depends(require_member)])
 async def list_held_rows(
     job_id: str | None = None,
     user: User = Depends(get_current_user),
@@ -59,6 +89,18 @@ async def list_held_rows(
 ) -> dict:
     rows = await held_rows.list_pending(db, _org(user), job_id)
     return {"data": {"count": len(rows), "rows": rows}, "error": None}
+
+
+@router.get("/held-rows/file-questions", dependencies=[Depends(require_member)])
+async def list_file_questions(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    role = await acting_role(db, user)
+    return {"data": {
+        "files": await held_direction.list_questions(db, _org(user)),
+        # Remembering an answer is a standing rule for that statement format: not every writer may.
+        "can_remember": may_set_standing_rules(role),
+    }, "error": None}
 
 
 async def _answer(body: HeldAction, user: User, db: AsyncSession, *, release: bool) -> dict:
@@ -70,6 +112,8 @@ async def _answer(body: HeldAction, user: User, db: AsyncSession, *, release: bo
         )
     except held_rows.CorrectionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except held_rows.UnknownRows as exc:
+        raise _not_found() from exc
     return {"data": out, "error": None}
 
 
@@ -87,7 +131,82 @@ async def reject_held_rows(
     return await _answer(body, user, db, release=False)
 
 
-@router.get("/org/base-currency")
+@router.post("/held-rows/file-direction", dependencies=[Depends(require_writer)])
+async def answer_file_direction(
+    body: FileDirectionAnswer, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    remember = body.remember and may_set_standing_rules(await acting_role(db, user))
+    try:
+        out = await held_direction.answer_file(
+            db, _org(user), user.id, body.job_id, body.file_key, body.answer,
+            remember=remember, note=body.note, standing=body.standing,
+        )
+    except held_rows.UnknownRows as exc:
+        raise _not_found() from exc
+    except (held_direction.AnswerError, held_rows.CorrectionError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    out["remember_refused"] = bool(body.remember and not remember)
+    return {"data": out, "error": None}
+
+
+class AccountAnswer(BaseModel):
+    answer: str = Field(max_length=16)  # same | different
+    job_ids_a: list[str] = Field(min_length=1, max_length=200)
+    job_ids_b: list[str] = Field(min_length=1, max_length=200)
+    name_a: str | None = Field(default=None, max_length=80)
+    name_b: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/held-rows/account-questions", dependencies=[Depends(require_member)])
+async def list_account_questions(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    from app.services.bank_accounts import proven_balances
+
+    found = await proven_balances(db, _org(user))
+    role = await acting_role(db, user)
+    return {"data": {
+        "count": len(found["questions"]), "questions": found["questions"],
+        "can_decide": role in DECIDER_ROLES,
+    }, "error": None}
+
+
+@router.post("/held-rows/account-questions/answer", dependencies=[Depends(require_decider)])
+async def answer_account_question(
+    body: AccountAnswer, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        out = await account_identity.answer(
+            db, _org(user), user.id, answer=body.answer, job_ids_a=body.job_ids_a,
+            job_ids_b=body.job_ids_b, name_a=body.name_a, name_b=body.name_b, note=body.note,
+        )
+    except account_identity.AnswerRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await db.commit()
+    return {"data": out, "error": None}
+
+
+@router.get("/held-rows/direction-mappings", dependencies=[Depends(require_member)])
+async def list_direction_mappings(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    found = await held_direction.active_mappings(db, _org(user))
+    return {"data": {"mappings": [held_direction.describe_mapping(m) for m in found]}, "error": None}
+
+
+@router.delete("/held-rows/direction-mappings/{mapping_id}", dependencies=[Depends(require_decider_or_smmm)])
+async def revoke_direction_mapping(
+    mapping_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        await held_direction.revoke_mapping(db, _org(user), user.id, mapping_id)
+    except held_rows.UnknownRows as exc:
+        raise _not_found() from exc
+    return {"data": {"revoked": mapping_id}, "error": None}
+
+
+@router.get("/org/base-currency", dependencies=[Depends(require_member)])
 async def get_base_currency(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -109,12 +228,18 @@ async def get_base_currency(
 async def confirm_base_currency(
     body: CurrencyConfirmation, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
+    """The one way to set the company currency: owner or admin, a recorded decision with before and after.
+
+    One transaction: the confirmation, the currency filled on the rows that waited for it, the rows
+    released by it and the decisions for each. Rows previously admitted as `currency_assumed` keep
+    the currency they were stored with; they are returned in `assumed_for_review`, never rewritten.
+    """
     code = body.currency.strip().upper()
-    if not code.isalpha():
-        raise HTTPException(status_code=422, detail="currency must be an ISO-4217 code")
+    if not is_currency_code(code):
+        raise HTTPException(status_code=422, detail="currency must be a known ISO-4217 code")
     org = await db.get(Organization, _org(user))
     if org is None:
-        raise HTTPException(status_code=404, detail="Not found.")
+        raise _not_found()
     before = {"currency": org.base_currency, "confirmed": org.base_currency_confirmed_at is not None}
     org.base_currency = code
     org.base_currency_confirmed_at = datetime.now(UTC)
@@ -124,6 +249,10 @@ async def confirm_base_currency(
         target_id=org.id, outcome=code, decided_via=DecidedVia.HUMAN, decided_by=user.id,
         before=before, after={"currency": code, "confirmed": True},
     )
+    released, jobs = await held_rows.fill_currency(db, org.id, user.id, code)
+    review = await held_rows.assumed_under_other_currency(db, org.id, code)
     await db.commit()
-    released = await held_rows.fill_currency(db, org.id, user.id, code)
-    return {"data": {"currency": code, "confirmed": True, "released": released}, "error": None}
+    released["ledger"] = await held_rows.append_released(db, jobs)
+    return {"data": {
+        "currency": code, "confirmed": True, "released": released, "assumed_for_review": review,
+    }, "error": None}

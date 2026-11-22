@@ -34,8 +34,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
+from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
+from app.models.decision import DecisionKind, ReadClass, read_class
 from app.models.organization import OrgMembership
 from app.models.user import User, UserRole
 from app.services.acting_role import acting_role
@@ -116,6 +118,30 @@ DECIDER_ROLES = frozenset({"owner", "admin"})
 OWN_BOOKS_ROLES = frozenset({"owner", "admin", "cfo"})
 
 
+# Which roles each read class means: the same sets the guards below use. None = any member.
+READ_ROLES: dict[ReadClass, frozenset[str] | None] = {
+    ReadClass.MEMBER: None,
+    ReadClass.CONTRIBUTOR: CONTRIBUTOR_ROLES,
+    ReadClass.WRITER: WRITER_ROLES,
+    ReadClass.DECIDER: DECIDER_ROLES,
+}
+
+
+def may_read_decision_kind(role: str | None, kind: str) -> bool:
+    """Whether `role` may read decisions of `kind`. An unknown role reads nothing; an unknown kind is DECIDER's."""
+    if role is None:
+        return False
+    roles = READ_ROLES[read_class(kind)]
+    return roles is None or role in roles
+
+
+def readable_decision_kinds(role: str | None) -> frozenset[str] | None:
+    """The kinds `role` may read; None means every kind, including ones this code does not know (deciders)."""
+    if role in DECIDER_ROLES:
+        return None
+    return frozenset(k.value for k in DecisionKind if may_read_decision_kind(role, k.value))
+
+
 def _refuse(needed: str) -> HTTPException:
     return HTTPException(
         status_code=403,
@@ -130,6 +156,20 @@ async def require_writer(
     role = await acting_role(db, user) if user.org_id else None
     if role is not None and role not in WRITER_ROLES:
         raise _refuse("veriyi değiştirme yetkisi (viewer ve analyst salt okunurdur)")
+    return user
+
+
+async def require_member(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency for reads of an organisation's own queue: any member of the acting organisation.
+
+    A viewer may read; a caller with no organisation has nothing to read (400, as the ledger's
+    read routes answer). The rows are then selected by that organisation only, so another
+    organisation's are never visible.
+    """
+    if not user.org_id:
+        raise HTTPException(status_code=400, detail="Bu işlem için bir organizasyon gerekli.")
     return user
 
 
@@ -163,8 +203,8 @@ async def require_platform_operator(user: User = Depends(get_current_user)) -> U
 
 
 def is_platform_operator(email: str | None, configured: str) -> bool:
-    allowed = {e.strip().lower() for e in (configured or "").split(",") if e.strip()}
-    return bool(email) and str(email).strip().lower() in allowed
+    allowed = {normalize_email(e) for e in (configured or "").split(",") if e.strip()}
+    return bool(email) and normalize_email(str(email)) in allowed
 
 
 async def require_decider(
@@ -174,6 +214,22 @@ async def require_decider(
     role = await acting_role(db, user) if user.org_id else None
     if role is not None and role not in DECIDER_ROLES:
         raise _refuse("owner veya admin rolü")
+    return user
+
+
+def may_set_standing_rules(role: str | None) -> bool:
+    """Creating or revoking a remembered statement mapping changes how every later statement of that
+    format is booked: an owner, admin or the accountant."""
+    return role in DECIDER_ROLES or role == UserRole.SMMM.value
+
+
+async def require_decider_or_smmm(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency: owner, admin or smmm in the acting organisation, or 403."""
+    role = await acting_role(db, user) if user.org_id else None
+    if role is not None and not may_set_standing_rules(role):
+        raise _refuse("owner, admin veya mali müşavir (smmm) rolü")
     return user
 
 
@@ -206,6 +262,10 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/auth/login"): "issues the token",
     ("POST", "/api/v1/demo/guest"): "mints an isolated demo session without signup (gated by demo_mode)",
     ("POST", "/api/v1/auth/refresh"): "exchanges a refresh token, which it verifies",
+    ("POST", "/api/v1/auth/forgot-password"): "asks for a reset link; the same answer for every address, rate-limited per IP and per address",
+    ("POST", "/api/v1/auth/resend-verification"): "asks for the verification link again; the same answer for every address, rate-limited per IP and per address",
+    ("POST", "/api/v1/auth/verify-email"): "verifies an address with its single-use e-mailed token (stored hashed, expiring)",
+    ("POST", "/api/v1/auth/reset-password"): "completes a reset with its single-use e-mailed token (stored hashed, expiring)",
     ("GET", "/api/v1/auth/sso/providers"): "lists login options before login",
     ("GET", "/api/v1/auth/sso/{provider}/login"): "starts an SSO login",
     ("GET", "/api/v1/auth/sso/{provider}/callback"): "SSO provider redirect; verifies state",
@@ -216,7 +276,8 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/webhooks/slack"): "Slack; verifies the signature",
     ("GET", "/api/v1/open-banking/callback"): "bank OAuth redirect; verifies state",
     ("GET", "/api/v1/pilot/invite/validate"): "checks an invite code before sign-up",
-    ("POST", "/api/v1/org/invite/accept"): "accepts an invite by its token",
+    ("POST", "/api/v1/org/invite/accept"): "accepts an invite by its token (an existing account also proves itself)",
+    ("POST", "/api/v1/org/invite/preview"): "reads an invitation by its secret token before sign-in: organisation, role, state",
     ("GET", "/api/v1/benchmark/sectors"): "static sector list, no tenant data",
     ("GET", "/api/v1/agent-graph/topology"): "static agent graph, no tenant data",
     ("GET", "/api/v1/open-banking/banks"): "static list of supported banks",
@@ -330,6 +391,8 @@ INLINE_GUARDED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/approve"): "payment_plan: owner or admin decide",
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/reject"): "payment_plan: owner or admin decide",
     ("POST", "/api/v1/ledger/plan-changes/{change_id}/withdraw"): "payment_plan.withdraw: only the person who proposed it, while it waits (the author check, not a role check)",
+    ("POST", "/api/v1/org/me/materiality/acknowledge"): "owner only, checked in the handler: the person a control constrains (an admin) does not set the control",
+    ("PUT", "/api/v1/org/me/materiality"): "owner only, checked in the handler: the person a control constrains (an admin) does not set the control",
     ("POST", "/api/v1/org/invite"): "_require_admin: owner or admin",
     ("DELETE", "/api/v1/org/invites/{invite_id}"): "_require_admin: owner or admin",
     ("PATCH", "/api/v1/org/me"): "_require_admin: owner or admin",
