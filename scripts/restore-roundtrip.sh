@@ -153,8 +153,9 @@ stop_api() { kill "$API_PID" 2>/dev/null || true; wait "$API_PID" 2>/dev/null ||
 start_api
 ready_code="$(curl -s --max-time 10 -o "$WORK/ready.json" -w '%{http_code}' "http://127.0.0.1:${RT_API_PORT}/api/v1/ready")"
 [[ "$ready_code" == 503 ]] || { cat "$WORK/ready.json"; die "/ready answered $ready_code on a database behind the code (want 503)"; }
-grep -q '"code": *"behind"' "$WORK/ready.json" || { cat "$WORK/ready.json"; die "/ready did not report migrations 'behind'"; }
-log "/api/v1/ready answers 503 'behind'"
+# Anonymous callers see verdicts only (the revision is for operators): migrations must be "fail".
+grep -q '"migrations": *"fail"' "$WORK/ready.json" || { cat "$WORK/ready.json"; die "/ready did not report migrations 'fail'"; }
+log "/api/v1/ready answers 503 with migrations 'fail'"
 stop_api
 
 in_backend alembic upgrade head >/dev/null
