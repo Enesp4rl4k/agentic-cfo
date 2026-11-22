@@ -65,7 +65,9 @@ app_env() {
   export BACKEND_URL="https://api.roundtrip.test" BACKEND_CORS_ORIGINS="https://app.roundtrip.test"
   export OPENAI_API_KEY="llm-placeholder-ci" LANGGRAPH_CHECKPOINT=memory
   # APP_ENV is required with Postgres, and invite-only registration needs a mail sender (never used here).
-  export APP_ENV=production SMTP_USER=roundtrip SMTP_PASSWORD=roundtrip-not-a-secret
+  export APP_ENV=production SMTP_USER=roundtrip
+  SMTP_PASSWORD="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' 
+')"; export SMTP_PASSWORD
 }
 in_backend() { (cd "$REPO_ROOT/backend" && "$@"); }
 count_rows() {

@@ -114,5 +114,5 @@ async def alert_in_own_session(code: str, *, dedupe: str = "", detail: str = "")
             await raise_alert(db, code, dedupe=dedupe, detail=detail)
             await db.commit()
         outbox.kick()
-    except Exception as exc:  # an alert must never turn a failure into a second one
-        logger.error("operator alert %s could not be written: %s", code, type(exc).__name__)
+    except Exception:  # an alert must never turn a failure into a second one
+        logger.exception("operator alert %s could not be written", code)
