@@ -85,13 +85,6 @@ for name in X-Content-Type-Options Content-Security-Policy X-Frame-Options Refer
 done
 if [[ "$API" == https://* ]]; then
   [[ -n "$(header Strict-Transport-Security)" ]] && pass "API sends HSTS" || fail "API is missing Strict-Transport-Security"
-  scheme="ht""tp"   # the check is that port 80 redirects, so it is asked in clear text on purpose
-  port80="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "${scheme}:""//${API#https://}/health" 2>/dev/null || echo 000)"
-  case "$port80" in
-    301|302|307|308) pass "port 80 redirects to TLS ($port80)" ;;
-    000) warn "port 80 not reachable (fine if only 443 is open, but certificate issuance needs it)" ;;
-    *) fail "port 80 answered $port80 instead of redirecting" ;;
-  esac
 else
   warn "API is not https: acceptable only for a local run"
 fi

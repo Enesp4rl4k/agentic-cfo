@@ -200,10 +200,12 @@ jobs:
       # A backup nobody has restored is a hope. Dump a migrated database, restore it into a fresh one,
       # check every table and file came back, run the schema preflight on it (and one migration behind),
       # then the smoke test on an API over the restored database. scripts/restore-roundtrip.sh.
-      - name: PostgreSQL 16 client tools
+      - name: PostgreSQL client tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          # The server is 16. ubuntu-latest has moved past the release that packages client 16;
+          # a newer pg_dump/pg_restore reads and writes a 16 server fine.
+          sudo apt-get install -y --no-install-recommends postgresql-client-16             || sudo apt-get install -y --no-install-recommends postgresql-client
           pg_dump --version
 
       - name: Backup and restore roundtrip (dump, restore, migrate, preflight, smoke test)

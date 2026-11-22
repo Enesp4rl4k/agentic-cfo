@@ -24,7 +24,7 @@ empty, from `IMAGE_TAG` in the compose `.env` (the deploy step already writes it
 ```
 
 It checks liveness, readiness (503 = database, schema or Redis), the running commit, that an anonymous call is
-refused, the security headers, HTTPS redirect, CORS for the app origin and not for a stranger, and the
+refused, the security headers, CORS for the app origin and not for a stranger, and the
 frontend. Add `--strict` to also fail on `degraded` (worker, outbox, scheduler). The first run after a deploy
 is often `degraded` for up to five minutes until the scheduler's first outbox pass.
 
