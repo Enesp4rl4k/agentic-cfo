@@ -283,6 +283,9 @@ class Settings(BaseSettings):
     # invites and read every company's pilot feedback (platform-wide data, not
     # a company owner's). Empty = nobody.
     platform_operator_emails: str = ""
+    # Shown to someone locked out by their company's IP allow-list: where to ask for its removal
+    # (an e-mail address or a URL). Unset: "platform yöneticinize başvurun".
+    support_contact: str = ""
 
     # File upload
     max_upload_size_mb: int = 10

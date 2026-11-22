@@ -11,6 +11,7 @@ answer is a single sentence (`outbox_immediate.PUBLIC_REFUSAL`).
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from typing import Any
 
@@ -87,14 +88,16 @@ async def destination_status(db: AsyncSession, org_id: str) -> list[dict[str, An
 
 
 def _source(channel: str, host: str) -> str:
-    return f"delivery_failing:{channel}:{host}"[:100]
+    """The idempotency key of a destination's outage. Hashed: `source` is returned to every member."""
+    digest = hashlib.sha256(host.encode("utf-8")).hexdigest()[:16]
+    return f"delivery_failing:{channel}:{digest}"
 
 
 async def notify_if_newly_failing(db: AsyncSession, row: OutboxMessage) -> bool:
     """One in-app notification when a destination starts failing; nothing for the 2nd, 3rd failure.
 
     "Starts failing": no notification for this destination exists since its last success. The text
-    names the destination host and the reason, never the URL."""
+    is one generic sentence (no host, no reason, no URL): every member can read it."""
     if row.channel not in DESTINATION_CHANNELS or row.status != FAILED:
         return False
     last_ok = (
@@ -115,12 +118,12 @@ async def notify_if_newly_failing(db: AsyncSession, row: OutboxMessage) -> bool:
         seen = seen.where(InAppNotification.created_at > last_ok)
     if (await db.execute(seen.limit(1))).first() is not None:
         return False
-    why = describe(row.last_error)
+    # Every member reads this: one generic sentence. Host and reason are in the owner/admin status route.
     db.add(InAppNotification(
         org_id=row.org_id, level="warning", domain="system", source=source, action="route",
         message=(
-            f"{row.channel} hedefi ({row.recipient}) çalışmıyor: {why['tr']}. "
-            f"/ The {row.channel} destination ({row.recipient}) is failing: {why['en']}."
+            "Bir bildirim hedefine ulaşılamıyor; ayrıntılar için yöneticinize danışın. "
+            "/ A notification destination cannot be reached; ask your administrator for details."
         ),
     ))
     await db.flush()

@@ -114,16 +114,30 @@ class RefreshRequest(BaseModel):
 
 # ── Dependency: get current user ──────────────────────────────────────────────
 
-async def _refuse_outside_allow_list(request: Request, db: AsyncSession, user: User) -> None:
-    """The organisation the user acts in may limit the addresses it can be acted in from."""
+def _refuse_outside_allow_list(request: Request, user: User, enabled: bool | None, stored: str | None) -> None:
+    """The organisation the user acts in may limit the addresses it can be acted in from.
+
+    `enabled` / `stored` ride on the query that loaded the user (an outer join to the organisation):
+    no extra round trip per request."""
     from app.core.client_ip import client_ip
     from app.services import ip_allowlist
 
-    if not user.org_id or ip_allowlist.exempt(request.url.path):
+    if not user.org_id or not enabled or ip_allowlist.exempt(request.url.path):
         return
-    refusal = await ip_allowlist.org_refusal(db, str(user.org_id), client_ip(request))
+    refusal = ip_allowlist.refusal_for(stored, client_ip(request))
     if refusal:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=refusal)
+
+
+def _user_with_allow_list(*where: Any):
+    """User columns plus the acting organisation's allow-list fields, in one statement."""
+    from app.models.organization import Organization
+
+    return (
+        select(User, Organization.ip_whitelist_enabled, Organization.ip_whitelist)
+        .outerjoin(Organization, Organization.id == User.org_id)
+        .where(*where)
+    )
 
 
 async def get_current_user(
@@ -163,12 +177,13 @@ async def get_current_user(
         except JWTError:
             raise credentials_exception
 
-        user = await db.get(User, user_id)
+        found = (await db.execute(_user_with_allow_list(User.id == user_id))).first()
+        user = found[0] if found else None
         if not user or not user.is_active or not token_is_current(payload, user.token_version):
             raise credentials_exception
         if not email_verification.is_verified(user):
             raise unverified_exception
-        await _refuse_outside_allow_list(request, db, user)
+        _refuse_outside_allow_list(request, user, found[1], found[2])
 
         # Detached, so every caller gets the same kind of object (reads work; endpoints
         # that change the user re-load it through their own session, see `create_org`).
@@ -179,17 +194,15 @@ async def get_current_user(
     if x_api_key:
         hashed_key = hash_api_key(x_api_key)
         result = await db.execute(
-            select(User).where(
-                (User.api_key == hashed_key) | (User.api_key == x_api_key),
-                User.is_active,
-            )
+            _user_with_allow_list((User.api_key == hashed_key) | (User.api_key == x_api_key), User.is_active)
         )
-        user = result.scalar_one_or_none()
+        found = result.first()
+        user = found[0] if found else None
         if not user:
             raise credentials_exception
         if not email_verification.is_verified(user):
             raise unverified_exception
-        await _refuse_outside_allow_list(request, db, user)
+        _refuse_outside_allow_list(request, user, found[1], found[2])
         return user
 
     raise credentials_exception

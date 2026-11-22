@@ -108,7 +108,7 @@ async def ws_alerts(
             try:
                 await manager.send_heartbeat(org_id)
                 # Authenticated once, at connect: ask again, so leaving or switching ends the feed.
-                if not await ws_auth.still_acting_in(user_id, org_id):
+                if not await ws_auth.still_acting_in(user_id, org_id, client_ip(ws)):
                     await ws.close(code=ws_auth.REFUSED)
                     return
             except Exception:
@@ -124,7 +124,7 @@ async def ws_alerts(
                 msg = json.loads(raw)
 
                 if msg.get("type") == "ack" and msg.get("alert_id"):
-                    if not await ws_auth.still_acting_in(user_id, org_id):
+                    if not await ws_auth.still_acting_in(user_id, org_id, client_ip(ws)):
                         await ws.close(code=ws_auth.REFUSED)
                         break
                     await manager.broadcast_acknowledgement(

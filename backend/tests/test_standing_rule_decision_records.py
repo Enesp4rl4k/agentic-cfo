@@ -122,14 +122,14 @@ async def test_an_invalid_or_foreign_trigger_change_and_a_failed_record_leave_no
 # ── IP allow-list ────────────────────────────────────────────────────────────
 
 async def test_the_ip_allow_list_records_before_and_after_and_who(client):
-    headers, org_id, user_id = await kullanici(client, "ip@example.com", role="admin")
+    headers, org_id, user_id = await kullanici(client, "ip@example.com", role="owner")
     res = await client.put(f"{API}/security/ip-whitelist", headers=headers,
                            json={"cidrs": ["203.0.113.42", "10.0.0.0/8", "127.0.0.1"], "enabled": True})
     assert res.status_code == 200, res.text
     (d,) = await decisions_of(client, org_id, kind="security_setting_change")
     assert (d.target_type, d.target_id, d.outcome, d.decided_by) == ("organization_ip_whitelist", org_id, "enabled", user_id)
     assert d.before == {"enabled": False, "cidrs": []}
-    assert d.after == {"enabled": True, "cidrs": ["203.0.113.42/32", "10.0.0.0/8", "127.0.0.1/32"], "acting_role": "admin"}
+    assert d.after == {"enabled": True, "cidrs": ["203.0.113.42/32", "10.0.0.0/8", "127.0.0.1/32"], "acting_role": "owner"}
 
     off = await client.put(f"{API}/security/ip-whitelist", headers=headers, json={"cidrs": [], "enabled": False})
     assert off.status_code == 200

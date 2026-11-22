@@ -23,10 +23,30 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 MAX_ENTRIES = 50
-REFUSAL = (
-    "Bu şirkete bu adresten erişime izin verilmiyor (IP izin listesi). Yöneticinizle görüşün. "
-    "/ Access to this company from this address is not allowed (IP allow-list)."
-)
+def recovery_sentence() -> str:
+    """How a locked-out person gets back in (tr + en), from configuration."""
+    from app.config import get_settings
+
+    contact = get_settings().support_contact.strip()
+    tr_who = f"destek: {contact}" if contact else "platform yöneticinize başvurun"
+    en_who = f"contact {contact}" if contact else "contact your platform administrator"
+    return (
+        "Şirketin sahibi (owner) listeyi izin verilen bir adresten değiştirebilir. Sahip de dışarıda kaldıysa "
+        f"listenin kaldırılmasını platform tarafından isteyin ({tr_who}). "
+        "/ The company owner can change the list from an allowed address. If the owner is locked out too, "
+        f"ask the platform to remove it ({en_who})."
+    )
+
+
+def refusal_text() -> str:
+    """The 403 text: what happened, why, who can change it, how to recover. Never the list itself."""
+    return (
+        "Bu şirket erişimi IP adresine göre kısıtlıyor ve şu anki adresiniz izin listesinde değil. "
+        "/ This company restricts access by IP address and your current address is not on the list. "
+        + recovery_sentence()
+    )
+
+
 # Calls a person needs to reach ANOTHER organisation or read who they are; never org-scoped data.
 EXEMPT_PATHS = ("/api/v1/org/memberships", "/api/v1/org/switch", "/api/v1/auth/me")
 
@@ -106,6 +126,13 @@ def exempt(path: str) -> bool:
     return path.rstrip("/") in EXEMPT_PATHS
 
 
+def refusal_for(stored: str | None, ip: str) -> str | None:
+    """The refusal text for a saved list (already known enabled) that does not contain `ip`."""
+    if not parse(stored):
+        return None
+    return None if allows(stored, ip) else refusal_text()
+
+
 async def org_refusal(db: AsyncSession, org_id: str | None, ip: str) -> str | None:
     """The refusal sentence when `org_id` has an enabled, non-empty list that does not contain `ip`."""
     if not org_id:
@@ -121,4 +148,45 @@ async def org_refusal(db: AsyncSession, org_id: str | None, ip: str) -> str | No
     ).first()
     if row is None or not row[0] or not parse(row[1]):
         return None
-    return None if allows(row[1], ip) else REFUSAL
+    return None if allows(row[1], ip) else refusal_text()
+
+
+async def lockout_preview(db: AsyncSession, org_id: str, new_stored: str, *, caller_outside: bool, caller_ip: str) -> str:
+    """Who the new list would lock out, for the confirmation step (before anything is saved).
+
+    Only data the app already stores: the address of each member's latest audit-log row. Counts and
+    roles only, never an address of another person. A member with no known address is counted as unknown."""
+    from app.models.audit_log import AuditLog
+    from app.models.organization import OrgMembership
+
+    members = (await db.execute(
+        select(OrgMembership.user_id, OrgMembership.role).where(OrgMembership.org_id == org_id)
+    )).all()
+    roles = {str(u): str(r) for u, r in members}
+    latest: dict[str, str] = {}
+    if roles:
+        rows = (await db.execute(
+            select(AuditLog.user_id, AuditLog.ip_address)
+            .where(AuditLog.user_id.in_(list(roles)), AuditLog.ip_address.is_not(None))
+            .order_by(AuditLog.created_at.desc()).limit(5000)
+        )).all()
+        for uid, address in rows:
+            latest.setdefault(str(uid), str(address))
+    outside: dict[str, int] = {}
+    unknown = 0
+    for uid, role in roles.items():
+        if uid not in latest:
+            unknown += 1
+        elif not allows(new_stored, latest[uid]):
+            outside[role] = outside.get(role, 0) + 1
+    parts = []
+    if caller_outside:
+        parts.append(f"Siz kilitlenirsiniz (şu anki adresiniz {caller_ip} listede değil) / You would be locked out (your address {caller_ip} is not on the list)")
+    if outside:
+        detail = ", ".join(f"{role}: {n}" for role, n in sorted(outside.items()))
+        parts.append(f"son bilinen adresi listenin dışında kalan üyeler / members whose last known address is outside: {sum(outside.values())} ({detail})")
+    if unknown:
+        parts.append(f"adresi bilinmeyen üyeler / members with no known address: {unknown}")
+    if not outside and not unknown:
+        parts.append("diğer üyelerin erişimi de kesilebilir / other members may lose access too")
+    return "; ".join(parts) + ". " + recovery_sentence()

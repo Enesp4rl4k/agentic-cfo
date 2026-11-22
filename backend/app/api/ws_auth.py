@@ -46,11 +46,12 @@ async def user_for_token(db: AsyncSession, token: str | None) -> User | None:
     return user
 
 
-async def still_acting_in(user_id: str, org_id: str) -> bool:
+async def still_acting_in(user_id: str, org_id: str, ip: str | None = None) -> bool:
     """Whether `user_id` is still active, still acting in `org_id` and still a member of it.
 
     A socket authenticates once, at connect. Leaving the company (removal) or
-    switching to another must end the live feed, so long-lived sockets ask again.
+    switching to another must end the live feed, so long-lived sockets ask again. With `ip`, the
+    organisation's IP allow-list is asked again too (a list enabled after the connect ends the feed).
     """
     from sqlalchemy import select
 
@@ -60,6 +61,11 @@ async def still_acting_in(user_id: str, org_id: str) -> bool:
         user = await db.get(User, str(user_id))
         if user is None or not user.is_active or not user.org_id or str(user.org_id) != str(org_id):
             return False
+        if ip is not None:
+            from app.services import ip_allowlist
+
+            if await ip_allowlist.org_refusal(db, str(org_id), ip):
+                return False
         has_row = (
             await db.execute(
                 select(OrgMembership.id).where(

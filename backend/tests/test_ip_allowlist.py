@@ -210,3 +210,89 @@ def test_the_watch_stays_quiet_when_configured_in_dev_or_after_a_public_peer():
     client_ip_module.observe_peer("93.184.216.34", production=True, configured=False)
     assert not any(client_ip_module.observe_peer("10.1.2.3", production=True, configured=False) for _ in range(30))
     client_ip_module.reset_peer_watch()
+
+
+# ── who may change it, and what a locked-out person is told ──────────────────
+
+async def _member(client, email: str, org_id: str, role: str) -> dict[str, str]:
+    from app.models.organization import OrgMembership
+    from app.models.user import User as UserRow
+    from app.services.auth import create_access_token, hash_password
+
+    async with client._maker() as db:
+        user = UserRow(email=email, hashed_password=hash_password(PAROLA), full_name="T", role=role, org_id=org_id)
+        db.add(user)
+        await db.flush()
+        db.add(OrgMembership(org_id=org_id, user_id=user.id, role=role))
+        await db.commit()
+    return {"Authorization": f"Bearer {create_access_token(user.id, email, role, token_version=0)}"}
+
+
+async def test_only_the_owner_changes_the_list_an_admin_may_read_it(client):
+    owner, org_id, _ = await kullanici(client, "own@example.com")
+    admin = await _member(client, "adm@example.com", org_id, "admin")
+    cfo = await _member(client, "cfo@example.com", org_id, "cfo")
+    body = {"cidrs": ["127.0.0.1"], "enabled": True}
+    assert (await client.put(URL, headers=admin, json=body)).status_code == 403
+    assert (await client.put(URL, headers=cfo, json=body)).status_code == 403
+    assert (await client.put(URL, headers=owner, json=body)).status_code == 200
+    assert (await client.get(URL, headers=admin)).status_code == 200
+    assert (await client.get(URL, headers=cfo)).status_code == 403
+
+
+async def test_the_refusal_says_what_why_who_and_how_to_recover_and_never_shows_the_list(client, monkeypatch):
+    owner, _, _ = await kullanici(client, "own@example.com")
+    await client.put(URL, headers=owner, json={"cidrs": ["203.0.113.9", "127.0.0.1"], "enabled": True})
+    trust_one_proxy(monkeypatch)
+    text = (await client.get(URL, headers=via("198.51.100.7", owner))).json()["error"]
+    for fragment in ("IP adresine göre kısıtlıyor", "izin listesinde değil", "şirketin sahibi", "Şirketin sahibi (owner)",
+                     "platform yöneticinize başvurun", "restricts access by IP address", "not on the list",
+                     "company owner can change the list", "platform administrator"):
+        assert fragment in text or fragment.lower() in text.lower(), fragment
+    assert "203.0.113.9" not in text and "127.0.0.1" not in text and "198.51.100.7" not in text  # no list, no addresses
+    monkeypatch.setattr(get_settings(), "support_contact", "destek@example.org")
+    again = (await client.get(URL, headers=via("198.51.100.7", owner))).json()["error"]
+    assert "destek@example.org" in again and "platform yöneticinize başvurun" not in again
+
+
+async def test_the_confirmation_says_who_would_be_locked_out_with_counts_and_roles_only(client):
+    from app.models.audit_log import AuditLog
+    from app.models.user import User as UserRow
+
+    owner, org_id, _owner_id = await kullanici(client, "own@example.com")
+    cfo = await _member(client, "cfo@example.com", org_id, "cfo")
+    unknown = await _member(client, "an@example.com", org_id, "analyst")
+    assert cfo and unknown
+    async with client._maker() as db:
+        cfo_user = (await db.execute(select(UserRow).where(UserRow.email == "cfo@example.com"))).scalar_one()
+        db.add(AuditLog(user_id=cfo_user.id, action="x", resource="/x", ip_address="198.51.100.77"))
+        await db.commit()
+    refused = await client.put(URL, headers=owner, json={"cidrs": ["203.0.113.9"], "enabled": True})
+    assert refused.status_code == 409
+    text = refused.json()["error"]
+    assert "Siz kilitlenirsiniz" in text and "127.0.0.1" in text  # the caller, own address
+    assert "cfo: 1" in text and "bilinen adresi" in text          # counts and roles of others
+    assert "adresi bilinmeyen" in text                              # members with no stored address
+    assert "198.51.100.77" not in text and "cfo@example.com" not in text  # nobody else's address or name
+    assert "platform yöneticinize başvurun" in text and "confirm_lockout" in text
+
+
+async def test_the_confirmation_without_stored_addresses_says_others_may_lose_access(client):
+    from app.services.ip_allowlist import lockout_preview
+
+    _, org_id, _ = await kullanici(client, "own@example.com")
+    async with client._maker() as db:
+        text = await lockout_preview(db, org_id, "203.0.113.9/32", caller_outside=True, caller_ip="127.0.0.1")
+    assert "Siz kilitlenirsiniz" in text and "platform yöneticinize başvurun" in text
+
+
+async def test_an_allow_list_enabled_after_connect_ends_the_alerts_feed_check(client, monkeypatch):
+    from app.api import ws_auth
+
+    owner, org_id, user_id = await kullanici(client, "own@example.com")
+    monkeypatch.setattr(ws_auth, "session_factory", lambda: client._maker)
+    assert await ws_auth.still_acting_in(user_id, org_id, "198.51.100.7") is True  # no list yet
+    await client.put(URL, headers=owner, json={"cidrs": ["127.0.0.1"], "enabled": True})
+    assert await ws_auth.still_acting_in(user_id, org_id, "198.51.100.7") is False
+    assert await ws_auth.still_acting_in(user_id, org_id, "127.0.0.1") is True
+    assert await ws_auth.still_acting_in(user_id, org_id) is True  # callers that pass no address (heartbeat of tests)

@@ -277,7 +277,9 @@ async def get_ip_whitelist(
     }
 
 
-async def _check_activation(req: IPWhitelistUpdate, request: Request, valid_cidrs: list[str]) -> None:
+async def _check_activation(
+    req: IPWhitelistUpdate, request: Request, valid_cidrs: list[str], db: AsyncSession, org_id: str
+) -> None:
     from app.config import get_settings
     from app.core.client_ip import client_ip
     from app.services import ip_allowlist
@@ -291,10 +293,13 @@ async def _check_activation(req: IPWhitelistUpdate, request: Request, valid_cidr
     if problem:
         raise HTTPException(409, problem)
     if not ip_allowlist.allows(",".join(valid_cidrs), ip) and not req.confirm_lockout:
+        summary = await ip_allowlist.lockout_preview(
+            db, org_id, ",".join(valid_cidrs), caller_outside=True, caller_ip=ip
+        )
         raise HTTPException(
             409,
-            f"Listede şu anki adresiniz ({ip}) yok: kaydederseniz siz de dahil herkes bu adres dışında "
-            "erişemez. Yine de kaydetmek için confirm_lockout=true gönderin.",
+            f"Kaydedilmedi. {summary} Yine de kaydetmek için confirm_lockout=true gönderin. "
+            "/ Not saved. Send confirm_lockout=true to save anyway.",
         )
 
 
@@ -305,14 +310,15 @@ async def update_ip_whitelist(
     current_user: User = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Update the organisation's IP allow-list. It IS enforced (api/auth.get_current_user, WebSockets).
+    """Update the organisation's IP allow-list (OWNER only). It IS enforced (api/auth.get_current_user, WebSockets).
 
     Refused (409) when: the caller's own address is not in the list and `confirm_lockout` is not set;
     the client address cannot be trusted (a proxy header and no TRUSTED_PROXY_* setting). Enabled needs
     at least one entry. Break-glass if everyone is locked out: a platform operator clears it."""
     role = await acting_role(db, current_user)
-    if role not in ("owner", "admin"):
-        raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
+    if role != "owner":
+        # Who may reach the company at all is the owner's call (one owner); an admin may read it.
+        raise HTTPException(status_code=403, detail="IP izin listesini yalnızca şirket sahibi (owner) değiştirebilir.")
 
     org_id = getattr(current_user, "org_id", None)
     if not org_id:
@@ -320,7 +326,7 @@ async def update_ip_whitelist(
 
     valid_cidrs = _validate_cidrs(req.cidrs)
     if req.enabled:
-        await _check_activation(req, request, valid_cidrs)
+        await _check_activation(req, request, valid_cidrs, db, str(org_id))
 
     from app.models.organization import Organization
     result = await db.execute(select(Organization).where(Organization.id == str(org_id)))

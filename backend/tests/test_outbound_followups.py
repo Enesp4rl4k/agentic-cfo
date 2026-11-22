@@ -179,7 +179,10 @@ async def test_one_notification_when_a_destination_starts_failing_and_again_only
     await _failing_row(client, org_id, "b")  # still failing: nothing more
     first = await notes()
     assert len(first) == 1
-    assert "127.0.0.1" in first[0].message and "iç ağa" in first[0].message and "https://" not in first[0].message
+    # every member can read it: one generic sentence, no host, no reason, no URL, nothing in `source`
+    text = first[0].message + first[0].source
+    assert "ulaşılamıyor" in first[0].message and "yöneticinize danışın" in first[0].message
+    assert "127.0.0.1" not in text and "iç ağa" not in text and "https://" not in text and "internal" not in text
     # recovery, then a new outage: one more
     async with client._maker() as db:
         await outbox.enqueue_webhook(db, key="ok", org_id=org_id, url="https://127.0.0.1/hook", event_type="e",

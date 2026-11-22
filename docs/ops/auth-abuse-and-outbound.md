@@ -104,7 +104,8 @@ reason is in the audit log (`integrations.connection_test_refused`) and, for del
 owner/admin-only `GET /api/v1/notifications/delivery-status`: per destination host, last success,
 last failure and why in tr/en, no URL, no body. A destination that starts failing raises ONE in-app
 notification (again only after a success in between). The notification table is organisation-wide
-(no per-user target), so every member sees it; its text names the host and the reason, never the URL.
+(no per-user target), so every member sees it: its text is one generic sentence ("Bir bildirim hedefine
+ulaşılamıyor; ayrıntılar için yöneticinize danışın"); host and reason are only in the owner/admin status route.
 There is no screen for the status yet (API only).
 
 **Behind a reverse proxy.** Set `TRUSTED_PROXY_COUNT=1` (or `TRUSTED_PROXY_CIDRS`), see
@@ -115,7 +116,8 @@ from private/loopback peers with neither setting present. It does not fail.
 
 ## 6. IP allow-list (enforced)
 
-`PUT /api/v1/security/ip-whitelist` `{cidrs, enabled, confirm_lockout}`; owner/admin; API only (no
+`PUT /api/v1/security/ip-whitelist` `{cidrs, enabled, confirm_lockout}`; **owner only** (admin and others get
+403; an admin may read it with GET; the decision stays readable by owner/admin); API only (no
 screen yet). Enforced when it is enabled and non-empty, at the point an organisation is acted in:
 `get_current_user` (every HTTP request, JWT or API key) and `websocket_caller` (WebSocket connect and
 every message), using `client_ip()`.
@@ -133,3 +135,12 @@ every message), using `client_ip()`.
   `security_setting_change` decision records who, before and after (`break_glass: true`).
 * Short-lived stream tickets (`stream_ticket_user`) are issued by a request that passed the check and
   are not re-checked against the list.
+
+**If you are locked out.** The 403 says this company restricts access by IP address, that your address
+is not on the list, that the company owner can change it from an allowed address, and that if the
+owner is locked out too the platform removes it. Set `SUPPORT_CONTACT` (an e-mail or URL) so the text
+names where to ask; unset it says "platform yöneticinize başvurun". The platform operator runs
+`DELETE /api/v1/platform/orgs/{org_id}/ip-whitelist` (recorded as a decision). The 409 before saving a
+list says who would be locked out: the caller, and the count and roles of members whose latest
+audit-log address is outside the new list (counts only, no addresses or names), or that other members
+may lose access if none are known. Open WebSockets re-check the list every 20 s and on every ack/message.
