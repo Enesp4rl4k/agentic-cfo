@@ -351,6 +351,36 @@ def _question(a: dict[str, Any], b: dict[str, Any], ga: list[dict[str, Any]], gb
     }
 
 
+async def account_groups(db: AsyncSession, org_id: str) -> list[dict[str, Any]]:
+    """The statement accounts the company's proven statements resolve to, and what identifies each.
+
+    {name, job_ids, identity (the stated IBAN / account number, or None), currency, known}. `known` is true only
+    for an account provably distinct from every other one: an account that nothing separates from another
+    (`uncertain`) is never treated as a counterpart (a transfer between "two" accounts that may be one is no transfer).
+    """
+    jobs = (await db.execute(
+        select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.result_metadata).where(
+            AnalysisJob.org_id == org_id, AnalysisJob.status == JobStatus.COMPLETED,
+        )
+    )).all()
+    proven, _ = _records([tuple(j) for j in jobs])
+    if not proven:
+        return []
+    for r in proven:
+        r["currency"] = normalise(r["currency"]) or None
+    found = resolve_accounts(proven, await _answers(db, org_id))
+    unsure = {i for cluster in found["uncertain"] for i in cluster}
+    out: list[dict[str, Any]] = []
+    for i, group in enumerate(found["groups"]):
+        newest = max(group, key=lambda r: (r["date"], r["job_id"]))
+        out.append({
+            "name": newest["filename"], "job_ids": sorted(r["job_id"] for r in group),
+            "identity": next((r["identity"] for r in group if _stated(r)), None),
+            "currency": newest["currency"], "known": i not in unsure,
+        })
+    return out
+
+
 async def proven_balance(db: AsyncSession, org_id: str, currency: str | None = None) -> dict[str, Any] | None:
     """The company's opening cash in its base currency (see `proven_balances`), or None."""
     opening: dict[str, Any] | None = (await proven_balances(db, org_id, currency))["opening"]

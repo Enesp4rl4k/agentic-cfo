@@ -6626,6 +6626,7 @@ export const en: MessageTree = {
       held_row_resolution: "Held row answer",
       balance_reverification: "Balance re-verification",
       account_identity: "Account identity",
+      own_transfer: "Own-account transfer",
       base_currency_confirmation: "Company currency",
       file_direction_answer: "File direction answer",
       direction_mapping: "Direction mapping",
