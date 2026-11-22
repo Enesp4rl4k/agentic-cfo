@@ -214,14 +214,41 @@ def validate_rules(rules: Any) -> list[str]:
     return errors
 
 
+def with_threshold(rules: list[dict[str, Any]], applied: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The default policy with its "high value" rule at an acknowledged materiality amount, and saying why.
+
+    `applied` is what the organisation stored when an owner or admin acknowledged or set the amount
+    (`services/materiality`): the amount in kuruş and the sentence that gives its basis. Untouched when
+    there is none, so the policy reads as it always did.
+    """
+    if not applied:
+        return rules
+    out = []
+    for rule in rules:
+        if rule.get("id") == "high_value":
+            rule = {
+                **rule,
+                "when": {"amount_kurus_gt": int(applied["amount_cents"])},
+                "note": f"Yüksek tutarlı işlem: {applied.get('basis_text', '')}".rstrip(": "),
+            }
+        out.append(rule)
+    return out
+
+
 async def load_active_rules(org_id: str | None, db: Any) -> list[dict[str, Any]]:
-    """Return the org's active policy rules, or the default set."""
+    """Return the org's active policy rules, or the default set.
+
+    The default set carries the org's materiality threshold in its "high value" rule once an owner or
+    admin acknowledged it (`services/materiality`); until then it reads exactly as it always did. A
+    policy the organisation saved itself is theirs and is returned as saved.
+    """
     if not org_id:
         return DEFAULT_POLICY_RULES
     try:
         from sqlalchemy import select
 
         from app.models.authority_policy import AuthorityPolicy
+        from app.models.organization import Organization
 
         row = (
             await db.execute(
@@ -233,6 +260,8 @@ async def load_active_rules(org_id: str | None, db: Any) -> list[dict[str, Any]]
         ).scalar_one_or_none()
         if row and row.rules:
             return list(row.rules)
+        org = await db.get(Organization, str(org_id))
+        return with_threshold(DEFAULT_POLICY_RULES, org.materiality_applied if org is not None else None)
     except Exception:
         pass
     return DEFAULT_POLICY_RULES

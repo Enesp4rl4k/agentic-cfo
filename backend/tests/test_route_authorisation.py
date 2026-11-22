@@ -270,6 +270,11 @@ CONTRIBUTORS = {"analyst", "cfo", "admin", "owner", "smmm"}  # everyone but a vi
         # ...but not what changes or decides a record
         ("DELETE", "/api/v1/datasource/nope/nope", None, {"cfo", "admin", "owner", "smmm"}),
         ("POST", "/api/v1/erp/logo-tiger/connect", {}, {"admin", "owner"}),
+        # decider: the company's own thresholds and recipients (the accountant advises; the company decides)
+        # (only the OWNER changes the threshold: an admin decides under it and must not be able to move it)
+        ("PUT", "/api/v1/org/me/materiality", {"amount_cents": 20_000_00, "reason": "deneme"}, {"owner"}),
+        ("POST", "/api/v1/org/me/materiality/acknowledge", {"amount_cents": 1000}, {"owner"}),
+        ("PUT", "/api/v1/org/me/briefing-recipients", {"send_to_smmm": False}, {"admin", "owner"}),
     ],
 )
 async def test_read_only_roles_are_refused_and_writers_pass(client, method, path, body, allowed) -> None:

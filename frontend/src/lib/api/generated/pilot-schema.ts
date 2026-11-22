@@ -465,6 +465,8 @@ export interface components {
         DecisionRequest: {
             /** Note */
             note?: string | null;
+            /** Self Decision Ack */
+            self_decision_ack?: string | null;
         };
         /** Envelope[Baslangic] */
         Envelope_Baslangic_: {
@@ -872,6 +874,11 @@ export interface components {
         PlanChangeListMeta: {
             /** Can Decide */
             can_decide: boolean;
+            /**
+             * Self Decision Ack
+             * @default Öneren ve onaylayan aynı kişi: bu öneriyi ben veriyorum ve ben onaylıyorum. Karar bu notla kaydedilir.
+             */
+            self_decision_ack: string;
         };
         /** PlanChangeView */
         PlanChangeView: {
@@ -899,8 +906,17 @@ export interface components {
             requested_at: string;
             /** Requested By */
             requested_by: string;
+            /** Self Decision */
+            self_decision?: string | null;
+            /** Self Decision Message */
+            self_decision_message?: string | null;
             /** Status */
             status: string;
+            /**
+             * Threshold Changed By Proposer
+             * @default false
+             */
+            threshold_changed_by_proposer: boolean;
             /** To Date */
             to_date: string;
         };

@@ -17,6 +17,7 @@ from app.models.organization import Organization
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
 from app.models.transaction import Transaction
 from app.platform.authority_matrix import DEFAULT_POLICY_RULES
+from app.services.self_approval import SELF_DECISION_ACK
 from tests.api_helpers import bellek_istemcisi, kullanici
 from tests.test_payment_plan_changes import member, propose, seed_item
 
@@ -112,11 +113,14 @@ async def test_an_owners_own_proposal_is_recorded_as_their_decision(client):
     item = await seed_item(client, org_id, days=20)
     created = await propose(client, owner, item, date.today() + timedelta(days=35))
     change_id = created.json()["data"]["id"]
-    assert (await client.post(f"{P}/ledger/plan-changes/{change_id}/approve", headers=owner)).status_code == 200
+    # the only decider decides their own proposal in one honest step: the sentence is confirmed and recorded
+    ack = {"self_decision_ack": SELF_DECISION_ACK}
+    assert (await client.post(f"{P}/ledger/plan-changes/{change_id}/approve", headers=owner, json=ack)).status_code == 200
 
     approvals = await records(client, kind="plan_change", outcome="approved")
     assert len(approvals) == 1
     assert approvals[0].decided_by == owner_id and approvals[0].after["self_decided"] is True
+    assert approvals[0].after["self_decision_ack"] == SELF_DECISION_ACK
 
 
 async def test_a_rejection_and_a_withdrawal_are_recorded(client):

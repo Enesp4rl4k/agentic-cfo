@@ -75,6 +75,10 @@ class DecisionKind(StrEnum):
     AGENT_CONFLICT_RESOLUTION = "agent_conflict_resolution"
     # A person makes a finished analysis the company's picture (the system did not apply it alone).
     COMPANY_VIEW_ADOPTION = "company_view_adoption"
+    # The amount above which a decision needs a senior person: acknowledged as proposed, or set by the owner.
+    MATERIALITY = "materiality"
+    # Who else receives the Monday briefing (the owner's standing choice about the accountant).
+    BRIEFING_RECIPIENTS = "briefing_recipients"
 
 
 class DecidedVia(StrEnum):
