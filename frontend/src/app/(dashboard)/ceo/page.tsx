@@ -389,7 +389,6 @@ export default function CEODashboardPage() {
               id="ceo-company"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
-              placeholder="Acme Corp"
             />
           </div>
           <div className="space-y-1.5">
