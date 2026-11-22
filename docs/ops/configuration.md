@@ -91,7 +91,7 @@ is never blocked. WARN findings are logged in every mode.
 | `TWILIO_ACCOUNT_SID` | (empty) | optional | - |  |
 | `TWILIO_AUTH_TOKEN` | (empty) | optional | - |  |
 | `TWILIO_WHATSAPP_FROM` | (empty) | optional | - |  |
-| `WHATSAPP_VERIFY_TOKEN` | (set) | optional | FATAL if the public default and WhatsApp is configured |  |
+| `WHATSAPP_VERIFY_TOKEN` | (empty) | optional | FATAL if set to the old public default `agentic-cfo-verify` and WhatsApp is configured | no default since #133: unset disables the WhatsApp webhook |
 | `SLACK_BOT_TOKEN` | (empty) | optional | - |  |
 | `SLACK_SIGNING_SECRET` | (empty) | optional | - |  |
 | `WHATSAPP_APP_SECRET` | (empty) | optional | - |  |
