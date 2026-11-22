@@ -49,6 +49,9 @@ _ROUTERS = [
     ("app.api.demo",                "router", "demo"),
     ("app.api.org",                 "router", "org"),
     ("app.api.size_profile",        "router", "org"),                         # company size answers + confirmed profile
+    ("app.api.materiality",         "router", "org"),                         # materiality threshold: proposal, acknowledgement, override
+    ("app.api.briefing_recipients", "router", "org"),                         # the briefing also to the accountant (a recorded preference)
+    ("app.api.smmm_workload",       "router", "smmm"),                        # the accountant's workload across companies
     ("app.api.pilot",               "router", "pilot"),
     ("app.api.monday_briefing",     "router", "briefing"),  # Pazartesi Bülteni
     ("app.api.context",             "router", "context"),

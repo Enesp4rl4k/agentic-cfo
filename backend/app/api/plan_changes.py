@@ -11,7 +11,7 @@ Every route is scoped to the caller's organisation: another organisation's propo
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,11 +23,12 @@ from app.api.access import ensure_tenant
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
-from app.models.decision import DecidedVia, DecisionKind
+from app.models.decision import DecidedVia, Decision, DecisionKind
 from app.models.open_item import OpenItem
+from app.models.organization import Organization
 from app.models.payment_plan_change import PENDING, STATUSES, PaymentPlanChange
 from app.models.user import User
-from app.services import payment_plan
+from app.services import materiality, payment_plan, self_approval
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 from app.services.payment_plan import PlanChangeError
@@ -43,6 +44,8 @@ class ProposeRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+    # Needed only to approve one's own proposal: the sentence `self_approval.SELF_DECISION_ACK`.
+    self_decision_ack: str | None = Field(default=None, max_length=500)
 
 
 class PlanChangeView(BaseModel):
@@ -60,10 +63,18 @@ class PlanChangeView(BaseModel):
     decided_by: str | None
     decided_at: str | None
     decision_note: str | None
+    # What the caller may do with their OWN waiting proposal: "acknowledge" (decide it after confirming that
+    # proposer and approver are the same person), "blocked" (another decider must), else null.
+    self_decision: str | None = None
+    self_decision_message: str | None = None
+    # The proposer changed the company's approval threshold shortly before or after proposing: said to
+    # whoever decides, so the audit does not depend on someone noticing the settings history.
+    threshold_changed_by_proposer: bool = False
 
 
 class PlanChangeListMeta(BaseModel):
     can_decide: bool
+    self_decision_ack: str = self_approval.SELF_DECISION_ACK
 
 
 class PlanChangeList(Envelope[list[PlanChangeView]]):
@@ -80,7 +91,10 @@ def _fail(exc: PlanChangeError) -> HTTPException:
     return HTTPException(status_code=exc.status, detail=exc.message)
 
 
-def _view(change: PaymentPlanChange, item: OpenItem | None) -> dict[str, Any]:
+def _view(
+    change: PaymentPlanChange, item: OpenItem | None, self_state: self_approval.SelfDecision | None = None,
+    threshold_moved: bool = False,
+) -> dict[str, Any]:
     return {
         "id": change.id,
         "open_item_id": change.open_item_id,
@@ -96,11 +110,60 @@ def _view(change: PaymentPlanChange, item: OpenItem | None) -> dict[str, Any]:
         "decided_by": change.decided_by,
         "decided_at": change.decided_at.isoformat() if change.decided_at else None,
         "decision_note": change.decision_note,
+        "self_decision": self_state.state if self_state and self_state.state != self_approval.NOT_SELF else None,
+        "self_decision_message": self_state.message if self_state else None,
+        "threshold_changed_by_proposer": threshold_moved,
     }
+
+
+async def _threshold_movers(db: AsyncSession, org_id: str) -> list[tuple[str, datetime]]:
+    """Who changed the company's materiality threshold, and when (recent changes only)."""
+    since = datetime.now(UTC) - timedelta(days=2 * self_approval.SELF_APPROVAL_WINDOW_DAYS)
+    rows = (
+        await db.execute(
+            select(Decision.decided_by, Decision.decided_at).where(
+                Decision.org_id == org_id, Decision.kind == DecisionKind.MATERIALITY.value,
+                Decision.decided_at >= since,
+            )
+        )
+    ).all()
+    return [(str(who), at) for who, at in rows if who]
+
+
+def _moved(change: PaymentPlanChange, movers: list[tuple[str, datetime]]) -> bool:
+    """Did the proposer change the threshold within the window before the proposal, or after it?"""
+    window = timedelta(days=self_approval.SELF_APPROVAL_WINDOW_DAYS)
+    asked = change.requested_at if change.requested_at.tzinfo else change.requested_at.replace(tzinfo=UTC)
+    return any(
+        who == change.requested_by and (at if at.tzinfo else at.replace(tzinfo=UTC)) >= asked - window
+        for who, at in movers
+    )
+
+
+async def _self_state(
+    db: AsyncSession, change: PaymentPlanChange, item: OpenItem | None, user: User, role: str
+) -> self_approval.SelfDecision:
+    """The caller's position on their own waiting proposal (`services/self_approval`)."""
+    if change.status != PENDING or change.requested_by != str(user.id) or not payment_plan.can_decide(role):
+        return self_approval.SelfDecision(self_approval.NOT_SELF)
+    # Judged against the threshold in force when it was proposed (a later change does not reach it); a row
+    # older than that column falls back to the current one. An item that is gone is an unknown amount.
+    org = await db.get(Organization, str(change.org_id))
+    threshold = change.threshold_cents if change.threshold_cents is not None else materiality.threshold_cents(org)
+    threshold_cur = change.threshold_currency or materiality.threshold_currency(org)
+    currency = item.currency if item else None
+    return self_approval.assess(
+        proposer_id=change.requested_by, user_id=str(user.id),
+        others=await self_approval.other_decider_exists(db, str(change.org_id), str(user.id)),
+        amount_cents=(item.amount_cents - item.paid_cents) if item else None, currency=currency,
+        threshold=threshold, threshold_currency=threshold_cur,
+        prior_cents=await self_approval.self_approved_total(db, str(change.org_id), str(user.id), currency),
+    )
 
 
 async def _record(
     db: AsyncSession, change: PaymentPlanChange, user: User, outcome: str, *, reason: str | None = None,
+    acknowledgement: str | None = None, item: OpenItem | None = None,
 ) -> None:
     """One decision record per step of a proposal's life, in the caller's transaction.
 
@@ -111,6 +174,14 @@ async def _record(
     after: dict[str, Any] = {"from_date": change.from_date.isoformat(), "to_date": change.to_date.isoformat(), "status": change.status}
     if outcome in ("approved", "rejected"):
         after["self_decided"] = change.requested_by == str(user.id)
+        if after["self_decided"] and outcome == "approved" and item is not None:
+            # What the person approved for themselves: the next self-approval is judged with it
+            # (`self_approval.self_approved_total`).
+            after["amount_cents"] = item.amount_cents - item.paid_cents
+            after["currency"] = item.currency
+            after["threshold_cents"] = change.threshold_cents
+        if acknowledgement:
+            after["self_decision_ack"] = acknowledgement
     await record_decision(
         db, org_id=str(change.org_id), kind=DecisionKind.PLAN_CHANGE, target_type="payment_plan_change",
         target_id=str(change.id), outcome=outcome, decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
@@ -153,7 +224,10 @@ async def propose_change(
         raise _fail(exc) from exc
     await _record(db, change, current_user, "proposed", reason=change.request_note)
     await db.commit()
-    return {"data": _view(change, await _item(db, change)), "error": None}
+    item = await _item(db, change)
+    state = await _self_state(db, change, item, current_user, await acting_role(db, current_user))
+    moved = _moved(change, await _threshold_movers(db, org_id))
+    return {"data": _view(change, item, state, moved), "error": None}
 
 
 @router.get("/ledger/plan-changes", response_model=PlanChangeList)
@@ -177,9 +251,12 @@ async def list_changes(
         .scalars()
         .all()
     }
+    role = await acting_role(db, current_user)
+    states = {r.id: await _self_state(db, r, items.get(r.open_item_id), current_user, role) for r in rows}
+    movers = await _threshold_movers(db, org_id)
     return {
-        "data": [_view(r, items.get(r.open_item_id)) for r in rows],
-        "meta": {"can_decide": payment_plan.can_decide(await acting_role(db, current_user))},
+        "data": [_view(r, items.get(r.open_item_id), states[r.id], _moved(r, movers)) for r in rows],
+        "meta": {"can_decide": payment_plan.can_decide(role), "self_decision_ack": self_approval.SELF_DECISION_ACK},
         "error": None,
     }
 
@@ -187,15 +264,33 @@ async def list_changes(
 async def _apply_decision(
     db: AsyncSession, change: PaymentPlanChange, approve: bool, body: DecisionRequest, user: User
 ) -> dict[str, Any]:
+    role = await acting_role(db, user)
+    acknowledgement: str | None = None
+    if payment_plan.can_decide(role) and change.status == PENDING:
+        if change.requested_by == str(user.id):
+            # Check and approve as one step per person: wait for any concurrent self-approval, then judge
+            # the proposal (still pending?) and the cumulative total as they are after it.
+            await self_approval.lock_proposer(db, str(change.org_id), str(user.id))
+            await db.refresh(change)
+        # Deciding one's own proposal: one honest step, or not at all (`services/self_approval`).
+        state = await _self_state(db, change, await _item(db, change), user, role)
+        if state.state == self_approval.BLOCKED and approve:
+            raise HTTPException(403, state.message)
+        if state.state == self_approval.ACKNOWLEDGE and approve:
+            if body.self_decision_ack != self_approval.SELF_DECISION_ACK:
+                raise HTTPException(422, "Öneren ve onaylayan aynı kişi: devam etmek için bunu onaylamanız gerekir.")
+            acknowledgement = body.self_decision_ack
     try:
-        payment_plan.decide(
-            change, user=user, role=await acting_role(db, user), approve=approve, note=body.note
-        )
+        payment_plan.decide(change, user=user, role=role, approve=approve, note=body.note)
     except PlanChangeError as exc:
         raise _fail(exc) from exc
-    await _record(db, change, user, "approved" if approve else "rejected", reason=change.decision_note)
+    item = await _item(db, change)
+    await _record(
+        db, change, user, "approved" if approve else "rejected", reason=change.decision_note,
+        acknowledgement=acknowledgement, item=item,
+    )
     await db.commit()
-    return {"data": _view(change, await _item(db, change)), "error": None}
+    return {"data": _view(change, item), "error": None}
 
 
 @router.post("/ledger/plan-changes/{change_id}/approve", response_model=Envelope[PlanChangeView])

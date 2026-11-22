@@ -1,10 +1,12 @@
-"""How big a company is, as the company itself says it (size input, not size logic).
+"""How big a company is, as the company itself says it, and what that sets as DEFAULTS.
 
 This module is the ONE place the band cut-offs live. They are PROVISIONAL and wait
-for the owner's decision: nothing else may import or depend on the numbers. The
-only things built on them are the answer options a person picks from and the
-suggestion `derive_size_profile` makes, and a person confirms the suggestion
-before it is stored. No threshold, approval or money rule reads the profile.
+for the owner's decision. The profile never decides an authorisation and never locks anything:
+it (a) offers the answer options and the suggestion `derive_size_profile` makes, which a person
+confirms before it is stored; (b) sets the defaults in `profile_defaults` (menu, whether the one-tap
+button leads the approval screen, whether the briefing is suggested to the accountant), every one of which the
+owner can change; (c) gives the declared monthly outflow that `services/materiality` falls back
+on while the ledger has too little history to measure the company. A larger profile loses no capability.
 
 Derivation rule (pure, documented, tested):
 
@@ -71,6 +73,15 @@ PROFILE_BY_HEADCOUNT: dict[HeadcountBand, SizeProfile] = {
     HeadcountBand.FROM_50: SizeProfile.MEDIUM,
 }
 
+# PROVISIONAL: the monthly outflow a declared band stands for when the ledger has too little history to
+# measure it (`services/materiality`): the geometric middle of a bounded band, and a round figure for the
+# open one. Whole lira in kuruş; never shown as a measurement, always labelled "beyan edilen".
+DECLARED_MONTHLY_OUTFLOW_CENTS: dict[OutflowBand, int] = {
+    OutflowBand.UNDER_500K: 250_000 * 100,
+    OutflowBand.FROM_500K_TO_5M: 1_500_000 * 100,
+    OutflowBand.OVER_5M: 10_000_000 * 100,
+}
+
 # What the menu does when a profile is confirmed. Mirrored by the frontend's
 # PROFILE_NAV (lib/nav-focus.ts); both are tested.
 FOCUS_DEFAULT: dict[SizeProfile, bool] = {
@@ -102,3 +113,33 @@ def derive_size_profile(
     if by_headcount is not None:
         return Derivation(profile=by_headcount, decided_by="headcount", disagreement=False)
     return None
+
+
+@dataclass(frozen=True)
+class ProfileDefaults:
+    """What a confirmed profile sets as a starting point. None of it is a permission and none is a lock."""
+
+    # The one-tap button leads /onay instead of sitting below the lists (a person with a handful of
+    # decisions a week). The lists are all still there, in the same order, and the button is the same.
+    one_tap_first: bool
+    # Suggest, in settings, that the Monday briefing also goes to the accountant. Only a suggestion: the
+    # owner's recorded choice (`organizations.briefing_to_smmm`) is what counts.
+    briefing_to_smmm_suggested: bool
+
+
+PROFILE_DEFAULTS: dict[SizeProfile, ProfileDefaults] = {
+    SizeProfile.MICRO: ProfileDefaults(one_tap_first=True, briefing_to_smmm_suggested=True),
+    SizeProfile.SMALL: ProfileDefaults(one_tap_first=True, briefing_to_smmm_suggested=False),
+    SizeProfile.MEDIUM: ProfileDefaults(one_tap_first=False, briefing_to_smmm_suggested=False),
+}
+
+
+def profile_defaults(profile: str | None) -> dict[str, object] | None:
+    """The defaults of a confirmed profile as plain data, or None when none is confirmed."""
+    try:
+        d = PROFILE_DEFAULTS[SizeProfile(profile)] if profile else None
+    except ValueError:
+        return None
+    if d is None:
+        return None
+    return {"one_tap_first": d.one_tap_first, "briefing_to_smmm_suggested": d.briefing_to_smmm_suggested}

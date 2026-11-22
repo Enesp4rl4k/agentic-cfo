@@ -75,7 +75,8 @@ class Organization(Base):
     )
 
     # Company size, as the company says it (services/size_profile.py). Null = not
-    # yet determined. Nothing in authorisation, thresholds or money reads these.
+    # yet determined. The profile never decides an authorisation; it sets defaults and is the fallback
+    # basis of the materiality threshold below, which the owner acknowledges before it applies.
     size_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)
     monthly_outflow_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
     headcount_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -83,6 +84,16 @@ class Organization(Base):
     size_profile_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
     size_profile_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     size_profile_set_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # The amount above which a decision needs a senior person (services/materiality.py): what an owner or
+    # admin acknowledged or set, with its basis and who/when. Null = nobody did yet, and the fixed amount
+    # the authority policy always carried still applies. Never filled in silently.
+    materiality_applied: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # The owner's standing choice that the Monday briefing also goes to the company's accountant (smmm).
+    # It only names a recipient; sending is the outbox's release flow (services/briefing_delivery.py).
+    briefing_to_smmm: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     # Tax identity. Decides an invoice's direction (we sold / we bought) and
     # names the e-Defter's owner; see app/services/org_identity.py.
