@@ -7,6 +7,7 @@ export type HeldReason =
   | "confidence_unknown"
   | "confidence_low"
   | "currency_unknown"
+  | "currency_unreadable"
   | "direction_unknown"
   | "direction_file_unknown"
   | "balance_mismatch"

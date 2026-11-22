@@ -425,14 +425,14 @@ def test_direction_is_never_assumed_to_be_income() -> None:
     # no type column, every amount positive, no source semantics: nothing says which way the money went
     n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,,TRY", header="date,amount,description,reference,type,currency"))
     assert n.rows == [] and len(n.held) == 1 and DIRECTION_MISSING in n.held[0]["feed_flags"]
-    # the file is signed: a negative amount is an expense and a positive one an income
+    # a file with both signs is NOT "signed": no contract and no type field means every row is held
     n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,-100.00,x,R1,,TRY", "2026-01-06,40.00,y,R2,,TRY"))
-    assert [(r.direction, r.amount_cents) for r in n.rows] == [("expense", 10000), ("income", 4000)]
+    assert n.rows == [] and len(n.held) == 2
     # the source's own semantics (payroll is an expense) decide only when the file states nothing
-    n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,,TRY"), source_direction="expense")
+    n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,,TRY"), source="hr_export")
     assert [r.direction for r in n.rows] == ["expense"]
     # an unknown type word is held, not read as income
-    n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,transfer,TRY"), source_direction="income")
+    n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,transfer,TRY"), source="crm_export")
     assert n.rows == [] and len(n.held) == 1
 
 

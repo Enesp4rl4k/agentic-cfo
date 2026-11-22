@@ -104,7 +104,9 @@ async def _finansal_ekle(
             csv_text = standart_csv(tablo, S.BANKA_EKSTRESI)[0]
             # The bank's title rows say which account this is; the normalised table has no room for them,
             # so the account travels as a first line the table reader skips as a title row.
-            if statement_identity(tablo.ust_metin):
+            from app.services.ingest.feed import has_coverage_header
+
+            if statement_identity(tablo.ust_metin) or has_coverage_header(tablo.ust_metin):
                 csv_text = '"' + tablo.ust_metin[:400].replace('"', "") + '"' + chr(10) + csv_text
             veri, uzanti = csv_text.encode("utf-8"), "csv"
     try:
@@ -330,7 +332,7 @@ def _fatura_mi(t: dict[str, Any]) -> bool:
     return bool(t.get("document_id"))
 
 
-def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
+def islemler_csv(islemler: list[dict[str, Any]], kapsam: str | None = None) -> bytes:
     """Connector transactions as a file the ingestion reads: signed amounts, ISO dates.
 
     An invoice carries three more columns (number, counterparty, due date): without
@@ -338,6 +340,8 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
     """
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
+    if kapsam:
+        w.writerow([kapsam])      # what the pull received: read back as the file's stated period (stated_period)
     faturali = any(_fatura_mi(t) for t in islemler)
     # The currency a source stated travels with the row; a source that states none leaves the cell empty (the
     # pipeline's own rule applies: the document's, else the confirmed base currency marked as assumed, else held).
@@ -358,7 +362,9 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
             ("?" if not has_amount else -tutar if tip == "expense" else tutar), tip,   # "?": no amount to stand behind
         ]
         if para:
-            satir.append(t.get("currency") or "")
+            # A STATED currency that cannot be read travels as it was written: the pipeline holds it, and never
+            # replaces it with the base currency (only an empty cell is "unstated").
+            satir.append(t.get("currency") or t.get("currency_raw") or "")
         if faturali:
             satir += [t.get("document_id") or "", t.get("counterparty") or "", t.get("due_date") or ""]
         w.writerow(satir)
@@ -366,7 +372,7 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
 
 
 async def islemleri_ekle(
-    db: AsyncSession, sahip: Sahip, islemler: list[dict[str, Any]], kaynak: str,
+    db: AsyncSession, sahip: Sahip, islemler: list[dict[str, Any]], kaynak: str, kapsam: str | None = None,
 ) -> dict[str, Any]:
     """A connector's pull becomes an ordinary analysis the pages can show."""
     ad = f"{kaynak}_{datetime.now(UTC):%Y%m%d_%H%M}.csv"
@@ -374,4 +380,4 @@ async def islemleri_ekle(
     # schema keeps only date, description, amount and type, which is how an invoice
     # used to lose its number and become cash (G22).
     tur = FINANSAL_BELGE if any(_fatura_mi(t) for t in islemler) else S.BANKA_EKSTRESI
-    return await dosyalari_ekle(db, sahip, [(ad, islemler_csv(islemler))], {ad: tur})
+    return await dosyalari_ekle(db, sahip, [(ad, islemler_csv(islemler, kapsam))], {ad: tur})

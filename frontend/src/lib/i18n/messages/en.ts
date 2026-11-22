@@ -5824,6 +5824,7 @@ export const en: MessageTree = {
       confidence_unknown: "confidence unknown",
       confidence_low: "low confidence",
       currency_unknown: "currency unknown",
+      currency_unreadable: "currency stated but unreadable",
       direction_unknown: "direction unclear",
       amount_unreadable: "amount unreadable",
       date_unreadable: "date unreadable",

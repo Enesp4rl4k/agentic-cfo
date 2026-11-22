@@ -230,3 +230,24 @@ def test_there_is_one_amount_parser_for_pulled_money() -> None:
     assert not any(
         isinstance(n, ast.FunctionDef) and n.name == "_to_cents" for p in _modules() for n in ast.walk(_tree(p))
     )
+
+
+# ── 5. no file-level direction heuristic ────────────────────────────────────────────────────────────────────
+
+def test_no_source_module_infers_a_direction_from_the_sign_mix_of_a_file() -> None:
+    """"The file has a negative amount, so it is signed" turned a payroll's salaries into income. Only a row's own
+    field or a source's declared contract (`feed.SOURCE_DIRECTION`) is evidence. (The upload path's
+    `direction.sign_is_informative` is a reviewed rule of its own: both signs, the rarer at 3 or 15%.)"""
+    offenders = []
+    for path in _modules():
+        rel = _rel(path)
+        if not _is_source(rel):
+            continue
+        for node in ast.walk(_tree(path)):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"any", "all"}:
+                text = ast.unparse(node)
+                if "negative" in text or "< 0" in text:
+                    offenders.append(f"{rel}:{node.lineno}")
+            if isinstance(node, ast.Name) and node.id in {"signed_file", "file_is_signed"}:
+                offenders.append(f"{rel}:{node.lineno}")
+    assert not offenders, f"a file-level sign heuristic: {offenders}"

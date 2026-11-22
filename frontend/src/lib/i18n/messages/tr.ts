@@ -2965,6 +2965,7 @@ export const tr: MessageTree = {
       confidence_unknown: "güven bilinmiyor",
       confidence_low: "güven düşük",
       currency_unknown: "para birimi bilinmiyor",
+      currency_unreadable: "para birimi okunamadı",
       direction_unknown: "yön belirsiz",
       amount_unreadable: "tutar okunamadı",
       date_unreadable: "tarih okunamadı",

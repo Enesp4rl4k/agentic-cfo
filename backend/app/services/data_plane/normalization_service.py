@@ -9,8 +9,9 @@ canonical table and carries the raw values it was read from:
   amount     `parsers.direction.parse_money` (the one amount parser); missing, unreadable or ambiguous ("1.500"
              with no locale evidence) is held;
   direction  a `type` / `direction` column the source wrote (income, expense, gelir, gider, credit, debit); else
-             the sign of the amount when the file is signed (some amount is negative); else the source's own
-             semantics (`source_direction`: payroll is an expense, a paid Stripe invoice is income); else held;
+             the source's declared contract (`feed.SOURCE_DIRECTION`: payroll is outflows, a paid Stripe invoice
+             is an inflow; a sign that contradicts the contract is held); else held. NEVER the mix of signs in the
+             file: one refund row does not make a file "signed";
   date       must read; an unreadable date is held, it is not today;
   currency   must be stated and be an ISO-4217 code; a source that states none is held (the upload pipeline
              applies the organisation's CONFIRMED base currency and marks it assumed; the canonical table has no
@@ -29,8 +30,11 @@ from app.core.dates import parse_transaction_date
 from app.services.ingest.feed import (
     EXPENSE,
     INCOME,
+    SOURCE_DIRECTION,
     Feed,
     FeedResult,
+    MoneyRead,
+    direction_by_contract,
     direction_from_code,
     item_is_blank,
     read_money,
@@ -85,22 +89,21 @@ class NormalizedFeed:
         return out
 
 
-def _direction(raw: dict[str, str], money_negative: bool, signed_file: bool, source_direction: str | None) -> str | None:
+def _direction(raw: dict[str, str], money: MoneyRead, contract: tuple[str, str | None] | None) -> str | None:
+    """Direction from EVIDENCE only: the row's own field, else the source's declared contract; else None (held).
+
+    Never from the mix of signs in the file: a lone negative row says nothing about the others."""
     said = (raw.get("type") or raw.get("direction") or raw.get("tip") or "").strip().lower()
     if said:
         return direction_from_code(said, _INCOME_WORDS, _EXPENSE_WORDS)     # an unknown word is held, not guessed
-    if money_negative:
-        return EXPENSE
-    if signed_file:
-        return INCOME
-    return source_direction
+    return direction_by_contract(contract, money)
 
 
 def normalize_csv_transactions(
     *,
     csv_bytes: bytes,
     column_mapping: dict[str, str] | None = None,
-    source_direction: str | None = None,
+    source: str | None = None,
 ) -> NormalizedFeed:
     """Convert a connector/upload CSV payload into canonical rows (clean ones) and held rows (everything else)."""
     mapping = column_mapping or {}
@@ -115,7 +118,7 @@ def normalize_csv_transactions(
     category_col = mapping.get("category", "category")
     reference_col = mapping.get("reference", "reference")
 
-    signed_file = any(read_money(r.get(amount_col)).negative for r in records)
+    contract = SOURCE_DIRECTION.get(str(source)) if source else None
     rows: list[CanonicalTxRow] = []
     held: list[dict[str, Any]] = []
     flagged: set[int] = set()
@@ -128,7 +131,7 @@ def normalize_csv_transactions(
         evidence = {"amount": raw.get(amount_col), "date": raw.get(date_col), "type": raw.get("type"),
                     "currency": raw.get("currency"), "reference": raw.get(reference_col)}
         row = feed.add(
-            amount=raw.get(amount_col), direction=_direction(raw, money.negative, signed_file, source_direction),
+            amount=raw.get(amount_col), direction=_direction(raw, money, contract),
             date=raw.get(date_col), currency=raw.get("currency"), description=raw.get(desc_col) or "",
             reference=(raw.get(reference_col) or "").strip(), evidence=evidence,
             category=raw.get(category_col) or None, counterparty=raw.get("counterparty") or raw.get("vendor") or None,

@@ -37,6 +37,7 @@ from app.services.ingest.hold import (
     AMOUNT_ZERO,
     BALANCE_MISMATCH,
     CURRENCY_UNKNOWN,
+    CURRENCY_UNREADABLE,
     DATE_UNREADABLE,
     DIRECTION_FILE,
     DIRECTION_UNKNOWN,
@@ -49,6 +50,7 @@ REASON_TEXT: dict[str, str] = {
     "confidence_unknown": "güven bilinmiyor",
     "confidence_low": "güven düşük",
     "currency_unknown": "para birimi bilinmiyor",
+    "currency_unreadable": "para birimi okunamadı",
     "direction_unknown": "yön belirsiz",
     "direction_file_unknown": "yön belirsiz",
     "balance_mismatch": "bakiye ile uyuşmuyor",
@@ -174,7 +176,11 @@ def describe(row: HeldTransaction, filename: str | None = None) -> dict[str, Any
         "job_id": row.job_id,
         "source": {"job_id": row.job_id, "filename": filename, "document_id": p.get("document_id")},
         "reasons": reasons,
-        "reason_labels": [REASON_TEXT.get(r, r) for r in reasons],
+        "reason_labels": [
+            f"{REASON_TEXT[r]}: {p.get('currency_unreadable')}" if r == "currency_unreadable" and p.get("currency_unreadable")
+            else REASON_TEXT.get(r, r)
+            for r in reasons
+        ],
         "confidence": confidence,                       # None = unknown; never a made-up number
         "confidence_label": label(confidence),
         "amount_cents": p.get("amount_cents"),
@@ -213,7 +219,7 @@ class UnknownRows(LookupError):
 # Which open question each corrected field answers.
 _FIXES = {
     "type": (DIRECTION_UNKNOWN, DIRECTION_FILE, BALANCE_MISMATCH),
-    "currency": (CURRENCY_UNKNOWN,),
+    "currency": (CURRENCY_UNKNOWN, CURRENCY_UNREADABLE),
     "transaction_date": (DATE_UNREADABLE,),
     "amount_cents": (AMOUNT_UNREADABLE, AMOUNT_ZERO, AMOUNT_UNCERTAIN),
 }
@@ -244,6 +250,7 @@ def apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | Non
             if not is_currency_code(value):
                 raise CorrectionError("currency must be a known ISO-4217 code")
             out.pop("currency_assumed", None)   # a person said it: it is no longer assumed
+            out.pop("currency_unreadable", None)
         if key == "amount_cents":
             # The direction is its own field: an amount is a magnitude.
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:

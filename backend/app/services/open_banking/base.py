@@ -207,6 +207,7 @@ class OpenBankingClient:
             the result does not cover the period.
         """
         feed = Feed(f"{self.config.bank_id}_open_banking")
+        feed.window = (start_date, end_date)
         first_url = self.config.transactions_url.format(account_id=account_id)
         url: str | None = first_url
         params: dict[str, str] | None = {"startDate": start_date, "endDate": end_date}

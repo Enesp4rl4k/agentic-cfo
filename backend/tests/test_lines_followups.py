@@ -30,7 +30,7 @@ def _held(text: str) -> list[dict]:
 
 # ── (a) ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("word", ["Ref", "Referans", "Belge", "Dekont", "FTR", "ref", "REF"])
+@pytest.mark.parametrize("word", ["Ref", "Referans", "Belge", "Dekont", "ref", "REF"])
 @pytest.mark.parametrize("digits", ["12500000", "123456789", "99999999", "10000000"])
 def test_a_bare_keyword_and_a_long_number_with_no_date_is_held_with_its_value(word, digits) -> None:
     held = _held(BASE + f"{word} {digits}\n")
@@ -38,7 +38,11 @@ def test_a_bare_keyword_and_a_long_number_with_no_date_is_held_with_its_value(wo
     assert held[0]["amount_cents"] == int(digits) * 100          # a bare integer is whole lira: shown beside the raw line
 
 
-@pytest.mark.parametrize("line", ["Ref: 12500000", "Referans No 12345678", "Fatura no 12345678", "Ref AB12345678", "Dekont: 123456789"])
+@pytest.mark.parametrize("line", [
+    "Ref: 12500000", "Referans No 12345678", "Fatura no 12345678", "Ref AB12345678", "Dekont: 123456789",
+    "FTR 2025000123", "FTR2025000123", "Fiş No: 12345678", "Fis No 12345678", "Dekont No 12345678", "Belge No 12345678",
+    "İrsaliye No 12345678", "FTR 2025000124 Ref: 98765432 nolu fatura",
+])
 def test_a_labelled_reference_is_still_explained(line) -> None:
     assert money_tokens(line) == [] and not is_candidate(line)
     assert _held(BASE + line + "\n") == []
@@ -126,3 +130,42 @@ def test_a_positively_identified_non_money_token_is_not_a_candidate(line) -> Non
 @pytest.mark.parametrize("line", ["Sube 5000", "Şube 1250,00", "Sube 500 TL", "Düzenleme ücreti 01.02.2026 100,00"])
 def test_a_branch_word_with_a_money_shaped_number_is_still_held(line) -> None:
     assert len(_held(BASE + line + "\n")) == 1
+
+
+# ── noise on the review's invoice-number text (round 2) ──────────────────────────────────────────────────────
+
+def test_the_invoice_number_text_holds_no_noise_and_loses_no_row() -> None:
+    """Five `FTR 2025000123 nolu fatura tahsilati` wrapped lines, an `FTR … Ref: …` line, and footers with a year, a
+    copyright line and an issue date with a time, on two pages. Held non-transaction lines: 10 before, 0 now (target
+    <= 1 per page)."""
+    from tests.realistic_garanti_invoices import two_page_with_invoices
+
+    text, expected = two_page_with_invoices()
+    rows, ledger = _pipeline(GarantiParser, text)
+    noise = [r["description"] for r in rows if r.get("line_unreadable")]
+    assert len(rows) - len(noise) == expected and noise == []
+    assert ledger.continuation >= 5
+
+
+def test_the_invoice_number_text_still_holds_every_money_line_injected_into_it() -> None:
+    from tests.realistic_garanti_invoices import two_page_with_invoices
+
+    lines = two_page_with_invoices()[0].split("\n")
+    lines[10:10] = ["FTR 2025000999 tahsilat 1.250,00", "Hesap özeti ücreti 1.250,00", "Ref 12500000", "FTR 5000",
+                    "© 2026 5000", "Düzenleme tarihi: 01.02.2026 14:32 250,00"]
+    rows, _ = _pipeline(GarantiParser, "\n".join(lines))
+    held = [r["description"] for r in rows if r.get("line_unreadable")]
+    assert len(held) == 5, held                               # the sixth (a dated line with an amount) is read as a ROW
+    assert len(rows) == 26                                    # 20 real + 6 injected: none lost
+
+
+@pytest.mark.parametrize("line", ["Düzenleme tarihi: 01.02.2026 14:32", "Basım tarihi 01.02.2026", "Son işlem tarihi: 31.01.2026 23:59:10"])
+def test_an_issue_date_label_with_its_date_and_time_is_a_footer(line) -> None:
+    assert _held(BASE + line + "\n") == []
+
+
+def test_a_footer_year_is_exempt_only_beside_a_page_marker_or_a_rights_line() -> None:
+    assert _held(BASE + "Sayfa 1 / 2\n2026\n") == []
+    assert _held(BASE + "2026 Garanti BBVA. Tüm hakları saklıdır\n") == []
+    assert len(_held(BASE + "2026\n")) == 1                    # a lone year with nothing around it may be an amount
+    assert len(_held(BASE + "Kira 2026\n")) == 1

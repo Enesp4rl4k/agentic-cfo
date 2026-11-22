@@ -40,7 +40,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
-from app.services.ingest.feed import FeedFailed
+from app.services.ingest.feed import FeedFailed, coverage_header
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,7 @@ class SyncScheduleConfig:
         "enabled",
         "frequency",
         "hour_utc",
+        "last_error",
         "last_run_at",
         "last_status",
         "notify_on_completion",
@@ -112,7 +113,9 @@ class SyncScheduleConfig:
         source_config: dict[str, Any] | None = None,
         auto_analyze: bool = True,
         notify_on_completion: bool = True,
+        last_error: str | None = None,
     ) -> None:
+        self.last_error = last_error
         self.schedule_id = schedule_id
         self.org_id = org_id
         self.source_type = source_type
@@ -141,7 +144,8 @@ class SyncScheduleConfig:
         if self.last_run_at is None:
             return True
 
-        delta = now - self.last_run_at
+        last = self.last_run_at if self.last_run_at.tzinfo else self.last_run_at.replace(tzinfo=UTC)
+        delta = now - last
 
         if self.frequency == SyncFrequency.DAILY:
             return delta >= timedelta(hours=23)
@@ -313,7 +317,7 @@ class ScheduledSyncRunner:
             normalized = normalize_csv_transactions(
                 csv_bytes=csv_bytes,
                 column_mapping=validation.column_mapping,
-                source_direction=_SOURCE_DIRECTION.get(str(schedule.source_type)),
+                source=str(schedule.source_type),
             )
             canonical_rows = normalized.rows
             # What the pull came to, by the one reconcile the upload pipeline runs: rows fetched = written +
@@ -458,8 +462,12 @@ class ScheduledSyncRunner:
                         job_id,
                     )
                 else:
+                    cfg = schedule.source_config or {}
+                    window = (str(cfg["from_date"])[:10], str(cfg["to_date"])[:10]) if cfg.get("from_date") and cfg.get("to_date") else None
+                    stated = coverage_header(window, [r["date"] for r in normalized.feed.rows], partial)
                     job_id = await self._create_job(
-                        csv_bytes=normalized.job_csv,
+                        # The pull's own statement of what it received heads the file: coverage reads it like a period.
+                        csv_bytes=(('"' + str(stated) + '"' + chr(10)).encode() + normalized.job_csv) if stated else normalized.job_csv,
                         filename=filename,
                         org_id=schedule.org_id,
                         column_mapping=validation.column_mapping,
@@ -513,7 +521,10 @@ class ScheduledSyncRunner:
 
         except Exception as exc:
             logger.error("ScheduledSync: error in %s: %s", schedule.schedule_id, type(exc).__name__)
-            if sync_run_id is None:
+            # State-based: a source that cannot pull (dormant, revoked, down) is reported ONCE per distinct reason, not as a
+            # new failed run on every tick; the schedule's own last_status/last_error (persisted by run_due_syncs) say so.
+            repeat = schedule.last_status == SyncStatus.FAILED and (schedule.last_error or "") == str(exc)[:500]
+            if sync_run_id is None and not repeat:
                 # The pull itself failed (before any run was opened): the failure is still a recorded run.
                 try:
                     sync_run_id = await self._start_sync_run(
@@ -941,15 +952,6 @@ async def job_owner_id(db: Any, org_id: str) -> str | None:
     return str(legacy) if legacy else None
 
 
-# What a source's rows MEAN when its file states no direction: payroll is an expense, a paid Stripe invoice and a
-# won CRM deal are income. This is the source's own semantics, not a guess; every other source writes its own.
-_SOURCE_DIRECTION = {
-    SyncSourceType.HR_EXPORT.value: "expense",
-    SyncSourceType.CRM_EXPORT.value: "income",
-    SyncSourceType.BILLING_STRIPE.value: "income",
-}
-
-
 def _outcome_note(outcome: dict[str, Any]) -> str | None:
     """One sentence for a person when the run is not a plain success (held rows, a pull that stopped short)."""
     parts: list[str] = []
@@ -972,7 +974,7 @@ def feed_row_for_csv(row: dict[str, Any]) -> dict[str, Any]:
     amount: Any = "" if cents is None else (-cents if kind == "expense" else cents) / 100
     return {
         "date": row.get("date") or "", "amount": amount, "description": row.get("description") or "",
-        "type": kind or "?", "currency": row.get("currency") or "", "reference": row.get("reference") or "",
+        "type": kind or "?", "currency": row.get("currency") or row.get("currency_raw") or "", "reference": row.get("reference") or "",
     }
 
 
@@ -1060,8 +1062,25 @@ async def run_due_syncs(db: Any, settings: Any) -> list[SyncResult]:
         if schedule.is_due(now):
             result = await runner.run(schedule, db, settings)
             results.append(result)
+            await _remember_run(db, schedule, result)
 
     return results
+
+
+async def _remember_run(db: Any, schedule: SyncScheduleConfig, result: SyncResult) -> None:
+    """Persist what the run came to on its schedule row: it is what makes a repeated failure a state, not an event."""
+    try:
+        from app.models.sync_schedule import SyncSchedule
+
+        row = await db.get(SyncSchedule, schedule.schedule_id)
+        if row is None:
+            return
+        row.last_run_at, row.last_status = result.ran_at, result.status
+        row.last_error, row.last_job_id = (result.error or None) and str(result.error)[:500], result.job_id
+        row.last_row_count, row.last_health_score = result.row_count, result.health_score
+        await db.commit()
+    except Exception as exc:
+        logger.warning("ScheduledSync: could not persist run state: %s", type(exc).__name__)
 
 
 async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
@@ -1097,6 +1116,7 @@ async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
                     enabled=bool(row.enabled),
                     last_run_at=row.last_run_at,
                     last_status=row.last_status or SyncStatus.IDLE,
+                    last_error=row.last_error,
                     source_config=source_config if isinstance(source_config, dict) else {},
                     auto_analyze=bool(row.auto_analyze),
                     notify_on_completion=bool(row.notify_on_completion),

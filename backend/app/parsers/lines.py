@@ -76,18 +76,27 @@ _LABELLED_LINE = re.compile(
 # or the token is alphanumeric ("AB12345678"). A bare "Ref 12500000" proves nothing: a person wrote 12.500.000 or a
 # reference, and the line is HELD (a number that looks like a round amount is never explained by a word alone).
 _REFERENCE = re.compile(
-    r"\b(?:fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*[.:]?[ ]*\d{8,}(?![.,]\d)"
-    r"|\b(?:ref|referans|belge|dekont|ftr)\b(?:[ ]*(?:no|nu|numarası)\b[ ]*[.:]?[ ]*|[ ]*[.:][ ]*)\d{8,}(?![.,]\d)"
-    r"|\b(?:ref|referans|belge|dekont|ftr|fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*(?:no|nu|numarası)?[ ]*[.:]?[ ]*"
+    # an invoice number: "FTR 2025000123", "Fatura No 12345678", "Fiş No: 12345678", "İrsaliye No ...", "Belge No ..."
+    r"\bftr\b[ ]*[.:]?[ ]*\d{8,}(?![.,]\d)"
+    r"|\bftr\d{8,}(?![.,]\d)"
+    r"|\b(?:fiş|fis|fatura|irsaliye|dekont|belge|sipariş|siparis)[ ]*(?:no|nu|numarası)\b[ ]*[.:]?[ ]*\d{8,}(?![.,]\d)"
+    # a plain keyword needs the label (a "no" or a colon) before its number
+    r"|\b(?:ref|referans|belge|dekont|irsaliye)\b(?:[ ]*(?:no|nu|numarası)\b[ ]*[.:]?[ ]*|[ ]*[.:][ ]*)\d{8,}(?![.,]\d)"
+    r"|\b(?:ref|referans|belge|dekont|ftr|irsaliye|fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*(?:no|nu|numarası)?[ ]*[.:]?[ ]*"
     r"(?=[A-Z0-9\-/]*[A-Z])(?=[A-Z0-9\-/]*\d)[A-Z0-9\-/]{6,}(?![.,]\d)", re.IGNORECASE,
 )
 # A branch code is zero-padded ("Şube 0123"): an amount never is, so the token is positively not money.
 _BRANCH = re.compile(r"\b(?:şube|sube)\b[ ]*(?:no|kodu)?[ ]*[.:]?[ ]*0\d{2,5}(?![\d.,])", re.IGNORECASE)
 # "Düzenleme tarihi 01.02.2026" and nothing else: a print/issue date line, with no amount to hold.
 _FOOTER_DATE = re.compile(
-    r"^(?:düzenleme|duzenleme|basım|basim|yazdırma|yazdirma|oluşturma|olusturma|çıktı|cikti|ekstre|rapor)[ ]*"
-    r"(?:tarihi|tarih)?[ ]*[:.]?[ ]*\d{1,2}[./-]\d{1,2}[./-]\d{4}$", re.IGNORECASE,
+    r"^(?:(?:düzenleme|duzenleme|basım|basim|yazdırma|yazdirma|oluşturma|olusturma|çıktı|cikti|ekstre|rapor|sorgu|"
+    r"güncelleme|guncelleme|son|işlem|islem|printed|print|generated|statement)[ ]*)+"
+    r"(?:tarihi|tarih|date|saati)?[ ]*[:.]?[ ]*\d{1,2}[./-]\d{1,2}[./-]\d{4}(?:[ ]+\d{1,2}:\d{2}(?::\d{2})?)?$", re.IGNORECASE,
 )
+# A year on a line that says "all rights reserved"/© is a copyright year; a lone year next to a page marker is a footer.
+_RIGHTS = re.compile(r"tüm hakları saklıdır|tum haklari saklidir|all rights reserved|©|\bcopyright\b", re.IGNORECASE)
+_YEAR = re.compile(r"(?<![\d.,])(?:19|20)\d{2}(?![\d.,])")
+_LONE_YEAR = re.compile(r"^(?:©[ ]*)?(?:19|20)\d{2}$")
 
 
 def _iban_valid(match: re.Match[str]) -> str:
@@ -111,8 +120,11 @@ def read_lines(text: str) -> list[str]:
 def strip_explained(line: str) -> str:
     """The line with the tokens a strict pattern identifies as not money blanked out (the rest untouched)."""
     line = _IBAN.sub(_iban_valid, line)
+    rights = bool(_RIGHTS.search(line))
     for pattern in (_CARD, *_PHONES, _PAGE, _COPYRIGHT_YEAR, _YEAR_PHRASE, _REFERENCE, _BRANCH):
         line = pattern.sub(" ", line)
+    if rights:
+        line = _YEAR.sub(" ", line)     # "2026 Garanti BBVA. Tüm hakları saklıdır": a copyright year, nothing else
     if _LABELLED_LINE.match(line.strip()) and not DATE_LIKE.search(line) and not _MONEY_SHAPE.search(line):
         return " "
     return line
@@ -275,6 +287,12 @@ def account_for_lines(text: str, transactions: list[ParsedTransaction]) -> LineA
             continue
         if header_at is not None and i < header_at and not DATE_LIKE.search(line) and not _MONEY_SHAPE.search(line):
             acct.non_row += 1
+            previous_is_row = False
+            continue
+        if _LONE_YEAR.match(line) and any(
+            0 <= k < len(lines) and (_PAGE.search(lines[k]) or _RIGHTS.search(lines[k])) for k in (i - 1, i + 1)
+        ):
+            acct.non_row += 1       # a footer year beside the page marker / copyright line: no amount in it
             previous_is_row = False
             continue
         if _FOOTER_DATE.match(line):

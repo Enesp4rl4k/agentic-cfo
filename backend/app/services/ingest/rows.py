@@ -37,6 +37,7 @@ from app.services.ingest.cells import (
     _parse_amount,
     _parse_date,
 )
+from app.services.ingest.currencies import is_currency_code
 from app.services.ingest.okuma import ReadLedger
 
 logger = logging.getLogger(__name__)
@@ -220,7 +221,7 @@ def _para_birimi(raw: str) -> str | None:
     """An ISO-4217 code from a currency cell; None for an empty or unreadable one."""
     code = raw.strip().upper()
     code = _PARA_BIRIMI_TAKMA_ADLARI.get(code, code)
-    return code if len(code) == 3 and code.isalpha() else None
+    return code if len(code) == 3 and code.isalpha() and is_currency_code(code) else None
 
 
 def _kodlu_mu(r_lower: dict[str, str]) -> bool:
@@ -257,6 +258,11 @@ def _csv_satiri(
         # has classified: the row is read by its words and its sign, and says so.
         "confidence": 0.6 if account_code and hesap is None else 0.95,
     }
+    stated = _ilk(r_lower, "currency", "para birimi", "doviz", "doviz cinsi", "pb").strip()
+    if stated and tx["currency"] is None:
+        # The row STATES a currency that cannot be read ("XXX", "US$1"): it is held with what it said and the
+        # organisation's base currency is never put in its place (only a currency nobody stated may follow that rule).
+        tx["currency_unreadable"] = stated[:20]
     if hesap is not None:
         raw_amt = _ilk(r_lower, "amount", "tutar") or "0"
         borc, alacak = _kolon(r_lower, DEBIT_ALIASES), _kolon(r_lower, CREDIT_ALIASES)

@@ -100,6 +100,37 @@ def first(item: Any, *keys: str) -> Any:
     return None
 
 
+ONE_WAY = "one_way"      # the source's contract: every row moves money one way; a sign that says otherwise is held
+SIGNED = "signed"        # the source's contract: amounts are signed (negative = out); only a declared source may use it
+
+# THE one place a direction is declared by a source's contract, never inferred from the data. A row's own explicit
+# direction/type field always comes first; with neither a field nor an entry here the row is HELD. There is no
+# file-level rule ("the file has a negative, so it is signed"): one refund row in a payroll or Stripe file must not
+# turn every other row into income.
+SOURCE_DIRECTION: dict[str, tuple[str, str | None]] = {
+    # A payroll export lists what the company pays its staff: outflows. A negative line (an advance returned) says
+    # nothing the contract allows, so it is held, not booked as income and not as more payroll.
+    "hr_export": (ONE_WAY, EXPENSE),
+    # A CRM deal export is filtered to closed-won deals: sales, inflows.
+    "crm_export": (ONE_WAY, INCOME),
+    # The Stripe pull is `status=paid` invoices: charges, inflows. A refund or credit note is not in this pull;
+    # one that appears (a negative amount) is held.
+    "billing_stripe": (ONE_WAY, INCOME),
+}
+
+
+def direction_by_contract(contract: tuple[str, str | None] | None, money: MoneyRead) -> str | None:
+    """The direction a source's declared contract gives this amount; None (held) when it gives none."""
+    if contract is None or money.cents is None:
+        return None
+    kind, fixed = contract
+    if kind == ONE_WAY:
+        return None if money.negative else fixed
+    if kind == SIGNED:
+        return direction_from_sign(money)
+    return None
+
+
 def direction_from_code(code: Any, credit: Iterable[str], debit: Iterable[str]) -> str | None:
     """income / expense from a type code the source documents; anything else, or nothing, is None (held)."""
     text = str(code).strip().upper() if code is not None else ""
@@ -134,6 +165,18 @@ def iso_currency(raw: Any) -> tuple[str | None, bool]:
     return (text, True) if is_currency_code(text) else (None, False)
 
 
+_CARD_RUN = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
+_BEARER = re.compile(r"(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE)
+
+
+def mask_secrets(text: str) -> str:
+    """A held row is shown to people: a token, an authorization header or a full card number never is.
+
+    A run of 13-19 digits (a card number, with or without spaces/dashes) keeps its last four; "Bearer xxxx" is cut."""
+    text = _BEARER.sub("[gizli]", text)
+    return _CARD_RUN.sub(lambda m: "**** " + re.sub(r"\D", "", m.group(0))[-4:], text)
+
+
 def evidence_text(evidence: dict[str, Any]) -> str:
     """The raw values a held row shows its reviewer. Fields the SOURCE module chose; a secret-looking key is dropped."""
     parts = []
@@ -142,7 +185,39 @@ def evidence_text(evidence: dict[str, Any]) -> str:
             continue
         text = repr(value) if not isinstance(value, str) else repr(value[:_SUMMARY_VALUE])
         parts.append(f"{key}={text[:_SUMMARY_VALUE]}")
-    return "; ".join(parts)
+    return mask_secrets("; ".join(parts))
+
+
+def _tr_date(iso: str) -> str:
+    return f"{iso[8:10]}.{iso[5:7]}.{iso[:4]}"
+
+
+_COVERAGE_MARK = re.compile(r"çekim\s+(?:tamamlandı|yarıda\s+kaldı)", re.IGNORECASE)
+
+
+def has_coverage_header(text: str) -> bool:
+    """Whether a file's title rows carry a sync's own statement of what it received (`coverage_header`)."""
+    return bool(_COVERAGE_MARK.search(text or ""))
+
+
+def coverage_header(window: tuple[str, str] | None, row_dates: list[str | None], partial: str | None) -> str | None:
+    """The one title line a pulled file carries so coverage reads it like a statement's stated period.
+
+    A COMPLETED pull states the window it asked for and fully received ("Dönem: 01.03.2026 - 31.03.2026 Çekim
+    tamamlandı"): that is proof of the period, not a guess from the first and last row. A PARTIAL pull states only what
+    it received, from its first to its last row ("... Çekim yarıda kaldı: en son tam alınan gün 27.03.2026"); both
+    edges of that span are strict and the five-day edge tolerance never applies to them. No window and no rows:
+    nothing is stated.
+    """
+    days = sorted(str(d)[:10] for d in row_dates if d)
+    if partial:
+        if not days:
+            return None
+        return (f"Dönem: {_tr_date(days[0])} - {_tr_date(days[-1])} "
+                f"Çekim yarıda kaldı: en son tam alınan gün {_tr_date(days[-1])}")
+    if window:
+        return f"Dönem: {_tr_date(window[0])} - {_tr_date(window[1])} Çekim tamamlandı"
+    return None
 
 
 @dataclass
@@ -153,6 +228,13 @@ class FeedResult:
     failed: str | None = None          # nothing usable was fetched; the reason
     partial: str | None = None         # some of it was fetched; what is missing
     ignored: dict[str, int] = field(default_factory=dict)    # items the source marks as not (yet) money, by named rule
+    window: tuple[str, str] | None = None                    # the days the pull asked for (ISO), when it asked for a range
+
+    def coverage_header(self) -> str | None:
+        """The title line for the file this pull becomes (see `coverage_header`)."""
+        if self.failed:
+            return None
+        return coverage_header(self.window, [r.get("date") for r in self.rows], self.partial)
 
     @property
     def held_candidates(self) -> int:
@@ -193,6 +275,7 @@ class Feed:
         self.failed: str | None = None
         self.partial: str | None = None
         self.ignored: dict[str, int] = {}
+        self.window: tuple[str, str] | None = None
 
     def each(self, items: Iterable[Any]) -> Iterator[Any]:
         """Iterate the fetched items, counting every one (`read`) before the caller looks at it."""
@@ -228,7 +311,8 @@ class Feed:
         code, readable = iso_currency(currency)
         if not readable:
             flags.append(CURRENCY_UNREADABLE)
-        text = description or ""
+            extra["currency_raw"] = str(currency).strip()[:20]     # what the source STATED: it travels to the review queue
+        text = mask_secrets(description or "")
         if flags and evidence:
             text = f"{text} [ham: {evidence_text(evidence)}]"
         row: dict[str, Any] = {
@@ -245,7 +329,7 @@ class Feed:
         return self.result()
 
     def result(self) -> FeedResult:
-        return FeedResult(self.rows, self.ledger, self.source, self.failed, self.partial, self.ignored)
+        return FeedResult(self.rows, self.ledger, self.source, self.failed, self.partial, self.ignored, self.window)
 
 
 def item_is_blank(item: Any) -> bool:
@@ -257,6 +341,10 @@ def item_is_blank(item: Any) -> bool:
     return isinstance(item, (str, list)) and not item
 
 
+SAFETY_KEYS = ("feed_flags", "currency_raw")
+
+
 def rows_for_pipeline(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The rows as `islemler_csv` reads them (the helper flag is not a column)."""
-    return [{k: v for k, v in r.items() if k != "feed_flags"} for r in rows]
+    """The rows as `islemler_csv` reads them. A projection never drops a safety key (`SAFETY_KEYS`): it was the
+    dropped `feed_flags` that let a stated-but-unreadable currency be replaced by the base currency."""
+    return [dict(r) for r in rows]

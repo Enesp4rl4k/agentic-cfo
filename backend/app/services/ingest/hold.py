@@ -27,6 +27,7 @@ from app.services.ingest.cells import _detect_currency
 CONFIDENCE_UNKNOWN = "confidence_unknown"
 CONFIDENCE_LOW = "confidence_low"
 CURRENCY_UNKNOWN = "currency_unknown"
+CURRENCY_UNREADABLE = "currency_unreadable"   # the source STATED a currency that cannot be read: never the base currency
 DIRECTION_UNKNOWN = "direction_unknown"
 # The whole file's direction could not be placed (app.parsers.direction): one question for the file.
 DIRECTION_FILE = "direction_file_unknown"
@@ -47,7 +48,7 @@ def resolve_currency(
     """Give each row without a currency the document's, else the confirmed base's (assumed). In place."""
     stated = _detect_currency(raw_text)
     for row in rows:
-        if str(row.get("currency") or "").strip():
+        if str(row.get("currency") or "").strip() or row.get("currency_unreadable"):
             continue
         if stated:
             row["currency"] = stated
@@ -65,7 +66,9 @@ def row_reasons(row: dict[str, Any]) -> list[str]:
         reasons.append(CONFIDENCE_UNKNOWN)
     elif needs_review(confidence):
         reasons.append(CONFIDENCE_LOW)
-    if not str(row.get("currency") or "").strip():
+    if row.get("currency_unreadable"):
+        reasons.append(CURRENCY_UNREADABLE)
+    elif not str(row.get("currency") or "").strip():
         reasons.append(CURRENCY_UNKNOWN)
     if row.get("amount_uncertain"):
         reasons.append(AMOUNT_UNCERTAIN)

@@ -31,6 +31,9 @@ _LABELLED = re.compile(
     r"[^\n\d]{0,30}" + _D + _DASH + _D,
     re.IGNORECASE,
 )
+_PULL = re.compile(
+    r"çekim\s+(tamamlandı|yarıda\s+kaldı)(?:[^\d]{0,40}" + _D + r")?", re.IGNORECASE,
+)
 _START = re.compile(r"(?:başlangıç|baslangic|başlama|baslama|start|from)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
 _END = re.compile(r"(?:bitiş|bitis|bitim|end|to)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
 
@@ -84,7 +87,11 @@ def stated_period(text: str, transaction_dates: list[str] | None = None) -> dict
     dates = sorted(str(d)[:10] for d in (transaction_dates or []) if d)
     if dates and (dates[0] < start.isoformat() or dates[-1] > end.isoformat()):
         return None
-    return {"start": start.isoformat(), "end": end.isoformat()}
+    period: dict[str, Any] = {"start": start.isoformat(), "end": end.isoformat()}
+    # A sync's own statement of what it received (`feed.coverage_header`): proof of the span, not a header claim.
+    if pull := _PULL.search("\n".join(header)):
+        period["pulled"] = "complete" if pull.group(1).lower().startswith("tamam") else "partial"
+    return period
 
 
 def attach_period(patch: dict[str, Any]) -> dict[str, Any]:

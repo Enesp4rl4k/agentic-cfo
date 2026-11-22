@@ -295,7 +295,7 @@ async def sync_transactions(
         return {"data": {"job_id": None, **summary, "status": "veri_yok"}, "error": None}
 
     sonuc = await islemleri_ekle(db, Sahip.kullanici(current_user), rows_for_pipeline(result.rows),
-                                 kaynak=f"{body.bank_id}_open_banking")
+                                 kaynak=f"{body.bank_id}_open_banking", kapsam=result.coverage_header())
     dosya = (sonuc.get("dosyalar") or [{}])[0]
     if dosya.get("durum") != EKLENDI:
         raise HTTPException(status_code=422, detail=dosya.get("mesaj") or "İşlemler eklenemedi.")
