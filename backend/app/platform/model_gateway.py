@@ -6,7 +6,7 @@ agents, skills, routers and services call :func:`complete`, which owns the
 cross-cutting concerns that were previously copy-pasted (or missing) at ~40 call
 sites:
 
-  * model selection      — delegated to the task→model table in ``llm_router``
+  * model selection      — task→tier table in ``model_catalog``; tier→id from settings
   * structured output    — ``schema=`` returns a validated pydantic instance
   * retry + backoff      — transient errors are retried up to LLM_CALL_MAX_ATTEMPTS
   * timeout              — every call is bounded by LLM_CALL_TIMEOUT_SECONDS
@@ -31,7 +31,17 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.platform.model_catalog import MODELS, ModelConfig, select_model
+from app.platform.model_catalog import (
+    ModelConfig,
+    Tier,
+    config_for_model,
+    config_for_tier,
+    cost_usd,
+    http_status,
+    is_provider_rejection,
+    llm_config_report,
+    select_model,
+)
 from app.platform.policies import (
     LLM_CACHE_MAX_ENTRIES,
     LLM_CACHE_TTL_SECONDS,
@@ -90,7 +100,7 @@ class GatewayResult:
     parsed: Any | None = None          # pydantic instance when schema= was given
     input_tokens: int = 0
     output_tokens: int = 0
-    cost_usd: float = 0.0
+    cost_usd: float | None = 0.0       # None = model price unknown (never 0)
     latency_ms: float = 0.0
     from_cache: bool = False
     attempts: int = 1
@@ -103,6 +113,7 @@ class _Ledger:
     calls: int = 0
     ok_calls: int = 0
     total_cost_usd: float = 0.0
+    unpriced_calls: int = 0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     by_model: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -112,22 +123,25 @@ class _Ledger:
         self.calls += 1
         if ok:
             self.ok_calls += 1
-        self.total_cost_usd = round(self.total_cost_usd + res.cost_usd, 6)
+        cost = res.cost_usd or 0.0
+        self.unpriced_calls += res.cost_usd is None
+        self.total_cost_usd = round(self.total_cost_usd + cost, 6)
         self.total_input_tokens += res.input_tokens
         self.total_output_tokens += res.output_tokens
         m = self.by_model.setdefault(res.model, {"calls": 0, "cost_usd": 0.0})
         m["calls"] += 1
-        m["cost_usd"] = round(m["cost_usd"] + res.cost_usd, 6)
+        m["cost_usd"] = round(m["cost_usd"] + cost, 6)
         key = org_id or "(none)"
         o = self.by_org.setdefault(key, {"calls": 0, "cost_usd": 0.0})
         o["calls"] += 1
-        o["cost_usd"] = round(o["cost_usd"] + res.cost_usd, 6)
+        o["cost_usd"] = round(o["cost_usd"] + cost, 6)
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "calls": self.calls,
             "ok_calls": self.ok_calls,
             "total_cost_usd": self.total_cost_usd,
+            "unpriced_calls": self.unpriced_calls,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
             "avg_cost_usd": round(self.total_cost_usd / self.calls, 6) if self.calls else 0.0,
@@ -220,18 +234,26 @@ async def _enforce_org_budget(org_id: str | None) -> None:
 # ── Model selection ─────────────────────────────────────────────────────────
 
 def _resolve_model(task: str, prompt_len: int, model_override: str | None) -> ModelConfig:
+    """``model_override`` is a tier name ("cheap"/"strong") or a literal model id."""
     if model_override:
-        return MODELS.get(model_override, MODELS["gpt-4o"])
+        if model_override in (Tier.CHEAP, Tier.STRONG):
+            return config_for_tier(model_override)
+        return config_for_model(model_override)
     try:
         return select_model(task, prompt_len)
-    except Exception:  # deterministic task / unknown → safest capable model
-        return MODELS["gpt-4o"]
+    except Exception:  # deterministic task / unknown → the strong tier
+        return config_for_tier(Tier.STRONG)
 
 
 def _cache_key(model: str, system_prompt: str, prompt: str, schema_name: str) -> str:
-    h = hashlib.sha256()
-    h.update(f"{model}\x00{schema_name}\x00{system_prompt}\x00{prompt}".encode())
-    return h.hexdigest()
+    raw = f"{model}\x00{schema_name}\x00{system_prompt}\x00{prompt}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def llm_config_status() -> dict[str, Any]:
+    """Configured base_url/model pair for ops: no network call, never the key."""
+    from app.config import get_settings
+    return llm_config_report(api_key_configured=not is_placeholder_key(get_settings().openai_api_key))
 
 
 # ── Raw provider call (the ONLY place ChatOpenAI is built) ───────────────────
@@ -239,6 +261,8 @@ def _cache_key(model: str, system_prompt: str, prompt: str, schema_name: str) ->
 History = list[dict[str, str]]  # [{"role": "user"|"assistant", "content": "..."}]
 
 
+def _first(*values: Any) -> Any:  # first value that is not None
+    return next(v for v in values if v is not None)
 def _build_client(cfg: ModelConfig, temperature: float | None, max_tokens: int | None) -> Any:
     """Construct the model client. The ONLY ChatOpenAI() call in the backend."""
     from app.config import get_settings
@@ -251,8 +275,8 @@ def _build_client(cfg: ModelConfig, temperature: float | None, max_tokens: int |
 
     return ChatOpenAI(
         model=cfg.model_id,
-        temperature=cfg.temperature if temperature is None else temperature,
-        max_tokens=cfg.max_tokens if max_tokens is None else max_tokens,
+        temperature=_first(temperature, cfg.temperature, settings.llm_temperature),
+        max_tokens=_first(max_tokens, cfg.max_tokens, settings.llm_max_tokens),
         api_key=settings.openai_api_key,  # type: ignore[arg-type]  # langchain coerces str→SecretStr
         base_url=getattr(settings, "llm_base_url", None) or None,
     )
@@ -333,7 +357,8 @@ def _persist_call_log(
                         model=model,
                         input_tokens=res.input_tokens if res else 0,
                         output_tokens=res.output_tokens if res else 0,
-                        cost_usd=res.cost_usd if res else 0.0,
+                        # llm_call_log.cost_usd is NOT NULL (follow-up migration): unpriced rows store 0.0
+                        cost_usd=(res.cost_usd or 0.0) if res else 0.0,
                         latency_ms=res.latency_ms if res else 0.0,
                         ok=ok,
                         from_cache=res.from_cache if res else False,
@@ -369,12 +394,11 @@ async def complete(
     max_attempts: int = LLM_CALL_MAX_ATTEMPTS,
 ) -> GatewayResult:
     """
-    Run one LLM completion with routing, retry, timeout, caching, cost logging
-    and tracing.
+    Run one LLM completion: routing, retry, timeout, caching, cost log, tracing.
 
     Raises:
-        LLMUnavailable: the configured API key is a placeholder. Callers that
-            have a deterministic fallback should catch this and use it.
+        LLMUnavailable: placeholder API key, or the provider refused the model
+            (4xx, not retried). Callers should use their deterministic fallback.
     """
     system_prompt = system_prompt or _DEFAULT_SYSTEM_PROMPT
     cfg = _resolve_model(task, len(prompt), model_override)
@@ -425,7 +449,15 @@ async def complete(
                 # or spawn a DB write; the caller falls back to a template.
                 raise
             except (TimeoutError, Exception) as exc:
-                if attempt < max_attempts:
+                rejected = is_provider_rejection(exc)
+                if rejected:
+                    logger.error(
+                        "LLM provider rejected the request (HTTP %s): base_url host=%s "
+                        "model=%s task=%s. Check LLM_BASE_URL/LLM_MODEL; not retrying.",
+                        http_status(exc), llm_config_report()["base_url_host"],
+                        cfg.model_id, task,
+                    )
+                if attempt < max_attempts and not rejected:
                     await asyncio.sleep(LLM_CALL_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
                     continue
                 latency_ms = round((time.time() - start) * 1000, 1)
@@ -444,12 +476,12 @@ async def complete(
                     span.set_attribute("llm.ok", False)
                 except Exception:
                     pass
+                if rejected:
+                    raise LLMUnavailable(f"LLM provider rejected model {cfg.model_id}: {exc}") from exc
                 raise RuntimeError(f"LLM call failed after {attempts} attempts: {exc}") from exc
 
     latency_ms = round((time.time() - start) * 1000, 1)
-    cost = round(
-        (in_tok * cfg.cost_per_1k_in + out_tok * cfg.cost_per_1k_out) / 1000, 6
-    )
+    cost = cost_usd(cfg, in_tok, out_tok)
     result = GatewayResult(
         text=text,
         model=cfg.model_id,
@@ -494,8 +526,7 @@ async def complete_text(
     Convenience wrapper around :func:`complete` for plain-text narratives.
 
     Returns the model's text. Raises :class:`LLMUnavailable` when no API key is
-    configured — callers with a deterministic template should catch it (a bare
-    ``except Exception`` around a template fallback already does).
+    configured; callers with a template fallback should catch it.
     """
     result = await complete(
         task=task,
@@ -526,10 +557,9 @@ async def stream(
     """
     Stream a completion token-by-token through the gateway.
 
-    Yields text chunks. Routing + tracing + cost logging still apply (cost is
-    recorded once the stream finishes). No retry/caching for streams.
-
-    Raises :class:`LLMUnavailable` before yielding anything when no key is set.
+    Yields text chunks. Routing, tracing and cost logging still apply (cost is
+    recorded when the stream ends). No retry/caching. Raises
+    :class:`LLMUnavailable` before yielding when no key is set.
     """
     from app.services.telemetry import tracer
 
@@ -557,7 +587,7 @@ async def stream(
     text = "".join(pieces)
     in_tok = int(len((system_prompt + prompt).split()) * 1.3)
     out_tok = int(len(text.split()) * 1.3)
-    cost = round((in_tok * cfg.cost_per_1k_in + out_tok * cfg.cost_per_1k_out) / 1000, 6)
+    cost = cost_usd(cfg, in_tok, out_tok)
     res = GatewayResult(
         text=text, model=cfg.model_id, task=task,
         input_tokens=in_tok, output_tokens=out_tok, cost_usd=cost,
